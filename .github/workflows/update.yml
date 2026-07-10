@@ -1,0 +1,38 @@
+name: 🔄 Update
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-skills:
+    name: 🧠 Update skills-lock.json
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v7
+
+      - name: 🔧 Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: 🔄 Update skills
+        run: make update
+
+      - name: 🧪 Run tests
+        run: make test
+
+      - name: 📂 Open PR if skills-lock.json changed
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: update/skills
+          commit-message: "update(skills): update skills-lock.json to latest versions"
+          title: "update(skills): update agent skills to latest versions"
+          body: "Automated daily update of `skills-lock.json` via `make update`."
+          add-paths: skills-lock.json

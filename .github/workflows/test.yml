@@ -1,0 +1,16 @@
+name: 🧪 Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: 🧪 Lock + scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v7
+
+      - name: 🧪 Run tests
+        run: make test

@@ -3,3 +3,6 @@ dist/
 build/
 __pycache__/
 *.pyc
+.agents/
+.claude/
+node_modules/
