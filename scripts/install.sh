@@ -44,4 +44,12 @@ for dst in "${TARGET}/.agents/skills" "${TARGET}/.claude/skills"; do
 	cp -a "${src}/." "${dst}/"
 done
 
+settings="${TARGET}/.claude/settings.json"
+if command -v node &>/dev/null; then
+	log "skills: auto-enabling caveman + ponytail plugins in ${settings}"
+	node "${REPO_ROOT}/scripts/enable-plugins.js" "${settings}"
+else
+	warn "skills: node not found; skipped auto-enabling caveman/ponytail plugins."
+fi
+
 log "skills: done. Restart your agent to load the skills."
