@@ -50,6 +50,26 @@ class TestSkillsLock(unittest.TestCase):
             f"skills must be sorted ascending; expected {sorted(names)}",
         )
 
+    def test_first_party_skills_have_valid_frontmatter(self):
+        for skill_md in sorted((REPO_ROOT / "skills").glob("*/SKILL.md")):
+            with self.subTest(skill=skill_md.parent.name):
+                text = skill_md.read_text(encoding="utf-8")
+                self.assertTrue(text.startswith("---\n"), "missing frontmatter")
+                frontmatter = text.split("---", 2)[1]
+                self.assertIn("name:", frontmatter, "frontmatter missing name")
+                self.assertIn(
+                    "description:", frontmatter, "frontmatter missing description"
+                )
+
+    def test_first_party_skills_do_not_shadow_locked_skills(self):
+        locked = set(self.lock["skills"].keys())
+        for skill_dir in sorted((REPO_ROOT / "skills").glob("*/")):
+            self.assertNotIn(
+                skill_dir.name.rstrip("/"),
+                locked,
+                f"first-party skill '{skill_dir.name}' collides with a locked skill",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,8 +1,21 @@
+# Python
 .venv/
-dist/
-build/
 __pycache__/
 *.pyc
+dist/
+build/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Rendered skill install targets
 .agents/
 .claude/
-node_modules/
+
+# Editor / OS
+.DS_Store
+*.swp

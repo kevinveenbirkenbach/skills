@@ -32,6 +32,11 @@ if [[ ! -d "${src}" ]]; then
 	exit 1
 fi
 
+if [[ -d "${REPO_ROOT}/skills" ]]; then
+	log "skills: adding first-party skills from skills/..."
+	cp -a "${REPO_ROOT}/skills/." "${src}/"
+fi
+
 for dst in "${TARGET}/.agents/skills" "${TARGET}/.claude/skills"; do
 	log "skills: copying -> ${dst}"
 	rm -rf "${dst}"
