@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Enable the caveman and ponytail plugins in a Claude Code settings.json so
-// their SessionStart hooks auto-activate both modes. Merges non-destructively:
-// existing marketplaces and enabled plugins are preserved, unparseable files
-// are left untouched.
+// their SessionStart hooks auto-activate both modes, and register the autotune
+// reminder hook. Merges non-destructively: existing marketplaces, plugins and
+// hooks are preserved, unparseable files are left untouched.
 "use strict";
 
 const fs = require("fs");
+const path = require("path");
 
 const settingsPath = process.argv[2];
 if (!settingsPath) {
@@ -38,5 +39,15 @@ for (const [name, entry] of Object.entries(MARKETPLACES)) {
 }
 data.enabledPlugins = Object.assign(data.enabledPlugins || {}, PLUGINS);
 
+const reminder = path.join(path.dirname(settingsPath), "skills", "autotune", "hooks", "reminder.sh");
+data.hooks = data.hooks || {};
+data.hooks.UserPromptSubmit = data.hooks.UserPromptSubmit || [];
+const registered = JSON.stringify(data.hooks.UserPromptSubmit).includes("autotune/hooks/reminder.sh");
+if (!registered) {
+  data.hooks.UserPromptSubmit.push({
+    hooks: [{ type: "command", command: `bash ${JSON.stringify(reminder)}` }],
+  });
+}
+
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled caveman + ponytail plugins in ${settingsPath}`);
+console.log(`skills: enabled caveman + ponytail plugins and the autotune reminder in ${settingsPath}`);
