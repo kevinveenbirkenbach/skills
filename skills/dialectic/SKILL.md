@@ -26,6 +26,13 @@ operator holds.
    git history; the running containers (exec, logs, inspect through whatever
    make or CLI helpers the project exposes); CI logs and artifacts; tests; docs.
    Cite `file:line` and command output — never a bare assertion.
+   **Download the artifacts before theorising.** When the failure comes from a
+   CI run, list its artifacts and fetch every one that could carry the failure
+   (`gh run download <run> -n <name> -D <dir>`, or the equivalent for the CI in
+   use). A job log routinely holds only the *path* of a report while the payload
+   — assertion text, expected vs received, server logs, diagnostic dumps — lives
+   in the artifact. Theorising from the log alone while an unread artifact
+   contains the answer is the single most expensive mistake in this loop.
 2. **Antithesis.** Spawn MULTIPLE independent skeptics (parallel subagents or a
    workflow) whose only job is to REFUTE the thesis. Each re-inspects the
    sources itself and defaults to "refuted" on any concrete hole. Give diverse

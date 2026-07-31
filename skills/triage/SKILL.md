@@ -17,20 +17,27 @@ root cause is proven.
    whose conclusion is failure, cancelled, or timed-out. A downstream aggregate
    job that fails only because an upstream job did is not a separate root cause —
    note it and move on.
-2. **Dialectic per failing job.** For EACH failing job, invoke the `dialectic`
+2. **Download the run's artifacts.** Before investigating, list the run's
+   artifacts and fetch every one belonging to a failing job — reports, rescue
+   diagnostics, inventories, container logs. The job log usually names an
+   artifact path and nothing more; the assertion text, the server-side
+   exception and the state dumps are inside the artifact. Do this even when the
+   log looks conclusive, because a log that explains the symptom rarely
+   explains the cause.
+3. **Dialectic per failing job.** For EACH failing job, invoke the `dialectic`
    skill: form a thesis about the root cause from evidence (the job log, its
    artifacts, the code at the run's commit, git history), attack it with
    independent skeptics, and iterate to a ~99% thesis. The jobs are independent,
    so run their investigations in parallel where the tooling allows.
-3. **Distinguish shared vs hidden causes.** When several jobs share one root
+4. **Distinguish shared vs hidden causes.** When several jobs share one root
    cause, fix it once. When a job hides a second failure behind the first, keep
    going until the job is actually green, not just past the first error.
-4. **Fix at the root.** Apply the real fix in the repository for each proven root
+5. **Fix at the root.** Apply the real fix in the repository for each proven root
    cause. Never mask a failure — no retry-until-pass, no disabling the check, no
    soft-skip. If a failure is genuinely external (upstream outage, flaky infra),
    confirm that with evidence and surface it honestly instead of fixing around
    it.
-5. **Follow the run.** While the run is still in progress, re-check it
+6. **Follow the run.** While the run is still in progress, re-check it
    periodically and triage each newly failed job as it appears. The run is done
    only when it has finished and every failure has a verified fix.
 
