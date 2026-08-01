@@ -17,27 +17,33 @@ root cause is proven.
    whose conclusion is failure, cancelled, or timed-out. A downstream aggregate
    job that fails only because an upstream job did is not a separate root cause —
    note it and move on.
-2. **Download the run's artifacts.** Before investigating, list the run's
-   artifacts and fetch every one belonging to a failing job — reports, rescue
-   diagnostics, inventories, container logs. The job log usually names an
+2. **Cluster the failures by error message.** Group the failing jobs by their
+   actual failing line, not by job name. Jobs whose messages differ in anything
+   but the interpolated identifiers (host, app, port, path) belong in separate
+   clusters.
+3. **Download artifacts per cluster.** For each cluster, fetch every artifact of
+   one representative job: reports, rescue diagnostics, inventories, container
+   logs. Pull a second member's artifacts only when the representative's
+   evidence does not explain the whole cluster. The job log usually names an
    artifact path and nothing more; the assertion text, the server-side
    exception and the state dumps are inside the artifact. Do this even when the
    log looks conclusive, because a log that explains the symptom rarely
    explains the cause.
-3. **Dialectic per failing job.** For EACH failing job, invoke the `dialectic`
-   skill: form a thesis about the root cause from evidence (the job log, its
-   artifacts, the code at the run's commit, git history), attack it with
-   independent skeptics, and iterate to a ~99% thesis. The jobs are independent,
-   so run their investigations in parallel where the tooling allows.
-4. **Distinguish shared vs hidden causes.** When several jobs share one root
-   cause, fix it once. When a job hides a second failure behind the first, keep
-   going until the job is actually green, not just past the first error.
-5. **Fix at the root.** Apply the real fix in the repository for each proven root
+4. **Dialectic per cluster.** For EACH cluster, invoke the `dialectic` skill:
+   form a thesis about the root cause from evidence (the job log, its artifacts,
+   the code at the run's commit, git history), attack it with independent
+   skeptics, and iterate to a ~99% thesis. The clusters are independent, so run
+   their investigations in parallel where the tooling allows.
+5. **Distinguish shared vs hidden causes.** A cluster is a hypothesis, not a
+   proof: if the dialectic shows one cluster splitting into two causes, split it.
+   When a job hides a second failure behind the first, keep going until the job
+   is actually green, not just past the first error.
+6. **Fix at the root.** Apply the real fix in the repository for each proven root
    cause. Never mask a failure — no retry-until-pass, no disabling the check, no
    soft-skip. If a failure is genuinely external (upstream outage, flaky infra),
    confirm that with evidence and surface it honestly instead of fixing around
    it.
-6. **Follow the run.** While the run is still in progress, re-check it
+7. **Follow the run.** While the run is still in progress, re-check it
    periodically and triage each newly failed job as it appears. The run is done
    only when it has finished and every failure has a verified fix.
 
