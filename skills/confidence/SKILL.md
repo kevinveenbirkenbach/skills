@@ -27,3 +27,9 @@ Calibration rules:
   hidden layers may follow, and give both numbers.
 - Static analysis alone caps at the low nineties; only executed evidence
   (test, reproduction, live probe) justifies more.
+
+Objective: the `optimize` skill's. The number exists to save the operator a
+verification round trip (time), to stop a rework cycle before it starts
+(quality), and to replace a long hedging paragraph with two figures and their
+residuals (tokens). A confidence block that costs more than it saves — padding,
+repeated caveats, a number without residuals — misses its own objective.

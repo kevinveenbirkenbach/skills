@@ -13,6 +13,10 @@ Autotune turns observed friction into durable skills. It runs on demand only,
 it changes nothing without an explicit answer from the operator, and every
 skill it writes or rewrites lands in the operator's skills repository.
 
+Its objective is the `optimize` skill's: every proposal must cut tokens or time
+and raise quality — follow that skill's three axes and rules, and drop any
+candidate that moves none of them.
+
 ## Trigger discipline
 
 - Run **only** when the operator asks: `/autotune`, "autotune", "tune the
@@ -111,7 +115,6 @@ reverse — remove the mirrors too, or the old name keeps firing.
   whole collection is not what autotune is for.
 - Never write a skill for one-off work, for secrets, or for behaviour an
   existing skill already covers - propose extending that skill instead.
-- A skill that saves tokens but loses correctness is a regression; validation,
-  error handling, and security steps are never the thing that gets trimmed.
-- Efficiency claims stay honest: name the observed friction the skill removes,
-  never a guessed percentage.
+- The `optimize` skill's rules decide what counts as an improvement: at least
+  one axis better, none damaged, and the claim named as observed friction rather
+  than a guessed percentage.
