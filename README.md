@@ -26,7 +26,7 @@ Copy the skills into a specific project (`<repo>/.agents/skills` and `<repo>/.cl
 make project TARGET=/path/to/repo
 ```
 
-Both commands also patch the target's `.claude/settings.json`: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and the `autotune` reminder hook is registered so the agent points you at `/autotune` at most once an hour. Existing settings are preserved.
+Both commands also patch the target's `.claude/settings.json`: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `autotune` points you at `/autotune` at most once an hour, `dream` points you at `/dream` at most once every twelve hours per repository (stamped in that repository's git dir). Existing settings are preserved.
 
 Restart your agent afterwards so it loads the new skills.
 

@@ -85,7 +85,7 @@ class TestSettingsRegistration(unittest.TestCase):
             encoding="utf-8",
         )
         data = self._patch()
-        self.assertEqual(len(data["hooks"]["UserPromptSubmit"]), 2)
+        self.assertEqual(len(data["hooks"]["UserPromptSubmit"]), 3)
 
 
 if __name__ == "__main__":
