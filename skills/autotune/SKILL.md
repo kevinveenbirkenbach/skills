@@ -65,10 +65,35 @@ for a final `Write it` / `Revise it` / `Discard` confirmation before touching
 disk. Rewrites of an existing skill additionally show a before/after diff of
 the changed lines in that confirmation.
 
+## Persistence
+
+A skill that exists only under `.claude/skills` is lost on the next install, and
+one that exists only in the repository is not live until the next restart — so
+every skill is written to **both**, in this order:
+
+1. **Locate the operator's skills repository.** Take the first hit: the
+   `SKILLS_REPO` environment variable; the current repository, when it holds
+   `skills-lock.json` and a `skills/` directory; `pkgmgr path skills`; a git
+   checkout named `skills` under the usual roots
+   (`~/Repositories/*/*/skills`, `~/git`, `~/src`, `~/Projects`) carrying
+   `skills-lock.json`. If none matches, ask the operator for the path with a
+   single-select question — never skip the repository and write only the live
+   copies.
+2. **Write the source of truth**: `skills/<name>/SKILL.md` in that repository
+   (portable skills), or `skills/<name>/SKILL.md` in the current project
+   (project-specific ones). This is the copy that gets committed.
+3. **Mirror it live**, so it works without a reinstall: copy the skill's whole
+   directory to `~/.claude/skills/<name>/` and `~/.agents/skills/<name>/`, and
+   for a project-specific skill additionally to that project's
+   `.claude/skills/<name>/` and `.agents/skills/<name>/`. Copy the directory,
+   not just `SKILL.md`, so hooks and references come along.
+
+Report all written paths. Deleting or renaming a skill follows the same list in
+reverse — remove the mirrors too, or the old name keeps firing.
+
 ## Step 3: write
 
-- Portable skills go to `skills/<name>/SKILL.md` in the operator's skills
-  repository; project-specific ones to that project's skills directory.
+- Write the skill to every location the **Persistence** section lists.
 - Frontmatter carries `name` and a `description` that states what the skill
   does **and** when to trigger it - the description is the only part loaded into
   every session, so it decides whether the skill ever fires.

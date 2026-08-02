@@ -37,6 +37,20 @@ class TestAutotuneSkill(unittest.TestCase):
         self.assertIn("multiSelect: false", text)
 
 
+class TestSkillPersistence(unittest.TestCase):
+    """Both skill writers must persist to the skills repository AND the live dirs."""
+
+    def test_autotune_names_every_target(self):
+        text = SKILL.read_text(encoding="utf-8")
+        for target in ("SKILLS_REPO", "skills/<name>/SKILL.md", "~/.claude/skills/", "~/.agents/skills/"):
+            self.assertIn(target, text)
+
+    def test_autoskill_routes_to_the_same_persistence(self):
+        text = (REPO_ROOT / "skills" / "autoskill" / "SKILL.md").read_text(encoding="utf-8")
+        for target in ("Persistence", "~/.claude/skills/", "~/.agents/skills/"):
+            self.assertIn(target, text)
+
+
 class TestAutotuneHook(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

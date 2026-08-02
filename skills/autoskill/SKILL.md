@@ -18,10 +18,12 @@ vary), do the following:
 3. On approval, write the skill:
    - a conversation shortcut or expansion: add it to the `shortcuts` skill
      table instead of creating a new skill.
-   - project-specific behavior: create it in the project's own skills
-     directory (e.g. `skills/<name>/SKILL.md` in the repository).
-   - portable behavior: create `skills/<name>/SKILL.md` in the operator's
-     skills repository.
+   - anything else: persist it exactly as the `autotune` skill's
+     **Persistence** section specifies — locate the operator's skills
+     repository, write `skills/<name>/SKILL.md` there (or in the current
+     project for project-specific behavior), then mirror the skill directory
+     into `~/.claude/skills/` and `~/.agents/skills/`, plus the project's
+     `.claude/skills/` and `.agents/skills/` when it is project-specific.
    Follow the local naming conventions and keep the skill a thin,
    single-purpose instruction; route to an authoritative doc when one
    exists instead of duplicating it.
