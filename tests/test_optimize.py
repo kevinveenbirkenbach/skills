@@ -20,7 +20,9 @@ class TestOptimizeObjective(unittest.TestCase):
     def test_routers_point_at_it(self):
         for skill in ROUTERS:
             text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
-            self.assertIn("`optimize` skill", text, f"{skill} does not route to optimize")
+            self.assertIn(
+                "`optimize` skill", text, f"{skill} does not route to optimize"
+            )
 
 
 if __name__ == "__main__":

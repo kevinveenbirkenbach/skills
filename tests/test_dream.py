@@ -15,7 +15,9 @@ HOOK = REPO_ROOT / "skills" / "dream" / "hooks" / "reminder.sh"
 PATCHER = REPO_ROOT / "scripts" / "enable-plugins.js"
 
 
-def _run_hook(cwd: Path, stamp: Path | None = None, interval: str = "43200") -> subprocess.CompletedProcess:
+def _run_hook(
+    cwd: Path, stamp: Path | None = None, interval: str = "43200"
+) -> subprocess.CompletedProcess:
     env = {
         "PATH": "/usr/bin:/bin",
         "HOME": str(cwd),
@@ -73,7 +75,9 @@ class TestDreamHook(unittest.TestCase):
         for name in ("one", "two"):
             repo = self.cwd / name
             repo.mkdir()
-            subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
+            subprocess.run(
+                ["git", "init", "-q", str(repo)], check=True, capture_output=True
+            )
             self.assertIn("/dream", _run_hook(repo).stdout)
             self.assertTrue((repo / ".git" / ".dream-stamp").is_file())
             self.assertEqual(_run_hook(repo).stdout, "")
@@ -87,7 +91,9 @@ class TestSettingsRegistration(unittest.TestCase):
         self.settings = Path(self.tmp.name) / "settings.json"
 
     def _patch(self) -> dict:
-        subprocess.run(["node", str(PATCHER), str(self.settings)], check=True, capture_output=True)
+        subprocess.run(
+            ["node", str(PATCHER), str(self.settings)], check=True, capture_output=True
+        )
         return json.loads(self.settings.read_text(encoding="utf-8"))
 
     def test_hook_registered_once(self):

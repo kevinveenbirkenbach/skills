@@ -42,11 +42,18 @@ class TestSkillPersistence(unittest.TestCase):
 
     def test_autotune_names_every_target(self):
         text = SKILL.read_text(encoding="utf-8")
-        for target in ("SKILLS_REPO", "skills/<name>/SKILL.md", "~/.claude/skills/", "~/.agents/skills/"):
+        for target in (
+            "SKILLS_REPO",
+            "skills/<name>/SKILL.md",
+            "~/.claude/skills/",
+            "~/.agents/skills/",
+        ):
             self.assertIn(target, text)
 
     def test_autoskill_routes_to_the_same_persistence(self):
-        text = (REPO_ROOT / "skills" / "autoskill" / "SKILL.md").read_text(encoding="utf-8")
+        text = (REPO_ROOT / "skills" / "autoskill" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
         for target in ("Persistence", "~/.claude/skills/", "~/.agents/skills/"):
             self.assertIn(target, text)
 
@@ -84,7 +91,9 @@ class TestSettingsRegistration(unittest.TestCase):
         self.settings = Path(self.tmp.name) / "settings.json"
 
     def _patch(self) -> dict:
-        subprocess.run(["node", str(PATCHER), str(self.settings)], check=True, capture_output=True)
+        subprocess.run(
+            ["node", str(PATCHER), str(self.settings)], check=True, capture_output=True
+        )
         return json.loads(self.settings.read_text(encoding="utf-8"))
 
     def test_hook_registered_once(self):
@@ -95,7 +104,15 @@ class TestSettingsRegistration(unittest.TestCase):
 
     def test_existing_hooks_preserved(self):
         self.settings.write_text(
-            json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "true"}]}]}}),
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {"hooks": [{"type": "command", "command": "true"}]}
+                        ]
+                    }
+                }
+            ),
             encoding="utf-8",
         )
         data = self._patch()
