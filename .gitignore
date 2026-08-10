@@ -15,6 +15,7 @@ npm-debug.log*
 # Rendered skill install targets
 .agents/
 .claude/
+.mcp.json
 
 # Editor / OS
 .DS_Store
