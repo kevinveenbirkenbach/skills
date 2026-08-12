@@ -105,7 +105,11 @@ reverse — remove the mirrors too, or the old name keeps firing.
   behaviour. Route to an authoritative doc instead of duplicating it.
 - Optimizing an existing skill means the file gets shorter or sharper, not
   longer. Delete rules the agent already follows, merge duplicated ones, and
-  cut every sentence that does not change an action.
+  cut every sentence that does not change an action. Route that compaction
+  through the `essence` skill instead of trimming by hand: it runs a health
+  pass for dead pointers and rules duplicated across skills before cutting
+  anything, ranks by what loads in every session, and shows the diff before it
+  writes. It asks for its own scope — answer with the skill being optimized.
 - Report what changed in at most three lines, then refresh the reminder stamp
   so the next hint is an hour out: `date +%s > ~/.claude/.autotune-stamp`.
 
