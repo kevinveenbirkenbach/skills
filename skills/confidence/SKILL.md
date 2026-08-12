@@ -28,6 +28,14 @@ Calibration rules:
 - Static analysis alone caps at the low nineties; only executed evidence
   (test, reproduction, live probe) justifies more.
 
+## When a threshold was stated
+
+A number the operator named ("95% confidence, break risk ≤5%") is a gate on the
+work, not a field in the report. A block that misses it is not finished output,
+it is a work item: name the cheapest evidence that closes the gap, go get it,
+re-measure. Report a miss only when that evidence is genuinely out of reach — a
+deploy you cannot run, an artifact that does not exist — and say which one.
+
 Objective: the `optimize` skill's. The number exists to save the operator a
 verification round trip (time), to stop a rework cycle before it starts
 (quality), and to replace a long hedging paragraph with two figures and their
