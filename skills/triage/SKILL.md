@@ -21,7 +21,10 @@ root cause is proven.
    actual failing line, not by job name. Jobs whose messages differ in anything
    but the interpolated identifiers (host, app, port, path) belong in separate
    clusters.
-3. **Download artifacts per cluster.** For each cluster, fetch every artifact of
+3. **Download artifacts per cluster.** Use the `ci-artifacts` skill for the
+   mechanics — it covers per-job logs while a run is still in progress, which
+   bundle to pull, and the grep hygiene that keeps a false positive from
+   becoming a root cause. For each cluster, fetch every artifact of
    one representative job: reports, rescue diagnostics, inventories, container
    logs. Pull a second member's artifacts only when the representative's
    evidence does not explain the whole cluster. The job log usually names an
@@ -51,7 +54,17 @@ root cause is proven.
 
 - Executed evidence beats reasoning: read the actual failing log line and the
   artifact, not the job title.
+- A derived source is not evidence. A conversation summary, your own earlier
+  message, a cluster table you built ten minutes ago, or a subagent's report
+  proves nothing on its own. Only the job log, the artifact, the code at the
+  run's commit, and command output you just ran count. Quote them literally; if
+  you cannot quote it, you do not know it.
+- Re-derive after a context compaction. A summary carried across a compaction
+  boundary preserves your conclusions but not the evidence under them, and a
+  cluster assignment that was wrong stays wrong while reading as settled fact.
+  Before acting on any pre-compaction attribution, rebuild it from the job logs.
 - Classify each failure: a real defect (fix it), a flake or infra hiccup (prove
   it is transient before dismissing), or already-fixed-by-a-later-commit (verify
   the fix is present in the run's commit before claiming it).
-- Report a per-job verdict: root cause, the evidence that proves it, and the fix.
+- Report a per-job verdict: root cause, the artifact path and line that prove
+  it, and the fix. A verdict that cites only the job log has not finished step 3.
