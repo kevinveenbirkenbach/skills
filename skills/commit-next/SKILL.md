@@ -23,7 +23,13 @@ description: >
    audit first, then `git commit --no-verify`, exact staging index only).
 4. Group the remaining uncommitted changes into logical bundles (one
    concern per bundle: same failure class, same mechanism, or same role)
-   and stage the next one; never mix concerns to save a commit.
+   and stage the next one; never mix concerns to save a commit. Staging
+   happens here and nowhere else: never stage merely to run a lint or a
+   test. Repository checks that enumerate through `git ls-files` already
+   see tracked, modified files and read the worktree; only an untracked
+   NEW file needs `git add` to become visible. Path-scope every `git add`
+   to the bundle — `git add -A` sweeps up the operator's own edits and
+   their local config.
 5. For the newly staged bundle run the explain skill (what the changes do
    and how the pieces interact, file:line-anchored) followed by the
    confidence skill (fix confidence, break risk, evidence, residuals).
