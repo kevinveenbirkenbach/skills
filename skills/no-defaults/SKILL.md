@@ -59,7 +59,7 @@ with `false`, `null`, or `""` is permitted, and with any other value is permitte
 only when justified in a comment.
 
 | Language | Never | Instead |
-|---|---|---|
+| --- | --- | --- |
 | Bash | `${VAR:-x}`, `${VAR:=x}`, `: "${VAR:=x}"` | `: "${VAR:?set VAR in <file>}"` |
 | Python | `def f(a=1)`, `d.get(k, x)`, `getattr(o, n, x)`, `os.environ.get(k, x)`, `argparse(default=)` | required args, `d[k]`, `os.environ[k]`, `add_argument(required=True)` |
 | Jinja / Ansible | `\| default(x)`, `lookup('env', k) \| default('')` | `\| mandatory`, `assert` on the var |

@@ -20,7 +20,7 @@ same tree may own.
 
 ## 2. Fetch everything
 
-```
+```bash
 git fetch --all --prune --tags
 ```
 
@@ -37,7 +37,7 @@ one line so a wrong reading is visible before the search.
 
 Run all three; they find different things:
 
-```
+```bash
 git log --all --oneline --regexp-ignore-case --grep='<keyword>'
 git log --all --oneline -S'<symbol or literal>'
 git log --all --oneline -- '<path or glob>'
