@@ -8,11 +8,18 @@ description: >
 ---
 
 Every stage summary, fix report, or ready-to-commit bundle ends with a
-confidence block:
+confidence block.
+
+Invoke the `break-risk` skill every time, before writing the block. The break
+risk half is derived there — consumers enumerated, the delta measured at the
+surface where it shows, live separated from latent, the deployment matrix
+walked, the failure mode weighed. Do not estimate it here; this skill reports
+the number that skill produces.
 
 1. **Fix confidence** (percent): probability the change does what it
-   claims. **Break risk** (percent): probability it breaks anything else.
-   Two separate numbers, never one blended figure.
+   claims. **Break risk** (percent): probability it breaks anything else,
+   derived via the `break-risk` skill. Two separate numbers, never one
+   blended figure.
 2. **Evidence**: the strongest proof lines only — what was executed,
    reproduced, enumerated, or read from authoritative source. Distinguish
    proven (ran it, saw it) from derived (reasoned statically).
@@ -21,6 +28,7 @@ confidence block:
    Never a bare percentage without its residuals.
 
 Calibration rules:
+
 - Number the claim you verified, not the effort you spent; discount after
   any error the operator caught in the same area.
 - Distinguish "fixes the observed failure" from "makes the job green" when
