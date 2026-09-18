@@ -83,6 +83,10 @@ over an exposure and not creating the exposure, prefer the second and say why.
 - Negative control before claiming a check works: make the thing it should
   catch, watch it fail, restore. A check never observed failing is not known to
   work.
+- The same applies to a check you did not write. Citing an existing lint, test
+  or gate as the reason a change is safe means reading its pattern, not its
+  docstring, and watching it fail on the case you are trusting it to catch. A
+  green gate whose rule never matched your case is silence, not a pass.
 - After a context compaction, rebuild attributions from the source; conclusions
   survive compaction, the evidence under them does not.
 
