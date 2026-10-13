@@ -46,13 +46,19 @@ Read-only, in parallel, sizes included:
 - **Docker**: `docker system df -v`; containers with state and compose project
   label, volumes with the containers using them
   (`docker ps -a --filter volume=<name>`), dangling and unused images, build
-  cache, unused networks.
+  cache, unused networks. For every stopped container (`exited`, `created`)
+  record its volumes (`{{.Mounts}}`); for every volume no running container
+  uses, record size, `CreatedAt` (`docker volume inspect`) and compose project
+  label, anonymous ones included.
 - **Other agent dirs**: package and tool caches (pip, npm, pre-commit, act,
   gh, buildx), worktrees with `git status --short` and whether their branch is
   merged or pushed, Ansible and build temp dirs.
 - **Live use**: open handles (`fuser`, `lsof`) and running processes by name
   only (`ps -o pid,etime,comm`). Never print full command lines or
-  environments: process arguments carry credentials.
+  environments: process arguments carry credentials. A sandboxed agent often
+  sees only its own processes, so an empty handle list proves nothing there;
+  then only entries untouched for more than 24 hours (`find -mtime +0`) are
+  candidates, and newer ones stay as `keep (recent, possibly in use)`.
 - **Archive duties**: memory and project instructions that require copying
   something out before deletion (logs, reports, generated maps). Such an item
   is `archive first`, never a plain delete.
@@ -75,9 +81,9 @@ worktree or compose project name, a container label, an open handle, or
 
 | Risk | Meaning | Typical items |
 | ---- | ------- | ------------- |
-| low | regenerated automatically, cheap | stopped containers, dangling images, unused networks, scratch dirs and logs of finished sessions |
+| low | regenerated automatically, cheap | stopped containers without volumes, dangling images, unused networks, scratch dirs and logs of finished sessions |
 | medium | regenerated, but slow, rate-limited or network-bound | unused tagged images (re-pull, registry limits), build cache (cold rebuilds), package caches |
-| high | data loss or a broken run possible | volumes, running unclaimed containers or stacks, worktrees with uncommitted or unpushed work, unread reports, anything `unknown` |
+| high | data loss or a broken run possible | volumes, stopped containers with volumes, running unclaimed containers or stacks, worktrees with uncommitted or unpushed work, unread reports, anything `unknown` |
 
 ## Step 4: propose
 
@@ -88,22 +94,30 @@ One table, biggest first:
 Below it: reclaimable size per risk class, and every `keep` row grouped by
 reason, so the operator sees what was protected and why.
 
-Then ask with `AskUserQuestion`, at most four questions per call:
+Then ask with `AskUserQuestion` in two calls.
 
-1. **Strategy** (`multiSelect: false`, radio buttons): `Conservative: low risk
-   only (Recommended)`, `Standard: low and medium`, `Custom: only what I tick
-   below`, `Abort`. Each description states the size it frees and its worst
-   case.
-2. **/tmp** (`multiSelect: true`, checklist): the candidate groups, size and
-   risk in each description.
-3. **Docker** (`multiSelect: true`): containers, images, build cache,
-   networks, volumes.
-4. **Other dirs** (`multiSelect: true`): caches, worktrees, temp dirs.
+**Call 1, the selection** (`multiSelect: true`, checklists, at most four
+questions): `/tmp`, `Docker`, `Other dirs`, and a separate `High risk`
+question that holds every high-risk candidate. Size, risk and worst case go
+into each option's description. An area with more than four options is
+grouped by owner or risk, or split into a further call. Only ticked items are
+selected; nothing is preselected.
 
-An area with more than four options is grouped by owner or risk, or asked in a
-second call. A high-risk item is deleted only when it is ticked explicitly;
-the strategy radio button alone never selects one. A checklist answer that
-contradicts the strategy wins, since it is the more specific choice.
+**Stopped containers and volumes** always get their own checklist
+(`multiSelect: true`, header `⚠ Volumes`, in a further call when call 1 is
+full). Every stopped container and every volume without a running container
+appears there unless a peer claimed it; none is dropped as "not proposed",
+`unknown` and anonymous ones included. The question text carries the warning:
+`Deleting a volume is irreversible; its data does not come back unless the
+description says how.` One option per stopped container together with its
+volumes (removing the container alone frees nothing of them), one per
+unattached volume, anonymous ones grouped. Each description gives size,
+`CreatedAt`, owner or compose project, and what is lost.
+
+**Call 2, the confirmation** (`multiSelect: false`, radio buttons), computed
+from the ticks: `Execute: <n> items, <size> (Recommended)`, `Revise the
+selection`, `Abort`. The execute description names the worst case of the
+ticked items. Revise repeats call 1; nothing is deleted before `Execute`.
 
 ## Step 5: execute
 
@@ -111,7 +125,20 @@ contradicts the strategy wins, since it is the more specific choice.
   peer may have started something since the inventory.
 - Delete exactly the selected items, by name or path. No blanket prune
   (`docker system prune -a --volumes`, `rm -rf /tmp/*`) that sweeps beyond the
-  selection.
+  selection. For more than a handful of paths, write the list to a file under
+  `/tmp`, grep it against every claim once more, then delete with
+  `xargs -d '\n' rm -rf -- < <list>`.
+- Locally built images free little on their own: their layers stay behind as
+  build cache. After removing images, re-measure `docker system df`; the
+  layers show up as reclaimable build cache. Offer
+  `docker builder prune --filter until=24h` as a follow-up candidate, ask the
+  peers that claimed build cache first, and run it outside their running
+  builds.
+- A host permission layer (an auto-mode classifier, a deny rule) may refuse a
+  delete. Never route around it with another command or a peer. Finish the
+  rest, then put the refused item to the operator again as its own option: an
+  explicit renewed selection may pass; if it is refused again, hand over the
+  exact command with its list file for the operator to run.
 - Running stacks go down through the project's teardown target, never by
   removing their containers or volumes underneath them.
 - Archive-first items: copy out, verify the copy, then delete.
