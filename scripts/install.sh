@@ -44,7 +44,7 @@ for dst in "${TARGET}/.agents/skills" "${TARGET}/.claude/skills"; do
 	cp -a "${src}/." "${dst}/"
 done
 
-settings="${TARGET}/.claude/settings.json"
+settings="${TARGET}/.claude/settings.local.json"
 if command -v node &>/dev/null; then
 	log "skills: auto-enabling caveman + ponytail plugins in ${settings}"
 	node "${REPO_ROOT}/scripts/enable-plugins.js" "${settings}"
