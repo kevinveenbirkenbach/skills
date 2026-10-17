@@ -13,6 +13,19 @@ root cause is proven.
 
 ## Procedure
 
+0. **Check the run against HEAD before anything else.** A CI run is a snapshot
+   of one commit, and the branch has moved since. Run
+   `git log --oneline <run-sha>..HEAD | wc -l` as the first command of the
+   triage. Zero means the run speaks for the current tree and you proceed.
+   Non-zero means it does not, and you scope the job set down **before**
+   enumerating, clustering, or spawning anything — every job you investigate
+   against stale code is work thrown away, and a fix proposed there risks
+   reverting someone else's. Two cheap discriminators do it without opening an
+   artifact: `git diff --name-only <run-sha>..HEAD -- <source dir> | cut -d/ -f2 | sort -u`
+   for which components already moved, and a grep of the saved job logs for the
+   literal error signature of each cause already fixed in that range. What
+   survives both is the job set the rest of this procedure applies to; say how
+   many jobs you dropped and why.
 1. **Enumerate every failing job.** Pull the run's job list and isolate each job
    whose conclusion is failure, cancelled, or timed-out. A downstream aggregate
    job that fails only because an upstream job did is not a separate root cause —
@@ -64,7 +77,9 @@ root cause is proven.
   cluster assignment that was wrong stays wrong while reading as settled fact.
   Before acting on any pre-compaction attribution, rebuild it from the job logs.
 - Classify each failure: a real defect (fix it), a flake or infra hiccup (prove
-  it is transient before dismissing), or already-fixed-by-a-later-commit (verify
-  the fix is present in the run's commit before claiming it).
+  it is transient before dismissing), or already-fixed-by-a-later-commit. For
+  that last class the comparison is `<run-sha>..HEAD`, never the run's commit
+  alone: the run cannot contain a fix that landed after it, so looking there
+  can only ever confirm the failure. Name the commit that carries the fix.
 - Report a per-job verdict: root cause, the artifact path and line that prove
   it, and the fix. A verdict that cites only the job log has not finished step 3.
