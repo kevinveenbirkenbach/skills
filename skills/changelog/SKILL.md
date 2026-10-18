@@ -76,8 +76,13 @@ Upgrade notes:
    default of 80 unless the repo's config changes it. Aim for 78 or less, so
    lines stay within 80 after Debian's two-space indent and RPM's two-character
    `-` prefix.
-5. **Lists use `-` only**, no nesting, with a blank line before and after
-   every list (MD004, MD032).
+5. **Lists use the marker CHANGELOG.md already uses**, no nesting, with a
+   blank line before and after every list (MD004, MD032). MD004's default
+   *consistent* style takes the marker of the first list in the file, and
+   pkgmgr puts the new entry on top, so a marker that differs from the older
+   entries turns every older list into a finding. Take the marker of the first
+   list item in the existing CHANGELOG.md; use `-` only when there is no
+   CHANGELOG.md yet, and the configured one when the repo's MD004 pins a style.
 6. **No backticks and no code blocks.** pkgmgr rewrites inline code to
    *italic* in all four targets, and a fenced block fails its fallback lint.
    Write *names*, *--flags* and *paths* in `*` italics yourself; use `*`, not
@@ -98,11 +103,19 @@ config. Reproduce that exactly:
 2. From the repository root, so its config is picked up, run:
 
    ```bash
-   markdownlint-cli2 - < <scratch-file>
+   markdownlint-cli2 --no-globs - < <scratch-file>
    ```
 
+   *--no-globs* keeps the config's own globs from linting the whole tree too.
 3. A finding on line N points at message line N - 4. Shorten that line and
    lint again; print nothing until the result is 0 errors.
+4. The standalone check cannot see rules that compare the entry with the rest
+   of the file (MD004 *consistent*, MD024 duplicate headings), but the
+   repository's own markdown lint and pre-push gate do. Copy CHANGELOG.md to a
+   scratch file, insert the wrapped heading and message below its
+   `# Changelog` line, and lint that copy the same way. A finding in the older
+   entries that the unmodified CHANGELOG.md does not produce comes from the
+   new entry; fix the message, never the older entries.
 
 Without `markdownlint-cli2`, check by hand what pkgmgr's fallback checks plus
 the length limit: no line over the limit, no trailing whitespace, no
