@@ -8,7 +8,9 @@ description: >
   to later commits. Portable across projects.
 ---
 
-1. Run the comments-clean audit over the staged and unstaged changes first.
+1. Run the comments-clean audit over the staged and unstaged changes first,
+   then the advocate check over the staging index. An advocate blocker stops
+   here.
 2. Commit exactly the staging index with `git commit --no-verify` and a
    Conventional-Commits message derived from the staged diff; never add
    unstaged files, never push.

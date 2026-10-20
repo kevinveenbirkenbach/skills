@@ -20,7 +20,8 @@ description: >
    operator's decision; do not commit.
 3. Nothing similar found, or the operator picked the staged version: run the
    commit-no-verify skill on the currently staged changes (comments-clean
-   audit first, then `git commit --no-verify`, exact staging index only).
+   audit and advocate check first, then `git commit --no-verify`, exact
+   staging index only).
 4. Group the remaining uncommitted changes into logical bundles (one
    concern per bundle: same failure class, same mechanism, or same role)
    and stage the next one; never mix concerns to save a commit. Staging
