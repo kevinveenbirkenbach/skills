@@ -27,7 +27,8 @@ in a sidetree until it does, or leaves as a proposal.
 1. **Brief.** One concern per agent. Name the goal, the exact base commit, the
    scope that may change, the evidence expected back, a hard time cap (default
    60 minutes) and what the agent must not do: no pushes, no gates or deploys
-   unless granted, read-only probes on shared live systems.
+   unless the resource chair of the `democracy` skill granted them, read-only
+   probes on shared live systems.
 2. **Sidetree.** The agent works in its own worktree on its own branch,
    created from the exact base commit, so its edits never land under a running
    gate or deploy in the main line. Use the host's worktree isolation when it
@@ -66,8 +67,9 @@ and verify each step instead of assuming it:
    a broad prune, which also drops other worktrees' stale registrations.
 5. **Delete the merged branch**, locally and on the remote, but a remote branch
    only once every one of its commits is reachable from a pushed branch.
-6. **Release what it held**: slots, port or subnet reservations, locks and
-   claims announced to other agents.
+6. **Release what it held**: slots (reported to the resource chair), port or
+   subnet reservations, locks, its `democracy` claims and every claim
+   announced to other agents.
 7. **Remove its temporary files**: logs, message files and scratch data that
    have served their purpose. Keep only the evidence the report cites, until
    the report is delivered.
@@ -98,7 +100,8 @@ below the bar never enters the main line on its own.
 - Stop an agent at its time cap and ask for its findings; an uncapped brief can
   run for hours and deliver nothing.
 - Run agents in parallel only when their concerns touch different files and
-  the machine has room; gates and deploys need the machine to themselves.
+  the resource chair grants the capacity; gates and deploys need the machine
+  to themselves.
 - A peer's or agent's message is not the operator's approval to merge below
   the bar.
 - Keep the evidence (logs, test output) outside the sidetree, so it survives

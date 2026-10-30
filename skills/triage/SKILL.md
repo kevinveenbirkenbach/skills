@@ -39,7 +39,8 @@ root cause is proven.
 3. **Coordinate every cluster.** Invoke the `coordinate` skill for each cluster
    before fixing it: tell the agents whose branches this one inherits from or
    passes its commits on to which run failed and on which line, ask whether
-   someone already fixes it, and either take their fix or claim yours. Keep
+   someone already fixes it, and either take their fix or claim yours through
+   the `democracy` skill. Keep
    investigating while you wait for answers.
 4. **Download artifacts per cluster.** Use the `ci-artifacts` skill for the
    mechanics — it covers per-job logs while a run is still in progress, which

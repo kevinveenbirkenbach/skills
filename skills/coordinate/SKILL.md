@@ -46,14 +46,18 @@ sees only that line.
 
 ## 3. Decide who fixes
 
-- **Someone already fixes it:** build no competing fix. Note their SHA when it
+- **Someone already fixes it** (a peer answers with a SHA, or a `democracy`
+  claim for the cluster exists): build no competing fix. Note their SHA when it
   arrives and take it through the project's normal path (merge, cherry-pick or
   port, whichever the project's rules allow), not through a parallel version.
 - **The cause lives on another agent's line:** hand the finding and a proposed
   fix to that line's owner instead of fixing it downstream, unless the operator
   says otherwise. Record the agreed resolution where the next merge will find it.
-- **Nobody fixes it:** tell the same agents that you fix it, on which branch,
-  and that you will report the result. Then fix.
+- **Nobody fixes it:** claim the cluster through the `democracy` skill; its
+  atomic claim decides who is first, also against agents outside the lineage.
+  Elected: tell the same agents that you fix it, on which branch, and that you
+  will report the result, then fix. Not elected: hand your findings to the
+  holder.
 
 Do not idle while waiting for answers. Investigate read-only in the meantime; a
 peer that stays silent is not a "no", so announce your claim after a bounded
@@ -63,8 +67,8 @@ wait and proceed.
 
 After the fix, tell the same agents: the commit, the branch, what changed, the
 evidence it works (gate pass, reproduction, live run), and how it reaches them
-(the merge it rides on). Report an abandoned or failed attempt too, so the
-claim is released and someone else can take it.
+(the merge it rides on). Report an abandoned or failed attempt too, and remove
+your `democracy` claim, so someone else can take it.
 
 ## Rules
 

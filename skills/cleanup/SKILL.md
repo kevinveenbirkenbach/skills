@@ -13,6 +13,13 @@ description: >
 Nothing is deleted before the operator has picked it. Every candidate carries
 its owner, its size, and its risk.
 
+## Step 0: the resource chair
+
+Shared resources belong to the resource chair of the `democracy` skill. If
+another session holds the chair, send it the cleanup request and stop, unless
+the operator ordered the cleanup in this session; then tell the chair before
+step 1, so its grants and queue stay consistent.
+
 ## Step 1: ask the peers
 
 List every agent the host can message (in Claude Code: `ListAgents`). Only

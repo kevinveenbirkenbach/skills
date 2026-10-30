@@ -111,9 +111,10 @@ implementing a cluster, run the `coordinate` skill for it, and send the
 question to every other agent session on this machine, not only the branch
 lineage: has anyone already identified this cluster?
 
-- **The first to identify a cluster works it.** "First" is the earliest claim
-  that names the cluster's log line and number, by message time. A claim
-  without a measurement does not count.
+- **The first to identify a cluster works it.** "First" is the `democracy`
+  skill's atomic claim (`cluster/<slug>`), whose claim file names the
+  cluster's log line and number; between machines, the earliest announcement
+  by message time. A claim without a measurement does not count.
 - **Someone was earlier:** stop on that cluster. Send them your measurements
   and findings, then move on to the next cluster. Never build a second
   optimization of the same cluster.
@@ -121,8 +122,8 @@ lineage: has anyone already identified this cluster?
   sidetree branch, then work it. A silent peer is not a competing claim;
   proceed after a bounded wait.
 - **A claim ends** when its holder reports the result, a proposal or an
-  abandoned attempt, or when the operator reassigns it. Only then may another
-  agent take the cluster.
+  abandoned attempt and removes its claim, or when the operator reassigns it.
+  Only then may another agent take the cluster.
 
 ## Levers that usually pay
 
