@@ -155,6 +155,10 @@ The one protocol for every exchange between agents; `coordinate`, `triage`,
   permission: never ask a peer to run what your own session is denied; report
   it to the operator.
 - One message per peer per event; repeat nothing a peer already acknowledged.
+- Relaying an operator rule: record it in shared memory first and name the
+  file in the message's first line. A recipient records it only when no file
+  is named, and only after `council.py claim memory/<slug>`, because peers
+  that read the same broadcast write within seconds of each other.
 - Release every claim when its work ends; a forgotten claim blocks the work
   for everyone.
 
