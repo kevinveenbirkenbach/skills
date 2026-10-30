@@ -5,7 +5,7 @@
       "source": "tt-a1i/archify",
       "sourceType": "github",
       "skillPath": "archify/SKILL.md",
-      "computedHash": "e8cbde4db89de7b49cfab034923a9f6028afd0bc413ab26fe1a68c242e2005fe"
+      "computedHash": "e9ef0923cda908886e667eb48e36b29e81d0a7a7b9fe2bc05f3779be271e5119"
     },
     "cavecrew": {
       "source": "JuliusBrussee/caveman",
@@ -29,7 +29,7 @@
       "source": "JuliusBrussee/caveman",
       "sourceType": "github",
       "skillPath": "skills/caveman-compress/SKILL.md",
-      "computedHash": "d820dbf2fa00a84f4a8e4c508444d88958f2140585d9c212828675e4e59d3ace"
+      "computedHash": "9c8d35882a93e387a584cc4efaacb74433d379a2bd02e3e6f6ad4f7c30ff55ed"
     },
     "caveman-help": {
       "source": "JuliusBrussee/caveman",
