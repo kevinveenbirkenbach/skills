@@ -15,6 +15,10 @@ root cause is proven.
 
 ## Procedure
 
+For a GitHub Actions run, the ci-artifacts skill's `ci_failures.py <run>`
+does the mechanics of steps 0 to 2 in one call: distance to HEAD, the failed
+jobs' logs, and a first clustering. The judgement in those steps stays yours.
+
 0. **Check the run against HEAD before anything else.** A CI run is a snapshot
    of one commit, and the branch has moved since. Run
    `git log --oneline <run-sha>..HEAD | wc -l` as the first command of the

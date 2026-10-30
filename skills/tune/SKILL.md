@@ -93,7 +93,7 @@ Discard a before/after pair, not just its noise, when:
 
 ## Before you optimize
 
-- **Search every branch** (`git log --all -S<symbol>`, by path) for a change
+- **Search every branch** (the merge-fix skill's `find_fix.py -S <symbol> --path <path>`) for a change
   that already removes or reshapes the step. A fix on a sibling branch can make
   the whole candidate worth zero.
 - A step that is long by design (a backup and restore drill, an end-to-end

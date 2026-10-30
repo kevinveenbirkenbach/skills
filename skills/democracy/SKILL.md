@@ -111,8 +111,8 @@ records the result.
 The one protocol for every exchange between agents; `coordinate`, `triage`,
 `tune`, `funnel` and `cleanup` use it.
 
-1. **Look**: `council.py list` and the refs (`git log --all` by message, by
-   `-S`, by path). A claim or a committed fix answers the question without a
+1. **Look**: `council.py list` and the refs (the merge-fix skill's
+   `find_fix.py`). A claim or a committed fix answers the question without a
    message.
 2. **Claim** the office (Election).
 3. **One message per peer** (in Claude Code: `ListAgents`, then

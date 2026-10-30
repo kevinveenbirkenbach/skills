@@ -35,21 +35,18 @@ one line so a wrong reading is visible before the search.
 
 ## 4. Search every ref
 
-Run all three; they find different things:
+Search by keyword, by literal and by path in one call; they find different
+things:
 
 ```bash
-git log --all --oneline --regexp-ignore-case --grep='<keyword>'
-git log --all --oneline -S'<symbol or literal>'
-git log --all --oneline -- '<path or glob>'
+${CLAUDE_SKILL_DIR}/scripts/find_fix.py --grep '<keyword>' -S '<symbol or literal>' --path '<path or glob>'
 ```
 
-Then reduce the hits:
-
-- Drop anything already merged: `git merge-base --is-ancestor <sha> HEAD`
-  exits 0 → the fix is already in, say so and stop.
-- Locate the rest: `git branch -a --contains <sha>`.
-- Read the actual change: `git show --stat <sha>` and the diff. A matching
-  commit subject is a lead, not evidence; the diff decides.
+It drops every hit already in HEAD (`in_head` counts them; all in HEAD means
+the fix is already in, say so and stop) and prints the rest with their
+branches and files. Then read the actual change: `git show --stat <sha>` and
+the diff. A matching commit subject is a lead, not evidence, and `-S` also
+matches the commit that removed the literal; the diff decides.
 
 ## 5. Present the candidates
 

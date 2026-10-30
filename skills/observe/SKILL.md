@@ -27,7 +27,8 @@ gave one): after each observation, schedule the next wake-up yourself and pass
 the same `/observe` prompt back so the next firing repeats the watch.
 
 1. **Poll the target.** Pull its current state (job list, check conclusions, the
-   log's tail). Enumerate the failures exactly as the `triage` skill's step 1
+   log's tail); for a GitHub Actions run, the ci-artifacts skill's
+   `ci_failures.py <run>`. Enumerate the failures exactly as the `triage` skill's step 1
    does: failure, cancelled, timed-out; a downstream aggregate that fails only
    because an upstream did is not its own failure.
 2. **Diff against the baseline.** A failure is *new* only if it is not in the

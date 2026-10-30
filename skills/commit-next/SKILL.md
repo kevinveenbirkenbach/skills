@@ -9,8 +9,8 @@ description: >
 ---
 
 1. `git fetch --all --prune --tags`, then hunt the staged fix across every
-   ref with the merge-fix search steps (`git log --all` by `--grep`, by
-   `-S<symbol>`, by path). Describe the staged bundle in one line first so a
+   ref with the merge-fix skill's `find_fix.py` (by `--grep`, by `-S`, by
+   `--path`). Describe the staged bundle in one line first so a
    wrong search intent is visible. Only the search runs here — never
    cherry-pick or merge, and never touch the staging index or the tree.
 2. A similar fix on another branch is a stop: run the dialectic skill on the

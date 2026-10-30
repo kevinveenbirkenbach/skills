@@ -12,23 +12,18 @@ failure without downloading its artifacts is guessing with extra steps.
 
 ## Getting the log
 
-`gh run view --log` refuses to serve anything while a run is unfinished:
+For a GitHub Actions run, one call does it:
 
-    run <id> is still in progress; logs will be available when it is complete
+    ${CLAUDE_SKILL_DIR}/scripts/ci_failures.py <RUN_ID> [--repo <owner>/<repo>] [--artifacts]
 
-That is not a dead end — individual *jobs* that have already finished are
-served by the API:
+It prints how far HEAD moved since the run's commit, saves every finished
+failed job's log to `/tmp/ci-logs-<run>/` (colour stripped, even while the run
+is still in progress), and clusters the jobs by the normalised error line that
+ended them. Jobs still running are listed, not fetched: their API log can stop hours
+early. The clustering is a heuristic; check each boundary against the logs.
 
-    gh api /repos/<owner>/<repo>/actions/jobs/<JOB_ID>/logs
-
-Enumerate the failing jobs and their ids first:
-
-    gh run view <RUN_ID> --repo <owner>/<repo> --json jobs \
-      --jq '.jobs[] | select(.conclusion=="failure") | "\(.databaseId)\t\(.name)"'
-
-Save every log to a file (`/tmp/ci-logs-<run>/<job>.log`) and grep the file
-repeatedly. Re-fetching a log to find the line you just lost costs minutes;
-grepping the saved copy costs milliseconds.
+Grep the saved files repeatedly. Re-fetching a log to find the line you just
+lost costs minutes; grepping the saved copy costs milliseconds.
 
 ## Getting the artifacts
 
