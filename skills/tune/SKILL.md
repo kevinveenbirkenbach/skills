@@ -5,8 +5,9 @@ description: >
   build and gate runtime, hot code paths) without reducing logic, coverage or
   correctness, including a change of language where measurement justifies it.
   Asks once per session what to examine and which limits apply, measures from
-  logs, hardens every candidate with the dialectic skill and funnels each
-  optimization through a sidetree. Trigger on /tune, when a job dies on its time
+  logs, coordinates every cost cluster with the other agents so the one who
+  identified it first works it, hardens every candidate with the dialectic skill
+  and funnels each optimization through a sidetree. Trigger on /tune, when a job dies on its time
   budget, when a pipeline or deploy grows slower, or when the operator asks
   where the time goes. Portable across projects.
 ---
@@ -102,6 +103,27 @@ Discard a before/after pair, not just its noise, when:
 - Pruning build caches to free disk costs a cold rebuild of every custom image
   on the next run. Name that cost before anyone prunes.
 
+## Coordinate every cost cluster
+
+A cost cluster is one place the time goes: one step, one hot path, one
+repeated call, named by its log line and its number. Before investigating or
+implementing a cluster, run the `coordinate` skill for it, and send the
+question to every other agent session on this machine, not only the branch
+lineage: has anyone already identified this cluster?
+
+- **The first to identify a cluster works it.** "First" is the earliest claim
+  that names the cluster's log line and number, by message time. A claim
+  without a measurement does not count.
+- **Someone was earlier:** stop on that cluster. Send them your measurements
+  and findings, then move on to the next cluster. Never build a second
+  optimization of the same cluster.
+- **You are first:** announce the claim with the log line, the number and the
+  sidetree branch, then work it. A silent peer is not a competing claim;
+  proceed after a bounded wait.
+- **A claim ends** when its holder reports the result, a proposal or an
+  abandoned attempt, or when the operator reassigns it. Only then may another
+  agent take the cluster.
+
 ## Levers that usually pay
 
 - **Batch per-item process spawns**: N calls that each boot an interpreter or
@@ -154,7 +176,9 @@ failure, or only moves the cost somewhere the measurement does not look.
 ## The loop
 
 1. Measure, and name the single biggest cost with its log line and number.
-2. Form one candidate for it, after the branch search and the floor check.
+2. Coordinate the cluster with the other agents; work it only when you
+   identified it first, otherwise hand over your findings and take the next.
+   Then form one candidate for it, after the branch search and the floor check.
 3. Harden it with the `dialectic` skill.
 4. Funnel it through a sidetree; merge what reaches the bar, submit the rest as
    proposals. Re-measure from the same source under the same conditions and
