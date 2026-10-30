@@ -23,10 +23,11 @@ if [[ ! -d "${TARGET}" ]]; then
 fi
 
 cd "${REPO_ROOT}"
+src="${REPO_ROOT}/.agents/skills"
+rm -rf "${src}"
 log "skills: restoring from skills-lock.json..."
 npx --yes skills experimental_install
 
-src="${REPO_ROOT}/.agents/skills"
 if [[ ! -d "${src}" ]]; then
 	warn "skills: ${src} not found after install."
 	exit 1

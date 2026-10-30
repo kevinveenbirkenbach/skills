@@ -82,6 +82,30 @@ class TestDreamHook(unittest.TestCase):
             self.assertTrue((repo / ".git" / ".dream-stamp").is_file())
             self.assertEqual(_run_hook(repo).stdout, "")
 
+    @unittest.skipUnless(shutil.which("git"), "git not installed")
+    def test_linked_worktrees_share_the_stamp(self):
+        repo = self.cwd / "main"
+        tree = self.cwd / "tree"
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(self.cwd),
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        }
+        repo.mkdir()
+        for args in (
+            ["init", "-q"],
+            ["commit", "-q", "--allow-empty", "-m", "init"],
+            ["worktree", "add", "-q", str(tree)],
+        ):
+            subprocess.run(
+                ["git", *args], check=True, capture_output=True, env=env, cwd=str(repo)
+            )
+        self.assertIn("/dream", _run_hook(repo).stdout)
+        self.assertEqual(_run_hook(tree).stdout, "")
+
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")
 class TestSettingsRegistration(unittest.TestCase):

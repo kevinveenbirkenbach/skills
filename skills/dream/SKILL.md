@@ -120,7 +120,7 @@ for the operator corrections the window revealed. Both keep their own
 confirmation steps; the dream never writes a skill on their behalf.
 
 Close the run by refreshing this repository's reminder stamp, so the next hint
-is twelve hours out: `date +%s > "$(git rev-parse --absolute-git-dir)/.dream-stamp"`.
+is twelve hours out: `date +%s > "$(git rev-parse --path-format=absolute --git-common-dir)/.dream-stamp"`.
 
 ## Rules
 

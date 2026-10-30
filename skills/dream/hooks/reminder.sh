@@ -10,7 +10,7 @@ interval="${DREAM_INTERVAL_SECONDS:-43200}"
 if [[ -n "${DREAM_STAMP:-}" ]]; then
 	stamp="${DREAM_STAMP}"
 else
-	git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null)" || exit 0
+	git_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
 	stamp="${git_dir}/.dream-stamp"
 fi
 
