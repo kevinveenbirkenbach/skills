@@ -3,8 +3,10 @@ name: triage
 description: >
   Triage a failing CI run, pipeline, or job set to a verified root cause and a
   real fix. Trigger when a build, test, or deploy pipeline has one or more failed
-  jobs. Applies the dialectic skill to every failing job independently. Portable
-  across projects.
+  jobs. Applies the dialectic skill to every failing job independently, the
+  coordinate skill to every failure cluster, and the funnel skill to every
+  cluster, so each cluster is fixed in its own worktree. Portable across
+  projects.
 ---
 
 Drive a red pipeline to green by root cause, not by guesswork. Treat every
@@ -34,7 +36,12 @@ root cause is proven.
    actual failing line, not by job name. Jobs whose messages differ in anything
    but the interpolated identifiers (host, app, port, path) belong in separate
    clusters.
-3. **Download artifacts per cluster.** Use the `ci-artifacts` skill for the
+3. **Coordinate every cluster.** Invoke the `coordinate` skill for each cluster
+   before fixing it: tell the agents whose branches this one inherits from or
+   passes its commits on to which run failed and on which line, ask whether
+   someone already fixes it, and either take their fix or claim yours. Keep
+   investigating while you wait for answers.
+4. **Download artifacts per cluster.** Use the `ci-artifacts` skill for the
    mechanics — it covers per-job logs while a run is still in progress, which
    bundle to pull, and the grep hygiene that keeps a false positive from
    becoming a root cause. For each cluster, fetch every artifact of
@@ -45,21 +52,33 @@ root cause is proven.
    exception and the state dumps are inside the artifact. Do this even when the
    log looks conclusive, because a log that explains the symptom rarely
    explains the cause.
-4. **Dialectic per cluster.** For EACH cluster, invoke the `dialectic` skill:
+5. **One funnel per cluster.** Hand every cluster you claimed in step 3 to the
+   `funnel` skill: one agent per cluster, working in its own worktree on its own
+   branch created from the exact current HEAD, with that cluster as its only
+   concern, the artifact paths of step 4 in its brief and a hard time cap. Steps 6 to 8 run inside that sidetree, so no
+   cluster's edits land under another cluster's work or under a running gate or
+   deploy. Run clusters in parallel only when their fixes touch different files
+   and the machine has room. A split cluster (step 7) gets a funnel of its own.
+6. **Dialectic per cluster.** For EACH cluster, invoke the `dialectic` skill:
    form a thesis about the root cause from evidence (the job log, its artifacts,
    the code at the run's commit, git history), attack it with independent
-   skeptics, and iterate to a ~99% thesis. The clusters are independent, so run
-   their investigations in parallel where the tooling allows.
-5. **Distinguish shared vs hidden causes.** A cluster is a hypothesis, not a
+   skeptics, and iterate to a ~99% thesis.
+7. **Distinguish shared vs hidden causes.** A cluster is a hypothesis, not a
    proof: if the dialectic shows one cluster splitting into two causes, split it.
    When a job hides a second failure behind the first, keep going until the job
    is actually green, not just past the first error.
-6. **Fix at the root.** Apply the real fix in the repository for each proven root
-   cause. Never mask a failure — no retry-until-pass, no disabling the check, no
-   soft-skip. If a failure is genuinely external (upstream outage, flaky infra),
-   confirm that with evidence and surface it honestly instead of fixing around
-   it.
-7. **Follow the run.** While the run is still in progress, re-check it
+8. **Fix at the root, through the funnel.** Apply the real fix for each proven
+   root cause in the cluster's sidetree, with a test and a negative control as
+   the `funnel` skill demands. The fix enters the main line only at the funnel's
+   bar (at least 90 % fix confidence, under 5 % break risk) after its
+   independent review; below the bar the cluster ends as a proposal for the
+   operator, never as a merge. Never mask a failure: no retry-until-pass, no
+   disabling the check, no soft-skip. If a failure is genuinely external
+   (upstream outage, flaky infra), confirm that with evidence and surface it
+   honestly instead of fixing around it. Report every fix, every proposal, and
+   every abandoned attempt to the same agents through the `coordinate` skill,
+   then remove the sidetree.
+9. **Follow the run.** While the run is still in progress, re-check it
    periodically and triage each newly failed job as it appears. The run is done
    only when it has finished and every failure has a verified fix.
 
@@ -82,4 +101,5 @@ root cause is proven.
   alone: the run cannot contain a fix that landed after it, so looking there
   can only ever confirm the failure. Name the commit that carries the fix.
 - Report a per-job verdict: root cause, the artifact path and line that prove
-  it, and the fix. A verdict that cites only the job log has not finished step 3.
+  it, the fix, the cluster's sidetree branch, and the funnel verdict (merged or
+  proposal). A verdict that cites only the job log has not finished step 4.
