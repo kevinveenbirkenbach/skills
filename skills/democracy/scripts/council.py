@@ -89,7 +89,7 @@ def write_claim(path: Path, office: str, sid: str, runtime: str, work: str) -> N
         "session": sid,
         "runtime": runtime,
         "name": live_sessions().get(sid),
-        "since": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "since": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
         "beat": time.time(),
         "work": work,
     }
