@@ -23,9 +23,13 @@ from pathlib import Path
 FAILED = {"failure", "cancelled", "timed_out"}
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 STAMP = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z\s?")
-GENERIC = re.compile(r"Process completed with exit code|failed=0\b|FAILED - RETRYING")
+GENERIC = re.compile(r"failed=0\b|FAILED - RETRYING|^make(\[\d+\])?: \*\*\* \[.*\] Error \d+")
+PROCESS_END = re.compile(r"##\[error\]Process completed with exit code")
 ANNOTATION = re.compile(r"##\[error\]")
 FATAL = re.compile(r"fatal: \[|FAILED!|Traceback|AssertionError|panic:")
+LINT_AT = re.compile(r"\S+:\d+:\d+:? ((error|warning) )?[A-Z]{1,4}\d{3,4}\b")
+LINT_CODE = re.compile(r"^[A-Z]{1,4}\d{3,4}\b")
+LINT_ARROW = re.compile(r"^-->\s+\S+:\d+:\d+")
 SIGNAL = re.compile(r"\b(ERROR|Error|FAILED|FAIL|fatal|Exception|failed)\b")
 TASK = re.compile(r"^TASK \[")
 REFUSAL = "terminal escape sequences"
@@ -49,6 +53,8 @@ def output_lines(text: str) -> list[tuple[str, str]]:
     kept, echo, task = [], False, ""
     for raw in text.splitlines():
         line = clean(raw)
+        if PROCESS_END.search(line):
+            break
         if line.startswith("##[group]Run "):
             echo = True
         elif line.startswith("##[endgroup]"):
@@ -60,13 +66,28 @@ def output_lines(text: str) -> list[tuple[str, str]]:
     return kept
 
 
+def is_lint(lines: list[tuple[str, str]], index: int) -> bool:
+    line = lines[index][1]
+    if LINT_AT.search(line):
+        return True
+    following = lines[index + 1][1] if index + 1 < len(lines) else ""
+    return bool(LINT_CODE.match(line) and LINT_ARROW.match(following))
+
+
 def signature(text: str) -> str:
     lines = output_lines(text)
-    for pattern in (ANNOTATION, FATAL, SIGNAL):
-        for task, line in reversed(lines):
-            if pattern.search(line):
+    tiers = (
+        (lambda i: ANNOTATION.search(lines[i][1]), False),
+        (lambda i: FATAL.search(lines[i][1]), True),
+        (lambda i: is_lint(lines, i), False),
+        (lambda i: SIGNAL.search(lines[i][1]), False),
+    )
+    for matches, with_task in tiers:
+        for index in reversed(range(len(lines))):
+            if matches(index):
+                task, line = lines[index]
                 found = ANNOTATION.sub("", line).strip()
-                return normalise(f"{task} {found}" if pattern is FATAL and task else found)
+                return normalise(f"{task} {found}" if with_task and task else found)
     return normalise(lines[-1][1]) if lines else "<empty log>"
 
 

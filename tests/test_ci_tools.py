@@ -50,6 +50,20 @@ class TestCiFailures(unittest.TestCase):
             'TASK [web-app-x : Wait for health] **** fatal: [localhost]: FAILED! => {"msg": "timeout <n>"}',
         )
 
+    def test_lint_finding_beats_make_error_and_later_steps(self):
+        text = (
+            "Ran 41 tests in 1.0s\n"
+            "OK\n"
+            "UP017 [*] Use `datetime.UTC` alias\n"
+            "  --> skills/democracy/scripts/council.py:92:40\n"
+            "Found 1 error.\n"
+            "make: *** [Makefile:15: test] Error 1\n"
+            "##[error]Process completed with exit code 2.\n"
+            "Post job cleanup.\n"
+            "SHA256 digest of uploaded artifact is 0123456789abcdef\n"
+        )
+        self.assertEqual(self.ci.signature(text), "UP<n> [*] Use `datetime.UTC` alias")
+
     def test_generic_exit_code_line_is_not_the_signature(self):
         text = "Error: disk full\n##[error]Process completed with exit code 1.\n"
         self.assertEqual(self.ci.signature(text), "Error: disk full")
