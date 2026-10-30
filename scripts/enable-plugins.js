@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Enable the caveman and ponytail plugins in a Claude Code settings.json so
-// their SessionStart hooks auto-activate both modes, and register the autotune
-// and dream reminder hooks. Merges non-destructively: existing marketplaces,
+// their SessionStart hooks auto-activate both modes, register the autotune
+// and dream reminder hooks and the democracy claim gate. Merges non-destructively: existing marketplaces,
 // plugins and hooks are preserved, unparseable files are left untouched.
 "use strict";
 
@@ -51,5 +51,14 @@ for (const skill of REMINDERS) {
   });
 }
 
+data.hooks.PreToolUse = data.hooks.PreToolUse || [];
+if (!JSON.stringify(data.hooks.PreToolUse).includes("democracy/scripts/council.py")) {
+  const council = path.join(path.dirname(settingsPath), "skills", "democracy", "scripts", "council.py");
+  data.hooks.PreToolUse.push({
+    matcher: "Edit|Write|MultiEdit|NotebookEdit",
+    hooks: [{ type: "command", command: `python3 ${JSON.stringify(council)} gate` }],
+  });
+}
+
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled caveman + ponytail plugins and the ${REMINDERS.join(" + ")} reminders in ${settingsPath}`);
+console.log(`skills: enabled caveman + ponytail plugins, the ${REMINDERS.join(" + ")} reminders and the democracy claim gate in ${settingsPath}`);

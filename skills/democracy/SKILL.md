@@ -46,23 +46,25 @@ appointment outranks the election.
 ## Election
 
 The first to claim wins, and the claim is atomic, so two agents can never both
-be first. Use the literal path `/tmp/agents-council`, never `$TMPDIR`, which a
-sandbox may make session-private.
+be first. `${CLAUDE_SKILL_DIR}/scripts/council.py` keeps the claims in
+`/tmp/agents-council`; other runtimes call the same script from their skills
+directory with `--session <id>`.
 
 1. **Name the office**: `work/<slug>`, `cluster/<slug>`,
    `<dimension>/<line>` for a representative, or `chair`. The slug names the
    work concretely: the issue number, the failing line, the cost's log line.
-2. **Look first**: list `/tmp/agents-council` and read the claims. A claim for
-   the same work under another slug counts as first.
-3. **Claim**: `mkdir -p` the parent directory, then `mkdir` the office itself
-   without `-p`, as two separate commands. Success means elected; `File
-   exists` means someone was first.
-4. **Elected**: write `claim` into the office directory (session name, ISO
-   time, one line of what the work is, its evidence, branch or worktree), then
-   announce office, holder and work to every peer on the system (in Claude
-   Code: `ListAgents`, then `SendMessage`).
-5. **Not elected**: read the holder's `claim`, send the holder your findings,
-   and stop on that work.
+2. **Look first**: `council.py list`. A claim for the same work under another
+   slug counts as first.
+3. **Claim**: `council.py claim <office> --work "<what, evidence, branch or
+   worktree>"`. Exit 0: elected, or already yours. Exit 3: a live agent holds
+   it, and its claim is printed. Exit 4: the holder's session is dead (see
+   Succession).
+4. **Elected**: announce office, holder and work to every peer on the system
+   (in Claude Code: `ListAgents`, then `SendMessage`).
+5. **Not elected**: send the holder your findings and stop on that work.
+
+A Claude Code session cannot edit a file in a git worktree before it holds a
+claim: a PreToolUse hook (`council.py gate`) blocks the edit.
 
 Peers on other machines cannot see this host's claims. Between machines the
 earliest announcement by message time wins, and each host's claim directory
@@ -89,19 +91,20 @@ records the result.
 
 - A piece of work or a cluster ends with its result, a proposal, or an
   abandoned attempt, reported to the peers who heard the claim. The holder
-  then removes its office directory, and the next agent that starts the work
-  is elected afresh.
+  then runs `council.py release <office>`, and the next agent that starts the
+  work is elected afresh.
 - A representative or the chair that ends hands its office to the next-oldest
   live representative (by claim time) and announces it.
-- A claim is stale when its holder no longer appears in the agent listing and
-  does not answer a message. A stale work or cluster claim goes to the next
+- A claim is stale when its holder's session is gone: in Claude Code its
+  session id is no longer in `~/.claude/sessions`; other runtimes run
+  `council.py beat` at least hourly and go stale after 60 minutes without
+  one. `claim` then exits 4. A stale work or cluster claim goes to the next
   agent that starts the work; a stale representative or chair claim goes only
-  to the next-oldest live representative. The successor removes the stale
-  claim, claims anew and announces the succession; everyone else leaves it
-  alone.
-- After a restart or reboot, check every office you believe you hold: `/tmp`
-  may have been wiped, and your session name may have changed. Re-claim and
-  update the claim file instead of assuming the office is still yours.
+  to the next-oldest live representative. The successor runs
+  `council.py takeover <office> --work "..."` and announces the succession;
+  everyone else leaves it alone.
+- After a restart or reboot, run `council.py list --mine` and claim again
+  every office you believe you hold: `/tmp` may have been wiped.
 
 ## Rules
 
@@ -115,7 +118,7 @@ records the result.
 
 ## Output
 
-On /democracy, one table of the current offices, read from the claim
-directory and the agent listing, vacant and stale claims marked:
+On /democracy, one table of the current offices from `council.py list`, stale
+claims marked:
 
 | Office | Holder | Since | Work | Grants or queue |

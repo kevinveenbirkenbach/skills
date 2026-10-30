@@ -126,6 +126,8 @@ class TestSettingsRegistration(unittest.TestCase):
         entries = json.dumps(data["hooks"]["UserPromptSubmit"])
         self.assertEqual(entries.count("dream/hooks/reminder.sh"), 1)
         self.assertEqual(entries.count("autotune/hooks/reminder.sh"), 1)
+        gate = json.dumps(data["hooks"]["PreToolUse"])
+        self.assertEqual(gate.count("democracy/scripts/council.py"), 1)
 
 
 if __name__ == "__main__":
