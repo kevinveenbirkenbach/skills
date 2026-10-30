@@ -19,6 +19,10 @@ needs. A dialectic run on the wrong question wastes the whole loop. Return to
 `active-listening` mid-loop whenever an objection turns on a fact only the
 operator holds.
 
+When another skill or an autonomous run (robot, observe, a loop) invoked this
+skill, derive the requirements from the task and the evidence instead of
+asking; ask only when an operator-only fact blocks the conclusion.
+
 ## The loop
 
 1. **Thesis.** Form the strongest initial claim you can, grounded in evidence,

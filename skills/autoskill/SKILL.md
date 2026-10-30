@@ -7,9 +7,9 @@ description: >
   and the pattern is general enough to reuse. Portable across projects.
 ---
 
-Its objective is the `optimize` skill's: a skill is worth creating only when it
-cuts tokens or time and raises quality — judge every candidate against that
-skill's three axes and rules.
+Its objective is the `autotune` skill's **Objective** section: a skill is worth
+creating only when it cuts tokens or time and raises quality; judge every
+candidate against its three axes and rules.
 
 When you notice the operator repeating the same kind of instruction,
 correction, or prompt pattern (about three occurrences, exact wording may

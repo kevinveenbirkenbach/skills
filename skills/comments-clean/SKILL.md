@@ -35,12 +35,8 @@ added lines only) and delete every explanatory comment:
    both the lint and the language parser can pass over code that no longer
    executes. Diff against the pre-edit revision (`git show HEAD:<path>`) and
    confirm that only comment lines left.
-5. Do not stage in order to run a check. Repository lints that enumerate through
-   `git ls-files` already see every tracked file and read its worktree content;
-   only an untracked NEW file is invisible to them and needs `git add`. Staging
-   a tracked, modified file before a lint changes nothing except the operator's
-   index, which they then have to undo. Stage only what a requested bundle
-   contains, and re-stage after the audit exactly the files that were staged
+5. Do not stage in order to run a check (the `commit-next` skill's step 4
+   says why). Re-stage after the audit exactly the files that were staged
    before it.
 6. Penalty: if this audit finds anything you wrote yourself, admit it in
    the report (file and count, no excuses), lower your confidence numbers

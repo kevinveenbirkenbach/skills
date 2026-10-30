@@ -3,10 +3,9 @@ name: triage
 description: >
   Triage a failing CI run, pipeline, or job set to a verified root cause and a
   real fix. Trigger when a build, test, or deploy pipeline has one or more failed
-  jobs. Applies the dialectic skill to every failing job independently, the
-  democracy peer protocol to every failure cluster, and the funnel skill to every
-  cluster, so each cluster is fixed in its own worktree, and hands one log per
-  cluster to the tune skill. Portable across projects.
+  jobs. Applies the dialectic skill, the democracy peer protocol and the funnel
+  skill to every failure cluster, so each cluster is fixed in its own worktree,
+  and hands a timed-out job's log to the tune skill. Portable across projects.
 ---
 
 Drive a red pipeline to green by root cause, not by guesswork. Treat every
@@ -82,13 +81,11 @@ jobs' logs, and a first clustering. The judgement in those steps stays yours.
    honestly instead of fixing around it. Report every fix, every proposal, and
    every abandoned attempt to the same agents through the `democracy` Peer protocol,
    then remove the sidetree.
-9. **Tune one log per cluster.** For each cluster, hand one job log to the
-   `tune` skill: the cluster's job that ran furthest, because its timings cover
-   the most phases. `tune` looks for performance potential in it under its own
-   rules and the session's limits. Its candidates run through funnels of their
-   own, separate from the cluster's fix sidetree, and never delay or block the
-   fix. A log the failure cut short is tuned for the phases it covers; say which
-   phases it does not reach.
+9. **Tune what ran out of time.** Only for a cluster whose jobs died on their
+   time budget (timed out, or cancelled by the runner's limit), or when the
+   operator asks: hand the job log that ran furthest to the `tune` skill. Its
+   candidates run through funnels of their own, separate from the cluster's fix
+   sidetree, and never delay or block the fix.
 10. **Follow the run.** While the run is still in progress, re-check it
    periodically and triage each newly failed job as it appears. The run is done
    only when it has finished and every failure has a verified fix.

@@ -42,6 +42,10 @@ suggestions, and allow free text:
 Keep the answers for the rest of the session and do not ask again. Work only
 inside them; a candidate outside them becomes a proposal.
 
+When another skill (triage, observe) or an autonomous run invoked tune, skip
+the questions: examine the handed-over log, apply the defaults above, and ask
+only when an operator-only fact blocks.
+
 ## Forbidden, whatever it saves
 
 - Dropping a test, a spec, a play, a drill or a verification pass.
