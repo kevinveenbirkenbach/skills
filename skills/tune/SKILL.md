@@ -107,23 +107,18 @@ Discard a before/after pair, not just its noise, when:
 
 A cost cluster is one place the time goes: one step, one hot path, one
 repeated call, named by its log line and its number. Before investigating or
-implementing a cluster, run the `coordinate` skill for it, and send the
-question to every other agent session on this machine, not only the branch
-lineage: has anyone already identified this cluster?
+implementing a cluster, run the `democracy` skill's Peer protocol for it with
+every agent session on this machine, not only the branch lineage.
 
 - **The first to identify a cluster works it.** "First" is the `democracy`
-  skill's atomic claim (`cluster/<slug>`), whose claim file names the
-  cluster's log line and number; between machines, the earliest announcement
-  by message time. A claim without a measurement does not count.
-- **Someone was earlier:** stop on that cluster. Send them your measurements
-  and findings, then move on to the next cluster. Never build a second
-  optimization of the same cluster.
-- **You are first:** announce the claim with the log line, the number and the
-  sidetree branch, then work it. A silent peer is not a competing claim;
-  proceed after a bounded wait.
+  claim `cluster/<slug>`, whose `--work` names the cluster's log line and
+  number; between machines, the earliest announcement by message time. A
+  claim without a measurement does not count.
+- **Someone was earlier:** send them your measurements and findings, then move
+  on to the next cluster. Never build a second optimization of the same
+  cluster.
 - **A claim ends** when its holder reports the result, a proposal or an
-  abandoned attempt and removes its claim, or when the operator reassigns it.
-  Only then may another agent take the cluster.
+  abandoned attempt and releases it, or when the operator reassigns it.
 
 ## Levers that usually pay
 

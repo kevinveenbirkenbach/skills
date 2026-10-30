@@ -4,7 +4,7 @@ description: >
   Triage a failing CI run, pipeline, or job set to a verified root cause and a
   real fix. Trigger when a build, test, or deploy pipeline has one or more failed
   jobs. Applies the dialectic skill to every failing job independently, the
-  coordinate skill to every failure cluster, and the funnel skill to every
+  democracy peer protocol to every failure cluster, and the funnel skill to every
   cluster, so each cluster is fixed in its own worktree, and hands one log per
   cluster to the tune skill. Portable across projects.
 ---
@@ -36,11 +36,9 @@ root cause is proven.
    actual failing line, not by job name. Jobs whose messages differ in anything
    but the interpolated identifiers (host, app, port, path) belong in separate
    clusters.
-3. **Coordinate every cluster.** Invoke the `coordinate` skill for each cluster
-   before fixing it: tell the agents whose branches this one inherits from or
-   passes its commits on to which run failed and on which line, ask whether
-   someone already fixes it, and either take their fix or claim yours through
-   the `democracy` skill. Keep
+3. **Coordinate every cluster.** Run the `democracy` skill's Lineage and Peer
+   protocol for each cluster before fixing it: claim it, ask the lineage
+   whether someone already fixes it, and take their fix or keep yours. Keep
    investigating while you wait for answers.
 4. **Download artifacts per cluster.** Use the `ci-artifacts` skill for the
    mechanics — it covers per-job logs while a run is still in progress, which
@@ -78,7 +76,7 @@ root cause is proven.
    disabling the check, no soft-skip. If a failure is genuinely external
    (upstream outage, flaky infra), confirm that with evidence and surface it
    honestly instead of fixing around it. Report every fix, every proposal, and
-   every abandoned attempt to the same agents through the `coordinate` skill,
+   every abandoned attempt to the same agents through the `democracy` Peer protocol,
    then remove the sidetree.
 9. **Tune one log per cluster.** For each cluster, hand one job log to the
    `tune` skill: the cluster's job that ran furthest, because its timings cover

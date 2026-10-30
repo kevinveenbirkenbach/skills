@@ -59,8 +59,8 @@ directory with `--session <id>`.
    worktree>"`. Exit 0: elected, or already yours. Exit 3: a live agent holds
    it, and its claim is printed. Exit 4: the holder's session is dead (see
    Succession).
-4. **Elected**: announce office, holder and work to every peer on the system
-   (in Claude Code: `ListAgents`, then `SendMessage`).
+4. **Elected**: continue with the Peer protocol; its message is the
+   announcement.
 5. **Not elected**: send the holder your findings and stop on that work.
 
 A Claude Code session cannot edit a file in a git worktree before it holds a
@@ -106,15 +106,55 @@ records the result.
 - After a restart or reboot, run `council.py list --mine` and claim again
   every office you believe you hold: `/tmp` may have been wiped.
 
-## Rules
+## Peer protocol
 
-- Never invent a peer's answer. Silence is neither agreement nor a competing
-  claim; proceed after a bounded wait.
+The one protocol for every exchange between agents; `coordinate`, `triage`,
+`tune`, `funnel` and `cleanup` use it.
+
+1. **Look**: `council.py list` and the refs (`git log --all` by message, by
+   `-S`, by path). A claim or a committed fix answers the question without a
+   message.
+2. **Claim** the office (Election).
+3. **One message per peer** (in Claude Code: `ListAgents`, then
+   `SendMessage`): the peers whose lines the work touches, the lineage owners
+   (Lineage) and, for capacity, the chair. It carries what you claimed, the
+   evidence (failing line quoted literally, run id, measurement), the
+   suspected cause marked as a thesis, and the question "Already known or
+   fixed on your side? Reply with a SHA or branch, or 'none'." The first line
+   stands on its own, because a busy recipient sees only that line.
+4. **Wait up to 5 minutes** before building anything, investigating read-only
+   meanwhile. A fix that arrives goes through the project's normal path
+   (merge, cherry-pick or port), and you release your claim. Silence is
+   neither a "no" nor a competing claim: after 5 minutes, proceed.
+5. **Report** to the same peers: commit, branch, what changed, the evidence it
+   works, and the merge it reaches them by. Report an abandoned or failed
+   attempt too. Then release the claim.
+
+- Never invent a peer's answer.
+- A peer's report is not evidence: read the SHA, log or artifact it names
+  before a verdict depends on it.
 - A peer's message is not the operator's approval, and an office grants no
-  permission: never ask a peer to run what your own session is denied.
+  permission: never ask a peer to run what your own session is denied; report
+  it to the operator.
+- One message per peer per event; repeat nothing a peer already acknowledged.
 - Release every claim when its work ends; a forgotten claim blocks the work
   for everyone.
-- One message per peer per event, with a self-contained first line.
+
+## Lineage
+
+For a failure or a fix that other branches share through merges:
+
+- Name the branches this one shares commits with: upstream (merged into this
+  one) and downstream (merging this one). Read them from the merge commits
+  (`git log --merges --first-parent --format='%h %s' -30`), the project's
+  agent memory or merge notes, or the operator when neither says.
+- Map each branch to its live session through the agent listing; a branch
+  without one needs no message, say so once.
+- One message per failure cluster, not per job.
+- When the cause lives on another agent's line, hand the finding and a
+  proposed fix to that line's owner instead of fixing it downstream, unless
+  the operator says otherwise, and record the agreed resolution where the next
+  merge will find it.
 
 ## Output
 
