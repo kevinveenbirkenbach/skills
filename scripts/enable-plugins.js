@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Enable the caveman and ponytail plugins in a Claude Code settings.json so
 // their SessionStart hooks auto-activate both modes, register the autotune
-// and dream reminder hooks and the democracy claim gate. Merges non-destructively: existing marketplaces,
+// and dream reminder hooks, the democracy claim gate and the resource watch. Merges non-destructively: existing marketplaces,
 // plugins and hooks are preserved, unparseable files are left untouched.
 "use strict";
 
@@ -60,5 +60,21 @@ if (!JSON.stringify(data.hooks.PreToolUse).includes("democracy/scripts/council.p
   });
 }
 
+const watch = path.join(path.dirname(settingsPath), "skills", "democracy", "scripts", "watch.py");
+const WATCH_HOOKS = [
+  ["UserPromptSubmit", null, "watch"],
+  ["PostToolUse", "Bash", "watch"],
+  ["PreToolUse", "Bash", "block"],
+];
+for (const [event, matcher, sub] of WATCH_HOOKS) {
+  data.hooks[event] = data.hooks[event] || [];
+  const registered = data.hooks[event].some((entry) =>
+    (entry.hooks || []).some((hook) =>
+      String(hook.command).includes("democracy/scripts/watch.py") && String(hook.command).endsWith(` ${sub}`)));
+  if (registered) continue;
+  const entry = { hooks: [{ type: "command", command: `python3 ${JSON.stringify(watch)} ${sub}` }] };
+  data.hooks[event].push(matcher ? { matcher, ...entry } : entry);
+}
+
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled caveman + ponytail plugins, the ${REMINDERS.join(" + ")} reminders and the democracy claim gate in ${settingsPath}`);
+console.log(`skills: enabled caveman + ponytail plugins, the ${REMINDERS.join(" + ")} reminders, the democracy claim gate and resource watch in ${settingsPath}`);

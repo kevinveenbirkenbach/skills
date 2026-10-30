@@ -73,13 +73,37 @@ records the result.
   the operator has not ended the appointment.
 - Before starting anything that consumes shared capacity (gates, deploys,
   iteration loops, swarm or cloud resources, cleanup of shared data), an agent
-  sends the chair what, where and for how long, waits for the grant, and
-  reports the release. The chair keeps one queue, answers every request with
-  its position, enforces the limits the operator set, and never cancels a
-  running grant to free capacity.
+  sends the chair what, where, for how long and its expected disk need, waits
+  for the grant, and reports the release. The chair keeps one queue, answers
+  every request with its position, enforces the limits the operator set,
+  checks every grant with `watch.py admit --need-gb <N>` (or `--kind <slot>`),
+  and never cancels a running grant to free capacity.
 - Handover is explicit: the outgoing chair sends every peer the new holder,
   the queue and the running grants, and keeps allocating until the incoming
   chair confirms. Two allocators never run at once.
+
+## Resource watch
+
+The chair keeps the system from running out instead of reacting once it has.
+`${CLAUDE_SKILL_DIR}/scripts/watch.py` does the measuring as hooks in every
+session, so no agent probes the disk by hand; it reads its thresholds, job
+patterns, cleanup commands and cache directories from
+`~/.config/agents-council/config.json` (keys in the script's docstring) and
+stays silent below the thresholds.
+
+- **Warn**: the chair and every session get the biggest consumers; the chair
+  plans a cleanup and grants no large slot.
+- **Stop**: new heavy jobs are blocked in every session (teardown commands
+  never), and the hook runs the configured low-risk cleanup by itself.
+- **Critical**: additionally a desktop alarm to the operator. A running stack
+  is torn down only with the operator's OK.
+- A measured fall that would reach the critical threshold within the
+  projection window raises the stage by one at once.
+- Caches together stay under their budget; the least recently used go first.
+
+`watch.py status` shows the last measurement. A `RESOURCE` line in a hook's
+context is addressed to the chair; any other session only adjusts its own
+plans to it.
 
 ## Succession
 

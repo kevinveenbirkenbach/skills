@@ -15,7 +15,9 @@ its owner, its size, and its risk.
 Shared resources belong to the resource chair of the `democracy` skill. If
 another session holds the chair, send it the cleanup request and stop, unless
 the operator ordered the cleanup in this session; then tell the chair before
-step 1, so its grants and queue stay consistent.
+step 1, so its grants and queue stay consistent. The `democracy` resource
+watch already runs the configured low-risk cleanup at its stop threshold; this
+skill covers everything that needs the operator's pick.
 
 ## Step 1: ask the peers
 
