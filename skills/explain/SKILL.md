@@ -1,10 +1,9 @@
 ---
 name: explain
 description: >
-  Explain code and its interactions. Trigger when the operator asks what a
-  piece of code does, how a mechanism works, why components interact the way
-  they do, or invokes /explain on a file, function, role, or module.
-  Portable across projects.
+  Explain code and its interactions. Trigger when the operator asks what code
+  does, how a mechanism works, why components interact, or invokes /explain on
+  a file, function, role or module.
 ---
 
 Explain the named code so an engineer who has never seen it can follow it:

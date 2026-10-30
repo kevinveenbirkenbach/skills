@@ -1,10 +1,9 @@
 ---
 name: ci-artifacts
 description: >
-  Get the real evidence out of a CI run: per-job logs even while the run is
-  still in progress, and the artifacts that hold the cause rather than the
-  symptom. Trigger whenever a CI failure has to be explained, and from the
-  triage skill's artifact step. Portable across projects.
+  Get the evidence out of a CI run: failed job logs (also mid-run) clustered
+  by error line, and the artifacts that hold the cause. Trigger whenever a CI
+  failure must be explained, and from triage.
 ---
 
 A job log tells you what broke. An artifact tells you why. Investigating a CI

@@ -1,15 +1,10 @@
 ---
 name: tune
 description: >
-  Find and apply performance optimizations (CI wall-clock, deploy duration,
-  build and gate runtime, hot code paths) without reducing logic, coverage or
-  correctness, including a change of language where measurement justifies it.
-  Asks once per session what to examine and which limits apply, measures from
-  logs, coordinates every cost cluster with the other agents so the one who
-  identified it first works it, hardens every candidate with the dialectic skill
-  and funnels each optimization through a sidetree. Trigger on /tune, when a job dies on its time
-  budget, when a pipeline or deploy grows slower, or when the operator asks
-  where the time goes. Portable across projects.
+  Find and apply performance optimizations (CI, deploy, build, gate, hot
+  paths) without reducing logic, coverage or correctness. Trigger on /tune,
+  when a job dies on its time budget, when a pipeline or deploy grows slower,
+  or asked where time goes.
 ---
 
 # Tune

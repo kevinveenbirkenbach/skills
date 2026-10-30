@@ -1,11 +1,9 @@
 ---
 name: test
 description: >
-  Discover the test targets of the project's Makefile, let the operator pick
-  which ones to run, then run them and report; in fix mode, loop run, diagnose,
-  fix, re-run until green. Trigger on /test, /test --fix, or when the operator
-  asks to run the tests, make them pass, or get the suite green. Portable
-  across projects.
+  Discover the Makefile's test targets, let the operator pick, run and report;
+  fix mode loops until green. Trigger on /test, /test --fix, or when the
+  operator asks to run the tests, make them pass, or get the suite green.
 ---
 
 The Makefile is the source of truth for how this project runs tests. Never

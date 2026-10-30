@@ -1,10 +1,9 @@
 ---
 name: coordinate
 description: >
-  Coordinate a failing run or a fix with the agents on related branches
-  (upstream and downstream through merges): claim it, ask whether it is
-  already fixed, report the result. Trigger on /coordinate and whenever a fix
-  touches code other branches share through merges. Portable across projects.
+  Coordinate a failure or fix with the agents on related branches through
+  merges: claim, ask, report. Trigger on /coordinate and when a fix touches
+  code other branches share.
 ---
 
 Run the `democracy` skill's **Lineage** and **Peer protocol** sections for the

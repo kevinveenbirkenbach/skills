@@ -1,10 +1,9 @@
 ---
 name: robot
 description: >
-  Work fully autonomously to a goal. Trigger when the operator wants hands-off,
-  uninterrupted execution — the agent drives the task to completion without
-  check-ins, never stops before the goal is reached, and uses only commands it
-  is already cleared to run. Portable across projects.
+  Work fully autonomously to a goal: no check-ins, no stopping before the goal,
+  only commands already cleared. Trigger when the operator wants hands-off,
+  uninterrupted execution.
 ---
 
 Operate as an autonomous robot: given a goal, reach it without hand-holding.

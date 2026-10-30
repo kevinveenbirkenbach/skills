@@ -1,15 +1,10 @@
 ---
 name: no-defaults
 description: >
-  Forbid default values for parameters, settings, and environment lookups in
-  every language. Load and apply AUTOMATICALLY on every task that writes,
-  edits, generates, refactors, or reviews code, config, templates, schemas,
-  or infrastructure — never wait to be asked. A default silently substitutes
-  a guess for a value the caller failed to supply, so a misconfiguration
-  becomes wrong behaviour instead of a loud failure. Demand strict, explicit
-  values and fail loudly when one is missing. `false`, `null` and `""` are the
-  only free defaults; every other default needs a written justification.
-  Portable across projects.
+  Forbid default values for parameters, settings and environment lookups;
+  demand explicit values and fail loudly. Apply AUTOMATICALLY on every task
+  that writes, edits, generates, refactors or reviews code, config, templates,
+  schemas or infrastructure.
 ---
 
 A default value is a guess, written at the point where the caller's intent is

@@ -1,10 +1,10 @@
 ---
 name: autoskill
 description: >
-  Detect operator repetition and turn it into a skill. Trigger when the
-  operator gives an instruction, correction, or prompt pattern for roughly
-  the third time in a conversation (or says they keep repeating themselves),
-  and the pattern is general enough to reuse. Portable across projects.
+  Turn operator repetition into a skill. Trigger when the operator gives the
+  same instruction, correction or prompt pattern about the third time in a
+  conversation, or says they keep repeating themselves, and the pattern is
+  reusable.
 ---
 
 Its objective is the `autotune` skill's **Objective** section: a skill is worth

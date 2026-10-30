@@ -1,10 +1,9 @@
 ---
 name: shortcuts
 description: >
-  Portable operator conversation shortcuts, reusable across every project.
-  Trigger when the user's message is exactly one of these tokens (optionally
-  followed by arguments): sobu, soco, socobu, socon, sona, sote. Expand the
-  shortcut to the listed meaning and act on the expanded instruction.
+  Operator conversation shortcuts. Trigger when the message is exactly one of
+  these tokens, optionally with arguments: sobu, soco, socobu, socon, sona,
+  sote. Expand it and act on the expanded instruction.
 ---
 
 When an operator message is one of the shortcuts below, expand it to the meaning and act on it.

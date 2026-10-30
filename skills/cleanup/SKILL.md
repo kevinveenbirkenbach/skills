@@ -1,13 +1,10 @@
 ---
 name: cleanup
 description: >
-  Free the disk space agents filled: ask every other agent session on this
-  machine which data it still needs, inventory /tmp, Docker and the other
-  directories agents write to, then propose a cleanup with its risks and let
-  the operator choose through single-select (radio button) and multi-select
-  (checklist) questions before anything is deleted. Trigger on /cleanup,
-  "aufräumen", "bereinigen", "platte voll", "no space left on device", or when
-  the operator asks to clean up after agents. Portable across projects.
+  Free disk space agents filled: ask peer sessions what they still need,
+  inventory /tmp, Docker and agent dirs, and delete only what the operator
+  picks. Trigger on /cleanup, "aufräumen", "bereinigen", "platte voll", "no
+  space left on device".
 ---
 
 Nothing is deleted before the operator has picked it. Every candidate carries

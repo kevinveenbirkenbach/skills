@@ -1,13 +1,10 @@
 ---
 name: auto-feature
 description: >
-  Derive the missing work of a codebase and turn it into requirement
-  documents: a sceptic pass for what the code gets structurally wrong, a
-  usability pass for what the product does not do yet, then active-listening
-  to confirm every proposal through single-select (radio button) questions
-  before anything is written. Trigger on /auto-feature, "was fehlt noch",
-  "welche features brauchen wir", or when the operator asks what to build
-  next. Portable across projects.
+  Derive missing work (sceptic pass for structural flaws, usability pass for
+  missing features) and write requirement documents after single-select
+  confirmation. Trigger on /auto-feature, "was fehlt noch", "welche features
+  brauchen wir", or when the operator asks what to build next.
 ---
 
 Two blind spots produce different work: the code has defects of structure,

@@ -1,13 +1,10 @@
 ---
 name: criticize
 description: >
-  Look at a problem, a plan, a design, a decision, a text, or a piece of code
-  critically from diverse aspects and give constructive criticism: what holds,
-  what does not, why it matters, and what to do instead. Every critique point is
-  hardened with the dialectic skill before it is reported. Trigger on
-  /criticize, "kritisiere", "kritisch betrachten", "konstruktive Kritik",
-  "was haeltst du davon", or when the operator asks for honest feedback on
-  something rather than for a fix. Portable across projects.
+  Give constructive criticism of a problem, plan, design, decision, text or
+  code from diverse aspects, each point hardened by dialectic. Trigger on
+  /criticize, "kritisiere", "kritisch betrachten", "konstruktive Kritik", "was
+  haeltst du davon", or requests for honest feedback.
 ---
 
 The stance is critical but constructive: the goal is a better result, not a

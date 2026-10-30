@@ -12,6 +12,8 @@ LOCK_FILE = REPO_ROOT / "skills-lock.json"
 
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_FIELDS = ("source", "sourceType", "skillPath", "computedHash")
+DESCRIPTION_WORDS = 40
+LISTING_WORDS = 1300
 
 
 class TestSkillsLock(unittest.TestCase):
@@ -60,6 +62,16 @@ class TestSkillsLock(unittest.TestCase):
                 self.assertIn(
                     "description:", frontmatter, "frontmatter missing description"
                 )
+
+    def test_descriptions_fit_the_listing_budget(self):
+        total = 0
+        for skill_md in sorted((REPO_ROOT / "skills").glob("*/SKILL.md")):
+            frontmatter = skill_md.read_text(encoding="utf-8").split("---", 2)[1]
+            words = len(frontmatter.split("description:", 1)[1].split()) - 1
+            total += words
+            with self.subTest(skill=skill_md.parent.name):
+                self.assertLessEqual(words, DESCRIPTION_WORDS)
+        self.assertLessEqual(total, LISTING_WORDS)
 
     def test_first_party_skills_do_not_shadow_locked_skills(self):
         locked = set(self.lock["skills"].keys())

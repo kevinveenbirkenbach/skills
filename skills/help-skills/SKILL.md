@@ -1,10 +1,9 @@
 ---
 name: help-skills
 description: >
-  List and explain every skill available in the current session. Trigger on
-  /help-skills, "welche skills gibt es", "skill übersicht", or when the
-  operator asks what skills exist or what a skill does. Portable across
-  projects.
+  List and explain every skill in the session. Trigger on /help-skills,
+  "welche skills gibt es", "skill übersicht", or when the operator asks what
+  skills exist or what one does.
 ---
 
 Produce a one-shot overview of every skill the session can invoke:

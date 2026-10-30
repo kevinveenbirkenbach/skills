@@ -1,13 +1,9 @@
 ---
 name: funnel
 description: >
-  Funnel agent work through sidetrees: every agent works in its own git
-  worktree until its change reaches at least 90 % fix confidence and under 5 %
-  break risk, and only then does the change enter the main line. When that bar
-  is realistically out of reach, the agent submits a proposal instead of a
-  change. Trigger when delegating implementation, fix or optimization work to
-  agents, when several agents work in parallel, or on /funnel. Portable across
-  projects.
+  Keep agent work in its own git worktree until it reaches 90% fix confidence
+  and under 5% break risk; below that bar it becomes a proposal. Trigger when
+  delegating work to agents, when agents work in parallel, or on /funnel.
 ---
 
 # Funnel

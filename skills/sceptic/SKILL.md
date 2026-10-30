@@ -1,11 +1,10 @@
 ---
 name: sceptic
 description: >
-  Analyse a repository, a path, or a diff with a hostile eye for violated
-  engineering principles — SPOT, DRY, KISS, SRP, and security at the trust
-  boundaries. Trigger on /sceptic, "sei skeptisch", "kritische analyse",
-  "review the architecture", or when the operator asks what is wrong with the
-  code rather than whether it works. Portable across projects.
+  Analyse a repository, path or diff with a hostile eye for violated
+  principles: SPOT, DRY, KISS, SRP, security at trust boundaries. Trigger on
+  /sceptic, "sei skeptisch", "kritische analyse", "review the architecture",
+  or "what is wrong with the code".
 ---
 
 The stance is adversarial: the code is guilty until its structure proves

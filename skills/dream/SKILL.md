@@ -1,16 +1,10 @@
 ---
 name: dream
 description: >
-  Consolidate the last 24 hours of work in the current repository: what the
-  agent did, where it was right, where it was wrong, and which hypotheses
-  follow. Every hypothesis is hardened with the dialectic skill, the survivors
-  are written to memory, the derived improvements to the repository's code and
-  to its agent instructions (CLAUDE.md, AGENTS.md) are offered as single-select
-  questions, and the run ends in autotune and autoskill. The objective is to
-  raise the confidence of future runs until those mistakes stop recurring.
-  Trigger on /dream, or
-  when the operator asks to reflect on, consolidate, or learn from recent work.
-  Portable across projects.
+  Consolidate the last 24 hours of work in this repository: what held, what
+  broke, which hypotheses follow, into memory and improvement proposals.
+  Trigger on /dream or when the operator asks to reflect on or learn from
+  recent work.
 ---
 
 Sleep on the work: replay what happened in this repository, separate what held

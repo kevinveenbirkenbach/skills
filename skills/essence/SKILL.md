@@ -1,10 +1,9 @@
 ---
 name: essence
 description: >
-  Compact skills and memory down to their essence so every session loads less
-  context, after a health pass that finds the dead weight first. Trigger on
-  /essence, or when the operator says the skills or MEMORY.md have grown too
-  long, carry duplicates, or eat too much context. Portable across projects.
+  Compact skills and memory to their essence after a health pass that finds
+  dead weight. Trigger on /essence or when skills or MEMORY.md grow too long,
+  duplicate, or eat too much context.
 ---
 
 Shorter, not thinner. Every fact that still earns its place survives; what goes

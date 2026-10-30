@@ -1,11 +1,9 @@
 ---
 name: triage
 description: >
-  Triage a failing CI run, pipeline, or job set to a verified root cause and a
-  real fix. Trigger when a build, test, or deploy pipeline has one or more failed
-  jobs. Applies the dialectic skill, the democracy peer protocol and the funnel
-  skill to every failure cluster, so each cluster is fixed in its own worktree,
-  and hands a timed-out job's log to the tune skill. Portable across projects.
+  Triage a failing CI run, pipeline or job set to a verified root cause and a
+  real fix, one cluster per worktree. Trigger when a build, test or deploy
+  pipeline has failed jobs.
 ---
 
 Drive a red pipeline to green by root cause, not by guesswork. Treat every

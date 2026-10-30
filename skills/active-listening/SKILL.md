@@ -1,11 +1,10 @@
 ---
 name: active-listening
 description: >
-  Gather every requirement before acting. Trigger at the start of any task
-  whose scope, constraints, or success criteria are not fully pinned down, and
-  whenever another skill needs an operator-only fact — ask focused questions
-  until nothing needed is still open, then reflect the understanding back.
-  Portable across projects.
+  Ask focused questions until every requirement is pinned down, then reflect
+  the task back. Trigger at the start of any task with unclear scope,
+  constraints or success criteria, and when another skill needs an
+  operator-only fact.
 ---
 
 Do not act on a half-understood request. Listen actively until you could state

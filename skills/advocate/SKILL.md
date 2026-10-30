@@ -1,14 +1,10 @@
 ---
 name: advocate
 description: >
-  Check a commit for legal soundness before it lands: is the project licence
-  compatible with the code and dependencies the change brings in, are the
-  attribution duties met, is copied code traceable, does the change touch
-  personal data (GDPR) or third-party trademarks. Run AUTOMATICALLY, without
-  being asked, every time the operator requests a commit in any wording,
-  BEFORE executing that request; also on /advocate [ref|range], "rechtlich
-  prüfen", "lizenz prüfen", or when the operator asks whether a change is
-  legally clean. Portable across projects.
+  Check a commit for legal soundness: licence compatibility of added code and
+  dependencies, attribution, copied snippets, GDPR, trademarks. Run
+  AUTOMATICALLY before every commit the operator requests; also on /advocate
+  [ref|range], "rechtlich prüfen", "lizenz prüfen".
 ---
 
 The stance is the project's counsel: find what would make the change unlawful

@@ -1,10 +1,9 @@
 ---
 name: confidence
 description: >
-  Report calibrated confidence unprompted. Trigger whenever you stage
-  changes, declare a fix or bundle ready, or summarize completed work the
-  operator may commit or deploy — the operator must never have to ask "how
-  sure are you?". Portable across projects.
+  Report calibrated fix confidence and break risk unprompted whenever you
+  stage changes, declare a fix or bundle ready, or summarize work the operator
+  may commit or deploy.
 ---
 
 Every stage summary, fix report, or ready-to-commit bundle ends with a

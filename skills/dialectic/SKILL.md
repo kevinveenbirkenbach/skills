@@ -1,11 +1,10 @@
 ---
 name: dialectic
 description: >
-  Reach a defensible conclusion through a dialectical process — thesis,
-  adversarial antithesis, synthesis — iterated until one thesis survives every
-  attack at ~99% confidence. Trigger for any consequential root-cause, design,
-  or decision where being wrong is expensive and the answer is not yet certain.
-  Deep-inspects every accessible source. Portable across projects.
+  Reach a defensible conclusion by thesis, independent skeptic antithesis and
+  synthesis, iterated to ~99% confidence. Trigger for any consequential root
+  cause, design or decision where being wrong is expensive and the answer is
+  uncertain.
 ---
 
 Reach the truth by dialectic, not by first guess. Do not stop at a plausible

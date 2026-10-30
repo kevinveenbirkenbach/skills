@@ -1,11 +1,9 @@
 ---
 name: refactor
 description: >
-  Refactor every file that is currently uncommitted in the git working tree -
-  staged, unstaged and untracked - up to the project's coding standards,
-  without changing behaviour. Trigger on /refactor or when the operator asks to
-  clean up, tidy, or polish the current changes before committing. Portable
-  across projects.
+  Refactor every uncommitted file (staged, unstaged, untracked) up to the
+  project's standards without changing behaviour. Trigger on /refactor or when
+  the operator asks to clean up, tidy or polish the current changes.
 ---
 
 The unit of work is the uncommitted change set, not the repository. Behaviour

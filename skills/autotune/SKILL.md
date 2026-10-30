@@ -1,12 +1,10 @@
 ---
 name: autotune
 description: >
-  Generate new agent skills and optimize existing ones so the agent works more
-  efficiently: fewer input and output tokens, fewer errors, more focus, and
-  learnings that persist across sessions. Every proposal is confirmed with the
-  operator through single-select (radio button) questions. Trigger ONLY on an
-  explicit operator request (/autotune, "autotune", "tune the skills"); never
-  run it on your own initiative. Portable across projects.
+  Generate new skills or optimize existing ones (fewer tokens, fewer errors,
+  persistent learnings), each proposal confirmed by single-select question.
+  Trigger ONLY on an explicit request: /autotune, "autotune", "tune the
+  skills"; never on your own initiative.
 ---
 
 Autotune turns observed friction into durable skills. It runs on demand only,

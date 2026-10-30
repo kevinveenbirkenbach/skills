@@ -1,12 +1,10 @@
 ---
 name: changelog
 description: >
-  Write the release message for everything since the last release, ready to
-  paste into `pkgmgr release` (its editor or `--message`). Trigger on
-  /changelog, "release message", "changelog entry", or when the operator is
-  about to cut a release or pastes pkgmgr's markdown-lint rejection of an
-  entry. Prints the message only: never edits CHANGELOG.md, never tags, never
-  releases. Portable across projects.
+  Write the release message since the last release for `pkgmgr release`;
+  prints it only, never edits CHANGELOG.md, tags or releases. Trigger on
+  /changelog, "release message", "changelog entry", before cutting a release,
+  or on pkgmgr's markdown-lint rejection.
 ---
 
 The message is one text that pkgmgr writes to four places: the CHANGELOG.md

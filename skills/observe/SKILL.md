@@ -1,10 +1,9 @@
 ---
 name: observe
 description: >
-  Watch a named target (a CI run, a pipeline, a build, a log) on a fixed
-  cadence and apply the triage skill whenever new failures appear. Trigger on
-  /observe <target> or when the operator asks to keep monitoring something and
-  fix regressions as they surface. Portable across projects.
+  Watch a named target (CI run, pipeline, build, log) on a cadence and triage
+  new failures as they appear. Trigger on /observe <target> or when the
+  operator asks to keep monitoring and fix regressions.
 ---
 
 Keep a target under continuous watch and act only when it degrades. The loop is

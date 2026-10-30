@@ -1,10 +1,9 @@
 ---
 name: plan
 description: >
-  Turn a request into an objective-oriented plan and hand it to the robot skill
-  for autonomous execution. Trigger on /plan or when the operator asks for a
-  plan, a breakdown, or a strategy for a task before any work starts. Portable
-  across projects.
+  Turn a request into an objective-oriented plan and hand it to the robot
+  skill. Trigger on /plan or when the operator asks for a plan, breakdown or
+  strategy before work starts.
 ---
 
 Produce a plan whose every item is an outcome with a check, then execute it

@@ -1,16 +1,10 @@
 ---
 name: democracy
 description: >
-  Organise parallel agents so no two do the same work: the first agent to
-  start a piece of work is elected its president and does all of it, the first
-  agent in each organisational line represents that line, the first to start a
-  cross-cutting work cluster organises its strand, and the earliest-elected
-  live president chairs the council and allocates the resources of the whole
-  system (machines, servers, cloud, CI runners, gate, deploy and iteration
-  slots, disk). Run AUTOMATICALLY before starting work another agent on the
-  same system might also be doing (a failure, a cost cluster, a feature, a
-  gate, a deploy, a cleanup), whenever several agents share a system, and on
-  /democracy. Portable across projects.
+  Keep parallel agents from duplicating work: the first to claim it owns it;
+  line representatives and a resource chair coordinate. Run AUTOMATICALLY
+  before work another agent might also do (failure, cluster, feature, gate,
+  deploy, cleanup), and on /democracy.
 ---
 
 Two agents doing the same work waste the second run and then collide in the

@@ -2,12 +2,9 @@
 name: comments-clean
 description: >
   Purge explanatory comments from staged and unstaged changes. Run
-  AUTOMATICALLY, without being asked, every time the operator requests a
-  commit or stage in any wording (commit, commit no-verify, stage next,
-  socon, sobu, socobu, "commite ..."), BEFORE executing that request; also
-  on /comments-clean or when the operator complains about comments.
-  Explanatory comments are bad practice: they narrate code instead of
-  letting it speak. Portable across projects.
+  AUTOMATICALLY before every commit or stage request (commit, commit
+  no-verify, stage next, socon, sobu, socobu, "commite ..."); also on
+  /comments-clean or comment complaints.
 ---
 
 When the operator asks to commit or stage, run this audit first and only

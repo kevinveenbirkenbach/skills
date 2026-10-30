@@ -1,10 +1,9 @@
 ---
 name: merge-fix
 description: >
-  Fetch every branch of the repository, hunt down the commits that carry a
-  described fix, and merge that fix into the current branch. Trigger on
-  /merge-fix <description of the fix> or when the operator asks to find a fix
-  that lives on another branch and bring it over. Portable across projects.
+  Hunt down the commits on any branch that carry a described fix and merge it
+  into the current branch. Trigger on /merge-fix <description> or when the
+  operator asks to bring over a fix from another branch.
 ---
 
 The free text after `/merge-fix` is the fix description, exactly like `/loop`

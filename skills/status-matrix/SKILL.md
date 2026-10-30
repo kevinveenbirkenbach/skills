@@ -1,11 +1,9 @@
 ---
 name: status-matrix
 description: >
-  Print one matrix of everything currently in flight: open and closed tasks,
-  running workflows and background jobs, plus confidence and break risk per
-  item. Trigger on /status-matrix, "status", "übersicht", "wo stehen wir", or
-  whenever the operator asks what is done, what is left, or what is still
-  running. Portable across projects.
+  Print one matrix of everything in flight: tasks, workflows, background jobs,
+  with confidence and break risk per item. Trigger on /status-matrix,
+  "status", "übersicht", "wo stehen wir", or what is done, left or running.
 ---
 
 One-shot overview, no side effects: this skill reads state and reports it. It

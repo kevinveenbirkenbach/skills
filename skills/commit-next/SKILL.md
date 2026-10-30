@@ -1,11 +1,9 @@
 ---
 name: commit-next
 description: >
-  Fetch every branch and check whether the staged fix already exists
-  elsewhere, then commit the staged bundle with --no-verify, stage the next
-  logical bundle and brief the operator on it. Trigger on /commit-next or
-  when the operator asks to commit and stage the next bundle in one step.
-  Portable across projects.
+  Check every branch for the staged fix, commit the staged bundle with
+  --no-verify, then stage and brief the next bundle. Trigger on /commit-next
+  or when the operator asks to commit and stage the next bundle in one step.
 ---
 
 1. `git fetch --all --prune --tags`, then hunt the staged fix across every

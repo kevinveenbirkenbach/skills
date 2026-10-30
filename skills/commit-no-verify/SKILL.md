@@ -1,11 +1,9 @@
 ---
 name: commit-no-verify
 description: >
-  Commit the currently staged changes with --no-verify (skip the pre-commit
-  hooks). Trigger on /commit-no-verify or when the operator asks for a
-  no-verify commit in any wording. Invoking this skill IS the explicit
-  per-commit authorization that --no-verify requires; it never carries over
-  to later commits. Portable across projects.
+  Commit the staged changes with --no-verify. Trigger on /commit-no-verify or
+  any request for a no-verify commit; invoking it IS the per-commit
+  authorization --no-verify requires, never carried over to later commits.
 ---
 
 1. Run the comments-clean audit over the staged and unstaged changes first,

@@ -1,11 +1,10 @@
 ---
 name: medusa
 description: >
-  Run the MEDUSA AI security scanner (medusa-security on PyPI) against a
-  repository, working tree, or secret stores. Use when the user asks for a
-  security scan, supply-chain vetting of a repo before cloning, leaked-secret
-  detection in AI chat or shell history, or invokes /medusa. Defensive scanning
-  only.
+  Run the MEDUSA security scanner (medusa-security, PyPI) on a repository,
+  working tree or secret stores. Use for security scans, vetting a repo before
+  cloning, leaked-secret detection in chat or shell history, or /medusa.
+  Defensive only.
 ---
 
 MEDUSA is a defensive AI-first security scanner (40,000+ patterns: CVEs, prompt injection, MCP tool poisoning, leaked secrets).

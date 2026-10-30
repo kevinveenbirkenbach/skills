@@ -2,10 +2,9 @@
 name: scope-guard
 description: >
   Deliver exactly what was asked and nothing more. Trigger on every task that
-  creates files, commands, or commits, and on autonomous runs where no one is
-  reviewing each step. Also when the operator asks to be given something, and
-  when they ask why something exists that they never requested. Portable across
-  projects.
+  creates files, commands or commits, on unreviewed autonomous runs, on
+  hand-over requests, and when the operator asks why something unrequested
+  exists.
 ---
 
 The requested scope is the deliverable. A problem you noticed behind the

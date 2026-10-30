@@ -1,10 +1,9 @@
 ---
 name: break-risk
 description: >
-  Derive the break-risk percentage from measurement instead of feel. Called by
-  the `confidence` skill every time it reports, and usable alone whenever the
-  operator asks "what could this break?" or names a break-risk threshold.
-  Portable across projects.
+  Derive the break-risk percentage from measurement, not feel. Called by
+  `confidence` on every report; also when the operator asks "what could this
+  break?" or names a break-risk threshold.
 ---
 
 Break risk is the probability the change breaks something it did not intend to
