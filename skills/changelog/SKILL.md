@@ -26,10 +26,16 @@ git log --no-merges --format='%h %s%n%b' <tag>..HEAD
   commit it reverts inside the range.
 - A subject is a lead, not the change: read the diff (`git show --stat`, then
   the hunks) when the subject does not say what changed for the user.
-- When `gh` is available, check the previous tag's CI run
-  (`gh run list --branch <tag> -L 1`). A failed run means that version was
-  never published: say so under *Upgrade notes* and carry its upgrade notes
-  forward to this release.
+- When `gh` is available, read the CI of the previous tag's commit and of HEAD,
+  every workflow (`gh run list --commit <sha> --json
+  workflowName,status,conclusion`), not one picked by `-L 1`.
+  - Previous tag: a workflow that finished as a failure means that version was
+    never published: say so under *Upgrade notes* and carry its upgrade notes
+    forward to this release.
+  - HEAD: a workflow that finished as a failure means pkgmgr would tag a
+    release that never goes stable, because its CI gate runs after the tag.
+    Queued, running or missing runs are normal; report only the failure, in
+    step 5.
 
 ## 2. Sort into sections
 
@@ -130,6 +136,8 @@ used, shorten only the lines it names, and lint again.
    `feat` → minor, otherwise patch).
 3. One line with the lint result (`markdownlint-cli2: 0 errors` or the manual
    check that ran).
+4. Only when a workflow on HEAD finished as a failure: one line naming it and
+   its run, and the advice not to release before it is green.
 
 Then stop. Never edit CHANGELOG.md or a version file, never run
 `pkgmgr release`, never tag: the operator releases.
