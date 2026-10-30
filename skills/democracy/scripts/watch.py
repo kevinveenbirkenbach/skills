@@ -23,14 +23,15 @@ Environment:
 Config keys, all required: disk, thresholds_gb {warn, stop, critical},
 projection_minutes, interval_seconds, cache_interval_seconds, heavy_commands,
 never_block (regexes), cleanup (shell commands), worktree_cleanup (shell
-commands with {worktree}), worktrees (globs), cache_dirs, cache_budget_percent,
+commands with {worktree}), worktrees_command (shell command printing the
+running stacks' worktree paths, one per line), worktree_marker (path relative
+to a worktree that must exist), cache_dirs, cache_budget_percent,
 slot_need_gb {kind: GB}, notify (argv the alert text is appended to).
 """
 
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import os
 import re
@@ -263,12 +264,21 @@ def trim_caches(cfg: dict) -> float:
     return freed / GB
 
 
+def running_worktrees(cfg: dict) -> list[str]:
+    try:
+        out = subprocess.run(
+            cfg["worktrees_command"], shell=True, capture_output=True, text=True, timeout=60, check=False
+        ).stdout
+    except subprocess.TimeoutExpired:
+        return []
+    trees = sorted({line.strip() for line in out.splitlines() if line.strip()})
+    return [t for t in trees if os.path.exists(os.path.join(t, cfg["worktree_marker"]))]
+
+
 def run_cleanup(cfg: dict) -> list[str]:
     commands = list(cfg["cleanup"])
-    for pattern in cfg["worktrees"]:
-        for tree in sorted(glob.glob(os.path.expanduser(pattern))):
-            if os.path.isdir(tree):
-                commands += [t.format(worktree=shlex.quote(tree)) for t in cfg["worktree_cleanup"]]
+    for tree in running_worktrees(cfg):
+        commands += [t.format(worktree=shlex.quote(tree)) for t in cfg["worktree_cleanup"]]
     results = []
     for command in commands:
         try:

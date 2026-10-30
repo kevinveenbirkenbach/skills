@@ -59,7 +59,8 @@ class TestWatchCommands(unittest.TestCase):
             "never_block": ["^make swarm-down"],
             "cleanup": [],
             "worktree_cleanup": [],
-            "worktrees": [],
+            "worktrees_command": "true",
+            "worktree_marker": "Makefile",
             "cache_dirs": [str(self.cache)],
             "cache_budget_percent": 3,
             "slot_need_gb": {"swarm": 30},
@@ -127,6 +128,18 @@ class TestWatchCommands(unittest.TestCase):
         self.assertEqual(self._run("cleanup", "--caches").returncode, 0)
         self.assertFalse(old.exists())
         self.assertTrue(new.exists())
+
+    def test_full_cleanup_reaches_only_marked_running_worktrees(self):
+        marked, foreign = self.base / "marked", self.base / "foreign"
+        for tree in (marked, foreign):
+            tree.mkdir()
+        (marked / "Makefile").write_text("", encoding="utf-8")
+        self.cfg["worktrees_command"] = f"echo {marked}; echo {foreign}; echo {marked}"
+        self.cfg["worktree_cleanup"] = ["echo x >> {worktree}/cleaned"]
+        self._write_config()
+        self.assertEqual(self._run("cleanup", "--full").returncode, 0)
+        self.assertEqual((marked / "cleaned").read_text(encoding="utf-8"), "x\n")
+        self.assertFalse((foreign / "cleaned").exists())
 
     def test_without_config_every_command_is_a_no_op(self):
         self.config.unlink()
