@@ -10,11 +10,8 @@ description: >
 Every stage summary, fix report, or ready-to-commit bundle ends with a
 confidence block.
 
-Invoke the `break-risk` skill every time, before writing the block. The break
-risk half is derived there — consumers enumerated, the delta measured at the
-surface where it shows, live separated from latent, the deployment matrix
-walked, the failure mode weighed. Do not estimate it here; this skill reports
-the number that skill produces.
+Invoke the `break-risk` skill every time, before writing the block; this skill
+reports the number it derives and never estimates one itself.
 
 1. **Fix confidence** (percent): probability the change does what it
    claims. **Break risk** (percent): probability it breaks anything else,
@@ -36,16 +33,9 @@ Calibration rules:
 - Static analysis alone caps at the low nineties; only executed evidence
   (test, reproduction, live probe) justifies more.
 
-## When a threshold was stated
+A threshold the operator named ("95% confidence, break risk ≤5%") is a gate on
+the work, handled as the `break-risk` skill's last section says, for both
+numbers.
 
-A number the operator named ("95% confidence, break risk ≤5%") is a gate on the
-work, not a field in the report. A block that misses it is not finished output,
-it is a work item: name the cheapest evidence that closes the gap, go get it,
-re-measure. Report a miss only when that evidence is genuinely out of reach — a
-deploy you cannot run, an artifact that does not exist — and say which one.
-
-Objective: the `optimize` skill's. The number exists to save the operator a
-verification round trip (time), to stop a rework cycle before it starts
-(quality), and to replace a long hedging paragraph with two figures and their
-residuals (tokens). A confidence block that costs more than it saves — padding,
-repeated caveats, a number without residuals — misses its own objective.
+Objective: the `optimize` skill's. Two figures with their residuals replace a
+hedging paragraph and save the operator a verification round trip.
