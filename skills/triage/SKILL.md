@@ -5,8 +5,8 @@ description: >
   real fix. Trigger when a build, test, or deploy pipeline has one or more failed
   jobs. Applies the dialectic skill to every failing job independently, the
   coordinate skill to every failure cluster, and the funnel skill to every
-  cluster, so each cluster is fixed in its own worktree. Portable across
-  projects.
+  cluster, so each cluster is fixed in its own worktree, and hands one log per
+  cluster to the tune skill. Portable across projects.
 ---
 
 Drive a red pipeline to green by root cause, not by guesswork. Treat every
@@ -55,10 +55,11 @@ root cause is proven.
 5. **One funnel per cluster.** Hand every cluster you claimed in step 3 to the
    `funnel` skill: one agent per cluster, working in its own worktree on its own
    branch created from the exact current HEAD, with that cluster as its only
-   concern, the artifact paths of step 4 in its brief and a hard time cap. Steps 6 to 8 run inside that sidetree, so no
-   cluster's edits land under another cluster's work or under a running gate or
-   deploy. Run clusters in parallel only when their fixes touch different files
-   and the machine has room. A split cluster (step 7) gets a funnel of its own.
+   concern, the artifact paths of step 4 in its brief and a hard time cap.
+   Steps 6 to 8 run inside that sidetree, so no cluster's edits land under
+   another cluster's work or under a running gate or deploy. Run clusters in
+   parallel only when their fixes touch different files and the machine has
+   room. A split cluster (step 7) gets a funnel of its own.
 6. **Dialectic per cluster.** For EACH cluster, invoke the `dialectic` skill:
    form a thesis about the root cause from evidence (the job log, its artifacts,
    the code at the run's commit, git history), attack it with independent
@@ -78,7 +79,14 @@ root cause is proven.
    honestly instead of fixing around it. Report every fix, every proposal, and
    every abandoned attempt to the same agents through the `coordinate` skill,
    then remove the sidetree.
-9. **Follow the run.** While the run is still in progress, re-check it
+9. **Tune one log per cluster.** For each cluster, hand one job log to the
+   `tune` skill: the cluster's job that ran furthest, because its timings cover
+   the most phases. `tune` looks for performance potential in it under its own
+   rules and the session's limits. Its candidates run through funnels of their
+   own, separate from the cluster's fix sidetree, and never delay or block the
+   fix. A log the failure cut short is tuned for the phases it covers; say which
+   phases it does not reach.
+10. **Follow the run.** While the run is still in progress, re-check it
    periodically and triage each newly failed job as it appears. The run is done
    only when it has finished and every failure has a verified fix.
 
