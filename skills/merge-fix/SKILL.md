@@ -35,7 +35,8 @@ one line so a wrong reading is visible before the search.
 ## 4. Search every ref
 
 Search by keyword, by literal and by path in one call; they find different
-things:
+things, and a commit matching any one of them is a hit, so `--path` widens
+the search instead of narrowing `--grep`:
 
 ```bash
 ${CLAUDE_SKILL_DIR}/scripts/find_fix.py --grep '<keyword>' -S '<symbol or literal>' --path '<path or glob>'
