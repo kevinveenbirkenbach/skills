@@ -25,7 +25,8 @@ projection_minutes, interval_seconds, cache_interval_seconds, heavy_commands,
 never_block (regexes), cleanup (shell commands), worktree_cleanup (shell
 commands with {worktree}), worktrees_command (shell command printing the
 running stacks' worktree paths, one per line), worktree_marker (path relative
-to a worktree that must exist), cache_dirs, cache_budget_percent,
+to a worktree that must exist), busy_processes (process names; a worktree
+where one of them runs is skipped), cache_dirs, cache_budget_percent,
 slot_need_gb {kind: GB}, notify (argv the alert text is appended to),
 load_limits {cpu_percent, mem_percent, sample_seconds, kinds}: admit for a
 kind listed in kinds also needs CPU busy and RAM used below the limits.
@@ -313,9 +314,25 @@ def running_worktrees(cfg: dict) -> list[str]:
     return [t for t in trees if os.path.exists(os.path.join(t, cfg["worktree_marker"]))]
 
 
+def busy(tree: str, names: list[str]) -> bool:
+    root = os.path.realpath(tree)
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            if Path(f"/proc/{pid}/comm").read_text(encoding="utf-8").strip() not in names:
+                continue
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            continue
+        if cwd == root or cwd.startswith(root + os.sep):
+            return True
+    return False
+
+
 def run_cleanup(cfg: dict) -> list[str]:
     commands = list(cfg["cleanup"])
     for tree in running_worktrees(cfg):
+        if busy(tree, cfg["busy_processes"]):
+            continue
         commands += [t.format(worktree=shlex.quote(tree)) for t in cfg["worktree_cleanup"]]
     results = []
     for command in commands:

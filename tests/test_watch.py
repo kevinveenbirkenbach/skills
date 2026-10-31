@@ -66,6 +66,7 @@ class TestWatchCommands(unittest.TestCase):
             "worktree_cleanup": [],
             "worktrees_command": "true",
             "worktree_marker": "Makefile",
+            "busy_processes": ["sleep"],
             "cache_dirs": [str(self.cache)],
             "cache_budget_percent": 3,
             "slot_need_gb": {"swarm": 30, "test": 0.001},
@@ -157,6 +158,21 @@ class TestWatchCommands(unittest.TestCase):
         self.assertEqual(self._run("cleanup", "--full").returncode, 0)
         self.assertEqual((marked / "cleaned").read_text(encoding="utf-8"), "x\n")
         self.assertFalse((foreign / "cleaned").exists())
+
+    def test_full_cleanup_skips_a_worktree_where_a_busy_process_runs(self):
+        idle, gated = self.base / "idle", self.base / "gated"
+        for tree in (idle, gated):
+            (tree / "sub").mkdir(parents=True)
+            (tree / "Makefile").write_text("", encoding="utf-8")
+        gate = subprocess.Popen(["sleep", "60"], cwd=gated / "sub")
+        self.addCleanup(gate.wait)
+        self.addCleanup(gate.kill)
+        self.cfg["worktrees_command"] = f"echo {idle}; echo {gated}"
+        self.cfg["worktree_cleanup"] = ["echo x >> {worktree}/cleaned"]
+        self._write_config()
+        self.assertEqual(self._run("cleanup", "--full").returncode, 0)
+        self.assertTrue((idle / "cleaned").exists())
+        self.assertFalse((gated / "cleaned").exists())
 
     def test_without_config_every_command_is_a_no_op(self):
         self.config.unlink()

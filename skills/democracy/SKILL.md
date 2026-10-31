@@ -95,7 +95,8 @@ stays silent below the thresholds.
 - **Warn**: the chair and every session get the biggest consumers; the chair
   plans a cleanup and grants no large slot.
 - **Stop**: new heavy jobs are blocked in every session (teardown commands
-  never), and the hook runs the configured low-risk cleanup by itself.
+  never), and the hook runs the configured low-risk cleanup by itself; it
+  skips every worktree where a gate or deploy process still runs.
 - **Critical**: additionally a desktop alarm to the operator. A running stack
   is torn down only with the operator's OK.
 - A measured fall that would reach the critical threshold within the
