@@ -19,6 +19,7 @@ flowchart LR
     edit_hook([edit in a git worktree])
     reminders([reminder hooks])
     code_task([code task])
+    spawn([subagent spawn])
   end
   subgraph commit [Commit]
     commit_next[commit-next]
@@ -34,6 +35,7 @@ flowchart LR
     coordinate[coordinate]
     funnel[funnel]
     cleanup[cleanup]
+    subagent_model[subagent-model]
   end
   subgraph ci [CI]
     observe[observe]
@@ -81,6 +83,7 @@ flowchart LR
   reminders -.-> autotune
   code_task -.-> no_defaults
   code_task -.-> scope_guard
+  spawn -.-> subagent_model
 
   commit_next --> merge_fix
   commit_next --> commit_no_verify
@@ -96,6 +99,8 @@ flowchart LR
   cleanup --> democracy
   funnel --> democracy
   funnel --> dialectic
+  funnel --> subagent_model
+  dialectic --> subagent_model
   democracy --> merge_fix
 
   observe --> triage
@@ -155,7 +160,7 @@ Copy the skills into a specific project (`<repo>/.agents/skills` and `<repo>/.cl
 make project TARGET=/path/to/repo
 ```
 
-Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `autotune` points you at `/autotune` at most once an hour, `dream` points you at `/dream` at most once every twelve hours per repository (stamped in that repository's git dir). A PreToolUse gate from the `democracy` skill blocks edits to files in a git worktree until the session holds a claim (`skills/democracy/scripts/council.py`), and its resource watch (`skills/democracy/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Existing settings are preserved.
+Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `autotune` points you at `/autotune` at most once an hour, `dream` points you at `/dream` at most once every twelve hours per repository (stamped in that repository's git dir). A PreToolUse gate from the `democracy` skill blocks edits to files in a git worktree until the session holds a claim (`skills/democracy/scripts/council.py`), and its resource watch (`skills/democracy/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Two hooks of the `subagent-model` skill (`skills/subagent-model/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
 
 Restart your agent afterwards so it loads the new skills.
 

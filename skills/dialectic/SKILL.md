@@ -30,7 +30,8 @@ asking; ask only when an operator-only fact blocks the conclusion.
    make or CLI helpers the project exposes); CI logs and artifacts; tests; docs.
    Cite `file:line` and command output — never a bare assertion.
 2. **Antithesis.** Spawn MULTIPLE independent skeptics (parallel subagents or a
-   workflow) whose only job is to REFUTE the thesis. Each re-inspects the
+   workflow, on the default model as the `subagent-model` skill requires)
+   whose only job is to REFUTE the thesis. Each re-inspects the
    sources itself and defaults to "refuted" on any concrete hole. Give diverse
    skeptics diverse lenses: correctness, an alternate mechanism, does-it-
    reproduce, does-the-fix-break-something-else.

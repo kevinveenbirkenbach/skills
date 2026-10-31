@@ -20,7 +20,8 @@ in a sidetree until it does, or leaves as a proposal.
 
 ## The stages
 
-1. **Brief.** One concern per agent. Name the goal, the exact base commit, the
+1. **Brief.** One concern per agent, on the model the `subagent-model` skill
+   picks. Name the goal, the exact base commit, the
    scope that may change, the evidence expected back, a time cap (default
    60 minutes) at which it reports its interim state, and what the agent must
    not do: no pushes, no gates or deploys

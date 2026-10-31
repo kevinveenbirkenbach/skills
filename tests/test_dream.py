@@ -132,6 +132,8 @@ class TestSettingsRegistration(unittest.TestCase):
         self.assertEqual(entries.count("democracy/scripts/watch.py"), 1)
         post = json.dumps(data["hooks"]["PostToolUse"])
         self.assertEqual(post.count("democracy/scripts/watch.py"), 1)
+        self.assertEqual(gate.count("subagent-model/scripts/log.py"), 1)
+        self.assertEqual(post.count("subagent-model/scripts/log.py"), 1)
 
 
 if __name__ == "__main__":
