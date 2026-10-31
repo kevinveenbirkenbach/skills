@@ -58,7 +58,8 @@ Read-only, in parallel, sizes included:
   label, anonymous ones included.
 - **Other agent dirs**: package and tool caches (pip, npm, pre-commit, act,
   gh, buildx), worktrees with `git status --short` and whether their branch is
-  merged or pushed, Ansible and build temp dirs.
+  merged or pushed, Ansible and build temp dirs. With `pkgmgr` installed,
+  merged branches and worktrees go to the `branch-gc` skill instead.
 - **Live use**: open handles (`fuser`, `lsof`) and running processes by name
   only (`ps -o pid,etime,comm`). Never print full command lines or
   environments: process arguments carry credentials. A sandboxed agent often

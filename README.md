@@ -35,6 +35,7 @@ flowchart LR
     coordinate[coordinate]
     funnel[funnel]
     cleanup[cleanup]
+    branch_gc[branch-gc]
     subagent_model[subagent-model]
   end
   subgraph ci [CI]
@@ -97,6 +98,8 @@ flowchart LR
 
   coordinate --> democracy
   cleanup --> democracy
+  cleanup --> branch_gc
+  branch_gc --> democracy
   funnel --> democracy
   funnel --> dialectic
   funnel --> subagent_model
