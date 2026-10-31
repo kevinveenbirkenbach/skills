@@ -76,7 +76,8 @@ records the result.
   sends the chair what, where, for how long and its expected disk need, waits
   for the grant, and reports the release. The chair keeps one queue, answers
   every request with its position, enforces the limits the operator set,
-  checks every grant with `watch.py admit --need-gb <N>` (or `--kind <slot>`),
+  checks every grant with `watch.py admit --need-gb <N>` (or `--kind <slot>`;
+  test kinds also need CPU and RAM below the configured limits),
   and never cancels a running grant to free capacity.
 - Handover is explicit: the outgoing chair sends every peer the new holder,
   the queue and the running grants, and keeps allocating until the incoming

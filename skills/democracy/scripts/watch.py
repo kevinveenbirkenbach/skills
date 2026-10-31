@@ -26,7 +26,9 @@ never_block (regexes), cleanup (shell commands), worktree_cleanup (shell
 commands with {worktree}), worktrees_command (shell command printing the
 running stacks' worktree paths, one per line), worktree_marker (path relative
 to a worktree that must exist), cache_dirs, cache_budget_percent,
-slot_need_gb {kind: GB}, notify (argv the alert text is appended to).
+slot_need_gb {kind: GB}, notify (argv the alert text is appended to),
+load_limits {cpu_percent, mem_percent, sample_seconds, kinds}: admit for a
+kind listed in kinds also needs CPU busy and RAM used below the limits.
 """
 
 from __future__ import annotations
@@ -223,13 +225,49 @@ def cmd_block(cfg: dict) -> int:
     return 0
 
 
+def cpu_times() -> tuple[int, int]:
+    fields = [int(v) for v in Path("/proc/stat").read_text(encoding="utf-8").split("\n", 1)[0].split()[1:]]
+    return sum(fields), fields[3] + fields[4]
+
+
+def cpu_busy_percent(before: tuple[int, int], after: tuple[int, int]) -> float:
+    total = after[0] - before[0]
+    idle = after[1] - before[1]
+    return 100.0 * (total - idle) / total
+
+
+def mem_used_percent(meminfo: str) -> float:
+    values = {}
+    for line in meminfo.splitlines():
+        key, _, rest = line.partition(":")
+        if rest:
+            values[key] = int(rest.split()[0])
+    return 100.0 * (1 - values["MemAvailable"] / values["MemTotal"])
+
+
+def load(cfg: dict) -> tuple[float, float]:
+    before = cpu_times()
+    time.sleep(cfg["load_limits"]["sample_seconds"])
+    cpu = cpu_busy_percent(before, cpu_times())
+    return cpu, mem_used_percent(Path("/proc/meminfo").read_text(encoding="utf-8"))
+
+
 def cmd_admit(cfg: dict, args: argparse.Namespace) -> int:
     need = args.need_gb if args.need_gb is not None else cfg["slot_need_gb"][args.kind]
     free, _ = disk(cfg)
     left = free - need
     floor = cfg["thresholds_gb"]["stop"]
-    verdict = "grant" if left >= floor else "deny"
-    print(f"{verdict}: free {free:.1f} GB, need {need} GB, leaves {left:.1f} GB (floor {floor} GB)")
+    passed = [left >= floor]
+    report = [f"free {free:.1f} GB, need {need} GB, leaves {left:.1f} GB (floor {floor} GB)"]
+    limits = cfg["load_limits"]
+    if args.kind in limits["kinds"]:
+        cpu, mem = load(cfg)
+        passed += [cpu < limits["cpu_percent"], mem < limits["mem_percent"]]
+        report.append(
+            f"cpu {cpu:.0f} % (limit {limits['cpu_percent']}), ram {mem:.0f} % (limit {limits['mem_percent']})"
+        )
+    verdict = "grant" if all(passed) else "deny"
+    print(f"{verdict}: {'; '.join(report)}")
     return 0 if verdict == "grant" else 3
 
 

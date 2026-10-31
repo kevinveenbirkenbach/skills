@@ -34,6 +34,11 @@ class TestStage(unittest.TestCase):
         for free, stage in ((50, "ok"), (30, "warn"), (14, "stop"), (5, "critical")):
             self.assertEqual(self.watch.stage_for(free, [], self.cfg, now), stage)
 
+    def test_cpu_and_ram_percentages(self):
+        self.assertEqual(self.watch.cpu_busy_percent((100, 40), (200, 60)), 80.0)
+        meminfo = "MemTotal:       1000 kB\nMemFree:  100 kB\nMemAvailable:    250 kB\n"
+        self.assertEqual(self.watch.mem_used_percent(meminfo), 75.0)
+
     def test_fast_fall_escalates_one_stage(self):
         now = time.time()
         self.assertEqual(self.watch.stage_for(32, [[now - 600, 48]], self.cfg, now), "stop")
@@ -63,8 +68,9 @@ class TestWatchCommands(unittest.TestCase):
             "worktree_marker": "Makefile",
             "cache_dirs": [str(self.cache)],
             "cache_budget_percent": 3,
-            "slot_need_gb": {"swarm": 30},
+            "slot_need_gb": {"swarm": 30, "test": 0.001},
             "notify": ["true"],
+            "load_limits": {"cpu_percent": 101, "mem_percent": 101, "sample_seconds": 0.1, "kinds": ["test"]},
         }
         self._write_config()
 
@@ -103,6 +109,17 @@ class TestWatchCommands(unittest.TestCase):
         self._write_config()
         self.assertEqual(self._run("admit", "--need-gb", "0.001").returncode, 0)
         self.assertEqual(self._run("admit", "--need-gb", "1e9").returncode, 3)
+
+    def test_admit_for_a_load_kind_also_needs_cpu_and_ram_below_the_limits(self):
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self._write_config()
+        self.assertEqual(self._run("admit", "--kind", "test").returncode, 0)
+        self.cfg["load_limits"]["cpu_percent"] = 0
+        self._write_config()
+        denied = self._run("admit", "--kind", "test")
+        self.assertEqual(denied.returncode, 3)
+        self.assertIn("cpu", denied.stdout)
+        self.assertEqual(self._run("admit", "--need-gb", "0.001").returncode, 0)
 
     def test_warn_alert_reaches_each_session_once(self):
         self.cfg["thresholds_gb"] = {"warn": 1e9, "stop": -1, "critical": -2}
