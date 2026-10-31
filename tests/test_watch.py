@@ -105,6 +105,24 @@ class TestWatchCommands(unittest.TestCase):
         self._stage("warn")
         self.assertEqual(self._run("block", stdin=self._bash("make compose-deploy")).returncode, 0)
 
+    def test_block_ignores_heavy_words_inside_quotes_and_heredocs(self):
+        self.cfg["heavy_commands"] = [r"\bmake\s+(-C\s+\S+\s+)?(compose-deploy|test|swarm-\S+)(\s|$)"]
+        self._write_config()
+        self._stage("stop")
+        message = "$(cat <<'EOF'\nfix: run \"make test\" and make swarm-zombie\nEOF\n)"
+        for command in (
+            'git commit --no-verify -m "fix: passes the vars to make swarm-zombie app=x"',
+            "grep -n 'make test' Makefile",
+            f'git commit --no-verify -m "{message}"',
+        ):
+            self.assertEqual(self._run("block", stdin=self._bash(command)).returncode, 0, command)
+        for command in (
+            "make -C x swarm-zombie app=y",
+            "env FOO=1 make swarm-zombie",
+            'make compose-deploy apps="web-app-x"',
+        ):
+            self.assertEqual(self._run("block", stdin=self._bash(command)).returncode, 2, command)
+
     def test_admit_keeps_the_stop_floor(self):
         self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
         self._write_config()

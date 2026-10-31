@@ -208,9 +208,17 @@ def cmd_watch(cfg: dict) -> int:
     return 0
 
 
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2(?=\s|\)|$)", re.DOTALL)
+QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
+
+
+def executable_text(command: str) -> str:
+    return QUOTED.sub("''", HEREDOC.sub("", command))
+
+
 def cmd_block(cfg: dict) -> int:
     payload = json.load(sys.stdin)
-    command = (payload.get("tool_input") or {}).get("command", "")
+    command = executable_text((payload.get("tool_input") or {}).get("command", ""))
     stage = read_json(STATE).get("stage", "ok")
     if stage not in ("stop", "critical"):
         return 0
