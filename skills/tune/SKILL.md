@@ -22,8 +22,8 @@ suggestions, and allow free text:
 1. **What to examine.** Suggestions: CI wall-clock, deploy duration, gate and
    test runtime, image pulls and build caches, per-item loops and process
    spawns, idempotency (work repeated on a second run), network round trips,
-   resource use (CPU, memory, disk, I/O), and language or runtime choice for
-   hot paths.
+   and resource use (CPU, memory, disk, I/O). Language, framework and
+   recursion are checked on every run anyway (see Always check).
 2. **Which performance boundaries to keep.** Suggestions: time budgets per job,
    deploy or gate; resource caps (memory, CPU, disk headroom); a minimum saving
    per change (default 10 s per run); the measurement source that counts as
@@ -119,6 +119,23 @@ every agent session on this machine, not only the branch lineage.
 - **A claim ends** when its holder reports the result, a proposal or an
   abandoned attempt and releases it, or when the operator reassigns it.
 
+## Always check
+
+Every run examines these two on each measured hot path, whatever the operator
+picked in the first question, and lists the result in the output table, a
+clean result included:
+
+- **Language and framework**: whether the hot path's language and framework
+  are the most efficient fit for its work (see Language and framework).
+- **Unnecessary recursion**: a recursive function that recomputes the same
+  subproblem (memoize it or turn it into a loop), recursion that only walks a
+  list or a fixed depth (a loop), a tree walk that visits or reads the same
+  node more than once, depth that grows with the input (stack limits, Python's
+  1000 frames), and recursive tool calls: a make target calling make, a role
+  or playbook including itself, a script re-invoking itself per item. Count
+  the calls first (a profiler's call graph, cProfile's `ncalls`, log lines);
+  recursion that is bounded, rare and cheap stays.
+
 ## Levers that usually pay
 
 - **Batch per-item process spawns**: N calls that each boot an interpreter or
@@ -133,16 +150,22 @@ every agent session on this machine, not only the branch lineage.
 - **Overlap waits with work** only where concurrent execution is proven safe.
   Schema migrations and lock-holding steps are usually not.
 
-## Language and runtime
+## Language and framework
 
-Look for language optimizations where they make sense, for example replacing a
-Python hot path with Rust:
+Check the language and the framework of every measured hot path, for example
+replacing a Python hot path with Rust, or a heavy framework layer with a
+lighter one or the standard library:
 
 - **Only for measured CPU-bound work.** When the profile shows the time in
   computation inside the process (parsing, hashing, rendering, tight loops),
   a compiled language can win by an order of magnitude. When the time goes to
   process start-up, network round trips or waiting, batching in the current
   language wins first, and a rewrite changes nothing.
+- **Framework overhead**: when the profile puts the time inside the framework
+  (import and start-up, middleware, ORM query building, serialization),
+  compare a lighter framework or the standard library on the same input. An
+  ORM issuing one query per item is fixed by batching the query, not by
+  swapping the framework.
 - **Prefer the narrowest cut**: rewrite the hot function as an extension
   module (for Python and Rust: PyO3 and maturin) or a small binary behind the
   same interface, before rewriting a whole tool.
@@ -151,9 +174,9 @@ Python hot path with Rust:
   and test parity with the old implementation.
 - **Prove it on a prototype**: the same input, the same machine state, a before
   and an after number, and the old test suite passing against the new code.
-- A language change is applied only when the session's limits allow new
-  languages or toolchains; otherwise it is submitted as a proposal with the
-  prototype's numbers.
+- A language or framework change is applied only when the session's limits
+  allow new languages, frameworks or toolchains; otherwise it is submitted as
+  a proposal with the prototype's numbers.
 
 ## Delegating an optimization
 
