@@ -55,7 +55,8 @@ jobs' logs, and a first clustering. The judgement in those steps stays yours.
 5. **One funnel per cluster.** Hand every cluster you claimed in step 3 to the
    `funnel` skill: one agent per cluster, working in its own worktree on its own
    branch created from the exact current HEAD, with that cluster as its only
-   concern, the artifact paths of step 4 in its brief and a hard time cap.
+   concern, the artifact paths of step 4 in its brief and a time cap for its
+   interim report.
    Steps 6 to 8 run inside that sidetree, so no cluster's edits land under
    another cluster's work or under a running gate or deploy. Run clusters in
    parallel only when their fixes touch different files and the machine has

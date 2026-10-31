@@ -21,8 +21,9 @@ in a sidetree until it does, or leaves as a proposal.
 ## The stages
 
 1. **Brief.** One concern per agent. Name the goal, the exact base commit, the
-   scope that may change, the evidence expected back, a hard time cap (default
-   60 minutes) and what the agent must not do: no pushes, no gates or deploys
+   scope that may change, the evidence expected back, a time cap (default
+   60 minutes) at which it reports its interim state, and what the agent must
+   not do: no pushes, no gates or deploys
    unless the resource chair of the `democracy` skill granted them, read-only
    probes on shared live systems.
 2. **Sidetree.** The agent works in its own worktree on its own branch,
@@ -93,8 +94,9 @@ below the bar never enters the main line on its own.
 
 ## Rules
 
-- Stop an agent at its time cap and ask for its findings; an uncapped brief can
-  run for hours and deliver nothing.
+- At its time cap, ask an agent for its interim findings and let it run on;
+  never stop a running agent. A brief without a cap can run for hours without
+  a word.
 - Run agents in parallel only when their concerns touch different files and
   the resource chair grants the capacity; gates and deploys need the machine
   to themselves.

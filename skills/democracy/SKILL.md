@@ -77,8 +77,14 @@ records the result.
   for the grant, and reports the release. The chair keeps one queue, answers
   every request with its position, enforces the limits the operator set,
   checks every grant with `watch.py admit --need-gb <N>` (or `--kind <slot>`;
-  test kinds also need CPU and RAM below the configured limits),
-  and never cancels a running grant to free capacity.
+  test kinds also need CPU and RAM below the configured limits).
+- A running job (deploy, gate, test, swarm run, build) is never cut short to
+  free capacity. The chair neither asks nor orders its owner to stop, take
+  down or kill it, not for an operator-prioritised slot and not for a
+  projected disk stop. It grants nothing new, frees idle items through the
+  `cleanup` flow, asks the operator for an exception, or waits. An owner's
+  own disk guard only alerts the chair and takes nothing down; only the
+  operator can order a running job down.
 - Handover is explicit: the outgoing chair sends every peer the new holder,
   the queue and the running grants, and keeps allocating until the incoming
   chair confirms. Two allocators never run at once.
@@ -97,8 +103,9 @@ stays silent below the thresholds.
 - **Stop**: new heavy jobs are blocked in every session (teardown commands
   never), and the hook runs the configured low-risk cleanup by itself; it
   skips every worktree where a gate or deploy process still runs.
-- **Critical**: additionally a desktop alarm to the operator. A running stack
-  is torn down only with the operator's OK.
+- **Critical**: additionally a desktop alarm to the operator. Running jobs
+  and their stacks still keep running; only the operator can make an
+  exception.
 - A measured fall that would reach the critical threshold within the
   projection window raises the stage by one at once.
 - Caches together stay under their budget; the least recently used go first.

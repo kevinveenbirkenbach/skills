@@ -80,10 +80,12 @@ worktree or compose project name, a container label, an open handle, or
 `unknown`. Then apply, first match wins:
 
 1. Claimed by a peer: `keep`.
-2. Attributable to a peer that has not answered: `keep (no answer from
+2. A job running on it (deploy, gate, test, swarm run, build): `keep
+   (running)`.
+3. Attributable to a peer that has not answered: `keep (no answer from
    <peer>)`. Silence is not consent.
-3. Archive duty: `archive first`.
-4. Everything else is a candidate with a risk class:
+4. Archive duty: `archive first`.
+5. Everything else is a candidate with a risk class:
 
 | Risk | Meaning | Typical items |
 | ---- | ------- | ------------- |
@@ -145,7 +147,11 @@ ticked items. Revise repeats call 1; nothing is deleted before `Execute`.
   rest, then put the refused item to the operator again as its own option: an
   explicit renewed selection may pass; if it is refused again, hand over the
   exact command with its list file for the operator to run.
-- Running stacks go down through the project's teardown target, never by
+- Never stop, take down or kill a running job, and never ask its owner to, to
+  free space: not for a priority slot, not at a disk stop. Free idle items,
+  ask the operator for an exception, or wait; an owner's own disk guard only
+  alerts the chair, and only the operator can order a running job down.
+- Idle running stacks go down through the project's teardown target, never by
   removing their containers or volumes underneath them.
 - Archive-first items: copy out, verify the copy, then delete.
 - A delete failing on permissions (files owned by a container UID): use the

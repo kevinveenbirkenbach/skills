@@ -158,11 +158,11 @@ Python hot path with Rust:
 ## Delegating an optimization
 
 Hand every optimization to an agent through the `funnel` skill: one sidetree
-per candidate, branched from an exact commit, with a hard time cap and "measure
+per candidate, branched from an exact commit, with a time cap and "measure
 first, report the time split before implementing". The agent probes live
 systems read-only and never starts gates or deploys. A broad brief without a
-cap can run for hours and deliver nothing; stop an agent at its cap and collect
-its findings.
+cap can run for hours without a word; at its cap, collect the agent's interim
+findings and let it run on.
 
 Before merging, run independent skeptics through the `dialectic` skill. The
 antithesis must try to show that the candidate removes coverage, hides a
