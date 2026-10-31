@@ -89,21 +89,47 @@ class TestFindFix(unittest.TestCase):
         self._git("commit", "-q", "--allow-empty", "-m", "fix: probe on side")
         self._git("switch", "-q", "main")
 
-    def _git(self, *args: str) -> None:
-        subprocess.run(["git", *args], check=True, capture_output=True, env=self.env, cwd=self.repo)
+    def _git(self, *args: str) -> str:
+        return subprocess.run(
+            ["git", *args], check=True, capture_output=True, text=True, env=self.env, cwd=self.repo
+        ).stdout
 
-    def test_only_commits_outside_head_are_candidates(self):
+    def _find_fix(self, *args: str) -> list[str]:
         result = subprocess.run(
-            [sys.executable, str(FIND_FIX), "--grep", "probe"],
+            [sys.executable, str(FIND_FIX), *args],
             capture_output=True,
             text=True,
             check=True,
             env=self.env,
             cwd=self.repo,
         )
-        self.assertIn("hits=2 in_head=1 candidates=1", result.stdout)
-        self.assertIn("fix: probe on side", result.stdout)
-        self.assertNotIn("probe in head", result.stdout)
+        return result.stdout.splitlines()
+
+    def _commit_on_side(self, name: str, text: str, message: str) -> None:
+        self._git("switch", "-q", "side")
+        (self.repo / name).write_text(text)
+        self._git("add", name)
+        self._git("commit", "-q", "-m", message)
+        self._git("switch", "-q", "main")
+
+    def test_only_commits_outside_head_are_candidates(self):
+        lines = self._find_fix("--grep", "probe")
+        self.assertEqual(lines[0], "hits=2 in_head=1 candidates=1")
+        self.assertIn("fix: probe on side", "\n".join(lines))
+        self.assertNotIn("probe in head", "\n".join(lines))
+
+    def test_pickaxe_lists_what_git_log_all_finds_in_its_order(self):
+        for step in range(12):
+            self._commit_on_side("probe.txt", "needle\n" * (step % 3), f"step {step}")
+        expected = self._git("log", "--all", "--format=%h %s", "-Sneedle").splitlines()
+        lines = self._find_fix("-S", "needle")
+        self.assertEqual(lines[0], f"hits={len(expected)} in_head=0 candidates={len(expected)}")
+        self.assertEqual([line.split("\t")[0] for line in lines[1:]], expected)
+
+    def test_filters_are_alternatives_not_narrowing(self):
+        self._commit_on_side("other.txt", "x\n", "chore: unrelated")
+        lines = self._find_fix("--grep", "probe", "--path", "other.txt")
+        self.assertEqual(lines[0], "hits=3 in_head=1 candidates=2")
 
 
 if __name__ == "__main__":
