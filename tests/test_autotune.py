@@ -1,4 +1,4 @@
-"""Validate the autotune reminder hook and its settings registration."""
+"""Validate the kvb-skills-tune reminder hook and its settings registration."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL = REPO_ROOT / "skills" / "autotune" / "SKILL.md"
-HOOK = REPO_ROOT / "skills" / "autotune" / "hooks" / "reminder.sh"
+SKILL = REPO_ROOT / "skills" / "kvb-skills-tune" / "SKILL.md"
+HOOK = REPO_ROOT / "skills" / "kvb-skills-tune" / "hooks" / "reminder.sh"
 PATCHER = REPO_ROOT / "scripts" / "enable-plugins.js"
 
 
@@ -33,7 +33,7 @@ def _run_hook(stamp: Path, interval: str = "3600") -> subprocess.CompletedProces
 class TestAutotuneSkill(unittest.TestCase):
     def test_skill_is_trigger_only(self):
         text = SKILL.read_text(encoding="utf-8")
-        self.assertIn("name: autotune", text)
+        self.assertIn("name: kvb-skills-tune", text)
         self.assertIn("multiSelect: false", text)
 
 
@@ -51,7 +51,7 @@ class TestSkillPersistence(unittest.TestCase):
             self.assertIn(target, text)
 
     def test_autoskill_routes_to_the_same_persistence(self):
-        text = (REPO_ROOT / "skills" / "autoskill" / "SKILL.md").read_text(
+        text = (REPO_ROOT / "skills" / "kvb-skills-auto" / "SKILL.md").read_text(
             encoding="utf-8"
         )
         for target in ("Persistence", "~/.claude/skills/", "~/.agents/skills/"):
@@ -66,7 +66,7 @@ class TestAutotuneHook(unittest.TestCase):
 
     def test_first_run_hints_and_stamps(self):
         result = _run_hook(self.stamp)
-        self.assertIn("/autotune", result.stdout)
+        self.assertIn("/kvb-skills-tune", result.stdout)
         self.assertTrue(self.stamp.is_file())
 
     def test_second_run_is_silent_within_interval(self):
@@ -75,12 +75,12 @@ class TestAutotuneHook(unittest.TestCase):
 
     def test_hint_returns_after_the_interval(self):
         _run_hook(self.stamp)
-        self.assertIn("/autotune", _run_hook(self.stamp, interval="0").stdout)
+        self.assertIn("/kvb-skills-tune", _run_hook(self.stamp, interval="0").stdout)
 
     def test_corrupt_stamp_does_not_crash(self):
         self.stamp.parent.mkdir(parents=True, exist_ok=True)
         self.stamp.write_text("not-a-timestamp\n", encoding="utf-8")
-        self.assertIn("/autotune", _run_hook(self.stamp).stdout)
+        self.assertIn("/kvb-skills-tune", _run_hook(self.stamp).stdout)
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")
@@ -100,7 +100,7 @@ class TestSettingsRegistration(unittest.TestCase):
         self._patch()
         data = self._patch()
         entries = json.dumps(data["hooks"]["UserPromptSubmit"])
-        self.assertEqual(entries.count("autotune/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-skills-tune/hooks/reminder.sh"), 1)
 
     def test_existing_hooks_preserved(self):
         self.settings.write_text(

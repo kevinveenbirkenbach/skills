@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CI_FAILURES = REPO_ROOT / "skills" / "ci-artifacts" / "scripts" / "ci_failures.py"
-FIND_FIX = REPO_ROOT / "skills" / "merge-fix" / "scripts" / "find_fix.py"
+CI_FAILURES = REPO_ROOT / "skills" / "kvb-ci-artifacts" / "scripts" / "ci_failures.py"
+FIND_FIX = REPO_ROOT / "skills" / "kvb-git-merge-fix" / "scripts" / "find_fix.py"
 
 
 def _load(path: Path):
@@ -55,7 +55,7 @@ class TestCiFailures(unittest.TestCase):
             "Ran 41 tests in 1.0s\n"
             "OK\n"
             "UP017 [*] Use `datetime.UTC` alias\n"
-            "  --> skills/democracy/scripts/council.py:92:40\n"
+            "  --> skills/kvb-org-organize/scripts/council.py:92:40\n"
             "Found 1 error.\n"
             "make: *** [Makefile:15: test] Error 1\n"
             "##[error]Process completed with exit code 2.\n"

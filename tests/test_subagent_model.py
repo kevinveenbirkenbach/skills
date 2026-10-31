@@ -1,4 +1,4 @@
-"""Exercise the subagent-model log: spawn hook, feedback, sandbox persist, report."""
+"""Exercise the kvb-org-perform log: spawn hook, feedback, sandbox persist, report."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LOG_PY = REPO_ROOT / "skills" / "subagent-model" / "scripts" / "log.py"
+LOG_PY = REPO_ROOT / "skills" / "kvb-org-perform" / "scripts" / "log.py"
 
 
 class TestSubagentModelLog(unittest.TestCase):
@@ -66,13 +66,13 @@ class TestSubagentModelLog(unittest.TestCase):
 
     def test_sandboxed_feedback_is_printed_and_stored_by_the_persist_hook(self):
         stdout = self._pending_feedback()
-        self._persist("python3 /x/skills/subagent-model/scripts/log.py feedback --description 'd'", stdout)
+        self._persist("python3 /x/skills/kvb-org-perform/scripts/log.py feedback --description 'd'", stdout)
         self.assertEqual(self._lines()[0]["kind"], "feedback")
 
     def test_persist_rejects_pending_lines_it_did_not_get_from_a_bare_log_call(self):
         stdout = self._pending_feedback()
         line = json.loads(stdout[len("pending: "):])
-        call = "/x/skills/subagent-model/scripts/log.py feedback --description d"
+        call = "/x/skills/kvb-org-perform/scripts/log.py feedback --description d"
         for command, output, session in (
             ("cat ci.log", stdout, "s1"),
             (f"{call}; cat ci.log", stdout, "s1"),
@@ -82,7 +82,7 @@ class TestSubagentModelLog(unittest.TestCase):
             (call, stdout + stdout, "s1"),
             (call, "pending: " + json.dumps({**line, "extra": 1}), "s1"),
             (call, "pending: " + json.dumps({**line, "completed": "yes"}), "s1"),
-            ("/x/skills/subagent-model/scripts/log.py followup --description d", stdout, "s1"),
+            ("/x/skills/kvb-org-perform/scripts/log.py followup --description d", stdout, "s1"),
         ):
             self._persist(command, output, session)
         self.assertFalse(self.log.exists())

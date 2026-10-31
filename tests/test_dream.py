@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL = REPO_ROOT / "skills" / "dream" / "SKILL.md"
-HOOK = REPO_ROOT / "skills" / "dream" / "hooks" / "reminder.sh"
+SKILL = REPO_ROOT / "skills" / "kvb-skills-dream" / "SKILL.md"
+HOOK = REPO_ROOT / "skills" / "kvb-skills-dream" / "hooks" / "reminder.sh"
 PATCHER = REPO_ROOT / "scripts" / "enable-plugins.js"
 
 
@@ -38,7 +38,7 @@ def _run_hook(
 class TestDreamSkill(unittest.TestCase):
     def test_skill_is_trigger_only(self):
         text = SKILL.read_text(encoding="utf-8")
-        self.assertIn("name: dream", text)
+        self.assertIn("name: kvb-skills-dream", text)
         self.assertIn("multiSelect: false", text)
 
 
@@ -51,7 +51,7 @@ class TestDreamHook(unittest.TestCase):
 
     def test_first_run_hints_and_stamps(self):
         result = _run_hook(self.cwd, self.stamp)
-        self.assertIn("/dream", result.stdout)
+        self.assertIn("/kvb-skills-dream", result.stdout)
         self.assertTrue(self.stamp.is_file())
 
     def test_second_run_is_silent_within_interval(self):
@@ -60,12 +60,12 @@ class TestDreamHook(unittest.TestCase):
 
     def test_hint_returns_after_the_interval(self):
         _run_hook(self.cwd, self.stamp)
-        self.assertIn("/dream", _run_hook(self.cwd, self.stamp, interval="0").stdout)
+        self.assertIn("/kvb-skills-dream", _run_hook(self.cwd, self.stamp, interval="0").stdout)
 
     def test_corrupt_stamp_does_not_crash(self):
         self.stamp.parent.mkdir(parents=True, exist_ok=True)
         self.stamp.write_text("not-a-timestamp\n", encoding="utf-8")
-        self.assertIn("/dream", _run_hook(self.cwd, self.stamp).stdout)
+        self.assertIn("/kvb-skills-dream", _run_hook(self.cwd, self.stamp).stdout)
 
     def test_outside_a_repository_it_stays_silent(self):
         self.assertEqual(_run_hook(self.cwd).stdout, "")
@@ -78,7 +78,7 @@ class TestDreamHook(unittest.TestCase):
             subprocess.run(
                 ["git", "init", "-q", str(repo)], check=True, capture_output=True
             )
-            self.assertIn("/dream", _run_hook(repo).stdout)
+            self.assertIn("/kvb-skills-dream", _run_hook(repo).stdout)
             self.assertTrue((repo / ".git" / ".dream-stamp").is_file())
             self.assertEqual(_run_hook(repo).stdout, "")
 
@@ -103,7 +103,7 @@ class TestDreamHook(unittest.TestCase):
             subprocess.run(
                 ["git", *args], check=True, capture_output=True, env=env, cwd=str(repo)
             )
-        self.assertIn("/dream", _run_hook(repo).stdout)
+        self.assertIn("/kvb-skills-dream", _run_hook(repo).stdout)
         self.assertEqual(_run_hook(tree).stdout, "")
 
 
@@ -124,16 +124,59 @@ class TestSettingsRegistration(unittest.TestCase):
         self._patch()
         data = self._patch()
         entries = json.dumps(data["hooks"]["UserPromptSubmit"])
-        self.assertEqual(entries.count("dream/hooks/reminder.sh"), 1)
-        self.assertEqual(entries.count("autotune/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-skills-dream/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-skills-tune/hooks/reminder.sh"), 1)
         gate = json.dumps(data["hooks"]["PreToolUse"])
-        self.assertEqual(gate.count("democracy/scripts/council.py"), 1)
-        self.assertEqual(gate.count("democracy/scripts/watch.py"), 1)
-        self.assertEqual(entries.count("democracy/scripts/watch.py"), 1)
+        self.assertEqual(gate.count("kvb-org-organize/scripts/council.py"), 1)
+        self.assertEqual(gate.count("kvb-org-organize/scripts/watch.py"), 1)
+        self.assertEqual(entries.count("kvb-org-organize/scripts/watch.py"), 1)
         post = json.dumps(data["hooks"]["PostToolUse"])
-        self.assertEqual(post.count("democracy/scripts/watch.py"), 1)
-        self.assertEqual(gate.count("subagent-model/scripts/log.py"), 1)
-        self.assertEqual(post.count("subagent-model/scripts/log.py"), 1)
+        self.assertEqual(post.count("kvb-org-organize/scripts/watch.py"), 1)
+        self.assertEqual(gate.count("kvb-org-perform/scripts/log.py"), 1)
+        self.assertEqual(post.count("kvb-org-perform/scripts/log.py"), 1)
+
+    def test_hooks_of_renamed_skills_are_repointed(self):
+        base = Path(self.tmp.name) / "skills"
+
+        def hook(command):
+            return {"hooks": [{"type": "command", "command": command}]}
+
+        self.settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            hook(f'bash "{base}/autotune/hooks/reminder.sh"'),
+                            hook(f'bash "{base}/dream/hooks/reminder.sh"'),
+                            hook(f'python3 "{base}/democracy/scripts/watch.py" watch'),
+                            hook("echo keep"),
+                        ],
+                        "PreToolUse": [
+                            hook(f'python3 "{base}/democracy/scripts/council.py" gate'),
+                            hook(f'python3 "{base}/democracy/scripts/watch.py" block'),
+                            hook(f'python3 "{base}/subagent-model/scripts/log.py" spawn'),
+                        ],
+                        "PostToolUse": [
+                            hook(f'python3 "{base}/democracy/scripts/watch.py" watch'),
+                            hook(f'python3 "{base}/subagent-model/scripts/log.py" persist'),
+                        ],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        data = self._patch()
+        text = json.dumps(data["hooks"])
+        for old in ("/autotune/", "/dream/", "/democracy/", "/subagent-model/"):
+            self.assertNotIn(f"skills{old}", text)
+        self.assertIn("echo keep", text)
+        entries = json.dumps(data["hooks"]["UserPromptSubmit"])
+        self.assertEqual(entries.count("kvb-skills-dream/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-skills-tune/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-org-organize/scripts/watch.py"), 1)
+        gate = json.dumps(data["hooks"]["PreToolUse"])
+        self.assertEqual(gate.count("kvb-org-organize/scripts/council.py"), 1)
+        self.assertEqual(gate.count("kvb-org-perform/scripts/log.py"), 1)
 
 
 if __name__ == "__main__":

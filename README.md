@@ -7,9 +7,69 @@ Every skill is pinned in `skills-lock.json` for reproducible installs.
 First-party skills live under `skills/` and are layered on top of the locked ones at install time.
 Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline, and other agents.
 
+## Naming 🏷️
+
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skills`. Only `kvb-cleanup` and `kvb-help` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+
+## Organigram 🏛️
+
+Every first-party skill under its category.
+
+```mermaid
+flowchart LR
+  kvb((kvb))
+  kvb --> think[think]
+  kvb --> create[create]
+  kvb --> code[code]
+  kvb --> ci[ci]
+  kvb --> git[git]
+  kvb --> check[check]
+  kvb --> org[org]
+  kvb --> skills[skills]
+  kvb --> none[no category]
+  think --> think_listen[kvb-think-listen]
+  think --> think_explain[kvb-think-explain]
+  think --> think_dialectic[kvb-think-dialectic]
+  think --> think_criticize[kvb-think-criticize]
+  create --> create_plan[kvb-create-plan]
+  create --> create_feature[kvb-create-feature]
+  code --> code_scope_guard[kvb-code-scope-guard]
+  code --> code_no_defaults[kvb-code-no-defaults]
+  code --> code_no_comments[kvb-code-no-comments]
+  code --> code_refactor[kvb-code-refactor]
+  code --> code_test[kvb-code-test]
+  code --> code_tune[kvb-code-tune]
+  ci --> ci_triage[kvb-ci-triage]
+  ci --> ci_artifacts[kvb-ci-artifacts]
+  ci --> ci_observe[kvb-ci-observe]
+  git --> git_commit_next[kvb-git-commit-next]
+  git --> git_commit_no_verify[kvb-git-commit-no-verify]
+  git --> git_merge_fix[kvb-git-merge-fix]
+  git --> git_branch_gc[kvb-git-branch-gc]
+  git --> git_changelog[kvb-git-changelog]
+  check --> check_legal[kvb-check-legal]
+  check --> check_security[kvb-check-security]
+  check --> check_principles[kvb-check-principles]
+  check --> check_confidence[kvb-check-confidence]
+  check --> check_break_risk[kvb-check-break-risk]
+  org --> org_organize[kvb-org-organize]
+  org --> org_split[kvb-org-split]
+  org --> org_coordinate[kvb-org-coordinate]
+  org --> org_perform[kvb-org-perform]
+  org --> org_matrix[kvb-org-matrix]
+  org --> org_robot[kvb-org-robot]
+  skills --> skills_dream[kvb-skills-dream]
+  skills --> skills_tune[kvb-skills-tune]
+  skills --> skills_auto[kvb-skills-auto]
+  skills --> skills_essence[kvb-skills-essence]
+  skills --> skills_shortcuts[kvb-skills-shortcuts]
+  none --> cleanup[kvb-cleanup]
+  none --> help[kvb-help]
+```
+
 ## Skill map 🗺️
 
-How the first-party skills work together. A solid arrow means the skill invokes or relies on the other one; a dotted arrow means it fires automatically. Every skill that reports a result closes with the `confidence` block; those arrows are left out. The locked third-party skills (caveman, ponytail, archify) are not drawn.
+How the first-party skills work together. A solid arrow means the skill invokes or relies on the other one; a dotted arrow means it fires automatically. Every skill that reports a result closes with the `kvb-check-confidence` block; those arrows are left out. The locked third-party skills (caveman, ponytail, archify) are not drawn.
 
 ```mermaid
 flowchart LR
@@ -21,59 +81,61 @@ flowchart LR
     code_task([code task])
     spawn([subagent spawn])
   end
-  subgraph commit [Commit]
-    commit_next[commit-next]
-    commit_no_verify[commit-no-verify]
-    comments_clean[comments-clean]
-    advocate[advocate]
-    confidence[confidence]
-    break_risk[break-risk]
-    explain[explain]
+  subgraph cat_think [think]
+    active_listening[kvb-think-listen]
+    explain[kvb-think-explain]
+    dialectic[kvb-think-dialectic]
+    criticize[kvb-think-criticize]
   end
-  subgraph coordination [Coordination]
-    democracy[democracy]
-    coordinate[coordinate]
-    funnel[funnel]
-    cleanup[cleanup]
-    branch_gc[branch-gc]
-    subagent_model[subagent-model]
+  subgraph cat_create [create]
+    plan[kvb-create-plan]
+    auto_feature[kvb-create-feature]
   end
-  subgraph ci [CI]
-    observe[observe]
-    triage[triage]
-    ci_artifacts[ci-artifacts]
-    tune[tune]
-    merge_fix[merge-fix]
+  subgraph cat_code [code]
+    scope_guard[kvb-code-scope-guard]
+    no_defaults[kvb-code-no-defaults]
+    refactor[kvb-code-refactor]
+    test[kvb-code-test]
+    tune[kvb-code-tune]
+    comments_clean[kvb-code-no-comments]
   end
-  subgraph reasoning [Reasoning]
-    active_listening[active-listening]
-    dialectic[dialectic]
-    criticize[criticize]
-    sceptic[sceptic]
-    auto_feature[auto-feature]
+  subgraph cat_ci [ci]
+    triage[kvb-ci-triage]
+    ci_artifacts[kvb-ci-artifacts]
+    observe[kvb-ci-observe]
   end
-  subgraph autonomy [Autonomy]
-    plan[plan]
-    robot[robot]
+  subgraph cat_git [git]
+    commit_next[kvb-git-commit-next]
+    commit_no_verify[kvb-git-commit-no-verify]
+    merge_fix[kvb-git-merge-fix]
+    branch_gc[kvb-git-branch-gc]
+    changelog[kvb-git-changelog]
   end
-  subgraph self_improvement [Self-improvement]
-    dream[dream]
-    autotune[autotune]
-    autoskill[autoskill]
-    essence[essence]
-    shortcuts[shortcuts]
+  subgraph cat_check [check]
+    advocate[kvb-check-legal]
+    medusa[kvb-check-security]
+    sceptic[kvb-check-principles]
+    confidence[kvb-check-confidence]
+    break_risk[kvb-check-break-risk]
   end
-  subgraph quality [Quality]
-    test[test]
-    refactor[refactor]
-    no_defaults[no-defaults]
-    scope_guard[scope-guard]
+  subgraph cat_org [org]
+    democracy[kvb-org-organize]
+    funnel[kvb-org-split]
+    coordinate[kvb-org-coordinate]
+    subagent_model[kvb-org-perform]
+    status_matrix[kvb-org-matrix]
+    robot[kvb-org-robot]
   end
-  subgraph standalone [Standalone]
-    changelog[changelog]
-    help_skills[help-skills]
-    status_matrix[status-matrix]
-    medusa[medusa]
+  subgraph cat_skills [skills]
+    dream[kvb-skills-dream]
+    autotune[kvb-skills-tune]
+    autoskill[kvb-skills-auto]
+    essence[kvb-skills-essence]
+    shortcuts[kvb-skills-shortcuts]
+  end
+  subgraph cat_none [no category]
+    cleanup[kvb-cleanup]
+    help_skills[kvb-help]
   end
 
   commit_req -.-> commit_next
@@ -163,7 +225,7 @@ Copy the skills into a specific project (`<repo>/.agents/skills` and `<repo>/.cl
 make project TARGET=/path/to/repo
 ```
 
-Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `autotune` points you at `/autotune` at most once an hour, `dream` points you at `/dream` at most once every twelve hours per repository (stamped in that repository's git dir). A PreToolUse gate from the `democracy` skill blocks edits to files in a git worktree until the session holds a claim (`skills/democracy/scripts/council.py`), and its resource watch (`skills/democracy/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Two hooks of the `subagent-model` skill (`skills/subagent-model/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
+Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `kvb-skills-tune` points you at `/kvb-skills-tune` at most once an hour, `kvb-skills-dream` points you at `/kvb-skills-dream` at most once every twelve hours per repository (stamped in that repository's git dir). A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
 
 Restart your agent afterwards so it loads the new skills.
 

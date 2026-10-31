@@ -1,4 +1,4 @@
-"""Exercise the democracy council script: election, staleness, release, gate."""
+"""Exercise the kvb-org-organize council script: election, staleness, release, gate."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-COUNCIL = REPO_ROOT / "skills" / "democracy" / "scripts" / "council.py"
+COUNCIL = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "council.py"
 
 
 class TestCouncil(unittest.TestCase):

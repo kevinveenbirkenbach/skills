@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Enable the caveman and ponytail plugins in a Claude Code settings.json so
-// their SessionStart hooks auto-activate both modes, register the autotune
-// and dream reminder hooks, the democracy claim gate, the resource watch and the subagent-model log. Merges non-destructively: existing marketplaces,
-// plugins and hooks are preserved, unparseable files are left untouched.
+// their SessionStart hooks auto-activate both modes, register the kvb-skills-tune
+// and kvb-skills-dream reminder hooks, the kvb-org-organize claim gate, the resource watch and the kvb-org-perform log. Merges non-destructively: existing marketplaces,
+// plugins and hooks are preserved, hooks of renamed skills are repointed, unparseable files are left untouched.
 "use strict";
 
 const fs = require("fs");
@@ -19,7 +19,14 @@ const MARKETPLACES = {
   ponytail: { source: { source: "github", repo: "DietrichGebert/ponytail" } },
 };
 const PLUGINS = { "caveman@caveman": true, "ponytail@ponytail": true };
-const REMINDERS = ["autotune", "dream"];
+const REMINDERS = ["kvb-skills-tune", "kvb-skills-dream"];
+const RENAMED = {
+  "autotune/hooks/reminder.sh": "kvb-skills-tune/hooks/reminder.sh",
+  "dream/hooks/reminder.sh": "kvb-skills-dream/hooks/reminder.sh",
+  "democracy/scripts/council.py": "kvb-org-organize/scripts/council.py",
+  "democracy/scripts/watch.py": "kvb-org-organize/scripts/watch.py",
+  "subagent-model/scripts/log.py": "kvb-org-perform/scripts/log.py",
+};
 
 let data = {};
 if (fs.existsSync(settingsPath)) {
@@ -41,6 +48,17 @@ for (const [name, entry] of Object.entries(MARKETPLACES)) {
 data.enabledPlugins = Object.assign(data.enabledPlugins || {}, PLUGINS);
 
 data.hooks = data.hooks || {};
+for (const entries of Object.values(data.hooks)) {
+  if (!Array.isArray(entries)) continue;
+  for (const entry of entries) {
+    for (const hook of entry.hooks || []) {
+      if (typeof hook.command !== "string") continue;
+      for (const [from, to] of Object.entries(RENAMED)) {
+        hook.command = hook.command.replace(`/skills/${from}`, `/skills/${to}`);
+      }
+    }
+  }
+}
 data.hooks.UserPromptSubmit = data.hooks.UserPromptSubmit || [];
 const alreadyRegistered = JSON.stringify(data.hooks.UserPromptSubmit);
 for (const skill of REMINDERS) {
@@ -52,8 +70,8 @@ for (const skill of REMINDERS) {
 }
 
 data.hooks.PreToolUse = data.hooks.PreToolUse || [];
-if (!JSON.stringify(data.hooks.PreToolUse).includes("democracy/scripts/council.py")) {
-  const council = path.join(path.dirname(settingsPath), "skills", "democracy", "scripts", "council.py");
+if (!JSON.stringify(data.hooks.PreToolUse).includes("kvb-org-organize/scripts/council.py")) {
+  const council = path.join(path.dirname(settingsPath), "skills", "kvb-org-organize", "scripts", "council.py");
   data.hooks.PreToolUse.push({
     matcher: "Edit|Write|MultiEdit|NotebookEdit",
     hooks: [{ type: "command", command: `python3 ${JSON.stringify(council)} gate` }],
@@ -61,11 +79,11 @@ if (!JSON.stringify(data.hooks.PreToolUse).includes("democracy/scripts/council.p
 }
 
 const SCRIPT_HOOKS = [
-  ["democracy/scripts/watch.py", "UserPromptSubmit", null, "watch"],
-  ["democracy/scripts/watch.py", "PostToolUse", "Bash", "watch"],
-  ["democracy/scripts/watch.py", "PreToolUse", "Bash", "block"],
-  ["subagent-model/scripts/log.py", "PreToolUse", "Agent|Task", "spawn"],
-  ["subagent-model/scripts/log.py", "PostToolUse", "Bash", "persist"],
+  ["kvb-org-organize/scripts/watch.py", "UserPromptSubmit", null, "watch"],
+  ["kvb-org-organize/scripts/watch.py", "PostToolUse", "Bash", "watch"],
+  ["kvb-org-organize/scripts/watch.py", "PreToolUse", "Bash", "block"],
+  ["kvb-org-perform/scripts/log.py", "PreToolUse", "Agent|Task", "spawn"],
+  ["kvb-org-perform/scripts/log.py", "PostToolUse", "Bash", "persist"],
 ];
 for (const [script, event, matcher, sub] of SCRIPT_HOOKS) {
   data.hooks[event] = data.hooks[event] || [];
@@ -79,4 +97,4 @@ for (const [script, event, matcher, sub] of SCRIPT_HOOKS) {
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled caveman + ponytail plugins, the ${REMINDERS.join(" + ")} reminders, the democracy claim gate, the resource watch and the subagent-model log in ${settingsPath}`);
+console.log(`skills: enabled caveman + ponytail plugins, the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, the resource watch and the kvb-org-perform log in ${settingsPath}`);

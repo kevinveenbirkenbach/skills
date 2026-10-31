@@ -1,4 +1,4 @@
-"""Exercise the democracy resource watch: stages, projection, block, admit, alerts, caches."""
+"""Exercise the kvb-org-organize resource watch: stages, projection, block, admit, alerts, caches."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WATCH = REPO_ROOT / "skills" / "democracy" / "scripts" / "watch.py"
+WATCH = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "watch.py"
 LIMITS = {"warn": 40, "stop": 15, "critical": 12}
 
 

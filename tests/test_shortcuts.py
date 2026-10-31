@@ -1,4 +1,4 @@
-"""Validate the shortcuts skill table: rows present, sorted, ``soc``-prefixed,
+"""Validate the kvb-skills-shortcuts skill table: rows present, sorted, ``soc``-prefixed,
 no two adjacent consonants."""
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL = REPO_ROOT / "skills" / "shortcuts" / "SKILL.md"
+SKILL = REPO_ROOT / "skills" / "kvb-skills-shortcuts" / "SKILL.md"
 
 ROW_RE = re.compile(r"^\|\s*`(?P<shortcut>[^`]+)`\s*\|")
 VOWELS = frozenset("aeiou")
@@ -37,7 +37,7 @@ class TestShortcuts(unittest.TestCase):
         ]
 
     def test_shortcuts_present(self):
-        self.assertTrue(self.shortcuts, "no shortcut rows found in shortcuts skill")
+        self.assertTrue(self.shortcuts, "no shortcut rows found in kvb-skills-shortcuts skill")
 
     def test_shortcuts_sorted_ascending(self):
         self.assertEqual(
