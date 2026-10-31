@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.2.0] - 2026-10-31
+
+Added:
+
+- Git: *branch-gc* clears merged branches and worktrees with *pkgmgr*
+- Agents: *subagent-model* uses a cheaper model only at 90 % same result
+- Agents: *subagent-model* hooks log every spawn and its rated quality
+
+Changed:
+
+- Coordination: never cut a running job or agent short, not even at its cap
+- Resources: *watch.py admit* grants test slots only below CPU and RAM limits
+- Coordination: a relayer writes an operator rule to shared memory first
+
+Fixed:
+
+- Resources: stop-stage cleanup now skips worktrees where *make* still runs
+- Resources: the block hook ignores heavy commands in quotes and heredocs
+- Update: *make update* now updates every locked source, not just the first
+- Update: *make update* installs for Claude Code only
+- CI: *ci-artifacts* signs lint failures by finding, ignores later steps
+- Release: *changelog* warns when a workflow on HEAD already failed
+- CI: ruff pinned in *pyproject.toml*; local and CI lint now agree
+
+Upgrade notes:
+
+- 0.1.0 was never published (its CI failed); its upgrade notes follow
+- Install: restart the agent after *make install* to load skills and hooks
+- Resources: *watch.py* needs *~/.config/agents-council/config.json*
+- Resources: add *busy_processes* and *load_limits* to that config
+
 ## [0.1.0] - 2026-10-30
 
 Added:
