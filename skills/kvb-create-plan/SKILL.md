@@ -30,9 +30,11 @@ verified, and an unverifiable plan cannot be handed to a robot.
    trade-off the plan rests on gets settled before execution, escalating to the
    `kvb-think-dialectic` skill where being wrong is expensive. The robot does not ask, so
    an unresolved decision becomes a guess at runtime.
-6. **Record the plan as a todo list.** Write the sub-objectives into the
-   harness's own todo tracking, one entry per item, phrased as the outcome. Keep
-   a plan file only when the operator asks for one.
+6. **Record the plan in the register.** Enter the objective in the
+   `kvb-org-rasci` register with each sub-objective's verification as a key
+   result, and mirror the sub-objectives into the harness's own todo tracking,
+   one entry per item, phrased as the outcome. Keep a plan file only when the
+   operator asks for one.
 7. **Present it and wait.** Show the objective, the ordered sub-objectives with
    their verifications, what is deliberately out of scope, and the assumptions
    the plan rests on. Stop here: the plan is the deliverable of this step.

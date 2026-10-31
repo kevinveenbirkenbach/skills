@@ -7,5 +7,6 @@ description: >
 ---
 
 Run the `kvb-org-organize` skill's **Lineage** and **Peer protocol** sections for the
-failure or fix at hand. They hold the whole procedure; this skill only keeps
-`/kvb-org-coordinate` working.
+failure or fix at hand. They hold the whole procedure, including the entries
+in the `kvb-org-rasci` register; this skill only keeps `/kvb-org-coordinate`
+working.

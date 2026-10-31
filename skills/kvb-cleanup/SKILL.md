@@ -1,7 +1,7 @@
 ---
 name: kvb-cleanup
 description: >
-  Free disk space agents filled: ask peer sessions what they still need,
+  Free disk space agents filled: ask peers what they still need,
   inventory /tmp, Docker and agent dirs, and delete only what the operator
   picks. Trigger on /kvb-cleanup, "aufräumen", "bereinigen", "platte voll", "no
   space left on device".
@@ -60,6 +60,9 @@ Read-only, in parallel, sizes included:
   gh, buildx), worktrees with `git status --short` and whether their branch is
   merged or pushed, Ansible and build temp dirs. With `pkgmgr` installed,
   merged branches and worktrees go to the `kvb-git-branch-gc` skill instead.
+- **Register**: `rasci.py artifacts` of the `kvb-org-artefacts` skill:
+  workdir, branch and artifacts of every task in the `kvb-org-rasci` register,
+  with its status and worker; `--ended` narrows it to the candidates.
 - **Live use**: open handles (`fuser`, `lsof`) and running processes by name
   only (`ps -o pid,etime,comm`). Never print full command lines or
   environments: process arguments carry credentials. A sandboxed agent often
@@ -81,12 +84,15 @@ worktree or compose project name, a container label, an open handle, or
 `unknown`. Then apply, first match wins:
 
 1. Claimed by a peer: `keep`.
-2. A job running on it (deploy, gate, test, swarm run, build): `keep
+2. Listed in the register under a task that is not `done`, `stopped` or `stale`:
+   `keep (task <task>)`. Under an ended task it is a candidate whose owner is
+   the task's worker.
+3. A job running on it (deploy, gate, test, swarm run, build): `keep
    (running)`.
-3. Attributable to a peer that has not answered: `keep (no answer from
+4. Attributable to a peer that has not answered: `keep (no answer from
    <peer>)`. Silence is not consent.
-4. Archive duty: `archive first`.
-5. Everything else is a candidate with a risk class:
+5. Archive duty: `archive first`.
+6. Everything else is a candidate with a risk class:
 
 | Risk | Meaning | Typical items |
 | ---- | ------- | ------------- |
@@ -157,6 +163,8 @@ ticked items. Revise repeats call 1; nothing is deleted before `Execute`.
 - Idle running stacks go down through the project's teardown target, never by
   removing their containers or volumes underneath them.
 - Archive-first items: copy out, verify the copy, then delete.
+- Drop every deleted item from its task as the `kvb-org-artefacts` skill
+  says (`set <task> --drop-artifact <kind>:<ref>`), so `artifacts` stays true.
 - A delete failing on permissions (files owned by a container UID): use the
   project's container helper. Never sudo, never bypass the sandbox; without a
   helper, report the path.

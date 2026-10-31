@@ -40,7 +40,9 @@ jobs' logs, and a first clustering. The judgement in those steps stays yours.
 3. **Coordinate every cluster.** Run the `kvb-org-organize` skill's Lineage and Peer
    protocol for each cluster before fixing it: claim it, ask the lineage
    whether someone already fixes it, and take their fix or keep yours. Keep
-   investigating while you wait for answers.
+   investigating while you wait for answers. In the `kvb-org-rasci` register
+   the cluster's objective is the root cause fixed, its key results are the
+   failing jobs passing again, one per job.
 4. **Download artifacts per cluster.** Use the `kvb-ci-artifacts` skill for the
    mechanics — it covers per-job logs while a run is still in progress, which
    bundle to pull, and the grep hygiene that keeps a false positive from

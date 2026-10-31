@@ -31,6 +31,8 @@ Fable 5.1 $10 / $50.
 2. Start the brief with the line `task-class: <class>`; the spawn hook logs
    it together with `model`, `effort` and the Agent `description`.
 3. Set `model` and `effort` from the row; for `judgement` set neither.
+4. Enter the spawn in the `kvb-org-rasci` register: the subagent as R and as
+   `--worker "subagent <type> (<model>, <effort>)"` of the task it serves.
 
 - An agent type whose definition sets its own model (Explore, Plan, the
   cavecrew agents) keeps it; never pass `model` or `effort` for it.

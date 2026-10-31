@@ -1,10 +1,10 @@
 ---
 name: kvb-check-principles
 description: >
-  Analyse a repository, path or diff with a hostile eye for violated
-  principles: SPOT, DRY, KISS, SRP, security at trust boundaries. Trigger on
-  /kvb-check-principles, "sei skeptisch", "kritische analyse", "review the architecture",
-  or "what is wrong with the code".
+  Analyse a repository, path or diff for violated principles: SPOT, DRY, KISS,
+  SRP, security at trust boundaries. Trigger on /kvb-check-principles, "sei
+  skeptisch", "kritische analyse", "review the architecture", or "what is
+  wrong with the code".
 ---
 
 The stance is adversarial: the code is guilty until its structure proves

@@ -15,7 +15,7 @@ decides what to act on after reading the matrix.
 Gather in parallel, skip any source the session does not have, and never invent
 a row for a source you could not read:
 
-1. **Tasks** — the session's todo list, the operator's stated goals this
+1. **Tasks** — the `kvb-org-rasci` register first, then the session's todo list, the operator's stated goals this
    session, and any requirement or plan documents the work follows.
 2. **Working tree** — `git status --short` and `git log --oneline -10`:
    uncommitted files are open work, commits since the branch point are closed

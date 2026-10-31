@@ -57,6 +57,8 @@ flowchart LR
   org --> org_coordinate[kvb-org-coordinate]
   org --> org_perform[kvb-org-perform]
   org --> org_matrix[kvb-org-matrix]
+  org --> org_rasci[kvb-org-rasci]
+  org --> org_artefacts[kvb-org-artefacts]
   org --> org_robot[kvb-org-robot]
   skills --> skills_dream[kvb-skills-dream]
   skills --> skills_tune[kvb-skills-tune]
@@ -124,6 +126,8 @@ flowchart LR
     coordinate[kvb-org-coordinate]
     subagent_model[kvb-org-perform]
     status_matrix[kvb-org-matrix]
+    rasci[kvb-org-rasci]
+    artefacts[kvb-org-artefacts]
     robot[kvb-org-robot]
   end
   subgraph cat_skills [skills]
@@ -167,6 +171,12 @@ flowchart LR
   funnel --> subagent_model
   dialectic --> subagent_model
   democracy --> merge_fix
+  democracy -. claim and release .-> rasci
+  funnel --> rasci
+  status_matrix --> rasci
+  cleanup --> artefacts
+  artefacts --> rasci
+  dream --> rasci
 
   observe --> triage
   observe --> ci_artifacts

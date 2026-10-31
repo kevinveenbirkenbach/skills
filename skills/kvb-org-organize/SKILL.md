@@ -53,8 +53,10 @@ directory with `--session <id>`.
    worktree>"`. Exit 0: elected, or already yours. Exit 3: a live agent holds
    it, and its claim is printed. Exit 4: the holder's session is dead (see
    Succession).
-4. **Elected**: continue with the Peer protocol; its message is the
-   announcement.
+4. **Elected**: the claim entered the task in the `kvb-org-rasci` register,
+   the organisation's single point of truth; complete it there (objective,
+   description, priority, roles), then continue with the Peer protocol; its
+   message is the announcement.
 5. **Not elected**: send the holder your findings and stop on that work.
 
 A Claude Code session cannot edit a file in a git worktree before it holds a
@@ -74,8 +76,9 @@ records the result.
 - Before starting anything that consumes shared capacity (gates, deploys,
   iteration loops, swarm or cloud resources, cleanup of shared data), an agent
   sends the chair what, where, for how long and its expected disk need, waits
-  for the grant, and reports the release. The chair keeps one queue, answers
-  every request with its position, enforces the limits the operator set,
+  for the grant, and reports the release. The chair keeps one queue as the
+  priorities in the `kvb-org-rasci` register, answers every request with its
+  position, enforces the limits the operator set,
   checks every grant with `watch.py admit --need-gb <N>` (or `--kind <slot>`;
   test kinds also need CPU and RAM below the configured limits).
 - A running job (deploy, gate, test, swarm run, build) is never cut short to
@@ -154,14 +157,18 @@ The one protocol for every exchange between agents; `kvb-org-coordinate`, `kvb-c
    evidence (failing line quoted literally, run id, measurement), the
    suspected cause marked as a thesis, and the question "Already known or
    fixed on your side? Reply with a SHA or branch, or 'none'." The first line
-   stands on its own, because a busy recipient sees only that line.
+   stands on its own, because a busy recipient sees only that line. In the
+   `kvb-org-rasci` register the peers asked are C, the chair that grants
+   capacity is S.
 4. **Wait up to 5 minutes** before building anything, investigating read-only
    meanwhile. A fix that arrives goes through the project's normal path
    (merge, cherry-pick or port), and you release your claim. Silence is
    neither a "no" nor a competing claim: after 5 minutes, proceed.
 5. **Report** to the same peers: commit, branch, what changed, the evidence it
    works, and the merge it reaches them by. Report an abandoned or failed
-   attempt too. Then release the claim.
+   attempt too. In the register, enter the peers told as I and mark every key
+   result the evidence proves as met. Then release the claim: the task ends
+   `done`, or `stopped` while a key result is open.
 
 - Never invent a peer's answer.
 - A peer's report is not evidence: read the SHA, log or artifact it names
@@ -199,3 +206,6 @@ On /kvb-org-organize, one table of the current offices from `council.py list`, s
 claims marked:
 
 | Office | Holder | Since | Work | Grants or queue |
+
+Who carries which task, with priority and status, is the `kvb-org-rasci`
+register's `show`.

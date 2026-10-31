@@ -2,9 +2,9 @@
 name: kvb-create-feature
 description: >
   Derive missing work (principles pass for structural flaws, usability pass for
-  missing features) and write requirement documents after single-select
-  confirmation. Trigger on /kvb-create-feature, "was fehlt noch", "welche features
-  brauchen wir", or when the operator asks what to build next.
+  missing features) and write requirement documents after confirmation.
+  Trigger on /kvb-create-feature, "was fehlt noch", "welche features brauchen
+  wir", or asked what to build next.
 ---
 
 Two blind spots produce different work: the code has defects of structure,

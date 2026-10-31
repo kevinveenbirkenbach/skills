@@ -21,7 +21,8 @@ in a sidetree until it does, or leaves as a proposal.
 ## The stages
 
 1. **Brief.** One concern per agent, on the model the `kvb-org-perform` skill
-   picks. Name the goal, the exact base commit, the
+   picks, entered in the `kvb-org-rasci` register as R with `--worker "subagent
+   <type> (<model>)"`. Name the goal, the exact base commit, the
    scope that may change, the evidence expected back, a time cap (default
    60 minutes) at which it reports its interim state, and what the agent must
    not do: no pushes, no gates or deploys
@@ -35,7 +36,9 @@ in a sidetree until it does, or leaves as a proposal.
    behaviour, and makes a negative control: the test fails without the change.
    Numbers come from the same source before and after.
 4. **Self-assessment.** The agent reports fix confidence and break risk with
-   their residuals and commits on its branch.
+   their residuals and commits on its branch. Its parent marks the key results
+   that evidence proves as met in the `kvb-org-rasci` register and records
+   the branch and worktree as `--branch` and `--artifact worktree:<path>`.
 5. **Independent review.** Before anything is merged, run the `kvb-think-dialectic` skill
    with skeptics who did not write the change. A hole they find returns the
    change to stage 3.
@@ -67,7 +70,8 @@ and verify each step instead of assuming it:
    only once every one of its commits is reachable from a pushed branch.
 6. **Release what it held**: slots (reported to the resource chair), port or
    subnet reservations, locks, its `kvb-org-organize` claims and every claim
-   announced to other agents.
+   announced to other agents. Drop each removed item from the register with
+   `--drop-artifact` and set the subagent's task `done` or `stopped`.
 7. **Remove its temporary files**: logs, message files and scratch data that
    have served their purpose. Keep only the evidence the report cites, until
    the report is delivered.

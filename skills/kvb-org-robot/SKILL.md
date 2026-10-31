@@ -28,6 +28,10 @@ Operate as an autonomous robot: given a goal, reach it without hand-holding.
 - **Verify, do not assume.** Reaching the goal means proving it: run it, read the
   output, confirm the end state. Never report success on a step you did not
   actually verify.
+- **Run it over the register.** Before the first step, enter the goal in the
+  `kvb-org-rasci` register as the task's objective and every check that proves
+  it as a key result; mark each one met as its proof comes in. The run is
+  finished when the task can be set `done`.
 
 ## Rules
 

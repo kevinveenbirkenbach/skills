@@ -2,8 +2,8 @@
 name: kvb-code-tune
 description: >
   Find and apply performance optimizations (CI, deploy, build, gate, hot
-  paths) without reducing logic, coverage or correctness. Trigger on /kvb-code-tune,
-  when a job dies on its time budget, when a pipeline or deploy grows slower,
+  paths) without reducing logic, coverage or correctness. Trigger on
+  /kvb-code-tune, a job dying on its time budget, a slower pipeline or deploy,
   or asked where time goes.
 ---
 
@@ -113,7 +113,9 @@ every agent session on this machine, not only the branch lineage.
 - **The first to identify a cluster works it.** "First" is the `kvb-org-organize`
   claim `cluster/<slug>`, whose `--work` names the cluster's log line and
   number; between machines, the earliest announcement by message time. A
-  claim without a measurement does not count.
+  claim without a measurement does not count. In the `kvb-org-rasci` register
+  the cluster's key result is the measured target (`<step> from <before> to
+  under <after>`), met only by the re-measurement.
 - **Someone was earlier:** send them your measurements and findings, then move
   on to the next cluster. Never build a second optimization of the same
   cluster.

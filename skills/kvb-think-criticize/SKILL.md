@@ -2,9 +2,9 @@
 name: kvb-think-criticize
 description: >
   Give constructive criticism of a problem, plan, design, decision, text or
-  code from diverse aspects, each point hardened by dialectic. Trigger on
-  /kvb-think-criticize, "kritisiere", "kritisch betrachten", "konstruktive Kritik", "was
-  haeltst du davon", or requests for honest feedback.
+  code, each point hardened by dialectic. Trigger on /kvb-think-criticize,
+  "kritisiere", "kritisch betrachten", "konstruktive Kritik", "was haeltst du
+  davon", or requests for honest feedback.
 ---
 
 The stance is critical but constructive: the goal is a better result, not a

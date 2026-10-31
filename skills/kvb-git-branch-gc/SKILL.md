@@ -81,6 +81,10 @@ Then ask with `AskUserQuestion`:
    (still in use elsewhere), or `failed: <why>`.
    Report a failure as it stands; never remove by hand what gc skipped or
    refused.
+4. For every `done` item, drop its worktree and branch from the task that
+   lists them in the `kvb-org-rasci` register (`rasci.py artifacts` names
+   it): `set <task> --drop-artifact worktree:<path>`, and `--branch ''` where
+   the branch is gone.
 
 ## Step 5: unmerged and dirty
 

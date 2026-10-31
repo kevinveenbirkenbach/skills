@@ -3,8 +3,8 @@ name: kvb-skills-dream
 description: >
   Consolidate the last 24 hours of work in this repository: what held, what
   broke, which hypotheses follow, into memory and improvement proposals.
-  Trigger on /kvb-skills-dream or when the operator asks to reflect on or learn from
-  recent work.
+  Trigger on /kvb-skills-dream or a request to reflect on or learn from recent
+  work.
 ---
 
 Sleep on the work: replay what happened in this repository, separate what held
@@ -48,6 +48,9 @@ Gather the window's actual record, not your recollection of it:
   logs of the red ones — the failing log line, not the job title.
 - **Reviews**: pull requests and issues touched in the window, and the review
   comments on them.
+- **Register**: the `kvb-org-rasci` register: `rasci.py tools` ranks the
+  scripts and tools the window's tasks ran, the refactoring candidates;
+  `get <task>` shows a task's objective, roles, workdir and artifacts.
 - **Memory**: this project's memory directory and its `MEMORY.md` index — the
   findings already recorded, so the dream extends them instead of repeating them.
 - **Instructions**: `CLAUDE.md`, `AGENTS.md`, and the project's own skills, to

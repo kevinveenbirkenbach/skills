@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import importlib.util
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -28,6 +30,7 @@ ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 HEARTBEAT_LIMIT = 3600
 OFFICE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$")
 CLAIM = "claim.json"
+RASCI = Path(__file__).resolve().parents[2] / "kvb-org-rasci" / "scripts" / "rasci.py"
 
 
 def live_sessions() -> dict[str, str | None]:
@@ -83,7 +86,7 @@ def claims() -> list[tuple[str, dict]]:
     return found
 
 
-def write_claim(path: Path, office: str, sid: str, runtime: str, work: str) -> None:
+def write_claim(path: Path, office: str, sid: str, runtime: str, work: str) -> dict:
     claim = {
         "office": office,
         "session": sid,
@@ -94,6 +97,30 @@ def write_claim(path: Path, office: str, sid: str, runtime: str, work: str) -> N
         "work": work,
     }
     (path / CLAIM).write_text(json.dumps(claim), encoding="utf-8")
+    return claim
+
+
+def here() -> dict[str, str | None]:
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, check=False
+        )
+    except OSError:
+        head = None
+    branch = head.stdout.strip() if head and head.returncode == 0 else ""
+    return {"workdir": os.getcwd(), "branch": branch if branch not in ("", "HEAD") else None}
+
+
+def register(office: str, holder: str, status: str, **extra: str | None) -> None:
+    if not office.startswith(("work/", "cluster/")):
+        return
+    try:
+        spec = importlib.util.spec_from_file_location("rasci", RASCI)
+        rasci = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rasci)
+        rasci.track(office, holder, status, **extra)
+    except (OSError, SystemExit) as exc:
+        print(f"council: {office} is missing from the rasci register ({exc})", file=sys.stderr)
 
 
 def cmd_claim(args: argparse.Namespace) -> int:
@@ -105,12 +132,21 @@ def cmd_claim(args: argparse.Namespace) -> int:
     except FileExistsError:
         claim = read_claim(path)
         if claim is not None and claim["session"] == sid:
-            write_claim(path, args.office, sid, runtime, args.work)
+            claim = write_claim(path, args.office, sid, runtime, args.work)
+            register(args.office, claim["name"] or sid, "running", description=args.work, **here())
             print(f"held {args.office}")
             return 0
         print(json.dumps(claim) if claim else f"{args.office}: claim in progress")
         return 4 if is_stale(claim, live_sessions()) else 3
-    write_claim(path, args.office, sid, runtime, args.work)
+    claim = write_claim(path, args.office, sid, runtime, args.work)
+    register(
+        args.office,
+        claim["name"] or sid,
+        "running",
+        description=args.work,
+        previous=getattr(args, "previous", None),
+        **here(),
+    )
     print(f"elected {args.office}")
     return 0
 
@@ -121,6 +157,8 @@ def cmd_takeover(args: argparse.Namespace) -> int:
     if path.exists() and not is_stale(claim, live_sessions()):
         print(json.dumps(claim) if claim else f"{args.office}: claim in progress")
         return 3
+    if claim is not None:
+        args.previous = claim["name"] or claim["session"]
     # Two successors racing between this check and the rename can both win;
     # kvb-org-organize names exactly one successor per office to keep that window closed.
     if path.exists():
@@ -145,6 +183,7 @@ def cmd_release(args: argparse.Namespace) -> int:
         print(json.dumps(claim))
         return 3
     shutil.rmtree(path)
+    register(args.office, claim["name"] or claim["session"], "done")
     print(f"released {args.office}")
     return 0
 

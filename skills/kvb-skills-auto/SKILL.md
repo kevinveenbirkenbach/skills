@@ -1,10 +1,9 @@
 ---
 name: kvb-skills-auto
 description: >
-  Turn operator repetition into a skill. Trigger when the operator gives the
-  same instruction, correction or prompt pattern about the third time in a
-  conversation, or says they keep repeating themselves, and the pattern is
-  reusable.
+  Turn operator repetition into a skill. Trigger when the operator repeats an
+  instruction, correction or prompt pattern a third time in a conversation, or
+  says they keep repeating themselves, and the pattern is reusable.
 ---
 
 Its objective is the `kvb-skills-tune` skill's **Objective** section: a skill is worth
