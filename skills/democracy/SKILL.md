@@ -84,7 +84,13 @@ records the result.
   projected disk stop. It grants nothing new, frees idle items through the
   `cleanup` flow, asks the operator for an exception, or waits. An owner's
   own disk guard only alerts the chair and takes nothing down; only the
-  operator can order a running job down.
+  operator can order a running job down. The one exception is a hang: an
+  agent may end its own job, a stuck step inside it, or a process its own
+  ended session left behind, once at least 60 minutes passed without log
+  progress and a probe shows standstill (no fresh child process, no network
+  traffic, CPU time not moving). It secures the live state first and then
+  reports the timestamp, the step, the probe and the command. A peer's hung
+  job goes to its owner, and to the operator when the owner does not answer.
 - Handover is explicit: the outgoing chair sends every peer the new holder,
   the queue and the running grants, and keeps allocating until the incoming
   chair confirms. Two allocators never run at once.

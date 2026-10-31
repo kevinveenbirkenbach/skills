@@ -152,6 +152,8 @@ ticked items. Revise repeats call 1; nothing is deleted before `Execute`.
   free space: not for a priority slot, not at a disk stop. Free idle items,
   ask the operator for an exception, or wait; an owner's own disk guard only
   alerts the chair, and only the operator can order a running job down.
+  A hung job is not freed through cleanup: the `democracy` skill's hang rule
+  lets only its owner end it.
 - Idle running stacks go down through the project's teardown target, never by
   removing their containers or volumes underneath them.
 - Archive-first items: copy out, verify the copy, then delete.
