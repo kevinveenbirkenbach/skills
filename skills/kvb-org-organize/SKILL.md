@@ -76,9 +76,9 @@ records the result.
 - Before starting anything that consumes shared capacity (gates, deploys,
   iteration loops, swarm or cloud resources, cleanup of shared data), an agent
   sends the chair what, where, for how long and its expected disk need, waits
-  for the grant, and reports the release. The chair keeps one queue as the
-  priorities in the `kvb-org-rasci` register, answers every request with its
-  position, enforces the limits the operator set,
+  for the grant, and reports the release. The chair keeps one queue, ordered
+  by the WSJF rank of the `kvb-org-wsjf` skill (it asks its subordinates for
+  the Fibonacci estimates), answers every request with its position, enforces the limits the operator set,
   checks every grant with `watch.py admit --need-gb <N>` (or `--kind <slot>`;
   test kinds also need CPU and RAM below the configured limits).
 - A running job (deploy, gate, test, swarm run, build) is never cut short to

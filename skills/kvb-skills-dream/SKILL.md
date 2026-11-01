@@ -1,8 +1,8 @@
 ---
 name: kvb-skills-dream
 description: >
-  Consolidate the last 24 hours of work in this repository: what held, what
-  broke, which hypotheses follow, into memory and improvement proposals.
+  Consolidate the last 24 hours of work in this repository (what held, what
+  broke) into memory and improvement proposals.
   Trigger on /kvb-skills-dream or a request to reflect on or learn from recent
   work.
 ---

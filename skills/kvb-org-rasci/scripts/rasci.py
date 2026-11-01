@@ -20,6 +20,7 @@ import importlib.util
 import json
 import os
 import re
+import statistics
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -41,6 +42,7 @@ FIELDS = (
 TEXT_FIELDS = ("title", "objective", "description", "worker", "workdir", "branch")
 LIST_FIELDS = {"tools": "tool"}
 ARTIFACT = re.compile(r"^[a-z]+:\S")
+FIBONACCI = (1, 2, 3, 5, 8, 13, 21, 34, 55, 89)
 OPERATOR = "Operator"
 
 
@@ -192,6 +194,33 @@ def when(value: str | None) -> str:
     return datetime.datetime.fromisoformat(value).astimezone().strftime("%m-%d %H:%M")
 
 
+def wsjf(row: dict) -> tuple[float, float, float] | None:
+    estimates = list(row.get("estimates", {}).values())
+    if not estimates:
+        return None
+    value = statistics.median(e["value"] for e in estimates)
+    complexity = statistics.median(e["complexity"] for e in estimates)
+    return value, complexity, round(value / complexity, 2)
+
+
+def ranked(rows: dict[str, dict]) -> list[str]:
+    def key(task: str) -> tuple:
+        row = rows[task]
+        score = wsjf(row)
+        pinned = row.get("prio")
+        return (pinned is None, pinned or 0, score is None, -(score[2] if score else 0), task)
+
+    return sorted(rows, key=key)
+
+
+def okr(row: dict) -> str:
+    results = row.get("key_results", [])
+    text = cell(row.get("objective") or "-", 40)
+    if results:
+        text += f" ({sum(kr['met'] for kr in results)}/{len(results)} KR)"
+    return text
+
+
 def gaps(task: str, row: dict) -> list[str]:
     found = []
     roles = row["roles"]
@@ -297,6 +326,53 @@ def cmd_get(args: argparse.Namespace) -> int:
             print(f"{flag}: {item}")
     roles = ", ".join(f"{p}={v}" for p, v in sorted(row["roles"].items()))
     print(f"roles: {roles or '-'}")
+    for party, estimate in sorted(row.get("estimates", {}).items()):
+        print(f"estimate {party}: business value {estimate['value']}, complexity {estimate['complexity']}")
+    score = wsjf(row)
+    if score:
+        print(f"wsjf: {score[2]:g}")
+    return 0
+
+
+def cmd_estimate(args: argparse.Namespace) -> int:
+    check_task(args.task)
+    if not args.drop:
+        for name in ("value", "complexity"):
+            if getattr(args, name) not in FIBONACCI:
+                fail(f"--{name} must be one of {', '.join(map(str, FIBONACCI))}")
+    with database() as tasks:
+        entry = tasks.setdefault(args.task, {"roles": {}})
+        estimates = entry.setdefault("estimates", {})
+        if args.drop:
+            estimates.pop(args.party, None)
+        else:
+            estimates[args.party] = {"value": args.value, "complexity": args.complexity, "at": stamp()}
+        if not estimates:
+            entry.pop("estimates")
+    print(f"{args.task}: estimate {'dropped' if args.drop else 'recorded'} for {args.party}")
+    return 0
+
+
+def cmd_wsjf(args: argparse.Namespace) -> int:
+    rows = merged(args.all)
+    if not rows:
+        print("no tasks")
+        return 0
+    header = ["Rank", "Task", "OKR", "Business value", "Complexity", "WSJF", "Estimators", "Status"]
+    print("| " + " | ".join(header) + " |")
+    print("|" + "---|" * len(header))
+    unestimated = []
+    for rank, task in enumerate(ranked(rows), 1):
+        row = rows[task]
+        score = wsjf(row)
+        if score is None:
+            unestimated.append(task)
+        figures = [f"{n:g}" for n in score] if score else ["-", "-", "-"]
+        estimators = ", ".join(sorted(row.get("estimates", {}), key=str.lower)) or "-"
+        values = [rank, task, okr(row), *figures, cell(estimators, 40), row["status"]]
+        print("| " + " | ".join(str(v) for v in values) + " |")
+    if unestimated:
+        print("unestimated: " + ", ".join(unestimated))
     return 0
 
 
@@ -338,22 +414,19 @@ def cmd_show(args: argparse.Namespace) -> int:
     if not rows:
         print("no tasks")
         return 0
-    order = sorted(rows, key=lambda t: (rows[t].get("prio") is None, rows[t].get("prio") or 0, t))
-    header = ["Prio", "Task", "OKR", "Status", "Worker", "Artifacts", "Start", "End", *ORDER]
+    header = ["Prio", "WSJF", "Task", "OKR", "Status", "Worker", "Artifacts", "Start", "End", *ORDER]
     print("| " + " | ".join(header) + " |")
     print("|" + "---|" * len(header))
     problems = []
-    for task in order:
+    for rank, task in enumerate(ranked(rows), 1):
         row = rows[task]
         title = f"{task}: {row['title']}" if row.get("title") else task
-        results = row.get("key_results", [])
-        okr = cell(row.get("objective") or "-", 40)
-        if results:
-            okr += f" ({sum(kr['met'] for kr in results)}/{len(results)} KR)"
+        score = wsjf(row)
         values = [
-            row.get("prio") or "-",
+            rank,
+            f"{score[2]:g}" if score else "-",
             cell(title, 50),
-            okr,
+            okr(row),
             row["status"],
             cell(row.get("worker") or "-", 30),
             len(row.get("artifacts", [])) or "-",
@@ -384,6 +457,16 @@ def main() -> int:
         p.add_argument(f"--drop-{flag}", action="append", default=[])
     p.add_argument("--status", choices=STATUSES)
     p.set_defaults(func=cmd_set)
+    p = sub.add_parser("estimate")
+    p.add_argument("task")
+    p.add_argument("party")
+    p.add_argument("--value", type=int)
+    p.add_argument("--complexity", type=int)
+    p.add_argument("--drop", action="store_true")
+    p.set_defaults(func=cmd_estimate)
+    p = sub.add_parser("wsjf")
+    p.add_argument("--all", action="store_true")
+    p.set_defaults(func=cmd_wsjf)
     p = sub.add_parser("kr")
     p.add_argument("task")
     p.add_argument("action", choices=("add", "met", "open", "rm"))

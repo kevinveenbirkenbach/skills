@@ -20,6 +20,8 @@ rasci.py get <task>
 rasci.py rm <task>
 rasci.py show [--all]
 rasci.py artifacts [--ended] [--task <task>]
+rasci.py estimate <task> "<party>" --value <fib> --complexity <fib>
+rasci.py wsjf [--all]
 rasci.py tools
 ```
 
@@ -52,8 +54,9 @@ published). `done` is refused while one is open; a task ended short of them is
 - Artifacts share this table and follow the `kvb-org-artefacts` skill:
   record each one when it appears, drop it once deleted. Add every script or
   tool the task ran (`--tool`): `tools` ranks them for `kvb-skills-dream`.
-- Priority: the operator's order first, then the chair's queue; the chair
-  writes it.
+- Priority is the rank of the `kvb-org-wsjf` skill: an operator's pin
+  (`--prio`) first, then WSJF from the estimates the chair collects; `show`
+  prints the rank as Prio and the score as WSJF.
 - Write only your own rows; another session's task belongs to that session.
 - On /kvb-org-rasci print `show` unchanged; its `gaps:` line names tasks
   without exactly one A, without R, or open without a key result. `get`

@@ -1,8 +1,8 @@
 ---
 name: kvb-org-perform
 description: >
-  Pick `model` and `effort` per subagent from a fixed table: cheaper only on a
-  clear match at 90 % that the result equals the default's; log spawns and
+  Pick `model` and `effort` per subagent from a fixed table: cheaper only at
+  90 % confidence that the result equals the default's; log spawns and
   quality. Apply AUTOMATICALLY before every Agent tool call.
 ---
 

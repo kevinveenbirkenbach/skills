@@ -3,7 +3,7 @@ name: kvb-git-commit-next
 description: >
   Check every branch for the staged fix, commit the staged bundle with
   --no-verify, then stage and brief the next bundle. Trigger on /kvb-git-commit-next
-  or when the operator asks to commit and stage the next bundle in one step.
+  or a request to commit and stage the next bundle in one step.
 ---
 
 1. `git fetch --all --prune --tags`, then hunt the staged fix across every

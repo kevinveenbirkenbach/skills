@@ -14,7 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RASCI = REPO_ROOT / "skills" / "kvb-org-rasci" / "scripts" / "rasci.py"
 COUNCIL = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "council.py"
-HEADER = "| Prio | Task | OKR | Status | Worker | Artifacts | Start | End | R | A | S | C | I |"
+HEADER = "| Prio | WSJF | Task | OKR | Status | Worker | Artifacts | Start | End | R | A | S | C | I |"
 
 
 def local(iso: str) -> str:
@@ -81,11 +81,11 @@ class TestRasci(unittest.TestCase):
         lines = self._out("show")
         self.assertEqual(lines[0], HEADER)
         self.assertEqual(
-            lines[2], "| 1 | work/b: Beta | - | queued | subagent Explore (haiku) | - | - | - | Pkgmgr |  |  |  |  |"
+            lines[2], "| 1 | - | work/b: Beta | - | queued | subagent Explore (haiku) | - | - | - | Pkgmgr |  |  |  |  |"
         )
         self.assertEqual(
             lines[3],
-            f"| 2 | work/a: Alpha | Ship A | running | Skills | - | {local(start)} | - "
+            f"| 2 | - | work/a: Alpha | Ship A | running | Skills | - | {local(start)} | - "
             "| Skills | Skills |  | Operator, Pkgmgr | Operator |",
         )
         self.assertEqual(
@@ -159,9 +159,9 @@ class TestRasci(unittest.TestCase):
         self._run("set", "work/live", "--prio", "1", "--status", "running")
         self._run("role", "work/live", "Two", "S")
         lines = self._out("show")
-        self.assertTrue(lines[2].startswith("| 1 | work/live | - | running | One |"))
+        self.assertTrue(lines[2].startswith("| 1 | - | work/live | - | running | One |"))
         self.assertTrue(lines[2].endswith("| One | One | Two |  |  |"))
-        self.assertTrue(any(line.startswith("| - | cluster/dead | - | stale | Gone |") for line in lines))
+        self.assertTrue(lines[3].startswith("| 2 | - | cluster/dead | - | stale | Gone |"))
         self.assertFalse(any("chair" in line for line in lines))
 
     def test_council_claim_takeover_and_release_write_through(self):
@@ -203,6 +203,8 @@ class TestRasci(unittest.TestCase):
             ("get", "work/none"),
             ("kr", "work/a", "met", "1"),
             ("set", "work/a", "--artifact", "no-kind"),
+            ("estimate", "work/a", "One", "--value", "4", "--complexity", "2"),
+            ("estimate", "work/a", "One", "--value", "8"),
         ):
             with self.subTest(args=args):
                 self.assertEqual(self._run(*args).returncode, 2)
@@ -211,7 +213,29 @@ class TestRasci(unittest.TestCase):
     def test_pipe_in_a_title_does_not_break_the_table(self):
         self._run("set", "work/a", "--title", "a | b")
         self._run("role", "work/a", "Skills", "RA")
-        self.assertTrue(self._out("show")[2].startswith("| - | work/a: a \\| b | - | queued |"))
+        self.assertTrue(self._out("show")[2].startswith("| 1 | - | work/a: a \\| b | - | queued |"))
+
+    def test_wsjf_ranks_by_median_estimates(self):
+        self._run("set", "work/a", "--objective", "Ship A")
+        self._run("kr", "work/a", "add", "released")
+        self._run("estimate", "work/a", "One", "--value", "8", "--complexity", "2")
+        self._run("estimate", "work/a", "Two", "--value", "13", "--complexity", "3")
+        self._run("estimate", "work/b", "One", "--value", "5", "--complexity", "5")
+        self._run("set", "work/c", "--title", "Gamma")
+        lines = self._out("wsjf")
+        self.assertEqual(
+            lines[0], "| Rank | Task | OKR | Business value | Complexity | WSJF | Estimators | Status |"
+        )
+        self.assertEqual(lines[2], "| 1 | work/a | Ship A (0/1 KR) | 10.5 | 2.5 | 4.2 | One, Two | queued |")
+        self.assertEqual(lines[3], "| 2 | work/b | - | 5 | 5 | 1 | One | queued |")
+        self.assertEqual(lines[4], "| 3 | work/c | - | - | - | - | - | queued |")
+        self.assertEqual(lines[5], "unestimated: work/c")
+        self.assertTrue(self._out("show")[2].startswith("| 1 | 4.2 | work/a |"))
+        self.assertIn("wsjf: 4.2", self._out("get", "work/a"))
+        self._run("set", "work/c", "--prio", "1")
+        self.assertTrue(self._out("show")[2].startswith("| 1 | - | work/c: Gamma |"))
+        self._run("estimate", "work/b", "One", "--drop")
+        self.assertFalse(any(line.startswith("estimate ") for line in self._out("get", "work/b")))
 
 
 class TestOrgSkillsUseTheRegister(unittest.TestCase):
