@@ -31,7 +31,10 @@ rasci.py wsjf [--all]
 3. **Rank**: WSJF = median business value / median complexity, highest
    first. An operator's pin (`rasci.py set <task> --prio <n>`) outranks every
    score; unestimated tasks come last and are named under `unestimated:`.
-4. **Grant in rank order**: the chair hands out capacity by this rank.
+4. **Grant in rank order**: the chair hands out capacity by this rank, except
+   that a hotfix gate (a branch from the default branch that fixes it) takes
+   the next free gate or test slot before every ranked task; a running gate
+   is never cut short for it.
 
 ## Rules
 
