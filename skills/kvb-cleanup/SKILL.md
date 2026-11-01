@@ -36,6 +36,10 @@ need, one item per line:
 - containers, compose or stack projects, volumes, images, networks
 - running jobs (deploys, tests, builds) and when they finish
 Reply "nothing" if you need none of it. Items you do not answer for stay.
+Also search your own worktrees and volumes for unused ones (branch merged or
+pushed, no uncommitted changes, stack not needed), list them with their size
+as deletion candidates, delete only your own finished items, and tell me what
+you removed.
 ```
 
 ## Step 2: inventory
@@ -56,10 +60,15 @@ Read-only, in parallel, sizes included:
   record its volumes (`{{.Mounts}}`); for every volume no running container
   uses, record size, `CreatedAt` (`docker volume inspect`) and compose project
   label, anonymous ones included.
+- **Worktrees**: per worktree its size (`du -sh`), its dirty state (`git
+  status --short`), whether its branch is pushed, and whether its HEAD is
+  already contained in an integration line: the default branch and every
+  branch the project merges features into (ask the operator or the project's
+  memory which ones). With `pkgmgr` installed, `pkgmgr branch gc --json
+  --sizes --merged-into <line>` (one per line) measures all of it; its
+  merged-clean items go to the `kvb-git-branch-gc` skill.
 - **Other agent dirs**: package and tool caches (pip, npm, pre-commit, act,
-  gh, buildx), worktrees with `git status --short` and whether their branch is
-  merged or pushed, Ansible and build temp dirs. With `pkgmgr` installed,
-  merged branches and worktrees go to the `kvb-git-branch-gc` skill instead.
+  gh, buildx), Ansible and build temp dirs.
 - **Register**: `rasci.py artifacts` of the `kvb-org-artefacts` skill:
   workdir, branch and artifacts of every task in the `kvb-org-rasci` register,
   with its status and worker; `--ended` narrows it to the candidates.
@@ -97,7 +106,7 @@ worktree or compose project name, a container label, an open handle, or
 | Risk | Meaning | Typical items |
 | ---- | ------- | ------------- |
 | low | regenerated automatically, cheap | stopped containers without volumes, dangling images, unused networks, scratch dirs and logs of finished sessions |
-| medium | regenerated, but slow, rate-limited or network-bound | unused tagged images (re-pull, registry limits), build cache (cold rebuilds), package caches |
+| medium | regenerated, but slow, rate-limited or network-bound | unused tagged images (re-pull, registry limits), build cache (cold rebuilds), package caches, clean worktrees whose HEAD is already in an integration line (ignored files such as `node_modules`, build output or evidence are lost, no commit) |
 | high | data loss or a broken run possible | volumes, stopped containers with volumes, running unclaimed containers or stacks, worktrees with uncommitted or unpushed work, unread reports, anything `unknown` |
 
 ## Step 4: propose
@@ -162,6 +171,10 @@ ticked items. Revise repeats call 1; nothing is deleted before `Execute`.
   lets only its owner end it.
 - Idle running stacks go down through the project's teardown target, never by
   removing their containers or volumes underneath them.
+- Remove a worktree the way it was made: a slot worktree through the
+  project's teardown target (e.g. `make worktree-down`), run outside the
+  sandbox; a plain sidetree through `git worktree remove` without `--force`,
+  which refuses a dirty tree.
 - Archive-first items: copy out, verify the copy, then delete.
 - Drop every deleted item from its task as the `kvb-org-artefacts` skill
   says (`set <task> --drop-artifact <kind>:<ref>`), so `artifacts` stays true.

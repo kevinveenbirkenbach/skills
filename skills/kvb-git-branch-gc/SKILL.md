@@ -23,8 +23,12 @@ and nothing is removed before the operator's pick in this run.
 
 ## Step 1: dry run
 
-`pkgmgr branch gc --json`, with `--all` only when the operator asked for every
-repository, output to `/tmp/branch-gc-<N>.json`. No `git fetch` of your own
+`pkgmgr branch gc --json --sizes --min-age 24 --merged-into <line>`, one
+`--merged-into` per integration line the project merges features into
+(default branch excluded, it always counts), with `--all` only when the
+operator asked for every repository, output to `/tmp/branch-gc-<N>.json`. A
+line is protected, and a checkout at its tip stays as fresh work; an item
+merged into a line names it in `merged_into`. No `git fetch` of your own
 before it: gc fetches without auto-maintenance, while a plain fetch on git
 2.50 or later may prune the sandbox's bind-mount stubs. Every repository's
 `warnings` (a failed fetch) go to the top of the plan. Sort the items:
@@ -53,7 +57,7 @@ silence is not consent.
 
 One table:
 
-| Repo | Branch or worktree | Merged by | Actions | Note |
+| Repo | Branch or worktree | Merged into | Size | Actions | Note |
 
 Then ask with `AskUserQuestion`:
 
