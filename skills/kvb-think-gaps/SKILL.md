@@ -1,23 +1,21 @@
 ---
-name: kvb-create-feature
+name: kvb-think-gaps
 description: >
-  Derive missing work (principles pass for structural flaws, usability pass for
-  missing features) and write requirement documents after confirmation.
-  Trigger on /kvb-create-feature, "was fehlt noch", "welche features brauchen
-  wir", or asked what to build next.
+  Find and rank missing work (structural flaws, missing features); each pick
+  goes to kvb-create-requirement. Trigger on /kvb-think-gaps, "was fehlt
+  noch", or asked what to build next.
 ---
 
 Two blind spots produce different work: the code has defects of structure,
 the product has gaps of use. This skill runs both lenses, ranks what comes
-out, and lets the operator choose — it writes requirement documents, never
-implementations.
+out, and lets the operator choose. It writes no file; the
+`kvb-create-requirement` skill writes the requirement for every pick.
 
 ## Step 1: fix the scope
 
 Name the target in one line: repository, subsystem, role, or user-facing
-surface. Read the project's existing requirement documents first — their
-location, filename convention, and section structure are the template, and
-an already-written requirement is not a finding.
+surface. Read the project's existing requirement documents first; an
+already-written requirement is not a finding.
 
 ## Step 2: the principles pass
 
@@ -66,33 +64,21 @@ option a real alternative — never one option plus filler:
 2. **Which shape** the chosen one takes — for a feature typically
    `Minimal version that unblocks the user`, `Full version`, `Fix the
    underlying structure instead`, `Document the limitation and defer`.
-3. **Scope boundary** — what is explicitly out of scope, when the candidate
-   could grow in more than one direction.
-4. **Placement** — which requirement file or directory receives it, when the
-   project has more than one.
 
-Never assume an answer, never fold two decisions into one option, and never
-write a file before the answers are in.
+Never assume an answer and never fold two decisions into one option.
 
-## Step 5: write the requirements
+## Step 5: hand over
 
-One document per feature — a requirement that needs "and" in its title is
-two requirements. Follow the project's existing template; when there is
-none, keep it to: problem with its evidence, the decided scope and its
-boundary, definition of done as checkable criteria, and the alternatives the
-operator rejected with the reason.
-
-Show the drafted document and ask for a final `Write it` / `Revise it` /
-`Discard` before touching disk.
+Run the `kvb-create-requirement` skill once per chosen candidate. Its
+context step starts from the candidate's evidence and chosen shape; the
+rejected shapes go into its Decisions section.
 
 ## Rules
 
-- Requirements only: no implementation, no refactor, no staging as part of
-  this skill.
-- Every requirement traces to evidence — a `file:line`, a failing path, a
-  missing artifact. A requirement whose justification is "would be nice" is
-  not written.
-- Record the rejected alternatives inside the document; the next reader
-  needs to know what was already considered and dismissed.
+- Findings only: no file, no implementation, no refactor, no staging as
+  part of this skill.
+- Every candidate traces to evidence — a `file:line`, a failing path, a
+  missing artifact. A candidate whose justification is "would be nice" is
+  dropped.
 - Close with the `kvb-check-confidence` skill's numbers for the analysis: how sure the
   gaps are real, and what the passes did not cover.

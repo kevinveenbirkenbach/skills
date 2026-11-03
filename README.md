@@ -31,8 +31,10 @@ flowchart LR
   think --> think_explain[kvb-think-explain]
   think --> think_dialectic[kvb-think-dialectic]
   think --> think_criticize[kvb-think-criticize]
+  think --> think_brainstorm[kvb-think-brainstorm]
+  think --> think_gaps[kvb-think-gaps]
   create --> create_plan[kvb-create-plan]
-  create --> create_feature[kvb-create-feature]
+  create --> create_requirement[kvb-create-requirement]
   code --> code_scope_guard[kvb-code-scope-guard]
   code --> code_no_defaults[kvb-code-no-defaults]
   code --> code_no_comments[kvb-code-no-comments]
@@ -91,10 +93,12 @@ flowchart LR
     explain[kvb-think-explain]
     dialectic[kvb-think-dialectic]
     criticize[kvb-think-criticize]
+    brainstorm[kvb-think-brainstorm]
+    gaps[kvb-think-gaps]
   end
   subgraph cat_create [create]
     plan[kvb-create-plan]
-    auto_feature[kvb-create-feature]
+    requirement[kvb-create-requirement]
   end
   subgraph cat_code [code]
     scope_guard[kvb-code-scope-guard]
@@ -203,8 +207,13 @@ flowchart LR
   criticize --> active_listening
   sceptic --> dialectic
   sceptic --> no_defaults
-  auto_feature --> sceptic
-  auto_feature --> active_listening
+  gaps --> sceptic
+  gaps --> active_listening
+  gaps --> requirement
+  requirement --> active_listening
+  requirement --> brainstorm
+  requirement -. offer .-> plan
+  brainstorm --> dialectic
 
   plan --> robot
   plan --> active_listening
