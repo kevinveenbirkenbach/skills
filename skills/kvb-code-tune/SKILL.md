@@ -2,9 +2,8 @@
 name: kvb-code-tune
 description: >
   Find and apply performance optimizations (CI, deploy, build, gate, hot
-  paths) without reducing logic, coverage or correctness. Trigger on
-  /kvb-code-tune, a job dying on its time budget, a slower pipeline or deploy,
-  or asked where time goes.
+  paths) without losing logic or coverage. Trigger on /kvb-code-tune, a job
+  hitting its time budget, a slower pipeline, or asked where time goes.
 ---
 
 # Tune
@@ -205,6 +204,9 @@ failure, or only moves the cost somewhere the measurement does not look.
    proposals. Re-measure from the same source under the same conditions and
    report a before and an after number.
 5. Repeat until the next candidate is worth less than the run that measures it.
+6. Hand the prototypes and before/after harnesses of every kept candidate to
+   the `kvb-code-transcend` skill, so the measurement stays in the repository
+   as a benchmark or regression test.
 
 ## Output
 

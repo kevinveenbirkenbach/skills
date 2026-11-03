@@ -1,9 +1,9 @@
 ---
 name: kvb-git-merge-fix
 description: >
-  Hunt down the commits on any branch that carry a described fix and merge it
-  into the current branch. Trigger on /kvb-git-merge-fix <description> or when the
-  operator asks to bring over a fix from another branch.
+  Find the commits on any branch that carry a described fix and merge them
+  here. Trigger on /kvb-git-merge-fix <description> or a request to bring over
+  a fix from another branch.
 ---
 
 The free text after `/kvb-git-merge-fix` is the fix description, exactly like `/loop`

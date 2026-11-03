@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skills`. Only `kvb-cleanup` and `kvb-help` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skills`. Only `kvb-cleanup`, `kvb-help` and the collector `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -39,6 +39,7 @@ flowchart LR
   code --> code_refactor[kvb-code-refactor]
   code --> code_test[kvb-code-test]
   code --> code_tune[kvb-code-tune]
+  code --> code_transcend[kvb-code-transcend]
   ci --> ci_triage[kvb-ci-triage]
   ci --> ci_artifacts[kvb-ci-artifacts]
   ci --> ci_observe[kvb-ci-observe]
@@ -65,8 +66,10 @@ flowchart LR
   skills --> skills_tune[kvb-skills-tune]
   skills --> skills_auto[kvb-skills-auto]
   skills --> skills_essence[kvb-skills-essence]
+  skills --> skills_transcend[kvb-skills-transcend]
   none --> cleanup[kvb-cleanup]
   none --> help[kvb-help]
+  none --> transcend_all[kvb-transcend]
 ```
 
 ## Skill map 🗺️
@@ -100,6 +103,7 @@ flowchart LR
     test[kvb-code-test]
     tune[kvb-code-tune]
     comments_clean[kvb-code-no-comments]
+    code_transcend[kvb-code-transcend]
   end
   subgraph cat_ci [ci]
     triage[kvb-ci-triage]
@@ -136,10 +140,12 @@ flowchart LR
     autotune[kvb-skills-tune]
     autoskill[kvb-skills-auto]
     essence[kvb-skills-essence]
+    skills_transcend[kvb-skills-transcend]
   end
   subgraph cat_none [no category]
     cleanup[kvb-cleanup]
     help_skills[kvb-help]
+    transcend[kvb-transcend]
   end
 
   commit_req -.-> commit_next
@@ -209,6 +215,14 @@ flowchart LR
   dream --> autoskill
   autoskill --> autotune
   autotune --> essence
+  dream --> transcend
+  transcend --> skills_transcend
+  transcend --> code_transcend
+  skills_transcend --> active_listening
+  skills_transcend --> autotune
+  code_transcend --> active_listening
+  autotune -. own scripts .-> skills_transcend
+  tune -. measurements .-> code_transcend
 
   test --> triage
   test --> dialectic

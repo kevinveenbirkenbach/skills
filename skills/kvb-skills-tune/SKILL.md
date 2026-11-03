@@ -1,10 +1,9 @@
 ---
 name: kvb-skills-tune
 description: >
-  Generate new skills or optimize existing ones (fewer tokens, fewer errors,
-  persistent learnings), each proposal confirmed by single-select question.
-  Trigger ONLY on an explicit request: /kvb-skills-tune, "autotune", "tune the
-  skills"; never on your own initiative.
+  Generate new skills or optimize existing ones (fewer tokens and errors,
+  persistent learnings), each proposal confirmed. Trigger ONLY on an explicit
+  request: /kvb-skills-tune, "autotune", "tune the skills".
 ---
 
 Autotune turns observed friction into durable skills. It runs on demand only,
@@ -63,6 +62,9 @@ where readable, from the project's memory and agent instruction files:
   deploys, questions that stalled an autonomous run.
 - **Lost learnings**: facts re-derived this session that a memory file or a
   skill should already have carried.
+- **Own scripts**: helpers the agent wrote outside any repository belong to
+  the `kvb-skills-transcend` skill, which carries them over; this skill
+  takes the frictions they reveal.
 
 List each finding as one line: `symptom -> cost -> candidate fix`. Skip
 anything that happened once and is not a pattern.

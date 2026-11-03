@@ -109,12 +109,13 @@ as radio buttons: the improvement, the evidence behind it, and the options
 `Apply now`, `Record as a task`, `Skip`. Ranked by evidence, one question per
 improvement. No repository file changes before an answer comes back.
 
-## Step 7: kvb-skills-tune, then kvb-skills-auto
+## Step 7: kvb-skills-tune, kvb-skills-auto, kvb-transcend
 
 With the dialectic done and memory written, run `kvb-skills-tune` — hand it this run's
-findings as its evidence so it does not re-collect them — and then `kvb-skills-auto`
-for the operator corrections the window revealed. Both keep their own
-confirmation steps; the dream never writes a skill on their behalf.
+findings as its evidence so it does not re-collect them — then `kvb-skills-auto`
+for the operator corrections the window revealed, and `kvb-transcend` for the
+scripts and tests the window's sessions wrote outside a repository. All keep
+their own confirmation steps; the dream never writes a skill on their behalf.
 
 Close the run by refreshing this repository's reminder stamp, so the next hint
 is twelve hours out: `date +%s > "$(git rev-parse --path-format=absolute --git-common-dir)/.dream-stamp"`.

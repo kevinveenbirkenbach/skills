@@ -17,6 +17,8 @@ npm-debug.log*
 .claude/
 .mcp.json
 
+.state/
+
 # Editor / OS
 .DS_Store
 *.swp
