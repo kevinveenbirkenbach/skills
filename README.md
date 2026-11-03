@@ -49,6 +49,7 @@ flowchart LR
   git --> git_commit_next[kvb-git-commit-next]
   git --> git_commit_no_verify[kvb-git-commit-no-verify]
   git --> git_merge_fix[kvb-git-merge-fix]
+  git --> git_close_issues[kvb-git-close-issues]
   git --> git_branch_gc[kvb-git-branch-gc]
   git --> git_changelog[kvb-git-changelog]
   check --> check_legal[kvb-check-legal]
@@ -126,6 +127,7 @@ flowchart LR
     commit_next[kvb-git-commit-next]
     commit_no_verify[kvb-git-commit-no-verify]
     merge_fix[kvb-git-merge-fix]
+    close_issues[kvb-git-close-issues]
     branch_gc[kvb-git-branch-gc]
     changelog[kvb-git-changelog]
   end
@@ -182,6 +184,7 @@ flowchart LR
   commit_next --> commit_no_verify
   commit_next --> explain
   commit_next --> dialectic
+  close_issues --> confidence
   commit_no_verify --> comments_clean
   commit_no_verify --> advocate
   advocate --> dialectic

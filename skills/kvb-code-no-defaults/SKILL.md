@@ -2,9 +2,8 @@
 name: kvb-code-no-defaults
 description: >
   Forbid default values for parameters, settings and environment lookups;
-  demand explicit values and fail loudly. Apply AUTOMATICALLY on every task
-  that writes, edits, generates, refactors or reviews code, config, templates,
-  schemas or infrastructure.
+  demand explicit values. Apply AUTOMATICALLY whenever code, config,
+  templates or infrastructure are written, edited or reviewed.
 ---
 
 A default value is a guess, written at the point where the caller's intent is
