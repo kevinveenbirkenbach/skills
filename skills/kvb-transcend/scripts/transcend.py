@@ -22,6 +22,8 @@ SECRET_NAME = re.compile(
     r"(secret|token|credential|passw|auth|\.env$|id_[a-z0-9]+$|\.pem$|\.key$)", re.IGNORECASE
 )
 MAX_BYTES = 1_000_000
+MAX_DEPTH = 1
+REPO_MARKERS = {".git", "roles", "plugins", "pyproject.toml", "package.json", "Makefile"}
 HOME_SOURCES = {
     ".claude/skills": "skill",
     ".agents/skills": "skill",
@@ -74,11 +76,21 @@ def session_names(home: Path) -> dict[str, str]:
 
 def scratch_candidates(root: Path, source: str, owner: str) -> list[dict]:
     found = []
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        kind = file_kind(path)
-        if kind:
-            found.append({"source": source, "owner": owner, "kind": kind, "path": str(path)})
-    return found
+    for current, dirs, files in os.walk(root):
+        here = Path(current)
+        depth = len(here.relative_to(root).parts)
+        if depth and REPO_MARKERS & {*dirs, *files}:
+            dirs.clear()
+            continue
+        if depth >= MAX_DEPTH:
+            dirs.clear()
+        for name in files:
+            kind = file_kind(here / name)
+            if kind:
+                found.append(
+                    {"source": source, "owner": owner, "kind": kind, "path": str(here / name)}
+                )
+    return sorted(found, key=lambda item: item["path"])
 
 
 def shipped(skills_repo: Path) -> set[str]:

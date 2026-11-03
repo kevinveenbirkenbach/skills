@@ -40,6 +40,10 @@ class TestTranscend(unittest.TestCase):
         self._write(self.own / "auth_token.py", "secret")
         self._write(self.own / "big.py", "x" * 1_000_001)
         self._write(self.peer / "helper.sh", "echo hi")
+        self._write(self.peer / "probe" / "nested.py", "print(2)")
+        self._write(self.peer / "probe" / "deep" / "too_deep.py", "print(3)")
+        self._write(self.peer / "copy" / "pyproject.toml", "[project]")
+        self._write(self.peer / "copy" / "copied.py", "print(4)")
         for name in ("kvb-x", "caveman", "custom"):
             self._write(self.home / ".claude" / "skills" / name / "SKILL.md", name)
         self._write(self.home / ".codex" / "rules" / "default.rules", "allow")
@@ -78,6 +82,7 @@ class TestTranscend(unittest.TestCase):
                 "probe.py": ("own", "self", "script"),
                 "test_probe.py": ("own", "self", "test"),
                 "helper.sh": ("peer", "Peer", "script"),
+                "nested.py": ("peer", "Peer", "script"),
                 "custom": ("home", "operator", "skill"),
                 "default.rules": ("home", "operator", "rule"),
             },

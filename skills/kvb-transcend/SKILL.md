@@ -19,7 +19,9 @@ transcend.py mark --state <same> <path> carried|dropped|later
 scratchpad, every peer session's scratchpad, and the agent homes
 (`~/.claude`, `~/.agents`, `~/.codex`) for skills, commands, agents, hooks
 and rules the skills repository does not ship. It keeps scripts, tests and
-skills, and skips files named like secrets and files over 1 MB. Carried or
+skills at most one directory below a scratchpad, and skips files named like
+secrets, files over 1 MB, and repository copies (a directory holding `.git`,
+`roles`, `plugins`, `pyproject.toml`, `package.json` or a `Makefile`). Carried or
 dropped candidates return only when their content changes; `later` returns
 every time.
 
