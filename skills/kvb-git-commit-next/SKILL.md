@@ -29,7 +29,9 @@ description: >
    see tracked, modified files and read the worktree; only an untracked
    NEW file needs `git add` to become visible. Path-scope every `git add`
    to the bundle — `git add -A` sweeps up the operator's own edits and
-   their local config.
+   their local config. A file that carries two bundles is staged by line:
+   `${CLAUDE_SKILL_DIR}/scripts/stage_hunks.py --repo <worktree> --file
+   <path> --match <regex>`, first with `--dry-run`.
 5. For the newly staged bundle run the kvb-think-explain skill (what the changes do
    and how the pieces interact, file:line-anchored) followed by the
    kvb-check-confidence skill (fix confidence, break risk, evidence, residuals).
