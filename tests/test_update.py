@@ -36,10 +36,10 @@ class TestUpdate(unittest.TestCase):
             env={"PATH": f"{self.bin}:/usr/bin:/bin"},
             stdin=subprocess.DEVNULL,
         )
-        calls = self.log.read_text(encoding="utf-8").splitlines()
-        self.assertEqual([c.split()[-1] for c in calls], sources)
+        calls = [c.split() for c in self.log.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([c[c.index("add") + 1] for c in calls], sources)
         for call in calls:
-            self.assertIn("--agent claude-code", call)
+            self.assertEqual(call[call.index("--agent") + 1 :], ["claude-code"])
 
 
 if __name__ == "__main__":

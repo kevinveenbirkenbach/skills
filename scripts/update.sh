@@ -30,6 +30,6 @@ fi
 log "skills: updating from ${lockfile}..."
 jq -r '.skills[].source' "${lockfile}" | sort -u | while read -r source; do
 	log "skills: updating ${source}..."
-	npx --yes skills add --yes --agent claude-code "${source}" </dev/null
+	npx --yes skills add "${source}" --yes --agent claude-code </dev/null
 done
 log "skills: update complete."
