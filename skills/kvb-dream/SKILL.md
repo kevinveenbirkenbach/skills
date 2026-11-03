@@ -117,7 +117,9 @@ improvement. No repository file changes before an answer comes back.
 
 With the dialectic done and memory written, run the `kvb-optimize` skill and
 hand it this run's findings as its evidence, so none of its skills
-re-collects them.
+re-collects them. Its pass includes the `kvb-transcend` skill, which carries
+the scripts, tests and skills of every session in scope into their
+repositories.
 
 ## Step 8: clean up
 
