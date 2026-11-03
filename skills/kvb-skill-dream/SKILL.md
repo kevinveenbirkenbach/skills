@@ -1,10 +1,9 @@
 ---
 name: kvb-skill-dream
 description: >
-  Consolidate the last 24 hours of work in this repository (what held, what
-  broke) into memory and improvement proposals.
-  Trigger on /kvb-skill-dream or a request to reflect on or learn from recent
-  work.
+  Consolidate the last 24 hours of this repository (what held, what broke)
+  into memory and proposals. Trigger on /kvb-skill-dream or a request to
+  learn from recent work.
 ---
 
 Sleep on the work: replay what happened in this repository, separate what held

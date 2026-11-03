@@ -2,9 +2,8 @@
 name: kvb-code-scope-guard
 description: >
   Deliver exactly what was asked and nothing more. Trigger on every task that
-  creates files, commands or commits, on unreviewed autonomous runs, on
-  hand-over requests, and when the operator asks why something unrequested
-  exists.
+  creates files, commands or commits, on autonomous runs and hand-overs, and
+  when asked why something unrequested exists.
 ---
 
 The requested scope is the deliverable. A problem you noticed behind the
