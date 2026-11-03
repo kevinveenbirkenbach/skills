@@ -33,8 +33,11 @@ Calibration rules:
   (test, reproduction, live probe) justifies more.
 
 A threshold the operator named ("95% confidence, break risk ≤5%") is a gate on
-the work, handled as the `kvb-check-break-risk` skill's last section says, for both
-numbers.
+the work for both numbers, handled as the `kvb-check-break-risk` skill's last
+section says. Fix confidence of 90 % or more with break risk under 5 % (90/5)
+needs the project's full quality gate green on the exact head (in
+infinito-nexus `make quality-high`); before that, the numbers are
+provisional and the missing gate is the residual.
 
 Objective: the `kvb-skill-tune` skill's **Objective** section. Two figures with their residuals replace a
 hedging paragraph and save the operator a verification round trip.

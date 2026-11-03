@@ -13,7 +13,9 @@ holds:
   name the run or issue.
 - **`90/5`**: the pull request meets the bar of the `kvb-org-split` skill (fix
   confidence of at least 90 %, break risk under 5 %), from the
-  `kvb-check-confidence` numbers in its body or freshly assessed.
+  `kvb-check-confidence` numbers in its body or freshly assessed, and only
+  after the project's full quality gate passed on the PR's exact head; a
+  hotfix takes the next free gate slot.
 
 ## Procedure
 
