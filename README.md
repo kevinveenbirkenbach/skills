@@ -71,6 +71,7 @@ flowchart LR
   org --> org_wsjf[kvb-org-wsjf]
   org --> org_robot[kvb-org-robot]
   org --> org_operator[kvb-org-operator]
+  org --> org_priority[kvb-org-priority]
   skill --> skill_tune[kvb-skill-tune]
   skill --> skill_auto[kvb-skill-auto]
   skill --> skill_essence[kvb-skill-essence]
@@ -157,6 +158,7 @@ flowchart LR
     wsjf[kvb-org-wsjf]
     robot[kvb-org-robot]
     operator[kvb-org-operator]
+    priority[kvb-org-priority]
   end
   subgraph cat_skill [skill]
     autotune[kvb-skill-tune]
@@ -224,6 +226,8 @@ flowchart LR
   artefacts --> rasci
   democracy --> wsjf
   wsjf --> rasci
+  priority --> rasci
+  priority -. pins outrank .-> wsjf
   operator --> rasci
   dream --> rasci
 

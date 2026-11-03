@@ -213,6 +213,38 @@ def ranked(rows: dict[str, dict]) -> list[str]:
     return sorted(rows, key=key)
 
 
+def by_agent(rows: dict[str, dict]) -> dict[str, list[str]]:
+    agents: dict[str, list[str]] = {}
+    for task in ranked(rows):
+        agents.setdefault(rows[task].get("worker") or "-", []).append(task)
+    return agents
+
+
+def cmd_agents(_: argparse.Namespace) -> int:
+    for rank, (agent, tasks) in enumerate(by_agent(merged(include_done=False)).items(), 1):
+        print(f"{rank}\t{agent}\t{len(tasks)}\t{', '.join(tasks)}")
+    return 0
+
+
+def cmd_order(args: argparse.Namespace) -> int:
+    names = [name.strip() for name in args.agents.split(",") if name.strip()]
+    agents = by_agent(merged(include_done=False))
+    unknown = [name for name in names if name not in agents]
+    if not names or unknown or len(set(names)) != len(names):
+        fail(f"order needs distinct agents from `agents`; unknown: {', '.join(unknown) or '-'}")
+    with database() as tasks:
+        prio = 0
+        for name in names:
+            for task in agents[name]:
+                prio += 1
+                tasks.setdefault(task, {})["prio"] = prio
+        for name in agents.keys() - set(names):
+            for task in agents[name]:
+                tasks.get(task, {}).pop("prio", None)
+    print(f"pinned {prio} tasks of {len(names)} agents; the others rank by WSJF after them")
+    return 0
+
+
 def okr(row: dict) -> str:
     results = row.get("key_results", [])
     text = cell(row.get("objective") or "-", 40)
@@ -489,6 +521,10 @@ def main() -> int:
     p.add_argument("--task")
     p.set_defaults(func=cmd_artifacts)
     sub.add_parser("tools").set_defaults(func=cmd_tools)
+    sub.add_parser("agents").set_defaults(func=cmd_agents)
+    p = sub.add_parser("order")
+    p.add_argument("agents")
+    p.set_defaults(func=cmd_order)
     args = parser.parse_args()
     return args.func(args)
 

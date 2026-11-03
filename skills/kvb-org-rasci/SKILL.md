@@ -23,6 +23,8 @@ rasci.py artifacts [--ended] [--task <task>]
 rasci.py estimate <task> "<party>" --value <fib> --complexity <fib>
 rasci.py wsjf [--all]
 rasci.py tools
+rasci.py agents
+rasci.py order "<agent>,<agent>,..."
 ```
 
 ## Objective and key results
@@ -58,6 +60,8 @@ published). `done` is refused while one is open; a task ended short of them is
   (`--prio`) first, then WSJF from the estimates the chair collects; `show`
   prints the rank as Prio and the score as WSJF.
 - Write only your own rows; another session's task belongs to that session.
+  The one exception is `order`, the operator's pick through the
+  `kvb-org-priority` skill.
 - On /kvb-org-rasci print `show` unchanged; its `gaps:` line names tasks
   without exactly one A, without R, or open without a key result. `get`
   prints one task in full, key results numbered.

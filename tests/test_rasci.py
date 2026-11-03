@@ -237,6 +237,29 @@ class TestRasci(unittest.TestCase):
         self._run("estimate", "work/b", "One", "--drop")
         self.assertFalse(any(line.startswith("estimate ") for line in self._out("get", "work/b")))
 
+    def test_order_pins_the_agents_in_the_operators_order(self):
+        self._run("set", "work/a1", "--worker", "Alpha", "--prio", "1")
+        self._run("set", "work/a2", "--worker", "Alpha", "--prio", "2")
+        self._run("set", "work/b1", "--worker", "Beta", "--prio", "3")
+        self._run("set", "work/c1", "--worker", "Gamma")
+        self._run("estimate", "work/c1", "One", "--value", "8", "--complexity", "2")
+        self.assertEqual(
+            self._out("agents"),
+            ["1\tAlpha\t2\twork/a1, work/a2", "2\tBeta\t1\twork/b1", "3\tGamma\t1\twork/c1"],
+        )
+        self.assertEqual(
+            self._out("order", "Gamma, Beta"), ["pinned 2 tasks of 2 agents; the others rank by WSJF after them"]
+        )
+        self.assertEqual(
+            self._out("agents"),
+            ["1\tGamma\t1\twork/c1", "2\tBeta\t1\twork/b1", "3\tAlpha\t2\twork/a1, work/a2"],
+        )
+        self.assertTrue(self._out("show")[2].startswith("| 1 | 4 | work/c1 |"))
+        self.assertNotIn("prio: 1", self._out("get", "work/a1"))
+        for args in (("order", "Gamma,Nobody"), ("order", "Beta,Beta"), ("order", " , ")):
+            with self.subTest(args=args):
+                self.assertEqual(self._run(*args).returncode, 2)
+
 
 class TestOrgSkillsUseTheRegister(unittest.TestCase):
     def test_every_org_skill_names_the_register(self):
