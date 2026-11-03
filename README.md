@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skill`, `coach`. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `check` analyses and reports findings, `org` coordinates agents, `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
