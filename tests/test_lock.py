@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCK_FILE = REPO_ROOT / "skills-lock.json"
+BUDGET = REPO_ROOT / "scripts" / "budget.py"
+SPEC = importlib.util.spec_from_file_location("budget", BUDGET)
+budget = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(budget)
 
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_FIELDS = ("source", "sourceType", "skillPath", "computedHash")
-DESCRIPTION_WORDS = 40
-LISTING_WORDS = 1500
 
 
 class TestSkillsLock(unittest.TestCase):
@@ -64,14 +69,21 @@ class TestSkillsLock(unittest.TestCase):
                 )
 
     def test_descriptions_fit_the_listing_budget(self):
-        total = 0
-        for skill_md in sorted((REPO_ROOT / "skills").glob("*/SKILL.md")):
-            frontmatter = skill_md.read_text(encoding="utf-8").split("---", 2)[1]
-            words = len(frontmatter.split("description:", 1)[1].split()) - 1
-            total += words
-            with self.subTest(skill=skill_md.parent.name):
-                self.assertLessEqual(words, DESCRIPTION_WORDS)
-        self.assertLessEqual(total, LISTING_WORDS)
+        found = budget.counts(REPO_ROOT, index=False)
+        for name, words in found.items():
+            with self.subTest(skill=name):
+                self.assertLessEqual(words, budget.DESCRIPTION_WORDS)
+        self.assertLessEqual(sum(found.values()), budget.LISTING_WORDS)
+
+    def test_budget_script_reports_the_total_and_the_longest(self):
+        result = subprocess.run(
+            [sys.executable, str(BUDGET), "--repo", str(REPO_ROOT), "--top", "3"],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertRegex(result.stdout, r"^total \d+/\d+ words in \d+ skills\n")
+        self.assertEqual(len(result.stdout.splitlines()), 4)
+        self.assertEqual(budget.words("---\nname: x\ndescription: >\n  one two three\n---\n"), 3)
 
     def test_first_party_skills_do_not_shadow_locked_skills(self):
         locked = set(self.lock["skills"].keys())

@@ -1,4 +1,4 @@
-.PHONY: install project test update
+.PHONY: install project test update budget
 
 # Install the skills globally into $HOME (.agents/skills + .claude/skills).
 install:
@@ -19,3 +19,7 @@ test:
 # Update all skills to their latest versions and refresh skills-lock.json.
 update:
 	@bash scripts/update.sh
+
+# Count skill description words against the listing budget: make budget [INDEX=1]
+budget:
+	@python3 scripts/budget.py --repo . --top 5 $(if $(INDEX),--index)
