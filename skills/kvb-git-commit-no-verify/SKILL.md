@@ -7,9 +7,17 @@ description: >
 ---
 
 1. Run the kvb-code-no-comments audit over the staged and unstaged changes first,
-   then the advocate check over the staging index. An advocate blocker stops
+   then the kvb-check-legal check over the staging index. A legal blocker stops
    here.
-2. Commit exactly the staging index with `git commit --no-verify` and a
+2. Show four lines in the message right before the `git commit` call, never
+   only after it:
+   - **Worktree**: absolute path from `git rev-parse --show-toplevel`.
+   - **Branch**: `git branch --show-current`, or `detached at <short sha>`.
+   - **Fix confidence** of the staged bundle, from the kvb-check-confidence
+     skill.
+   - **Break risk** of the staged bundle, derived through the
+     kvb-check-break-risk skill.
+3. Commit exactly the staging index with `git commit --no-verify` and a
    Conventional-Commits message derived from the staged diff; never add
    unstaged files, never push.
-3. Report the created commit hash and what remains uncommitted.
+4. Report the created commit hash and what remains uncommitted.
