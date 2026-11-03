@@ -9,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS = REPO_ROOT / "skills"
 README = REPO_ROOT / "README.md"
-CATEGORIES = ("think", "create", "code", "ci", "git", "check", "org", "skill", "coach")
+CATEGORIES = ("think", "create", "code", "ci", "git", "check", "org", "agent", "skill", "coach")
 UNCATEGORIZED = frozenset(
     {
         "kvb-cleanup",

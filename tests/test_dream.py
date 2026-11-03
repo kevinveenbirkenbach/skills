@@ -38,6 +38,7 @@ class TestDreamSkill(unittest.TestCase):
             "kvb-skill-essence",
             "kvb-code-refactor",
             "kvb-code-tune",
+            "kvb-agent-optimize",
             "kvb-think-gaps",
         ):
             self.assertIn(f"`{skill}`", text)

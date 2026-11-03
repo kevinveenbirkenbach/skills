@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `check` analyses and reports findings, `org` coordinates agents, `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `agent`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `check` analyses and reports findings, `org` coordinates agents, `agent` makes a repository easy for agents (code index, agent instructions), `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -25,6 +25,7 @@ flowchart LR
   kvb --> git[git]
   kvb --> check[check]
   kvb --> org[org]
+  kvb --> agent[agent]
   kvb --> skill[skill]
   kvb --> coach[coach]
   kvb --> none[no category]
@@ -72,6 +73,7 @@ flowchart LR
   org --> org_robot[kvb-org-robot]
   org --> org_operator[kvb-org-operator]
   org --> org_priority[kvb-org-priority]
+  agent --> agent_optimize[kvb-agent-optimize]
   skill --> skill_tune[kvb-skill-tune]
   skill --> skill_auto[kvb-skill-auto]
   skill --> skill_essence[kvb-skill-essence]
@@ -159,6 +161,9 @@ flowchart LR
     robot[kvb-org-robot]
     operator[kvb-org-operator]
     priority[kvb-org-priority]
+  end
+  subgraph cat_agent [agent]
+    agent_optimize[kvb-agent-optimize]
   end
   subgraph cat_skill [skill]
     autotune[kvb-skill-tune]
@@ -272,7 +277,10 @@ flowchart LR
   optimize --> essence
   optimize --> refactor
   optimize --> tune
+  optimize --> agent_optimize
   optimize --> gaps
+  agent_optimize -. install .-> operator
+  agent_optimize -. domain graphs .-> rasci
   coach --> active_listening
   coach --> operator
   coach --> rasci

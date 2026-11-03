@@ -26,8 +26,10 @@ inventory is skipped with one line.
 7. `kvb-code-refactor`: bring the uncommitted changes up to the project's
    standards.
 8. `kvb-code-tune`: optimize the hot paths the evidence measured.
-9. `kvb-think-gaps`: find the missing work and hand each pick to
-   `kvb-create-requirement`.
+9. `kvb-agent-optimize`: index every repository in scope as a code graph
+   and tighten its agent instructions.
+10. `kvb-think-gaps`: find the missing work and hand each pick to
+    `kvb-create-requirement`.
 
 ## Questions
 
