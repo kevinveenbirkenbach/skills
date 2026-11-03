@@ -1,10 +1,9 @@
 ---
 name: kvb-org-organize
 description: >
-  Keep parallel agents from duplicating work: the first claim owns it; a
-  resource chair allocates. Run AUTOMATICALLY
-  before work another agent might also do (failure, cluster, feature, gate,
-  deploy, cleanup), and on /kvb-org-organize.
+  Keep parallel agents from duplicating work: the first claim owns it, a
+  chair allocates. Run AUTOMATICALLY before work another agent might also
+  do, and on /kvb-org-organize.
 ---
 
 Two agents doing the same work waste the second run and then collide in the

@@ -1,9 +1,9 @@
 ---
 name: kvb-code-refactor
 description: >
-  Refactor every uncommitted file (staged, unstaged, untracked) up to the
-  project's standards without changing behaviour. Trigger on /kvb-code-refactor or when
-  the operator asks to clean up, tidy or polish the current changes.
+  Refactor every uncommitted file up to the project's standards without
+  changing behaviour. Trigger on /kvb-code-refactor or asked to clean up,
+  tidy or polish the current changes.
 ---
 
 The unit of work is the uncommitted change set, not the repository. Behaviour

@@ -1,9 +1,9 @@
 ---
 name: kvb-think-dialectic
 description: >
-  Reach a defensible conclusion by thesis, independent skeptic antithesis and
-  synthesis, iterated to ~99% confidence. Trigger for any consequential root
-  cause, design or decision that is uncertain and expensive to get wrong.
+  Thesis, independent skeptic antithesis and synthesis, iterated to ~99%
+  confidence. Trigger for any root cause, design or decision that is
+  uncertain and expensive to get wrong.
 ---
 
 Reach the truth by dialectic, not by first guess. Do not stop at a plausible
