@@ -1,10 +1,9 @@
 ---
 name: kvb-check-security
 description: >
-  Run the MEDUSA security scanner (medusa-security, PyPI) on a repository,
-  working tree or secret stores. Use for security scans, vetting a repo before
-  cloning, leaked-secret detection in chat or shell history, or /kvb-check-security.
-  Defensive only.
+  Run the MEDUSA scanner (medusa-security) on a repository, working tree or
+  secret stores. Use for security scans, vetting a repo, leaked secrets in
+  chat or shell history, or /kvb-check-security. Defensive only.
 ---
 
 MEDUSA is a defensive AI-first security scanner (40,000+ patterns: CVEs, prompt injection, MCP tool poisoning, leaked secrets).

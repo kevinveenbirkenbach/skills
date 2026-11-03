@@ -1,9 +1,9 @@
 ---
 name: kvb-code-test
 description: >
-  Discover the Makefile's test targets, let the operator pick, run and report;
-  fix mode loops until green. Trigger on /kvb-code-test [--fix], or asked to
-  run the tests, make them pass, or get the suite green.
+  Run the Makefile test targets the operator picks and report; fix mode loops
+  until green. Trigger on /kvb-code-test [--fix] or asked to run or fix the
+  tests.
 ---
 
 The Makefile is the source of truth for how this project runs tests. Never

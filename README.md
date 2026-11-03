@@ -64,6 +64,7 @@ flowchart LR
   org --> org_artefacts[kvb-org-artefacts]
   org --> org_wsjf[kvb-org-wsjf]
   org --> org_robot[kvb-org-robot]
+  org --> org_operator[kvb-org-operator]
   skill --> skill_dream[kvb-skill-dream]
   skill --> skill_tune[kvb-skill-tune]
   skill --> skill_auto[kvb-skill-auto]
@@ -139,6 +140,7 @@ flowchart LR
     artefacts[kvb-org-artefacts]
     wsjf[kvb-org-wsjf]
     robot[kvb-org-robot]
+    operator[kvb-org-operator]
   end
   subgraph cat_skill [skill]
     dream[kvb-skill-dream]
@@ -190,6 +192,7 @@ flowchart LR
   artefacts --> rasci
   democracy --> wsjf
   wsjf --> rasci
+  operator --> rasci
   dream --> rasci
 
   observe --> triage

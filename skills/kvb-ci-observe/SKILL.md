@@ -1,9 +1,9 @@
 ---
 name: kvb-ci-observe
 description: >
-  Watch a named target (CI run, pipeline, build, log) on a cadence and triage
-  new failures as they appear. Trigger on /kvb-ci-observe <target> or when the
-  operator asks to keep monitoring and fix regressions.
+  Watch a CI run, pipeline, build or log on a cadence and triage new failures.
+  Trigger on /kvb-ci-observe <target> or a request to keep monitoring and fix
+  regressions.
 ---
 
 Keep a target under continuous watch and act only when it degrades. The loop is
