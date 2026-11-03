@@ -11,7 +11,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "skills" / "kvb-git-close-issues" / "scripts" / "issues.py"
 PR = {
-    "body": "Fixes #12 and touches #13.\nCloses: other/repo#7\nSee https://github.com/a/b/issues/9",
+    "number": 40,
+    "body": (
+        "Fixes #12 and touches #13.\nCloses: other/repo#7\nSee https://github.com/a/b/issues/9\n"
+        "Rows WordPress#0 and docs#1 are not issues; this is #40."
+    ),
     "headRefName": "fix/sys-ctl-hlth-runtime/vulnerability-engines/1324",
     "commits": [
         {"oid": "abcdef1234567", "messageHeadline": "fix: guard", "messageBody": "Resolved #13"},
@@ -25,7 +29,7 @@ PR = {
 
 def _run(payload: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(SCRIPT), "--json"],
+        [sys.executable, str(SCRIPT), "--repo", "Owner/repo", "--json"],
         input=payload,
         check=False,
         capture_output=True,
@@ -46,7 +50,7 @@ class TestIssues(unittest.TestCase):
                 ("other/repo", 7): (True, ["body"]),
                 ("a/b", 9): (False, ["body"]),
                 ("", 1324): (False, ["branch"]),
-                ("owner/repo", 21): (True, ["linked"]),
+                ("", 21): (True, ["linked"]),
             },
         )
 

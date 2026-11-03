@@ -18,7 +18,7 @@ body and the commits, a trailing number in the branch name, and the issues
 GitHub already links:
 
 ```bash
-gh pr view <pr> --json body,headRefName,commits,closingIssuesReferences | issues.py
+gh pr view <pr> --json number,body,headRefName,commits,closingIssuesReferences | issues.py --repo <owner/name>
 ```
 
 ## Step 2: verify
