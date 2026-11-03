@@ -33,8 +33,12 @@ installed, and the state of the shared snapshot
   claude plugin install codebase-memory@codebase-memory
   ```
 
-- **Index** with the MCP tool `index_repository` on the repository path, then
-  `check_index_coverage`; every file kind it leaves out is a finding.
+- **Index**: once installed, the skills repository's `make install` switches
+  `auto_index` on, so every repository a session opens is indexed and
+  watched; every skill that explores code asks the graph first. Check it with
+  `index_status`, index by hand with `index_repository` only where it is
+  missing, then `check_index_coverage`; every file kind it leaves out is a
+  finding.
 - **Snapshot**: ask whether the repository shares its graph. Shared: run
   `index_repository` with `persistence: true` and commit
   `.codebase-memory/graph.db.zst` at a fixed cadence (every commit of it adds

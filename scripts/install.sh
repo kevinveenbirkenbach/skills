@@ -64,6 +64,12 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	else
 		warn "skills: no systemd user session; skipped the kvb-dream notification timer."
 	fi
+	if command -v codebase-memory-mcp &>/dev/null; then
+		log "skills: auto-indexing every repository a session opens into the code graph"
+		codebase-memory-mcp config set auto_index true
+	else
+		warn "skills: codebase-memory-mcp not installed; the code graph stays off (see kvb-agent-optimize)."
+	fi
 fi
 
 log "skills: done. Restart your agent to load the skills."
