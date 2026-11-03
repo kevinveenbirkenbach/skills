@@ -18,15 +18,13 @@ vary), do the following:
 2. Then propose, in one short paragraph: the repeated pattern you observed,
    a skill name suggestion, the trigger phrasing, and what the skill would
    do. Ask whether to create it.
-3. On approval, write the skill:
-   - a conversation shortcut or expansion: add it to the `kvb-skills-shortcuts` skill
-     table instead of creating a new skill.
-   - anything else: persist it exactly as the `kvb-skills-tune` skill's
-     **Persistence** section specifies — locate the operator's skills
-     repository, write `skills/<name>/SKILL.md` there (or in the current
-     project for project-specific behavior), then mirror the skill directory
-     into `~/.claude/skills/` and `~/.agents/skills/`, plus the project's
-     `.claude/skills/` and `.agents/skills/` when it is project-specific.
+3. On approval, write the skill: persist it exactly as the
+   `kvb-skills-tune` skill's **Persistence** section specifies — locate the
+   operator's skills repository, write `skills/<name>/SKILL.md` there (or in
+   the current project for project-specific behavior), then mirror the skill
+   directory into `~/.claude/skills/` and `~/.agents/skills/`, plus the
+   project's `.claude/skills/` and `.agents/skills/` when it is
+   project-specific.
    Follow the local naming conventions and keep the skill a thin,
    single-purpose instruction; route to an authoritative doc when one
    exists instead of duplicating it.

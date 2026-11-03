@@ -3,8 +3,8 @@ name: kvb-code-no-comments
 description: >
   Purge explanatory comments from staged and unstaged changes. Run
   AUTOMATICALLY before every commit or stage request (commit, commit
-  no-verify, stage next, socon, sobu, socobu, "commite ..."); also on
-  /kvb-code-no-comments or comment complaints.
+  no-verify, stage next, "commite ..."); also on /kvb-code-no-comments or
+  comment complaints.
 ---
 
 When the operator asks to commit or stage, run this audit first and only

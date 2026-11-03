@@ -65,7 +65,6 @@ flowchart LR
   skills --> skills_tune[kvb-skills-tune]
   skills --> skills_auto[kvb-skills-auto]
   skills --> skills_essence[kvb-skills-essence]
-  skills --> skills_shortcuts[kvb-skills-shortcuts]
   none --> cleanup[kvb-cleanup]
   none --> help[kvb-help]
 ```
@@ -137,7 +136,6 @@ flowchart LR
     autotune[kvb-skills-tune]
     autoskill[kvb-skills-auto]
     essence[kvb-skills-essence]
-    shortcuts[kvb-skills-shortcuts]
   end
   subgraph cat_none [no category]
     cleanup[kvb-cleanup]
@@ -210,7 +208,6 @@ flowchart LR
   dream --> autotune
   dream --> autoskill
   autoskill --> autotune
-  autoskill --> shortcuts
   autotune --> essence
 
   test --> triage

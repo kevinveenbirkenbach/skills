@@ -81,8 +81,8 @@ Ask in this order, at most four questions per call:
 2. **Target** - which finding becomes a skill, or which existing skill gets
    optimized. One option per candidate, each with its measured cost in the
    description.
-3. **Shape** - for a new skill: `Standalone skill`, `Row in the
-   kvb-skills-shortcuts skill`, `Extend an existing skill`, `Memory entry instead of a skill`.
+3. **Shape** - for a new skill: `Standalone skill`, `Extend an existing
+   skill`, `Memory entry instead of a skill`.
    For an optimization: `Tighten wording only`, `Change the trigger`, `Add
    rules`, `Split into two skills`, `Merge into another skill`.
 4. **Placement** - `Operator skills repository (portable)` or
