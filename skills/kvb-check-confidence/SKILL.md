@@ -36,5 +36,5 @@ A threshold the operator named ("95% confidence, break risk ≤5%") is a gate on
 the work, handled as the `kvb-check-break-risk` skill's last section says, for both
 numbers.
 
-Objective: the `kvb-skills-tune` skill's **Objective** section. Two figures with their residuals replace a
+Objective: the `kvb-skill-tune` skill's **Objective** section. Two figures with their residuals replace a
 hedging paragraph and save the operator a verification round trip.

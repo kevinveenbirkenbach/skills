@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook: emit the kvb-skills-tune hint at most once per interval.
-# Stdout lands in the agent's context, which is why the payload tells the agent
-# to show the hint and keep going instead of running kvb-skills-tune by itself.
 set -euo pipefail
 
 interval="${AUTOTUNE_INTERVAL_SECONDS:-3600}"
@@ -24,9 +21,9 @@ printf '%s\n' "${now}" >"${stamp}"
 cat <<'HINT'
 AUTOTUNE HINT: over an hour since the last hint. Show the operator this notice
 verbatim as a short block, then continue with their request. Do NOT run
-kvb-skills-tune, do not propose skills, do not ask questions about it.
+kvb-skill-tune, do not propose skills, do not ask questions about it.
 
-    💡 /kvb-skills-tune - generate a new skill or optimize an existing one
+    💡 /kvb-skill-tune - generate a new skill or optimize an existing one
        (fewer tokens, fewer errors, more focus, learnings that persist).
        Runs only when you trigger it.
 HINT

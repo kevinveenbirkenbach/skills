@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook: emit the kvb-skills-dream hint at most once per interval and per
-# repository. The stamp lives in the repository's git dir, so every repository
-# keeps its own cadence; outside a git repository the hook stays silent.
-# Stdout lands in the agent's context, which is why the payload tells the agent
-# to show the hint and keep going instead of running kvb-skills-dream by itself.
 set -euo pipefail
 
 interval="${DREAM_INTERVAL_SECONDS:-43200}"
@@ -31,10 +26,10 @@ printf '%s\n' "${now}" >"${stamp}"
 cat <<'HINT'
 DREAM HINT: over twelve hours since the last hint for this repository. Show the
 operator this notice verbatim as a short block, then continue with their
-request. Do NOT run kvb-skills-dream, do not start replaying the history, do
+request. Do NOT run kvb-skill-dream, do not start replaying the history, do
 not ask questions about it.
 
-    💤 /kvb-skills-dream - consolidate the last 24h in this repository: what
+    💤 /kvb-skill-dream - consolidate the last 24h in this repository: what
        held, what broke, which hypotheses follow, into memory and improvement
        proposals.
        Runs only when you trigger it.

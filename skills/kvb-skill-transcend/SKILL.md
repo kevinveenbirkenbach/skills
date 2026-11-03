@@ -1,8 +1,8 @@
 ---
-name: kvb-skills-transcend
+name: kvb-skill-transcend
 description: >
   Carry the session's skill use and own scripts into the skills repo.
-  Trigger on /kvb-skills-transcend.
+  Trigger on /kvb-skill-transcend.
 ---
 
 What an agent improvised in one session dies with it: the helper script in its
@@ -31,7 +31,7 @@ One line each: `candidate -> source -> evidence`.
 
 Per candidate one target: a script under an existing skill's `scripts/`, a
 new skill, a sharper step in an existing skill, a memory entry instead, or
-drop. Recurring moves without a script go to the `kvb-skills-tune` skill as
+drop. Recurring moves without a script go to the `kvb-skill-tune` skill as
 evidence. A script is portable only once its host paths, names and values
 became explicit parameters (the `kvb-code-no-defaults` skill); one that needs
 a secret, a credential or a single host is dropped or stays a memory entry.
@@ -46,7 +46,7 @@ diff.
 
 ## Step 4: write
 
-- Write where the `kvb-skills-tune` skill's **Persistence** section says:
+- Write where the `kvb-skill-tune` skill's **Persistence** section says:
   the skills repository as source of truth, then the live mirrors.
 - Read every script whole before carrying it; strip comments the way the
   `kvb-code-no-comments` skill does.

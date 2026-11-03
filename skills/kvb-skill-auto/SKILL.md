@@ -1,12 +1,12 @@
 ---
-name: kvb-skills-auto
+name: kvb-skill-auto
 description: >
   Turn operator repetition into a skill. Trigger when the operator repeats an
   instruction, correction or prompt pattern a third time in a conversation, or
   says they keep repeating themselves, and the pattern is reusable.
 ---
 
-Its objective is the `kvb-skills-tune` skill's **Objective** section: a skill is worth
+Its objective is the `kvb-skill-tune` skill's **Objective** section: a skill is worth
 creating only when it cuts tokens or time and raises quality; judge every
 candidate against its three axes and rules.
 
@@ -19,7 +19,7 @@ vary), do the following:
    a skill name suggestion, the trigger phrasing, and what the skill would
    do. Ask whether to create it.
 3. On approval, write the skill: persist it exactly as the
-   `kvb-skills-tune` skill's **Persistence** section specifies — locate the
+   `kvb-skill-tune` skill's **Persistence** section specifies — locate the
    operator's skills repository, write `skills/<name>/SKILL.md` there (or in
    the current project for project-specific behavior), then mirror the skill
    directory into `~/.claude/skills/` and `~/.agents/skills/`, plus the

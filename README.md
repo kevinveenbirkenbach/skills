@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skills`. Only `kvb-cleanup`, `kvb-help` and the collector `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skill`. Only `kvb-cleanup`, `kvb-help` and the collector `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -25,7 +25,7 @@ flowchart LR
   kvb --> git[git]
   kvb --> check[check]
   kvb --> org[org]
-  kvb --> skills[skills]
+  kvb --> skill[skill]
   kvb --> none[no category]
   think --> think_listen[kvb-think-listen]
   think --> think_explain[kvb-think-explain]
@@ -64,11 +64,11 @@ flowchart LR
   org --> org_artefacts[kvb-org-artefacts]
   org --> org_wsjf[kvb-org-wsjf]
   org --> org_robot[kvb-org-robot]
-  skills --> skills_dream[kvb-skills-dream]
-  skills --> skills_tune[kvb-skills-tune]
-  skills --> skills_auto[kvb-skills-auto]
-  skills --> skills_essence[kvb-skills-essence]
-  skills --> skills_transcend[kvb-skills-transcend]
+  skill --> skill_dream[kvb-skill-dream]
+  skill --> skill_tune[kvb-skill-tune]
+  skill --> skill_auto[kvb-skill-auto]
+  skill --> skill_essence[kvb-skill-essence]
+  skill --> skill_transcend[kvb-skill-transcend]
   none --> cleanup[kvb-cleanup]
   none --> help[kvb-help]
   none --> transcend_all[kvb-transcend]
@@ -139,12 +139,12 @@ flowchart LR
     wsjf[kvb-org-wsjf]
     robot[kvb-org-robot]
   end
-  subgraph cat_skills [skills]
-    dream[kvb-skills-dream]
-    autotune[kvb-skills-tune]
-    autoskill[kvb-skills-auto]
-    essence[kvb-skills-essence]
-    skills_transcend[kvb-skills-transcend]
+  subgraph cat_skill [skill]
+    dream[kvb-skill-dream]
+    autotune[kvb-skill-tune]
+    autoskill[kvb-skill-auto]
+    essence[kvb-skill-essence]
+    skill_transcend[kvb-skill-transcend]
   end
   subgraph cat_none [no category]
     cleanup[kvb-cleanup]
@@ -225,12 +225,12 @@ flowchart LR
   autoskill --> autotune
   autotune --> essence
   dream --> transcend
-  transcend --> skills_transcend
+  transcend --> skill_transcend
   transcend --> code_transcend
-  skills_transcend --> active_listening
-  skills_transcend --> autotune
+  skill_transcend --> active_listening
+  skill_transcend --> autotune
   code_transcend --> active_listening
-  autotune -. own scripts .-> skills_transcend
+  autotune -. own scripts .-> skill_transcend
   tune -. measurements .-> code_transcend
 
   test --> triage
@@ -259,7 +259,7 @@ Copy the skills into a specific project (`<repo>/.agents/skills` and `<repo>/.cl
 make project TARGET=/path/to/repo
 ```
 
-Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `kvb-skills-tune` points you at `/kvb-skills-tune` at most once an hour, `kvb-skills-dream` points you at `/kvb-skills-dream` at most once every twelve hours per repository (stamped in that repository's git dir). A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
+Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `kvb-skill-tune` points you at `/kvb-skill-tune` at most once an hour, `kvb-skill-dream` points you at `/kvb-skill-dream` at most once every twelve hours per repository (stamped in that repository's git dir). A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
 
 Restart your agent afterwards so it loads the new skills.
 

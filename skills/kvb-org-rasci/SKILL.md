@@ -53,7 +53,7 @@ published). `done` is refused while one is open; a task ended short of them is
   executing the task right now.
 - Artifacts share this table and follow the `kvb-org-artefacts` skill:
   record each one when it appears, drop it once deleted. Add every script or
-  tool the task ran (`--tool`): `tools` ranks them for `kvb-skills-dream`.
+  tool the task ran (`--tool`): `tools` ranks them for `kvb-skill-dream`.
 - Priority is the rank of the `kvb-org-wsjf` skill: an operator's pin
   (`--prio`) first, then WSJF from the estimates the chair collects; `show`
   prints the rank as Prio and the score as WSJF.

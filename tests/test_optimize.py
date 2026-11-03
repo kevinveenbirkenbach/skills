@@ -1,4 +1,4 @@
-"""The self-improving skills must share the objective held by kvb-skills-tune."""
+"""The self-improving skills must share the objective held by kvb-skill-tune."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS = REPO_ROOT / "skills"
-ROUTERS = ("kvb-skills-auto", "kvb-check-confidence")
+ROUTERS = ("kvb-skill-auto", "kvb-check-confidence")
 
 
 class TestOptimizeObjective(unittest.TestCase):
     def test_autotune_names_the_three_axes(self):
-        text = (SKILLS / "kvb-skills-tune" / "SKILL.md").read_text(encoding="utf-8")
+        text = (SKILLS / "kvb-skill-tune" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("## Objective", text)
         for axis in ("**Tokens**", "**Time**", "**Quality**"):
             self.assertIn(axis, text)
@@ -21,9 +21,9 @@ class TestOptimizeObjective(unittest.TestCase):
         for skill in ROUTERS:
             text = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
             self.assertIn(
-                "`kvb-skills-tune` skill's **Objective**",
+                "`kvb-skill-tune` skill's **Objective**",
                 text,
-                f"{skill} does not route to the kvb-skills-tune objective",
+                f"{skill} does not route to the kvb-skill-tune objective",
             )
 
 

@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL = REPO_ROOT / "skills" / "kvb-skills-dream" / "SKILL.md"
-HOOK = REPO_ROOT / "skills" / "kvb-skills-dream" / "hooks" / "reminder.sh"
+SKILL = REPO_ROOT / "skills" / "kvb-skill-dream" / "SKILL.md"
+HOOK = REPO_ROOT / "skills" / "kvb-skill-dream" / "hooks" / "reminder.sh"
 PATCHER = REPO_ROOT / "scripts" / "enable-plugins.js"
 
 
@@ -38,7 +38,7 @@ def _run_hook(
 class TestDreamSkill(unittest.TestCase):
     def test_skill_is_trigger_only(self):
         text = SKILL.read_text(encoding="utf-8")
-        self.assertIn("name: kvb-skills-dream", text)
+        self.assertIn("name: kvb-skill-dream", text)
         self.assertIn("multiSelect: false", text)
 
 
@@ -51,7 +51,7 @@ class TestDreamHook(unittest.TestCase):
 
     def test_first_run_hints_and_stamps(self):
         result = _run_hook(self.cwd, self.stamp)
-        self.assertIn("/kvb-skills-dream", result.stdout)
+        self.assertIn("/kvb-skill-dream", result.stdout)
         self.assertTrue(self.stamp.is_file())
 
     def test_second_run_is_silent_within_interval(self):
@@ -60,12 +60,12 @@ class TestDreamHook(unittest.TestCase):
 
     def test_hint_returns_after_the_interval(self):
         _run_hook(self.cwd, self.stamp)
-        self.assertIn("/kvb-skills-dream", _run_hook(self.cwd, self.stamp, interval="0").stdout)
+        self.assertIn("/kvb-skill-dream", _run_hook(self.cwd, self.stamp, interval="0").stdout)
 
     def test_corrupt_stamp_does_not_crash(self):
         self.stamp.parent.mkdir(parents=True, exist_ok=True)
         self.stamp.write_text("not-a-timestamp\n", encoding="utf-8")
-        self.assertIn("/kvb-skills-dream", _run_hook(self.cwd, self.stamp).stdout)
+        self.assertIn("/kvb-skill-dream", _run_hook(self.cwd, self.stamp).stdout)
 
     def test_outside_a_repository_it_stays_silent(self):
         self.assertEqual(_run_hook(self.cwd).stdout, "")
@@ -78,7 +78,7 @@ class TestDreamHook(unittest.TestCase):
             subprocess.run(
                 ["git", "init", "-q", str(repo)], check=True, capture_output=True
             )
-            self.assertIn("/kvb-skills-dream", _run_hook(repo).stdout)
+            self.assertIn("/kvb-skill-dream", _run_hook(repo).stdout)
             self.assertTrue((repo / ".git" / ".dream-stamp").is_file())
             self.assertEqual(_run_hook(repo).stdout, "")
 
@@ -103,7 +103,7 @@ class TestDreamHook(unittest.TestCase):
             subprocess.run(
                 ["git", *args], check=True, capture_output=True, env=env, cwd=str(repo)
             )
-        self.assertIn("/kvb-skills-dream", _run_hook(repo).stdout)
+        self.assertIn("/kvb-skill-dream", _run_hook(repo).stdout)
         self.assertEqual(_run_hook(tree).stdout, "")
 
 
@@ -124,8 +124,8 @@ class TestSettingsRegistration(unittest.TestCase):
         self._patch()
         data = self._patch()
         entries = json.dumps(data["hooks"]["UserPromptSubmit"])
-        self.assertEqual(entries.count("kvb-skills-dream/hooks/reminder.sh"), 1)
-        self.assertEqual(entries.count("kvb-skills-tune/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-skill-dream/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-skill-tune/hooks/reminder.sh"), 1)
         gate = json.dumps(data["hooks"]["PreToolUse"])
         self.assertEqual(gate.count("kvb-org-organize/scripts/council.py"), 1)
         self.assertEqual(gate.count("kvb-org-organize/scripts/watch.py"), 1)
@@ -147,7 +147,7 @@ class TestSettingsRegistration(unittest.TestCase):
                     "hooks": {
                         "UserPromptSubmit": [
                             hook(f'bash "{base}/autotune/hooks/reminder.sh"'),
-                            hook(f'bash "{base}/dream/hooks/reminder.sh"'),
+                            hook(f'bash "{base}/kvb-skills-dream/hooks/reminder.sh"'),
                             hook(f'python3 "{base}/democracy/scripts/watch.py" watch'),
                             hook("echo keep"),
                         ],
@@ -167,12 +167,12 @@ class TestSettingsRegistration(unittest.TestCase):
         )
         data = self._patch()
         text = json.dumps(data["hooks"])
-        for old in ("/autotune/", "/dream/", "/democracy/", "/subagent-model/"):
+        for old in ("/autotune/", "/kvb-skills-dream/", "/democracy/", "/subagent-model/"):
             self.assertNotIn(f"skills{old}", text)
         self.assertIn("echo keep", text)
         entries = json.dumps(data["hooks"]["UserPromptSubmit"])
-        self.assertEqual(entries.count("kvb-skills-dream/hooks/reminder.sh"), 1)
-        self.assertEqual(entries.count("kvb-skills-tune/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-skill-dream/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-skill-tune/hooks/reminder.sh"), 1)
         self.assertEqual(entries.count("kvb-org-organize/scripts/watch.py"), 1)
         gate = json.dumps(data["hooks"]["PreToolUse"])
         self.assertEqual(gate.count("kvb-org-organize/scripts/council.py"), 1)

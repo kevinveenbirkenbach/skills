@@ -1,9 +1,9 @@
 ---
-name: kvb-skills-tune
+name: kvb-skill-tune
 description: >
   Generate new skills or optimize existing ones (fewer tokens and errors,
   persistent learnings), each proposal confirmed. Trigger ONLY on an explicit
-  request: /kvb-skills-tune, "autotune", "tune the skills".
+  request: /kvb-skill-tune, "autotune", "tune the skills".
 ---
 
 Autotune turns observed friction into durable skills. It runs on demand only,
@@ -12,8 +12,8 @@ skill it writes or rewrites lands in the operator's skills repository.
 
 ## Objective
 
-The shared objective of the self-improving skills (kvb-skills-tune,
-kvb-skills-auto, kvb-check-confidence): every skill, rule, or report the agent produces about its own
+The shared objective of the self-improving skills (kvb-skill-tune,
+kvb-skill-auto, kvb-check-confidence): every skill, rule, or report the agent produces about its own
 working is judged on three axes at once. A proposal that cannot name the axis
 it moves is not an optimization, it is a preference.
 
@@ -42,7 +42,7 @@ it moves is not an optimization, it is a preference.
 
 ## Trigger discipline
 
-- Run **only** when the operator asks: `/kvb-skills-tune`, "autotune", "tune the
+- Run **only** when the operator asks: `/kvb-skill-tune`, "autotune", "tune the
   skills", or an equivalent instruction.
 - The 60-minute reminder hook is a hint for the operator, not a trigger. When it
   fires, print the hint and continue the operator's actual request.
@@ -63,7 +63,7 @@ where readable, from the project's memory and agent instruction files:
 - **Lost learnings**: facts re-derived this session that a memory file or a
   skill should already have carried.
 - **Own scripts**: helpers the agent wrote outside any repository belong to
-  the `kvb-skills-transcend` skill, which carries them over; this skill
+  the `kvb-skill-transcend` skill, which carries them over; this skill
   takes the frictions they reveal.
 
 List each finding as one line: `symptom -> cost -> candidate fix`. Skip
@@ -77,7 +77,7 @@ option, and never write a file before the answers are in.
 
 Ask in this order, at most four questions per call:
 
-1. **Scope** - "What should kvb-skills-tune do this run?" Options: `Create a new
+1. **Scope** - "What should kvb-skill-tune do this run?" Options: `Create a new
    skill`, `Optimize an existing skill`, `Both`, plus the ranked findings if
    more than one candidate exists.
 2. **Target** - which finding becomes a skill, or which existing skill gets
@@ -132,7 +132,7 @@ reverse — remove the mirrors too, or the old name keeps firing.
 - Optimizing an existing skill means the file gets shorter or sharper, not
   longer. Delete rules the agent already follows, merge duplicated ones, and
   cut every sentence that does not change an action. Route that compaction
-  through the `kvb-skills-essence` skill instead of trimming by hand: it runs a health
+  through the `kvb-skill-essence` skill instead of trimming by hand: it runs a health
   pass for dead pointers and rules duplicated across skills before cutting
   anything, ranks by what loads in every session, and shows the diff before it
   writes. It asks for its own scope — answer with the skill being optimized.
@@ -142,7 +142,7 @@ reverse — remove the mirrors too, or the old name keeps firing.
 ## Rules
 
 - One skill per run unless the operator picked `Both`; a broad rewrite of the
-  whole collection is not what kvb-skills-tune is for.
+  whole collection is not what kvb-skill-tune is for.
 - Never write a skill for one-off work, for secrets, or for behaviour an
   existing skill already covers - propose extending that skill instead.
 - The **Objective** section decides what counts as an improvement: at least

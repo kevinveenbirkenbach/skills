@@ -1,9 +1,9 @@
 ---
-name: kvb-skills-dream
+name: kvb-skill-dream
 description: >
   Consolidate the last 24 hours of work in this repository (what held, what
   broke) into memory and improvement proposals.
-  Trigger on /kvb-skills-dream or a request to reflect on or learn from recent
+  Trigger on /kvb-skill-dream or a request to reflect on or learn from recent
   work.
 ---
 
@@ -30,7 +30,7 @@ confidence the next run can now hold on each closed class, calibrated as the
 
 Everything is read from the repository the skill runs in (`git rev-parse
 --show-toplevel`); never mix in another project's history or memory. The default
-window is the last 24 hours — the operator may widen it (`/kvb-skills-dream 7d`). State the
+window is the last 24 hours — the operator may widen it (`/kvb-skill-dream 7d`). State the
 repository and the window in one line before you start.
 
 Run only when the operator asks. The 12-hour reminder hook
@@ -109,10 +109,10 @@ as radio buttons: the improvement, the evidence behind it, and the options
 `Apply now`, `Record as a task`, `Skip`. Ranked by evidence, one question per
 improvement. No repository file changes before an answer comes back.
 
-## Step 7: kvb-skills-tune, kvb-skills-auto, kvb-transcend
+## Step 7: kvb-skill-tune, kvb-skill-auto, kvb-transcend
 
-With the dialectic done and memory written, run `kvb-skills-tune` — hand it this run's
-findings as its evidence so it does not re-collect them — then `kvb-skills-auto`
+With the dialectic done and memory written, run `kvb-skill-tune` — hand it this run's
+findings as its evidence so it does not re-collect them — then `kvb-skill-auto`
 for the operator corrections the window revealed, and `kvb-transcend` for the
 scripts and tests the window's sessions wrote outside a repository. All keep
 their own confirmation steps; the dream never writes a skill on their behalf.

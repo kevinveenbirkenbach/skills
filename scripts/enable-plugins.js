@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// Enable the caveman and ponytail plugins in a Claude Code settings.json so
-// their SessionStart hooks auto-activate both modes, register the kvb-skills-tune
-// and kvb-skills-dream reminder hooks, the kvb-org-organize claim gate, the resource watch and the kvb-org-perform log. Merges non-destructively: existing marketplaces,
-// plugins and hooks are preserved, hooks of renamed skills are repointed, unparseable files are left untouched.
 "use strict";
 
 const fs = require("fs");
@@ -19,10 +15,12 @@ const MARKETPLACES = {
   ponytail: { source: { source: "github", repo: "DietrichGebert/ponytail" } },
 };
 const PLUGINS = { "caveman@caveman": true, "ponytail@ponytail": true };
-const REMINDERS = ["kvb-skills-tune", "kvb-skills-dream"];
+const REMINDERS = ["kvb-skill-tune", "kvb-skill-dream"];
 const RENAMED = {
-  "autotune/hooks/reminder.sh": "kvb-skills-tune/hooks/reminder.sh",
-  "dream/hooks/reminder.sh": "kvb-skills-dream/hooks/reminder.sh",
+  "autotune/hooks/reminder.sh": "kvb-skill-tune/hooks/reminder.sh",
+  "dream/hooks/reminder.sh": "kvb-skill-dream/hooks/reminder.sh",
+  "kvb-skills-tune/hooks/reminder.sh": "kvb-skill-tune/hooks/reminder.sh",
+  "kvb-skills-dream/hooks/reminder.sh": "kvb-skill-dream/hooks/reminder.sh",
   "democracy/scripts/council.py": "kvb-org-organize/scripts/council.py",
   "democracy/scripts/watch.py": "kvb-org-organize/scripts/watch.py",
   "subagent-model/scripts/log.py": "kvb-org-perform/scripts/log.py",
