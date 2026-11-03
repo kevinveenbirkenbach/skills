@@ -64,6 +64,10 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	else
 		warn "skills: no systemd user session; skipped the kvb-dream notification timer."
 	fi
+	if ! command -v codebase-memory-mcp &>/dev/null && command -v yay &>/dev/null; then
+		log "skills: installing the codebase-memory-mcp code graph"
+		yay -S --needed codebase-memory-mcp-bin
+	fi
 	if command -v codebase-memory-mcp &>/dev/null; then
 		log "skills: auto-indexing every repository a session opens into the code graph"
 		codebase-memory-mcp config set auto_index true

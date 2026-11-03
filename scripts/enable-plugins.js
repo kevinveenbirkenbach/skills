@@ -13,8 +13,13 @@ if (!settingsPath) {
 const MARKETPLACES = {
   caveman: { source: { source: "github", repo: "JuliusBrussee/caveman" } },
   ponytail: { source: { source: "github", repo: "DietrichGebert/ponytail" } },
+  "codebase-memory": { source: { source: "github", repo: "DeusData/codebase-memory-mcp" } },
 };
-const PLUGINS = { "caveman@caveman": true, "ponytail@ponytail": true };
+const PLUGINS = {
+  "caveman@caveman": true,
+  "ponytail@ponytail": true,
+  "codebase-memory@codebase-memory": true,
+};
 const REMINDERS = ["kvb-dream", "kvb-coach"];
 const RETIRED = [
   "autotune/hooks/reminder.sh",
@@ -119,4 +124,4 @@ for (const [script, event, matcher, sub] of SCRIPT_HOOKS) {
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled caveman + ponytail plugins (their skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, news hook and resource watch, and the kvb-org-perform log in ${settingsPath}`);
+console.log(`skills: enabled the caveman, ponytail and codebase-memory plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, news hook and resource watch, and the kvb-org-perform log in ${settingsPath}`);
