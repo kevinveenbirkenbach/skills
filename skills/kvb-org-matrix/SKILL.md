@@ -1,9 +1,8 @@
 ---
 name: kvb-org-matrix
 description: >
-  Print one matrix of everything in flight: tasks, workflows, background jobs,
-  with confidence and break risk per item. Trigger on /kvb-org-matrix,
-  "status", "übersicht", "wo stehen wir", or what is done, left or running.
+  One matrix of everything in flight with confidence and break risk per
+  item. Trigger on /kvb-org-matrix, "status", "übersicht", "wo stehen wir".
 ---
 
 One-shot overview, no side effects: this skill reads state and reports it. It

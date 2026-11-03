@@ -1,10 +1,9 @@
 ---
 name: kvb-git-branch-gc
 description: >
-  Remove merged branches and worktrees with `pkgmgr branch gc`: dry run,
-  operator picks from the plan, then apply; unmerged items only one by one.
-  Trigger on /kvb-git-branch-gc, "branches aufräumen", "worktrees aufräumen",
-  "garbage collect".
+  Remove merged branches and worktrees with `pkgmgr branch gc` after a dry
+  run the operator picks from. Trigger on /kvb-git-branch-gc, "branches
+  aufräumen", "worktrees aufräumen".
 ---
 
 `pkgmgr branch gc` decides what is merged and does the removing; this skill

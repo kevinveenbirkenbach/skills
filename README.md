@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skill`. Only `kvb-cleanup`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skill`. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -76,6 +76,7 @@ flowchart LR
   none --> transcend_all[kvb-transcend]
   none --> dream_all[kvb-dream]
   none --> optimize_all[kvb-optimize]
+  none --> coach_all[kvb-coach]
 ```
 
 ## Skill map 🗺️
@@ -158,6 +159,7 @@ flowchart LR
     transcend[kvb-transcend]
     dream[kvb-dream]
     optimize[kvb-optimize]
+    coach[kvb-coach]
   end
 
   commit_req -.-> commit_next
@@ -240,6 +242,9 @@ flowchart LR
   optimize --> refactor
   optimize --> tune
   optimize --> gaps
+  coach --> active_listening
+  coach --> operator
+  coach --> rasci
   autoskill --> autotune
   autotune --> essence
   transcend --> skill_transcend
