@@ -2,8 +2,8 @@
 name: kvb-org-split
 description: >
   Keep agent work in its own worktree until 90% fix confidence and under 5%
-  break risk; below that it becomes a proposal. Trigger when delegating to or
-  parallelizing agents, or on /kvb-org-split.
+  break risk, else a proposal. Trigger when delegating or parallelizing, or on
+  /kvb-org-split.
 ---
 
 # Funnel

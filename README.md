@@ -49,7 +49,10 @@ flowchart LR
   git --> git_commit_next[kvb-git-commit-next]
   git --> git_commit_no_verify[kvb-git-commit-no-verify]
   git --> git_merge_fix[kvb-git-merge-fix]
-  git --> git_close_issues[kvb-git-close-issues]
+  git --> git_issue_close[kvb-git-issue-close]
+  git --> git_issue_solve[kvb-git-issue-solve]
+  git --> git_pr_create[kvb-git-pr-create]
+  git --> git_pr_label[kvb-git-pr-label]
   git --> git_update_branches[kvb-git-update-branches]
   git --> git_branch_gc[kvb-git-branch-gc]
   git --> git_changelog[kvb-git-changelog]
@@ -128,7 +131,10 @@ flowchart LR
     commit_next[kvb-git-commit-next]
     commit_no_verify[kvb-git-commit-no-verify]
     merge_fix[kvb-git-merge-fix]
-    close_issues[kvb-git-close-issues]
+    issue_close[kvb-git-issue-close]
+    issue_solve[kvb-git-issue-solve]
+    pr_create[kvb-git-pr-create]
+    pr_label[kvb-git-pr-label]
     update_branches[kvb-git-update-branches]
     branch_gc[kvb-git-branch-gc]
     changelog[kvb-git-changelog]
@@ -186,7 +192,13 @@ flowchart LR
   commit_next --> commit_no_verify
   commit_next --> explain
   commit_next --> dialectic
-  close_issues --> confidence
+  issue_close --> confidence
+  issue_solve --> issue_close
+  issue_solve --> funnel
+  issue_solve --> pr_create
+  pr_create --> issue_close
+  pr_create --> pr_label
+  pr_create -. push .-> operator
   update_branches --> active_listening
   update_branches -. conflicts .-> merge_fix
   update_branches -. pushes .-> operator

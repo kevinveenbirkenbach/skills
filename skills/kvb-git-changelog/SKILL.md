@@ -1,10 +1,9 @@
 ---
 name: kvb-git-changelog
 description: >
-  Write the release message for `pkgmgr release`;
-  prints only, never edits, tags or releases. Trigger on
-  /kvb-git-changelog, "release message", "changelog entry", before cutting a release,
-  or on pkgmgr's markdown-lint rejection.
+  Write the release message for `pkgmgr release`; prints only. Trigger on
+  /kvb-git-changelog, "release message", "changelog entry", before cutting a
+  release, or on pkgmgr's markdown-lint rejection.
 ---
 
 The message is one text that pkgmgr writes to four places: the CHANGELOG.md
