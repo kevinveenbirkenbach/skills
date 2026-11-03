@@ -14,8 +14,8 @@ holds:
 - **`90/5`**: the pull request meets the bar of the `kvb-org-split` skill (fix
   confidence of at least 90 %, break risk under 5 %), from the
   `kvb-check-confidence` numbers in its body or freshly assessed, and only
-  after the project's full quality gate passed on the PR's exact head; a
-  hotfix takes the next free gate slot.
+  when `gate.py status` of the `kvb-check-gate` skill prints `gate: green`
+  with the PR's exact head checked out.
 
 ## Procedure
 

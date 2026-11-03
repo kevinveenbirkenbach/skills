@@ -1,0 +1,63 @@
+---
+name: kvb-check-gate
+description: >
+  Prove 90/5: every `make test*` target green on the exact HEAD. Trigger
+  before declaring 90/5 or labelling a PR, or on "gate status".
+---
+
+The gate rule, stated here and nowhere else: nothing is declared 90/5 (fix
+confidence of at least 90 %, break risk under 5 %) before every `make test*`
+target of the project, each Makefile target named `test` or starting with
+`test-`, ran green on the exact head with a clean tracked tree. Until then
+the numbers are provisional and every target not green is a residual.
+
+`${CLAUDE_SKILL_DIR}/scripts/gate.py` is the deterministic part. It reads the
+targets from the Makefile and every file it includes without running make,
+and keeps the results per commit in `kvb-gate.json` in the git common dir:
+linked worktrees share them, a new commit starts from zero.
+
+## Steps
+
+1. **List**: `gate.py list --repo <root>`. A warning about an unresolved
+   include or target expression means the list may be short: read that line
+   and name the gap. A project without any target keeps the gate open; ask
+   the operator.
+2. **Status**: `gate.py status --repo <root>`. `gate: green` ends here.
+3. **Admit**: every gate target is heavy (`make test` and its siblings run
+   whole suites, often containers). Ask the resource chair of the
+   `kvb-org-organize` skill per target (what, where, how long, disk), wait
+   for the grant, post the release to its news. Only a single test module
+   self-admits (`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py
+   admit --kind test-nostack`), and it never turns a gate target green. A
+   hotfix takes the next free gate slot.
+4. **Run** the missing and red targets, tracked tree clean, in the
+   background; give the operator `tail -f` on the log:
+
+   ```bash
+   gate.py run --repo <root> --target <t> [--target ...] --log-dir /tmp/<slug> [--fail-regex <re> ...]
+   ```
+
+   Pass one `--fail-regex` per failure line the project prints while exiting
+   0; infinito-nexus needs `FAILED TARGETS: \S`. A target is red on a
+   non-zero exit, a `make: ***` line, a matching regex, or tracked files it
+   modified; the last one stops the run.
+5. **Judge** every red target by the line `status` prints and the log around
+   it: caused by the change, already red on the default branch, or the
+   environment. Fix the cause and run again; a red target never counts as
+   green because it looks unrelated.
+6. **Status** once more; its last line is the verdict.
+
+## Rules
+
+- Only `gate.py run` on this head marks a target green. A peer's report, a
+  CI run, an older commit or a run on a dirty tree never does.
+- 90/5 is allowed only on `gate: green` for the exact head: in the
+  `kvb-check-confidence` block, the `90/5` label of the `kvb-git-pr-label`
+  skill and the bar of the `kvb-org-split` skill.
+- Never edit `kvb-gate.json` by hand.
+
+## Output
+
+| Target | Status | Log | Line |
+
+Then the `gate:` line verbatim.

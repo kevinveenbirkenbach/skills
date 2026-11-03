@@ -62,6 +62,7 @@ flowchart LR
   check --> check_principles[kvb-check-principles]
   check --> check_confidence[kvb-check-confidence]
   check --> check_break_risk[kvb-check-break-risk]
+  check --> check_gate[kvb-check-gate]
   org --> org_organize[kvb-org-organize]
   org --> org_split[kvb-org-split]
   org --> org_coordinate[kvb-org-coordinate]
@@ -155,6 +156,7 @@ flowchart LR
     sceptic[kvb-check-principles]
     confidence[kvb-check-confidence]
     break_risk[kvb-check-break-risk]
+    gate[kvb-check-gate]
   end
   subgraph cat_org [org]
     democracy[kvb-org-organize]
@@ -227,6 +229,9 @@ flowchart LR
   commit_no_verify --> advocate
   advocate --> dialectic
   confidence --> break_risk
+  confidence --> gate
+  pr_label --> gate
+  gate --> democracy
   confidence -. objective .-> autotune
 
   coordinate --> democracy

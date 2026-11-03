@@ -32,10 +32,8 @@ Calibration rules:
 
 A threshold the operator named ("95% confidence, break risk ≤5%") is a gate on
 the work for both numbers, handled as the `kvb-check-break-risk` skill's last
-section says. Fix confidence of 90 % or more with break risk under 5 % (90/5)
-needs the project's full quality gate green on the exact head (in
-infinito-nexus `make quality-high`); before that, the numbers are
-provisional and the missing gate is the residual.
+section says. 90/5 also needs `gate: green` from `gate.py status` of the
+`kvb-check-gate` skill, which states the rule and its residuals.
 
 Objective: the `kvb-skill-tune` skill's **Objective** section. Two figures
 with their residuals replace a hedging paragraph and save the operator a
