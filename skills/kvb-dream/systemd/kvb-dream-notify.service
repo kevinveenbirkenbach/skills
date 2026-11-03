@@ -1,0 +1,7 @@
+[Unit]
+Description=Recommend /kvb-dream in a GNOME notification
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash %h/.claude/skills/kvb-dream/hooks/notify.sh

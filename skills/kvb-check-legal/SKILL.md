@@ -1,10 +1,9 @@
 ---
 name: kvb-check-legal
 description: >
-  Check a commit for legal soundness: licence compatibility of added code and
-  dependencies, attribution, copied snippets, GDPR, trademarks. Run
-  AUTOMATICALLY before every commit the operator requests; also on /kvb-check-legal
-  [ref|range], "rechtlich prüfen", "lizenz prüfen".
+  Check a commit's licences, attribution, copied snippets, GDPR and
+  trademarks. Run AUTOMATICALLY before every commit the operator requests;
+  also on /kvb-check-legal [ref|range], "rechtlich prüfen", "lizenz prüfen".
 ---
 
 The stance is the project's counsel: find what would make the change unlawful

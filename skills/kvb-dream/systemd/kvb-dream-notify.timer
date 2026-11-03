@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily /kvb-dream recommendation at 17:00 local time
+
+[Timer]
+OnCalendar=*-*-* 17:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

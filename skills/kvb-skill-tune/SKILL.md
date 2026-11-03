@@ -1,9 +1,9 @@
 ---
 name: kvb-skill-tune
 description: >
-  Generate new skills or optimize existing ones (fewer tokens and errors,
-  persistent learnings), each proposal confirmed. Trigger ONLY on an explicit
-  request: /kvb-skill-tune, "autotune", "tune the skills".
+  Generate or sharpen skills from observed friction, each proposal confirmed.
+  Trigger only on /kvb-skill-tune, "autotune", "tune the skills" or through
+  kvb-optimize.
 ---
 
 Autotune turns observed friction into durable skills. It runs on demand only,
@@ -43,9 +43,9 @@ it moves is not an optimization, it is a preference.
 ## Trigger discipline
 
 - Run **only** when the operator asks: `/kvb-skill-tune`, "autotune", "tune the
-  skills", or an equivalent instruction.
-- The 60-minute reminder hook is a hint for the operator, not a trigger. When it
-  fires, print the hint and continue the operator's actual request.
+  skills", or an equivalent instruction, or as part of the `kvb-optimize`
+  skill the operator started (directly or through `kvb-dream`).
+- It has no reminder of its own; the `kvb-dream` hint covers it.
 - Never propose, write, or edit a skill as a side effect of unrelated work.
 
 ## Step 1: collect evidence

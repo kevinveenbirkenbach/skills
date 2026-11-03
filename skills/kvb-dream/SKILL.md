@@ -1,20 +1,20 @@
 ---
-name: kvb-skill-dream
+name: kvb-dream
 description: >
-  Consolidate the last 24 hours of this repository (what held, what broke)
-  into memory and proposals. Trigger on /kvb-skill-dream or a request to
-  learn from recent work.
+  Process the last 24 hours of every repository and session: memory,
+  improvements, kvb-optimize, cleanups. Trigger on /kvb-dream or a request
+  to learn from recent work.
 ---
 
-Sleep on the work: replay what happened in this repository, separate what held
-from what broke, and keep only the conclusions that survive an attack. A dream
-that flatters the dreamer is worthless — an unverified success counts as
-unknown, not as a win.
+Sleep on the work: replay what happened, separate what held from what broke,
+keep only the conclusions that survive an attack, then optimize and clean up.
+Dreaming processes everything. A dream that flatters the dreamer is worthless —
+an unverified success counts as unknown, not as a win.
 
 ## Objective
 
-The dream exists to raise the confidence of every future run in this repository
-until the mistakes it found cannot happen again. Judge every finding, memory
+The dream exists to raise the confidence of every future run until the
+mistakes it found cannot happen again. Judge every finding, memory
 entry, and proposal by one question: does it make the next run measurably less
 likely to repeat this failure? What changes nothing about future behaviour is
 not worth recording.
@@ -27,18 +27,23 @@ confidence the next run can now hold on each closed class, calibrated as the
 
 ## Scope
 
-Everything is read from the repository the skill runs in (`git rev-parse
---show-toplevel`); never mix in another project's history or memory. The default
-window is the last 24 hours — the operator may widen it (`/kvb-skill-dream 7d`). State the
-repository and the window in one line before you start.
+Every repository and session this agent touched in the window: the
+repositories named by its session transcripts (working directories and
+worktrees), by the workdirs of its `kvb-org-rasci` register tasks, and the
+current one. The default window is the last 24 hours — the operator may widen
+it (`/kvb-dream 7d`). State the repositories and the window in one table before
+you start. Each repository is recalled and scored on its own; a finding goes
+into the memory of the project it concerns, never mixed with another's.
 
-Run only when the operator asks. The 12-hour reminder hook
-(`hooks/reminder.sh`, stamped per repository in its git dir) is a hint for the
-operator, not a trigger: print it and continue with their actual request.
+Run only when the operator asks. Two hints point at it, neither is a trigger:
+`hooks/reminder.sh` tells each agent at most once every twelve hours (stamped
+per session in `~/.claude/.dream-stamps/`), and the `kvb-dream-notify.timer`
+user timer shows a GNOME notification daily at 17:00 local time, catching up
+once after a missed run. Print the hint and continue with the actual request.
 
 ## Step 1: recall
 
-Gather the window's actual record, not your recollection of it:
+Gather the window's actual record per repository, not your recollection of it:
 
 - **History**: `git log --since` across all branches plus `--reflog`, with
   `--stat`; the reflog carries the resets, rebases, and amends the log hides.
@@ -50,7 +55,7 @@ Gather the window's actual record, not your recollection of it:
 - **Register**: the `kvb-org-rasci` register: `rasci.py tools` ranks the
   scripts and tools the window's tasks ran, the refactoring candidates;
   `get <task>` shows a task's objective, roles, workdir and artifacts.
-- **Memory**: this project's memory directory and its `MEMORY.md` index — the
+- **Memory**: each project's memory directory and its `MEMORY.md` index — the
   findings already recorded, so the dream extends them instead of repeating them.
 - **Instructions**: `CLAUDE.md`, `AGENTS.md`, and the project's own skills, to
   see which rule a mistake actually violated.
@@ -86,7 +91,7 @@ the next dream does not re-derive it.
 
 ## Step 5: write memory
 
-Persist the findings in this project's memory directory: one file per fact, one
+Persist the findings in the memory directory of the project they concern: one file per fact, one
 pointer line in `MEMORY.md`. Update the file that already covers a fact instead
 of adding a duplicate, and delete the memories this run disproved. Absolute
 dates, never "yesterday". Nothing that the repository already records — code
@@ -96,7 +101,7 @@ structure, git history, `CLAUDE.md` — belongs in memory.
 
 Two kinds come out of the findings:
 
-- **Code** — the change to this repository's source, tests, config, or CI that
+- **Code** — the change to the affected repository's source, tests, config, or CI that
   the finding calls for.
 - **Agent instructions** — the missing or wrong rule in `CLAUDE.md`,
   `AGENTS.md`, the project's own skills, or the contributor docs. Every mistake
@@ -108,18 +113,24 @@ as radio buttons: the improvement, the evidence behind it, and the options
 `Apply now`, `Record as a task`, `Skip`. Ranked by evidence, one question per
 improvement. No repository file changes before an answer comes back.
 
-## Step 7: kvb-skill-tune, kvb-skill-auto, kvb-transcend, kvb-skill-compile
+## Step 7: optimize
 
-With the dialectic done and memory written, run `kvb-skill-tune` — hand it this run's
-findings as its evidence so it does not re-collect them — then `kvb-skill-auto`
-for the operator corrections the window revealed, `kvb-transcend` for the
-scripts and tests the window's sessions wrote outside a repository, and
-`kvb-skill-compile` for the skill steps the window's sessions worked through
-by hand although they are deterministic. All keep
-their own confirmation steps; the dream never writes a skill on their behalf.
+With the dialectic done and memory written, run the `kvb-optimize` skill and
+hand it this run's findings as its evidence, so none of its skills
+re-collects them.
 
-Close the run by refreshing this repository's reminder stamp, so the next hint
-is twelve hours out: `date +%s > "$(git rev-parse --path-format=absolute --git-common-dir)/.dream-stamp"`.
+## Step 8: clean up
+
+Run the `kvb-cleanup` skill for the disk, `/tmp`, Docker and agent
+directories the window filled, with the artifacts of the window's finished
+register tasks (`rasci.py artifacts --ended`) as its candidates, then the
+`kvb-git-branch-gc` skill for the merged branches and worktrees of every
+repository in scope.
+
+Every skill in steps 7 and 8 keeps its own confirmation steps; the dream never
+writes, deletes or commits on their behalf. Close the run by refreshing this
+agent's reminder stamp, so its next hint is twelve hours out:
+`date +%s > ~/.claude/.dream-stamps/"$CLAUDE_CODE_SESSION_ID"`.
 
 ## Rules
 
@@ -129,8 +140,8 @@ is twelve hours out: `date +%s > "$(git rev-parse --path-format=absolute --git-c
   attempt even when the final state is green.
 - Read-only until step 6: the dream inspects, and writes memory; repository code
   changes only on an explicit radio answer.
-- An empty window is a valid result — report "nothing in the last 24 hours in
-  this repository" and stop. Never invent activity to have something to dream
+- An empty window is a valid result — report "nothing in the last 24 hours" per
+  repository and skip it. Never invent activity to have something to dream
   about.
 - Prefer the structural fix over the remembered one: a test, check, hook, or
   written rule that makes the error impossible beats a memory entry that only

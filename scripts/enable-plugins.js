@@ -15,12 +15,16 @@ const MARKETPLACES = {
   ponytail: { source: { source: "github", repo: "DietrichGebert/ponytail" } },
 };
 const PLUGINS = { "caveman@caveman": true, "ponytail@ponytail": true };
-const REMINDERS = ["kvb-skill-tune", "kvb-skill-dream"];
+const REMINDERS = ["kvb-dream"];
+const RETIRED = [
+  "autotune/hooks/reminder.sh",
+  "kvb-skills-tune/hooks/reminder.sh",
+  "kvb-skill-tune/hooks/reminder.sh",
+];
 const RENAMED = {
-  "autotune/hooks/reminder.sh": "kvb-skill-tune/hooks/reminder.sh",
-  "dream/hooks/reminder.sh": "kvb-skill-dream/hooks/reminder.sh",
-  "kvb-skills-tune/hooks/reminder.sh": "kvb-skill-tune/hooks/reminder.sh",
-  "kvb-skills-dream/hooks/reminder.sh": "kvb-skill-dream/hooks/reminder.sh",
+  "dream/hooks/reminder.sh": "kvb-dream/hooks/reminder.sh",
+  "kvb-skills-dream/hooks/reminder.sh": "kvb-dream/hooks/reminder.sh",
+  "kvb-skill-dream/hooks/reminder.sh": "kvb-dream/hooks/reminder.sh",
   "democracy/scripts/council.py": "kvb-org-organize/scripts/council.py",
   "democracy/scripts/watch.py": "kvb-org-organize/scripts/watch.py",
   "subagent-model/scripts/log.py": "kvb-org-perform/scripts/log.py",
@@ -46,6 +50,15 @@ for (const [name, entry] of Object.entries(MARKETPLACES)) {
 data.enabledPlugins = Object.assign(data.enabledPlugins || {}, PLUGINS);
 
 data.hooks = data.hooks || {};
+const retired = (hook) =>
+  typeof hook.command === "string" && RETIRED.some((r) => hook.command.includes(`/skills/${r}`));
+for (const [event, entries] of Object.entries(data.hooks)) {
+  if (!Array.isArray(entries)) continue;
+  data.hooks[event] = entries
+    .map((entry) =>
+      Array.isArray(entry.hooks) ? { ...entry, hooks: entry.hooks.filter((h) => !retired(h)) } : entry)
+    .filter((entry) => !Array.isArray(entry.hooks) || entry.hooks.length > 0);
+}
 for (const entries of Object.values(data.hooks)) {
   if (!Array.isArray(entries)) continue;
   for (const entry of entries) {

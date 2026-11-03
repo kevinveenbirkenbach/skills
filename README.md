@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skill`. Only `kvb-cleanup`, `kvb-help` and the collector `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `skill`. Only `kvb-cleanup`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -65,7 +65,6 @@ flowchart LR
   org --> org_wsjf[kvb-org-wsjf]
   org --> org_robot[kvb-org-robot]
   org --> org_operator[kvb-org-operator]
-  skill --> skill_dream[kvb-skill-dream]
   skill --> skill_tune[kvb-skill-tune]
   skill --> skill_auto[kvb-skill-auto]
   skill --> skill_essence[kvb-skill-essence]
@@ -75,6 +74,8 @@ flowchart LR
   none --> cleanup[kvb-cleanup]
   none --> help[kvb-help]
   none --> transcend_all[kvb-transcend]
+  none --> dream_all[kvb-dream]
+  none --> optimize_all[kvb-optimize]
 ```
 
 ## Skill map 🗺️
@@ -87,7 +88,7 @@ flowchart LR
     commit_req([commit request])
     stage_req([staging or fix ready])
     edit_hook([edit in a git worktree])
-    reminders([reminder hooks])
+    reminders([12 h agent hint, 17:00 GNOME popup])
     code_task([code task])
     spawn([subagent spawn])
   end
@@ -144,7 +145,6 @@ flowchart LR
     operator[kvb-org-operator]
   end
   subgraph cat_skill [skill]
-    dream[kvb-skill-dream]
     autotune[kvb-skill-tune]
     autoskill[kvb-skill-auto]
     essence[kvb-skill-essence]
@@ -156,6 +156,8 @@ flowchart LR
     cleanup[kvb-cleanup]
     help_skills[kvb-help]
     transcend[kvb-transcend]
+    dream[kvb-dream]
+    optimize[kvb-optimize]
   end
 
   commit_req -.-> commit_next
@@ -163,7 +165,6 @@ flowchart LR
   stage_req -.-> confidence
   edit_hook -. council gate .-> democracy
   reminders -.-> dream
-  reminders -.-> autotune
   code_task -.-> no_defaults
   code_task -.-> scope_guard
   spawn -.-> subagent_model
@@ -227,18 +228,26 @@ flowchart LR
   robot --> dialectic
 
   dream --> dialectic
-  dream --> autotune
-  dream --> autoskill
+  dream --> optimize
+  dream --> cleanup
+  dream --> branch_gc
+  optimize --> skill_cleanup
+  optimize --> transcend
+  optimize --> autoskill
+  optimize --> autotune
+  optimize --> compile
+  optimize --> essence
+  optimize --> refactor
+  optimize --> tune
+  optimize --> gaps
   autoskill --> autotune
   autotune --> essence
-  dream --> transcend
   transcend --> skill_transcend
   transcend --> code_transcend
   skill_transcend --> active_listening
   skill_transcend --> autotune
   code_transcend --> active_listening
   autotune -. own scripts .-> skill_transcend
-  dream --> compile
   autotune -. deterministic prose .-> compile
   autoskill -. deterministic steps .-> compile
   skill_transcend -. deterministic moves .-> compile
@@ -274,7 +283,7 @@ Copy the skills into a specific project (`<repo>/.agents/skills` and `<repo>/.cl
 make project TARGET=/path/to/repo
 ```
 
-Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `kvb-skill-tune` points you at `/kvb-skill-tune` at most once an hour, `kvb-skill-dream` points you at `/kvb-skill-dream` at most once every twelve hours per repository (stamped in that repository's git dir). A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
+Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and one reminder hook is registered — `kvb-dream` points each agent at `/kvb-dream` at most once every twelve hours (stamped per session in `~/.claude/.dream-stamps/`); the global install also enables the `kvb-dream-notify.timer` systemd user timer, which recommends `/kvb-dream` in a GNOME notification daily at 17:00 local time and catches up once after a missed run. A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
 
 Restart your agent afterwards so it loads the new skills.
 

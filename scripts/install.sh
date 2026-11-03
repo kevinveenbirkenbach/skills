@@ -53,4 +53,17 @@ else
 	warn "skills: node not found; skipped auto-enabling caveman/ponytail plugins."
 fi
 
+if [[ "${TARGET}" == "${HOME}" ]]; then
+	if command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; then
+		log "skills: enabling the daily kvb-dream notification timer"
+		units="${HOME}/.config/systemd/user"
+		mkdir -p "${units}"
+		cp -f "${REPO_ROOT}/skills/kvb-dream/systemd/kvb-dream-notify.service" "${REPO_ROOT}/skills/kvb-dream/systemd/kvb-dream-notify.timer" "${units}/"
+		systemctl --user daemon-reload
+		systemctl --user enable --now kvb-dream-notify.timer
+	else
+		warn "skills: no systemd user session; skipped the kvb-dream notification timer."
+	fi
+fi
+
 log "skills: done. Restart your agent to load the skills."

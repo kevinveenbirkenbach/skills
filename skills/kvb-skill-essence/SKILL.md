@@ -1,9 +1,8 @@
 ---
 name: kvb-skill-essence
 description: >
-  Compact skills and memory to their essence after a health pass that finds
-  dead weight. Trigger on /kvb-skill-essence or when skills or MEMORY.md grow too long,
-  duplicate, or eat too much context.
+  Compact skills and memory after a health pass for dead weight. Trigger on
+  /kvb-skill-essence or when skills or MEMORY.md grow too long or duplicate.
 ---
 
 Shorter, not thinner. Every fact that still earns its place survives; what goes
