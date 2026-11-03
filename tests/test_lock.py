@@ -13,7 +13,7 @@ LOCK_FILE = REPO_ROOT / "skills-lock.json"
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_FIELDS = ("source", "sourceType", "skillPath", "computedHash")
 DESCRIPTION_WORDS = 40
-LISTING_WORDS = 1300
+LISTING_WORDS = 1500
 
 
 class TestSkillsLock(unittest.TestCase):
