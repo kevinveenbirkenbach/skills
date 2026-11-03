@@ -69,6 +69,7 @@ flowchart LR
   skill --> skill_auto[kvb-skill-auto]
   skill --> skill_essence[kvb-skill-essence]
   skill --> skill_transcend[kvb-skill-transcend]
+  skill --> skill_compile[kvb-skill-compile]
   none --> cleanup[kvb-cleanup]
   none --> help[kvb-help]
   none --> transcend_all[kvb-transcend]
@@ -145,6 +146,7 @@ flowchart LR
     autoskill[kvb-skill-auto]
     essence[kvb-skill-essence]
     skill_transcend[kvb-skill-transcend]
+    compile[kvb-skill-compile]
   end
   subgraph cat_none [no category]
     cleanup[kvb-cleanup]
@@ -231,6 +233,12 @@ flowchart LR
   skill_transcend --> autotune
   code_transcend --> active_listening
   autotune -. own scripts .-> skill_transcend
+  dream --> compile
+  autotune -. deterministic prose .-> compile
+  autoskill -. deterministic steps .-> compile
+  skill_transcend -. deterministic moves .-> compile
+  essence -. procedures .-> compile
+  compile --> active_listening
   tune -. measurements .-> code_transcend
 
   test --> triage

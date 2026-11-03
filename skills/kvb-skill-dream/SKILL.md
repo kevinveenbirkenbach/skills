@@ -109,12 +109,14 @@ as radio buttons: the improvement, the evidence behind it, and the options
 `Apply now`, `Record as a task`, `Skip`. Ranked by evidence, one question per
 improvement. No repository file changes before an answer comes back.
 
-## Step 7: kvb-skill-tune, kvb-skill-auto, kvb-transcend
+## Step 7: kvb-skill-tune, kvb-skill-auto, kvb-transcend, kvb-skill-compile
 
 With the dialectic done and memory written, run `kvb-skill-tune` — hand it this run's
 findings as its evidence so it does not re-collect them — then `kvb-skill-auto`
-for the operator corrections the window revealed, and `kvb-transcend` for the
-scripts and tests the window's sessions wrote outside a repository. All keep
+for the operator corrections the window revealed, `kvb-transcend` for the
+scripts and tests the window's sessions wrote outside a repository, and
+`kvb-skill-compile` for the skill steps the window's sessions worked through
+by hand although they are deterministic. All keep
 their own confirmation steps; the dream never writes a skill on their behalf.
 
 Close the run by refreshing this repository's reminder stamp, so the next hint

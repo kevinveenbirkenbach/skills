@@ -2,8 +2,8 @@
 name: kvb-skill-auto
 description: >
   Turn operator repetition into a skill. Trigger when the operator repeats an
-  instruction, correction or prompt pattern a third time in a conversation, or
-  says they keep repeating themselves, and the pattern is reusable.
+  instruction, correction or prompt pattern a third time, or says they keep
+  repeating themselves.
 ---
 
 Its objective is the `kvb-skill-tune` skill's **Objective** section: a skill is worth
@@ -27,7 +27,8 @@ vary), do the following:
    project-specific.
    Follow the local naming conventions and keep the skill a thin,
    single-purpose instruction; route to an authoritative doc when one
-   exists instead of duplicating it.
+   exists instead of duplicating it. Its deterministic steps become a script
+   through the `kvb-skill-compile` skill, not prose.
 4. Do not propose a skill for one-off work, secrets, or anything whose
    repetition is already covered by an existing skill; when an existing
    skill almost fits, propose extending it instead.

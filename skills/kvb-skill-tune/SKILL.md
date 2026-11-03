@@ -65,6 +65,9 @@ where readable, from the project's memory and agent instruction files:
 - **Own scripts**: helpers the agent wrote outside any repository belong to
   the `kvb-skill-transcend` skill, which carries them over; this skill
   takes the frictions they reveal.
+- **Deterministic prose**: a skill step the agent worked through by hand
+  although its result follows from its inputs belongs to the
+  `kvb-skill-compile` skill, which turns it into a script.
 
 List each finding as one line: `symptom -> cost -> candidate fix`. Skip
 anything that happened once and is not a pattern.
@@ -86,7 +89,8 @@ Ask in this order, at most four questions per call:
 3. **Shape** - for a new skill: `Standalone skill`, `Extend an existing
    skill`, `Memory entry instead of a skill`.
    For an optimization: `Tighten wording only`, `Change the trigger`, `Add
-   rules`, `Split into two skills`, `Merge into another skill`.
+   rules`, `Split into two skills`, `Merge into another skill`, `Compile
+   deterministic steps into a script` (the `kvb-skill-compile` skill).
 4. **Placement** - `Operator skills repository (portable)` or
    `This project's skills directory (project-specific)`.
 

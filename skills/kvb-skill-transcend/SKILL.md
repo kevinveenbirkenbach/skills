@@ -31,8 +31,9 @@ One line each: `candidate -> source -> evidence`.
 
 Per candidate one target: a script under an existing skill's `scripts/`, a
 new skill, a sharper step in an existing skill, a memory entry instead, or
-drop. Recurring moves without a script go to the `kvb-skill-tune` skill as
-evidence. A script is portable only once its host paths, names and values
+drop. A recurring deterministic move without a script goes to the
+`kvb-skill-compile` skill, any other recurring move to the `kvb-skill-tune`
+skill as evidence. A script is portable only once its host paths, names and values
 became explicit parameters (the `kvb-code-no-defaults` skill); one that needs
 a secret, a credential or a single host is dropped or stays a memory entry.
 

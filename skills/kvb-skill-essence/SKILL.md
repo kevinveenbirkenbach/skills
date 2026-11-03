@@ -65,6 +65,9 @@ Cut:
 - The second and third statement of one rule; keep the authoritative one and
   point at it.
 - Narration, hedging, and worked examples beyond the one that carries the point.
+- A deterministic procedure spelled out step by step: hand it to the
+  `kvb-skill-compile` skill, which replaces it with a script call, instead of
+  shortening it.
 
 Keep, always:
 

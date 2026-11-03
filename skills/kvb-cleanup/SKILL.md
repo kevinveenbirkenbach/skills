@@ -1,9 +1,8 @@
 ---
 name: kvb-cleanup
 description: >
-  Free disk space agents filled: ask peers what they still need,
-  inventory /tmp, Docker and agent dirs, and delete only what the operator
-  picks. Trigger on /kvb-cleanup, "aufräumen", "bereinigen", "platte voll", "no
+  Free disk space agents filled: ask peers, inventory /tmp, Docker and agent
+  dirs, and delete only what the operator picks. Trigger on /kvb-cleanup, "aufräumen", "bereinigen", "platte voll", "no
   space left on device".
 ---
 
