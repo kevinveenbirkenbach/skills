@@ -21,6 +21,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@(.*)$")
+
+
+def renumber(hunks: list[list[str]]) -> list[list[str]]:
+    offset = 0
+    out = []
+    for hunk in hunks:
+        match = HEADER.match(hunk[0])
+        start, count = int(match.group(1)), int(match.group(2) or 1)
+        added = sum(line.startswith("+") for line in hunk[1:])
+        removed = sum(line.startswith("-") for line in hunk[1:])
+        new_start = start + offset + (1 if count == 0 else 0) - (1 if added == 0 else 0)
+        out.append([f"@@ -{start},{count} +{new_start},{added} @@{match.group(3)}", *hunk[1:]])
+        offset += added - removed
+    return out
+
 
 def fail(message: str) -> None:
     print(f"stage_hunks: {message}", file=sys.stderr)
@@ -78,7 +94,7 @@ def main() -> int:
     except re.error as error:
         fail(f"--match: {error}")
     header, hunks = split(git(repo, "diff", "--no-color", "-U0", "--", args.file))
-    kept = select(hunks, pattern)
+    kept = renumber(select(hunks, pattern))
     if not kept:
         print(f"stage_hunks: no change in {args.file} matches {args.match!r}", file=sys.stderr)
         return 1

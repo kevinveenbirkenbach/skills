@@ -55,6 +55,16 @@ class TestStageHunks(unittest.TestCase):
         unstaged = [line for line in self._git("diff", "-U0").splitlines() if line.startswith("+") and not line.startswith("+++")]
         self.assertEqual(unstaged, ["+beta one", "+beta two"])
 
+    def test_kept_lines_land_where_they_stand_after_dropped_hunks(self):
+        self.file.write_text(
+            "one\nbeta one\ntwo\nthree\nalpha three\nbeta three\nfour\nfive\nalpha five\n", encoding="utf-8"
+        )
+        result = self._run("alpha")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self._git("show", ":notes.txt"), "one\ntwo\nthree\nalpha three\nfour\nfive\nalpha five\n"
+        )
+
     def test_no_match_exits_1_and_bad_pattern_exits_2(self):
         self.assertEqual(self._run("gamma").returncode, 1)
         self.assertEqual(self._run("(").returncode, 2)
