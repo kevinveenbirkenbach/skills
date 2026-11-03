@@ -15,7 +15,7 @@ const MARKETPLACES = {
   ponytail: { source: { source: "github", repo: "DietrichGebert/ponytail" } },
 };
 const PLUGINS = { "caveman@caveman": true, "ponytail@ponytail": true };
-const REMINDERS = ["kvb-dream"];
+const REMINDERS = ["kvb-dream", "kvb-coach"];
 const RETIRED = [
   "autotune/hooks/reminder.sh",
   "kvb-skills-tune/hooks/reminder.sh",

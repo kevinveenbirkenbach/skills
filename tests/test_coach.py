@@ -11,6 +11,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "skills" / "kvb-coach" / "scripts" / "coach.py"
+HOOK = REPO_ROOT / "skills" / "kvb-coach" / "hooks" / "reminder.sh"
 
 
 class TestCoach(unittest.TestCase):
@@ -60,6 +61,33 @@ class TestCoach(unittest.TestCase):
         self.profile.write_text("{broken", encoding="utf-8")
         self.assertEqual(self._run("show").returncode, 2)
         self.assertEqual(self.profile.read_text(encoding="utf-8"), "{broken")
+
+
+class TestCoachHour(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.hours = Path(self.tmp.name) / "hours"
+
+    def _run(self, hour: str) -> str:
+        return subprocess.run(
+            ["bash", str(HOOK)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "HOME": self.tmp.name,
+                "COACH_STAMP_DIR": str(self.hours),
+                "COACH_HOUR": hour,
+            },
+        ).stdout
+
+    def test_first_prompt_of_each_hour_triggers_the_coach_once(self):
+        self.assertIn("kvb-coach", self._run("2026-11-03T14"))
+        self.assertEqual(self._run("2026-11-03T14"), "")
+        self.assertIn("kvb-coach", self._run("2026-11-03T15"))
+        self.assertEqual(sorted(p.name for p in self.hours.iterdir()), ["2026-11-03T15"])
 
 
 if __name__ == "__main__":

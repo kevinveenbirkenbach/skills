@@ -21,6 +21,11 @@ coach.py --profile <same> show [--json]
 Areas: `psyche`, `body`, `sleep`, `food`, `tasks`, `delegate`. Every coaching
 skill beyond this one is named `kvb-coach-<name>`.
 
+`hooks/reminder.sh` triggers the short form at the first prompt of every full
+hour, once across all agents (stamped in `~/.claude/.coach-hours/`): at most
+three lines, the most urgent area first, then the agent continues with the
+operator's request.
+
 ## Step 1: read the situation
 
 - **Time**: local time and weekday, and how long the operator has been at it

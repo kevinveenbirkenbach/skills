@@ -148,6 +148,7 @@ class TestSettingsRegistration(unittest.TestCase):
         data = self._patch()
         entries = json.dumps(data["hooks"]["UserPromptSubmit"])
         self.assertEqual(entries.count("kvb-dream/hooks/reminder.sh"), 1)
+        self.assertEqual(entries.count("kvb-coach/hooks/reminder.sh"), 1)
         self.assertNotIn("tune/hooks/reminder.sh", entries)
         gate = json.dumps(data["hooks"]["PreToolUse"])
         self.assertEqual(gate.count("kvb-org-organize/scripts/council.py"), 1)
