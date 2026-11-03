@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.3.0] - 2026-11-03
+
+Breaking:
+
+- Skills: every skill is now *kvb-category-name*; the old names are gone
+- Skills: the category *skills* is now *skill*, e.g. *kvb-skill-tune*
+- Skills: *kvb-create-feature* is now *kvb-think-gaps*
+- Skills: *kvb-skill-dream* is now *kvb-dream*
+- Skills: *kvb-skills-shortcuts* and tokens such as *sobu* are gone
+
+Added:
+
+- Org: *kvb-org-rasci* keeps one RASCI/OKR register of every agent task
+- Org: *kvb-org-artefacts* tracks images, volumes and worktrees per task
+- Org: *kvb-org-wsjf* ranks the register by WSJF from Fibonacci estimates
+- Org: *kvb-org-operator* lists every command only the operator can run
+- Commit: commit skills show worktree, branch, confidence and risk first
+- Transcend: *kvb-transcend* carries session scripts and tests into repos
+- Requirements: *kvb-create-requirement* with user story, Mermaid and tests
+- Think: *kvb-think-brainstorm* scores options from seven fixed lenses
+- Skills: *kvb-skill-compile* turns deterministic steps into scripts
+- Skills: *kvb-skill-cleanup* deletes legacy skills that renames left behind
+- Dream: *kvb-optimize* runs all nine optimization skills in one pass
+- Dream: a GNOME notification recommends */kvb-dream* daily at 17:00
+- Coach: *kvb-coach* suggests the next step for mind, body, food and tasks
+- Coach: *kvb-coach-meditation* plays alpha-wave music with fractals
+- Coach: a short coach note at the first prompt of every full hour
+
+Changed:
+
+- Dream: covers every repository and session, then optimizes and cleans up
+- Dream: one hint per agent every 12 h replaces the tune and dream hints
+- Tune: *kvb-code-tune* always checks language, framework and recursion
+- Cleanup: worktrees are listed by size and integration line
+- Coordination: hotfix gates take the next free test slot
+- Coordination: an agent may end its own job after 60 min without progress
+
+Upgrade notes:
+
+- Install: run *make install* and restart the agent to load the new names
+- Install: run *make install-skills* in each project to drop old copies
+- Install: */kvb-skill-cleanup* lists any legacy skill left behind
+- Install: the global install enables the *kvb-dream-notify.timer* unit
+- Settings: remove *autotune* and *dream* hooks from *~/.claude/settings.json*
+
 ## [0.2.0] - 2026-10-31
 
 Added:
