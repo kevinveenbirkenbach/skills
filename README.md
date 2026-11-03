@@ -86,6 +86,7 @@ flowchart LR
   skill --> skill_transcend[kvb-skill-transcend]
   skill --> skill_compile[kvb-skill-compile]
   skill --> skill_cleanup[kvb-skill-cleanup]
+  skill --> skill_silence[kvb-skill-silence]
   none --> cleanup[kvb-cleanup]
   none --> help[kvb-help]
   none --> transcend_all[kvb-transcend]
@@ -184,6 +185,7 @@ flowchart LR
     skill_transcend[kvb-skill-transcend]
     compile[kvb-skill-compile]
     skill_cleanup[kvb-skill-cleanup]
+    silence[kvb-skill-silence]
   end
   subgraph cat_none [no category]
     cleanup[kvb-cleanup]
@@ -289,6 +291,8 @@ flowchart LR
   optimize --> essence
   optimize --> refactor
   optimize --> tune
+  optimize --> silence
+  silence -. peer protocol .-> democracy
   optimize --> agent_optimize
   optimize --> gaps
   agent_optimize -. install .-> operator

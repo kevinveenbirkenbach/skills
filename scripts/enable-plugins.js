@@ -48,6 +48,8 @@ for (const [name, entry] of Object.entries(MARKETPLACES)) {
   if (!data.extraKnownMarketplaces[name]) data.extraKnownMarketplaces[name] = entry;
 }
 data.enabledPlugins = Object.assign(data.enabledPlugins || {}, PLUGINS);
+data.env = data.env || {};
+if (!data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "500000";
 
 const pluginRepos = new Set(Object.values(MARKETPLACES).map((entry) => entry.source.repo));
 const lock = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "skills-lock.json"), "utf8"));

@@ -23,12 +23,14 @@ inventory is skipped with one line.
 4. `kvb-skill-tune`: turn frictions into new or sharper skills.
 5. `kvb-skill-compile`: turn deterministic skill steps into scripts.
 6. `kvb-skill-essence`: compact skills and memory.
-7. `kvb-code-refactor`: bring the uncommitted changes up to the project's
+7. `kvb-skill-silence`: cut the tokens and agent messages the skills still
+   cost.
+8. `kvb-code-refactor`: bring the uncommitted changes up to the project's
    standards.
-8. `kvb-code-tune`: optimize the hot paths the evidence measured.
-9. `kvb-agent-optimize`: index every repository in scope as a code graph
-   and tighten its agent instructions.
-10. `kvb-think-gaps`: find the missing work and hand each pick to
+9. `kvb-code-tune`: optimize the hot paths the evidence measured.
+10. `kvb-agent-optimize`: index every repository in scope as a code graph
+    and tighten its agent instructions.
+11. `kvb-think-gaps`: find the missing work and hand each pick to
     `kvb-create-requirement`.
 
 ## Questions

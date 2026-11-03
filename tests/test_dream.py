@@ -36,6 +36,7 @@ class TestDreamSkill(unittest.TestCase):
             "kvb-skill-tune",
             "kvb-skill-compile",
             "kvb-skill-essence",
+            "kvb-skill-silence",
             "kvb-code-refactor",
             "kvb-code-tune",
             "kvb-agent-optimize",
@@ -161,6 +162,10 @@ class TestSettingsRegistration(unittest.TestCase):
         self.assertEqual(gate.count("kvb-org-perform/scripts/log.py"), 1)
         self.assertEqual(post.count("kvb-org-perform/scripts/log.py"), 1)
 
+    def test_compact_window_is_set_once_and_never_overwritten(self):
+        self.assertEqual(self._patch()["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "500000")
+        self.settings.write_text(json.dumps({"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"}}), encoding="utf-8")
+        self.assertEqual(self._patch()["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "300000")
 
     def test_plugin_skills_are_not_copied_twice(self):
         skills = Path(self.tmp.name) / "skills"
