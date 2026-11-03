@@ -4,7 +4,8 @@
 Environment:
     AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
         /tmp/agents-council unless set, because all agents must agree on it.
-    CLAUDE_CODE_SESSION_ID: the caller's session; other runtimes pass --session.
+    CLAUDE_CODE_SESSION_ID: the caller's session, taken over --session; other
+        runtimes pass --session.
 
 Exit codes:
     0 done, 2 usage error, 3 office held by a live session,
@@ -46,11 +47,11 @@ def live_sessions() -> dict[str, str | None]:
 
 
 def caller(session: str | None) -> tuple[str, str]:
-    if session:
-        return session, "other"
     env = os.environ.get("CLAUDE_CODE_SESSION_ID")
     if env:
         return env, "claude-code"
+    if session:
+        return session, "other"
     print("council: no session id; pass --session", file=sys.stderr)
     sys.exit(2)
 

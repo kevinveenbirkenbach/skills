@@ -62,6 +62,11 @@ class TestCouncil(unittest.TestCase):
         self._run("s1", "claim", "work/x", "--work", "w")
         self.assertEqual(self._run("s2", "takeover", "work/x", "--work", "w").returncode, 3)
 
+    def test_session_flag_cannot_hide_the_claude_code_session(self):
+        self._run("s1", "claim", "work/x", "--work", "w", "--session", "One")
+        self.assertIn('"session": "s1"', (self.root / "work/x/claim.json").read_text())
+        self.assertEqual(self._run("s1", "release", "work/x", "--session", "One").returncode, 0)
+
     def test_only_the_holder_releases(self):
         self._run("s1", "claim", "work/x", "--work", "w")
         self.assertEqual(self._run("s2", "release", "work/x").returncode, 3)
