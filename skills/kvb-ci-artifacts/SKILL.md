@@ -54,7 +54,7 @@ tells you whether the proxy or the upstream burned the seconds.
 
 Two failure modes turn a search into a false conclusion:
 
-- **Clustered flags silently change the pattern.** Write them separately —
+- **Clustered flags silently change the pattern.** Write them separately:
   `grep -r -a -i -l -F "needle" dir/`, not `-ariel`. A cluster where one letter
   takes an argument consumes your pattern and searches for something else, and
   the run still exits successfully.

@@ -2,13 +2,11 @@
 name: kvb-git-merge-fix
 description: >
   Find the commits on any branch that carry a described fix and merge them
-  here. Trigger on /kvb-git-merge-fix <description> or a request to bring over
-  a fix from another branch.
+  here. Trigger on a request to bring over a fix from another branch.
 ---
 
-The free text after `/kvb-git-merge-fix` is the fix description, exactly like `/loop`
-takes its prompt. Everything after the skill name is the search intent; there is
-no other input. If it is missing, ask for it and stop.
+The free text after the skill name is the fix description and the only input.
+If it is missing, ask for it and stop.
 
 ## 1. Refuse to work on a dirty tree
 
@@ -23,14 +21,16 @@ same tree may own.
 git fetch --all --prune --tags
 ```
 
-That is the "pull all branches" step. Do not check branches out one by one; all
-searching below runs against the fetched refs.
+Never check branches out one by one; the search runs against the fetched refs.
 
 ## 3. Turn the description into search terms
 
 Derive from the operator's text: 2-4 keywords for commit messages, plus any
-symbol, string, or path the fix must have touched. State the derived terms in
-one line so a wrong reading is visible before the search.
+symbol, string, or path the fix must have touched. Find those symbols and
+paths through the codebase-memory-mcp graph first (`search_graph`,
+`trace_path`, `get_architecture`, `detect_changes`; the `kvb-agent-optimize`
+skill sets it up), grep and read after. State the derived terms in one line so
+a wrong reading is visible before the search.
 
 ## 4. Search every ref
 
@@ -60,7 +60,7 @@ and its diff plainly is the described fix.
   (`-x` records the origin).
 - The whole branch is wanted: `git merge --no-ff <branch>`.
 - Conflicts: resolve them by reading both sides. Never `-X ours`/`-X theirs`,
-  never `git checkout --ours/--theirs` wholesale — that silently drops one
+  never `git checkout --ours/--theirs` wholesale: that silently drops one
   side's fix. Unresolvable → `git cherry-pick --abort` / `git merge --abort`,
   report what conflicted, change nothing else.
 
@@ -77,4 +77,4 @@ Run the project's test or quality gate only when the operator asks for it.
 - Never rewrite history to make a cherry-pick fit (no rebase of the target
   branch, no amend of foreign commits).
 - If the search finds nothing, say so plainly and list the terms tried. Do not
-  reimplement the fix under this skill — that is a different task.
+  reimplement the fix under this skill; that is a different task.

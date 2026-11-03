@@ -19,12 +19,12 @@ the task, its constraints, and its definition of done without guessing.
    answer yourself from the code, the logs, the git history, or a sensible
    default. Active listening is not offloading your own investigation onto the
    operator.
-3. **Ask, focused.** Put the genuinely-open questions to the operator — grouped,
+3. **Ask, focused.** Put the genuinely-open questions to the operator: grouped,
    concrete, answerable, with a recommended default where one exists. Prefer a
    few high-leverage questions over a long interrogation. Use the host's
    structured question mechanism when one exists.
-4. **Listen and integrate.** Fold each answer in. A new answer often opens a new
-   question — keep going.
+4. **Listen and integrate.** Fold each answer in; a new answer often opens a
+   new question.
 5. **Loop until closed.** Repeat until no needed information is still open.
 6. **Reflect back.** Restate the task, its constraints, and its definition of
    done in your own words for a final confirmation before acting.

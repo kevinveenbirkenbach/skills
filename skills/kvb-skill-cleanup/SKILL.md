@@ -2,7 +2,7 @@
 name: kvb-skill-cleanup
 description: >
   Delete legacy skills that renamed or removed skills left in Claude, Codex,
-  agent and project dirs. Trigger on /kvb-skill-cleanup.
+  agent and project dirs.
 ---
 
 `${CLAUDE_SKILL_DIR}/scripts/legacy.py` reads the skills repository's git

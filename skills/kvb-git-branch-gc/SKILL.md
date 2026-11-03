@@ -2,8 +2,8 @@
 name: kvb-git-branch-gc
 description: >
   Remove merged branches and worktrees with `pkgmgr branch gc` after a dry
-  run the operator picks from. Trigger on /kvb-git-branch-gc, "branches
-  aufräumen", "worktrees aufräumen".
+  run the operator picks from. Trigger on "branches aufräumen",
+  "worktrees aufräumen".
 ---
 
 `pkgmgr branch gc` decides what is merged and does the removing; this skill
@@ -17,7 +17,7 @@ and nothing is removed before the operator's pick in this run.
 2. The apply takes stacks down and ends with a host-wide
    `docker image prune -f` and `docker builder prune -f`, which reach every
    session's images and build cache. When another session holds the chair,
-   send it what, where and how long, and wait for the grant; the prune never
+   request the grant (what, where, how long) and wait for it; the prune never
    runs during a peer's build.
 
 ## Step 1: dry run
@@ -40,21 +40,18 @@ before it: gc fetches without auto-maintenance, while a plain fetch on git
 
 Never override a state: a branch without own commits is `unmerged` even
 though git sees its tip on the default branch, because it is fresh work.
-
-`host_pid_namespace: false` means the dry run ran inside a sandbox: it saw no
+`host_pid_namespace: false` means the dry run ran in a sandbox: it saw no
 processes and could not tell whether a lock is live. Say so above the plan;
 the apply re-checks both on the host.
 
 ## Step 2: claims
 
-Read `council.py list`. For every candidate whose branch or worktree a peer's
-claim names, send that peer one message (Peer protocol) and wait up to 5
+Read `council.py list --long`. Every peer whose claim names a candidate's branch or
+worktree gets one message listing all its items (Peer protocol); wait up to 5
 minutes. A kept or unanswered item leaves the plan as `keep (<peer>)`;
 silence is not consent.
 
 ## Step 3: plan
-
-One table:
 
 | Repo | Branch or worktree | Merged into | Size | Actions | Note |
 
@@ -69,40 +66,19 @@ Then ask with `AskUserQuestion`:
 
 ## Step 4: apply
 
-1. Re-read `council.py list` and drop every item claimed since the dry run.
-2. `--apply` refuses outside the host PID namespace (exit 2) and deletes
-   remote branches, which is a push. Unless this session runs in the host PID
-   namespace and the project lets agents push, hand the operator one command
-   per repository, run from inside it, one `--branch` per picked item (the
-   worktree path for a detached worktree):
-
-   ```bash
-   pkgmgr branch gc --apply --json --branch <name> --branch <name> | tee /tmp/branch-gc-apply-<N>.json
-   ```
-
-3. Read every item's `result` in that file: `done`, `done; image kept: <img>`
-   (still in use elsewhere), or `failed: <why>`.
-   Report a failure as it stands; never remove by hand what gc skipped or
-   refused.
-4. For every `done` item, drop its worktree and branch from the task that
-   lists them in the `kvb-org-rasci` register (`rasci.py artifacts` names
-   it): `set <task> --drop-artifact worktree:<path>`, and `--branch ''` where
-   the branch is gone.
+Read `apply.md` next to this file once the operator picked `Apply`.
 
 ## Step 5: unmerged and dirty
 
-Never part of the apply. One `AskUserQuestion` question per item
-(`multiSelect: false`): `Keep (Recommended)` and `Delete`, the description
-naming what is lost (the item's `reason`: unique commits, dirty paths). For
-each `Delete`, hand the operator
-`pkgmgr branch purge --branch <name>`: it asks y/N per item and answers no
-without a terminal, so it runs only in the operator's shell.
+When the dry run sorted any item here, read `unmerged.md` next to this file.
 
 ## Step 6: report
 
-Removed, kept and skipped items, each with its reason, and
-`docker system df` before and after. Report the release to the chair, tell
-each peer whose line an item touched what went, and release the claim.
+Removed, kept and skipped items, each with its reason, and `docker system df`
+before and after. The release for the chair and what went for each peer whose
+line an item touched go out as one
+`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post "<text>"`, not
+as messages; then release the claim.
 
 ## Rules
 

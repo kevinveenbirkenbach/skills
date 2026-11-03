@@ -2,7 +2,7 @@
 name: kvb-git-issue-close
 description: >
   Close finished issues, of one pull request or the whole repository, each
-  verified and confirmed. Trigger on /kvb-git-issue-close [pr].
+  verified and confirmed.
 ---
 
 Closing an issue is outward-facing: nothing is closed or edited before the
@@ -13,8 +13,8 @@ commit that fixed it.
 
 - **A pull request named** (or the current branch's, `gh pr view --json
   number`): `${CLAUDE_SKILL_DIR}/scripts/issues.py` lists every issue it
-  references, from closing keywords and mentions in the body and the commits,
-  a trailing number in the branch name, and the issues GitHub already links:
+  references: closing keywords and mentions in the body and the commits, a
+  trailing number in the branch name, and the issues GitHub already links.
 
   ```bash
   gh pr view <pr> --json number,body,headRefName,commits,closingIssuesReferences | issues.py --repo <owner/name>
@@ -34,15 +34,15 @@ commit that fixed it.
 ## Step 2: verify
 
 Per candidate, `gh issue view <n> --json state,title,body,comments` (with
-`--repo` for a foreign one); a closed issue is skipped. Judge it `fixed`,
-`partly` or `unrelated` against the diff, with evidence: the change that
-addresses each point of the issue and the test or CI run that proves it.
-Only `fixed` goes on; `partly` gets a progress comment instead.
+`--repo` for a foreign one); skip a closed issue. Judge it `fixed`, `partly`
+or `unrelated` against the diff, with evidence: the change addressing each
+point of the issue and the test or CI run proving it. Only `fixed` goes on;
+`partly` gets a progress comment instead.
 
 ## Step 3: confirm
 
-`AskUserQuestion` with `multiSelect: true`, one option per `fixed` issue,
-the evidence in its description, nothing preselected.
+`AskUserQuestion` with `multiSelect: true`, one option per `fixed` issue, the
+evidence in its description, nothing preselected.
 
 ## Step 4: close
 

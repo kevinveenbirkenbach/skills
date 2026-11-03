@@ -18,7 +18,7 @@ sentence of the request asks for this? No sentence, no artifact.
 2. Path-scope every `git add`. Never `-A`, never `.`. The operator's tree
    carries their own edits and their local config, and sweeping those into
    your bundle makes them undo your work by hand.
-3. An adjacent defect gets reported in one line, not fixed — unless it blocks
+3. An adjacent defect gets reported in one line, not fixed, unless it blocks
    the request. Fixing it quietly puts an unreviewed change in someone else's
    commit.
 4. An instruction to hand something over is complete on its own. Print the

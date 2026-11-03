@@ -24,16 +24,24 @@ asking; ask only when an operator-only fact blocks the conclusion.
 ## The loop
 
 1. **Thesis.** Form the strongest initial claim you can, grounded in evidence,
-   not assumption. Deep-inspect every source you can reach: the source code and
-   git history; the running containers (exec, logs, inspect through whatever
-   make or CLI helpers the project exposes); CI logs and artifacts; tests; docs.
-   Cite `file:line` and command output — never a bare assertion.
-2. **Antithesis.** Spawn MULTIPLE independent skeptics (parallel subagents or a
+   not assumption. Deep-inspect every source you can reach: the source code
+   (through the codebase-memory-mcp graph first: `search_graph`, `trace_path`,
+   `get_architecture`, set up by the `kvb-agent-optimize` skill; grep and read
+   after) and git history; the running containers (exec, logs, inspect through
+   whatever make or CLI helpers the project exposes); CI logs and artifacts;
+   tests; docs. Cite `file:line` and command output, never a bare assertion.
+2. **Antithesis.** Spawn independent skeptics (parallel subagents or a
    workflow, on the default model as the `kvb-org-perform` skill requires)
    whose only job is to REFUTE the thesis. Each re-inspects the
-   sources itself and defaults to "refuted" on any concrete hole. Give diverse
-   skeptics diverse lenses: correctness, an alternate mechanism, does-it-
-   reproduce, does-the-fix-break-something-else.
+   sources itself and defaults to "refuted" on any concrete hole. Their
+   number follows the stakes, since each skeptic costs a full agent run: one
+   skeptic holding several lenses for a reversible or routine decision, two
+   or three with distinct lenses (correctness, an alternate mechanism,
+   does-it-reproduce, does-the-fix-break-something-else) when it is
+   expensive or hard to undo. Brief each with the exact claims, files and
+   docs to check, read-only, and an answer cap of one line per claim, so it
+   checks instead of exploring. A fact one command or one doc page settles
+   is checked by you, not by a skeptic.
 3. **Synthesis.** Fold every surviving objection back into a refined thesis. A
    skeptic that found a real hole replaces or corrects the thesis; a skeptic
    that failed to refute raises confidence.
@@ -47,7 +55,7 @@ asking; ask only when an operator-only fact blocks the conclusion.
 
 - Executed evidence beats reasoning: run it, exec into it, read the log. A
   thesis backed only by static reasoning caps in the low nineties.
-- The antithesis MUST be independent — never let the thesis-author be its own
+- The antithesis MUST be independent: never let the thesis-author be its own
   sole skeptic.
 - Diversity over redundancy: skeptics with different lenses catch failure modes
   identical skeptics miss.

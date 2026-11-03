@@ -2,8 +2,7 @@
 name: kvb-org-priority
 description: >
   Let the operator reorder the agents' priority from a selection; pins their
-  tasks in that order. Trigger on /kvb-org-priority, "prioritaet", "reihenfolge
-  der agents".
+  tasks in that order. Trigger on "prioritaet", "reihenfolge der agents".
 ---
 
 The operator's order of the agents outranks every WSJF score. It is written
@@ -20,7 +19,7 @@ rasci.py order "<agent>,<agent>,..."
 
 `rasci.py agents` prints one line per agent with open tasks, in the
 register's rank: number, agent, task count, tasks. Show it as a table with
-each agent's status and OKR from `rasci.py show`.
+each agent's status and OKR from `rasci.py show --wide`.
 
 ## Step 2: selection
 
@@ -42,9 +41,10 @@ the listed ones; say so in the question.
 `rasci.py order "<A>,<B>,..."` pins the listed agents' tasks 1..n in that
 order, keeping each agent's own task order. It writes other sessions' rows:
 the operator decides priority, so this is the one exception to "write only
-your own rows". Show `rasci.py agents` again, then tell the resource chair
-of the `kvb-org-organize` skill and every reordered agent their new rank, one
-message each.
+your own rows". Show `rasci.py agents` again, then post the new ranks for the
+resource chair of the `kvb-org-organize` skill and every reordered agent as
+one `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post "<text>"`,
+not as messages.
 
 ## Rules
 

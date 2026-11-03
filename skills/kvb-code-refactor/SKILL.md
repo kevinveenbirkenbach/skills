@@ -2,105 +2,81 @@
 name: kvb-code-refactor
 description: >
   Refactor every uncommitted file up to the project's standards without
-  changing behaviour. Trigger on /kvb-code-refactor or asked to clean up,
-  tidy or polish the current changes.
+  changing behaviour. Trigger when asked to clean up, tidy or polish the
+  current changes.
 ---
 
 The unit of work is the uncommitted change set, not the repository. Behaviour
-stays identical: a refactor that changes what the code does is a bug, not a
-cleanup.
+stays identical: a refactor that changes what the code does is a bug.
 
 ## Step 1: fix the file set
 
-Read the set from git, never from memory of what was edited:
+Read it from `git status --porcelain`, never from memory: modified, added,
+renamed and untracked files, without deleted files, binaries, lockfiles,
+vendored trees and generated output. Restate the list in one line before
+touching anything; if it is empty, say so and stop.
 
-```bash
-git status --porcelain
-```
-
-Take modified, added, renamed and untracked files. Drop deleted files, binaries,
-lockfiles, vendored trees and generated output. Restate the resulting list in
-one line before touching anything; if it is empty, say so and stop.
-
-Never `git stash` and never revert a working-tree file to compare - other agents
-and the operator share this tree. Read the committed version with
-`git show HEAD:<path>` into a temporary file instead.
+Never `git stash` or revert a working-tree file to compare: others share this
+tree. Read the committed version with `git show HEAD:<path>` into a temporary
+file.
 
 ## Step 2: get a safety net first
 
-A refactor is only provably behaviour-preserving if something failed before it
-and passes after it. Before editing, check what covers the change set:
+Behaviour stays provable only through a check before and after: tests that
+cover the change set run now and give the green baseline; a suite already red
+is reported, not refactored around. No coverage: read `net.md` next to this
+file before editing.
 
-- **Coverage exists**: run it now and record the green baseline. A suite that
-  was already red gets reported, not refactored around.
-- **No coverage and the code is testable logic**: write the characterization
-  tests first, against the current behaviour - including the behaviour you
-  consider wrong, so the refactor cannot silently change it. Keep them small
-  and framework-free unless the project already has a framework. Fix the
-  captured wrongness in a separate change, never in this one.
-- **Not sensibly testable**: pure glue, declarative config, a thin wrapper over
-  a service the test would have to mock into meaninglessness, or a project with
-  no test setup at all. Say so in one line and refactor without a net; do not
-  invent a test harness the project never asked for.
-
-The new tests are part of the deliverable and must still pass unchanged after
-the refactor. A test that had to be edited to stay green means the behaviour
-moved: revert the refactor, not the test.
+Light runs (targeted tests, ruff, single lint files) start once `watch.py
+admit --kind test-nostack` of the `kvb-org-organize` skill prints `grant`; no
+chair request.
 
 ## Step 3: refactor each file
 
-Read the whole file first, then apply the standards that the surrounding code
-and the project's own config already establish (formatter config, linter rules,
-existing idioms) over any generic preference of your own.
+Read the whole file first; the project's own standards (formatter config,
+linter rules, existing idioms) outrank generic preference. Find callers,
+duplicates and existing helpers through the codebase-memory-mcp graph first
+(`search_graph`, `trace_path`, `get_architecture`; the `kvb-agent-optimize`
+skill sets it up), grep and read after.
 
-Four principles govern the result:
+- **SRP**: one file, one responsibility; one function, one reason to change.
+  A unit that needs an "and" to describe it is two.
+- **SPOT**: every fact (constant, path, schema, rule) lives in one place;
+  everything else references it.
+- **KISS**: the simplest construct that works; no abstraction without a
+  second caller today, no configuration for a value that never varies.
+- **DRY**: logic is written once; a literal repeated three times is a missing
+  constant.
+- **File size**: read `size.md` next to this file for a file over 250 lines.
+- **Duplication**: fold repeated logic into the existing helper; a new one
+  only when two or more call sites need it now.
+- **Dead weight**: unused imports, variables and parameters, unreachable
+  branches, single-value flags, one-implementation abstractions.
+- **Naming**: names state what a thing is, in the file's convention.
+- **Shape**: split a function that needs a scroll; return early instead of
+  nesting; magic values become a named constant at the use site.
+- **Errors**: never widen or swallow a caught exception, never remove a
+  validation or security check to shorten code.
+- **Comments**: invoke the `kvb-code-no-comments` skill.
 
-- **SRP**: one file, one responsibility; one function, one reason to change. A
-  unit that needs an "and" to describe it is two units.
-- **SPOT**: every fact - a constant, a path, a schema, a rule - lives in exactly
-  one place and everything else references it.
-- **KISS**: the simplest construct that works. No abstraction without a second
-  caller today, no configuration for a value that never varies.
-- **DRY**: the same logic is written once. A literal repeated three times is a
-  missing constant.
-
-Concretely:
-
-- **File size**: no file containing program code exceeds 250 lines. Split the
-  overflow along the SRP seam - it is the symptom, not the cause. Description
-  and markup languages are exempt (Markdown, YAML, JSON, HTML, translation and
-  data files), as is the rare file the language or framework genuinely forbids
-  splitting: name that reason in the report, "it was easier" does not qualify.
-- **Duplication**: fold repeated logic into the helper that already exists;
-  create a new one only when two or more call sites need it now.
-- **Dead weight**: unused imports, variables, parameters, branches that cannot
-  be reached, flags with a single value, abstractions with one implementation.
-- **Naming**: names that state what a thing is, matching the file's convention.
-- **Shape**: split a function that needs a scroll to read; collapse nesting by
-  returning early; replace magic values with a named constant at its use site.
-- **Errors**: never widen a caught exception, never swallow one, never remove a
-  validation or a security check to make the code shorter.
-- **Comments**: invoke the `kvb-code-no-comments` skill rather than reimplementing its
-  rules here.
-
-Do not reformat regions you have no substantive fix for - cosmetic churn buries
-the real change in the diff. If a file's problem is architectural and cannot be
-fixed inside the change set, report it instead of half-doing it.
+Never reformat a region without a substantive fix: cosmetic churn buries the
+real change. An architectural problem the change set cannot fix is reported,
+not half-done.
 
 ## Step 4: keep behaviour provable
 
-- Re-run the step 2 net and require the same green result as the baseline.
-- Never fold a bug fix, a feature, or a dependency change into a refactor.
-  Found a real bug? Name it in the report and leave it for a separate change.
-- Run the cheap checks the project already has for the touched files (formatter,
-  linter, the module's own unit tests). Do not start a full suite, a build, or a
-  deploy on your own initiative - propose it and let the operator trigger it.
-- State plainly what was verified and what was not. An unverified refactor is
-  reported as unverified.
+- Re-run the step 2 net; require the baseline's green result.
+- Never fold a bug fix, feature or dependency change into a refactor; name a
+  found bug in the report for a separate change.
+- Run the project's cheap checks for the touched files (formatter, linter,
+  the module's unit tests). Never start a full suite, build or deploy on your
+  own: propose it for the operator to trigger.
+- Report what was verified and what was not, an unverified refactor as
+  unverified.
 
 ## Step 5: report
 
-One line per file: what changed and why it is safe. Then one line naming what
-was deliberately left alone (architectural findings, bugs, files skipped) and
-the exact command the operator can run to validate. Do not commit unless the
-operator asked for a commit.
+One line per file: what changed and why it is safe. Then one line on what was
+deliberately left alone (architectural findings, bugs, skipped files) and the
+exact command the operator can run to validate. Commit only when the operator
+asked.

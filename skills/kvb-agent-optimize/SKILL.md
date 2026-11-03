@@ -2,8 +2,7 @@
 name: kvb-agent-optimize
 description: >
   Make a repository easy for agents: a code graph index (codebase-memory-mcp)
-  and lean agent instructions. Trigger on /kvb-agent-optimize; kvb-optimize
-  runs it.
+  and lean agent instructions; kvb-optimize runs it.
 ---
 
 An agent that queries a graph reads a fraction of what an agent exploring

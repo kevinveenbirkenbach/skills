@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Count every first-party skill description against the listing budget.
+"""Count every first-party skill description against the listing budget, and each SKILL.md against its cap.
 
 Args:
     --repo: skills repository root.
@@ -19,6 +19,14 @@ from pathlib import Path
 
 LISTING_WORDS = 1500
 DESCRIPTION_WORDS = 40
+SKILL_WORDS = 600
+
+
+def skill_sizes(repo: Path) -> dict[str, int]:
+    return {
+        p.parent.name: len(p.read_text(encoding="utf-8").split())
+        for p in sorted((repo / "skills").glob("*/SKILL.md"))
+    }
 
 
 def words(skill_md: str) -> int:
@@ -65,7 +73,10 @@ def main() -> int:
         print(f"{n}\t{name}")
     for name in over:
         print(f"over {DESCRIPTION_WORDS}: {name}")
-    return 1 if total > LISTING_WORDS or over else 0
+    long = sorted(name for name, n in skill_sizes(repo).items() if n > SKILL_WORDS)
+    for name in long:
+        print(f"SKILL.md over {SKILL_WORDS}: {name}")
+    return 1 if total > LISTING_WORDS or over or long else 0
 
 
 if __name__ == "__main__":

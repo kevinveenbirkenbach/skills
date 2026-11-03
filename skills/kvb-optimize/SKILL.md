@@ -2,7 +2,7 @@
 name: kvb-optimize
 description: >
   Run every optimization skill in one pass with one round of questions.
-  Trigger on /kvb-optimize; kvb-dream runs it.
+  kvb-dream runs it.
 ---
 
 Collector for the optimization skills, so one pass needs one evidence

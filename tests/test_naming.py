@@ -52,6 +52,16 @@ class TestSkillNames(unittest.TestCase):
             with self.subTest(skill=name):
                 self.assertRegex(name, SCHEMA)
 
+    def test_skill_md_never_names_its_own_slash_command(self):
+        for name in self.names:
+            own = re.compile(rf"(?<![\w./~-])/{re.escape(name)}(?![\w/-])")
+            text = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
+            with self.subTest(skill=name):
+                self.assertEqual(
+                    [n for n, line in enumerate(text.splitlines(), 1) if own.search(line)], [],
+                    f"/{name} is implied by the name; it only costs listing and context tokens",
+                )
+
     def test_every_category_and_exception_is_in_use(self):
         for category in CATEGORIES:
             with self.subTest(category=category):

@@ -1,8 +1,8 @@
 ---
 name: kvb-git-commit-no-verify
 description: >
-  Commit the staged changes with --no-verify. Trigger on /kvb-git-commit-no-verify or
-  any request for a no-verify commit; invoking it IS the per-commit
+  Commit the staged changes with --no-verify. Trigger on any request for a
+  no-verify commit; invoking it IS the per-commit
   authorization --no-verify requires, never carried over to later commits.
 ---
 

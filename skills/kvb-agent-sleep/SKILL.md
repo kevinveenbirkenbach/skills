@@ -2,7 +2,7 @@
 name: kvb-agent-sleep
 description: >
   Put this agent to sleep on kvb-org-sunset: park work, end loops, write a
-  morning handover, stay idle. Trigger on its request or /kvb-agent-sleep.
+  morning handover, stay idle. Trigger on its request.
 ---
 
 Verify first: `${CLAUDE_SKILL_DIR}/../kvb-org-sunset/scripts/night.py status`
@@ -26,8 +26,9 @@ The request asks for less, so it needs no operator approval, and it ends a
    - each loop with its exact prompt and interval or cron expression;
    - each running job with its command and log path;
    - each open task of yours in the `kvb-org-rasci` register with its next step.
-5. **Reply** to the sender in one line, `asleep: <handover path>`, and end the
-   turn. Offices stay claimed and register rows unchanged.
+5. **Reply** to the sender in one line, `asleep: <handover path>`, by
+   `SendMessage` (its next wave waits on it), and end the turn. Offices stay
+   claimed and register rows unchanged.
 
 ## While asleep
 

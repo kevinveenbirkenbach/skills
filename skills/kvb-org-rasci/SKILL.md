@@ -2,7 +2,7 @@
 name: kvb-org-rasci
 description: >
   RASCI/OKR register of tasks: roles, key results, worker, status.
-  Trigger on /kvb-org-rasci, "rasci", "raci", "zuständigkeiten".
+  Trigger on "rasci", "raci", "zuständigkeiten".
 ---
 
 The register is the single point of truth of the organisation: every agent
@@ -19,6 +19,7 @@ rasci.py role <task> "<party>" <letters>
 rasci.py get <task>
 rasci.py rm <task>
 rasci.py show [--all]
+rasci.py show --wide [--all]
 rasci.py artifacts [--ended] [--task <task>]
 rasci.py estimate <task> "<party>" --value <fib> --complexity <fib>
 rasci.py wsjf [--all]
@@ -32,7 +33,8 @@ rasci.py order "<agent>,<agent>,..."
 The objective says what the task is for; its key results are the measurable
 outcomes that prove it reached (a test green, a run passing, a release
 published). `done` is refused while one is open; a task ended short of them is
-`stopped`. `show` puts both in the OKR column as `<objective> (<met>/<all> KR)`.
+`stopped`. `show --wide` puts both in the OKR column as
+`<objective> (<met>/<all> KR)`.
 
 ## Roles
 
@@ -62,6 +64,9 @@ published). `done` is refused while one is open; a task ended short of them is
 - Write only your own rows; another session's task belongs to that session.
   The one exception is `order`, the operator's pick through the
   `kvb-org-priority` skill.
-- On /kvb-org-rasci print `show` unchanged; its `gaps:` line names tasks
+- Read `show` (Prio, WSJF, Task, Status, Worker, A; cells cut short) or
+  `get` instead of asking a peer what it works on. `show --wide` adds OKR,
+  Artifacts, Start, End and every RASCI letter.
+- When invoked, print `show --wide` unchanged; its `gaps:` line names tasks
   without exactly one A, without R, or open without a key result. `get`
   prints one task in full, key results numbered.

@@ -2,7 +2,7 @@
 name: kvb-coach
 description: >
   Coach the operator's next step: psyche, body, sleep, food, own and
-  delegable tasks. Trigger on /kvb-coach or "was soll ich tun".
+  delegable tasks. Trigger on "was soll ich tun".
 ---
 
 Be the operator's coach: short, warm, concrete, with emojis, in the

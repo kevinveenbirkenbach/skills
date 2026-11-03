@@ -7,9 +7,8 @@ description: >
 ---
 
 Break risk is the probability the change breaks something it did not intend to
-touch. It is not the inverse of fix confidence, and it is not a mood. Derive it
-by the steps below; a number produced without them is a guess wearing a
-percent sign.
+touch: not the inverse of fix confidence, not a mood. Derive it by the steps
+below; without them a number is a guess.
 
 ## Fast path
 
@@ -22,7 +21,10 @@ under 1%, and skip the method. Any other file takes the full method.
 
 1. **Consumers**: enumerate every consumer of everything the change alters, in
    the committed state (`git grep <symbol> HEAD`) and of its output; say the
-   count. A caveat never licenses a low number; an enumeration does.
+   count. A caveat never licenses a low number; an enumeration does. Query
+   the codebase-memory-mcp graph first (`detect_changes`, `trace_path`,
+   `search_graph`; the `kvb-agent-optimize` skill sets it up), grep and read
+   after.
 2. **Delta**: run the old and the new code on today's inputs and compare at
    the surface where the difference shows (rendered output, emitted config,
    returned set, wire bytes), not as the source reads.
@@ -45,7 +47,7 @@ its residuals. Anchor roughly:
 
 - **Under 5%**: consumers enumerated, delta measured at the surface, every axis
   of the matrix covered by executed evidence, failure mode closed.
-- **5 to 15%**: measured, but one axis or one layer rests on reasoning — no live
+- **5 to 15%**: measured, but one axis or one layer rests on reasoning: no live
   run, a mode not exercised, a runtime the render cannot prove.
 - **15 to 40%**: a real behaviour change whose consumers are enumerated but
   whose effect is unmeasured, or a latent finding with a plausible trigger.

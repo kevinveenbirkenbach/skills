@@ -2,27 +2,30 @@
 name: kvb-org-matrix
 description: >
   One matrix of everything in flight with confidence and break risk per
-  item. Trigger on /kvb-org-matrix, "status", "übersicht", "wo stehen wir".
+  item. Trigger on "status", "übersicht", "wo stehen wir".
 ---
 
-One-shot overview, no side effects: this skill reads state and reports it. It
-never edits files, stages, commits, deploys, or starts work — the operator
-decides what to act on after reading the matrix.
+One-shot overview, no side effects: it reads state and reports it, never
+edits, stages, commits, deploys or starts work. The operator decides what to
+act on.
 
 ## Collect the state
 
-Gather in parallel, skip any source the session does not have, and never invent
-a row for a source you could not read:
+In parallel; skip a source the session lacks, and never invent a row for one
+you could not read:
 
-1. **Tasks** — the `kvb-org-rasci` register first, then the session's todo list, the operator's stated goals this
-   session, and any requirement or plan documents the work follows.
-2. **Working tree** — `git status --short` and `git log --oneline -10`:
-   uncommitted files are open work, commits since the branch point are closed
-   work. Untracked files count as open.
-3. **Running** — background bash jobs, spawned agents not yet reported,
-   scheduled `/loop` wake-ups, and remote runs (CI, deploys). Poll their live
-   state; a job you started is not "running" because you started it.
-4. **Remote** — open PRs and issues for the branch, and their check
+1. **Tasks**: the `kvb-org-rasci` register first, then the session's todo
+   list, the operator's goals this session, and the requirement or plan
+   documents the work follows.
+2. **Peers**: `council.py list` and `news.py show --all` (the
+   `kvb-org-organize` skill's scripts); never message a peer for status.
+3. **Working tree**: `git status --short` and `git log --oneline -10`:
+   uncommitted and untracked files are open work, commits since the branch
+   point closed work.
+4. **Running**: background jobs, spawned agents not yet reported, scheduled
+   `/loop` wake-ups, remote runs (CI, deploys). Poll their live state; a job
+   is not "running" because you started it.
+5. **Remote**: open PRs and issues for the branch and their check
    conclusions, when a forge CLI is available.
 
 ## The matrix
@@ -31,30 +34,29 @@ One table, most-blocking first, one row per item:
 
 | Item | State | Conf. | Break risk | Evidence / next step |
 
-- **State**: `open`, `running`, `blocked`, `done`. `done` means verified —
-  a passing run, a green check, a reproduction that now succeeds. Work that
+- **State**: `open`, `running`, `blocked`, `done`. `done` means verified (a
+  passing run, a green check, a reproduction that now succeeds); work that
   merely looks finished is `open`.
-- **Conf.** and **Break risk**: two separate percentages per the `kvb-check-confidence`
-  skill — probability the item does what it claims, and probability it breaks
-  something else. Only for rows that changed something; `—` for pure
-  observation rows.
-- **Evidence / next step**: for `done`, the strongest proof line (what ran,
-  what it returned). For everything else, the single next action.
+- **Conf.** and **Break risk**: two separate percentages per the
+  `kvb-check-confidence` skill, only for rows that changed something; `-`
+  for pure observation rows.
+- **Evidence / next step**: for `done` the strongest proof line (what ran,
+  what it returned), otherwise the single next action.
 
-Then at most three lines below the table:
+Then at most three lines:
 
 - **Blocked on**: what needs the operator (a decision, a credential, an
-  approval) — omit when nothing does.
-- **Residuals**: what keeps the lowest confidence number below 100.
-- **Running**: what will report back on its own, so the operator does not wait
-  on it manually.
+  approval); omit when nothing does.
+- **Residuals**: what keeps the lowest confidence below 100.
+- **Running**: what reports back on its own, so the operator need not wait
+  on it.
 
 ## Rules
 
-- Cover everything in scope, including work the operator did not ask about —
-  a forgotten background job or an unpushed commit is exactly what the matrix
-  exists to surface.
-- Report what the poll returned, never a predicted result for work still in
-  flight; a running item has no confidence number yet.
-- Compress: one row per item, no per-item paragraphs. If a row needs
-  explaining, the operator will ask.
+- Cover everything in scope, including work the operator did not ask about:
+  a forgotten background job or an unpushed commit is what the matrix exists
+  to surface.
+- Report what the poll returned, never a predicted result; a running item
+  has no confidence number yet.
+- One row per item, no per-item paragraphs; the operator asks when a row
+  needs explaining.

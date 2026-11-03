@@ -1,8 +1,7 @@
 ---
 name: kvb-org-wsjf
 description: >
-  WSJF priority from Fibonacci estimates. Trigger on /kvb-org-wsjf, "wsjf",
-  "priorisieren".
+  WSJF priority from Fibonacci estimates. Trigger on "wsjf", "priorisieren".
 ---
 
 Weighted Shortest Job First ranks the tasks of the `kvb-org-rasci` register
@@ -22,12 +21,16 @@ rasci.py wsjf [--all]
 ## Procedure
 
 1. **The chair asks.** For every new task, and when its objective or a key
-   result changes, the resource chair of the `kvb-org-organize` skill asks
-   its subordinates (the task's worker and R, the representatives of the
-   lines it touches) for one Fibonacci estimate each of business value and
-   complexity, one message per agent.
-2. **Record each answer** under the party that gave it; a new estimate
-   replaces the old one. An agent may record its own.
+   result changes, the resource chair of the `kvb-org-organize` skill reads
+   `rasci.py wsjf` and asks only the subordinates (the task's worker and R,
+   the representatives of the lines it touches) whose Fibonacci estimate of
+   business value or complexity is missing or older than the task's last
+   objective or key-result change: one batched message per agent
+   covering all its tasks. The agent answers by recording its estimate with
+   `rasci.py estimate`, not by message; the chair reads the register instead
+   of polling.
+2. **Record each estimate** under the party that gave it; a new estimate
+   replaces the old one. An agent may record its own unasked.
 3. **Rank**: WSJF = median business value / median complexity, highest
    first. An operator's pin (`rasci.py set <task> --prio <n>`) outranks every
    score; unestimated tasks come last and are named under `unestimated:`.

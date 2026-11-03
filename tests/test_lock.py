@@ -75,6 +75,13 @@ class TestSkillsLock(unittest.TestCase):
                 self.assertLessEqual(words, budget.DESCRIPTION_WORDS)
         self.assertLessEqual(sum(found.values()), budget.LISTING_WORDS)
 
+    def test_skill_files_fit_the_word_cap(self):
+        for name, words in budget.skill_sizes(REPO_ROOT).items():
+            with self.subTest(skill=name):
+                self.assertLessEqual(
+                    words, budget.SKILL_WORDS, "move details into a side file the skill reads on demand"
+                )
+
     def test_budget_script_reports_the_total_and_the_longest(self):
         result = subprocess.run(
             [sys.executable, str(BUDGET), "--repo", str(REPO_ROOT), "--top", "3"],

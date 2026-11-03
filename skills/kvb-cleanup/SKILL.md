@@ -2,198 +2,89 @@
 name: kvb-cleanup
 description: >
   Free disk space agents filled in /tmp, Docker and agent dirs; delete only
-  what the operator picks. Trigger on /kvb-cleanup, "aufräumen", "bereinigen",
+  what the operator picks. Trigger on "aufräumen", "bereinigen",
   "platte voll", "no space left on device".
 ---
 
-Nothing is deleted before the operator has picked it. Every candidate carries
-its owner, its size, and its risk.
+Delete only what the operator picked in this run; questions, inventory and
+proposal change nothing. Never invent a size or a peer's answer: unmeasured
+is `unknown`.
 
-## Step 0: the resource chair
+## Step 0: the chair
 
-Shared resources belong to the resource chair of the `kvb-org-organize` skill. If
-another session holds the chair, send it the cleanup request and stop, unless
-the operator ordered the cleanup in this session; then tell the chair before
-step 1, so its grants and queue stay consistent. The `kvb-org-organize` resource
-watch already runs the configured low-risk cleanup at its stop threshold; this
-skill covers everything that needs the operator's pick.
+Shared resources belong to the `kvb-org-organize` chair; its resource watch
+already runs the configured low-risk cleanup. Another session chairs: send it
+the request and stop, or, when the operator ordered the cleanup here, first
+`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post --to <chair>
+"<plan>"`.
 
-## Step 1: ask the peers
+## Step 1: inventory
 
-List every agent the host can message (in Claude Code: `ListAgents`). Only
-peers sharing this machine's filesystem and Docker daemon count: local
-sessions and your own subagents. Cloud sessions and remote sessions on other
-machines hold nothing here; skip them.
+Read-only, in parallel, with sizes, only in the agent write scope (Claude
+Code: `sandbox.filesystem.allowWrite`) and session scratch dirs, even where
+more is readable; never another user's files. Prefer the project's cleanup
+and teardown targets; obey rules forbidding raw commands.
 
-Send each local peer one message (`SendMessage`) and go on with step 2 while
-they answer:
+- **/tmp**: `du -sh` per own top-level entry; system entries (`.X11-unix`,
+  `.ICE-unix`, `systemd-private-*`, `ssh-*`, `tmux-*`, sockets) are never
+  candidates.
+- **Docker**, **worktrees**: read `docker.md` (its `⚠ Volumes` checklist
+  joins Step 4) and `worktrees.md` next to this file when present.
+- **Agent dirs**: pip, npm, pre-commit, act, gh, buildx caches; Ansible and
+  build temp dirs.
+- **Register**: `council.py list --long`; `rasci.py artifacts` (`kvb-org-artefacts`,
+  `--ended` for candidates): workdir, branch, artifacts, status and worker per
+  `kvb-org-rasci` task.
+- **Live use**: `fuser`, `lsof`, `ps -o pid,etime,comm`, never full command
+  lines or environments (credentials). Sandboxed, an empty result proves
+  nothing.
+- **Archive duties**: memory or project rules requiring a copy before
+  deletion (logs, reports, generated maps).
 
-```text
-Cleanup planned by <own session name>. Reply to me with everything you still
-need, one item per line:
-- paths under /tmp, caches, worktrees
-- containers, compose or stack projects, volumes, images, networks
-- running jobs (deploys, tests, builds) and when they finish
-Reply "nothing" if you need none of it. Items you do not answer for stay.
-Also search your own worktrees and volumes for unused ones (branch merged or
-pushed, no uncommitted changes, stack not needed), list them with their size
-as deletion candidates, delete only your own finished items, and tell me what
-you removed.
-```
+## Step 2: ask the owners
 
-## Step 2: inventory
+Owner: register worker, session id in the path, worktree or compose project,
+container label, open handle, else `unknown`. `SendMessage` the text in
+`ask.md` next to this file once to each local peer owning candidates the
+register does not cover; go on meanwhile.
 
-Read-only, in parallel, sizes included:
+## Step 3: classify
 
-- **Scope**: the directories agents may write to, taken from the host's
-  sandbox or permission config (in Claude Code:
-  `sandbox.filesystem.allowWrite` in `.claude/settings.json`) plus the session
-  scratch dirs. Anything outside is out of scope, even when readable.
-- **/tmp**: `du -sh` per top-level entry the current user owns. System entries
-  (`.X11-unix`, `.ICE-unix`, `systemd-private-*`, `ssh-*`, `tmux-*`, sockets)
-  are never candidates.
-- **Docker**: `docker system df -v`; containers with state and compose project
-  label, volumes with the containers using them
-  (`docker ps -a --filter volume=<name>`), dangling and unused images, build
-  cache, unused networks. For every stopped container (`exited`, `created`)
-  record its volumes (`{{.Mounts}}`); for every volume no running container
-  uses, record size, `CreatedAt` (`docker volume inspect`) and compose project
-  label, anonymous ones included.
-- **Worktrees**: per worktree its size (`du -sh`), its dirty state (`git
-  status --short`), whether its branch is pushed, and whether its HEAD is
-  already contained in an integration line: the default branch and every
-  branch the project merges features into (ask the operator or the project's
-  memory which ones). With `pkgmgr` installed, `pkgmgr branch gc --json
-  --sizes --merged-into <line>` (one per line) measures all of it; its
-  merged-clean items go to the `kvb-git-branch-gc` skill.
-- **Other agent dirs**: package and tool caches (pip, npm, pre-commit, act,
-  gh, buildx), Ansible and build temp dirs.
-- **Register**: `rasci.py artifacts` of the `kvb-org-artefacts` skill:
-  workdir, branch and artifacts of every task in the `kvb-org-rasci` register,
-  with its status and worker; `--ended` narrows it to the candidates.
-- **Live use**: open handles (`fuser`, `lsof`) and running processes by name
-  only (`ps -o pid,etime,comm`). Never print full command lines or
-  environments: process arguments carry credentials. A sandboxed agent often
-  sees only its own processes, so an empty handle list proves nothing there;
-  then only entries untouched for more than 24 hours (`find -mtime +0`) are
-  candidates, and newer ones stay as `keep (recent, possibly in use)`.
-- **Archive duties**: memory and project instructions that require copying
-  something out before deletion (logs, reports, generated maps). Such an item
-  is `archive first`, never a plain delete.
+First match wins: claimed by a peer, `keep`; in a register task not `done`,
+`stopped` or `stale`, `keep (task <task>)` (an ended task's items are its
+worker's candidates); a running deploy, gate, test, swarm run or build, `keep
+(running)`; a silent peer's, `keep (no answer from <peer>)`, silence is not
+consent; sandboxed, anything touched within 24 hours (`find -mtime +0` lists
+the older), `keep (recent, possibly in use)`; archive duty,
+`archive first`, never a plain delete. Else a candidate:
 
-Prefer the project's own cleanup and teardown targets (Makefile, scripts) over
-raw commands where they exist, and obey project rules that forbid raw
-commands.
-
-## Step 3: attribute
-
-Give every candidate an owner: a peer's reply, a session id in the path, a
-worktree or compose project name, a container label, an open handle, or
-`unknown`. Then apply, first match wins:
-
-1. Claimed by a peer: `keep`.
-2. Listed in the register under a task that is not `done`, `stopped` or `stale`:
-   `keep (task <task>)`. Under an ended task it is a candidate whose owner is
-   the task's worker.
-3. A job running on it (deploy, gate, test, swarm run, build): `keep
-   (running)`.
-4. Attributable to a peer that has not answered: `keep (no answer from
-   <peer>)`. Silence is not consent.
-5. Archive duty: `archive first`.
-6. Everything else is a candidate with a risk class:
-
-| Risk | Meaning | Typical items |
-| ---- | ------- | ------------- |
-| low | regenerated automatically, cheap | stopped containers without volumes, dangling images, unused networks, scratch dirs and logs of finished sessions |
-| medium | regenerated, but slow, rate-limited or network-bound | unused tagged images (re-pull, registry limits), build cache (cold rebuilds), package caches, clean worktrees whose HEAD is already in an integration line (ignored files such as `node_modules`, build output or evidence are lost, no commit) |
-| high | data loss or a broken run possible | volumes, stopped containers with volumes, running unclaimed containers or stacks, worktrees with uncommitted or unpushed work, unread reports, anything `unknown` |
+- **low**, regenerated cheaply: stopped containers without volumes, dangling
+  images, unused networks, finished sessions' scratch and logs.
+- **medium**, regenerated slowly, rate-limited or networked: unused tagged
+  images, build cache, package caches, clean worktrees already merged.
+- **high**, data loss or a broken run: volumes, stopped containers with
+  volumes, running unclaimed containers or stacks, dirty or unpushed
+  worktrees, unread reports, anything `unknown`.
 
 ## Step 4: propose
 
-One table, biggest first:
+One table, biggest first: area, item, size, owner, risk, proposal, what
+breaks if wrong. Below it reclaimable size per risk and every `keep` grouped
+by reason. Then `AskUserQuestion`:
 
-| Area | Item | Size | Owner | Risk | Proposal | What breaks if wrong |
-
-Below it: reclaimable size per risk class, and every `keep` row grouped by
-reason, so the operator sees what was protected and why.
-
-Then ask with `AskUserQuestion` in two calls.
-
-**Call 1, the selection** (`multiSelect: true`, checklists, at most four
-questions): `/tmp`, `Docker`, `Other dirs`, and a separate `High risk`
-question that holds every high-risk candidate. Size, risk and worst case go
-into each option's description. An area with more than four options is
-grouped by owner or risk, or split into a further call. Only ticked items are
-selected; nothing is preselected.
-
-**Stopped containers and volumes** always get their own checklist
-(`multiSelect: true`, header `⚠ Volumes`, in a further call when call 1 is
-full). Every stopped container and every volume without a running container
-appears there unless a peer claimed it; none is dropped as "not proposed",
-`unknown` and anonymous ones included. The question text carries the warning:
-`Deleting a volume is irreversible; its data does not come back unless the
-description says how.` One option per stopped container together with its
-volumes (removing the container alone frees nothing of them), one per
-unattached volume, anonymous ones grouped. Each description gives size,
-`CreatedAt`, owner or compose project, and what is lost.
-
-**Call 2, the confirmation** (`multiSelect: false`, radio buttons), computed
-from the ticks: `Execute: <n> items, <size> (Recommended)`, `Revise the
-selection`, `Abort`. The execute description names the worst case of the
-ticked items. Revise repeats call 1; nothing is deleted before `Execute`.
+1. `multiSelect: true`, at most four questions: `/tmp`, `Docker`, `Other
+   dirs`, `High risk` (every high-risk candidate); size, risk and worst case
+   in each option's description. Over four options: group by owner or risk,
+   or call again. Only ticks select; nothing preselected.
+2. `multiSelect: false`: `Execute: <n> items, <size> (Recommended)` naming
+   the ticked items' worst case, `Revise the selection` (repeats 1), `Abort`.
 
 ## Step 5: execute
 
-- Re-check claims, open handles and running state right before each delete: a
-  peer may have started something since the inventory.
-- Delete exactly the selected items, by name or path. No blanket prune
-  (`docker system prune -a --volumes`, `rm -rf /tmp/*`) that sweeps beyond the
-  selection. For more than a handful of paths, write the list to a file under
-  `/tmp`, grep it against every claim once more, then delete with
-  `xargs -d '\n' rm -rf -- < <list>`.
-- Locally built images free little on their own: their layers stay behind as
-  build cache. After removing images, re-measure `docker system df`; the
-  layers show up as reclaimable build cache. Offer
-  `docker builder prune --filter until=24h` as a follow-up candidate, ask the
-  peers that claimed build cache first, and run it outside their running
-  builds.
-- A host permission layer (an auto-mode classifier, a deny rule) may refuse a
-  delete. Never route around it with another command or a peer. Finish the
-  rest, then put the refused item to the operator again as its own option: an
-  explicit renewed selection may pass; if it is refused again, hand over the
-  exact command with its list file for the operator to run.
-- Never stop, take down or kill a running job, and never ask its owner to, to
-  free space: not for a priority slot, not at a disk stop. Free idle items,
-  ask the operator for an exception, or wait; an owner's own disk guard only
-  alerts the chair, and only the operator can order a running job down.
-  A hung job is not freed through cleanup: the `kvb-org-organize` skill's hang rule
-  lets only its owner end it.
-- Idle running stacks go down through the project's teardown target, never by
-  removing their containers or volumes underneath them.
-- Remove a worktree the way it was made: a slot worktree through the
-  project's teardown target (e.g. `make worktree-down`), run outside the
-  sandbox; a plain sidetree through `git worktree remove` without `--force`,
-  which refuses a dirty tree.
-- Archive-first items: copy out, verify the copy, then delete.
-- Drop every deleted item from its task as the `kvb-org-artefacts` skill
-  says (`set <task> --drop-artifact <kind>:<ref>`), so `artifacts` stays true.
-- A delete failing on permissions (files owned by a container UID): use the
-  project's container helper. Never sudo, never bypass the sandbox; without a
-  helper, report the path.
-- Stop on the first unexpected error and report it.
+After `Execute`, read `execute.md` next to this file first.
 
 ## Step 6: report
 
 `df -h` and `docker system df` before and after, freed size per area, every
-skipped or failed item with its reason. Tell each peer that answered which of
-the removed items lay near its own.
-
-## Rules
-
-- Questions, inventory and proposal change nothing. Deletion needs the
-  operator's selection in this run; a selection from an earlier run does not
-  carry over.
-- Never delete outside the agent write scope, another user's files, or system
-  entries in `/tmp`.
-- Never invent a peer's answer or a size. Unmeasured is `unknown`, and
-  `unknown` is high risk.
+skipped or failed item with its reason. `news.py post --to <peer>` tells each
+answering peer which removed items lay near its own.

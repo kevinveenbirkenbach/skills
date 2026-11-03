@@ -2,7 +2,6 @@
 name: kvb-org-sunrise
 description: >
   Wake every agent after kvb-org-evening or kvb-org-sunset into its old roles.
-  Trigger on /kvb-org-sunrise.
 ---
 
 Undoes the night of `kvb-org-evening` or `kvb-org-sunset`; the state lives in

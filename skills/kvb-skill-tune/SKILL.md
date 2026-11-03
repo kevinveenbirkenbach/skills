@@ -2,153 +2,81 @@
 name: kvb-skill-tune
 description: >
   Generate or sharpen skills from observed friction, each proposal confirmed.
-  Trigger only on /kvb-skill-tune, "autotune", "tune the skills" or through
-  kvb-optimize.
+  Trigger only on "autotune", "tune the skills" or through kvb-optimize.
 ---
-
-Autotune turns observed friction into durable skills. It runs on demand only,
-it changes nothing without an explicit answer from the operator, and every
-skill it writes or rewrites lands in the operator's skills repository.
 
 ## Objective
 
-The shared objective of the self-improving skills (kvb-skill-tune,
-kvb-skill-auto, kvb-check-confidence): every skill, rule, or report the agent produces about its own
-working is judged on three axes at once. A proposal that cannot name the axis
-it moves is not an optimization, it is a preference.
+Shared by kvb-skill-tune, kvb-skill-auto and kvb-check-confidence: every skill,
+rule or report about the agent's own working is judged on three axes; a
+proposal naming none is a preference.
 
-- **Tokens** — fewer input and output tokens for the same result: read the range
-  instead of the whole file, grep the saved log instead of re-running the
-  command, route to an authoritative doc instead of duplicating it, report in
-  lines instead of paragraphs.
-- **Time** — fewer round trips and less waiting: independent calls in parallel,
-  one command that answers the question instead of three that circle it, no
-  polling for work the harness will report on its own.
-- **Quality** — fewer errors and less rework: verification instead of
-  assumption, and learnings that persist so the same mistake is not paid for
-  twice.
+- **Tokens**: fewer tokens for the same result (read the range, grep the saved
+  log, route to the authoritative doc, report in lines).
+- **Time**: fewer round trips and less waiting (independent calls in parallel,
+  one command that answers, no polling for what the harness reports).
+- **Quality**: fewer errors and less rework (verify instead of assuming,
+  persist learnings so a mistake is paid once).
 
-- A change must improve at least one axis and damage none. Output that got
-  cheaper but lost correctness is a regression, not an optimization.
-- Quality is never the currency: validation, error handling, tests, and security
-  steps are not what gets cut to save tokens or time.
-- Measure, do not guess: name the observed friction — the re-read, the retry,
-  the correction the operator had to give twice — and what it cost. A guessed
-  percentage is not a measurement.
-- The cheapest step is the one that does not run: drop work before optimizing
-  it.
-- Persist it or pay again: an optimization that lives only in this session is
-  re-derived in the next one, so it belongs in a skill or a memory entry.
+A change improves at least one axis and damages none; cheaper but less correct
+is a regression. Quality is never the currency: validation, error handling,
+tests and security steps are not cut. Name the observed friction (the re-read,
+the retry, the correction given twice) and its cost, never a guessed
+percentage. Drop work before optimizing it. Persist it in a skill or memory
+entry, or pay again.
 
 ## Trigger discipline
 
-- Run **only** when the operator asks: `/kvb-skill-tune`, "autotune", "tune the
-  skills", or an equivalent instruction, or as part of the `kvb-optimize`
-  skill the operator started (directly or through `kvb-dream`).
-- It has no reminder of its own; the `kvb-dream` hint covers it.
-- Never propose, write, or edit a skill as a side effect of unrelated work.
+Run only on the operator's request (its command, "autotune", "tune the skills"
+or an equivalent) or inside a `kvb-optimize` run the operator started,
+directly or through `kvb-dream`, whose hint is its only reminder. Never write
+or edit a skill as a side effect of other work.
 
 ## Step 1: collect evidence
 
-Before asking anything, gather concrete friction from the current session and,
-where readable, from the project's memory and agent instruction files:
-
-- **Token waste**: repeated file re-reads, whole-file reads where a range was
-  enough, long tool output pasted back, re-running a command instead of
-  grepping a saved log, verbose report prose.
-- **Errors**: rejected tool calls, permission prompts, retried commands,
-  corrections the operator had to give twice.
-- **Focus loss**: work that drifted beyond the request, unrequested tests or
-  deploys, questions that stalled an autonomous run.
-- **Lost learnings**: facts re-derived this session that a memory file or a
-  skill should already have carried.
-- **Own scripts**: helpers the agent wrote outside any repository belong to
-  the `kvb-skill-transcend` skill, which carries them over; this skill
-  takes the frictions they reveal.
-- **Deterministic prose**: a skill step the agent worked through by hand
-  although its result follows from its inputs belongs to the
-  `kvb-skill-compile` skill, which turns it into a script.
-
-List each finding as one line: `symptom -> cost -> candidate fix`. Skip
-anything that happened once and is not a pattern.
+Before asking, gather friction from the session and, where readable, the
+project's memory and agent instruction files: token waste (re-reads, whole-file
+reads, pasted tool output, re-runs instead of a grepped log, verbose prose),
+errors (rejected calls, permission prompts, retries, corrections given twice),
+focus loss (drift beyond the request, unrequested tests or deploys, questions
+that stalled an autonomous run), lost learnings (facts memory or a skill should
+have carried). Own scripts outside any repository go to the
+`kvb-skill-transcend` skill (this one takes the frictions they reveal); a step
+worked by hand although its result follows from its inputs goes to the
+`kvb-skill-compile` skill. One line per finding: `symptom -> cost -> candidate
+fix`; skip one-offs that form no pattern.
 
 ## Step 2: ask, do not decide
 
-Use `AskUserQuestion` with `multiSelect: false` so every question renders as
-radio buttons. Never assume an answer, never batch several decisions into one
-option, and never write a file before the answers are in.
+`AskUserQuestion` with `multiSelect: false`, at most four questions per call,
+in this order; never assume an answer, never batch decisions into one option:
 
-Ask in this order, at most four questions per call:
+1. **Scope**: "What should kvb-skill-tune do this run?" `Create a new skill`,
+   `Optimize an existing skill`, `Both`, plus the ranked findings when there
+   are several candidates.
+2. **Target**: one option per candidate, its measured cost in the description.
+3. **Shape**: new: `Standalone skill`, `Extend an existing skill`, `Memory
+   entry instead of a skill`. Optimization: `Tighten wording only`, `Change
+   the trigger`, `Add rules`, `Split into two skills`, `Merge into another
+   skill`, `Compile deterministic steps into a script` (`kvb-skill-compile`).
+4. **Placement**: `Operator skills repository (portable)` or `This project's
+   skills directory (project-specific)`.
 
-1. **Scope** - "What should kvb-skill-tune do this run?" Options: `Create a new
-   skill`, `Optimize an existing skill`, `Both`, plus the ranked findings if
-   more than one candidate exists.
-2. **Target** - which finding becomes a skill, or which existing skill gets
-   optimized. One option per candidate, each with its measured cost in the
-   description.
-3. **Shape** - for a new skill: `Standalone skill`, `Extend an existing
-   skill`, `Memory entry instead of a skill`.
-   For an optimization: `Tighten wording only`, `Change the trigger`, `Add
-   rules`, `Split into two skills`, `Merge into another skill`, `Compile
-   deterministic steps into a script` (the `kvb-skill-compile` skill).
-4. **Placement** - `Operator skills repository (portable)` or
-   `This project's skills directory (project-specific)`.
-
-Present the drafted skill text (name, trigger phrasing, body outline) and ask
-for a final `Write it` / `Revise it` / `Discard` confirmation before touching
-disk. Rewrites of an existing skill additionally show a before/after diff of
-the changed lines in that confirmation.
+Then show the draft (name, trigger phrasing, body outline; a rewrite adds a
+before/after diff of the changed lines) and ask `Write it` / `Revise it` /
+`Discard`. Nothing touches disk before `Write it`.
 
 ## Persistence
 
-A skill that exists only under `.claude/skills` is lost on the next install, and
-one that exists only in the repository is not live until the next restart — so
-every skill is written to **both**, in this order:
-
-1. **Locate the operator's skills repository.** Take the first hit: the
-   `SKILLS_REPO` environment variable; the current repository, when it holds
-   `skills-lock.json` and a `skills/` directory; `pkgmgr path skills`; a git
-   checkout named `skills` under the usual roots
-   (`~/Repositories/*/*/skills`, `~/git`, `~/src`, `~/Projects`) carrying
-   `skills-lock.json`. If none matches, ask the operator for the path with a
-   single-select question — never skip the repository and write only the live
-   copies.
-2. **Write the source of truth**: `skills/<name>/SKILL.md` in that repository
-   (portable skills), or `skills/<name>/SKILL.md` in the current project
-   (project-specific ones). This is the copy that gets committed.
-3. **Mirror it live**, so it works without a reinstall: copy the skill's whole
-   directory to `~/.claude/skills/<name>/` and `~/.agents/skills/<name>/`, and
-   for a project-specific skill additionally to that project's
-   `.claude/skills/<name>/` and `.agents/skills/<name>/`. Copy the directory,
-   not just `SKILL.md`, so hooks and references come along.
-
-Report all written paths. Deleting or renaming a skill follows the same list in
-reverse — remove the mirrors too, or the old name keeps firing.
-
-## Step 3: write
-
-- Write the skill to every location the **Persistence** section lists.
-- Frontmatter carries `name` and a `description` that states what the skill
-  does **and** when to trigger it - the description is the only part loaded into
-  every session, so it decides whether the skill ever fires.
-- Body is thin and single-purpose: the smallest instruction that changes
-  behaviour. Route to an authoritative doc instead of duplicating it.
-- Optimizing an existing skill means the file gets shorter or sharper, not
-  longer. Delete rules the agent already follows, merge duplicated ones, and
-  cut every sentence that does not change an action. Route that compaction
-  through the `kvb-skill-essence` skill instead of trimming by hand: it runs a health
-  pass for dead pointers and rules duplicated across skills before cutting
-  anything, ranks by what loads in every session, and shows the diff before it
-  writes. It asks for its own scope — answer with the skill being optimized.
-- Report what changed in at most three lines, then refresh the reminder stamp
-  so the next hint is an hour out: `date +%s > ~/.claude/.autotune-stamp`.
+Every skill goes to its source of truth `skills/<name>/SKILL.md` in the skills
+repository (`SKILLS_REPO` first) or the project, and live to
+`~/.claude/skills/` and `~/.agents/skills/`. Read `write.md` next to this file
+before writing, renaming or deleting a skill.
 
 ## Rules
 
-- One skill per run unless the operator picked `Both`; a broad rewrite of the
-  whole collection is not what kvb-skill-tune is for.
-- Never write a skill for one-off work, for secrets, or for behaviour an
-  existing skill already covers - propose extending that skill instead.
-- The **Objective** section decides what counts as an improvement: at least
-  one axis better, none damaged, and the claim named as observed friction rather
-  than a guessed percentage.
+- One skill per run unless the operator picked `Both`; no broad rewrite of the
+  whole collection.
+- No skill for one-off work, for secrets, or for behaviour an existing skill
+  covers: propose extending that skill.
+- The **Objective** decides what counts as an improvement.

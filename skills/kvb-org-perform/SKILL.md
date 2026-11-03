@@ -7,10 +7,10 @@ description: >
 ---
 
 A subagent runs on the main model and effort unless the spawn names others.
-Set `model` and `effort` on an Agent call only when the task clearly matches a
-row below and you are at least 90 % sure the cheaper setting delivers the same
-result as the default: no lost findings, no rework. Cost counts per finished
-task, retries included. Otherwise set neither, and the default stays.
+Set `model` and `effort` only for a task that clearly matches a row below, at
+least 90 % sure the cheaper setting gives the default's result: no lost
+findings, no rework. Cost counts per finished task, retries included.
+Otherwise set neither.
 
 ## Table
 
@@ -26,12 +26,16 @@ Fable 5.1 $10 / $50.
 
 ## Spawn
 
-1. Pick the class. A task that mixes classes, or whose class you hesitate
+1. Pick the class; a task that mixes classes, or whose class you hesitate
    over, is `judgement`.
-2. Start the brief with the line `task-class: <class>`; the spawn hook logs
-   it together with `model`, `effort` and the Agent `description`.
+2. Start the brief with `task-class: <class>`; the spawn hook logs it with
+   `model`, `effort` and the Agent `description`.
 3. Set `model` and `effort` from the row; for `judgement` set neither.
-4. Enter the spawn in the `kvb-org-rasci` register: the subagent as R and as
+4. Spawn as many agents as the stakes need: one, unless independent parts
+   gain from running in parallel. The brief names the exact files, lines and
+   claims to check and what is ruled out, and caps the answer (for example
+   "at most 15 lines, file:line per finding").
+5. Enter the spawn in the `kvb-org-rasci` register: the subagent as R and as
    `--worker "subagent <type> (<model>, <effort>)"` of the task it serves.
 
 - An agent type whose definition sets its own model (Explore, Plan, the
@@ -44,31 +48,22 @@ Fable 5.1 $10 / $50.
 
 ## Feedback
 
-Once you have judged the subagent's result, rate it under the same Agent
-`description`:
+Once you have judged the result, rate it under the same Agent `description`:
 
 ```bash
 ${CLAUDE_SKILL_DIR}/scripts/log.py feedback --description "<description>" --completed yes|no --tests pass|fail|none --redo yes|no
 ```
 
 `--redo yes` when the default had to redo or finish the work. When the
-operator later asks a follow-up question about that result or corrects it:
+operator later asks a follow-up about that result or corrects it:
 
 ```bash
 ${CLAUDE_SKILL_DIR}/scripts/log.py followup --description "<description>" --text "<question or correction>"
 ```
 
-All sessions share `~/.local/state/agents-council/subagent-model.jsonl`.
-Inside a sandbox that cannot write it, the script prints the line as
-`pending:` and the PostToolUse hook stores it.
+All sessions share `~/.local/state/agents-council/subagent-model.jsonl`; a
+sandbox that cannot write it gets the line printed as `pending:`, and the
+PostToolUse hook stores it.
 
-## Evaluation
-
-`log.py report` shows per task class, model and effort the runs, the rated
-runs and the share with the same result: completed, not redone, no failing
-test, no follow-up. A row is added, or a cheaper setting extended to a class,
-only when the report shows at least 90 % over at least 20 rated runs, and only
-after the operator confirms it (for example through `/kvb-skill-tune`). A row whose
-rate falls below 90 % over 20 rated runs goes back to the default. `sonnet`
-enters the table only this way, and a trial run on a setting the table does
-not hold needs the operator's order.
+Read `evaluation.md` next to this file before reading `log.py report` or
+changing a row of the table.

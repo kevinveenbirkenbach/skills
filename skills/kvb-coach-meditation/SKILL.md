@@ -2,7 +2,7 @@
 name: kvb-coach-meditation
 description: >
   Short meditation with generative alpha-wave music, animated fractals and
-  breathing cues, tuned by feedback. Trigger on /kvb-coach-meditation.
+  breathing cues, tuned by feedback.
 ---
 
 A short session in the browser: `assets/meditation.html` plays generative

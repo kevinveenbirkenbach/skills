@@ -2,7 +2,7 @@
 name: kvb-think-brainstorm
 description: >
   Generate options through fixed lenses, then score and narrow them. Trigger
-  on /kvb-think-brainstorm, "brainstorm", or when a skill needs alternatives.
+  on "brainstorm" or when a skill needs alternatives.
 ---
 
 Generate first, judge second: no option is scored before all are on the
@@ -24,19 +24,22 @@ At least one option per lens, none judged yet:
 - **Inversion**: solve the opposite problem, or remove the need.
 - **Analogy**: how another domain solves a problem of the same shape.
 - **Drop a constraint**: what one fixed constraint, gone, makes possible.
-- **Reuse**: what the repository, the platform or a dependency already has.
+- **Reuse**: what the repository, the platform or a dependency already has;
+  search the repository through the codebase-memory-mcp graph first
+  (`search_graph`, `get_architecture`; the `kvb-agent-optimize` skill sets it
+  up), grep and read after.
 
 ## Step 3: converge
 
-Rate every option on value, effort and risk (`low`, `medium`, `high`),
-merge duplicates, and drop each option another one beats on all three.
+Rate every option on value, effort and risk (`low`, `medium`, `high`), merge
+duplicates, and drop each option another one beats on all three.
 
 ## Step 4: hand over
 
 The best two or three go to the calling skill, or to the operator through
-`AskUserQuestion` with `multiSelect: false`, the recommended option first.
-A consequential choice runs through the `kvb-think-dialectic` skill before
-it is offered.
+`AskUserQuestion` with `multiSelect: false`, the recommended option first. A
+consequential choice runs through the `kvb-think-dialectic` skill before it
+is offered.
 
 ## Output
 

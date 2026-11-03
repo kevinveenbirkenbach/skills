@@ -2,7 +2,7 @@
 name: kvb-git-pr-create
 description: >
   Open a pull request for the current branch: push handed over, Closes lines,
-  labels. Trigger on /kvb-git-pr-create.
+  labels.
 ---
 
 Opening a pull request is outward-facing and needs the branch on the remote,

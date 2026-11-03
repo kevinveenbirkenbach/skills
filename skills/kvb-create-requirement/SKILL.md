@@ -2,8 +2,8 @@
 name: kvb-create-requirement
 description: >
   Write a requirement: user story, decisions, Mermaid approach, acceptance
-  criteria, tests. Trigger on /kvb-create-requirement, "requirement
-  schreiben", or a kvb-think-gaps pick.
+  criteria, tests. Trigger on "requirement schreiben" or a kvb-think-gaps
+  pick.
 ---
 
 Writes requirements, never implementations. Nothing touches disk before the
@@ -70,8 +70,11 @@ order:
 
 Show the full draft, then `AskUserQuestion`: `Write it` / `Revise it` /
 `Discard`. Revise loops back to the step the correction touches. Write only
-on `Write it`; lint the file with the project's markdown linter on the
-resource chair's grant (the `kvb-org-organize` skill).
+on `Write it`; lint the file with the project's markdown linter, a light run
+that self-admits with
+`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
+test-nostack`; a lint through `make` or Docker waits for the resource chair's
+grant (the `kvb-org-organize` skill).
 
 ## Step 6: hand over
 

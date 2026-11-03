@@ -2,7 +2,7 @@
 name: kvb-git-issue-solve
 description: >
   Solve open issues, each in its own worktree, and open one pull request per
-  issue. Trigger on /kvb-git-issue-solve [issue...].
+  issue.
 ---
 
 Every issue gets its own sidetree, its own evidence and its own pull
@@ -12,9 +12,9 @@ request, so a red one blocks nothing else.
 
 1. **Candidates**: the issues named, else `gh issue list --state open`. Drop
    what the `kvb-git-issue-close` skill finds already fixed, and what a peer
-   already works on: `council.py list` and the `kvb-org-organize` Peer
-   protocol; when a peer solves it, only comment on the issue who solves it
-   where.
+   already works on: `council.py list --long`, the register and the news of the
+   `kvb-org-organize` Peer protocol, no message; when a peer solves it, only
+   comment on the issue who solves it where.
 2. **Rank**: issues about a failing default branch first, then the rank of
    the `kvb-org-wsjf` skill; the operator's order wins.
 3. **Take** each issue before touching it: label it `in analysis` (`gh issue
@@ -28,11 +28,19 @@ request, so a red one blocks nothing else.
    results: a test that failed before and passes after, the pull request
    open), branch `fix/<scope>/<n>` from the default branch in its own
    worktree, evidence, self-assessment, independent review. Commits go to
-   that branch only, never to the default branch; parallel work follows the
-   resource chair's grants. With the first change, swap the label: `gh issue
+   that branch only, never to the default branch. Spawn agents only as the
+   issues' stakes justify; each brief names the issue, the files and the
+   claim to prove, and caps the answer at a verdict table of at most 15
+   lines. Explore code through the codebase-memory-mcp graph first
+   (`search_graph`, `trace_path`, `get_architecture`, `detect_changes`; the
+   `kvb-agent-optimize` skill sets it up), grep and read after. Parallel
+   work, gates, deploys and anything with Docker follow the resource chair's
+   grants; light runs (no Docker, about a minute) self-admit with `watch.py
+   admit --kind test-nostack`. With the first change, swap the label: `gh issue
    edit <n> --remove-label "in analysis" --add-label "in progress"`.
 5. **Open the pull request** with the `kvb-git-pr-create` skill, closing
-   exactly its issue. Below the split bar the proposal becomes a draft pull
+   exactly its issue; one for a failing default branch is posted with
+   `news.py post`. Below the split bar the proposal becomes a draft pull
    request with the residuals and the evidence that would close them.
 6. **Report** per issue, then release its claim and tear its sidetree down
    as `kvb-org-split` describes; the branch stays until the merge. An issue

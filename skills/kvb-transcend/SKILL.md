@@ -1,7 +1,7 @@
 ---
 name: kvb-transcend
 description: >
-  Run both transcend skills in one pass. Trigger on /kvb-transcend.
+  Run both transcend skills in one pass.
 ---
 
 Collector for the `kvb-skill-transcend` and `kvb-code-transcend` skills, so

@@ -2,7 +2,7 @@
 name: kvb-org-sunset
 description: >
   Put every agent but this session to sleep: park work, write a morning
-  handover, hold messages. Trigger on /kvb-org-sunset; /kvb-org-sunrise undoes it.
+  handover, hold messages. kvb-org-sunrise undoes it.
 ---
 
 When tokens or rate limits run short, the organisation narrows to one working
@@ -33,7 +33,8 @@ the state for evening, sunset and sunrise; every agent verifies a request with
 - **Offices**: the sleepers' claims stay theirs. Take only free work; a piece
   a sleeper holds waits for sunrise or the operator.
 - **Messages**: no broadcasts and no peer questions; the Peer protocol's wait
-  is skipped.
+  is skipped. Status goes to `news.py post` (next to `watch.py`); sleepers
+  read it at sunrise at no cost.
 - The `kvb-org-rasci` register keeps every row as it is.
 
 ## Output

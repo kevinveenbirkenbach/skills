@@ -7,21 +7,19 @@ description: >
 ---
 
 Every stage summary, fix report, or ready-to-commit bundle ends with a
-confidence block.
+confidence block. Invoke the `kvb-check-break-risk` skill every time before
+writing it; this skill reports the number it derives and never estimates one
+itself.
 
-Invoke the `kvb-check-break-risk` skill every time, before writing the block; this skill
-reports the number it derives and never estimates one itself.
-
-1. **Fix confidence** (percent): probability the change does what it
-   claims. **Break risk** (percent): probability it breaks anything else,
-   derived via the `kvb-check-break-risk` skill. Two separate numbers, never one
-   blended figure.
-2. **Evidence**: the strongest proof lines only — what was executed,
-   reproduced, enumerated, or read from authoritative source. Distinguish
-   proven (ran it, saw it) from derived (reasoned statically).
-3. **Residuals**: name exactly what keeps the number below 100 and what
-   would close the gap (live deploy, missing artifact, unexercised path).
-   Never a bare percentage without its residuals.
+1. **Fix confidence** (percent): probability the change does what it claims.
+   **Break risk** (percent): probability it breaks anything else, from the
+   `kvb-check-break-risk` skill. Two numbers, never one blended figure.
+2. **Evidence**: the strongest proof lines only: what was executed,
+   reproduced, enumerated, or read from an authoritative source. Mark proven
+   (ran it, saw it) apart from derived (reasoned statically).
+3. **Residuals**: exactly what keeps the number below 100 and what would
+   close the gap (live deploy, missing artifact, unexercised path). Never a
+   bare percentage without its residuals.
 
 Calibration rules:
 
@@ -39,5 +37,6 @@ needs the project's full quality gate green on the exact head (in
 infinito-nexus `make quality-high`); before that, the numbers are
 provisional and the missing gate is the residual.
 
-Objective: the `kvb-skill-tune` skill's **Objective** section. Two figures with their residuals replace a
-hedging paragraph and save the operator a verification round trip.
+Objective: the `kvb-skill-tune` skill's **Objective** section. Two figures
+with their residuals replace a hedging paragraph and save the operator a
+verification round trip.

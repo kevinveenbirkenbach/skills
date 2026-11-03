@@ -1,8 +1,8 @@
 ---
 name: kvb-git-pr-label
 description: >
-  Label pull requests `hotfix` and `90/5` from evidence. Trigger on
-  /kvb-git-pr-label [pr]; kvb-git-pr-create runs it.
+  Label pull requests `hotfix` and `90/5` from evidence; kvb-git-pr-create
+  runs it.
 ---
 
 Two labels, each set only with its evidence and removed when it no longer

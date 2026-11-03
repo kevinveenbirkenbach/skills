@@ -2,7 +2,7 @@
 name: kvb-git-update-branches
 description: >
   Merge main into open PRs or branches: the operator's own directly, others
-  after consent. Trigger on /kvb-git-update-branches.
+  after consent.
 ---
 
 Invoking this skill authorizes the merge commits it makes; pushing stays the
@@ -11,8 +11,7 @@ operator's. Branches are merged, never rebased.
 ## Step 1: scope and candidates
 
 Pull requests, branches or both, as the operator said; ask when it is open.
-`git fetch --all --prune`, then list the open branches with their lag and
-owner:
+`git fetch --all --prune`, then list the open branches with lag and owner:
 
 ```bash
 gh pr list --state open --json number,headRefName,author,isCrossRepository > <tmp>/prs.json
@@ -28,8 +27,7 @@ branch whose own commits all carry the operator's email. A row with
 
 The operator's own rows go on. For every other row run the `kvb-think-listen`
 skill: one `AskUserQuestion` with `multiSelect: true` listing branch, pull
-request, owner and lag, nothing preselected. Only what the operator picks is
-updated.
+request, owner and lag, nothing preselected. Only the picks are updated.
 
 ## Step 3: update
 
