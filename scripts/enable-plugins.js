@@ -49,6 +49,14 @@ for (const [name, entry] of Object.entries(MARKETPLACES)) {
 }
 data.enabledPlugins = Object.assign(data.enabledPlugins || {}, PLUGINS);
 
+const pluginRepos = new Set(Object.values(MARKETPLACES).map((entry) => entry.source.repo));
+const lock = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "skills-lock.json"), "utf8"));
+for (const [name, entry] of Object.entries(lock.skills || {})) {
+  if (pluginRepos.has(entry.source)) {
+    fs.rmSync(path.join(path.dirname(settingsPath), "skills", name), { recursive: true, force: true });
+  }
+}
+
 data.hooks = data.hooks || {};
 const retired = (hook) =>
   typeof hook.command === "string" && RETIRED.some((r) => hook.command.includes(`/skills/${r}`));
@@ -109,4 +117,4 @@ for (const [script, event, matcher, sub] of SCRIPT_HOOKS) {
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled caveman + ponytail plugins, the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, the resource watch and the kvb-org-perform log in ${settingsPath}`);
+console.log(`skills: enabled caveman + ponytail plugins (their skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, news hook and resource watch, and the kvb-org-perform log in ${settingsPath}`);

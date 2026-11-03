@@ -161,6 +161,14 @@ class TestSettingsRegistration(unittest.TestCase):
         self.assertEqual(gate.count("kvb-org-perform/scripts/log.py"), 1)
         self.assertEqual(post.count("kvb-org-perform/scripts/log.py"), 1)
 
+
+    def test_plugin_skills_are_not_copied_twice(self):
+        skills = Path(self.tmp.name) / "skills"
+        for name in ("caveman", "ponytail-review", "cavecrew", "archify", "kvb-dream"):
+            (skills / name).mkdir(parents=True)
+        self._patch()
+        self.assertEqual(sorted(p.name for p in skills.iterdir()), ["archify", "kvb-dream"])
+
     def test_existing_hooks_preserved(self):
         self.settings.write_text(
             json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "true"}]}]}}),
