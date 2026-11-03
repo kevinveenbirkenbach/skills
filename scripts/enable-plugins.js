@@ -91,6 +91,7 @@ if (!JSON.stringify(data.hooks.PreToolUse).includes("kvb-org-organize/scripts/co
 
 const SCRIPT_HOOKS = [
   ["kvb-org-organize/scripts/watch.py", "UserPromptSubmit", null, "watch"],
+  ["kvb-org-organize/scripts/news.py", "UserPromptSubmit", null, "hook"],
   ["kvb-org-organize/scripts/watch.py", "PostToolUse", "Bash", "watch"],
   ["kvb-org-organize/scripts/watch.py", "PreToolUse", "Bash", "block"],
   ["kvb-org-perform/scripts/log.py", "PreToolUse", "Agent|Task", "spawn"],

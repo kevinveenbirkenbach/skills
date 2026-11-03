@@ -155,6 +155,7 @@ class TestSettingsRegistration(unittest.TestCase):
         self.assertEqual(gate.count("kvb-org-organize/scripts/council.py"), 1)
         self.assertEqual(gate.count("kvb-org-organize/scripts/watch.py"), 1)
         self.assertEqual(entries.count("kvb-org-organize/scripts/watch.py"), 1)
+        self.assertEqual(entries.count("kvb-org-organize/scripts/news.py"), 1)
         post = json.dumps(data["hooks"]["PostToolUse"])
         self.assertEqual(post.count("kvb-org-organize/scripts/watch.py"), 1)
         self.assertEqual(gate.count("kvb-org-perform/scripts/log.py"), 1)
