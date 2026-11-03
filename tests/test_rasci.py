@@ -14,7 +14,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RASCI = REPO_ROOT / "skills" / "kvb-org-rasci" / "scripts" / "rasci.py"
 COUNCIL = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "council.py"
-HEADER = "| Prio | WSJF | Task | OKR | Status | Worker | Artifacts | Start | End | R | A | S | C | I |"
+WIDE_HEADER = "| Prio | WSJF | Task | OKR | Status | Worker | Artifacts | Start | End | R | A | S | C | I |"
+COMPACT_HEADER = "| Prio | WSJF | Task | Status | Worker | A |"
 
 
 def local(iso: str) -> str:
@@ -69,7 +70,7 @@ class TestRasci(unittest.TestCase):
         }
         (path / "claim.json").write_text(json.dumps(claim), encoding="utf-8")
 
-    def test_matrix_orders_by_priority_and_lists_roles(self):
+    def _two_tasks(self) -> str:
         start = "2026-11-01T10:00:00+00:00"
         self._run("set", "work/a", "--title", "Alpha", "--objective", "Ship A", "--prio", "2",
                   "--status", "running", "--worker", "Skills", "--start", start)
@@ -78,8 +79,12 @@ class TestRasci(unittest.TestCase):
         self._run("role", "work/a", "Pkgmgr", "C")
         self._run("set", "work/b", "--title", "Beta", "--prio", "1", "--worker", "subagent Explore (haiku)")
         self._run("role", "work/b", "Pkgmgr", "R")
-        lines = self._out("show")
-        self.assertEqual(lines[0], HEADER)
+        return start
+
+    def test_wide_matrix_orders_by_priority_and_lists_roles(self):
+        start = self._two_tasks()
+        lines = self._out("show", "--wide")
+        self.assertEqual(lines[0], WIDE_HEADER)
         self.assertEqual(
             lines[2], "| 1 | - | work/b: Beta | - | queued | subagent Explore (haiku) | - | - | - | Pkgmgr |  |  |  |  |"
         )
@@ -92,15 +97,43 @@ class TestRasci(unittest.TestCase):
             lines[4], "gaps: work/b has 0 A; work/b has no key result; work/a has no key result"
         )
 
+    def test_show_prints_the_compact_table_by_default(self):
+        self._two_tasks()
+        self.assertEqual(
+            self._out("show"),
+            [
+                COMPACT_HEADER,
+                "|---|---|---|---|---|---|",
+                "| 1 | - | work/b: Beta | queued | subagent Explore (haiku) |  |",
+                "| 2 | - | work/a: Alpha | running | Skills | Skills |",
+                "gaps: work/b has 0 A; work/b has no key result; work/a has no key result",
+            ],
+        )
+
+    def test_compact_cells_keep_the_slug_and_truncate_title_worker_and_a(self):
+        slug = "work/" + "s" * 45
+        self._run("set", slug, "--title", "Hidden", "--prio", "1")
+        self._run("set", "work/a", "--title", "A title far longer than the forty character cell",
+                  "--prio", "2", "--worker", "subagent general-purpose (default)")
+        self._run("role", "work/a", "Accountable Party With A Long Name", "A")
+        lines = self._out("show")
+        self.assertEqual(lines[2], f"| 1 | - | {slug}… | queued | - |  |")
+        self.assertEqual(
+            lines[3],
+            "| 2 | - | work/a: A title far longer than the for… | queued | subagent general-purpos… "
+            "| Accountable Party With … |",
+        )
+
     def test_key_results_gate_done_and_fill_the_okr_column(self):
         self._run("set", "work/a", "--objective", "Ship A", "--status", "running")
         self._run("role", "work/a", "Skills", "RA")
         self._run("kr", "work/a", "add", "tests green")
         self._run("kr", "work/a", "add", "released")
         self._run("kr", "work/a", "met", "1")
-        lines = self._out("show")
+        lines = self._out("show", "--wide")
         self.assertIn("| Ship A (1/2 KR) | running |", lines[2])
         self.assertEqual(len(lines), 3)
+        self.assertNotIn("Ship A", self._out("show")[2])
         self.assertEqual(self._run("set", "work/a", "--status", "done").returncode, 2)
         self.assertIn("key result 2 [ ]: released", self._out("get", "work/a"))
         self._run("kr", "work/a", "met", "2")
@@ -122,7 +155,11 @@ class TestRasci(unittest.TestCase):
         self._run("set", "work/a", "--status", "done", "--end", "2026-11-01T12:00:00+00:00")
         self._run("role", "work/a", "Skills", "RA")
         self.assertEqual(self._out("show"), ["no tasks"])
-        self.assertIn("| done | - |", self._out("show", "--all")[2])
+        self.assertEqual(self._out("show", "--wide"), ["no tasks"])
+        self.assertEqual(self._out("show", "--all")[2], "| 1 | - | work/a | done | - | Skills |")
+        self.assertIn(
+            f"| done | - | - | - | {local('2026-11-01T12:00:00+00:00')} |", self._out("show", "--all", "--wide")[2]
+        )
 
     def test_artifacts_and_tools(self):
         self._run("set", "work/a", "--workdir", "/w/a", "--branch", "feat/a", "--status", "done",
@@ -145,7 +182,7 @@ class TestRasci(unittest.TestCase):
         self.assertRegex(rows[2][4], r"^\d\d-\d\d \d\d:\d\d$")
         self.assertEqual([r.split("\t")[1] for r in self._out("artifacts", "--ended")], ["work/a"] * 3)
         self.assertEqual(len(self._out("artifacts", "--task", "work/b")), 1)
-        self.assertIn("| queued | Two | 1 |", self._out("show")[2])
+        self.assertIn("| queued | Two | 1 |", self._out("show", "--wide")[2])
         self.assertTrue(any(line.startswith("artifact: image:core:dev (since ") for line in self._out("get", "work/a")))
         self.assertEqual(
             self._out("tools"), ["2\tmake test\twork/a work/b", "1\tcouncil.py\twork/a"]
@@ -158,10 +195,14 @@ class TestRasci(unittest.TestCase):
         self._claim("chair", "s1", "One", "allocator")
         self._run("set", "work/live", "--prio", "1", "--status", "running")
         self._run("role", "work/live", "Two", "S")
-        lines = self._out("show")
+        lines = self._out("show", "--wide")
         self.assertTrue(lines[2].startswith("| 1 | - | work/live | - | running | One |"))
         self.assertTrue(lines[2].endswith("| One | One | Two |  |  |"))
         self.assertTrue(lines[3].startswith("| 2 | - | cluster/dead | - | stale | Gone |"))
+        self.assertFalse(any("chair" in line for line in lines))
+        lines = self._out("show")
+        self.assertEqual(lines[2], "| 1 | - | work/live | running | One | One |")
+        self.assertEqual(lines[3], "| 2 | - | cluster/dead | stale | Gone | Gone |")
         self.assertFalse(any("chair" in line for line in lines))
 
     def test_council_claim_takeover_and_release_write_through(self):
@@ -188,7 +229,7 @@ class TestRasci(unittest.TestCase):
         self._run("role", "work/a", "Skills", "RA")
         self._run("role", "work/a", "Pkgmgr", "C")
         self._run("role", "work/a", "Pkgmgr", "-")
-        self.assertTrue(self._out("show")[2].endswith("| Skills | Skills |  |  |  |"))
+        self.assertTrue(self._out("show", "--wide")[2].endswith("| Skills | Skills |  |  |  |"))
         self.assertEqual(self._out("rm", "work/a"), ["removed work/a"])
         self.assertEqual(self._out("show"), ["no tasks"])
 
@@ -213,7 +254,8 @@ class TestRasci(unittest.TestCase):
     def test_pipe_in_a_title_does_not_break_the_table(self):
         self._run("set", "work/a", "--title", "a | b")
         self._run("role", "work/a", "Skills", "RA")
-        self.assertTrue(self._out("show")[2].startswith("| 1 | - | work/a: a \\| b | - | queued |"))
+        self.assertTrue(self._out("show", "--wide")[2].startswith("| 1 | - | work/a: a \\| b | - | queued |"))
+        self.assertEqual(self._out("show")[2], "| 1 | - | work/a: a \\| b | queued | - | Skills |")
 
     def test_wsjf_ranks_by_median_estimates(self):
         self._run("set", "work/a", "--objective", "Ship A")

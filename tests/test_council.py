@@ -1,4 +1,4 @@
-"""Exercise the kvb-org-organize council script: election, staleness, release, gate."""
+"""Exercise the kvb-org-organize council script: election, staleness, release, list, gate."""
 
 from __future__ import annotations
 
@@ -84,6 +84,50 @@ class TestCouncil(unittest.TestCase):
         self.assertEqual(self._run("s1", "gate", stdin=outside).returncode, 0)
         self._run("s1", "claim", "work/x", "--work", "w")
         self.assertEqual(self._run("s1", "gate", stdin=inside).returncode, 0)
+
+    def _two_claims(self) -> str:
+        work = "fix the failing deploy of web-app-x on branch fix/web-app-x/deploy"
+        self._run("s1", "claim", "work/x", "--work", work)
+        self._run("s2", "claim", "work/y", "--work", "short work")
+        (self.sessions / "s2.json").unlink()
+        return work
+
+    def _since(self, office: str) -> str:
+        return json.loads((self.root / office / "claim.json").read_text(encoding="utf-8"))["since"]
+
+    def test_list_prints_office_holder_state_and_a_short_work_cell(self):
+        self._two_claims()
+        result = self._run("s1", "list")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.splitlines(),
+            ["work/x\tOne\tlive\tfix the failing deploy of web-app-x on …", "work/y\tTwo\tstale\tshort work"],
+        )
+
+    def test_list_collapses_whitespace_in_the_short_work_cell(self):
+        self._run("s1", "claim", "work/z", "--work", "a\tb\nc")
+        self.assertEqual(self._run("s1", "list").stdout.splitlines(), ["work/z\tOne\tlive\ta b c"])
+
+    def test_list_long_prints_since_and_the_whole_work_line(self):
+        work = self._two_claims()
+        self.assertEqual(
+            self._run("s1", "list", "--long").stdout.splitlines(),
+            [
+                f"work/x\tOne\t{self._since('work/x')}\tlive\t{work}",
+                f"work/y\tTwo\t{self._since('work/y')}\tstale\tshort work",
+            ],
+        )
+
+    def test_list_mine_keeps_only_the_callers_claims_in_both_forms(self):
+        work = self._two_claims()
+        self.assertEqual(
+            self._run("s1", "list", "--mine").stdout.splitlines(),
+            ["work/x\tOne\tlive\tfix the failing deploy of web-app-x on …"],
+        )
+        self.assertEqual(
+            self._run("s1", "list", "--mine", "--long").stdout.splitlines(),
+            [f"work/x\tOne\t{self._since('work/x')}\tlive\t{work}"],
+        )
 
     def test_invalid_office_is_a_usage_error(self):
         self.assertEqual(self._run("s1", "claim", "../x", "--work", "w").returncode, 2)

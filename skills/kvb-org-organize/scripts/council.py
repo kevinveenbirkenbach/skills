@@ -31,6 +31,7 @@ ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 HEARTBEAT_LIMIT = 3600
 OFFICE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$")
 CLAIM = "claim.json"
+WORK_WIDTH = 40
 RASCI = Path(__file__).resolve().parents[2] / "kvb-org-rasci" / "scripts" / "rasci.py"
 
 
@@ -198,6 +199,11 @@ def cmd_beat(args: argparse.Namespace) -> int:
     return 0
 
 
+def short(text: str, width: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     live = live_sessions()
     sid = None
@@ -208,7 +214,10 @@ def cmd_list(args: argparse.Namespace) -> int:
             continue
         state = "stale" if is_stale(claim, live) else "live"
         holder = claim["name"] or claim["session"]
-        print(f"{office}\t{holder}\t{claim['since']}\t{state}\t{claim['work']}")
+        if args.long:
+            print(f"{office}\t{holder}\t{claim['since']}\t{state}\t{claim['work']}")
+        else:
+            print(f"{office}\t{holder}\t{state}\t{short(claim['work'], WORK_WIDTH)}")
     return 0
 
 
@@ -253,6 +262,7 @@ def main() -> int:
     beat.set_defaults(func=cmd_beat)
     listing = sub.add_parser("list")
     listing.add_argument("--mine", action="store_true")
+    listing.add_argument("--long", action="store_true")
     listing.add_argument("--session")
     listing.set_defaults(func=cmd_list)
     sub.add_parser("gate").set_defaults(func=cmd_gate)

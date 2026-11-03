@@ -33,6 +33,8 @@ COUNCIL = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" /
 TASK = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$")
 LETTERS = re.compile(r"^(?!.*(.).*\1)[RASCI]+$")
 ORDER = "RASCI"
+WIDE = ("Prio", "WSJF", "Task", "OKR", "Status", "Worker", "Artifacts", "Start", "End", *ORDER)
+COMPACT = ("Prio", "WSJF", "Task", "Status", "Worker", "A")
 STATUSES = ("queued", "running", "blocked", "done", "stopped")
 ENDED = ("done", "stopped")
 FIELDS = (
@@ -441,34 +443,43 @@ def cmd_rm(args: argparse.Namespace) -> int:
     return 0
 
 
+def holders(row: dict, letter: str, width: int) -> str:
+    parties = sorted(row["roles"], key=lambda p: (p != OPERATOR, p.lower()))
+    return cell(", ".join(p for p in parties if letter in row["roles"][p]), width)
+
+
+def wide(task: str, row: dict) -> list[object]:
+    title = f"{task}: {row['title']}" if row.get("title") else task
+    return [
+        cell(title, 50),
+        okr(row),
+        row["status"],
+        cell(row.get("worker") or "-", 30),
+        len(row.get("artifacts", [])) or "-",
+        when(row.get("start")),
+        when(row.get("end")),
+        *(holders(row, letter, 30) for letter in ORDER),
+    ]
+
+
+def compact(task: str, row: dict) -> list[object]:
+    title = cell(f"{task}: {row['title']}", max(40, len(task) + 1)) if row.get("title") else task
+    return [title, row["status"], cell(row.get("worker") or "-", 24), holders(row, "A", 24)]
+
+
 def cmd_show(args: argparse.Namespace) -> int:
     rows = merged(args.all)
     if not rows:
         print("no tasks")
         return 0
-    header = ["Prio", "WSJF", "Task", "OKR", "Status", "Worker", "Artifacts", "Start", "End", *ORDER]
+    header, columns = (WIDE, wide) if args.wide else (COMPACT, compact)
     print("| " + " | ".join(header) + " |")
     print("|" + "---|" * len(header))
     problems = []
     for rank, task in enumerate(ranked(rows), 1):
         row = rows[task]
-        title = f"{task}: {row['title']}" if row.get("title") else task
         score = wsjf(row)
-        values = [
-            rank,
-            f"{score[2]:g}" if score else "-",
-            cell(title, 50),
-            okr(row),
-            row["status"],
-            cell(row.get("worker") or "-", 30),
-            len(row.get("artifacts", [])) or "-",
-            when(row.get("start")),
-            when(row.get("end")),
-        ]
-        parties = sorted(row["roles"], key=lambda p: (p != OPERATOR, p.lower()))
-        values += [
-            cell(", ".join(p for p in parties if letter in row["roles"][p]), 30) for letter in ORDER
-        ]
+        values = [rank, f"{score[2]:g}" if score else "-", *columns(task, row)]
         print("| " + " | ".join(str(v) for v in values) + " |")
         problems += gaps(task, row)
     if problems:
@@ -515,6 +526,7 @@ def main() -> int:
         p.set_defaults(func=func)
     p = sub.add_parser("show")
     p.add_argument("--all", action="store_true")
+    p.add_argument("--wide", action="store_true")
     p.set_defaults(func=cmd_show)
     p = sub.add_parser("artifacts")
     p.add_argument("--ended", action="store_true")
