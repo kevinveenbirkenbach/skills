@@ -18,7 +18,8 @@ coach.py --profile <same> done <area> "<thing>" [--at <iso>]
 coach.py --profile <same> show [--json]
 ```
 
-Areas: `psyche`, `body`, `sleep`, `food`, `tasks`, `delegate`.
+Areas: `psyche`, `body`, `sleep`, `food`, `tasks`, `delegate`. Every coaching
+skill beyond this one is named `kvb-coach-<name>`.
 
 ## Step 1: read the situation
 
@@ -36,8 +37,9 @@ Areas: `psyche`, `body`, `sleep`, `food`, `tasks`, `delegate`.
 At most one line per area, the most urgent first, the whole answer on one
 screen:
 
-- 🧠 **Psyche**: a short break, a walk outside, five minutes of meditation or
-  box breathing, a call with a friend, something just for fun.
+- 🧠 **Psyche**: a short break, a walk outside, five minutes with the
+  `kvb-coach-meditation` skill or box breathing, a call with a friend,
+  something just for fun.
 - 💪 **Body**: a workout from the operator's likes (a 20-minute run, a
   bodyweight circuit, cycling, yoga), stretching neck, hips and back after
   long sitting, standing up every hour.

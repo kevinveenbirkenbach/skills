@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kvb-coach-meditation</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #eee; font-family: "URW Gothic", "Fira Sans", "Cantarell", sans-serif; font-weight: 300; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+  #ui { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; text-align: center; padding: 1rem; }
+  #breath { font-size: 2.6rem; text-transform: lowercase; letter-spacing: .4em; color: #fff; text-shadow: 0 0 14px #fff9, 0 0 40px #9cf8, 0 0 80px #c9f5; will-change: transform, opacity, letter-spacing; }
+  #clock { position: fixed; bottom: 1rem; right: 1rem; opacity: .5; font-variant-numeric: tabular-nums; }
+  #progress { position: fixed; left: 0; bottom: 0; height: 3px; width: 0; background: linear-gradient(90deg, #9cf, #c9f); box-shadow: 0 0 12px #9cf9; opacity: .7; }
+  #level { position: fixed; top: 1rem; right: 1rem; opacity: 0; transition: opacity .6s; letter-spacing: .2em; text-shadow: 0 0 10px #fff8; }
+  button { font: inherit; font-size: 1.4rem; letter-spacing: .4em; text-transform: lowercase; padding: .8rem 2.4rem; border-radius: 2rem; border: 1px solid #fff6; background: #fff1; color: #fff; cursor: pointer; text-shadow: 0 0 12px #fff8; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="ui"><div id="breath"></div><button id="start">Start</button></div>
+<div id="clock"></div>
+<div id="level"></div>
+<div id="progress"></div>
+<script>
+"use strict";
+const KEYS = ["minutes", "beat", "base", "volume", "mode", "palette", "breathing"];
+const PALETTES = {
+  aurora: [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [1.0, 1.0, 1.0], [0.0, 0.33, 0.67]],
+  ocean: [[0.2, 0.4, 0.6], [0.2, 0.3, 0.4], [1.0, 1.0, 1.0], [0.0, 0.1, 0.2]],
+  ember: [[0.5, 0.3, 0.2], [0.5, 0.3, 0.2], [1.0, 1.0, 1.0], [0.0, 0.1, 0.2]],
+  forest: [[0.3, 0.5, 0.3], [0.2, 0.4, 0.2], [1.0, 1.0, 1.0], [0.1, 0.2, 0.3]],
+};
+const PATTERNS = {
+  box: [["Breathe in", 4], ["Hold", 4], ["Breathe out", 4], ["Hold", 4]],
+  "478": [["Breathe in", 4], ["Hold", 7], ["Breathe out", 8]],
+  none: [],
+};
+
+const SETTINGS = null;
+const breathEl = document.getElementById("breath");
+const clockEl = document.getElementById("clock");
+const startEl = document.getElementById("start");
+const missing = KEYS.filter((key) => !SETTINGS || !(key in SETTINGS));
+const cfg = Object.fromEntries(KEYS.map((key) => [key, SETTINGS ? SETTINGS[key] : null]));
+["minutes", "beat", "base", "volume"].forEach((key) => { cfg[key] = Number(cfg[key]); });
+if (missing.length || !PALETTES[cfg.palette] || !PATTERNS[cfg.breathing]) {
+  startEl.remove();
+  breathEl.textContent = "Start the session through the kvb-coach-meditation skill.";
+  throw new Error(`invalid settings: ${missing.join(", ")}`);
+}
+
+function breath(t) {
+  const steps = PATTERNS[cfg.breathing];
+  if (!steps.length) return ["", 0.5 + 0.5 * Math.sin(t * 0.2)];
+  const total = steps.reduce((sum, [, d]) => sum + d, 0);
+  let x = t % total;
+  let lung = 0;
+  for (const [label, d] of steps) {
+    if (x < d) {
+      if (label === "Breathe in") return [label, x / d];
+      if (label === "Breathe out") return [label, 1 - x / d];
+      return [label, lung];
+    }
+    x -= d;
+    if (label === "Breathe in") lung = 1;
+    if (label === "Breathe out") lung = 0;
+  }
+  return ["", lung];
+}
+
+const canvas = document.getElementById("view");
+const gl = canvas.getContext("webgl");
+let draw = () => {};
+if (gl) {
+  const VERT = "attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }";
+  const FRAG = `precision highp float;
+uniform vec2 res; uniform float t; uniform float lung; uniform vec3 pa, pb, pc, pd;
+vec3 pal(float x) { return pa + pb * cos(6.28318 * (pc * x + pd)); }
+void main() {
+  vec2 z = (2.0 * gl_FragCoord.xy - res) / min(res.x, res.y) * (1.6 - 0.3 * lung);
+  vec2 c = 0.7885 * vec2(cos(t * 0.05), sin(t * 0.05));
+  float n = 0.0;
+  for (int i = 0; i < 160; i++) {
+    z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+    if (dot(z, z) > 16.0) break;
+    n += 1.0;
+  }
+  float s = (n - log2(log2(max(dot(z, z), 1.0001))) + 4.0) / 160.0;
+  gl_FragColor = vec4(pal(s + t * 0.01) * (n < 160.0 ? 1.0 : 0.05), 1.0);
+}`;
+  const shader = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, "p");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const u = (name) => gl.getUniformLocation(prog, name);
+  ["pa", "pb", "pc", "pd"].forEach((name, i) => gl.uniform3fv(u(name), PALETTES[cfg.palette][i]));
+  const resize = () => {
+    const scale = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width = Math.floor(innerWidth * scale);
+    canvas.height = Math.floor(innerHeight * scale);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  };
+  addEventListener("resize", resize);
+  resize();
+  draw = (t, lung) => {
+    gl.uniform2f(u("res"), canvas.width, canvas.height);
+    gl.uniform1f(u("t"), t);
+    gl.uniform1f(u("lung"), lung);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  };
+  draw(0, 0);
+}
+
+const levelEl = document.getElementById("level");
+const progressEl = document.getElementById("progress");
+const BRIGHTNESS = "kvb-coach-meditation-brightness";
+const stored = () => {
+  try {
+    return Number(localStorage.getItem(BRIGHTNESS)) || 1;
+  } catch {
+    return 1;
+  }
+};
+const store = (value) => {
+  try {
+    localStorage.setItem(BRIGHTNESS, String(value));
+    return true;
+  } catch {
+    return false;
+  }
+};
+let brightness = stored();
+let levelTimer = 0;
+const showBrightness = () => {
+  canvas.style.filter = `brightness(${brightness})`;
+};
+showBrightness();
+addEventListener("keydown", (event) => {
+  const step = { "+": 0.1, "=": 0.1, "-": -0.1 }[event.key];
+  if (!step) return;
+  brightness = Math.min(1.6, Math.max(0.2, Math.round((brightness + step) * 10) / 10));
+  showBrightness();
+  const saved = store(brightness);
+  levelEl.textContent = `☀ ${Math.round(brightness * 100)} %${saved ? "" : " (not saved)"}`;
+  levelEl.style.opacity = "1";
+  clearTimeout(levelTimer);
+  levelTimer = setTimeout(() => { levelEl.style.opacity = "0"; }, 1200);
+});
+
+function sound(ctx) {
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0, ctx.currentTime);
+  master.gain.linearRampToValueAtTime(cfg.volume, ctx.currentTime + 8);
+  master.connect(ctx.destination);
+  const reverb = ctx.createConvolver();
+  const length = ctx.sampleRate * 4;
+  const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = impulse.getChannelData(ch);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3);
+  }
+  reverb.buffer = impulse;
+  reverb.connect(master);
+  if (cfg.mode === "binaural") {
+    const merger = ctx.createChannelMerger(2);
+    [cfg.base, cfg.base + cfg.beat].forEach((freq, ch) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = freq;
+      gain.gain.value = 0.12;
+      osc.connect(gain).connect(merger, 0, ch);
+      osc.start();
+    });
+    merger.connect(master);
+  } else {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const lfo = ctx.createOscillator();
+    const depth = ctx.createGain();
+    osc.frequency.value = cfg.base;
+    gain.gain.value = 0.06;
+    lfo.frequency.value = cfg.beat;
+    depth.gain.value = 0.06;
+    lfo.connect(depth).connect(gain.gain);
+    osc.connect(gain).connect(master);
+    osc.start();
+    lfo.start();
+  }
+  const ratios = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2];
+  const note = () => {
+    if (ctx.state === "closed") return;
+    const now = ctx.currentTime;
+    const freq = cfg.base * ratios[Math.floor(Math.random() * ratios.length)];
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.1, now + 3);
+    gain.gain.linearRampToValueAtTime(0, now + 9);
+    gain.connect(reverb);
+    [0, 4].forEach((cents) => {
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      osc.detune.value = cents;
+      osc.connect(gain);
+      osc.start(now);
+      osc.stop(now + 9.5);
+    });
+    setTimeout(note, 2500 + Math.random() * 3500);
+  };
+  note();
+  return master;
+}
+
+startEl.addEventListener("click", () => {
+  startEl.remove();
+  const ctx = new AudioContext();
+  const master = sound(ctx);
+  const begin = performance.now();
+  const end = cfg.minutes * 60;
+  const frame = (now) => {
+    const t = (now - begin) / 1000;
+    const [label, lung] = breath(t);
+    draw(t, lung);
+    progressEl.style.width = `${Math.min(100, (t / end) * 100)}%`;
+    const left = Math.max(0, end - t);
+    clockEl.textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
+    breathEl.style.opacity = String(0.35 + 0.65 * lung);
+    breathEl.style.letterSpacing = `${0.3 + 0.5 * lung}em`;
+    breathEl.style.transform = `scale(${0.9 + 0.2 * lung})`;
+    if (t < end) {
+      breathEl.textContent = label;
+      requestAnimationFrame(frame);
+      return;
+    }
+    master.gain.cancelScheduledValues(ctx.currentTime);
+    master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
+    master.gain.linearRampToValueAtTime(0, ctx.currentTime + 6);
+    setTimeout(() => ctx.close(), 6500);
+    breathEl.style.opacity = "1";
+    breathEl.style.transform = "none";
+    breathEl.style.letterSpacing = ".2em";
+    breathEl.textContent = "Done. Back to your agent for a short feedback.";
+  };
+  requestAnimationFrame(frame);
+});
+</script>
+</body>
+</html>

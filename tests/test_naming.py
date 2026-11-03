@@ -9,9 +9,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS = REPO_ROOT / "skills"
 README = REPO_ROOT / "README.md"
-CATEGORIES = ("think", "create", "code", "ci", "git", "check", "org", "skill")
+CATEGORIES = ("think", "create", "code", "ci", "git", "check", "org", "skill", "coach")
 UNCATEGORIZED = frozenset(
-    {"kvb-cleanup", "kvb-coach", "kvb-dream", "kvb-help", "kvb-optimize", "kvb-transcend"}
+    {
+        "kvb-cleanup",
+        "kvb-coach",
+        "kvb-dream",
+        "kvb-help",
+        "kvb-optimize",
+        "kvb-transcend",
+    }
 )
 SPEC = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 SCHEMA = re.compile(rf"^kvb-(?:{'|'.join(CATEGORIES)})-[a-z0-9]+(?:-[a-z0-9]+)*$")

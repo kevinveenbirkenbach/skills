@@ -1,9 +1,9 @@
 ---
 name: kvb-code-tune
 description: >
-  Find and apply performance optimizations (CI, deploy, build, gate, hot
-  paths) without losing logic or coverage. Trigger on /kvb-code-tune, a job
-  hitting its time budget, a slower pipeline, or asked where time goes.
+  Speed up CI, deploys, builds and hot paths without losing logic or
+  coverage. Trigger on /kvb-code-tune, a job hitting its time budget, or
+  asked where time goes.
 ---
 
 # Tune
