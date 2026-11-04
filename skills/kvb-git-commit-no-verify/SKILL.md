@@ -6,9 +6,9 @@ description: >
   carried over to later commits.
 ---
 
-1. Run the kvb-code-no-comments audit over the staged and unstaged changes first,
-   then the kvb-check-legal check over the staging index. A legal blocker stops
-   here.
+1. Run the kvb-code-clean pass (comments, defaults, principles) over the
+   staged and unstaged changes first, then the kvb-check-legal check over
+   the staging index. A legal blocker stops here.
 2. Show in the message right before the `git commit` call, never only after
    it, the full staged diff (`git diff --cached`), then the commit table of
    the kvb-check-score skill (`score.py ... --commit-table <worktree>`):

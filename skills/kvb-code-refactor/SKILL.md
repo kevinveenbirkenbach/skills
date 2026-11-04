@@ -57,7 +57,7 @@ skill sets it up), grep and read after.
   nesting; magic values become a named constant at the use site.
 - **Errors**: never widen or swallow a caught exception, never remove a
   validation or security check to shorten code.
-- **Comments**: invoke the `kvb-code-no-comments` skill.
+- **Comments, defaults**: the `kvb-code-clean` skill.
 
 Never reformat a region without a substantive fix: cosmetic churn buries the
 real change. An architectural problem the change set cannot fix is reported,

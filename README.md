@@ -38,8 +38,7 @@ flowchart LR
   create --> create_plan[kvb-create-plan]
   create --> create_requirement[kvb-create-requirement]
   code --> code_scope_guard[kvb-code-scope-guard]
-  code --> code_no_defaults[kvb-code-no-defaults]
-  code --> code_no_comments[kvb-code-no-comments]
+  code --> code_clean[kvb-code-clean]
   code --> code_refactor[kvb-code-refactor]
   code --> code_test[kvb-code-test]
   code --> code_tune[kvb-code-tune]
@@ -135,11 +134,10 @@ flowchart LR
   end
   subgraph cat_code [code]
     scope_guard[kvb-code-scope-guard]
-    no_defaults[kvb-code-no-defaults]
+    clean[kvb-code-clean]
     refactor[kvb-code-refactor]
     test[kvb-code-test]
     tune[kvb-code-tune]
-    comments_clean[kvb-code-no-comments]
     code_transcend[kvb-code-transcend]
   end
   subgraph cat_ci [ci]
@@ -223,7 +221,7 @@ flowchart LR
   edit_hook -. council gate .-> democracy
   reminders -.-> dream
   full_hour -.-> coach
-  code_task -.-> no_defaults
+  code_task -.-> clean
   code_task -.-> scope_guard
   spawn -.-> subagent_model
 
@@ -241,7 +239,10 @@ flowchart LR
   update_branches --> active_listening
   update_branches -. conflicts .-> merge_fix
   update_branches -. pushes .-> operator
-  commit_no_verify --> comments_clean
+  commit_no_verify --> clean
+  commit_next --> clean
+  clean --> sceptic
+  clean --> refactor
   commit_no_verify --> advocate
   advocate --> dialectic
   confidence --> break_risk
@@ -301,7 +302,6 @@ flowchart LR
   criticize --> dialectic
   criticize --> active_listening
   sceptic --> dialectic
-  sceptic --> no_defaults
   gaps --> sceptic
   gaps --> active_listening
   gaps --> requirement
@@ -363,9 +363,8 @@ flowchart LR
 
   test --> triage
   test --> dialectic
-  test --> no_defaults
-  test --> comments_clean
-  refactor --> comments_clean
+  test --> clean
+  refactor --> clean
 ```
 
 ## Requirements 📦

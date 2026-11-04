@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = REPO_ROOT / "skills" / "kvb-code-no-defaults" / "scripts" / "defaults.py"
+SCRIPT = REPO_ROOT / "skills" / "kvb-code-clean" / "scripts" / "defaults.py"
 BASE = {
     "app.py": "import os\n\n\ndef old(a=1):\n    return a\n",
     "run.sh": 'echo "${OLD:-1}"\n',

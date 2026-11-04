@@ -23,8 +23,8 @@ after three simultaneous changes proves nothing about which one mattered.
     unbuilt artefact. Fix the environment or report it; do not patch code
     around it.
 - **Fix** with the smallest change that addresses the root cause, in the
-  project's idioms and under the `kvb-code-no-defaults` and
-  `kvb-code-no-comments` rules. Forbidden without explicit operator approval:
+  project's idioms and under the `kvb-code-clean` rules. Forbidden without
+  explicit operator approval:
   deleting, skipping, `xfail`-ing or commenting out a failing test; loosening
   an assertion to what the code produces; swallowing the exception the test
   surfaces; retries, sleeps or reruns over a flaky failure; disabling a linter

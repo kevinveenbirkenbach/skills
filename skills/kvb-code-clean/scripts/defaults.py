@@ -550,7 +550,7 @@ def call_default(node: ast.Call):
     elif "getenv" in (attribute, name) or attribute == "get":
         fallback = node.args[1] if len(node.args) == 2 else keywords.get("default")
         owner = ast.unparse(func.value) if attribute == "get" else "os.environ"
-        instead = "os.environ[key]" if owner.endswith("environ") else f"{owner}[key]"
+        instead = "os.environ[name]" if owner.endswith("environ") else f"{owner}[name]"
     else:
         return []
     if fallback is None or absent(fallback):
@@ -580,7 +580,7 @@ def scan_python(path: str, text: str, wanted: set[int] | None) -> list[Hit]:
         tree = ast.parse(text, filename=path)
         tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
     except (SyntaxError, ValueError, tokenize.TokenError) as error:
-        raise ScanError(f"{path}: not parseable as Python: {error}") from error
+        raise ScanError(f"{path}: unparseable Python: {error}") from error
     commented = {token.start[0] for token in tokens if token.type == tokenize.COMMENT}
     comment_only = {line for line, row in enumerate(text.split("\n"), 1) if row.lstrip().startswith("#")}
     hits = []

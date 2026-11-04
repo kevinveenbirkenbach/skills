@@ -40,7 +40,7 @@ Compile what runs often or went wrong; a one-off stays prose. Per candidate:
   library in the skills repository); no new language, framework or dependency
   without the operator.
 - **Interface**: every host path, name and value an explicit parameter (the
-  `kvb-code-no-defaults` skill), documented exit codes, `--json` when another
+  `kvb-code-clean` skill), documented exit codes, `--json` when another
   script or skill consumes the output.
 - **Location**: `skills/<skill>/scripts/<verb>.py` with a test under `tests/`
   in the skills repository; elsewhere the owning repository's convention,

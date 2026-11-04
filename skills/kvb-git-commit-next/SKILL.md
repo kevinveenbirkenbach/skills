@@ -18,7 +18,7 @@ description: >
    Wait for the operator's decision; do not commit.
 3. Nothing similar found, or the operator picked the staged version: run the
    kvb-git-commit-no-verify skill on the currently staged changes
-   (kvb-code-no-comments audit and kvb-check-legal check first, then the
+   (kvb-code-clean pass and kvb-check-legal check first, then the
    full staged diff and the kvb-check-score commit table of 📁 worktree,
    🌿 branch, 📊 diff stat, scores with 🛡️ security and gate, then
    `git commit --no-verify`, exact staging index only, its message carrying
@@ -40,10 +40,11 @@ description: >
    operator's own edits and local config. A file that carries two bundles is
    staged by line: `${CLAUDE_SKILL_DIR}/scripts/stage_hunks.py --repo
    <worktree> --file <path> --match <regex>`, first with `--dry-run`.
-5. For the newly staged bundle run the kvb-think-explain skill (what the
-   changes do and how the pieces interact, file:line-anchored), then the
-   kvb-check-confidence skill (its kvb-check-score block with 🛡️ security
-   from `security.py` of kvb-check-security, evidence, residuals).
+5. For the newly staged bundle run the kvb-code-clean pass, then the
+   kvb-think-explain skill (what the changes do and how the pieces
+   interact, file:line-anchored), then the kvb-check-confidence skill (its
+   kvb-check-score block with 🛡️ security from `security.py` of
+   kvb-check-security, evidence, residuals).
 6. Close with the staged bundle's commit table (`score.py ...
    --commit-table <worktree>`: 📁 worktree, 🌿 branch, 📊 diff stat, scores,
    gate), what remains unstaged, and wait for the operator's commit

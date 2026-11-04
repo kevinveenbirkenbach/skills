@@ -33,7 +33,7 @@ new skill, a sharper step in an existing skill, a memory entry instead, or
 drop. A recurring deterministic move without a script goes to the
 `kvb-skill-compile` skill, any other recurring move to the `kvb-skill-tune`
 skill as evidence. A script is portable only once its host paths, names and
-values are explicit parameters (the `kvb-code-no-defaults` skill); one that
+values are explicit parameters (the `kvb-code-clean` skill); one that
 needs a secret, a credential or a single host is dropped or stays a memory
 entry.
 
@@ -49,8 +49,8 @@ or diff.
 
 - Write where the `kvb-skill-tune` skill's **Persistence** section says: the
   skills repository as source of truth, then the live mirrors.
-- Read every script whole before carrying it; strip comments the way the
-  `kvb-code-no-comments` skill does.
+- Read every script whole before carrying it; clean it the way the
+  `kvb-code-clean` skill does.
 - A carried script gets a unit test in the repository's `tests/` with a
   negative control, run once `watch.py admit --kind test-nostack` (the
   `kvb-org-organize` skill) prints `grant`; `make test` runs through

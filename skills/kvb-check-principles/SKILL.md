@@ -1,8 +1,8 @@
 ---
 name: kvb-check-principles
 description: >
-  Find violated principles (SPOT, DRY, KISS, SRP, trust boundaries) in a
-  repository, path or diff. Trigger on "sei skeptisch", "kritische
+  Find violated principles (SPOT, DRY, KISS, SRP, coupling, trust
+  boundaries) in a repository, path or diff. Trigger on "sei skeptisch", "kritische
   analyse", or "review the architecture".
 ---
 
@@ -31,16 +31,18 @@ Apply each independently; a finding belongs to exactly one:
 3. **SRP**: one reason to change per unit: the module that parses and
    persists, the function named "x and y", the role that configures, deploys
    and monitors. Name the two stakeholders who would each demand a change.
-4. **KISS**: mechanism nobody asked for: an abstraction with one
+4. **KISS/YAGNI**: mechanism nobody asked for: an abstraction with one
    implementation, a config value that never varies, a cache with no measured
    pressure, a retry loop around a deterministic call.
 5. **Security**, only at trust boundaries: unvalidated input reaching a
    query, shell, template or path; authorization checked in the caller
    instead of the resource; a secret in a default, log or image layer; a
    permission wider than the operation needs. Defensive findings only.
-6. **Silent defaults**: a fallback substituting a guess for a value the
-   caller failed to supply, turning a misconfiguration into wrong behaviour
-   instead of a loud failure (the `kvb-code-no-defaults` skill).
+6. **Fail fast**: a fallback guessing a value the caller failed to supply,
+   or a swallowed error: wrong behaviour instead of a loud failure (step 2
+   of the `kvb-code-clean` skill).
+7. **Coupling**: a dependency against the layer direction, an import cycle,
+   a reach into another unit's internals.
 
 ## Method
 
@@ -70,13 +72,12 @@ One table, worst blast radius first:
 
 Then at most three lines: what the scope excluded, which findings survived
 `kvb-think-dialectic` and which are still derived-only, and the one to fix
-first. No per-finding paragraphs; the operator asks when a row needs it.
+first.
 
 ## Rules
 
 - Never report formatting, naming taste or missing comments.
 - Mark each finding proven (grepped, read, reproduced) or derived (reasoned
   statically), and close with the `kvb-check-score` block for the audit.
-- No silent caps: if you ranked and cut, say how many findings were dropped
-  and by what rule.
+- No silent caps: say how many findings a cut dropped, by what rule.
 - Skepticism ends at the report: no fix, stage or refactor in this skill.
