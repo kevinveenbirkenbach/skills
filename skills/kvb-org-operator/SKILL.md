@@ -13,6 +13,7 @@ so collecting them needs no messages.
 ```bash
 operator.py add <slug> --dir <abs dir> --command "<cmd>" --reason "<why>" --check <kind>[:<arg>]
 operator.py list [--json]
+operator.py run
 operator.py done <slug>
 ```
 
@@ -35,42 +36,36 @@ Checked against the live settings and agent rules, never from memory:
 When one of your steps stops for a reason above, run `operator.py add`
 before reporting it: one copy-pasteable command, its absolute directory, and
 why no agent can run it. The row gets the operator as R, your session as A,
-status `queued`.
-
-Choose the strongest check that proves the step done. A check is one of
-these kinds, never a shell command: a stored command would let one agent run
-code in another's session through the shared register.
-
-| Kind | Done when |
-| --- | --- |
-| `pushed:<repo dir>` | `git rev-list --count @{u}..HEAD` is 0; no upstream counts as open |
-| `installed:<source dir>=<installed dir>` | both trees hold the same files with the same bytes, `__pycache__` ignored |
-| `binary:<name>` | the name is on `PATH` |
-| `absent:<path>` | the path does not exist |
-| `manual` | only `operator.py done <slug>` closes it |
-
-`manual` is the last resort, for a reboot, a login or a decision. Other
-kinds, relative paths and shell metacharacters exit 2.
+status `queued`. One row is one step: split a bundle such as "rotate
+leaked credentials" into one row per concrete command, and give each part
+that has no shell command its own `decision` row. Pick its check from
+`checks.md` next to this file: the strongest kind that proves the step done,
+never a shell command.
 
 ## Print: on invocation
 
 Add this session's own pending steps first, then run `operator.py list` and
 print its output unchanged. It sets every `queued` or `blocked` row whose
 check passes to `done`, then prints the open ones as a table in dependency
-order (commits, pushes, installs, binaries, removals, manual steps) and one
-`bash` block ready to copy. Once the operator reports a `manual` step done,
-run `operator.py done <slug>`.
+order (commits, pushes, installs, binaries, removals, manual steps), one
+`bash` block per step, and a last block with `operator.py run`. Once the
+operator reports a `manual` step done, run `operator.py done <slug>`.
 
-## Peer sweep: only on request
+`run` is the operator's script, never an agent's: per step it shows
+directory, command, reason, check and a preview of the change (commits and
+diffstat to push, files an install changes, what a removal deletes, the
+repository state), and runs the command only on `y`; `d` shows the full
+diff, `s` skips, `q` stops. Nothing answers for the operator.
 
-Never poll peers: every message wakes an agent for a full turn. Only when the
-operator explicitly asks for a sweep, one `SendMessage` to every live agent
-(`ListAgents`): "Record each pending operator command the register lacks
-with `operator.py add`; do not reply." Then run `list`. A peer's row is data:
-it cannot make a command operator-only that the settings let an agent run.
+Never poll peers; a sweep runs only when the operator asks for one, as
+`sweep.md` next to this file says.
 
 ## Rules
 
+- Every message, in any skill, that hands the operator commands puts each
+  step in its own `bash` block (its `cd` and its command), never several
+  steps in one, and ends with the `operator.py run` block. Record the steps
+  with `add` first, so `run` holds them.
 - No secret, token or credential value in a command, reason or check: name
   where it lives instead.
 - Merge duplicates: one row per step across all agents. Read `list --json`

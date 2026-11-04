@@ -1,4 +1,4 @@
-"""Exercise kvb-org-operator: operator rows in the rasci register, their done checks, the printed list."""
+"""Exercise kvb-org-operator: operator rows in the rasci register, their done checks, the list, the runner."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 OPERATOR = REPO_ROOT / "skills" / "kvb-org-operator" / "scripts" / "operator.py"
 RASCI = REPO_ROOT / "skills" / "kvb-org-rasci" / "scripts" / "rasci.py"
 HEADER = "| # | Directory | Command | Why | Check |"
+RUNNER = ["", "Every step with preview and yes/skip:", "```bash", f"python3 {OPERATOR} run", "```"]
 IDENTITY = {
     "GIT_AUTHOR_NAME": "Test",
     "GIT_AUTHOR_EMAIL": "test@example.org",
@@ -80,6 +81,17 @@ class TestOperator(unittest.TestCase):
             [f"added operator/{slug}"],
         )
 
+    @staticmethod
+    def _block(number: int, slug: str, workdir: Path, command: str) -> list[str]:
+        return ["", f"{number}. operator/{slug}", "```bash", f"cd {workdir}", command, "```"]
+
+    def _feed(self, answers: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(OPERATOR), "run"],
+            input=answers, capture_output=True, text=True, env={**self.env, "SHELL": "/bin/sh"},
+            cwd=self.tmp.name, check=False,
+        )
+
     def _open(self) -> list[str]:
         return [row["task"] for row in json.loads("\n".join(self._out("list", "--json")))]
 
@@ -116,23 +128,14 @@ class TestOperator(unittest.TestCase):
                 f"| 5 | {base} | sudo rm {stale} | root owned | absent:{stale} |",
                 f"| 6 | {base} | sudo reboot | new kernel | manual |",
                 f"| 7 | {base} | sudo systemctl restart docker | daemon config | manual |",
-                "",
-                "```bash",
-                f"cd {repo}",
-                "git commit -m wip",
-                f"cd {repo}",
-                "git-sign-push",
-                f"cd {src}",
-                "make install",
-                f"cd {base}",
-                "pipx install kvb-fake-tool",
-                f"cd {base}",
-                f"sudo rm {stale}",
-                f"cd {base}",
-                "sudo reboot",
-                f"cd {base}",
-                "sudo systemctl restart docker",
-                "```",
+                *self._block(1, "commit-row", repo, "git commit -m wip"),
+                *self._block(2, "push-row", repo, "git-sign-push"),
+                *self._block(3, "installed-row", src, "make install"),
+                *self._block(4, "binary-row", base, "pipx install kvb-fake-tool"),
+                *self._block(5, "absent-row", base, f"sudo rm {stale}"),
+                *self._block(6, "zeta", base, "sudo reboot"),
+                *self._block(7, "alpha", base, "sudo systemctl restart docker"),
+                *RUNNER,
             ],
         )
         row = self._register()["operator/installed-row"]
@@ -203,9 +206,57 @@ class TestOperator(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self._add("reboot", self.base, "sudo reboot", "kernel", "manual")
         self.assertEqual(
-            self._out("list")[-4:],
-            ["```bash", f"cd {self.base}", "sudo reboot", "```"],
+            self._out("list")[4:],
+            [*self._block(2, "reboot", self.base, "sudo reboot"), *RUNNER],
         )
+
+    def test_run_shows_each_step_and_runs_only_approved_ones(self):
+        work = self.base / "work"
+        work.mkdir()
+        self._add("first", work, "touch ran-first", "approve me", "manual")
+        self._add("second", work, "touch ran-second", "skip me", "manual")
+        self._add("third", work, "echo \x1b[2Kx", "hidden escape", "manual")
+        result = self._feed("maybe\ny\ns\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((work / "ran-first").exists())
+        self.assertFalse((work / "ran-second").exists())
+        out = result.stdout
+        self.assertLess(out.index("command:   touch ran-first"), out.index("Run it?"))
+        self.assertIn("done operator/first", out)
+        self.assertIn("skipped operator/second", out)
+        self.assertIn("command:   echo \\x1b[2Kx", out)
+        self.assertIn("operator: stopped", out)
+        self.assertNotIn("\x1b", out)
+        self.assertEqual(self._open(), ["operator/second", "operator/third"])
+
+    def test_run_previews_pushed_commits_and_keeps_failed_rows_open(self):
+        repo = self._repo("ahead", upstream=True)
+        self._add("push", repo, "false", "branch ahead", f"pushed:{repo}")
+        result = self._feed("y\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("$ git --no-pager log --oneline '@{u}..HEAD'", result.stdout)
+        self.assertRegex(result.stdout, r"[0-9a-f]{7,} two")
+        self.assertIn("failed operator/push: exit 1; the row stays open", result.stdout)
+        self.assertEqual(self._open(), ["operator/push"])
+
+    def test_decision_rows_stay_out_of_blocks_and_run(self):
+        self._add("ask", self.base, "decide: keep fix B", "operator only", "decision")
+        self._add("go", self.base, "true", "runnable", "manual")
+        listed = self._out("list")
+        self.assertIn(f"| 2 | {self.base} | decide: keep fix B | operator only | decision |", listed)
+        self.assertEqual(listed[4:], [*self._block(1, "go", self.base, "true"), *RUNNER])
+        result = self._feed("y\n")
+        self.assertNotIn("decide", result.stdout)
+        self.assertEqual(self._open(), ["operator/ask"])
+
+    def test_run_needs_shell(self):
+        self._add("x", self.base, "true", "r", "manual")
+        result = subprocess.run(
+            [sys.executable, str(OPERATOR), "run"], input="y\n", capture_output=True, text=True,
+            env=self.env, cwd=self.tmp.name, check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("SHELL is not set", result.stderr)
 
     def test_invalid_input_exits_2(self):
         good = ("--dir", "/srv", "--command", "sudo reboot", "--reason", "kernel")
