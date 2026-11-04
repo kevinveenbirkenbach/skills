@@ -28,9 +28,9 @@ a new commit starts from zero.
    the operator.
 3. **Status**: `gate.py status --repo <root>`. `gate: green` ends here; a
    `missing hotfix` reason means back to step 1.
-4. **Admit**: every gate target is heavy. Ask the resource chair of the
-   `kvb-org-organize` skill per target (what, where, how long, disk), wait
-   for the grant, post the release to its news. Only a single test module
+4. **Admit**: every gate target is heavy and runs only inside
+   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold` (step 5),
+   which grants by rule and releases on exit. Only a single test module
    self-admits (`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py
    admit --kind test-nostack`), and it never turns a gate target green. A
    hotfix takes the next free gate slot.
@@ -38,7 +38,7 @@ a new commit starts from zero.
    background; give the operator `tail -f` on the log:
 
    ```bash
-   gate.py run --repo <root> --target <t> [--target ...] --log-dir /tmp/<slug> [--fail-regex <re> ...]
+   queue.py hold --kind <kind> --task <register task> -- gate.py run --repo <root> --target <t> [--target ...] --log-dir /tmp/<slug> [--fail-regex <re> ...]
    ```
 
    Pass one `--fail-regex` per failure line the project prints while exiting
@@ -46,8 +46,8 @@ a new commit starts from zero.
    `make: ***` line, a matching regex or modified tracked files make a
    target red; the last stops the run. Before each target `run` asks
    `hotfix.py void` for it and every later one. Exit 3 (`void: merge main
-   for hotfix <slug>, then rerun`): post the release to the news, back to
-   step 1, and the chair's grant again at step 4. Exit 75: the worktree is
+   for hotfix <slug>, then rerun`): back to step 1, then through the queue
+   again. Exit 75: the worktree is
    busy, the message names the holder; wait, then rerun.
 6. **Judge** every red target by its `status` line and the log around it:
    caused by the change, already red on the default branch, or the

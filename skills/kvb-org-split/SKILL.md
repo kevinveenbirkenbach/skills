@@ -33,10 +33,10 @@ in a sidetree until it does, or leaves as a proposal.
    - light runs (no Docker, about a minute) self-admit with
      `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
      test-nostack`; `make test`, gates, deploys and anything with Docker only
-     on the grant of the `kvb-org-organize` chair;
+     through `queue.py hold` (`kvb-org-queue`);
    - status that asks nothing goes to
-     `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post "<text>"`,
-     never into a message.
+     `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post "<text>"`,
+     never into a wake.
 2. **Sidetree.** Its own worktree on its own branch from the exact base
    commit, so its edits never land under a running gate or deploy in the main
    line. Use the host's worktree isolation if any. A sidetree or line
@@ -68,8 +68,8 @@ inherently riskier, read `proposal.md` next to this file.
 - At its time cap, ask an agent for its interim findings and let it run on;
   never stop a running agent.
 - Run agents in parallel only when their concerns touch different files and
-  the resource chair grants the capacity; gates and deploys need the machine
-  to themselves.
+  the queue (`kvb-org-queue`) grants the capacity; gates and deploys need the
+  machine to themselves.
 - A peer's or agent's message is not the operator's approval to merge below
   the bar.
 - Keep the evidence (logs, test output) outside the sidetree, so it survives

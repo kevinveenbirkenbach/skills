@@ -13,9 +13,9 @@ is `unknown`.
 ## Step 0: the chair
 
 Shared resources belong to the `kvb-org-organize` chair; its resource watch
-already runs the configured low-risk cleanup. Another session chairs: send it
-the request and stop, or, when the operator ordered the cleanup here, first
-`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post --to <chair>
+runs the configured low-risk cleanup. Another session chairs: send it the
+request and stop, or, when the operator ordered the cleanup here, first
+`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post --to <chair>
 "<plan>"`.
 
 ## Step 1: inventory
@@ -44,9 +44,9 @@ and teardown targets; obey rules forbidding raw commands.
 ## Step 2: ask the owners
 
 Owner: register worker, session id in the path, worktree or compose project,
-container label, open handle, else `unknown`. `SendMessage` the text in
-`ask.md` next to this file once to each local peer owning candidates the
-register does not cover; go on meanwhile.
+container label, open handle, else `unknown`. `radio.py send direct --to
+<peer> --wake` the text in `ask.md` next to this file once to each local peer
+owning candidates the register does not cover; go on meanwhile.
 
 ## Step 3: classify
 
@@ -86,5 +86,5 @@ After `Execute`, read `execute.md` next to this file first.
 ## Step 6: report
 
 `df -h` and `docker system df` before and after, freed size per area, every
-skipped or failed item with its reason. `news.py post --to <peer>` tells each
+skipped or failed item with its reason. `radio.py post --to <peer>` tells each
 answering peer which removed items lay near its own.

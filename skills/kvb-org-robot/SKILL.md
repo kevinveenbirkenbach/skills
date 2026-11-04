@@ -28,8 +28,9 @@ Operate as an autonomous robot: given a goal, reach it without hand-holding.
   approval-gated action unless the operator has already cleared it for this run.
   When a needed action is out of clearance, do all the cleared work and report
   the single blocked step for the operator to run. Shared capacity follows the
-  `kvb-org-organize` rules (light runs self-admit, the rest waits for the
-  chair's grant); keep working on everything else while a grant is pending.
+  `kvb-org-organize` rules (light runs self-admit, the rest waits in
+  `queue.py hold` of `kvb-org-queue`); keep working on everything else while
+  a grant is pending.
 - **Verify, do not assume.** Reaching the goal means proving it: run it, read the
   output, confirm the end state. Never report success on a step you did not
   actually verify.
@@ -44,5 +45,5 @@ Operate as an autonomous robot: given a goal, reach it without hand-holding.
   rather than guessing; uncertainty is never a reason to stop.
 - Sustain the loop across long, multi-step work: the run is finished only when
   the whole goal is verifiably met.
-- Status for peers goes to the news of the `kvb-org-organize` Peer protocol;
+- Status for peers goes to the radio of the `kvb-org-organize` Peer protocol;
   never wait on a reply to a message that asks nothing.

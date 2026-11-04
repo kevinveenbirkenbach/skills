@@ -19,8 +19,9 @@ not installed copies) and the skills repository. Measure before changing:
   longest descriptions, every SKILL.md over the cap.
 - Each own SKILL.md's word count, and what each registered hook prints per
   turn (settings files, read-only).
-- The window's traffic: this session's `SendMessage` calls, the news
-  (`news.py show --all` of the `kvb-org-organize` skill), and subagent runs
+- The window's traffic: the radio store (`radio.py show --all` of the
+  `kvb-org-radio` skill; wakes carry `"wake": true` in its `news.jsonl`),
+  this session's `SendMessage` calls, and subagent runs
   (`log.py report` of the `kvb-org-perform` skill).
 - Context re-read per turn, from the transcripts Claude Code keeps:
   `${CLAUDE_SKILL_DIR}/scripts/context.py --root ~/.claude/projects --days 7
@@ -36,9 +37,10 @@ not installed copies) and the skills repository. Measure before changing:
    side file the skill reads only when it needs them; no rule is cut.
 3. **Messages**: every step that sends one is checked against the
    `kvb-org-organize` Peer protocol: status that asks nothing goes to
-   `news.py post`, polling peers becomes reading the council, the register or
-   the news, one batched message per peer, no reply to a message that asks
-   nothing, light runs admit themselves.
+   `radio.py post`, polling peers becomes reading the council, the register or
+   the radio, one batched message per peer, a wake only when the recipient
+   must act or answer, no reply to a message that asks nothing, light runs
+   admit themselves.
 4. **Subagents**: their number follows the stakes, the brief names exact
    files and claims and caps the answer, a cheaper model only by the
    `kvb-org-perform` table.

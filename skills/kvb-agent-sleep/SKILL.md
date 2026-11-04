@@ -27,8 +27,9 @@ The request asks for less, so it needs no operator approval, and it ends a
    - each running job with its command and log path;
    - each open task of yours in the `kvb-org-rasci` register with its next step.
 5. **Reply** to the sender in one line, `asleep: <handover path>`, by
-   `SendMessage` (its next wave waits on it), and end the turn. Offices stay
-   claimed and register rows unchanged.
+   `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send direct --to
+   <sender> --wake` (its next wave waits on it), and end the turn. Offices
+   stay claimed and register rows unchanged.
 
 ## While asleep
 

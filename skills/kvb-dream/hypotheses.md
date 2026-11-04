@@ -37,5 +37,6 @@ error impossible over a memory entry that only reminds. Each question carries
 the improvement and its evidence.
 
 A finding on a live peer's line goes to it as
-`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post "<finding>" --to
-<name>`; `SendMessage` only when the peer must act or answer.
+`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post "<finding>" --to
+<name>`; `radio.py send direct --to <name> --wake` only when the peer must act
+or answer.

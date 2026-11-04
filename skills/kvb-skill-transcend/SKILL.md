@@ -53,8 +53,8 @@ or diff.
   `kvb-code-no-comments` skill does.
 - A carried script gets a unit test in the repository's `tests/` with a
   negative control, run once `watch.py admit --kind test-nostack` (the
-  `kvb-org-organize` skill) prints `grant`; `make test` keeps the chair's
-  grant.
+  `kvb-org-organize` skill) prints `grant`; `make test` runs through
+  `queue.py hold` (`kvb-org-queue`).
 - `transcend.py mark` every offered candidate with its verdict.
 - Leave the result uncommitted; committing is the `kvb-git-commit-next`
   skill's job.

@@ -6,8 +6,8 @@ description: >
 ---
 
 The operator's order of the agents outranks every WSJF score. It is written
-as `--prio` pins into the `kvb-org-rasci` register, so the chair's grants of
-the `kvb-org-wsjf` skill follow it. The script is
+as `--prio` pins into the `kvb-org-rasci` register, so the grants of the
+`kvb-org-queue` skill follow it. The script is
 `${CLAUDE_SKILL_DIR}/../kvb-org-rasci/scripts/rasci.py`.
 
 ```bash
@@ -43,8 +43,8 @@ order, keeping each agent's own task order. It writes other sessions' rows:
 the operator decides priority, so this is the one exception to "write only
 your own rows". Show `rasci.py agents` again, then post the new ranks for the
 resource chair of the `kvb-org-organize` skill and every reordered agent as
-one `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post "<text>"`,
-not as messages.
+one `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post "<text>"`,
+not as wakes.
 
 ## Rules
 

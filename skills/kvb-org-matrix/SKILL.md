@@ -17,8 +17,9 @@ you could not read:
 1. **Tasks**: the `kvb-org-rasci` register first, then the session's todo
    list, the operator's goals this session, and the requirement or plan
    documents the work follows.
-2. **Peers**: `council.py list` and `news.py show --all` (the
-   `kvb-org-organize` skill's scripts); never message a peer for status.
+2. **Peers**: `council.py list` (the `kvb-org-organize` skill) and the radio
+   store, `radio.py show --all` (the `kvb-org-radio` skill); never message a
+   peer for status.
 3. **Working tree**: `git status --short` and `git log --oneline -10`:
    uncommitted and untracked files are open work, commits since the branch
    point closed work.

@@ -9,7 +9,7 @@ description: >
 Drive a red pipeline green by root cause. Every failing job is its own
 investigation; no fix before its root cause is proven. For GitHub Actions,
 the `kvb-ci-artifacts` skill's `ci_failures.py <run>` does the mechanics of
-steps 0 to 2 in one call; the judgement stays yours.
+steps 0 to 2; the judgement stays yours.
 
 ## Procedure
 
@@ -25,8 +25,9 @@ steps 0 to 2 in one call; the judgement stays yours.
 3. **Coordinate** each cluster via the `kvb-org-organize` Peer protocol,
    lineage included: `${CLAUDE_SKILL_DIR}/../kvb-git-hotfix/scripts/hotfix.py
    match --line '<line>'` first; claim it; read `council.py list`, the
-   register, the news and `find_fix.py`; ask every live peer, one batched
-   `SendMessage` per peer for all clusters nothing there answers. Investigate
+   register, the radio and `find_fix.py`; ask every live peer, one batched
+   `radio.py send direct --wake` per peer for all clusters nothing there
+   answers. Investigate
    while waiting; take their fix or keep yours. Register (`kvb-org-rasci`):
    objective the root cause fixed, one key result per failing job passing.
 4. **Artifacts** per cluster (the `kvb-ci-artifacts` skill: in-progress

@@ -73,8 +73,8 @@ Show the full draft, then `AskUserQuestion`: `Write it` / `Revise it` /
 on `Write it`; lint the file with the project's markdown linter, a light run
 that self-admits with
 `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
-test-nostack`; a lint through `make` or Docker waits for the resource chair's
-grant (the `kvb-org-organize` skill).
+test-nostack`; a lint through `make` or Docker runs through `queue.py hold`
+(the `kvb-org-queue` skill).
 
 ## Step 6: hand over
 

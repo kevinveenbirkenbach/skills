@@ -77,7 +77,7 @@ When the dry run sorted any item here, read `unmerged.md` next to this file.
 Removed, kept and skipped items, each with its reason, and `docker system df`
 before and after. The release for the chair and what went for each peer whose
 line an item touched go out as one
-`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post "<text>"`, not
+`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post "<text>"`, not
 as messages; then release the claim.
 
 ## Rules

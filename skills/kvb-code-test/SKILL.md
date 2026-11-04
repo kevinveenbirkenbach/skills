@@ -41,8 +41,11 @@ Before each run, admit it under the `kvb-org-organize` Capacity rules: a
 light run (no Docker, about a minute: targeted pytest or unittest, ruff, a
 single lint file) self-admits with
 `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
-test-nostack`; `make test`, quality gates and anything with Docker wait for
-the chair's grant, and the release goes to its news.
+test-nostack`; `make test`, quality gates and anything with Docker run in the
+background through
+`${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold --kind <kind>
+--task <register task> -- make <target>`, which waits for the rule-based
+grant and releases on exit.
 
 Run the selected targets in the operator's order, one `make <target>` per
 command so a failure is attributable. No `-k`, no reordering, no faster

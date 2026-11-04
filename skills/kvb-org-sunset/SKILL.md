@@ -15,11 +15,13 @@ the state for evening, sunset and sunrise; every agent verifies a request with
 
 1. `night.py set sunset` makes this session the active one and prints every
    other live session.
-2. Message them in waves of three, so cold caches do not wake all at once
-   against the rate limit; the next wave follows the previous wave's replies
-   or 10 minutes. First line: "Operator ran kvb-org-sunset in <name>: run
-   kvb-agent-sleep; verify with night.py status." A request to do less needs
-   no operator approval (the `kvb-org-organize` Peer protocol).
+2. Wake them with `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py
+   send direct --to <name> --wake` in waves of three, so cold caches do not
+   wake all at once against the rate limit; the next wave follows the
+   previous wave's replies or 10 minutes. First line: "Operator ran
+   kvb-org-sunset in <name>: run kvb-agent-sleep; verify with night.py
+   status." A request to do less needs no operator approval (the
+   `kvb-org-organize` Peer protocol).
 3. Once the replies are in, naming every session that did not answer, hand
    the operator one step through the `kvb-org-operator` skill: `/config` →
    "Messages from your other sessions" → `hold`. Held messages cost nothing,
@@ -32,9 +34,9 @@ the state for evening, sunset and sunrise; every agent verifies a request with
   disk, CPU and RAM limits still apply.
 - **Offices**: the sleepers' claims stay theirs. Take only free work; a piece
   a sleeper holds waits for sunrise or the operator.
-- **Messages**: no broadcasts and no peer questions; the Peer protocol's wait
-  is skipped. Status goes to `news.py post` (next to `watch.py`); sleepers
-  read it at sunrise at no cost.
+- **Messages**: no wakes and no peer questions; the Peer protocol's wait is
+  skipped. Status goes to `radio.py post`; sleepers read it at sunrise
+  without a wake.
 - The `kvb-org-rasci` register keeps every row as it is.
 
 ## Output

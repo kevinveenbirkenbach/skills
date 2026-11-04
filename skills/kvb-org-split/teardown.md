@@ -21,8 +21,8 @@ assuming it:
 6. **Release what it held**: slots, port or subnet reservations, locks, its
    `kvb-org-organize` claims and every claim announced to other agents. The
    freed slot and the released claims go to the chair and the peers as one
-   `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post "<text>"`,
-   not as messages. Drop each removed item from the `kvb-org-rasci` register
+   `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post "<text>"`,
+   not as wakes. Drop each removed item from the `kvb-org-rasci` register
    with `--drop-artifact` and set the subagent's task `done` or `stopped`.
 7. **Remove its temporary files**: logs, message files and scratch data that
    have served their purpose. Keep only the evidence the report cites, until

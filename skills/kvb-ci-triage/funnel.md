@@ -18,14 +18,19 @@ skill's Rules apply here too.
    demands. Light runs (no Docker, about a minute: targeted pytest or
    unittest, ruff, single lint files) self-admit with
    `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
-   test-nostack`; `make test`, gates, deploys and anything with Docker keep
-   the chair's request, grant and release. The fix enters the main line only
-   at the funnel's bar (at least 90 % fix confidence, under 5 % break risk)
+   test-nostack`; `make test`, gates, deploys and anything with Docker run in
+   the background through
+   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold --kind <kind>
+   --task <register task> -- <command>`, which waits for the rule-based
+   grant and releases on exit. The fix enters the main line only
+   at the funnel's bar (the `kvb-org-split` skill's: fix confidence ≥ 90 %,
+   break risk ≤ 5 %, efficiency and speed ≤ 100 % in the `kvb-check-score`
+   block; over 100 %, ask the operator before the commit, naming the cause)
    after its independent review; below the bar the cluster ends as a
    proposal for the operator, never as a merge. Never mask a failure: no
    retry-until-pass, no disabling the check, no soft-skip. If a failure is
    genuinely external (upstream outage, flaky infra), confirm that with
    evidence and surface it honestly instead of fixing around it. Report every
    fix, proposal and abandoned attempt to the peers asked in step 3 of the
-   skill with `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post
+   skill with `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post
    "<text>"` (`--to <name>` per peer), then remove the sidetree.

@@ -3,13 +3,14 @@
 `kvb-org-coordinate`, `kvb-ci-triage`, `kvb-code-tune`, `kvb-org-split` and
 `kvb-cleanup` follow these steps.
 
-1. **Look**: `council.py list`, the `kvb-org-rasci` register, the news,
+1. **Look**: `council.py list`, the `kvb-org-rasci` register, the radio,
    `hotfix.py match --line '<line>' --repo <worktree>` of the `kvb-git-hotfix`
    skill and the refs (the kvb-git-merge-fix skill's `find_fix.py`). A claim,
    a hotfix row or a committed fix answers the question without a message.
 2. **Claim** the office (Election in `SKILL.md`).
-3. **Ask** (in Claude Code: `ListAgents`, then `SendMessage`) only the peers
-   whose lines the work touches, the lineage owners (`lineage.md`) and, for
+3. **Ask** (`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send direct
+   --to <name> --wake`, since each must answer) only the peers whose lines
+   the work touches, the lineage owners (`lineage.md`) and, for
    capacity, the chair. One batched message per peer: what you claimed, the
    evidence (failing line quoted literally, run id, measurement), the
    suspected cause marked as a thesis, and the question "Already known or
@@ -20,10 +21,10 @@
    meanwhile. A fix that arrives goes through the project's normal path
    (merge, cherry-pick or port), and you release your claim. Silence is
    neither a "no" nor a competing claim: after 5 minutes, proceed.
-5. **Report** to the same peers through `news.py post --to <name>`: commit,
+5. **Report** to the same peers through `radio.py post --to <name>`: commit,
    branch, what changed, the evidence it works, and the merge it reaches them
    by; an abandoned or failed attempt too. A hotfix is no report: it is
-   recorded with `hotfix.py add` and `update`, never by message or news post.
+   recorded with `hotfix.py add` and `update`, never by message or radio post.
    In the register, enter the peers told as I and mark every key result the
    evidence proves as met. Then release the claim: the task ends `done`, or
    `stopped` while a key result is open.

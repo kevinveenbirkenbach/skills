@@ -12,7 +12,7 @@ request, so a red one blocks nothing else.
 
 1. **Candidates**: the issues named, else `gh issue list --state open`. Drop
    what the `kvb-git-issue-close` skill finds already fixed, and what a peer
-   already works on: `council.py list --long`, the register and the news of the
+   already works on: `council.py list --long`, the register and the radio of the
    `kvb-org-organize` Peer protocol, no message; when a peer solves it, only
    comment on the issue who solves it where.
 2. **Rank**: issues about a failing default branch first, then the rank of
@@ -34,13 +34,13 @@ request, so a red one blocks nothing else.
    lines. Explore code through the codebase-memory-mcp graph first
    (`search_graph`, `trace_path`, `get_architecture`, `detect_changes`; the
    `kvb-agent-optimize` skill sets it up), grep and read after. Parallel
-   work, gates, deploys and anything with Docker follow the resource chair's
-   grants; light runs (no Docker, about a minute) self-admit with `watch.py
-   admit --kind test-nostack`. With the first change, swap the label: `gh issue
+   work, gates, deploys and anything with Docker run through `queue.py hold`
+   (`kvb-org-queue`); light runs (no Docker, about a minute) self-admit with
+   `watch.py admit --kind test-nostack`. With the first change, swap the label: `gh issue
    edit <n> --remove-label "in analysis" --add-label "in progress"`.
 5. **Open the pull request** with the `kvb-git-pr-create` skill, closing
    exactly its issue; one for a failing default branch is posted with
-   `news.py post`. Below the split bar the proposal becomes a draft pull
+   `radio.py post`. Below the split bar the proposal becomes a draft pull
    request with the residuals and the evidence that would close them.
 6. **Report** per issue, then release its claim and tear its sidetree down
    as `kvb-org-split` describes; the branch stays until the merge. An issue

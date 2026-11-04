@@ -34,8 +34,8 @@ skill's prompt back unchanged.
 3. **Triage each new failure** with the `kvb-ci-triage` skill on the new set
    only; it applies `kvb-think-dialectic` per failing job to a ~99% root
    cause and a real fix. Never mask (no retry-until-pass, disabled check or
-   soft skip). A new failure and its verdict go to peers as news, never as a
-   message: `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post
+   soft skip). A new failure and its verdict go to peers by radio, never with
+   a wake: `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post
    "<target>: <job> <failing line> -> <verdict>"`. Fold each newly fixed
    failure into the baseline.
 4. **Reschedule** by what you wait on: an active run that changes every few

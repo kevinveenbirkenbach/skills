@@ -52,7 +52,7 @@ and number, works it (between machines, the earliest announcement); a claim
 without a measurement does not count. Its `kvb-org-rasci` key result is
 `<step> from <before> to under <after>`, met only by the re-measurement.
 Someone earlier: post them your measurements and findings
-(`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/news.py post --to <holder>
+(`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post --to <holder>
 "<text>"`), take the next cluster, never build a second optimization. A claim
 ends with its release or the operator's reassignment.
 

@@ -43,5 +43,5 @@ grouped by skill. Each skill writes only what was picked for it.
 
 | Skill | Candidates | Picked | Written | Skipped with reason |
 
-Tests and lints of the written changes run once at the end, on the resource
-chair's grant (the `kvb-org-organize` skill); nothing is committed.
+Tests and lints of the written changes run once at the end, through
+`queue.py hold` (the `kvb-org-queue` skill); nothing is committed.
