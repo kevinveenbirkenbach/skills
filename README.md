@@ -78,6 +78,8 @@ flowchart LR
   org --> org_evening[kvb-org-evening]
   org --> org_sunset[kvb-org-sunset]
   org --> org_sunrise[kvb-org-sunrise]
+  org --> org_radio[kvb-org-radio]
+  org --> org_queue[kvb-org-queue]
   agent --> agent_optimize[kvb-agent-optimize]
   agent --> agent_relax[kvb-agent-relax]
   agent --> agent_sleep[kvb-agent-sleep]
@@ -175,6 +177,8 @@ flowchart LR
     evening[kvb-org-evening]
     sunset[kvb-org-sunset]
     sunrise[kvb-org-sunrise]
+    radio[kvb-org-radio]
+    queue[kvb-org-queue]
   end
   subgraph cat_agent [agent]
     agent_optimize[kvb-agent-optimize]
@@ -363,7 +367,7 @@ Copy the skills into a specific project (`<repo>/.agents/skills` and `<repo>/.cl
 make project TARGET=/path/to/repo
 ```
 
-Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `kvb-dream` points each agent at `/kvb-dream` at most once every twelve hours (stamped per session in `~/.claude/.dream-stamps/`), and `kvb-coach` runs its short form at the first prompt of every full hour, once across all agents (stamped in `~/.claude/.coach-hours/`); the global install also enables the `kvb-dream-notify.timer` systemd user timer, which recommends `/kvb-dream` in a GNOME notification daily at 17:00 local time and catches up once after a missed run. A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
+Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `kvb-dream` points each agent at `/kvb-dream` at most once every twelve hours (stamped per session in `~/.claude/.dream-stamps/`), and `kvb-coach` runs its short form at the first prompt of every full hour, once across all agents (stamped in `~/.claude/.coach-hours/`); the global install also enables the `kvb-dream-notify.timer` systemd user timer, which recommends `/kvb-dream` in a GNOME notification daily at 17:00 local time and catches up once after a missed run. A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.config/agents-council/config.json` exists. The `kvb-org-radio` skill registers three hooks: its prompt hook delivers `broadcast` and `direct` items on the next prompt, a PostToolBatch hook delivers `security`, `pan-pan` and `mayday` items mid-turn, and an `asyncRewake` Stop hook wakes an idle session for a `mayday` or a `direct` item sent with `--wake`. The PreToolUse hook of the `kvb-org-queue` skill sends heavy commands through `queue.py hold` once the config sets `queue_enforce`. Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Existing settings are preserved.
 
 Restart your agent afterwards so it loads the new skills.
 

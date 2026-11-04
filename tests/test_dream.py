@@ -145,22 +145,59 @@ class TestSettingsRegistration(unittest.TestCase):
         )
         return json.loads(self.settings.read_text(encoding="utf-8"))
 
+    @staticmethod
+    def _hooks(data: dict, event: str, script: str) -> list[dict]:
+        return [
+            hook
+            for entry in data["hooks"].get(event, [])
+            for hook in entry.get("hooks", [])
+            if script in hook.get("command", "")
+        ]
+
     def test_hook_registered_once(self):
         self._patch()
         data = self._patch()
-        entries = json.dumps(data["hooks"]["UserPromptSubmit"])
-        self.assertEqual(entries.count("kvb-dream/hooks/reminder.sh"), 1)
-        self.assertEqual(entries.count("kvb-coach/hooks/reminder.sh"), 1)
-        self.assertNotIn("tune/hooks/reminder.sh", entries)
-        gate = json.dumps(data["hooks"]["PreToolUse"])
-        self.assertEqual(gate.count("kvb-org-organize/scripts/council.py"), 1)
-        self.assertEqual(gate.count("kvb-org-organize/scripts/watch.py"), 1)
-        self.assertEqual(entries.count("kvb-org-organize/scripts/watch.py"), 1)
-        self.assertEqual(entries.count("kvb-org-organize/scripts/news.py"), 1)
-        post = json.dumps(data["hooks"]["PostToolUse"])
-        self.assertEqual(post.count("kvb-org-organize/scripts/watch.py"), 1)
-        self.assertEqual(gate.count("kvb-org-perform/scripts/log.py"), 1)
-        self.assertEqual(post.count("kvb-org-perform/scripts/log.py"), 1)
+        expected = {
+            ("UserPromptSubmit", "kvb-dream/hooks/reminder.sh"): 1,
+            ("UserPromptSubmit", "kvb-coach/hooks/reminder.sh"): 1,
+            ("UserPromptSubmit", "tune/hooks/reminder.sh"): 0,
+            ("UserPromptSubmit", "kvb-org-organize/scripts/watch.py"): 1,
+            ("UserPromptSubmit", "kvb-org-radio/scripts/radio.py"): 1,
+            ("UserPromptSubmit", "kvb-org-organize/scripts/news.py"): 0,
+            ("PostToolBatch", "kvb-org-radio/scripts/radio.py"): 1,
+            ("Stop", "kvb-org-radio/scripts/radio.py"): 1,
+            ("PreToolUse", "kvb-org-organize/scripts/council.py"): 1,
+            ("PreToolUse", "kvb-org-organize/scripts/watch.py"): 1,
+            ("PreToolUse", "kvb-org-queue/scripts/queue.py"): 1,
+            ("PreToolUse", "kvb-org-perform/scripts/log.py"): 1,
+            ("PostToolUse", "kvb-org-organize/scripts/watch.py"): 1,
+            ("PostToolUse", "kvb-org-perform/scripts/log.py"): 1,
+        }
+        for (event, script), count in expected.items():
+            with self.subTest(event=event, script=script):
+                self.assertEqual(len(self._hooks(data, event, script)), count)
+
+    def test_radio_listener_wakes_asynchronously_and_hooks_survive_a_missing_script(self):
+        data = self._patch()
+        (listen,) = self._hooks(data, "Stop", "kvb-org-radio/scripts/radio.py")
+        self.assertIs(listen["asyncRewake"], True)
+        self.assertGreater(listen["timeout"], 3600)
+        self.assertTrue(listen["command"].endswith(" listen"))
+        (gate,) = self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py")
+        result = subprocess.run(["sh", "-c", gate["command"]], capture_output=True, check=False)
+        self.assertEqual(result.returncode, 1)
+
+    def test_news_hook_moves_to_radio(self):
+        base = Path(self.tmp.name) / "skills"
+        self.settings.write_text(
+            json.dumps({"hooks": {"UserPromptSubmit": [
+                {"hooks": [{"type": "command", "command": f'python3 "{base}/kvb-org-organize/scripts/news.py" hook'}]}
+            ]}}),
+            encoding="utf-8",
+        )
+        data = self._patch()
+        self.assertEqual(self._hooks(data, "UserPromptSubmit", "kvb-org-organize/scripts/news.py"), [])
+        self.assertEqual(len(self._hooks(data, "UserPromptSubmit", "kvb-org-radio/scripts/radio.py")), 1)
 
     def test_code_graph_plugin_is_retired_for_the_agent_agnostic_installer(self):
         self.settings.write_text(
@@ -231,12 +268,10 @@ class TestSettingsRegistration(unittest.TestCase):
         for old in ("/autotune/", "/kvb-skill-tune/", "/kvb-skill-dream/", "/democracy/", "/subagent-model/"):
             self.assertNotIn(f"skills{old}", text)
         self.assertIn("echo keep", text)
-        entries = json.dumps(data["hooks"]["UserPromptSubmit"])
-        self.assertEqual(entries.count("kvb-dream/hooks/reminder.sh"), 1)
-        self.assertEqual(entries.count("kvb-org-organize/scripts/watch.py"), 1)
-        gate = json.dumps(data["hooks"]["PreToolUse"])
-        self.assertEqual(gate.count("kvb-org-organize/scripts/council.py"), 1)
-        self.assertEqual(gate.count("kvb-org-perform/scripts/log.py"), 1)
+        self.assertEqual(len(self._hooks(data, "UserPromptSubmit", "kvb-dream/hooks/reminder.sh")), 1)
+        self.assertEqual(len(self._hooks(data, "UserPromptSubmit", "kvb-org-organize/scripts/watch.py")), 1)
+        self.assertEqual(len(self._hooks(data, "PreToolUse", "kvb-org-organize/scripts/council.py")), 1)
+        self.assertEqual(len(self._hooks(data, "PreToolUse", "kvb-org-perform/scripts/log.py")), 1)
 
 
 if __name__ == "__main__":

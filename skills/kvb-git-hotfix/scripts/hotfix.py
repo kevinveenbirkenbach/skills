@@ -22,11 +22,13 @@ Args:
         --target is a make target or `deploy` the fix turns green, none listed
         means every target; --pr is the pull request number.
     update <slug> --status staged|pr|merged [--sha <commit>] [--pr <n>]
-        [--repo <abs clone>] [--default <branch>]: move a hotfix on. --sha
-        resolves in the recorded git common dir or in --repo, which must be
-        the same repository unless the recorded one is unknown, and records
-        it anew. --status merged needs --sha, the commit as it sits on
-        origin/<default> after a fetch.
+        [--repo <abs clone>] [--default <branch>] [--session <id>]: move a
+        hotfix on. --sha resolves in the recorded git common dir or in
+        --repo, which must be the same repository unless the recorded one is
+        unknown, and records it anew. --status merged needs --sha, the commit
+        as it sits on origin/<default> after a fetch. add and update with
+        --status merged post a kvb-org-radio security item; a failed post
+        only warns.
     pending --repo <dir> [--target <t> ...]: every hotfix of that repository
         against HEAD; with --target only those that turn one of the targets
         green, as void counts them.
@@ -127,6 +129,7 @@ SKILLS = Path(__file__).resolve().parents[2]
 RASCI = SKILLS / "kvb-org-rasci" / "scripts" / "rasci.py"
 GATE = SKILLS / "kvb-check-gate" / "scripts" / "gate.py"
 WATCH = SKILLS / "kvb-org-organize" / "scripts" / "watch.py"
+RADIO = SKILLS / "kvb-org-radio" / "scripts" / "radio.py"
 PREFIX = "hotfix/"
 STAGES = ("staged", "pr", "merged")
 REGISTER_STATUS = {"staged": "running", "pr": "running", "merged": "done"}
@@ -584,7 +587,35 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
             fail(f"{task} is already in the register; move it on with update")
         tasks[task] = entry
     print(f"added {task}")
+    if args.status == "merged":
+        announce(task, entry, args.session)
     return 0
+
+
+def announce(task: str, entry: dict, session: str | None) -> None:
+    """Post a merged hotfix as a kvb-org-radio security item; never fails the caller.
+
+    Args:
+      task: the register task, hotfix/<slug>.
+      entry: its register row.
+      session: the caller's --session, for runtimes without CLAUDE_CODE_SESSION_ID.
+    """
+    if not RADIO.is_file():
+        return
+    text = (
+        f"HOTFIX merged: {task} {entry.get('sha', '-')[:12]} on {repository(entry)}; "
+        "hotfix.py sync before your next deploy, merge or gate"
+    )
+    command = [sys.executable, str(RADIO), "send", "security", text]
+    if session:
+        command += ["--session", session]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"hotfix: radio announcement failed: {error}", file=sys.stderr)
+        return
+    if result.returncode != 0:
+        print(f"hotfix: radio announcement failed: {result.stderr.strip()}", file=sys.stderr)
 
 
 def located(task: str, entry: dict, given: str | None) -> tuple[str, dict]:
@@ -624,6 +655,8 @@ def cmd_update(rasci: ModuleType, args: argparse.Namespace) -> int:
         entry["stage"] = args.status
         rasci.apply_status(entry, REGISTER_STATUS[args.status])
     print(f"updated {task}")
+    if args.status == "merged":
+        announce(task, entry, args.session)
     return 0
 
 
@@ -856,6 +889,7 @@ def main() -> int:
     p.add_argument("--pr", type=int)
     p.add_argument("--repo")
     p.add_argument("--default")
+    p.add_argument("--session")
     p.set_defaults(func=cmd_update)
     p = sub.add_parser("pending")
     p.add_argument("--repo", required=True)

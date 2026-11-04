@@ -3,9 +3,13 @@
 
 Usage:
     watch.py watch     hook (UserPromptSubmit, PostToolUse): measure at most once
-                       per interval machine-wide, act on the stage, show alerts
+                       per interval machine-wide, act on the stage, show alerts,
+                       and append the kvb-org-queue history rows of
+                       <root>/queue-history.jsonl whose id it lacks to
+                       ~/.local/state/agents-council/queue-history.jsonl
     watch.py block     hook (PreToolUse on Bash): exit 2 for a heavy job while the
-                       stage is stop or critical
+                       stage is stop or critical, or while a kvb-org-radio mayday
+                       holds radio silence (<root>/radio-silence.json, until > now)
     watch.py admit (--need-gb N | --kind KIND)
                        exit 0 when the grant leaves at least the stop threshold
                        free, 3 otherwise
@@ -35,6 +39,7 @@ kind listed in kinds also needs CPU busy and RAM used below the limits.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -53,7 +58,10 @@ CONFIG = Path(
 )
 STAGES = ("ok", "warn", "stop", "critical")
 STATE = ROOT / "watch.json"
+SILENCE = ROOT / "radio-silence.json"
 ALERTS = ROOT / "alerts.jsonl"
+HISTORY = ROOT / "queue-history.jsonl"
+KEPT_HISTORY = Path.home() / ".local" / "state" / "agents-council" / "queue-history.jsonl"
 ALERT_TTL = 3600
 LOCK_TTL = 1800
 GB = 1e9
@@ -180,8 +188,43 @@ def act(cfg: dict, stage: str, previous: str, free: float) -> None:
             notify(cfg, f"Agents council: {head}. Heavy jobs blocked; a running stack needs the operator's OK to go.")
 
 
+def history_rows(text: str) -> list[tuple[str, str]]:
+    rows = []
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and "id" in row:
+            rows.append((row["id"], line))
+    return rows
+
+
+def keep_history() -> None:
+    # The agents' sandbox cannot write ~/.local/state and /tmp is wiped on reboot, so this hook keeps the rows.
+    # The kept file takes the source's mtime: an unchanged source is skipped without parsing.
+    try:
+        source = HISTORY.stat().st_mtime_ns
+        if KEPT_HISTORY.exists() and KEPT_HISTORY.stat().st_mtime_ns == source:
+            return
+        KEPT_HISTORY.parent.mkdir(parents=True, exist_ok=True)
+        with KEPT_HISTORY.open("a+", encoding="utf-8") as kept:
+            fcntl.flock(kept, fcntl.LOCK_EX)
+            kept.seek(0)
+            known = {row_id for row_id, _ in history_rows(kept.read())}
+            for row_id, line in history_rows(HISTORY.read_text(encoding="utf-8")):
+                if row_id not in known:
+                    known.add(row_id)
+                    kept.write(line + "\n")
+            kept.flush()
+            os.utime(KEPT_HISTORY, ns=(source, source))
+    except (OSError, ValueError, TypeError):
+        pass
+
+
 def cmd_watch(cfg: dict) -> int:
     payload = json.load(sys.stdin)
+    keep_history()
     now = time.time()
     state = read_json(STATE)
     if now - state.get("checked", 0) >= cfg["interval_seconds"]:
@@ -216,18 +259,29 @@ def executable_text(command: str) -> str:
     return QUOTED.sub("''", HEREDOC.sub("", command))
 
 
+def silence() -> dict | None:
+    state = read_json(SILENCE)
+    return state if state.get("until", 0) > time.time() else None
+
+
 def cmd_block(cfg: dict) -> int:
     payload = json.load(sys.stdin)
     command = executable_text((payload.get("tool_input") or {}).get("command", ""))
     stage = read_json(STATE).get("stage", "ok")
-    if stage not in ("stop", "critical"):
+    mayday = silence()
+    if stage not in ("stop", "critical") and not mayday:
         return 0
     if any(re.search(p, command) for p in cfg["never_block"]):
         return 0
     if any(re.search(p, command) for p in cfg["heavy_commands"]):
+        reason = (
+            f"a mayday by {mayday.get('by', '?')} holds radio silence: {mayday.get('text', '')}; "
+            "it ends with radio.py clear"
+            if mayday
+            else f"resource stage is {stage}; new heavy jobs are blocked until the disk recovers"
+        )
         print(
-            f"kvb-org-organize: resource stage is {stage}; new heavy jobs are blocked until "
-            "the disk recovers. Teardown commands still run. Ask the resource chair.",
+            f"kvb-org-organize: {reason}. Teardown commands still run. Ask the resource chair.",
             file=sys.stderr,
         )
         return 2

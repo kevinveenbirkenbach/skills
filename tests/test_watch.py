@@ -105,6 +105,19 @@ class TestWatchCommands(unittest.TestCase):
         self._stage("warn")
         self.assertEqual(self._run("block", stdin=self._bash("make compose-deploy")).returncode, 0)
 
+    def test_block_heavy_jobs_while_a_mayday_holds_radio_silence(self):
+        self._stage("ok")
+        self.root.mkdir(exist_ok=True)
+        silence = self.root / "radio-silence.json"
+        now = time.time()
+        silence.write_text(json.dumps({"since": now, "until": now + 60, "by": "One", "text": "fire"}), encoding="utf-8")
+        blocked = self._run("block", stdin=self._bash("make compose-deploy"))
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("mayday by One", blocked.stderr)
+        self.assertEqual(self._run("block", stdin=self._bash("make swarm-down")).returncode, 0)
+        silence.write_text(json.dumps({"since": now - 120, "until": now - 60, "by": "One", "text": "fire"}), encoding="utf-8")
+        self.assertEqual(self._run("block", stdin=self._bash("make compose-deploy")).returncode, 0)
+
     def test_block_ignores_heavy_words_inside_quotes_and_heredocs(self):
         self.cfg["heavy_commands"] = [r"\bmake\s+(-C\s+\S+\s+)?(compose-deploy|test|swarm-\S+)(\s|$)"]
         self._write_config()
@@ -151,6 +164,27 @@ class TestWatchCommands(unittest.TestCase):
         self.assertIn("RESOURCE WARN", hook("s1"))
         self.assertEqual(hook("s1"), "")
         self.assertIn("RESOURCE WARN", hook("s2"))
+
+    def test_watch_keeps_each_new_queue_history_row_once(self):
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self._write_config()
+        self.root.mkdir()
+        source = self.root / "queue-history.jsonl"
+        kept = self.base / ".local" / "state" / "agents-council" / "queue-history.jsonl"
+        kept.parent.mkdir(parents=True)
+        kept.write_text('{"id": "old"}\n', encoding="utf-8")
+        source.write_text('{"id": "old"}\n{"id": "a"}\n{broken\n', encoding="utf-8")
+        payload = json.dumps({"session_id": "s1", "hook_event_name": "PostToolUse"})
+
+        def kept_ids() -> list[str]:
+            self.assertEqual(self._run("watch", stdin=payload).returncode, 0)
+            return [json.loads(line)["id"] for line in kept.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual(kept_ids(), ["old", "a"])
+        self.assertEqual(kept_ids(), ["old", "a"])
+        with source.open("a", encoding="utf-8") as handle:
+            handle.write('{"id": "b"}\n')
+        self.assertEqual(kept_ids(), ["old", "a", "b"])
 
     def test_cache_trim_evicts_least_recently_used_first(self):
         old, new = self.cache / "old", self.cache / "new"

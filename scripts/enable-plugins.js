@@ -33,6 +33,7 @@ const RENAMED = {
   "democracy/scripts/council.py": "kvb-org-organize/scripts/council.py",
   "democracy/scripts/watch.py": "kvb-org-organize/scripts/watch.py",
   "subagent-model/scripts/log.py": "kvb-org-perform/scripts/log.py",
+  "kvb-org-organize/scripts/news.py": "kvb-org-radio/scripts/radio.py",
 };
 
 let data = {};
@@ -109,23 +110,28 @@ if (!JSON.stringify(data.hooks.PreToolUse).includes("kvb-org-organize/scripts/co
 }
 
 const SCRIPT_HOOKS = [
-  ["kvb-org-organize/scripts/watch.py", "UserPromptSubmit", null, "watch"],
-  ["kvb-org-organize/scripts/news.py", "UserPromptSubmit", null, "hook"],
-  ["kvb-org-organize/scripts/watch.py", "PostToolUse", "Bash", "watch"],
-  ["kvb-org-organize/scripts/watch.py", "PreToolUse", "Bash", "block"],
-  ["kvb-org-perform/scripts/log.py", "PreToolUse", "Agent|Task", "spawn"],
-  ["kvb-org-perform/scripts/log.py", "PostToolUse", "Bash", "persist"],
+  ["kvb-org-organize/scripts/watch.py", "UserPromptSubmit", null, "watch", {}],
+  ["kvb-org-radio/scripts/radio.py", "UserPromptSubmit", null, "hook", {}],
+  ["kvb-org-radio/scripts/radio.py", "PostToolBatch", null, "tool", {}],
+  ["kvb-org-radio/scripts/radio.py", "Stop", null, "listen", { asyncRewake: true, timeout: 21600 }],
+  ["kvb-org-organize/scripts/watch.py", "PostToolUse", "Bash", "watch", {}],
+  ["kvb-org-organize/scripts/watch.py", "PreToolUse", "Bash", "block", {}],
+  ["kvb-org-queue/scripts/queue.py", "PreToolUse", "Bash", "block", {}],
+  ["kvb-org-perform/scripts/log.py", "PreToolUse", "Agent|Task", "spawn", {}],
+  ["kvb-org-perform/scripts/log.py", "PostToolUse", "Bash", "persist", {}],
 ];
-for (const [script, event, matcher, sub] of SCRIPT_HOOKS) {
+for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
   data.hooks[event] = data.hooks[event] || [];
   const registered = data.hooks[event].some((entry) =>
     (entry.hooks || []).some((hook) =>
       String(hook.command).includes(script) && String(hook.command).endsWith(` ${sub}`)));
   if (registered) continue;
-  const file = path.join(path.dirname(settingsPath), "skills", ...script.split("/"));
-  const entry = { hooks: [{ type: "command", command: `python3 ${JSON.stringify(file)} ${sub}` }] };
+  const file = JSON.stringify(path.join(path.dirname(settingsPath), "skills", ...script.split("/")));
+  // Trip-wire: python3 on a missing file exits 2, which blocks every prompt or tool call; the test makes it exit 1.
+  const command = `[ -f ${file} ] && python3 ${file} ${sub}`;
+  const entry = { hooks: [{ type: "command", command, ...extra }] };
   data.hooks[event].push(matcher ? { matcher, ...entry } : entry);
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, news hook and resource watch, and the kvb-org-perform log in ${settingsPath}`);
+console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate and resource watch, the kvb-org-radio hooks, the kvb-org-queue gate, and the kvb-org-perform log in ${settingsPath}`);

@@ -7,7 +7,8 @@ description: >
 
 `${CLAUDE_SKILL_DIR}/scripts/hotfix.py` keeps each hotfix as a task
 `hotfix/<slug>` of the `kvb-org-rasci` register, the author as R and A;
-never a message or news post.
+recording it merged radios a `security` item (`kvb-org-radio`), never post it
+yourself.
 
 ```bash
 hotfix.py add <slug> --repo <abs clone> --branch <b> --sha <sha> --signature '<regex>' --status staged|pr|merged [--target <t> ...] [--pr <n>]
@@ -39,12 +40,12 @@ hotfix.py void --repo <worktree> --target <t> [--target ...]
    names the blocker. Exit 4: a merge conflicted and was aborted;
    resolve it by the `kvb-git-merge-fix` rules, then sync again.
 2. `pending`: exit 0 means every merged hotfix is in HEAD. `open, not
-   merged` is reported, never merged: name it in your report and go on.
+   merged` is reported, never merged: report it.
    `not on origin/<default>` or exit 2: tell its A to correct the row.
 
 ## On any failure
 
-Before triage, investigation or asking a peer: `match`, the line quoted
+Before triage or asking a peer: `match`, the line quoted
 literally; `foreign` marks another repository's hotfix. A merged match: sync
 and run again. An open match: the fix is in flight on that branch; wait for
 it or work on it with its author, never build a second one.
@@ -59,10 +60,8 @@ capacity rules).
   target; on exit 3 finished targets keep their results.
 - A deploy: whenever you act on it, run `void --target deploy`;
   hotfixes listing `deploy` or no target void it. Only on exit 3 stop it at
-  the next safe point, between stages and never inside a task. Never on a
-  timer.
-- After exit 3: post the release to the news, sync, and request the chair's
-  grant again before rerunning.
+  the next safe point between stages. Never on a timer.
+- After exit 3: sync, then rerun through `queue.py hold` (`kvb-org-queue`).
 
 ## Rules
 

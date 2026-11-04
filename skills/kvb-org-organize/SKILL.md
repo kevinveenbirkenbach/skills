@@ -27,7 +27,7 @@ outranks them and appoints or recalls at will.
 4. Elected: complete the task the claim entered in the `kvb-org-rasci`
    register (objective, description, priority, roles); the listed claim
    announces it.
-5. Not elected: post your findings to the holder via the news and stop.
+5. Not elected: radio your findings to the holder (`direct`) and stop.
 
 A hook (`council.py gate`) blocks worktree edits before a claim. Between
 machines the earliest announcement by message time wins; each host's claim
@@ -41,9 +41,9 @@ ends or goes stale, or after a restart.
   on `grant`.
 - `make test`, `make test-lint`, quality gates, deploys, iteration loops,
   swarm, image builds, cloud, shared-data cleanup, anything with Docker or
-  over a few minutes: ask the chair (what, where, how long, disk), wait for
-  the grant, post the release to the news. In a worktree they run through
-  `gate.py run` or `gate.py hold` (`kvb-check-gate`).
+  over a few minutes: run through `queue.py hold` (`kvb-org-queue`), which
+  grants by rule and releases on exit; the chair only handles exceptions. In
+  a worktree wrap `gate.py run` or `gate.py hold` (`kvb-check-gate`).
 - No running job is cut short for capacity; only the operator orders one
   down. Exception: void by a missing merged hotfix (`kvb-git-hotfix`).
   `RESOURCE` hook lines address the chair; others adjust plans.
@@ -55,13 +55,12 @@ ends or goes stale, or after a restart.
 Read `peers.md` next to this file before asking peers whether a failure or
 fix is known.
 
-- Never poll: `council.py list`, the register and the news answer first.
+- Never poll: `council.py list`, the register and the radio answer first.
 - Hotfixes: `${CLAUDE_SKILL_DIR}/../kvb-git-hotfix/scripts/hotfix.py add` and
-  `update`, never a message or news post.
-- Status that asks nothing (a failure, a freed slot, a result):
-  `${CLAUDE_SKILL_DIR}/scripts/news.py post "<text>"` (`--to <name>` for one
-  peer).
-- `SendMessage` only when the recipient must act or answer: one batched
+  `update`; merged ones go out as radio `security` by themselves.
+- Agents are reached through `kvb-org-radio`; status that asks nothing as
+  `broadcast` or `direct`.
+- `direct --wake` only when the recipient must act or answer: one batched
   message per peer per event, terse, no greeting, at most five lines unless
   evidence needs more, nothing already acknowledged. A message asking
   nothing gets no reply; end that turn in one line.

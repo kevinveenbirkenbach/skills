@@ -5,17 +5,19 @@
 - An operator-appointed allocator holds the chair: its claim says
   `appointed: operator`, and no election replaces it while its session runs and
   the operator has not ended the appointment.
-- The chair keeps one queue: a hotfix gate (a branch from the default branch
-  that fixes it) takes the next free gate or test slot before every other
-  line, the rest follows the WSJF rank of the `kvb-org-wsjf` skill (it asks its
-  subordinates for the Fibonacci estimates); a running gate is never cut short
-  for a hotfix's slot, only when the hotfix voids it (`kvb-git-hotfix`). It
-  answers every request with its queue position through
-  `news.py post --to <name>` and sends the grant itself as a message (the
-  requester acts on it), enforces the limits the operator set, and checks
-  every grant with
-  `watch.py admit --need-gb <N>` (or `--kind <slot>`; test kinds also need CPU
-  and RAM below the configured limits).
+- The queue of the `kvb-org-queue` skill grants heavy jobs by rule, with no
+  request, position post or grant message: a hotfix gate (a branch from the
+  default branch that fixes it, checked against its `hotfix/` register row)
+  before every other line, the rest by the register rank, that is the
+  operator's pins, then the WSJF of the `kvb-org-wsjf` skill; slot limits
+  from `slot_limits` in the config, disk reserved per granted job, CPU and RAM
+  through `watch.py`, nothing new at the stop stage or during a mayday. A
+  running gate is never cut short for a hotfix's slot, only when the hotfix
+  voids it (`kvb-git-hotfix`).
+- The chair handles what the rule cannot: it collects the Fibonacci
+  estimates (an unestimated task ranks last), places a job the rule leaves
+  waiting too long, and carries out the operator's overrides. `queue.py list`
+  shows the queue.
 - A running job (deploy, gate, test, swarm run, build) is never cut short to
   free capacity. The chair neither asks nor orders its owner to stop, take
   down or kill it, not for an operator-prioritised slot and not for a
