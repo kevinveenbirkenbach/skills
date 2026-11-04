@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -19,6 +20,8 @@ FAKE = """#!{python}
 import json, os, pathlib, sys
 args = sys.argv[1:]
 pathlib.Path(__file__).with_name("argv.json").write_text(json.dumps(args))
+pathlib.Path(__file__).with_name("home.txt").write_text(os.environ["HOME"])
+pathlib.Path(os.environ["HOME"], ".medusa").mkdir()
 target, out = pathlib.Path(args[1]), pathlib.Path(args[args.index("-o") + 1])
 out.mkdir(parents=True)
 findings = []
@@ -26,7 +29,10 @@ for path in sorted(p for p in target.rglob("*") if p.is_file()):
     for number, text in enumerate(path.read_text().splitlines(), 1):
         for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
             if "MARK-" + severity in text:
-                findings.append({{"severity": severity, "file": str(path), "line": number, "code": text}})
+                findings.append({{
+                    "severity": severity, "rule_id": "FAKE-" + severity, "file": str(path), "line": number,
+                    "code": text,
+                }})
 report = {{"issues": findings}} if os.environ.get("FAKE_MEDUSA_SHAPE") == "other" else {{"findings": findings}}
 (out / "medusa-scan-20261104-120000.json").write_text(json.dumps(report))
 """
@@ -48,6 +54,7 @@ class TestSecurity(unittest.TestCase):
         self.env = {
             "PATH": f"{self.bin}:{GIT_DIR}",
             "HOME": str(self.base),
+            "AGENTS_COUNCIL_ROOT": str(self.base / "council"),
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_AUTHOR_NAME": "Test",
             "GIT_AUTHOR_EMAIL": "test@example.org",
@@ -94,7 +101,67 @@ class TestSecurity(unittest.TestCase):
             {k: found[k] for k in ("security", "files", "critical", "high", "medium", "low", "info")},
             {"security": 63, "files": 2, "critical": 0, "high": 1, "medium": 1, "low": 1, "info": 1},
         )
-        self.assertEqual(found["findings"][0], {"severity": "high", "path": "app.py", "line": 2})
+        self.assertEqual(
+            found["findings"][0],
+            {
+                "severity": "high", "rule": "FAKE-HIGH", "path": "app.py", "line": 2,
+                "sha1": hashlib.sha1(f"token = '{PLACEHOLDER}'  # MARK-HIGH".encode()).hexdigest(),
+            },
+        )
+        self.assertEqual(found["accepted"], [])
+        home = Path((self.bin / "home.txt").read_text(encoding="utf-8"))
+        self.assertNotEqual(home, self.base)
+        self.assertTrue(home.name == "home" and home.parent.name.startswith("kvb-security-"), home)
+
+    def accept(self, *flags: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(SECURITY), "accept", "--repo", str(self.repo), *flags],
+            cwd=self.base, env=self.env, capture_output=True, text=True, check=False,
+        )
+
+    def test_accepted_false_positive_leaves_the_score_until_its_line_changes(self):
+        line = "x = compute()  # MARK-CRITICAL"
+        self.write("app.py", f"print(1)\n{line}\n")
+        sha1 = hashlib.sha1(line.encode()).hexdigest()
+        result = self.accept("--rule", "FAKE-CRITICAL", "--path", "app.py", "--sha1", sha1, "--reason", "fixture marker")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        listing = self.base / "council" / "security-accepted.jsonl"
+        row = json.loads(listing.read_text(encoding="utf-8"))
+        self.assertEqual(
+            {k: row[k] for k in ("rule", "path", "sha1", "reason", "repo")},
+            {"rule": "FAKE-CRITICAL", "path": "app.py", "sha1": sha1, "reason": "fixture marker",
+             "repo": str(self.repo.resolve())},
+        )
+        result = self.scan(env=self.env)
+        self.assertEqual(
+            (result.stdout, result.returncode),
+            ("🛡️ security 100 % (medusa: 0 findings, 1 accepted in 1 file)\n", 0),
+        )
+        accepted = json.loads(self.scan("--json", env=self.env).stdout)["accepted"]
+        self.assertEqual([(a["rule"], a["path"], a["line"]) for a in accepted], [("FAKE-CRITICAL", "app.py", 2)])
+        self.write("app.py", "print(1)\nx = compute(2)  # MARK-CRITICAL\n")
+        result = self.scan(env=self.env)
+        self.assertEqual(
+            (result.stdout, result.returncode),
+            ("🛡️ security 50 % (medusa: 1 finding in 1 file: critical app.py:2)\n", 1),
+        )
+
+    def test_kept_rows_count_and_broken_rows_stop(self):
+        line = "y = other()  # MARK-HIGH"
+        self.write("app.py", f"{line}\n")
+        kept = self.base / ".local" / "state" / "agents-council" / "security-accepted.jsonl"
+        kept.parent.mkdir(parents=True)
+        sha1 = hashlib.sha1(line.encode()).hexdigest()
+        kept.write_text(json.dumps({"rule": "FAKE-HIGH", "path": "app.py", "sha1": sha1}) + "\n", encoding="utf-8")
+        result = self.scan(env=self.env)
+        self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings, 1 accepted in 1 file)\n")
+        kept.write_text('{"rule": "FAKE-HIGH"}\n', encoding="utf-8")
+        result = self.scan(env=self.env)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("security-accepted.jsonl:1: want a JSON row with rule, path and sha1", result.stderr)
+        result = self.accept("--rule", "R", "--path", "app.py", "--sha1", "XYZ", "--reason", "r")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--sha1 must be 40 lowercase hex digits", result.stderr)
 
     def test_critical_exits_1_and_floors_at_0(self):
         self.write("app.py", "a  # MARK-CRITICAL\nb  # MARK-CRITICAL\nc  # MARK-CRITICAL\n")

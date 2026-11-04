@@ -4,9 +4,10 @@
 Usage:
     watch.py watch     hook (UserPromptSubmit, PostToolUse): measure at most once
                        per interval machine-wide, act on the stage, show alerts,
-                       and append the kvb-org-queue history rows of
-                       <root>/queue-history.jsonl whose id it lacks to
-                       ~/.local/state/agents-council/queue-history.jsonl
+                       and append the rows of <root>/queue-history.jsonl
+                       (kvb-org-queue) and <root>/security-accepted.jsonl
+                       (kvb-check-security) whose id it lacks to the same name
+                       under ~/.local/state/agents-council/
     watch.py block     hook (PreToolUse on Bash): exit 2 for a heavy job while the
                        stage is stop or critical, or while a kvb-org-radio mayday
                        holds radio silence (<root>/radio-silence.json, until > now)
@@ -60,8 +61,12 @@ STAGES = ("ok", "warn", "stop", "critical")
 STATE = ROOT / "watch.json"
 SILENCE = ROOT / "radio-silence.json"
 ALERTS = ROOT / "alerts.jsonl"
+KEPT = Path.home() / ".local" / "state" / "agents-council"
 HISTORY = ROOT / "queue-history.jsonl"
-KEPT_HISTORY = Path.home() / ".local" / "state" / "agents-council" / "queue-history.jsonl"
+KEPT_HISTORY = KEPT / "queue-history.jsonl"
+ACCEPTED = ROOT / "security-accepted.jsonl"
+KEPT_ACCEPTED = KEPT / "security-accepted.jsonl"
+MIRRORED = ((HISTORY, KEPT_HISTORY), (ACCEPTED, KEPT_ACCEPTED))
 ALERT_TTL = 3600
 LOCK_TTL = 1800
 GB = 1e9
@@ -200,26 +205,31 @@ def history_rows(text: str) -> list[tuple[str, str]]:
     return rows
 
 
-def keep_history() -> None:
+def keep_rows(origin: Path, target: Path) -> None:
     # The agents' sandbox cannot write ~/.local/state and /tmp is wiped on reboot, so this hook keeps the rows.
     # The kept file takes the source's mtime: an unchanged source is skipped without parsing.
     try:
-        source = HISTORY.stat().st_mtime_ns
-        if KEPT_HISTORY.exists() and KEPT_HISTORY.stat().st_mtime_ns == source:
+        source = origin.stat().st_mtime_ns
+        if target.exists() and target.stat().st_mtime_ns == source:
             return
-        KEPT_HISTORY.parent.mkdir(parents=True, exist_ok=True)
-        with KEPT_HISTORY.open("a+", encoding="utf-8") as kept:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a+", encoding="utf-8") as kept:
             fcntl.flock(kept, fcntl.LOCK_EX)
             kept.seek(0)
             known = {row_id for row_id, _ in history_rows(kept.read())}
-            for row_id, line in history_rows(HISTORY.read_text(encoding="utf-8")):
+            for row_id, line in history_rows(origin.read_text(encoding="utf-8")):
                 if row_id not in known:
                     known.add(row_id)
                     kept.write(line + "\n")
             kept.flush()
-            os.utime(KEPT_HISTORY, ns=(source, source))
+            os.utime(target, ns=(source, source))
     except (OSError, ValueError, TypeError):
         pass
+
+
+def keep_history() -> None:
+    for origin, target in MIRRORED:
+        keep_rows(origin, target)
 
 
 def cmd_watch(cfg: dict) -> int:
