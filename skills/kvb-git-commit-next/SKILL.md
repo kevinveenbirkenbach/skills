@@ -18,9 +18,13 @@ description: >
    Wait for the operator's decision; do not commit.
 3. Nothing similar found, or the operator picked the staged version: run the
    kvb-git-commit-no-verify skill on the currently staged changes
-   (kvb-code-no-comments audit and kvb-check-legal check first, then its
-   four-line block of worktree path, branch, fix confidence and break risk,
-   then `git commit --no-verify`, exact staging index only).
+   (kvb-code-no-comments audit and kvb-check-legal check first, then the
+   full staged diff and its score block of 📁 worktree, 🌿 branch,
+   📊 diff stat, score line and gate line, then `git commit --no-verify`,
+   exact staging index only). Its approval-prompt duty is binding: the commit
+   call's approval prompt names worktree, branch, diff stat and the score
+   values, or the call is not sent. Gate exit 1 is shown and the operator's
+   word decides; exit 3 asks the operator again first, naming the cause.
 4. Group the remaining uncommitted changes into logical bundles (one concern
    per bundle: same failure class, mechanism or role) and stage the next one;
    never mix concerns to save a commit. Staging happens here and nowhere
@@ -33,7 +37,8 @@ description: >
    <worktree> --file <path> --match <regex>`, first with `--dry-run`.
 5. For the newly staged bundle run the kvb-think-explain skill (what the
    changes do and how the pieces interact, file:line-anchored), then the
-   kvb-check-confidence skill (fix confidence, break risk, evidence,
+   kvb-check-confidence skill (its kvb-check-score block, evidence,
    residuals).
-6. Close with what remains unstaged and wait for the operator's commit
-   decision; never auto-commit the newly staged bundle.
+6. Close with the staged bundle's score block (📁 worktree, 🌿 branch,
+   📊 diff stat, score line, gate line), what remains unstaged, and wait for
+   the operator's commit decision; never auto-commit the newly staged bundle.

@@ -1,8 +1,7 @@
 ---
 name: kvb-git-merge-fix
 description: >
-  Find the commits on any branch that carry a described fix and merge them
-  here. Trigger on a request to bring over a fix from another branch.
+  Find commits on any branch carrying a described fix and merge them here. Trigger on a request to bring over a fix from another branch.
 ---
 
 The free text after the skill name is the fix description and the only input.
@@ -59,6 +58,8 @@ and its diff plainly is the described fix.
 - One or a few commits, rest of the branch unwanted: `git cherry-pick -x <sha>…`
   (`-x` records the origin).
 - The whole branch is wanted: `git merge --no-ff <branch>`.
+- Every cherry-pick or merge call creates commits: it follows the
+  approval-prompt duty of `kvb-git-commit-no-verify`.
 - Conflicts: resolve them by reading both sides. Never `-X ours`/`-X theirs`,
   never `git checkout --ours/--theirs` wholesale: that silently drops one
   side's fix. Unresolvable → `git cherry-pick --abort` / `git merge --abort`,
@@ -67,7 +68,8 @@ and its diff plainly is the described fix.
 ## 7. Report
 
 Show `git log --oneline <base>..HEAD` and the resulting diffstat, then apply the
-kvb-check-confidence skill: what came over, what did not, what still has to be verified.
+kvb-check-confidence skill and its kvb-check-score block: what came over, what
+did not, what still has to be verified.
 Run the project's test or quality gate only when the operator asks for it.
 
 ## Rules

@@ -35,9 +35,10 @@ request, owner and lag, nothing preselected. Only the picks are updated.
   to the operator.
 - **Any other branch**: in the worktree that already has it checked out,
   else a temporary one under `/tmp` (the repository's own worktree targets
-  where it has them), `git merge --no-verify --no-edit origin/main`. On a
-  conflict, `git merge --abort` and report the files; the `kvb-git-merge-fix`
-  skill or the operator resolves it later.
+  where it has them), `git merge --no-verify --no-edit origin/main`, with the
+  approval-prompt duty of `kvb-git-commit-no-verify`. On a conflict, `git
+  merge --abort` and report the files; the `kvb-git-merge-fix` skill or the
+  operator resolves it later.
 - Remove the temporary worktrees afterwards.
 
 ## Step 4: hand over the pushes

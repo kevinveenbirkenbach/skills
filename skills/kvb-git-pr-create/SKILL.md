@@ -14,18 +14,20 @@ confirms it.
 1. **Check**: the branch is committed and clean, branched from the default
    branch (`gh repo view --json defaultBranchRef`), and has no open pull
    request yet (`gh pr list --head <branch>`).
-2. **Assess** the branch with the `kvb-check-confidence` skill: fix
-   confidence, break risk, residuals.
+2. **Assess** the branch with the `kvb-check-confidence` skill: its
+   `kvb-check-score` block and residuals.
 3. **Push**: hand the operator `gipsn` in the worktree through the
    `kvb-org-operator` skill, and continue once `git ls-remote --heads origin
    <branch>` shows the branch's head commit.
 4. **Body**, written to a scratch file: what changed and why, the test
-   evidence, the confidence block, and one `Closes #<n>` line per issue the
+   evidence, the score block, and one `Closes #<n>` line per issue the
    branch fixes, each verified as the `kvb-git-issue-close` skill does.
 5. **Confirm** with one `AskUserQuestion`: title (Conventional Commits),
    base, state and labels. The state follows the bar of the `kvb-org-split`
-   skill: ready at or above it, a draft with the residuals in the body below
-   it.
+   skill (fix confidence ≥ 90 %, break risk ≤ 5 %, efficiency and speed
+   ≤ 100 %): ready at or above it, a draft with the residuals in the body
+   below it. An efficiency or speed over 100 % goes into this question with
+   its cause.
 6. **Create**: `gh pr create --base <default> --head <branch> --title
    "<title>" --body-file <file>`, plus `--draft` below the bar.
 7. **Label** with the `kvb-git-pr-label` skill.

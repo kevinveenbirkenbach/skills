@@ -1,8 +1,8 @@
 ---
 name: kvb-org-matrix
 description: >
-  One matrix of everything in flight with confidence and break risk per
-  item. Trigger on "status", "übersicht", "wo stehen wir".
+  One matrix of everything in flight with the kvb-check-score line per item.
+  Trigger on "status", "übersicht", "wo stehen wir".
 ---
 
 One-shot overview, no side effects: it reads state and reports it, never
@@ -33,14 +33,14 @@ you could not read:
 
 One table, most-blocking first, one row per item:
 
-| Item | State | Conf. | Break risk | Evidence / next step |
+| Item | State | Score | Evidence / next step |
 
 - **State**: `open`, `running`, `blocked`, `done`. `done` means verified (a
   passing run, a green check, a reproduction that now succeeds); work that
   merely looks finished is `open`.
-- **Conf.** and **Break risk**: two separate percentages per the
-  `kvb-check-confidence` skill, only for rows that changed something; `-`
-  for pure observation rows.
+- **Score**: the `kvb-check-score` line (🎯 fix, 💥 break, 🌱 efficiency,
+  ⚡ speed, 🏆 score) per the `kvb-check-confidence` skill, only for rows
+  that changed something; `-` for pure observation rows.
 - **Evidence / next step**: for `done` the strongest proof line (what ran,
   what it returned), otherwise the single next action.
 
@@ -58,6 +58,6 @@ Then at most three lines:
   a forgotten background job or an unpushed commit is what the matrix exists
   to surface.
 - Report what the poll returned, never a predicted result; a running item
-  has no confidence number yet.
+  has no score yet.
 - One row per item, no per-item paragraphs; the operator asks when a row
   needs explaining.

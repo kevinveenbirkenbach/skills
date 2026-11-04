@@ -1,9 +1,9 @@
 ---
 name: kvb-think-listen
 description: >
-  Ask focused questions until every requirement is pinned down, then reflect
-  the task back. Trigger on unclear scope, constraints or success criteria,
-  or when a skill needs an operator-only fact.
+  Pin down every requirement by focused questions, then reflect the task
+  back. Trigger on unclear scope, constraints or success criteria, or a skill
+  needing an operator-only fact.
 ---
 
 Do not act on a half-understood request. Listen actively until you could state

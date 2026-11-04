@@ -76,8 +76,7 @@ first. No per-finding paragraphs; the operator asks when a row needs it.
 
 - Never report formatting, naming taste or missing comments.
 - Mark each finding proven (grepped, read, reproduced) or derived (reasoned
-  statically), and close with the `kvb-check-confidence` skill's numbers for
-  the audit.
+  statically), and close with the `kvb-check-score` block for the audit.
 - No silent caps: if you ranked and cut, say how many findings were dropped
   and by what rule.
 - Skepticism ends at the report: no fix, stage or refactor in this skill.

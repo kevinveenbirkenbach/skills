@@ -1,7 +1,7 @@
 ---
 name: kvb-code-scope-guard
 description: >
-  Deliver exactly what was asked. Trigger on every task that creates files,
+  Deliver exactly what was asked. Trigger on every task creating files,
   commands or commits, on autonomous runs and hand-overs, and when asked why
   something unrequested exists.
 ---

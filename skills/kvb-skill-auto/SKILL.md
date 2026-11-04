@@ -2,7 +2,7 @@
 name: kvb-skill-auto
 description: >
   Turn operator repetition into a skill. Trigger when the operator repeats an
-  instruction, correction or prompt pattern a third time, or says they keep
+  instruction, correction or prompt pattern thrice, or says they keep
   repeating themselves.
 ---
 

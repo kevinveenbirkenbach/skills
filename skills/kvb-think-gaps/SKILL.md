@@ -1,8 +1,8 @@
 ---
 name: kvb-think-gaps
 description: >
-  Find and rank missing work (structural flaws, missing features); each pick
-  goes to kvb-create-requirement. Trigger on "was fehlt noch" or when asked
+  Find and rank missing work (structural flaws, missing features); picks go
+  to kvb-create-requirement. Trigger on "was fehlt noch" or when asked
   what to build next.
 ---
 
@@ -79,5 +79,5 @@ shapes go into its Decisions section.
 - Findings only: no file, implementation, refactor or staging in this skill.
 - Every candidate traces to evidence: a `file:line`, a failing path, a
   missing artifact. "Would be nice" is dropped.
-- Close with the `kvb-check-confidence` skill's numbers for the analysis: how
+- Close with the `kvb-check-score` block for the analysis: how
   sure the gaps are real, and what the passes did not cover.

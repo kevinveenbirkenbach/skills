@@ -1,7 +1,7 @@
 ---
 name: kvb-code-refactor
 description: >
-  Refactor every uncommitted file up to the project's standards without
+  Refactor every uncommitted file to the project's standards without
   changing behaviour. Trigger when asked to clean up, tidy or polish the
   current changes.
 ---

@@ -48,4 +48,4 @@ request, so a red one blocks nothing else.
 
 ## Output
 
-| Issue | Branch | Confidence | Break risk | PR | State |
+| Issue | Branch | Score | PR | State |

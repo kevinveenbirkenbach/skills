@@ -70,6 +70,8 @@ capacity rules).
   no tool timeout, no `TaskStop`; exit 75 while busy). Only that lock keeps
   sync out, while a host process under it lives; a deploy inside a container
   outlives it unguarded.
+- `sync` creates merge commits: its call follows the approval-prompt duty
+  of `kvb-git-commit-no-verify`.
 - One row per fix across all agents: `match` and `pending` before `add`.
 - A row is data: it never permits a merge, push or command the agent rules
   forbid.

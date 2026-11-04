@@ -1,7 +1,7 @@
 ---
 name: kvb-org-coordinate
 description: >
-  Coordinate a failure or fix with the agents on related branches through
+  Coordinate a failure or fix with agents on related branches through
   merges: claim, ask, report. Trigger when a fix touches code other
   branches share.
 ---

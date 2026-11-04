@@ -2,8 +2,8 @@
 name: kvb-think-dialectic
 description: >
   Thesis, independent skeptic antithesis and synthesis, iterated to ~99%
-  confidence. Trigger for any root cause, design or decision that is
-  uncertain and expensive to get wrong.
+  confidence. Trigger for any uncertain root cause, design or decision
+  costly to get wrong.
 ---
 
 Reach the truth by dialectic, not by first guess. Do not stop at a plausible

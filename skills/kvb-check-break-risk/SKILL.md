@@ -1,8 +1,8 @@
 ---
 name: kvb-check-break-risk
 description: >
-  Derive the break-risk percentage from measurement, not feel. Called by
-  `kvb-check-confidence` on every report; also when the operator asks "what could this
+  Derive the break-risk percentage from measurement, not feel, for every
+  `kvb-check-confidence` report; also when the operator asks "what could this
   break?" or names a break-risk threshold.
 ---
 
@@ -43,7 +43,8 @@ Read it when a step is new to you or its result is contested.
 ## Producing the number
 
 State it as a percentage next to fix confidence, never blended, and always with
-its residuals. Anchor roughly:
+its residuals; `kvb-check-confidence` passes it to the `kvb-check-score` block
+as `--break`. Anchor roughly:
 
 - **Under 5%**: consumers enumerated, delta measured at the surface, every axis
   of the matrix covered by executed evidence, failure mode closed.

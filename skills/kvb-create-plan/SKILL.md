@@ -1,7 +1,7 @@
 ---
 name: kvb-create-plan
 description: >
-  Turn a request into an objective-oriented plan for the kvb-org-robot skill.
+  Turn a request into an objective-oriented plan for kvb-org-robot.
   Trigger on a request for a plan, breakdown or strategy before work starts.
 ---
 

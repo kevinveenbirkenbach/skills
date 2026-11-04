@@ -49,8 +49,8 @@ grant and releases on exit.
 
 Run the selected targets in the operator's order, one `make <target>` per
 command so a failure is attributable. No `-k`, no reordering, no faster
-substitute. A target needing a long timeout (container builds, e2e) gets it on
-the Bash call instead of blind backgrounding. Stop after the first failing
+substitute. A light target needing a long timeout gets it on the Bash call
+instead of blind backgrounding. Stop after the first failing
 target unless the operator asked for all: a later suite against a broken build
 produces noise, not information.
 

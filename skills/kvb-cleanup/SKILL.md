@@ -2,7 +2,7 @@
 name: kvb-cleanup
 description: >
   Free disk space agents filled in /tmp, Docker and agent dirs; delete only
-  what the operator picks. Trigger on "aufräumen", "bereinigen",
+  operator picks. Trigger on "aufräumen", "bereinigen",
   "platte voll", "no space left on device".
 ---
 

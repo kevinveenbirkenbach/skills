@@ -64,6 +64,9 @@ flowchart LR
   check --> check_confidence[kvb-check-confidence]
   check --> check_break_risk[kvb-check-break-risk]
   check --> check_gate[kvb-check-gate]
+  check --> check_efficiency[kvb-check-efficiency]
+  check --> check_speed[kvb-check-speed]
+  check --> check_score[kvb-check-score]
   org --> org_organize[kvb-org-organize]
   org --> org_split[kvb-org-split]
   org --> org_coordinate[kvb-org-coordinate]
@@ -161,6 +164,9 @@ flowchart LR
     confidence[kvb-check-confidence]
     break_risk[kvb-check-break-risk]
     gate[kvb-check-gate]
+    efficiency[kvb-check-efficiency]
+    speed[kvb-check-speed]
+    score[kvb-check-score]
   end
   subgraph cat_org [org]
     democracy[kvb-org-organize]
@@ -237,6 +243,13 @@ flowchart LR
   confidence --> break_risk
   confidence --> gate
   pr_label --> gate
+  stage_req -.-> score
+  score --> confidence
+  score --> break_risk
+  score --> efficiency
+  score --> speed
+  speed --> efficiency
+  efficiency -. heavy commands .-> queue
   gate --> democracy
   gate --> hotfix
   triage --> hotfix

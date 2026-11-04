@@ -1,7 +1,7 @@
 ---
 name: kvb-code-no-defaults
 description: >
-  Forbid default values for parameters, settings and environment lookups;
+  Forbid defaults for parameters, settings and environment lookups;
   demand explicit values. Apply AUTOMATICALLY whenever code, config,
   templates or infrastructure are written, edited or reviewed.
 ---

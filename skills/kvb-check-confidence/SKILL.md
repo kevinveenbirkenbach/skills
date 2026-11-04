@@ -2,22 +2,28 @@
 name: kvb-check-confidence
 description: >
   Report calibrated fix confidence and break risk unprompted whenever you
-  stage changes, declare a fix or bundle ready, or summarize work the operator
-  may commit or deploy.
+  stage changes, declare a fix or bundle ready, or summarize committable or
+  deployable work.
 ---
 
-Every stage summary, fix report, or ready-to-commit bundle ends with a
-confidence block. Invoke the `kvb-check-break-risk` skill every time before
-writing it; this skill reports the number it derives and never estimates one
-itself.
+Every stage summary, fix report, or ready-to-commit bundle ends with the
+score block of the `kvb-check-score` skill. Invoke the `kvb-check-break-risk`
+skill every time before writing it; this skill reports the number it derives
+and never estimates one itself.
 
 1. **Fix confidence** (percent): probability the change does what it claims.
    **Break risk** (percent): probability it breaks anything else, from the
    `kvb-check-break-risk` skill. Two numbers, never one blended figure.
-2. **Evidence**: the strongest proof lines only: what was executed,
+2. **Score**: pass both, with efficiency from the `kvb-check-efficiency`
+   skill and speed from the `kvb-check-speed` skill, to
+   `${CLAUDE_SKILL_DIR}/../kvb-check-score/scripts/score.py --fix <n> --break
+   <n> --efficiency <n|-> --speed <n|->` and show its score line and gate line
+   verbatim. Exit 1 fails the 90/5 rule; exit 3 means ask the operator again
+   before the commit, naming the cause the gate line prints.
+3. **Evidence**: the strongest proof lines only: what was executed,
    reproduced, enumerated, or read from an authoritative source. Mark proven
    (ran it, saw it) apart from derived (reasoned statically).
-3. **Residuals**: exactly what keeps the number below 100 and what would
+4. **Residuals**: exactly what keeps the number below 100 and what would
    close the gap (live deploy, missing artifact, unexercised path). Never a
    bare percentage without its residuals.
 

@@ -2,7 +2,7 @@
 name: kvb-check-legal
 description: >
   Check a commit's licences, attribution, copied snippets, GDPR and
-  trademarks. Run AUTOMATICALLY before every commit the operator requests;
+  trademarks. Run AUTOMATICALLY before every requested commit;
   also on "rechtlich prüfen", "lizenz prüfen".
 ---
 
@@ -72,7 +72,7 @@ the operator's language). Then one table, blockers first:
 
 `Evidence` is `proven` (licence text, metadata or file read; cite path:line
 or the registry URL) or `derived` (inferred). Close with the verdict (commit
-stops or proceeds) and the `kvb-check-confidence` skill's numbers.
+stops or proceeds) and the `kvb-check-score` block.
 
 ## Rules
 

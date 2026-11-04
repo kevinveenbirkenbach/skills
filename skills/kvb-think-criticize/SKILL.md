@@ -1,8 +1,8 @@
 ---
 name: kvb-think-criticize
 description: >
-  Constructive criticism of a plan, design, decision, text or code, each
-  point hardened by dialectic. Trigger on "kritisiere",
+  Constructive criticism of a plan, design, decision, text or code,
+  hardened by dialectic. Trigger on "kritisiere",
   "konstruktive Kritik", "was haeltst du davon", or requests for honest
   feedback.
 ---
@@ -79,8 +79,8 @@ One line of scope, then the steelman. Then:
 `Evidence` is `proven` (read, run, reproduced, cited) or `derived` (reasoned).
 
 Close with at most three lines: how many points dialectic dropped and why, the
-single change that helps most, and the `kvb-check-confidence` skill's numbers
-for the whole critique.
+single change that helps most, and the `kvb-check-score` block for the whole
+critique.
 
 ## Rules
 

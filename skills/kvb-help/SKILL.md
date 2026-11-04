@@ -1,9 +1,8 @@
 ---
 name: kvb-help
 description: >
-  List and explain every skill in the session. Trigger on "welche skills
-  gibt es", "skill übersicht", or when the operator asks what
-  skills exist or what one does.
+  List and explain every session skill. Trigger on "welche skills gibt es",
+  "skill übersicht", or questions on what skills exist or what one does.
 ---
 
 Produce a one-shot overview of every skill the session can invoke:

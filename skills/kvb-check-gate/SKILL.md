@@ -6,15 +6,16 @@ description: >
 ---
 
 The gate rule, stated here and nowhere else: nothing is declared 90/5 (fix
-confidence of at least 90 %, break risk under 5 %) before every `make test*`
-target of the project, each Makefile target named `test` or starting with
+confidence ≥ 90 %, break risk ≤ 5 %, efficiency and speed ≤ 100 % in
+`kvb-check-score`; over 100 %, ask the operator before the commit, naming
+the cause) before every `make test*` target of the project, each Makefile target named `test` or starting with
 `test-`, ran green on the exact head with a clean tracked tree. Until then
 the numbers are provisional and every target not green is a residual.
 
 `${CLAUDE_SKILL_DIR}/scripts/gate.py` reads the targets from the Makefile and
-every file it includes without running make, and keeps the results per
-commit in `kvb-gate.json` in the git common dir: linked worktrees share them,
-a new commit starts from zero.
+its includes without running make, and keeps results per commit in
+`kvb-gate.json` in the git common dir: linked worktrees share them, a new
+commit starts from zero.
 
 ## Steps
 
@@ -33,7 +34,7 @@ a new commit starts from zero.
    which grants by rule and releases on exit. Only a single test module
    self-admits (`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py
    admit --kind test-nostack`), and it never turns a gate target green. A
-   hotfix takes the next free gate slot.
+   hotfix gate adds `--hotfix <slug>` and takes the next free gate slot.
 5. **Run** the missing and red targets, tracked tree clean, in the
    background; give the operator `tail -f` on the log:
 
@@ -62,12 +63,11 @@ a new commit starts from zero.
 - Every heavy command in a worktree (deploys, `make test`, other gates) runs
   through `gate.py run` or `gate.py hold --repo <root> -- <command>` in the
   background (`run_in_background`), never under a tool timeout or
-  `TaskStop`: it is never cut short. Their lock keeps `hotfix.py sync` out
+  `TaskStop`. Their lock keeps `hotfix.py sync` out
   only while a host process under it lives; a `docker compose exec` deploy
   runs on in its container unguarded.
-- 90/5 is allowed only on `gate: green` for the exact head: in the
-  `kvb-check-confidence` block, the `90/5` label of `kvb-git-pr-label` and
-  the bar of `kvb-org-split`.
+- 90/5 is allowed only on `gate: green` for the exact head: in
+  `kvb-check-score`, the `90/5` label and the `kvb-org-split` bar.
 - Never edit `kvb-gate.json` by hand.
 
 ## Output

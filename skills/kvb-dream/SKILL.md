@@ -15,7 +15,7 @@ Make the next run measurably less likely to repeat each failure found; what
 changes no future behaviour is not recorded. An error class is closed only by
 something structural (test, lint rule, CI check, hook, written rule in the
 agent instructions, skill), never by "be more careful". Per closed class,
-report the confidence the next run can hold, calibrated as the
+report the `kvb-check-score` block of its structural fix, calibrated as the
 `kvb-check-confidence` skill requires, and name what is still open.
 
 ## Scope

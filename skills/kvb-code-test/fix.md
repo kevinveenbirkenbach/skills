@@ -53,5 +53,6 @@ Emit one line per iteration: target, failure, hypothesis, change. The final
 report gives per iteration what failed, the root cause, the fix and the
 result; the final state of every selected target with the verbatim output of
 anything still failing; everything deliberately not done; and the command
-reproducing the final state. State confidence per the `kvb-check-confidence`
-skill. Do not commit unless the operator asked for a commit.
+reproducing the final state. End with the `kvb-check-score` block per the
+`kvb-check-confidence` skill. Do not commit unless the operator asked for a
+commit.

@@ -1,8 +1,8 @@
 ---
 name: kvb-org-split
 description: >
-  Keep agent work in its own worktree until 90% fix confidence and under 5%
-  break risk, else a proposal. Trigger when delegating or parallelizing.
+  Keep agent work in its own worktree until it meets the 90/5 bar
+  (kvb-check-score), else a proposal. Trigger when delegating or parallelizing.
 ---
 
 # Funnel
@@ -12,9 +12,9 @@ in a sidetree until it does, or leaves as a proposal.
 
 ## The bar
 
-- **Fix confidence of at least 90 %** and **break risk under 5 %**, both
-  reported by the `kvb-check-confidence` skill, the break risk derived through
-  the `kvb-check-break-risk` skill.
+- **Fix confidence ≥ 90 %, break risk ≤ 5 %, efficiency and speed ≤ 100 %**,
+  all from the `kvb-check-score` block of `kvb-check-confidence`; over 100 %,
+  ask the operator before the commit, naming the cause.
 - The operator may set a different bar. Never lower it to make a change fit.
 
 ## The stages
@@ -45,8 +45,8 @@ in a sidetree until it does, or leaves as a proposal.
 3. **Evidence.** Targeted tests, a test for the new behaviour, and a negative
    control: the test fails without the change. Numbers come from the same
    source before and after.
-4. **Self-assessment.** The agent reports fix confidence and break risk with
-   their residuals and commits on its branch. Its parent marks proven key
+4. **Self-assessment.** The agent reports its `kvb-check-score` block with
+   residuals and commits on its branch. Its parent marks proven key
    results met in the `kvb-org-rasci` register and records
    `--artifact worktree:<path>`.
 5. **Independent review.** Before any merge, run the `kvb-think-dialectic`
@@ -79,7 +79,7 @@ inherently riskier, read `proposal.md` next to this file.
 
 One table per round:
 
-| Agent | Sidetree branch | Confidence | Break risk | Verdict | Evidence |
+| Agent | Sidetree branch | Score | Verdict | Evidence |
 
 Verdict: merged, proposal or abandoned; proposals list what would close their
 gap.

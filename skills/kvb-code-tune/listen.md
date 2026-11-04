@@ -15,6 +15,7 @@ checklist (multi-select) with suggestions, free text allowed:
 3. **Which limits apply to optimizations.** Suggestions: the scope that may
    be changed (files, roles, services); whether new dependencies, toolchains
    or languages may be introduced; whether infrastructure or CI configuration
-   may change; the merge bar (default: the `kvb-org-split` skill's 90 %
-   confidence and under 5 % break risk); a time cap per delegated agent
-   (default 60 minutes).
+   may change; the merge bar (default: the `kvb-org-split` skill's bar of fix
+   confidence ≥ 90 %, break risk ≤ 5 %, efficiency and speed ≤ 100 %, over
+   100 % only after asking the operator, naming the cause); a time cap per
+   delegated agent (default 60 minutes).
