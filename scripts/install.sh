@@ -73,6 +73,15 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	else
 		warn "skills: codebase-memory-mcp is not runnable from PATH; the code graph stays off (see kvb-agent-optimize)."
 	fi
+	if command -v medusa &>/dev/null; then
+		log "skills: the MEDUSA security scanner is installed"
+	elif ! command -v pipx &>/dev/null; then
+		warn "skills: pipx not found; install the MEDUSA scanner with 'pip install --user medusa-security'. Until then kvb-check-security reviews by hand."
+	elif pipx install medusa-security; then
+		log "skills: installed the MEDUSA security scanner for kvb-check-security"
+	else
+		warn "skills: the MEDUSA install failed; kvb-check-security reviews by hand."
+	fi
 fi
 
 log "skills: done. Restart your agent to load the skills."

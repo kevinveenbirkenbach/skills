@@ -15,11 +15,13 @@ and never estimates one itself.
    **Break risk** (percent): probability it breaks anything else, from the
    `kvb-check-break-risk` skill. Two numbers, never one blended figure.
 2. **Score**: pass both, with efficiency from the `kvb-check-efficiency`
-   skill and speed from the `kvb-check-speed` skill, to
+   skill, speed from the `kvb-check-speed` skill and security and the
+   critical count from `security.py` of the `kvb-check-security` skill, to
    `${CLAUDE_SKILL_DIR}/../kvb-check-score/scripts/score.py --fix <n> --break
-   <n> --efficiency <n|-> --speed <n|->` and show its score line and gate line
-   verbatim. Exit 1 fails the 90/5 rule; exit 3 means ask the operator again
-   before the commit, naming the cause the gate line prints.
+   <n> --efficiency <n|-> --speed <n|-> --security <n|~n> --critical <count>`
+   and show its score line and gate line verbatim. Exit 4 forbids the commit
+   (critical finding); exit 1 fails the 90/5 rule; exit 3 means ask the
+   operator again before the commit, naming the causes the gate line prints.
 3. **Evidence**: the strongest proof lines only: what was executed,
    reproduced, enumerated, or read from an authoritative source. Mark proven
    (ran it, saw it) apart from derived (reasoned statically).
