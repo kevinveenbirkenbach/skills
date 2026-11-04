@@ -57,6 +57,7 @@ flowchart LR
   git --> git_update_branches[kvb-git-update-branches]
   git --> git_branch_gc[kvb-git-branch-gc]
   git --> git_changelog[kvb-git-changelog]
+  git --> git_hotfix[kvb-git-hotfix]
   check --> check_legal[kvb-check-legal]
   check --> check_security[kvb-check-security]
   check --> check_principles[kvb-check-principles]
@@ -149,6 +150,7 @@ flowchart LR
     update_branches[kvb-git-update-branches]
     branch_gc[kvb-git-branch-gc]
     changelog[kvb-git-changelog]
+    hotfix[kvb-git-hotfix]
   end
   subgraph cat_check [check]
     advocate[kvb-check-legal]
@@ -232,6 +234,10 @@ flowchart LR
   confidence --> gate
   pr_label --> gate
   gate --> democracy
+  gate --> hotfix
+  triage --> hotfix
+  democracy --> hotfix
+  hotfix --> rasci
   confidence -. objective .-> autotune
 
   coordinate --> democracy

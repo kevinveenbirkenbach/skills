@@ -151,6 +151,15 @@ class TestRasci(unittest.TestCase):
         self._run("set", "work/a", "--status", "running")
         self.assertFalse(any(line.startswith("end:") for line in self._out("get", "work/a")))
 
+    def test_base_names_the_upstream_branch_after_the_branch(self):
+        self._run("set", "work/side", "--branch", "sidetree", "--base", "line")
+        lines = self._out("get", "work/side")
+        self.assertIn("base: line", lines)
+        self.assertEqual(lines.index("base: line"), lines.index("branch: sidetree") + 1)
+        self.assertEqual(json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))["work/side"]["base"], "line")
+        self._run("set", "work/side", "--base", "")
+        self.assertFalse(any(line.startswith("base:") for line in self._out("get", "work/side")))
+
     def test_done_tasks_show_only_with_all(self):
         self._run("set", "work/a", "--status", "done", "--end", "2026-11-01T12:00:00+00:00")
         self._run("role", "work/a", "Skills", "RA")
@@ -278,6 +287,28 @@ class TestRasci(unittest.TestCase):
         self.assertTrue(self._out("show")[2].startswith("| 1 | - | work/c: Gamma |"))
         self._run("estimate", "work/b", "One", "--drop")
         self.assertFalse(any(line.startswith("estimate ") for line in self._out("get", "work/b")))
+
+    def test_hotfix_and_operator_rows_are_no_work_tasks_for_gaps_and_wsjf(self):
+        self._run("set", "work/a")
+        self._run("role", "work/a", "Skills", "RA")
+        self._run("kr", "work/a", "add", "released")
+        self._run("set", "hotfix/db", "--status", "running")
+        self._run("set", "operator/push", "--status", "running")
+        shown = self._out("show")
+        self.assertEqual([line.split(" | ")[2] for line in shown[2:]], ["hotfix/db", "operator/push", "work/a"])
+        self.assertFalse(any(line.startswith("gaps:") for line in shown))
+        self.assertEqual(
+            self._out("wsjf")[2:], ["| 1 | work/a | - (0/1 KR) | - | - | - | - | queued |", "unestimated: work/a"]
+        )
+        self._run("set", "work/b", "--title", "Beta")
+        self.assertEqual(self._out("show")[-1], "gaps: work/b has 0 A; work/b has no R; work/b has no key result")
+        self._run("set", "hotfix/db", "--status", "done", "--branch", "fix/db", "--workdir", "/w/db")
+        self._run("set", "operator/push", "--branch", "main", "--artifact", "dir:/tmp/push")
+        self._run("set", "work/a", "--branch", "feat/a")
+        for args in (("artifacts",), ("artifacts", "--ended"), ("artifacts", "--task", "hotfix/db")):
+            with self.subTest(args=args):
+                self.assertEqual([line.split("\t")[1] for line in self._out(*args)],
+                                 ["work/a"] if args == ("artifacts",) else [])
 
     def test_order_pins_the_agents_in_the_operators_order(self):
         self._run("set", "work/a1", "--worker", "Alpha", "--prio", "1")

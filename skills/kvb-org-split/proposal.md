@@ -1,6 +1,8 @@
 # Proposal
 
-When the bar is out of reach, the agent stops trying and submits a proposal:
+When the bar is out of reach (the deciding evidence, such as a live deploy, a
+production-like dataset or an upstream answer, is not available, or the change
+is inherently riskier), the agent stops trying and submits a proposal:
 
 - what the change does and why it is worth having;
 - the confidence and break risk it reached, with their residuals;

@@ -3,9 +3,10 @@
 `kvb-org-coordinate`, `kvb-ci-triage`, `kvb-code-tune`, `kvb-org-split` and
 `kvb-cleanup` follow these steps.
 
-1. **Look**: `council.py list`, the `kvb-org-rasci` register, the news and the
-   refs (the kvb-git-merge-fix skill's `find_fix.py`). A claim or a committed
-   fix answers the question without a message.
+1. **Look**: `council.py list`, the `kvb-org-rasci` register, the news,
+   `hotfix.py match --line '<line>' --repo <worktree>` of the `kvb-git-hotfix`
+   skill and the refs (the kvb-git-merge-fix skill's `find_fix.py`). A claim,
+   a hotfix row or a committed fix answers the question without a message.
 2. **Claim** the office (Election in `SKILL.md`).
 3. **Ask** (in Claude Code: `ListAgents`, then `SendMessage`) only the peers
    whose lines the work touches, the lineage owners (`lineage.md`) and, for
@@ -21,7 +22,8 @@
    neither a "no" nor a competing claim: after 5 minutes, proceed.
 5. **Report** to the same peers through `news.py post --to <name>`: commit,
    branch, what changed, the evidence it works, and the merge it reaches them
-   by; an abandoned or failed attempt too. In the register, enter the peers
-   told as I and mark every key result the evidence proves as met. Then
-   release the claim: the task ends `done`, or `stopped` while a key result is
-   open.
+   by; an abandoned or failed attempt too. A hotfix is no report: it is
+   recorded with `hotfix.py add` and `update`, never by message or news post.
+   In the register, enter the peers told as I and mark every key result the
+   evidence proves as met. Then release the claim: the task ends `done`, or
+   `stopped` while a key result is open.

@@ -13,7 +13,7 @@ itself (holder as R and A, `running`, start, workdir, branch); its release
 sets `done` and the end, or `stopped` while a key result is still open.
 
 ```bash
-rasci.py set <task> --title <t> --objective <o> --description <d> --prio <n> --status queued|running|blocked|done|stopped --worker "<agent | subagent <type> (<model>)>" --workdir <dir> --branch <b> --artifact <kind>:<ref> --tool <script or command> [--start <iso>] [--end <iso>] [--drop-artifact <a>] [--drop-tool <t>]
+rasci.py set <task> --title <t> --objective <o> --description <d> --prio <n> --status queued|running|blocked|done|stopped --worker "<agent | subagent <type> (<model>)>" --workdir <dir> --branch <b> --base <upstream branch> --artifact <kind>:<ref> --tool <script or command> [--start <iso>] [--end <iso>] [--drop-artifact <a>] [--drop-tool <t>]
 rasci.py kr <task> add "<measurable result>" | met <n> | open <n> | rm <n>
 rasci.py role <task> "<party>" <letters>
 rasci.py get <task>
@@ -68,5 +68,6 @@ published). `done` is refused while one is open; a task ended short of them is
   `get` instead of asking a peer what it works on. `show --wide` adds OKR,
   Artifacts, Start, End and every RASCI letter.
 - When invoked, print `show --wide` unchanged; its `gaps:` line names tasks
-  without exactly one A, without R, or open without a key result. `get`
-  prints one task in full, key results numbered.
+  without exactly one A, without R, or open without a key result. `hotfix/`
+  and `operator/` rows are records, not work tasks: `gaps:`, `wsjf` and
+  `artifacts` skip them. `get` prints one task in full, key results numbered.

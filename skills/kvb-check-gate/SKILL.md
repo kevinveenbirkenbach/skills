@@ -11,26 +11,30 @@ target of the project, each Makefile target named `test` or starting with
 `test-`, ran green on the exact head with a clean tracked tree. Until then
 the numbers are provisional and every target not green is a residual.
 
-`${CLAUDE_SKILL_DIR}/scripts/gate.py` is the deterministic part. It reads the
-targets from the Makefile and every file it includes without running make,
-and keeps the results per commit in `kvb-gate.json` in the git common dir:
-linked worktrees share them, a new commit starts from zero.
+`${CLAUDE_SKILL_DIR}/scripts/gate.py` reads the targets from the Makefile and
+every file it includes without running make, and keeps the results per
+commit in `kvb-gate.json` in the git common dir: linked worktrees share them,
+a new commit starts from zero.
 
 ## Steps
 
-1. **List**: `gate.py list --repo <root>`. A warning about an unresolved
+1. **Sync**: `${CLAUDE_SKILL_DIR}/../kvb-git-hotfix/scripts/hotfix.py sync
+   --repo <root> --task <your register task>`, then `hotfix.py pending
+   --repo <root>`, by the `kvb-git-hotfix` skill. A merge moves HEAD, so the
+   gate starts over from there.
+2. **List**: `gate.py list --repo <root>`. A warning about an unresolved
    include or target expression means the list may be short: read that line
    and name the gap. A project without any target keeps the gate open; ask
    the operator.
-2. **Status**: `gate.py status --repo <root>`. `gate: green` ends here.
-3. **Admit**: every gate target is heavy (`make test` and its siblings run
-   whole suites, often containers). Ask the resource chair of the
+3. **Status**: `gate.py status --repo <root>`. `gate: green` ends here; a
+   `missing hotfix` reason means back to step 1.
+4. **Admit**: every gate target is heavy. Ask the resource chair of the
    `kvb-org-organize` skill per target (what, where, how long, disk), wait
    for the grant, post the release to its news. Only a single test module
    self-admits (`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py
    admit --kind test-nostack`), and it never turns a gate target green. A
    hotfix takes the next free gate slot.
-4. **Run** the missing and red targets, tracked tree clean, in the
+5. **Run** the missing and red targets, tracked tree clean, in the
    background; give the operator `tail -f` on the log:
 
    ```bash
@@ -38,22 +42,32 @@ linked worktrees share them, a new commit starts from zero.
    ```
 
    Pass one `--fail-regex` per failure line the project prints while exiting
-   0; infinito-nexus needs `FAILED TARGETS: \S`. A target is red on a
-   non-zero exit, a `make: ***` line, a matching regex, or tracked files it
-   modified; the last one stops the run.
-5. **Judge** every red target by the line `status` prints and the log around
-   it: caused by the change, already red on the default branch, or the
-   environment. Fix the cause and run again; a red target never counts as
-   green because it looks unrelated.
-6. **Status** once more; its last line is the verdict.
+   0; infinito-nexus needs `FAILED TARGETS: \S`. A non-zero exit, a
+   `make: ***` line, a matching regex or modified tracked files make a
+   target red; the last stops the run. Before each target `run` asks
+   `hotfix.py void` for it and every later one. Exit 3 (`void: merge main
+   for hotfix <slug>, then rerun`): post the release to the news, back to
+   step 1, and the chair's grant again at step 4. Exit 75: the worktree is
+   busy, the message names the holder; wait, then rerun.
+6. **Judge** every red target by its `status` line and the log around it:
+   caused by the change, already red on the default branch, or the
+   environment. Fix the cause and rerun; looking unrelated never makes it
+   green.
+7. **Status** once more; its last line is the verdict.
 
 ## Rules
 
-- Only `gate.py run` on this head marks a target green. A peer's report, a
-  CI run, an older commit or a run on a dirty tree never does.
+- Only `gate.py run` on this head marks a target green. A peer's report, CI,
+  an older commit or a dirty tree never does.
+- Every heavy command in a worktree (deploys, `make test`, other gates) runs
+  through `gate.py run` or `gate.py hold --repo <root> -- <command>` in the
+  background (`run_in_background`), never under a tool timeout or
+  `TaskStop`: it is never cut short. Their lock keeps `hotfix.py sync` out
+  only while a host process under it lives; a `docker compose exec` deploy
+  runs on in its container unguarded.
 - 90/5 is allowed only on `gate: green` for the exact head: in the
-  `kvb-check-confidence` block, the `90/5` label of the `kvb-git-pr-label`
-  skill and the bar of the `kvb-org-split` skill.
+  `kvb-check-confidence` block, the `90/5` label of `kvb-git-pr-label` and
+  the bar of `kvb-org-split`.
 - Never edit `kvb-gate.json` by hand.
 
 ## Output

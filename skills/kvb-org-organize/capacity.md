@@ -9,7 +9,8 @@
   that fixes it) takes the next free gate or test slot before every other
   line, the rest follows the WSJF rank of the `kvb-org-wsjf` skill (it asks its
   subordinates for the Fibonacci estimates); a running gate is never cut short
-  for a hotfix. It answers every request with its queue position through
+  for a hotfix's slot, only when the hotfix voids it (`kvb-git-hotfix`). It
+  answers every request with its queue position through
   `news.py post --to <name>` and sends the grant itself as a message (the
   requester acts on it), enforces the limits the operator set, and checks
   every grant with
@@ -24,7 +25,8 @@
 
 ## Hung jobs
 
-The one exception to "never cut short": an agent may end its own job, a stuck
+Besides a void by a missing merged hotfix (`kvb-git-hotfix`), the only
+exception to "never cut short": an agent may end its own job, a stuck
 step inside it, or a process its own ended session left behind, once at least
 60 minutes passed without log progress and a probe shows standstill (no fresh
 child process, no network traffic, CPU time not moving). It secures the live

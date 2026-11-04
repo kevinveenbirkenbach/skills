@@ -39,13 +39,14 @@ STATUSES = ("queued", "running", "blocked", "done", "stopped")
 ENDED = ("done", "stopped")
 FIELDS = (
     "title", "objective", "description", "prio", "status", "worker", "start", "end", "workdir",
-    "branch",
+    "branch", "base",
 )
-TEXT_FIELDS = ("title", "objective", "description", "worker", "workdir", "branch")
+TEXT_FIELDS = ("title", "objective", "description", "worker", "workdir", "branch", "base")
 LIST_FIELDS = {"tools": "tool"}
 ARTIFACT = re.compile(r"^[a-z]+:\S")
 FIBONACCI = (1, 2, 3, 5, 8, 13, 21, 34, 55, 89)
 OPERATOR = "Operator"
+RECORDS = ("hotfix/", "operator/")
 
 
 def fail(message: str) -> None:
@@ -256,6 +257,8 @@ def okr(row: dict) -> str:
 
 
 def gaps(task: str, row: dict) -> list[str]:
+    if task.startswith(RECORDS):
+        return []
     found = []
     roles = row["roles"]
     accountable = sum("A" in letters for letters in roles.values())
@@ -388,7 +391,7 @@ def cmd_estimate(args: argparse.Namespace) -> int:
 
 
 def cmd_wsjf(args: argparse.Namespace) -> int:
-    rows = merged(args.all)
+    rows = {task: row for task, row in merged(args.all).items() if not task.startswith(RECORDS)}
     if not rows:
         print("no tasks")
         return 0
@@ -414,7 +417,7 @@ def cmd_artifacts(args: argparse.Namespace) -> int:
     rows = merged(True)
     for task in sorted(rows):
         row = rows[task]
-        if args.task and task != args.task:
+        if task.startswith(RECORDS) or (args.task and task != args.task):
             continue
         if args.ended and row["status"] not in (*ENDED, "stale"):
             continue

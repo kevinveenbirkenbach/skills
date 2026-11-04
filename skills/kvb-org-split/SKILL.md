@@ -39,14 +39,16 @@ in a sidetree until it does, or leaves as a proposal.
      never into a message.
 2. **Sidetree.** Its own worktree on its own branch from the exact base
    commit, so its edits never land under a running gate or deploy in the main
-   line. Use the host's worktree isolation when it has one.
+   line. Use the host's worktree isolation if any. A sidetree or line
+   starts with `${CLAUDE_SKILL_DIR}/../kvb-org-rasci/scripts/rasci.py set
+   <task> --branch <own> --base <upstream> --workdir <dir>`.
 3. **Evidence.** Targeted tests, a test for the new behaviour, and a negative
    control: the test fails without the change. Numbers come from the same
    source before and after.
 4. **Self-assessment.** The agent reports fix confidence and break risk with
    their residuals and commits on its branch. Its parent marks proven key
    results met in the `kvb-org-rasci` register and records
-   `--branch` and `--artifact worktree:<path>`.
+   `--artifact worktree:<path>`.
 5. **Independent review.** Before any merge, run the `kvb-think-dialectic`
    skill with skeptics who did not write the change, briefed the same way
    (exact diff and claim, capped answer). A hole returns the change to stage 3.
@@ -58,9 +60,8 @@ in a sidetree until it does, or leaves as a proposal.
 
 ## When the bar is out of reach
 
-When the deciding evidence (a live deploy, a production-like dataset, an
-upstream answer) is not available to the agent or the change is inherently
-riskier, read `proposal.md` next to this file.
+When the deciding evidence is not available to the agent or the change is
+inherently riskier, read `proposal.md` next to this file.
 
 ## Rules
 

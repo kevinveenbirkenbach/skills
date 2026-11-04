@@ -23,8 +23,9 @@ steps 0 to 2 in one call; the judgement stays yours.
    differ beyond interpolated identifiers (host, app, port, path) are
    separate clusters.
 3. **Coordinate** each cluster via the `kvb-org-organize` Peer protocol,
-   lineage included: claim it; read `council.py list`, the register, the news
-   and `find_fix.py`; then ask every live peer for known fixes, one batched
+   lineage included: `${CLAUDE_SKILL_DIR}/../kvb-git-hotfix/scripts/hotfix.py
+   match --line '<line>'` first; claim it; read `council.py list`, the
+   register, the news and `find_fix.py`; ask every live peer, one batched
    `SendMessage` per peer for all clusters nothing there answers. Investigate
    while waiting; take their fix or keep yours. Register (`kvb-org-rasci`):
    objective the root cause fixed, one key result per failing job passing.
