@@ -15,6 +15,13 @@ Args:
         diff stat of that repository.
     --commit <sha>: with --commit-table, the diff stat of that commit instead of
         the staged one, plus a commit column.
+    --message-block: print the commit message block instead of the two lines, one
+        value per line: `🎯 Fix: <f> %`, `💥 Break: <b> %`, `🌱 Efficiency: <e>`,
+        `⚡ Speed: <s>`, `🛡️ Security: <n> %`, `💰 Value: <n:n>` with --value only,
+        `🏆 Score: <n>`, `🚦 Gate: <verdict>`; values and markers as in line 1.
+    --value <n:n|?>: with --table, --commit-table or --message-block, a value after
+        the efficiency one (--message-block: after security): the cost:value quotient of
+        tokens.py of kvb-check-efficiency, `?` when unknown. It changes neither score nor gate.
 
 Output:
     Line 1: `🎯 fix <f> % · 💥 break <b> % · 🌱 efficiency <e> % · ⚡ speed <s> % ·
@@ -46,6 +53,10 @@ NEW = "new"
 ESTIMATE = "~"
 SCORE_HEADER = ("🎯 Fix", "💥 Break", "🌱 Efficiency", "⚡ Speed", "🛡️ Security", "🏆 Score", "Gate")
 COMMIT_HEADER = ("📁 Worktree", "🌿 Branch", "📊 Diff stat")
+VALUE_HEADER = "💰 Value"
+VALUE_AT = SCORE_HEADER.index("🌱 Efficiency") + 1
+UNKNOWN = "?"
+QUOTIENT = re.compile(r"\d+(?:\.\d+)?:\d+(?:\.\d+)?")
 SHORTSTAT = re.compile(
     r"(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?"
 )
@@ -76,6 +87,12 @@ def cost(text: str) -> float | str:
 def security(text: str) -> tuple[float, str]:
     mark = ESTIMATE if text.startswith(ESTIMATE) else ""
     return percent(text.removeprefix(ESTIMATE)), mark
+
+
+def worth(text: str) -> str:
+    if text == UNKNOWN or QUOTIENT.fullmatch(text):
+        return text
+    raise argparse.ArgumentTypeError(f"{text!r} is neither n:n nor {UNKNOWN!r}")
 
 
 def count(text: str) -> int:
@@ -190,10 +207,14 @@ def main() -> int:
     layout = parser.add_mutually_exclusive_group()
     layout.add_argument("--table", action="store_true")
     layout.add_argument("--commit-table", metavar="REPO")
+    layout.add_argument("--message-block", action="store_true")
     parser.add_argument("--commit", metavar="SHA")
+    parser.add_argument("--value", type=worth)
     args = parser.parse_args()
     if args.commit and not args.commit_table:
         parser.error("--commit needs --commit-table")
+    if args.value and not (args.table or args.commit_table or args.message_block):
+        parser.error("--value needs --table, --commit-table or --message-block")
 
     total = score(args)
     emoji, verdict, code = gate(args)
@@ -202,11 +223,22 @@ def main() -> int:
         f"{number(args.fix)} %", f"{number(args.risk)} %", shown(args.efficiency), shown(args.speed),
         f"{mark}{number(value)} %", str(total), f"{emoji} {verdict}",
     ]
+    header, row = list(SCORE_HEADER), list(values)
+    if args.value:
+        header.insert(VALUE_AT, VALUE_HEADER)
+        row.insert(VALUE_AT, args.value)
     if args.commit_table:
-        header, cells = commit_cells(args.commit_table, args.commit)
-        print(table([*header, *SCORE_HEADER], [*cells, *values]))
+        lead, cells = commit_cells(args.commit_table, args.commit)
+        print(table([*lead, *header], [*cells, *row]))
     elif args.table:
-        print(table(list(SCORE_HEADER), values))
+        print(table(header, row))
+    elif args.message_block:
+        worth_line = [f"💰 Value: {args.value}"] if args.value else []
+        print("\n".join((
+            f"🎯 Fix: {values[0]}", f"💥 Break: {values[1]}", f"🌱 Efficiency: {values[2]}",
+            f"⚡ Speed: {values[3]}", f"🛡️ Security: {values[4]}", *worth_line,
+            f"🏆 Score: {total}", f"🚦 Gate: {values[6]}",
+        )))
     else:
         print(
             f"🎯 fix {values[0]} · 💥 break {values[1]} · 🌱 efficiency {values[2]} · "

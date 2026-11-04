@@ -146,6 +146,68 @@ class TestScore(unittest.TestCase):
         self.assertTrue(result.stdout.splitlines()[2].endswith("| ⛔ critical security finding: do not commit |"))
         self.assertEqual(result.returncode, 4)
 
+    def test_message_block_lists_one_value_per_line(self):
+        result = self._run(*flags({**BASE, "efficiency": "97", "speed": "-"}), "--message-block", cwd=REPO_ROOT)
+        self.assertEqual(
+            (result.stdout.splitlines(), result.returncode),
+            (
+                [
+                    "🎯 Fix: 95 %", "💥 Break: 2 %", "🌱 Efficiency: 97 %", "⚡ Speed: –", "🛡️ Security: 100 %",
+                    "🏆 Score: 96", "🚦 Gate: ✅ 90/5, efficiency and speed <= 100, security 100 %",
+                ],
+                0,
+            ),
+        )
+        result = self._run(
+            *flags({**BASE, "security": "~80"}), "--message-block", "--value", "1:20", cwd=REPO_ROOT
+        )
+        self.assertEqual(
+            (result.stdout.splitlines(), result.returncode),
+            (
+                [
+                    "🎯 Fix: 95 %", "💥 Break: 2 %", "🌱 Efficiency: 100 %", "⚡ Speed: 100 %", "🛡️ Security: ~80 %",
+                    "💰 Value: 1:20", "🏆 Score: 74", f"🚦 Gate: ⚠️ security ~80 % < 100{ASK}",
+                ],
+                3,
+            ),
+        )
+
+    def test_message_block_gate_matches_the_gate_line(self):
+        for values, code in (
+            ({}, 0),
+            ({"break": "6"}, 1),
+            ({"efficiency": "new"}, 3),
+            ({"critical": "1"}, 4),
+        ):
+            with self.subTest(values=values):
+                lines, line_code = self._score(**values)
+                block = self._run(*flags({**BASE, **values}), "--message-block", cwd=REPO_ROOT)
+                self.assertEqual((block.returncode, line_code), (code, code))
+                self.assertEqual(block.stdout.splitlines()[-1], "🚦 Gate: " + lines[1].replace(" gate: ", " ", 1))
+                self.assertEqual(len(block.stdout.splitlines()), 7)
+
+    def test_value_column_changes_neither_score_nor_gate(self):
+        for value, verdict, code in (
+            ("1:20", "✅ 90/5, efficiency and speed <= 100, security 100 %", 0),
+            ("4.1:1", "✅ 90/5, efficiency and speed <= 100, security 100 %", 0),
+            ("?", "⚠️ efficiency 120 % > 100" + ASK, 3),
+        ):
+            with self.subTest(value=value):
+                efficiency = "97" if code == 0 else "120"
+                result = self._run(
+                    *flags({**BASE, "efficiency": efficiency, "speed": "-"}), "--table", "--value", value, cwd=REPO_ROOT
+                )
+                score = "96" if code == 0 else "78"
+                self.assertEqual(
+                    result.stdout.splitlines(),
+                    [
+                        HEADER.replace("🌱 Efficiency |", "🌱 Efficiency | 💰 Value |"),
+                        "|" + " --- |" * 8,
+                        f"| 95 % | 2 % | {efficiency} % | {value} | – | 100 % | {score} | {verdict} |",
+                    ],
+                )
+                self.assertEqual(result.returncode, code)
+
     def test_commit_table(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -191,6 +253,15 @@ class TestScore(unittest.TestCase):
         result = self._run(*flags(BASE), "--commit-table", str(repo), "--commit", "HEAD", cwd=repo)
         self.assertEqual(result.stdout.splitlines()[0], "| " + " | ".join([*head, "🔖 Commit"]) + " " + HEADER)
         self.assertEqual(result.stdout.splitlines()[2], f"| {repo.resolve()} | main | 2 files +3/-1 | {sha} " + score)
+        result = self._run(*flags(BASE), "--commit-table", str(repo), "--commit", "HEAD", "--value", "?", cwd=repo)
+        self.assertEqual(
+            result.stdout.splitlines()[0],
+            "| " + " | ".join([*head, "🔖 Commit"]) + " " + HEADER.replace("🌱 Efficiency |", "🌱 Efficiency | 💰 Value |"),
+        )
+        self.assertEqual(
+            result.stdout.splitlines()[2],
+            f"| {repo.resolve()} | main | 2 files +3/-1 | {sha} " + score.replace("| 100 % |", "| 100 % | ? |", 1),
+        )
         git("checkout", "-q", "--detach", "HEAD")
         result = self._run(*flags(BASE), "--commit-table", str(repo), cwd=repo)
         self.assertEqual(result.stdout.splitlines()[2], f"| {repo.resolve()} | detached at {sha} | 0 files +0/-0 " + score)
@@ -211,7 +282,17 @@ class TestScore(unittest.TestCase):
             with self.subTest(missing=missing):
                 values = {k: v for k, v in BASE.items() if k != missing}
                 self.assertEqual(self._run(*flags(values), cwd=REPO_ROOT).returncode, 2)
-        for extra in (("--commit", "HEAD"), ("--table", "--commit-table", str(REPO_ROOT))):
+        for extra in (
+            ("--commit", "HEAD"),
+            ("--table", "--commit-table", str(REPO_ROOT)),
+            ("--message-block", "--table"),
+            ("--message-block", "--commit-table", str(REPO_ROOT)),
+            ("--value", "1:20"),
+            ("--table", "--value", "1-20"),
+            ("--table", "--value", "?:?"),
+            ("--table", "--value", "a:b"),
+            ("--table", "--value", ""),
+        ):
             with self.subTest(extra=extra):
                 self.assertEqual(self._run(*flags(BASE), *extra, cwd=REPO_ROOT).returncode, 2)
 

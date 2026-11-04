@@ -5,15 +5,15 @@ description: >
 ---
 
 Efficiency is the share of its base's resources a change uses: under 100 %
-it saves, over 100 % it costs more. One script call gives one line; paste
-that line, never a paragraph about it. `<ref>` is the commit the change
+it saves, over 100 % it costs more. Paste the script's lines, never a
+paragraph about them. `<ref>` is the commit the change
 starts from: `HEAD` for uncommitted work, the merge base with the default
 branch for a branch.
 
 ## Skills: tokens
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/tokens.py --repo <skills repo> --base <ref>
+python3 ${CLAUDE_SKILL_DIR}/scripts/tokens.py --repo <skills repo> --base <ref> --transcripts ~/.claude/projects [--value <tokens/day> --evidence "<one line>"]
 ```
 
 It compares every changed `*.md` under `skills/`, untracked ones included,
@@ -21,6 +21,20 @@ at `<ref>` with the working tree, and the always-loaded listing: all
 `description:` words, counted by the repository's `scripts/budget.py`.
 Tokens are an estimate, characters / 4. Changed files without any base text
 print `efficiency new`, which counts as over 100. Skills have no speed.
+
+A second line, `💰 value 1:<n>` (`<n>:1` when value < cost), weighs both
+per day and never changes the exit code; pass its quotient or `?` to
+`kvb-check-score --value`.
+
+- **Cost**: listing words delta x 1.33 x requests x 0.1 (cached) plus each
+  changed `SKILL.md`'s tokens delta x its invocations, per day of the last
+  7 days' transcripts (other runtimes: JSONL of that shape). A new skill
+  takes its category's median, named in the line.
+- **Value**: tokens/day saved, derived by one `--evidence` line, e.g.
+  `"3829 SendMessage wakes/day x 10 % avoided x 43k"`; else `?:?`.
+- **Measured**: once shipped, `tokens.py value --repo <repo> --since
+  <commit> --transcripts <dir>` gives the median daily context tokens 7
+  days before minus after; pass it as `--value`.
 
 ## Code: CPU and RAM
 

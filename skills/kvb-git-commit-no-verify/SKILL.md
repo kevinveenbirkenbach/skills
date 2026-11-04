@@ -29,7 +29,13 @@ description: >
    in the message before).
 4. Commit exactly the staging index with `git commit --no-verify` and a
    Conventional-Commits message derived from the staged diff; never add
-   unstaged files, never push.
+   unstaged files, never push. The message carries the output of
+   `score.py ... --message-block` as its own paragraph right before the
+   `Co-Authored-By` line, passed as one `-m` argument
+   (`-m "<subject>" -m "<body>" -m "<block>" -m "Co-Authored-By: ..."`), so
+   the approval prompt shows the values one below the other and git history
+   keeps them. A commit-creating call without the block, `git merge`
+   included, is not sent.
 5. Report the created commit hash, the commit table again with
    `--commit <hash>` (the committed diff stat and a 🔖 Commit column), and
    what remains uncommitted.

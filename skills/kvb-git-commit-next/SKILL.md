@@ -21,13 +21,15 @@ description: >
    (kvb-code-no-comments audit and kvb-check-legal check first, then the
    full staged diff and the kvb-check-score commit table of 📁 worktree,
    🌿 branch, 📊 diff stat, scores with 🛡️ security and gate, then
-   `git commit --no-verify`, exact staging index only, then the table again
-   with the hash). Its approval-prompt duty is binding: the commit call's
-   approval prompt names worktree, branch, diff stat and the score values
-   with 🛡️ security, or the call is not sent. Gate exit 4 (critical security
-   finding): no commit, the call is never sent. Exit 1 is shown and the
-   operator's word decides; exit 3 asks the operator again first, naming
-   each cause.
+   `git commit --no-verify`, exact staging index only, its message carrying
+   the `score.py --message-block` paragraph right before the
+   `Co-Authored-By` line as one `-m` argument, then the table again with the
+   hash). Its approval-prompt duty is binding: the commit call's approval
+   prompt names worktree, branch, diff stat and the score values with
+   🛡️ security, and the message holds the block, or the call is not sent.
+   Gate exit 4 (critical security finding): no commit, the call is never
+   sent. Exit 1 is shown and the operator's word decides; exit 3 asks the
+   operator again first, naming each cause.
 4. Group the remaining uncommitted changes into logical bundles (one concern
    per bundle: same failure class, mechanism or role) and stage the next one;
    never mix concerns to save a commit. Staging happens here and nowhere
