@@ -4,7 +4,7 @@ description: >
   Token cost of skill edits, CPU and RAM of code edits.
 ---
 
-Efficiency is the share of its base's resources a change uses: under 100 %
+💸 Cost is the share of the base's resources a change uses: under 100 %
 it saves, over 100 % it costs more. Paste the script's lines, never a
 paragraph about them. `<ref>` is the commit the change
 starts from: `HEAD` for uncommitted work, the merge base with the default
@@ -20,7 +20,7 @@ It compares every changed `*.md` under `skills/`, untracked ones included,
 at `<ref>` with the working tree, and the always-loaded listing: all
 `description:` words, counted by the repository's `scripts/budget.py`.
 Tokens are an estimate, characters / 4. Changed files without any base text
-print `efficiency new`, which counts as over 100. Skills have no speed.
+print `cost new`, which counts as over 100. Skills have no time.
 
 A second line, `💰 value 1:<n>` (`<n>:1` when value < cost), weighs both
 per day and never changes the exit code; pass its quotient or `?` to
@@ -45,15 +45,15 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/measure.py --base <ref> -- <command...>
 Start it in the directory the command expects. It checks `<ref>` out as a
 detached worktree under `/tmp`, runs the command there and in the working
 tree from the same relative directory, compares CPU seconds and peak RSS,
-and removes the worktree. Efficiency is the mean of the CPU and the RAM
-ratio. The same run measures wall time for `kvb-check-speed`.
+and removes the worktree. Cost is the mean of the CPU and the RAM ratio.
+It also measures wall time for `kvb-check-speed`.
 
 - **Runs**: one per tree. Both values at most 100 end it; otherwise 4 more
   per tree, alternating, and the line reports the mean of all 5
   (`mean of 5`).
 - **Other load**: a 1 s sample of system CPU busy before and after, and per
   run the busy share beyond the command's own CPU time. Above 30 %, or
-  unreadable without `/proc/stat`, the result is an estimate: speed comes
+  unreadable without `/proc/stat`, the result is an estimate: time comes
   from the CPU-time ratio, both values carry `~` and the line ends in
   `(estimated: other load <x> %)`. Pass the numbers without `~` to
   `kvb-check-score`; the exit code holds as for a measured result.
@@ -64,7 +64,7 @@ ratio. The same run measures wall time for `kvb-check-speed`.
   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold --kind <kind>
   --task <register task> -- python3 <measure.py> ...`, in the background,
   by the `kvb-org-queue` skill; a cancelled wait there also exits 3, but
-  prints no 🌱 line. A light one self-admits with
+  prints no 💸 line. A light one self-admits with
   `watch.py admit --kind test-nostack` of `kvb-org-organize`.
 - Report the run you made; never rerun to pick the best result.
 

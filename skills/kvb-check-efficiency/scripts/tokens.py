@@ -15,8 +15,8 @@ Args:
         shipped change instead.
 
 Output:
-    Line 1: `🌱 efficiency <p> % (skills <b>→<a> tokens; listing <b>→<a> words)`, p = after / before * 100,
-    or `🌱 efficiency new (+<a> tokens; listing <b>→<a> words)` when the changed files hold no
+    Line 1: `💸 cost <p> % (skills <b>→<a> tokens; listing <b>→<a> words)`, p = after / before * 100,
+    or `💸 cost new (+<a> tokens; listing <b>→<a> words)` when the changed files hold no
     base tokens. Changed files are the *.md under skills/ that `git diff <ref>` names plus untracked
     ones; a file missing on a side counts 0. Tokens are an estimate: characters / 4. The listing
     is the sum of every skills/*/SKILL.md description word.
@@ -298,9 +298,9 @@ def check(argv: list[str]) -> int:
     else:
         listing = f"listing {listing_before}→{listing_after} words"
         if efficiency is None:
-            print(f"🌱 efficiency new (+{after} tokens; {listing})")
+            print(f"💸 cost new (+{after} tokens; {listing})")
         else:
-            print(f"🌱 efficiency {efficiency} % (skills {before}→{after} tokens; {listing})")
+            print(f"💸 cost {efficiency} % (skills {before}→{after} tokens; {listing})")
         print(money)
     return 3 if efficiency is None or efficiency > LIMIT else 0
 

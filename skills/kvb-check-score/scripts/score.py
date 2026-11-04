@@ -1,38 +1,41 @@
 #!/usr/bin/env python3
-"""Fold fix confidence, break risk, efficiency, speed and security into one score and one gate verdict.
+"""Fold fix confidence, break risk, cost, time and security into one score and one gate verdict.
 
 Args:
     --fix: fix confidence in percent, 0 to 100.
     --break: break risk in percent, 0 to 100.
-    --efficiency: efficiency in percent above 0; `-` when not measured or not
-        relevant, `new` when the change has no base. Both count as 100 in the score.
-    --speed: speed in percent above 0, `-` or `new` as for --efficiency.
+    --efficiency: cost in percent above 0, from kvb-check-efficiency; `-` when not
+        measured or not relevant, `new` when the change has no base. Both count as 100
+        in the score.
+    --speed: time in percent above 0, from kvb-check-speed; `-` or `new` as for
+        --efficiency.
     --security: security in percent, 0 to 100, from security.py of kvb-check-security;
         `~<n>` for a value from a review by hand.
     --critical: count of critical security findings.
     --table: print one markdown table instead of the two lines.
-    --commit-table <repo>: the same table, led by the worktree, branch and staged
-        diff stat of that repository.
+    --commit-table <repo>: the same table, led by the branch and staged diff stat of
+        that repository, then a blank line, `📁 Worktree:` and the top level path
+        alone in a ```text block, so it copies in one go.
     --commit <sha>: with --commit-table, the diff stat of that commit instead of
         the staged one, plus a commit column.
     --message-block: print the commit message block instead of the two lines, one
-        value per line: `🎯 Fix: <f> %`, `💥 Break: <b> %`, `🌱 Efficiency: <e>`,
-        `⚡ Speed: <s>`, `🛡️ Security: <n> %`, `💰 Value: <n:n>` with --value only,
+        value per line: `🎯 Fix: <f> %`, `💥 Break: <b> %`, `💸 Cost: <c>`,
+        `⏱️ Time: <t>`, `🛡️ Security: <n> %`, `💰 Value: <n:n>` with --value only,
         `🏆 Score: <n>`, `🚦 Gate: <verdict>`; values and markers as in line 1.
     --value <n:n|?>: with --table, --commit-table or --message-block, a value after
-        the efficiency one (--message-block: after security): the cost:value quotient of
+        the cost one (--message-block: after security): the cost:value quotient of
         tokens.py of kvb-check-efficiency, `?` when unknown. It changes neither score nor gate.
 
 Output:
-    Line 1: `🎯 fix <f> % · 💥 break <b> % · 🌱 efficiency <e> % · ⚡ speed <s> % ·
+    Line 1: `🎯 fix <f> % · 💥 break <b> % · 💸 cost <c> % · ⏱️ time <t> % ·
         🛡️ security <n> % · 🏆 score <n>`, `–` in place of `<x> %` for `-`, `new` for `new`.
-        Score is fix * (100 - break) / 100 * 100 / efficiency * 100 / speed * security / 100,
+        Score is fix * (100 - break) / 100 * 100 / cost * 100 / time * security / 100,
         capped to 0..100, rounded half up.
     Line 2: the gate verdict, `✅ gate: ...`, `⛔ gate: ...` or `⚠️ gate: ...`.
 
 Exit codes:
     0 gate passed, 1 fix under 90 or break over 5, 2 usage error,
-    3 efficiency or speed over 100 or new, or security under 100: ask the operator
+    3 cost or time over 100 or new, or security under 100: ask the operator
     before the commit, 4 a critical security finding: do not commit.
 """
 
@@ -51,10 +54,11 @@ SAFE = 100
 DASH = "-"
 NEW = "new"
 ESTIMATE = "~"
-SCORE_HEADER = ("🎯 Fix", "💥 Break", "🌱 Efficiency", "⚡ Speed", "🛡️ Security", "🏆 Score", "Gate")
-COMMIT_HEADER = ("📁 Worktree", "🌿 Branch", "📊 Diff stat")
+SCORE_HEADER = ("🎯 Fix", "💥 Break", "💸 Cost", "⏱️ Time", "🛡️ Security", "🏆 Score", "Gate")
+COMMIT_HEADER = ("🌿 Branch", "📊 Diff stat")
+WORKTREE = "📁 Worktree:"
 VALUE_HEADER = "💰 Value"
-VALUE_AT = SCORE_HEADER.index("🌱 Efficiency") + 1
+VALUE_AT = SCORE_HEADER.index("💸 Cost") + 1
 UNKNOWN = "?"
 QUOTIENT = re.compile(r"\d+(?:\.\d+)?:\d+(?:\.\d+)?")
 SHORTSTAT = re.compile(
@@ -143,13 +147,13 @@ def gate(args: argparse.Namespace) -> tuple[str, str, int]:
         failed.append(f"break {number(args.risk)} % > {BREAK_MAX}")
     value, mark = args.security
     unsafe = f"security {mark}{number(value)} % < {SAFE}" if value < SAFE else None
-    asks = [text for text in (over("efficiency", args.efficiency), over("speed", args.speed), unsafe) if text]
+    asks = [text for text in (over("cost", args.efficiency), over("time", args.speed), unsafe) if text]
     ask = f"{', '.join(asks)}: ask the operator before the commit" if asks else ""
     if failed:
         return "⛔", "; ".join(part for part in (", ".join(failed), ask) if part), 1
     if asks:
         return "⚠️", ask, 3
-    return "✅", f"{FIX_MIN}/{BREAK_MAX}, efficiency and speed <= {COST_MAX}, security {SAFE} %", 0
+    return "✅", f"{FIX_MIN}/{BREAK_MAX}, cost and time <= {COST_MAX}, security {SAFE} %", 0
 
 
 def git(repo: str, *args: str) -> str:
@@ -173,13 +177,9 @@ def diffstat(shortstat: str) -> str:
 def commit_cells(repo: str, commit: str | None) -> tuple[list[str], list[str]]:
     branch = git(repo, "branch", "--show-current") or f"detached at {git(repo, 'rev-parse', '--short', 'HEAD')}"
     if commit is None:
-        stat = git(repo, "diff", "--cached", "--shortstat")
-        return list(COMMIT_HEADER), [git(repo, "rev-parse", "--show-toplevel"), branch, diffstat(stat)]
+        return list(COMMIT_HEADER), [branch, diffstat(git(repo, "diff", "--cached", "--shortstat"))]
     stat = git(repo, "show", "--shortstat", "--format=", commit)
-    return (
-        [*COMMIT_HEADER, "🔖 Commit"],
-        [git(repo, "rev-parse", "--show-toplevel"), branch, diffstat(stat), git(repo, "rev-parse", "--short", commit)],
-    )
+    return [*COMMIT_HEADER, "🔖 Commit"], [branch, diffstat(stat), git(repo, "rev-parse", "--short", commit)]
 
 
 def cell(text: str) -> str:
@@ -229,20 +229,22 @@ def main() -> int:
         row.insert(VALUE_AT, args.value)
     if args.commit_table:
         lead, cells = commit_cells(args.commit_table, args.commit)
+        top = git(args.commit_table, "rev-parse", "--show-toplevel")
         print(table([*lead, *header], [*cells, *row]))
+        print(f"\n{WORKTREE}\n\n```text\n{top}\n```")
     elif args.table:
         print(table(header, row))
     elif args.message_block:
         worth_line = [f"💰 Value: {args.value}"] if args.value else []
         print("\n".join((
-            f"🎯 Fix: {values[0]}", f"💥 Break: {values[1]}", f"🌱 Efficiency: {values[2]}",
-            f"⚡ Speed: {values[3]}", f"🛡️ Security: {values[4]}", *worth_line,
+            f"🎯 Fix: {values[0]}", f"💥 Break: {values[1]}", f"💸 Cost: {values[2]}",
+            f"⏱️ Time: {values[3]}", f"🛡️ Security: {values[4]}", *worth_line,
             f"🏆 Score: {total}", f"🚦 Gate: {values[6]}",
         )))
     else:
         print(
-            f"🎯 fix {values[0]} · 💥 break {values[1]} · 🌱 efficiency {values[2]} · "
-            f"⚡ speed {values[3]} · 🛡️ security {values[4]} · 🏆 score {total}"
+            f"🎯 fix {values[0]} · 💥 break {values[1]} · 💸 cost {values[2]} · "
+            f"⏱️ time {values[3]} · 🛡️ security {values[4]} · 🏆 score {total}"
         )
         print(f"{emoji} gate: {verdict}")
     return code

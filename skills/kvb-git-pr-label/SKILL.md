@@ -12,7 +12,7 @@ holds:
   failure on it, a red default-branch run or an issue that reproduces there;
   name the run or issue.
 - **`90/5`**: the pull request meets the bar of the `kvb-org-split` skill (fix
-  confidence ≥ 90 %, break risk ≤ 5 %, efficiency and speed ≤ 100 %; over
+  confidence ≥ 90 %, break risk ≤ 5 %, cost and time ≤ 100 %; over
   100 %, ask the operator first, naming the cause), from the
   `kvb-check-score` block in its body or freshly assessed, and only when
   `gate.py status` of the `kvb-check-gate` skill prints `gate: green` with
@@ -27,7 +27,7 @@ holds:
 3. A missing label is created once: `gh label create hotfix --color B60205
    --description "Fixes a failure on the default branch"`, `gh label create
    90/5 --color 0E8A16 --description
-   "Fix confidence >= 90 %, break risk <= 5 %, efficiency and speed <= 100 %"`.
+   "Fix confidence >= 90 %, break risk <= 5 %, cost and time <= 100 %"`.
 4. Standalone, confirm the changes with one `AskUserQuestion`; from
    `kvb-git-pr-create`, its confirmation covers them.
 5. `gh pr edit <pr> --add-label <l>` or `--remove-label <l>`. A draft that

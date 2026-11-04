@@ -33,8 +33,8 @@ NEW_B = "💰 value ?:? (cost 0/day; pass --value with evidence; kvb-b new: all 
 CHEAP = "print('cheap')\n"
 COSTLY = "data = list(range(2_000_000))\nprint(sum(data))\n"
 LINE = re.compile(
-    r"^🌱 efficiency (?P<mark>~?)(?P<efficiency>\d+) % \(cpu \d+\.\d\d→\d+\.\d\d s, ram \d+\.\d→\d+\.\d MB\) · "
-    r"⚡ speed (?P<speed_mark>~?)(?P<speed>\d+) % \((?P<basis>wall|cpu) \d+\.\d\d→\d+\.\d\d s\)(?P<tail>.*)$"
+    r"^💸 cost (?P<mark>~?)(?P<efficiency>\d+) % \(cpu \d+\.\d\d→\d+\.\d\d s, ram \d+\.\d→\d+\.\d MB\) · "
+    r"⏱️ time (?P<speed_mark>~?)(?P<speed>\d+) % \((?P<basis>wall|cpu) \d+\.\d\d→\d+\.\d\d s\)(?P<tail>.*)$"
 )
 
 
@@ -121,7 +121,7 @@ class TestTokens(GitRepo):
         self.write("skills/kvb-a/scripts/tool.py", "print(1)\n" * 50)
         result = self.tokens()
         self.assertEqual(
-            result.stdout.splitlines(), ["🌱 efficiency 50 % (skills 100→50 tokens; listing 3→3 words)", NO_VALUE]
+            result.stdout.splitlines(), ["💸 cost 50 % (skills 100→50 tokens; listing 3→3 words)", NO_VALUE]
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -130,7 +130,7 @@ class TestTokens(GitRepo):
         self.write("skills/kvb-b/SKILL.md", SKILL_B.ljust(200, "y"))
         result = self.tokens()
         self.assertEqual(
-            result.stdout.splitlines(), ["🌱 efficiency 200 % (skills 100→200 tokens; listing 3→5 words)", NEW_B]
+            result.stdout.splitlines(), ["💸 cost 200 % (skills 100→200 tokens; listing 3→5 words)", NEW_B]
         )
         self.assertEqual(result.returncode, 3)
         result = self.tokens("--json")
@@ -157,7 +157,7 @@ class TestTokens(GitRepo):
     def test_only_new_files_print_new(self):
         self.write("skills/kvb-b/SKILL.md", SKILL_B.ljust(200, "y"))
         result = self.tokens()
-        self.assertEqual(result.stdout.splitlines(), ["🌱 efficiency new (+50 tokens; listing 3→5 words)", NEW_B])
+        self.assertEqual(result.stdout.splitlines(), ["💸 cost new (+50 tokens; listing 3→5 words)", NEW_B])
         self.assertEqual(result.returncode, 3)
         self.assertIsNone(json.loads(self.tokens("--json").stdout)["efficiency"])
 
@@ -165,14 +165,14 @@ class TestTokens(GitRepo):
         self.git("mv", "skills/kvb-a/notes.md", "skills/kvb-a/moved.md")
         result = self.tokens()
         self.assertEqual(
-            result.stdout.splitlines(), ["🌱 efficiency 100 % (skills 100→100 tokens; listing 3→3 words)", NO_VALUE]
+            result.stdout.splitlines(), ["💸 cost 100 % (skills 100→100 tokens; listing 3→3 words)", NO_VALUE]
         )
         self.assertEqual(result.returncode, 0)
 
     def test_no_change_is_100(self):
         result = self.tokens()
         self.assertEqual(
-            result.stdout.splitlines(), ["🌱 efficiency 100 % (skills 0→0 tokens; listing 3→3 words)", NO_VALUE]
+            result.stdout.splitlines(), ["💸 cost 100 % (skills 0→0 tokens; listing 3→3 words)", NO_VALUE]
         )
         self.assertEqual(result.returncode, 0)
 
@@ -193,7 +193,7 @@ class TestTokens(GitRepo):
         self.assertEqual(
             result.stdout.splitlines(),
             [
-                "🌱 efficiency 869 % (skills 13→113 tokens; listing 3→5 words)",
+                "💸 cost 869 % (skills 13→113 tokens; listing 3→5 words)",
                 "💰 value ?:? (cost 203/day; pass --value with evidence)",
             ],
         )

@@ -12,7 +12,7 @@ in a sidetree until it does, or leaves as a proposal.
 
 ## The bar
 
-- **Fix confidence ≥ 90 %, break risk ≤ 5 %, efficiency and speed ≤ 100 %**,
+- **Fix confidence ≥ 90 %, break risk ≤ 5 %, cost and time ≤ 100 %**,
   all from the `kvb-check-score` block of `kvb-check-confidence`; over 100 %,
   ask the operator before the commit, naming the cause.
 - The operator may set a different bar. Never lower it to make a change fit.

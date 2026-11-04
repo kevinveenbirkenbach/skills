@@ -14,8 +14,8 @@ and never estimates one itself.
 1. **Fix confidence** (percent): probability the change does what it claims.
    **Break risk** (percent): probability it breaks anything else, from the
    `kvb-check-break-risk` skill. Two numbers, never one blended figure.
-2. **Score**: pass both, with efficiency from the `kvb-check-efficiency`
-   skill, speed from the `kvb-check-speed` skill and security and the
+2. **Score**: pass both, with cost from the `kvb-check-efficiency`
+   skill, time from the `kvb-check-speed` skill and security and the
    critical count from `security.py` of the `kvb-check-security` skill, to
    `${CLAUDE_SKILL_DIR}/../kvb-check-score/scripts/score.py --fix <n> --break
    <n> --efficiency <n|-> --speed <n|-> --security <n|~n> --critical <count>`

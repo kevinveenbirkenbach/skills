@@ -12,14 +12,14 @@ description: >
 2. Show in the message right before the `git commit` call, never only after
    it, the full staged diff (`git diff --cached`), then the commit table of
    the kvb-check-score skill (`score.py ... --commit-table <worktree>`):
-   📁 worktree, 🌿 branch, 📊 staged diff stat, then fix, break, efficiency,
-   speed, security, score and gate of the staged bundle, as the
+   📁 worktree, 🌿 branch, 📊 staged diff stat, then fix, break, cost,
+   time, security, score and gate of the staged bundle, as the
    kvb-check-confidence skill produces them: break risk derived through the
    kvb-check-break-risk skill, never estimated.
 3. Approval-prompt duty: the commit call's approval prompt (Claude Code: the
    Bash `description`; other runtimes: their prompt text) names the worktree
    path, the branch, the diff stat and the score values (🎯 fix, 💥 break,
-   🌱 efficiency, ⚡ speed, 🛡️ security, 🏆 score). Missing any item: do not
+   💸 cost, ⏱️ time, 🛡️ security, 🏆 score). Missing any item: do not
    send the call. Gate exit 4 (critical security finding) means no commit:
    the call is never sent, not even on the operator's word; fix and rescan
    first. Exit 1 (below 90/5) is shown, the operator's word decides; exit 3

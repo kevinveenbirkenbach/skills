@@ -9,26 +9,26 @@ Args:
         relative to each tree's root; its output is discarded.
 
 Runs:
-    One run per tree, base first. When efficiency and speed are both at most 100 that
+    One run per tree, base first. When cost and time are both at most 100 that
     is the result; otherwise 4 more runs per tree, alternating, and the arithmetic mean
     of all 5 per tree counts.
 
 Other load:
     A 1 s /proc/stat sample of system CPU busy before and after the runs, and per run
     the busy jiffies minus the command's own CPU time, as a share of all jiffies. When
-    any share exceeds 30 % or cannot be read, the result is an estimate: speed comes
+    any share exceeds 30 % or cannot be read, the result is an estimate: time comes
     from the CPU-time ratio instead of wall time.
 
 Output:
-    `🌱 efficiency <p> % (cpu <b>→<a> s, ram <b>→<a> MB) · ⚡ speed <p> % (wall <b>→<a> s)`,
+    `💸 cost <p> % (cpu <b>→<a> s, ram <b>→<a> MB) · ⏱️ time <p> % (wall <b>→<a> s)`,
     then ` · mean of 5` after the extra runs. An estimate marks both values with `~`,
-    shows `(cpu <b>→<a> s)` for speed and ends in `(estimated: other load <x> %)`, or
-    `unknown` for <x>. Efficiency is the mean of the CPU ratio (user plus system seconds
+    shows `(cpu <b>→<a> s)` for time and ends in `(estimated: other load <x> %)`, or
+    `unknown` for <x>. Cost is the mean of the CPU ratio (user plus system seconds
     of the command and its waited-for children) and the peak RSS ratio; each ratio is
     working tree over base, times 100.
 
 Exit codes:
-    0 efficiency and speed at most 100, 2 usage error or a failing command
+    0 cost and time at most 100, 2 usage error or a failing command
     (its tree, exit code and last stderr line on stderr), 3 either over 100.
 """
 
@@ -144,9 +144,9 @@ def line(found: dict) -> str:
     basis = "cpu" if found["estimated"] else "wall"
     before, after = found["base"], found["head"]
     text = (
-        f"🌱 efficiency {mark}{found['efficiency']} % (cpu {before['cpu']:.2f}→{after['cpu']:.2f} s, "
+        f"💸 cost {mark}{found['efficiency']} % (cpu {before['cpu']:.2f}→{after['cpu']:.2f} s, "
         f"ram {before['ram']:.1f}→{after['ram']:.1f} MB) · "
-        f"⚡ speed {mark}{found['speed']} % ({basis} {before[basis]:.2f}→{after[basis]:.2f} s)"
+        f"⏱️ time {mark}{found['speed']} % ({basis} {before[basis]:.2f}→{after[basis]:.2f} s)"
     )
     if found["runs"] > 1:
         text += f" · mean of {found['runs']}"
