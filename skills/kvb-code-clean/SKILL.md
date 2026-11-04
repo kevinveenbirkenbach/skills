@@ -40,11 +40,9 @@ lint proves nothing here.
 
 ## Step 2: defaults
 
-Every parameter, option, setting, environment lookup and template variable
-is supplied by its caller. A missing value aborts at the earliest moment
-(argument parsing, config load, container start) with an error naming the
-key and where to set it; optionality is an explicit `None`/`null` branch at
-the call site, never a fallback inside the accessor.
+Every parameter, setting and environment lookup comes from its caller; a
+missing one aborts early with an error naming the key and where to set it.
+Optionality is an explicit `None` branch at the call site.
 
 `false`, `null`, `""` and an empty list or map are free. Any other default
 carries a comment saying why the value is right for every caller that omits
@@ -57,11 +55,14 @@ misses.
 
 ## Step 3: principles
 
-Apply the lenses of the `kvb-check-principles` skill (SPOT, DRY, SRP,
-KISS/YAGNI, security at trust boundaries, fail fast, coupling) and its
-method (graph first, siblings grepped, every `file:line` read) to the
-touched units. Judge what this change adds or worsens; an older violation in
-a touched unit is one report line, not a fix.
+Run `${CLAUDE_SKILL_DIR}/../kvb-check-principles/scripts/principles.py
+--repo <dir> --ccn 10 --nloc 50 --params 5 --min-tokens 50` (`--staged`,
+`--file` as above; McCabe's, pylint's and jscpd's limits, 50 NLOC one
+screen). Its hits on changed lines are leads under SRP, fail fast,
+KISS/YAGNI and DRY; a `skip:` line leaves that tool's lens to you. Apply the
+other `kvb-check-principles` lenses (SPOT, security, coupling, DRY of
+knowledge) by its method. Judge what this change adds or worsens; an older
+violation is one report line, not a fix.
 
 - Fix in place a violation the change introduced when the fix stays inside
   the bundle and keeps behaviour, proven by the tests covering the touched
@@ -75,5 +76,5 @@ a touched unit is one report line, not a fix.
 One line per step: comments deleted, defaults rewritten or justified,
 principle findings fixed and open, each with file and count. Whatever you
 wrote yourself is admitted without excuses, lowers the bundle's 🎯 fix and
-raises its 💥 break in the `kvb-check-score` block, and goes into persistent
-agent memory (date and pattern), so the calibration persists.
+raises its 💥 break, and goes into persistent agent memory (date and
+pattern).

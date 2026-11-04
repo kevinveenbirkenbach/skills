@@ -82,6 +82,26 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	else
 		warn "skills: the MEDUSA install failed; kvb-check-security reviews by hand."
 	fi
+	lizard_pin="lizard==1.24.1"
+	if command -v lizard &>/dev/null; then
+		log "skills: lizard is installed"
+	elif ! command -v pipx &>/dev/null; then
+		warn "skills: pipx not found; install lizard with 'pipx install ${lizard_pin}'. Until then principles.py skips its complexity hits."
+	elif pipx install "${lizard_pin}"; then
+		log "skills: installed ${lizard_pin} for the principles.py complexity hits"
+	else
+		warn "skills: the lizard install failed; principles.py skips its complexity hits."
+	fi
+	jscpd_pin="jscpd@5.4.2"
+	if command -v jscpd &>/dev/null; then
+		log "skills: jscpd is installed"
+	elif ! command -v npm &>/dev/null; then
+		warn "skills: npm not found; install jscpd with 'npm install --global ${jscpd_pin}'. Until then principles.py skips its clone hits."
+	elif npm install --global "${jscpd_pin}"; then
+		log "skills: installed ${jscpd_pin} for the principles.py clone hits"
+	else
+		warn "skills: the jscpd install failed; principles.py skips its clone hits."
+	fi
 fi
 
 log "skills: done. Restart your agent to load the skills."

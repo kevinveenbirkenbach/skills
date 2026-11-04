@@ -46,9 +46,11 @@ Apply each independently; a finding belongs to exactly one:
 
 ## Method
 
-- **Graph first**: explore through the codebase-memory-mcp graph
-  (`search_graph`, `trace_path`, `get_architecture`, `detect_changes`; the
-  `kvb-agent-optimize` skill sets it up), grep and read after.
+- **Tools and graph first**: on a diff, `scripts/principles.py` (thresholds
+  as in `kvb-code-clean` step 3) turns SRP, fail fast, KISS/YAGNI and textual
+  DRY into `file:line` leads; then the codebase-memory-mcp graph
+  (`search_graph`, `trace_path`, `get_architecture`, `detect_changes`), grep
+  and read after.
 - **Evidence before verdict**: every finding carries a `file:line` you read.
   Grep the sibling occurrences before calling something a duplicate; one hit
   is not a pattern.
@@ -58,8 +60,6 @@ Apply each independently; a finding belongs to exactly one:
 - **Attack your own finding**: run anything consequential or expensive to fix
   through the `kvb-think-dialectic` skill before reporting it; the strongest
   counter is usually "not the same knowledge" or "already checked upstream".
-  Skeptics scale with the stakes; each brief names the `file:line` and the
-  claim and caps the answer at five lines.
 - **Respect intent**: a deliberate marker (`ponytail:`, a documented
   exception, a nocheck directive with a reason) is a known ceiling, a finding
   only once exceeded.
