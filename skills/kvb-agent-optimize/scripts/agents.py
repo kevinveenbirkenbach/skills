@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report how ready a repository is for agents: instructions, pointers, code index.
+"""Report how ready a repository is for agents: instructions, runtime-specific files, code index.
 
 Args:
     --repo: path of the repository.
@@ -21,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-POINTERS = ("CLAUDE.md", "GEMINI.md")
+RUNTIME_FILES = ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md", "GEMINI.md")
 INDEX = "codebase-memory-mcp"
 SNAPSHOT = ".codebase-memory/graph.db.zst"
 LINK = re.compile(r"\]\(([^)\s#]+)")
@@ -50,11 +50,11 @@ def checks(repo: Path) -> list[tuple[str, str, str]]:
     agents = repo / "AGENTS.md"
     text = agents.read_text(encoding="utf-8") if agents.is_file() else ""
     rows = [("AGENTS.md", "ok" if text else "missing", "single source of the agent instructions")]
-    for name in POINTERS:
-        pointer = repo / name
-        if pointer.is_file():
-            points = "AGENTS.md" in pointer.read_text(encoding="utf-8")
-            rows.append((name, "ok" if points else "drift", f"{'points' if points else 'does not point'} to AGENTS.md"))
+    rows.extend(
+        (name, "drift", "runtime-specific; fold into AGENTS.md and remove")
+        for name in RUNTIME_FILES
+        if (repo / name).is_file()
+    )
     dead = sorted(
         {
             target

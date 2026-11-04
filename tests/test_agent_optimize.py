@@ -1,4 +1,4 @@
-"""Exercise agents.py: instruction pointers, dead links, index pointer, binary and snapshot state."""
+"""Exercise agents.py: runtime-specific files, dead links, index pointer, binary and snapshot state."""
 
 from __future__ import annotations
 
@@ -48,6 +48,9 @@ class TestAgents(unittest.TestCase):
         )
         (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
         (repo / "GEMINI.md").write_text("own rules\n", encoding="utf-8")
+        (repo / ".claude").mkdir()
+        (repo / ".claude" / "CLAUDE.md").write_text("x\n", encoding="utf-8")
+        (repo / "CLAUDE.local.md").write_text("x\n", encoding="utf-8")
         (repo / ".codebase-memory").mkdir()
         (repo / ".codebase-memory" / "graph.db.zst").write_bytes(b"x")
         (repo / ".gitignore").write_text(".codebase-memory/\n", encoding="utf-8")
@@ -59,8 +62,10 @@ class TestAgents(unittest.TestCase):
             self._report(repo),
             {
                 "AGENTS.md": ("ok", "single source of the agent instructions"),
-                "CLAUDE.md": ("ok", "points to AGENTS.md"),
-                "GEMINI.md": ("drift", "does not point to AGENTS.md"),
+                "CLAUDE.md": ("drift", "runtime-specific; fold into AGENTS.md and remove"),
+                ".claude/CLAUDE.md": ("drift", "runtime-specific; fold into AGENTS.md and remove"),
+                "CLAUDE.local.md": ("drift", "runtime-specific; fold into AGENTS.md and remove"),
+                "GEMINI.md": ("drift", "runtime-specific; fold into AGENTS.md and remove"),
                 "links": ("drift", "docs/b.md"),
                 "index-pointer": ("ok", "AGENTS.md names codebase-memory-mcp"),
                 "index-binary": ("ok", "codebase-memory-mcp on PATH"),

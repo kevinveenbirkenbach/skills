@@ -15,8 +15,8 @@ scope: the current one, or those `kvb-optimize` hands over.
 ## Step 1: inventory
 
 `${CLAUDE_SKILL_DIR}/scripts/agents.py --repo <dir>` prints one line per
-check: AGENTS.md, whether CLAUDE.md and GEMINI.md point to it, dead relative
-links in it, whether it names the index, whether the index binary is
+check: AGENTS.md, any runtime-specific instruction file beside it, dead
+relative links in it, whether it names the index, whether the index binary is
 installed, and the state of the shared snapshot
 `.codebase-memory/graph.db.zst`.
 
@@ -48,8 +48,11 @@ installed, and the state of the shared snapshot
 
 ## Step 3: instructions
 
-- AGENTS.md is the single source; CLAUDE.md and GEMINI.md only point to it
-  (`@AGENTS.md`).
+- AGENTS.md is the only instruction file: fold any `CLAUDE.md`,
+  `.claude/CLAUDE.md`, `CLAUDE.local.md` or `GEMINI.md` into it and remove
+  them. Claude Code reads AGENTS.md natively (v2.1.277+) but skips it while a
+  `CLAUDE.md` is on the path; Gemini CLI reads it once `context.fileName`
+  lists it.
 - AGENTS.md sends code questions to the graph first (`search_graph`,
   `trace_path`, `get_architecture`) and to grep only after it.
 - `/claude-api prompt-audit` over AGENTS.md and the files it references finds
