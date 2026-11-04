@@ -64,15 +64,14 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	else
 		warn "skills: no systemd user session; skipped the kvb-dream notification timer."
 	fi
-	if ! command -v codebase-memory-mcp &>/dev/null && command -v yay &>/dev/null; then
-		log "skills: installing the codebase-memory-mcp code graph"
-		yay -S --needed codebase-memory-mcp-bin
+	log "skills: installing or updating the codebase-memory-mcp code graph for every detected agent"
+	if ! curl -fsSL --proto '=https' https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash; then
+		warn "skills: the codebase-memory-mcp installer failed; the code graph keeps its previous setup."
 	fi
-	if command -v codebase-memory-mcp &>/dev/null; then
+	if (ulimit -c 0; codebase-memory-mcp config set auto_index true); then
 		log "skills: auto-indexing every repository a session opens into the code graph"
-		codebase-memory-mcp config set auto_index true
 	else
-		warn "skills: codebase-memory-mcp not installed; the code graph stays off (see kvb-agent-optimize)."
+		warn "skills: codebase-memory-mcp is not runnable from PATH; the code graph stays off (see kvb-agent-optimize)."
 	fi
 fi
 

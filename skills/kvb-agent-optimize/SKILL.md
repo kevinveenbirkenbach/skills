@@ -22,13 +22,13 @@ installed, and the state of the shared snapshot
 
 ## Step 2: index
 
-- **Binary missing**: the skills repository's `make install` installs it
-  (`yay -S --needed codebase-memory-mcp-bin` where yay exists) and enables
-  the `codebase-memory@codebase-memory` plugin with its marketplace in the
-  settings. Installing touches the agent configuration and needs sudo, so it
-  is the operator's step: hand `make install` (or, without yay, the
-  package's install on that system) to the `kvb-org-operator` skill and
-  continue after the restart.
+- **Binary missing**: the skills repository's `make install` runs the
+  upstream installer, which installs the checksum-verified release (static
+  on Linux) into `~/.local/bin` and wires the graph into every agent it
+  detects (Claude Code, Codex, Gemini, Hermes, OpenClaw and more); rerunning
+  it updates. It writes the agents' configuration, so it is the operator's
+  step: hand `make install` to the `kvb-org-operator` skill and continue
+  after the restart.
 
 - **Index**: once installed, the skills repository's `make install` switches
   `auto_index` on, so every repository a session opens is indexed and

@@ -162,12 +162,18 @@ class TestSettingsRegistration(unittest.TestCase):
         self.assertEqual(gate.count("kvb-org-perform/scripts/log.py"), 1)
         self.assertEqual(post.count("kvb-org-perform/scripts/log.py"), 1)
 
-    def test_code_graph_plugin_is_enabled_with_its_marketplace(self):
-        data = self._patch()
-        self.assertTrue(data["enabledPlugins"]["codebase-memory@codebase-memory"])
-        self.assertEqual(
-            data["extraKnownMarketplaces"]["codebase-memory"]["source"]["repo"], "DeusData/codebase-memory-mcp"
+    def test_code_graph_plugin_is_retired_for_the_agent_agnostic_installer(self):
+        self.settings.write_text(
+            json.dumps({
+                "enabledPlugins": {"codebase-memory@codebase-memory": True},
+                "extraKnownMarketplaces": {"codebase-memory": {"source": {"source": "github", "repo": "x/y"}}},
+            }),
+            encoding="utf-8",
         )
+        data = self._patch()
+        self.assertNotIn("codebase-memory@codebase-memory", data["enabledPlugins"])
+        self.assertNotIn("codebase-memory", data["extraKnownMarketplaces"])
+        self.assertTrue(data["enabledPlugins"]["caveman@caveman"])
 
     def test_compact_window_is_set_once_and_never_overwritten(self):
         self.assertEqual(self._patch()["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "500000")

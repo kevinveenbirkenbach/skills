@@ -13,13 +13,13 @@ if (!settingsPath) {
 const MARKETPLACES = {
   caveman: { source: { source: "github", repo: "JuliusBrussee/caveman" } },
   ponytail: { source: { source: "github", repo: "DietrichGebert/ponytail" } },
-  "codebase-memory": { source: { source: "github", repo: "DeusData/codebase-memory-mcp" } },
 };
 const PLUGINS = {
   "caveman@caveman": true,
   "ponytail@ponytail": true,
-  "codebase-memory@codebase-memory": true,
 };
+// Trip-wire: `codebase-memory-mcp install` registers the same server for every agent, Claude Code included; the plugin on top runs it twice.
+const RETIRED_PLUGINS = { "codebase-memory@codebase-memory": "codebase-memory" };
 const REMINDERS = ["kvb-dream", "kvb-coach"];
 const RETIRED = [
   "autotune/hooks/reminder.sh",
@@ -53,6 +53,10 @@ for (const [name, entry] of Object.entries(MARKETPLACES)) {
   if (!data.extraKnownMarketplaces[name]) data.extraKnownMarketplaces[name] = entry;
 }
 data.enabledPlugins = Object.assign(data.enabledPlugins || {}, PLUGINS);
+for (const [plugin, marketplace] of Object.entries(RETIRED_PLUGINS)) {
+  delete data.enabledPlugins[plugin];
+  delete data.extraKnownMarketplaces[marketplace];
+}
 data.env = data.env || {};
 if (!data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "500000";
 
@@ -124,4 +128,4 @@ for (const [script, event, matcher, sub] of SCRIPT_HOOKS) {
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled the caveman, ponytail and codebase-memory plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, news hook and resource watch, and the kvb-org-perform log in ${settingsPath}`);
+console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, news hook and resource watch, and the kvb-org-perform log in ${settingsPath}`);
