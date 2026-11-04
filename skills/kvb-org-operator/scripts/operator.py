@@ -226,14 +226,15 @@ def cmd_list(rasci: ModuleType, args: argparse.Namespace) -> int:
     for number, row in enumerate(listed, 1):
         values = (number, row["directory"] or "-", row["command"] or "-", row["why"] or "-", row["check"])
         print("| " + " | ".join(cell(v) for v in values) + " |")
-    print()
-    print("```bash")
-    for row in listed:
-        if row["directory"]:
+    # Trip-wire: legacy rows carry a prose title and no directory; only rows recorded by `add` are commands.
+    runnable = [row for row in listed if row["directory"] and row["command"]]
+    if runnable:
+        print()
+        print("```bash")
+        for row in runnable:
             print(f"cd {shlex.quote(row['directory'])}")
-        if row["command"]:
             print(row["command"])
-    print("```")
+        print("```")
     return 0
 
 

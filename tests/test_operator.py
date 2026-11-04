@@ -194,8 +194,17 @@ class TestOperator(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
             self._out("list"),
-            [HEADER, "|---|---|---|---|---|", "| 1 | - | sudo reboot | - | manual |", "", "```bash",
-             "sudo reboot", "```"],
+            [HEADER, "|---|---|---|---|---|", "| 1 | - | sudo reboot | - | manual |"],
+        )
+
+    def test_bash_block_skips_legacy_rows_without_directory(self):
+        result = self._run("set", "operator/legacy", "--title", "Rotate leaked credentials", "--status", "queued",
+                           script=RASCI)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self._add("reboot", self.base, "sudo reboot", "kernel", "manual")
+        self.assertEqual(
+            self._out("list")[-4:],
+            ["```bash", f"cd {self.base}", "sudo reboot", "```"],
         )
 
     def test_invalid_input_exits_2(self):
