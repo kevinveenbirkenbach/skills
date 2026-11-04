@@ -56,6 +56,7 @@ flowchart LR
   git --> git_pr_label[kvb-git-pr-label]
   git --> git_update_branches[kvb-git-update-branches]
   git --> git_branch_gc[kvb-git-branch-gc]
+  git --> git_orphans_find[kvb-git-orphans-find]
   git --> git_changelog[kvb-git-changelog]
   git --> git_hotfix[kvb-git-hotfix]
   check --> check_legal[kvb-check-legal]
@@ -156,6 +157,7 @@ flowchart LR
     pr_label[kvb-git-pr-label]
     update_branches[kvb-git-update-branches]
     branch_gc[kvb-git-branch-gc]
+    orphans_find[kvb-git-orphans-find]
     changelog[kvb-git-changelog]
     hotfix[kvb-git-hotfix]
   end
@@ -261,8 +263,11 @@ flowchart LR
 
   coordinate --> democracy
   cleanup --> democracy
-  cleanup --> branch_gc
+  cleanup --> orphans_find
   branch_gc --> democracy
+  orphans_find --> branch_gc
+  orphans_find --> choice
+  orphans_find --> operator
   funnel --> democracy
   funnel --> dialectic
   funnel --> subagent_model
@@ -312,7 +317,7 @@ flowchart LR
   dream --> dialectic
   dream --> optimize
   dream --> cleanup
-  dream --> branch_gc
+  dream --> orphans_find
   optimize --> skill_cleanup
   optimize --> transcend
   optimize --> autoskill

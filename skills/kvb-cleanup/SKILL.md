@@ -21,20 +21,21 @@ request and stop, or, when the operator ordered the cleanup here, first
 ## Step 1: inventory
 
 Read-only, in parallel, with sizes, only in the agent write scope (Claude
-Code: `sandbox.filesystem.allowWrite`) and session scratch dirs, even where
-more is readable; never another user's files. Prefer the project's cleanup
-and teardown targets; obey rules forbidding raw commands.
+Code: `sandbox.filesystem.allowWrite`) and session scratch dirs; never
+another user's files. Prefer the project's cleanup and teardown targets; obey
+rules forbidding raw commands.
 
 - **/tmp**: `du -sh` per own top-level entry; system entries (`.X11-unix`,
   `.ICE-unix`, `systemd-private-*`, `ssh-*`, `tmux-*`, sockets) are never
   candidates.
 - **Docker**, **worktrees**: read `docker.md` (its `⚠ Volumes` checklist
-  joins Step 4) and `worktrees.md` next to this file when present.
+  joins Step 4) and `worktrees.md` next to this file when present. Only at
+  watch stage `warn` or worse, or with worktrees among the biggest consumers:
+  `kvb-git-orphans-find --sizes`, its largest orphaned worktrees as candidates.
 - **Agent dirs**: pip, npm, pre-commit, act, gh, buildx caches; Ansible and
   build temp dirs.
 - **Register**: `council.py list --long`; `rasci.py artifacts` (`kvb-org-artefacts`,
-  `--ended` for candidates): workdir, branch, artifacts, status and worker per
-  `kvb-org-rasci` task.
+  `--ended` for candidates).
 - **Live use**: `fuser`, `lsof`, `ps -o pid,etime,comm`, never full command
   lines or environments (credentials). Sandboxed, an empty result proves
   nothing.
@@ -54,8 +55,8 @@ First match wins: claimed by a peer, `keep`; in a register task not `done`,
 `stopped` or `stale`, `keep (task <task>)` (an ended task's items are its
 worker's candidates); a running deploy, gate, test, swarm run or build, `keep
 (running)`; a silent peer's, `keep (no answer from <peer>)`, silence is not
-consent; sandboxed, anything touched within 24 hours (`find -mtime +0` lists
-the older), `keep (recent, possibly in use)`; archive duty,
+consent; sandboxed, anything touched within 24 hours, `keep (recent,
+possibly in use)`; archive duty,
 `archive first`, never a plain delete. Else a candidate:
 
 - **low**, regenerated cheaply: stopped containers without volumes, dangling
