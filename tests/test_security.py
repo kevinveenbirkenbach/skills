@@ -163,6 +163,18 @@ class TestSecurity(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("--sha1 must be 40 lowercase hex digits", result.stderr)
 
+    def test_one_accept_takes_every_rule_of_a_line(self):
+        line = "z = both()  # MARK-HIGH MARK-LOW"
+        self.write("app.py", f"{line}\n")
+        sha1 = hashlib.sha1(line.encode()).hexdigest()
+        result = self.accept(
+            "--rule", "FAKE-HIGH", "--rule", "FAKE-LOW", "--path", "app.py", "--sha1", sha1, "--reason", "fixture"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("accepted FAKE-HIGH, FAKE-LOW app.py", result.stdout)
+        result = self.scan(env=self.env)
+        self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings, 2 accepted in 1 file)\n")
+
     def test_critical_exits_1_and_floors_at_0(self):
         self.write("app.py", "a  # MARK-CRITICAL\nb  # MARK-CRITICAL\nc  # MARK-CRITICAL\n")
         result = self.scan(env=self.env)

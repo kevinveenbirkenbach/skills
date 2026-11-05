@@ -6,9 +6,9 @@ Args:
     --base: git ref the change starts from.
     --json: print the figures as JSON instead of the line.
 
-    accept --repo <root> --rule <rule_id> --path <repo path> --sha1 <40 hex> --reason <one line>:
-        record a reviewed false positive instead; --json of a scan prints rule, path
-        and sha1 of every finding.
+    accept --repo <root> --rule <rule_id> [--rule ...] --path <repo path> --sha1 <40 hex> --reason <one line>:
+        record reviewed false positives of one line instead, a row per rule; --json
+        of a scan prints rule, path and sha1 of every finding.
 
 Scan:
     The regular files `git diff <ref>` names plus untracked ones, symlinks left
@@ -151,25 +151,29 @@ def accepted(listings: tuple[Path, ...]) -> set[tuple[str, str, str]]:
 
 def accept(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="security.py accept", description="Record a reviewed false positive.")
-    for flag in ("--repo", "--rule", "--path", "--sha1", "--reason"):
+    for flag in ("--repo", "--path", "--sha1", "--reason"):
         parser.add_argument(flag, required=True)
+    parser.add_argument("--rule", action="append", required=True)
     args = parser.parse_args(argv)
     if not SHA1.fullmatch(args.sha1):
         parser.error("--sha1 must be 40 lowercase hex digits")
     if not args.reason.strip() or "\n" in args.reason:
         parser.error("--reason must be one non-empty line")
     root = git(Path(args.repo), "rev-parse", "--show-toplevel").strip()
-    key = f"{args.rule}\t{args.path}\t{args.sha1}"
-    row = {
-        "id": hashlib.sha1(key.encode()).hexdigest(), "rule": args.rule, "path": args.path, "sha1": args.sha1,
-        "reason": args.reason, "repo": root, "date": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
-    }
+    date = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+    rows = [
+        {
+            "id": hashlib.sha1(f"{rule}\t{args.path}\t{args.sha1}".encode()).hexdigest(), "rule": rule,
+            "path": args.path, "sha1": args.sha1, "reason": args.reason, "repo": root, "date": date,
+        }
+        for rule in args.rule
+    ]
     target = watch().ACCEPTED
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8") as listing:
         fcntl.flock(listing, fcntl.LOCK_EX)
-        listing.write(json.dumps(row) + "\n")
-    print(f"accepted {args.rule} {args.path} ({args.sha1[:12]}) in {target}")
+        listing.write("".join(json.dumps(row) + "\n" for row in rows))
+    print(f"accepted {', '.join(args.rule)} {args.path} ({args.sha1[:12]}) in {target}")
     return 0
 
 

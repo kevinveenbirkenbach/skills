@@ -47,12 +47,12 @@ value. Pass `<n>` as `--security` and the critical count as `--critical`
   `--security '~<n>'` (quoted: zsh expands a bare `~100` as a user's home) and the critical findings you found as `--critical`.
 - Exit 2: usage error.
 - **Accepted false positives**: `security.py accept --repo <root> --rule
-  <id> --path <path> --sha1 <sha1> --reason "<one line>"`, rule, path and
-  sha1 from `--json`, appends a row outside the repository: to the council
-  root, which the `kvb-org-organize` watch hook keeps in
-  `~/.local/state/agents-council/`. A match leaves the score and shows as
-  `<a> accepted`; editing the line brings it back. Accept only after reading
-  the rule's pattern, and name each acceptance in the commit message.
+  <id> [--rule <id> ...] --path <path> --sha1 <sha1> --reason "<one line>"`
+  (from `--json`) appends a row per rule to the council root, which the
+  `kvb-org-organize` watch hook mirrors to `~/.local/state/agents-council/`.
+  A match leaves the score as `<a> accepted` until the line changes. Accept
+  only after `kvb-think-criticize` judged it a false positive or by design;
+  name each acceptance in the commit message.
 
 ## Rules
 
