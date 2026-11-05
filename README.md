@@ -58,6 +58,7 @@ flowchart LR
   git --> git_orphans_find[kvb-git-orphans-find]
   git --> git_changelog[kvb-git-changelog]
   git --> git_hotfix[kvb-git-hotfix]
+  git --> git_push[kvb-git-push]
   check --> check_legal[kvb-check-legal]
   check --> check_security[kvb-check-security]
   check --> check_principles[kvb-check-principles]
@@ -158,6 +159,7 @@ flowchart LR
     orphans_find[kvb-git-orphans-find]
     changelog[kvb-git-changelog]
     hotfix[kvb-git-hotfix]
+    git_push[kvb-git-push]
   end
   subgraph cat_check [check]
     advocate[kvb-check-legal]
