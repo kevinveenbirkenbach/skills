@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import importlib.util
 import json
 import os
@@ -399,6 +400,54 @@ class TestQueueCommands(unittest.TestCase):
             [line.split("\t")[:3] for line in listing.stdout.splitlines()[1:]],
             [["run", "test-4", "active"], ["1", "test-5", "waiting"]],
         )
+
+    def test_list_keeps_a_lock_holder_whose_pid_another_namespace_hides(self):
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        holds = self.root / "holds"
+        holds.mkdir(parents=True)
+        script = (
+            "import fcntl, sys, time; h = open(sys.argv[1], 'w'); fcntl.flock(h, fcntl.LOCK_EX); "
+            "print('locked', flush=True); time.sleep(60)"
+        )
+        holder = subprocess.Popen(
+            [sys.executable, "-c", script, str(holds / "5-6.lock")], stdout=subprocess.PIPE, text=True
+        )
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        self.addCleanup(holder.stdout.close)
+        self.assertEqual(holder.stdout.readline().strip(), "locked")
+        (holds / "1-2.lock").write_text("", encoding="utf-8")
+        outside = self.root / "outside.lock"
+        outside.write_text("", encoding="utf-8")
+        self.write_store([
+            {**stored(1, "waiting", gone.pid, "1", None, None), "lock": "5-6"},
+            {**stored(2, "waiting", gone.pid, "1", None, None), "lock": "1-2"},
+            {**stored(3, "active", gone.pid, "1", gone.pid, "1"), "lock": "3-4"},
+            {**stored(4, "waiting", gone.pid, "1", None, None), "lock": "../outside"},
+        ])
+        listing = self.run_queue("list")
+        self.assertEqual(listing.returncode, 0, listing.stderr)
+        self.assertEqual([e["id"] for e in self.entries()], ["test-1"])
+        self.assertFalse((holds / "1-2.lock").exists())
+        self.assertTrue(outside.exists())
+        holder.kill()
+        holder.wait()
+        self.assertEqual(self.run_queue("list").returncode, 0)
+        self.assertEqual(self.entries(), [])
+
+    def test_hold_locks_while_waiting_and_cleans_up(self):
+        self.cfg["slot_limits"]["deploy"] = 0
+        self.write_config()
+        hold, _ = self.blocked_hold("true")
+        entry = self.entries()[0]
+        lock = self.root / "holds" / f"{entry['lock']}.lock"
+        with lock.open(encoding="utf-8") as handle, self.assertRaises(BlockingIOError):
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        hold.send_signal(signal.SIGTERM)
+        self.assertEqual(hold.wait(timeout=30), 128 + signal.SIGTERM)
+        self.assertFalse(lock.exists())
+        self.assertEqual(self.entries(), [])
 
     def test_hold_takes_the_need_learned_for_its_command_from_both_history_files(self):
         self.cfg["slot_limits"]["deploy"] = 0

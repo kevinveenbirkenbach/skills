@@ -12,6 +12,10 @@ Environment:
     AGENTS_COUNCIL_ROOT: shared state directory; /tmp/agents-council unless set,
         because every agent on the host must agree on it. The queue is
         <root>/queue.json, every read-modify-write holds <root>/queue.lock.
+        Each hold keeps an exclusive flock on <root>/holds/<tag>.lock, shared
+        with its command, from before its entry exists until it leaves; an
+        entry whose lock nobody holds is dead. Pids cannot tell, because every
+        sandboxed tool call has its own PID namespace.
         Every finished job appends a row (history.py) to
         <root>/queue-history.jsonl; the watch hook of watch.py keeps a copy in
         ~/.local/state/agents-council/queue-history.jsonl, and reading merges
@@ -119,6 +123,8 @@ watch = sibling("watch")
 history = sibling("history")
 STORE = watch.ROOT / "queue.json"
 LOCK = watch.ROOT / "queue.lock"
+HOLDS = watch.ROOT / "holds"
+TAG = re.compile(r"\d+-\d+")
 SILENCE = watch.ROOT / "radio-silence.json"
 HISTORIES = (watch.HISTORY, watch.KEPT_HISTORY)
 
@@ -178,11 +184,46 @@ def alive(pid: int | None, start: str | None) -> bool:
     return pid is not None and start is not None and identity(pid) == start
 
 
+def held(tag: object) -> bool:
+    if not isinstance(tag, str) or not TAG.fullmatch(tag):
+        return False
+    path = HOLDS / f"{tag}.lock"
+    try:
+        handle = path.open(encoding="utf-8")
+    except FileNotFoundError:
+        return False
+    with handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+    path.unlink(missing_ok=True)
+    return False
+
+
+@contextlib.contextmanager
+def holding() -> Iterator[tuple[str, int]]:
+    HOLDS.mkdir(parents=True, exist_ok=True)
+    tag = f"{os.getpid()}-{time.time_ns()}"
+    path = HOLDS / f"{tag}.lock"
+    with path.open("w", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield tag, handle.fileno()
+        finally:
+            path.unlink(missing_ok=True)
+
+
+def living(entry: dict) -> bool:
+    if "lock" in entry:
+        return held(entry["lock"])
+    return alive(entry["pid"], entry["pid_start"]) or (
+        entry["status"] == "active" and alive(entry["child"], entry["child_start"])
+    )
+
+
 def prune(entries: list[dict]) -> list[dict]:
-    return [
-        e for e in entries
-        if alive(e["pid"], e["pid_start"]) or (e["status"] == "active" and alive(e["child"], e["child_start"]))
-    ]
+    return [e for e in entries if living(e)]
 
 
 def read_store() -> dict:
@@ -447,36 +488,38 @@ def cmd_hold(args: argparse.Namespace) -> int:
 
     for signum in FORWARDED:
         signal.signal(signum, forward)
-    entry = enqueue({
-        "kind": args.kind, "task": args.task, "need_gb": need, "hotfix": args.hotfix,
-        "workdir": workdir(), "session": session, "name": council.live_sessions().get(session) or session,
-        "pid": os.getpid(), "pid_start": identity(os.getpid()), "child": None, "child_start": None,
-        "status": "waiting", "enqueued": time.time(), "granted": None, "cmd": shlex.join(args.command),
-    })
-    try:
-        code, concurrent = wait(cfg, entry["id"], args.kind, caught)
-        if code is not None:
-            return code
-        if caught:
-            return 128 + caught[0]
-        samples = [measure(cfg)]
-        start = time.time()
+    with holding() as (tag, lock_fd):
+        entry = enqueue({
+            "kind": args.kind, "task": args.task, "need_gb": need, "hotfix": args.hotfix,
+            "workdir": workdir(), "session": session, "name": council.live_sessions().get(session) or session,
+            "lock": tag, "pid": os.getpid(), "pid_start": identity(os.getpid()), "child": None,
+            "child_start": None, "status": "waiting", "enqueued": time.time(), "granted": None,
+            "cmd": shlex.join(args.command),
+        })
         try:
-            child = subprocess.Popen(args.command, start_new_session=True)
-        except OSError as error:
-            print(f"queue: cannot start {args.command[0]}: {error.strerror}", file=sys.stderr)
-            return 2
-        for signum in caught:
-            send(child, signum)
-        update(entry["id"], child=child.pid, child_start=identity(child.pid))
-        code = supervise(cfg, child, samples)
-        code = code if code >= 0 else 128 - code
-        job = {"id": f"{entry['id']}-{time.time_ns()}", "kind": args.kind, "signature": signature,
-               "workdir": entry["workdir"]}
-        keep(history.row(job, start, time.time(), code, samples, concurrent))
-        return code
-    finally:
-        leave(entry["id"])
+            code, concurrent = wait(cfg, entry["id"], args.kind, caught)
+            if code is not None:
+                return code
+            if caught:
+                return 128 + caught[0]
+            samples = [measure(cfg)]
+            start = time.time()
+            try:
+                child = subprocess.Popen(args.command, start_new_session=True, pass_fds=(lock_fd,))
+            except OSError as error:
+                print(f"queue: cannot start {args.command[0]}: {error.strerror}", file=sys.stderr)
+                return 2
+            for signum in caught:
+                send(child, signum)
+            update(entry["id"], child=child.pid, child_start=identity(child.pid))
+            code = supervise(cfg, child, samples)
+            code = code if code >= 0 else 128 - code
+            job = {"id": f"{entry['id']}-{time.time_ns()}", "kind": args.kind, "signature": signature,
+                   "workdir": entry["workdir"]}
+            keep(history.row(job, start, time.time(), code, samples, concurrent))
+            return code
+        finally:
+            leave(entry["id"])
 
 
 def cmd_list(_: argparse.Namespace) -> int:
