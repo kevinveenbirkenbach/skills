@@ -23,11 +23,11 @@ class TestHubAsks(HubCase):
             time.sleep(0.05)
         self.fail("no ask arrived")
 
-    def hook(self, port: int, timeout: str) -> subprocess.Popen:
+    def hook(self, port: int, timeout: str, payload: dict) -> subprocess.Popen:
         trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "hook.json")]
         command = [sys.executable, str(CLIENT), "--port", str(port), "--timeout", timeout, *trust]
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        process.stdin.write(json.dumps(HOOK))
+        process.stdin.write(json.dumps(payload))
         process.stdin.close()
         self.addCleanup(process.stdout.close)
         self.addCleanup(process.stderr.close)
@@ -91,7 +91,7 @@ class TestHubAsks(HubCase):
         relayed = []
 
         def asked(decide: Callable[[str], None]) -> tuple[int, str]:
-            process = self.hook(self.port, "20")
+            process = self.hook(self.port, "20", HOOK)
             ask = self.first_ask()
             self.assertEqual((ask["tool"], ask["command"], ask["cwd"], ask["session"]), ("Bash", "rm -rf node_modules", "/repo", "s1"))
             decide(ask["id"])
@@ -123,11 +123,37 @@ class TestHubAsks(HubCase):
         code, out = asked(allow_by(key(-7, "main")))
         self.assertEqual((code, json.loads(out)), (0, {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}))
         self.assertEqual(asked(relay(relayed[-1])), (0, ""))
-        self.assertEqual(self.finish(self.hook(self.port, "0.3")), (0, ""))
+        self.assertEqual(self.finish(self.hook(self.port, "0.3", HOOK)), (0, ""))
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             closed = probe.getsockname()[1]
-        self.assertEqual(self.finish(self.hook(closed, "5")), (0, ""))
+        self.assertEqual(self.finish(self.hook(closed, "5", HOOK)), (0, ""))
+
+    def test_the_hook_posts_nothing_it_cannot_send_in_full(self):
+        for name, change in (
+            ("tool", {"tool_name": "T" * 201}),
+            ("command", {"tool_input": {"command": "x" * 4001}}),
+            ("cwd", {"cwd": "/" + "d" * 4096}),
+            ("session", {"session_id": "s" * 201}),
+            ("agent", {"agent_type": "a" * 201}),
+        ):
+            with self.subTest(name=name):
+                process = self.hook(self.port, "3", {**HOOK, **change})
+                self.assertEqual((self.finish(process), self.httpd.hub.asks.listed()), ((0, ""), []))
+                self.assertRegex(process.stderr.read(), rf"\Akvb-hub: [^\n]*\b{name}\b[^\n]*\n\Z")
+        process = self.hook(self.port, "20", {**HOOK, "tool_input": {"command": "x" * 4000}})
+        ask = self.first_ask()
+        self.assertEqual(ask["command"], "x" * 4000)
+        self.assertEqual(self.call("POST", f"/api/asks/{ask['id']}/deny", b"", self.guard(self.host))[0], 200)
+        self.assertEqual(json.loads(self.finish(process)[1])["hookSpecificOutput"]["decision"]["behavior"], "deny")
+
+    def test_a_bad_timeout_names_the_field_the_caller_sent(self):
+        status, _, body = self.post_json("/api/asks", {**ASK, "timeout": -1}, self.local())
+        self.assertEqual((status, body), (400, b"timeout must be a finite number of seconds, 0 or more\n"))
+        for tool in ("decision_wait", "review_wait"):
+            with self.subTest(tool=tool):
+                result = self.tool(tool, {"id": "0123456789abcdef", "timeout_seconds": -1})
+                self.assertEqual(result["content"][0]["text"], "timeout_seconds must be a finite number of seconds, 0 or more")
 
     def test_decisions_are_requested_chosen_and_waited_for(self):
         for arguments in (

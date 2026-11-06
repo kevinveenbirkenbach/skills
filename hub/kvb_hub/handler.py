@@ -43,9 +43,6 @@ class Handler(Exchange):
         self.attempt(lambda: self.server.hub.speech.synthesize(body), lambda wav: self.send(HTTPStatus.OK, WAV_TYPE, wav, headers))
 
     def hear(self, body: bytes) -> None:
-        if self.headers.get_content_type() != WAV_TYPE:
-            self.send_text(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, f"use {WAV_TYPE}")
-            return
         self.answer(lambda: self.server.hub.speech.transcribe(body), HTTPStatus.OK)
 
     def do_GET(self) -> None:
@@ -87,50 +84,50 @@ class Handler(Exchange):
         else:
             self.send_text(HTTPStatus.NOT_FOUND, "not found")
 
-    def action(self, path: str, body: bytes) -> Callable[[], None] | None:
+    def action(self, path: str) -> Callable[[bytes], None] | None:
         hub = self.server.hub
         route = ROUTE.fullmatch(path)
         item = ITEM.fullmatch(path)
         board = BOARD.fullmatch(path)
         if route and route.group(2) in DECISIONS:
-            return lambda: self.answer(lambda: hub.verdict(route.group(1), DECISIONS[route.group(2)], body), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.verdict(route.group(1), DECISIONS[route.group(2)], body), HTTPStatus.OK)
         if item and item.group(3):
-            return lambda: self.answer(lambda: hub.settle(item.group(1), item.group(2), item.group(3), body), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.settle(item.group(1), item.group(2), item.group(3), body), HTTPStatus.OK)
         if path == UPLOADS:
-            return lambda: self.answer(lambda: hub.upload(self.query(), body), HTTPStatus.CREATED)
+            return lambda body: self.answer(lambda: hub.upload(self.query(), body), HTTPStatus.CREATED)
         if path == "/api/messages":
-            return lambda: self.answer(lambda: hub.message(body), HTTPStatus.CREATED)
+            return lambda body: self.answer(lambda: hub.message(body), HTTPStatus.CREATED)
         if board:
-            return lambda: self.answer(lambda: hub.board(board.group(1), body), HTTPStatus.OK)
-        return self.inbox_action(path, body)
+            return lambda body: self.answer(lambda: hub.board(board.group(1), body), HTTPStatus.OK)
+        return self.inbox_action(path)
 
-    def inbox_action(self, path: str, body: bytes) -> Callable[[], None] | None:
+    def inbox_action(self, path: str) -> Callable[[bytes], None] | None:
         hub = self.server.hub
         inbox = INBOX_ROUTE.fullmatch(path)
         undo = UNDO_ROUTE.fullmatch(path)
         rule = RULE_ROUTE.fullmatch(path)
         if inbox and inbox.group(1) == "approve":
-            return lambda: self.answer(lambda: hub.approve(body), HTTPStatus.ACCEPTED)
+            return lambda body: self.answer(lambda: hub.approve(body), HTTPStatus.ACCEPTED)
         if path == SIGN_ROUTE:
-            return lambda: self.answer(lambda: hub.sign(body), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.sign(body), HTTPStatus.OK)
         if path == RULE_SIGN_ROUTE:
-            return lambda: self.answer(lambda: hub.sign_rule(body), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.sign_rule(body), HTTPStatus.OK)
         if inbox:
-            return lambda: self.answer(lambda: hub.mark(body), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.mark(body), HTTPStatus.OK)
         if undo:
-            return lambda: self.answer(lambda: hub.undo(undo.group(1)), HTTPStatus.OK)
+            return lambda _body: self.answer(lambda: hub.undo(undo.group(1)), HTTPStatus.OK)
         if path == "/api/rules":
-            return lambda: self.answer(lambda: hub.add_rule(body), HTTPStatus.CREATED)
+            return lambda body: self.answer(lambda: hub.add_rule(body), HTTPStatus.CREATED)
         if rule:
-            return lambda: self.answer(lambda: hub.rule_action(rule.group(1), rule.group(2)), HTTPStatus.OK)
+            return lambda _body: self.answer(lambda: hub.rule_action(rule.group(1), rule.group(2)), HTTPStatus.OK)
         if path == "/api/nl":
-            return lambda: self.answer(lambda: hub.nl(body), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.nl(body), HTTPStatus.OK)
         if path == SETTINGS_ROUTE:
-            return lambda: self.answer(lambda: hub.save_settings(body), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.save_settings(body), HTTPStatus.OK)
         if path == TTS_ROUTE:
-            return lambda: self.speak(body)
+            return self.speak
         if path == STT_ROUTE:
-            return lambda: self.hear(body)
+            return self.hear
         return None
 
     def posted(self, path: str) -> bool:
@@ -139,41 +136,51 @@ class Handler(Exchange):
     def runner(self, path: str, body: bytes) -> None:
         hub = self.server.hub
         route = RUNNER_ROUTE.fullmatch(path)
-        if not self.client():
-            self.send_text(HTTPStatus.FORBIDDEN, "forbidden: the runner calls with the X-Kvb-Hub header and no origin only")
-        elif route.group(2) == "claim":
+        if route.group(2) == "claim":
             self.answer(lambda: hub.claim(route.group(1)), HTTPStatus.OK)
         else:
             self.answer(lambda: hub.report(route.group(1), body), HTTPStatus.OK)
 
+    def receiver(self, path: str, host: str) -> Callable[[bytes], None] | None:
+        """Returns:
+            What handles the body once every header guard let the request
+            pass, or None after a guard answered it.
+        """
+        if path == "/mcp":
+            return self.mcp_receiver(host)
+        if path == "/api/asks":
+            if self.local(host):
+                return lambda body: self.answer(lambda: self.server.hub.ask(body), HTTPStatus.CREATED)
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden: local POST with the X-Kvb-Hub header and no foreign origin only")
+            return None
+        if RUNNER_ROUTE.fullmatch(path):
+            if self.client():
+                return lambda body: self.runner(path, body)
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden: the runner calls with the X-Kvb-Hub header and no origin only")
+            return None
+        action = self.action(path)
+        if action is None:
+            self.send_text(HTTPStatus.NOT_FOUND, "not found")
+        elif not self.guarded(host):
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden: same-origin POST with the X-Kvb-Hub header only")
+        elif path == STT_ROUTE and self.headers.get_content_type() != WAV_TYPE:
+            self.send_text(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, f"use {WAV_TYPE}")
+        else:
+            return action
+        return None
+
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        body = self.body({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: STT_LIMIT}.get(path, BODY_LIMIT))
-        if body is None:
+        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: STT_LIMIT}.get(path, BODY_LIMIT))
+        if length is None:
             return
         host = self.host()
         if host is None:
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
             return
-        if path == "/mcp":
-            self.mcp(host, body)
-            return
-        if path == "/api/asks":
-            if self.local(host):
-                self.answer(lambda: self.server.hub.ask(body), HTTPStatus.CREATED)
-            else:
-                self.send_text(HTTPStatus.FORBIDDEN, "forbidden: local POST with the X-Kvb-Hub header and no foreign origin only")
-            return
-        if RUNNER_ROUTE.fullmatch(path):
-            self.runner(path, body)
-            return
-        action = self.action(path, body)
-        if action is None:
-            self.send_text(HTTPStatus.NOT_FOUND, "not found")
-        elif not self.guarded(host):
-            self.send_text(HTTPStatus.FORBIDDEN, "forbidden: same-origin POST with the X-Kvb-Hub header only")
-        else:
-            action()
+        receive = self.receiver(path, host)
+        if receive is not None:
+            receive(self.rfile.read(length))
 
     def index(self) -> None:
         nonce = secrets.token_urlsafe(18)
@@ -188,16 +195,19 @@ class Handler(Exchange):
         if reviews.get(review_id) is None or not path.is_file():
             self.send_text(HTTPStatus.NOT_FOUND, "not found")
             return
-        self.send(HTTPStatus.OK, content_type, path.read_bytes(), {"Content-Security-Policy": csp})
+        self.attempt(path.read_bytes, lambda data: self.send(HTTPStatus.OK, content_type, data, {"Content-Security-Policy": csp}))
 
-    def mcp(self, host: str, body: bytes) -> None:
+    def mcp_receiver(self, host: str) -> Callable[[bytes], None] | None:
         origins = self.headers.get_all("Origin")
         if origins is not None and origins != [f"http://{host}"]:
             self.send_text(HTTPStatus.FORBIDDEN, "foreign origin")
-            return
-        if self.headers.get_content_type() != "application/json":
+        elif self.headers.get_content_type() != "application/json":
             self.send_text(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "use application/json")
-            return
+        else:
+            return self.mcp
+        return None
+
+    def mcp(self, body: bytes) -> None:
         status, reply = self.server.hub.rpc(body)
         if reply is not None:
             self.send_json(status, reply)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 import unittest
@@ -98,6 +99,25 @@ class TestHubInbox(HubCase):
         for text in ("Passkey registrieren", "navigator.credentials.get", "navigator.credentials.create", "approval.py pin --port", "~/.config/kvb-hub/approvers.json", "nicht signiert"):
             with self.subTest(text=text):
                 self.assertIn(text, html)
+
+    def test_an_nl_command_records_new_operator_rows_like_the_state_does(self):
+        self.write_council({"rasci.json": {"operator/greet": {"title": "echo hi", "workdir": "/repo", "check": "manual", "status": "queued", "roles": {}}}})
+        model = mock.Mock(**{"enabled.return_value": True, "complete.return_value": '{"actions": []}'})
+        self.httpd.hub = dataclasses.replace(self.httpd.hub, model=model)
+        before = time.time()
+        self.assertEqual(self.post_json("/api/nl", {"text": "status"}, self.guard(self.host))[0], 200)
+        after = time.time()
+        row = next(item for item in self.snapshot()["inbox"] if item["id"] == "operator/greet")
+        self.assertTrue(before <= row["ts"] <= after, (before, row["ts"], after))
+
+    def test_the_title_counts_the_items_that_are_not_snoozed(self):
+        asks = [self.create_ask(ASK), self.create_ask({**ASK, "command": "make other"})]
+        self.assertIn("<title>(2) kvb-hub</title>", self.index())
+        for ask_id, title in zip(asks, ("(1) kvb-hub", "kvb-hub"), strict=True):
+            snooze = {"kind": "ask", "id": ask_id, "until": time.time() + 3600, "pinned": False}
+            self.assertEqual(self.post_json("/api/inbox/mark", snooze, self.guard(self.host))[0], 200)
+            with self.subTest(title=title):
+                self.assertIn(f"<title>{title}</title>", self.index())
 
 
 if __name__ == "__main__":

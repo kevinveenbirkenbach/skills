@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import errno
 import json
 import re
 import subprocess
 import time
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from hub_case import HubCase
 from hub_support import AMBIENCE, SPACE, VOICE
@@ -35,6 +38,13 @@ class TestHubPage(HubCase):
         status, headers, _ = self.get(f"/reviews/{review_id}/files")
         self.assertEqual((status, headers["content-type"]), (200, "application/json"))
         self.assertEqual(headers["content-security-policy"], exchange.PLAIN_CSP)
+
+    def test_a_stored_file_that_cannot_be_read_answers_500(self):
+        review_id = self.request("feat: io", "")
+        for name in ("page", "files"):
+            with self.subTest(name=name), mock.patch.object(Path, "read_bytes", side_effect=OSError(errno.EIO, "Input/output error")):
+                status, _, body = self.get(f"/reviews/{review_id}/{name}")
+                self.assertEqual((status, body), (500, b"storage failed: Input/output error\n"))
 
     def test_markup_from_agents_is_escaped(self):
         self.request("<script>alert(1)</script>", "</pre><script>alert(2)</script>")

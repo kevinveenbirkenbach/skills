@@ -180,7 +180,9 @@ class Language:
         now = time.time()
         claims = read_claims(self.council)
         tasks = read_register(self.council / REGISTER)
-        items = self.inbox(now, tasks, self.directory(claims, read_jsonl(self.council / NEWS), now))
+        directory = self.directory(claims, read_jsonl(self.council / NEWS), now)
+        self.watch.see(tasks, now)
+        items = self.inbox(now, tasks, directory)
         agents = ordered({claim["agent"] for claim in claims if claim["agent"]} | set(priority(tasks)))
         shown_items = [{"id": item["id"], "kind": item["kind"], "title": item["title"][:200]} for item in items]
         return nl_actions(self.model.complete(nl_messages(text, shown_items, agents)), items, agents)

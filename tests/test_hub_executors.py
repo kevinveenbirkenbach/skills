@@ -103,6 +103,21 @@ class TestHubExecutors(HubCase):
         self.assertEqual(runner.execute({"command": "exit 3", "directory": str(self.outside)}, reports.append), 3)
         self.assertEqual(reports[-1], {"output": "", "code": 3, "refused": False})
 
+    def test_the_runner_closes_the_output_pipe_on_every_path(self):
+        popen, spawned = subprocess.Popen, []
+        job = {"command": "echo hi; sleep 0.3", "directory": str(self.outside)}
+
+        def spawn(*args: object, **kwargs: object) -> subprocess.Popen:
+            spawned.append(popen(*args, **kwargs))
+            return spawned[-1]
+
+        with mock.patch.object(subprocess, "Popen", spawn), mock.patch.object(runner, "BEAT", 0.05):
+            self.assertEqual(runner.execute(job, [].append), 0)
+            self.assertTrue(spawned[0].stdout.closed)
+            self.assertRaises(RuntimeError, runner.execute, job, mock.Mock(side_effect=RuntimeError("the hub is gone")))
+        self.settle(lambda: spawned[1].stdout.closed)
+        self.assertEqual(spawned[1].wait(10), 0)
+
     def test_rules_are_signed_once_and_checked_by_the_executor(self):
         now = time.time()
         rule = {"kind": "ask", "tool": "Bash", "pattern": "make *", "scope": "/repo*", "expires": now + 3600}

@@ -97,7 +97,7 @@ class Reviewing:
     def wait(self, arguments: dict) -> dict:
         expect(arguments, ("id", "timeout_seconds"))
         review_id = field(arguments, "id")
-        timeout = seconds(arguments["timeout_seconds"], WAIT_CAP)
+        timeout = seconds(arguments, "timeout_seconds", WAIT_CAP)
         return state_of(found(self.reviews.wait(review_id, timeout), review_id))
 
     def pending(self, arguments: dict) -> dict:

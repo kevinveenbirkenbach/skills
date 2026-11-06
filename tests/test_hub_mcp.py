@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import http.client
 import json
 import unittest
 
 from hub_case import HubCase
 from hub_support import PAGE, SCORE, TREE
-from kvb_hub import mcp
+from kvb_hub import handler, mcp
 
 TOOLS = {"review_request", "review_status", "review_wait", "review_list", "decision_request", "decision_wait", "operator_message"}
 
@@ -78,6 +79,35 @@ class TestHubMcp(HubCase):
         self.assertEqual(self.post_mcp(ping, {"Content-Type": "text/plain"})[0], 415)
         self.assertEqual(self.post_mcp(ping, {"Origin": f"http://{self.host}"})[0], 200)
         self.assertEqual(self.get("/mcp")[0], 405)
+
+    def headers_only(self, path: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        try:
+            connection.putrequest("POST", path, skip_host=True)
+            for name, value in {"Content-Length": "1024", **headers}.items():
+                connection.putheader(name, value)
+            connection.endheaders()
+            response = connection.getresponse()
+            return response.status, response.read()
+        finally:
+            connection.close()
+
+    def test_every_post_guard_answers_before_the_body_arrives(self):
+        guard = self.guard(self.host)
+        for path, headers, status, text in (
+            ("/api/asks", {"Host": "evil.example", "X-Kvb-Hub": "1"}, 403, "forbidden host"),
+            ("/api/asks", {"Host": self.host}, 403, "forbidden: local POST with the X-Kvb-Hub header and no foreign origin only"),
+            ("/mcp", {"Host": self.host, "Origin": "http://evil.example", "Content-Type": "application/json"}, 403, "foreign origin"),
+            ("/mcp", {"Host": self.host, "Content-Type": "text/plain"}, 415, "use application/json"),
+            ("/api/runner/0123456789abcdef/report", guard, 403, "forbidden: the runner calls with the X-Kvb-Hub header and no origin only"),
+            ("/api/messages", self.client(), 403, "forbidden: same-origin POST with the X-Kvb-Hub header only"),
+            ("/api/stt", {**guard, "Content-Type": "text/plain"}, 415, "use audio/wav"),
+            ("/api/state", guard, 404, "not found"),
+            ("/api/uploads", {**guard, "Content-Length": str(handler.UPLOAD_LIMIT + 1)}, 413, "body too large"),
+            ("/api/messages", {**guard, "Content-Length": "many"}, 411, "Content-Length required"),
+        ):
+            with self.subTest(path=path, headers=headers):
+                self.assertEqual(self.headers_only(path, headers), (status, f"{text}\n".encode()))
 
     def test_mcp_requires_gate_score_and_recommended(self):
         tools = {entry["name"]: entry["inputSchema"] for entry in self.rpc("tools/list", {})["result"]["tools"]}

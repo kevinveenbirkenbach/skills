@@ -13,8 +13,9 @@ Returns:
     stdout: the PermissionRequest decision JSON: allow only when a pinned
         passkey signed exactly this tool, command, cwd, session and ask id;
         deny when the operator denied in the kvb-hub. Nothing on timeout,
-        error, a missing or invalid signature or a hub that is down, so
-        Claude Code shows its own dialog. The exit code is 0.
+        error, a missing or invalid signature, a value longer than the hub
+        takes or a hub that is down, so Claude Code shows its own dialog.
+        The exit code is 0.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ POLL = 25.0
 NAME_LIMIT = 200
 COMMAND_LIMIT = 4000
 PATH_LIMIT = 4096
+LIMITS = {"tool": NAME_LIMIT, "command": COMMAND_LIMIT, "cwd": PATH_LIMIT, "session": NAME_LIMIT, "agent": NAME_LIMIT}
 DENIED = "The operator denied this in the kvb-hub."
 
 
@@ -51,18 +53,12 @@ def facts(hook: dict) -> dict:
         "command": summary(hook.get("tool_input")),
         "cwd": str(hook.get("cwd") or ""),
         "session": str(hook.get("session_id") or ""),
+        "agent": str(hook.get("agent_type") or ""),
     }
 
 
-def create(base: str, hook: dict, ask: dict, timeout: float) -> str:
-    payload = {
-        "tool": ask["tool"][:NAME_LIMIT],
-        "command": ask["command"][:COMMAND_LIMIT],
-        "cwd": ask["cwd"][:PATH_LIMIT],
-        "session": ask["session"][:NAME_LIMIT],
-        "agent": str(hook.get("agent_type") or "")[:NAME_LIMIT],
-        "timeout": timeout,
-    }
+def create(base: str, ask: dict, timeout: float) -> str:
+    payload = {**ask, "timeout": timeout}
     headers = {"Content-Type": "application/json", **hub_api.GUARD}
     request = urllib.request.Request(f"{base}/api/asks", data=json.dumps(payload).encode(), headers=headers, method="POST")
     ask_id = hub_api.call(request, hub_api.SLACK)["id"]
@@ -104,7 +100,11 @@ def main() -> int:
     try:
         hook = json.load(sys.stdin)
         ask = facts(hook)
-        ask_id = create(base, hook, ask, args.timeout)
+        too_long = [name for name, limit in LIMITS.items() if len(ask[name]) > limit]
+        if too_long:
+            print(f"kvb-hub: {', '.join(too_long)} too long to sign in full, Claude Code asks instead", file=sys.stderr)
+            return 0
+        ask_id = create(base, ask, args.timeout)
         answer = {"status": "pending"}
         while answer["status"] == "pending" and (left := deadline - time.monotonic()) > 0:
             answer = status(base, ask_id, min(left, POLL))

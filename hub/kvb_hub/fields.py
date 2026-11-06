@@ -59,9 +59,10 @@ def message_text(arguments: dict, name: str) -> str:
     return value.strip()
 
 
-def seconds(value: object, cap: float) -> float:
+def seconds(arguments: dict, name: str, cap: float) -> float:
+    value = arguments[name]
     if isinstance(value, bool) or not isinstance(value, int | float) or not 0 <= value < math.inf:
-        raise ToolError("timeout_seconds must be a finite number of seconds, 0 or more")
+        raise ToolError(f"{name} must be a finite number of seconds, 0 or more")
     return float(min(value, cap))
 
 

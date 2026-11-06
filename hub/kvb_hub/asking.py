@@ -55,7 +55,7 @@ class Asking:
         payload = decode(body)
         expect(payload, ("tool", *ASK_TEXTS, "timeout"))
         values = {name: bounded(payload, name, limit) for name, limit in ASK_TEXTS.items()}
-        lifetime = seconds(payload["timeout"], ASK_LIFETIME)
+        lifetime = seconds(payload, "timeout", ASK_LIFETIME)
         created = time.time()
         fields = {**values, "tool": field(payload, "tool").strip(), "status": "pending", "decided": None, "proof": None}
         record = self.asks.add({**fields, "created_ts": created, "expires": created + lifetime})
@@ -122,7 +122,7 @@ class Asking:
     def decision_wait(self, arguments: dict) -> dict:
         expect(arguments, ("id", "timeout_seconds"))
         decision_id = field(arguments, "id")
-        record = self.decisions.wait(decision_id, seconds(arguments["timeout_seconds"], WAIT_CAP))
+        record = self.decisions.wait(decision_id, seconds(arguments, "timeout_seconds", WAIT_CAP))
         if record is None:
             raise ToolError(f"no decision {decision_id}")
         return decision_state(record)

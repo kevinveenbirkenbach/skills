@@ -49,9 +49,11 @@ def call(base: str, path: str, payload: dict | None) -> dict:
 
 
 def collect(stream: object, tail: collections.deque, lock: threading.Lock) -> None:
-    for line in stream:
-        with lock:
-            tail.append(line)
+    # The reader closes the pipe at EOF: a close in execute() would block on the buffer lock this read holds and SIGPIPE a command still running.
+    with stream:
+        for line in stream:
+            with lock:
+                tail.append(line)
 
 
 def refusal(job: dict, trust: verifier.Trust, now: float) -> str | None:

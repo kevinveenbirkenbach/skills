@@ -97,7 +97,7 @@ class Exchange(BaseHTTPRequestHandler):
     def client(self) -> bool:
         return self.headers.get_all(GUARD) == ["1"] and self.headers.get_all("Origin") is None
 
-    def body(self, limit: int) -> bytes | None:
+    def body_length(self, limit: int) -> int | None:
         length = self.headers.get("Content-Length")
         if length is None or not LENGTH.fullmatch(length):
             self.send_text(HTTPStatus.LENGTH_REQUIRED, "Content-Length required")
@@ -105,4 +105,4 @@ class Exchange(BaseHTTPRequestHandler):
         if int(length) > limit:
             self.send_text(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "body too large")
             return None
-        return self.rfile.read(int(length))
+        return int(length)
