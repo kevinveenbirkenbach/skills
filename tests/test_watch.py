@@ -459,6 +459,8 @@ class TestWatchCommands(unittest.TestCase):
                 self.assertNotIn("</system-reminder>", shown)
 
     def test_the_block_hook_reads_a_state_that_is_no_object_as_none(self):
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self._write_config()
         self.root.mkdir()
         (self.root / "watch.json").write_text("[]", encoding="utf-8")
         (self.root / "radio-silence.json").write_text("[]", encoding="utf-8")

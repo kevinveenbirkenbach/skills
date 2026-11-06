@@ -9,7 +9,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import iso
-from kvb_hub import lifetimes, names, orbits
+from kvb_orchestrator import lifetimes, names, orbits
 
 
 class TestHubGraph(HubCase):

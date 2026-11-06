@@ -5,13 +5,13 @@ import unittest
 
 from hub_case import HubCase
 from hub_support import STREAMS
-from kvb_hub import settings
+from kvb_orchestrator import settings
 
 
 class TestHubSettings(HubCase):
     def settings_payload(self, streams: list[dict]) -> dict:
         colors = {"top": "#101820", "bottom": "#405060", "accent": "#ffaa00"}
-        speech = {"on": True, "classes": ["direct", "pan-pan", "mayday"], "muted": ["name:Docs", "s1"]}
+        speech = {"on": True, "classes": ["call", "mayday", "pan-pan"], "muted": ["name:Docs", "s1"]}
         space = {"graph": {"axis": "time", "yaw": -45.5, "pitch": 12.25, "zoom": 1.5, "pan_x": -30.0, "pan_y": 12.0}, "sky": {"azimuth": 225.0, "altitude": 20.0, "fov": 120.0}}
         return {
             **settings.SETTINGS, "latitude": 52.52, "longitude": 13.405, "theme": "custom", "colors": colors, "music": {"on": True, "volume": 0.3}, "streams": streams, "speech": speech,
@@ -26,7 +26,7 @@ class TestHubSettings(HubCase):
         self.assertEqual(self.snapshot()["settings"], settings.SETTINGS)
         payload = self.settings_payload(STREAMS)
         good = self.guard(self.host)
-        for headers in ({k: v for k, v in good.items() if k != "X-Kvb-Hub"}, {k: v for k, v in good.items() if k != "Origin"}, {**good, "Origin": "http://evil.example"}):
+        for headers in ({k: v for k, v in good.items() if k != "X-Kvb-Orchestrator"}, {k: v for k, v in good.items() if k != "Origin"}, {**good, "Origin": "http://evil.example"}):
             with self.subTest(headers=headers):
                 self.assertEqual(self.post_json("/api/settings", payload, headers)[0], 403)
         self.assertFalse((self.state / "settings.json").exists())
@@ -47,7 +47,7 @@ class TestHubSettings(HubCase):
             {**payload, "streams": [{**stream, "to": "25:00"}]},
             *({**payload, "speech": {**payload["speech"], **change}} for change in (
                 {"on": "yes"},
-                {"classes": ["direct", "pan-pan"]},
+                {"classes": ["call", "pan-pan"]},
                 {"classes": ["mayday", "shout"]},
                 {"classes": ["mayday", "mayday"]},
                 {"classes": "mayday"},
@@ -102,7 +102,7 @@ class TestHubSettings(HubCase):
         shuffled = {**payload, "speech": {"on": False, "classes": ["mayday", "broadcast", "security"], "muted": ["s1", "Operator", "name:Docs"]}}
         status, _, body = self.post_json("/api/settings", shuffled, good)
         self.assertEqual(status, 200, body)
-        self.assertEqual(json.loads(body)["speech"], {"on": False, "classes": ["broadcast", "security", "mayday"], "muted": ["Operator", "name:Docs", "s1"]})
+        self.assertEqual(json.loads(body)["speech"], {"on": False, "classes": ["broadcast", "mayday", "security"], "muted": ["Operator", "name:Docs", "s1"]})
 
     def test_settings_written_before_the_radio_filter_keep_their_values(self):
         older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "speech"}

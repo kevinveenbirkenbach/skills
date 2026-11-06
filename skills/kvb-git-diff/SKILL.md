@@ -1,7 +1,7 @@
 ---
 name: kvb-git-diff
 description: >
-  Approve staged commits in the kvb-hub page; the commit skills run it.
+  Approve staged commits in the Agent Orchestrator; the commit skills run it.
 ---
 
 The commit skills run this where they ask for the commit approval. A hub
@@ -16,7 +16,7 @@ once the operator's pinned passkey signature over it verifies here.
    pkgmgr review --out /tmp/kvb-git-diff/<repo>-<branch>.html --max-file-lines 400 --base <base> --note <table>
    ```
 
-2. Call the kvb-hub MCP tool `review_request` with `repo` (what
+2. Call the kvb-orchestrator MCP tool `review_request` with `repo` (what
    `git rev-parse --path-format=absolute --git-common-dir` prints),
    `worktree` (what `git rev-parse --show-toplevel` prints), `branch` (what
    `git symbolic-ref --short HEAD` prints), `tree` (what `git write-tree`
@@ -32,12 +32,12 @@ once the operator's pinned passkey signature over it verifies here.
    first, `<gate>` being the `gate` from step 2:
 
    ```bash
-   python3 ~/.local/share/kvb-hub/client/approval.py verify --port 8737 --approvers ~/.config/kvb-hub/approvers.json --replay /tmp/kvb-hub-approvals/commit.json --review <id> --gate <gate>
+   python3 ~/.local/share/kvb-orchestrator/client/approval.py verify --port 8737 --approvers ~/.config/kvb-orchestrator/approvers.json --replay /tmp/kvb-orchestrator-approvals/commit.json --review <id> --gate <gate>
    ```
 
    Exit 0 only: commit as the calling skill says. Any other exit,
    `rejected`, or the tree changed: no commit; report the printed reason.
 
-The hub is unreachable (no kvb-hub tools, or a call cannot connect), or the
+The hub is unreachable (no kvb-orchestrator tools, or a call cannot connect), or the
 verify step refused: ask the calling skill's normal approval question in
 chat instead.

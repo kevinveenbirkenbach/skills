@@ -8,7 +8,7 @@ from unittest import mock
 from hub_case import HubCase
 from hub_engines import OPERATOR_VOICE, VOICES
 from hub_support import ASK
-from kvb_hub import council, engines, exchange, phrasing, view
+from kvb_orchestrator import council, engines, exchange, phrasing, view
 
 
 class TestHubState(HubCase):
@@ -149,6 +149,7 @@ class TestHubState(HubCase):
                 "now", "since", "until", "first", "alarm_since", "reviews", "asks", "decisions", "messages", "operator",
                 "register", "priority", "radio", "claims", "grants", "night", "silence", "graph",
                 "inbox", "pending", "rules", "approvers", "jobs", "views", "llm", "people", "settings", "media", "speech",
+                "badges", "kinds",
             },
         )
         self.assertEqual([row["speech"] for row in state["radio"]], [
@@ -170,9 +171,9 @@ class TestHubState(HubCase):
         self.assertEqual((state["night"], state["silence"], state["priority"]), ("day", None, ["Skills session", "subagent general-purpose (default)"]))
         radio = [(row["from"], row["to"], row["class"], row["text"]) for row in state["radio"]]
         self.assertEqual(radio, [
-            ("Skills", ["Maintainer"], "direct", "ready"),
-            ("Skills", ["Maintainer"], "direct", "again"),
-            ("Maintainer", [], "broadcast", "board"),
+            ("Skills", ["Maintainer"], "post", "ready"),
+            ("Skills", ["Maintainer"], "post", "again"),
+            ("Maintainer", [], "newsletter", "board"),
             ("Docs", [], "mayday", "MAYDAY disk full"),
             ("Docs", ["Skills"], "pan-pan", "PAN-PAN slow"),
             ("Maintainer", ["Skills", "Docs"], "security", "rotate"),
@@ -196,11 +197,11 @@ class TestHubState(HubCase):
         self.assertEqual(edges, {
             ("name:Docs", "*", "mayday"): 1,
             ("name:Docs", "s1", "pan-pan"): 1,
-            ("name:Maintainer", "*", "broadcast"): 1,
+            ("name:Maintainer", "*", "newsletter"): 1,
             ("name:Maintainer", "name:Docs", "security"): 1,
             ("name:Maintainer", "s1", "grant"): 1,
             ("name:Maintainer", "s1", "security"): 1,
-            ("s1", "name:Maintainer", "direct"): 2,
+            ("s1", "name:Maintainer", "post"): 2,
         })
 
     def test_state_needs_the_host(self):

@@ -9,7 +9,7 @@ import unittest
 import wave
 
 from hub_support import VOICE
-from kvb_hub import engines, settings
+from kvb_orchestrator import engines, settings
 
 VOICE_PROBE = """
 const V = require(process.argv[1]);

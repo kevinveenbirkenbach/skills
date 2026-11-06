@@ -8,7 +8,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import ASK, iso
-from kvb_hub import events, transcripts
+from kvb_orchestrator import events, transcripts
 
 
 class TestHubStream(HubCase):
@@ -90,21 +90,21 @@ class TestHubStream(HubCase):
 
         self.assertEqual(sorted(set(kinds("view=fuer-dich"))), ["ask", "decision", "operator", "radio", "review"])
         self.assertEqual([row["text"] for row in self.events("view=fuer-dich")["events"] if row["kind"] == "radio"], ["MAYDAY disk full"])
-        self.assertEqual(kinds("view=reviews"), ["review"])
-        self.assertEqual(kinds("view=radio"), ["radio", "radio"])
-        self.assertEqual(kinds("view=operator"), ["operator"])
-        self.assertEqual(kinds("view=entscheidungen"), ["decision"])
+        self.assertEqual(kinds("kinds=review"), ["review"])
+        self.assertEqual(kinds("view=funk"), ["radio", "radio"])
+        self.assertEqual(sorted(set(kinds("view=arbeit"))), ["ask", "decision", "operator", "review"])
+        self.assertEqual(kinds("kinds=decision"), ["decision"])
         self.assertEqual(kinds("kinds=radio&q=mayday"), ["radio"])
         self.assertEqual(kinds("kinds=ask,decision&waiting=1"), ["ask", "decision"])
         self.assertEqual(kinds("kinds=radio&agent=Docs"), ["radio", "radio"])
-        self.assertEqual(kinds("view=register"), [])
+        self.assertEqual(kinds("kinds=register,rename"), [])
         self.write_council({"rasci.json": {**register, "work/a": {**register["work/a"], "status": "running"}}})
-        self.assertEqual([(row["title"], row["text"]) for row in self.events("view=register")["events"]], [("work/a", "status: queued → running")])
-        for query in ("view=bogus", "kinds=bogus", "parts=bogus", "after=x"):
+        self.assertEqual([(row["title"], row["text"]) for row in self.events("kinds=register,rename")["events"]], [("work/a", "status: queued → running")])
+        for query in ("view=bogus", "view=reviews", "kinds=bogus", "parts=bogus", "after=x"):
             with self.subTest(query=query):
                 self.assertEqual(self.get(f"/api/events?{query}")[0], 400)
         sample = events.event({"id": "x", "ts": now, "kind": "review", "title": "feat: x", "waiting": True})
-        filters = events.event_filters({"view": ["reviews"]})
+        filters = events.event_filters({"kinds": ["review"]})
         self.assertTrue(events.wanted(sample, filters))
         self.assertFalse(events.wanted({**sample, "kind": "radio"}, filters))
         self.assertFalse(events.wanted({**sample, "waiting": False}, events.event_filters({"view": ["fuer-dich"]})))
@@ -141,7 +141,7 @@ class TestHubStream(HubCase):
 
         def crons() -> dict:
             with mock.patch.object(transcripts, "STREAM_SCAN", 0):
-                rows = self.events("view=crons")["events"]
+                rows = self.events("kinds=cron")["events"]
             return {row["title"]: (row["ref"]["active"], row["agent"], row["text"]) for row in rows}
 
         self.assertEqual(crons(), {

@@ -8,7 +8,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import ASK, PAGE, TREE, key, signing
-from kvb_hub import batches
+from kvb_orchestrator import batches
 
 
 class TestHubInbox(HubCase):
@@ -96,7 +96,7 @@ class TestHubInbox(HubCase):
         self.approvers.chmod(0o666)
         self.assertEqual(self.snapshot()["approvers"], [])
         html = self.index()
-        for text in ("Passkey registrieren", "navigator.credentials.get", "navigator.credentials.create", "approval.py pin --port", "~/.config/kvb-hub/approvers.json", "nicht signiert"):
+        for text in ("Passkey registrieren", "navigator.credentials.get", "navigator.credentials.create", "approval.py pin --port", "~/.config/kvb-orchestrator/approvers.json", "nicht signiert"):
             with self.subTest(text=text):
                 self.assertIn(text, html)
 
@@ -112,8 +112,8 @@ class TestHubInbox(HubCase):
 
     def test_the_title_counts_the_items_that_are_not_snoozed(self):
         asks = [self.create_ask(ASK), self.create_ask({**ASK, "command": "make other"})]
-        self.assertIn("<title>(2) kvb-hub</title>", self.index())
-        for ask_id, title in zip(asks, ("(1) kvb-hub", "kvb-hub"), strict=True):
+        self.assertIn("<title>(2) Agent Orchestrator</title>", self.index())
+        for ask_id, title in zip(asks, ("(1) Agent Orchestrator", "Agent Orchestrator"), strict=True):
             snooze = {"kind": "ask", "id": ask_id, "until": time.time() + 3600, "pinned": False}
             self.assertEqual(self.post_json("/api/inbox/mark", snooze, self.guard(self.host))[0], 200)
             with self.subTest(title=title):

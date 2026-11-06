@@ -16,7 +16,7 @@ from unittest import mock
 from hub_case import HubCase
 from hub_engines import OPERATOR_VOICE, VOICES, log_rows, wav_bytes
 from hub_support import HOST_STATE, HUB, server
-from kvb_hub import council, engines, exchange, handler, phrasing
+from kvb_orchestrator import council, engines, exchange, handler, phrasing
 
 
 class TestHubSpeech(HubCase):
@@ -79,7 +79,7 @@ class TestHubSpeech(HubCase):
         calls = self.engines.scratch / "piper.jsonl"
         cache = self.state / "tts"
         request = {"text": "all stations, this is Docs, board, out", "voice": "en_US-test-high:2"}
-        for headers in ({k: v for k, v in good.items() if k != "X-Kvb-Hub"}, {k: v for k, v in good.items() if k != "Origin"}, {**good, "Origin": "http://evil.example"}):
+        for headers in ({k: v for k, v in good.items() if k != "X-Kvb-Orchestrator"}, {k: v for k, v in good.items() if k != "Origin"}, {**good, "Origin": "http://evil.example"}):
             with self.subTest(headers=headers):
                 self.assertEqual(self.post_json("/api/tts", request, headers)[0], 403)
         for broken in (
@@ -136,7 +136,7 @@ class TestHubSpeech(HubCase):
         def post(body: bytes, headers: dict[str, str]) -> tuple[int, dict, bytes]:
             return self.call("POST", "/api/stt", body, {**headers, "Content-Type": "audio/wav"})
 
-        for headers in ({k: v for k, v in good.items() if k != "X-Kvb-Hub"}, {k: v for k, v in good.items() if k != "Origin"}, {**good, "Origin": "http://evil.example"}):
+        for headers in ({k: v for k, v in good.items() if k != "X-Kvb-Orchestrator"}, {k: v for k, v in good.items() if k != "Origin"}, {**good, "Origin": "http://evil.example"}):
             with self.subTest(headers=headers):
                 self.assertEqual(post(clip, headers)[0], 403)
         for content_type in ("application/octet-stream", "audio/x-wav", "text/plain", "application/json"):
@@ -216,12 +216,12 @@ class TestPhraseology(unittest.TestCase):
             (("mayday", "Docs", ["Skills"], "mayday, mayday: disk full"), "MAYDAY MAYDAY MAYDAY, this is Docs Docs Docs, disk full, over"),
             (("pan-pan", "Docs", ["Skills"], "PAN-PAN: slow"), "PAN-PAN PAN-PAN PAN-PAN, all stations, this is Docs, slow, over"),
             (("security", "Maintainer", ["Skills", "Docs"], "SECURITE rotate"), "SECURITE SECURITE SECURITE, all stations, this is Maintainer, rotate, over"),
-            (("direct", "Skills", ["Maintainer"], "ready"), "Maintainer, Maintainer, this is Skills, ready, over"),
-            (("direct", "Skills", ["Alpha", "Beta"], "ready"), "Alpha and Beta, Alpha and Beta, this is Skills, ready, over"),
-            (("direct", "Docs", ["Ops"], "MAYDAY is only a word here"), "Ops, Ops, this is Docs, MAYDAY is only a word here, over"),
-            (("direct", "Skills", [], "lost target"), "all stations, this is Skills, lost target, out"),
-            (("broadcast", "Maintainer", [], "board"), "all stations, this is Maintainer, board, out"),
-            (("broadcast", "Operator", [], "[kvb-hub msg 0123456789abcdef] deploy now file: /home/op/x.txt"), "all stations, this is Operator, deploy now, out"),
+            (("call", "Skills", ["Maintainer"], "ready"), "Maintainer, Maintainer, this is Skills, ready, over"),
+            (("post", "Skills", ["Alpha", "Beta"], "ready"), "Alpha and Beta, Alpha and Beta, this is Skills, ready, over"),
+            (("call", "Docs", ["Ops"], "MAYDAY is only a word here"), "Ops, Ops, this is Docs, MAYDAY is only a word here, over"),
+            (("post", "Skills", [], "lost target"), "all stations, this is Skills, lost target, out"),
+            (("newsletter", "Maintainer", [], "board"), "all stations, this is Maintainer, board, out"),
+            (("broadcast", "Operator", [], "[kvb-orchestrator msg 0123456789abcdef] deploy now file: /home/op/x.txt"), "all stations, this is Operator, deploy now, out"),
             (("broadcast", "Docs", [], "  two\n lines\t here "), "all stations, this is Docs, two lines here, out"),
             (("broadcast", "", [], "-"), "all stations, this is unknown station, out"),
         )
