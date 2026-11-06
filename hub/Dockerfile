@@ -31,6 +31,8 @@ ADD --checksum=sha256:c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567
     https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q8_0.bin \
     /opt/whisper/ggml-base-q8_0.bin
 COPY --from=whisper /out/whisper-cli /opt/whisper/whisper-cli
+# ADD --chmod=0644 also gives the directories it creates mode 0644; without the search bit the non-root hub finds no voice and no whisper.cpp
+RUN chmod 0755 /opt/voices /opt/whisper
 
 COPY server.py /app/server.py
 COPY kvb_hub /app/kvb_hub

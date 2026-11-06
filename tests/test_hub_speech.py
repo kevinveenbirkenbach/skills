@@ -5,10 +5,12 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import unittest
 import wave
+from pathlib import PurePosixPath
 from unittest import mock
 
 from hub_case import HubCase
@@ -36,9 +38,41 @@ class TestHubSpeech(HubCase):
         with self.assertRaises(server.ToolError):
             engines.Speech(dataclasses.replace(self.engines, operator_voice="en_US-test-high:4"), self.state / "other")
         silent = engines.Speech(dataclasses.replace(self.engines, voices=self.outside, operator_voice="anything"), self.state / "silent")
-        self.assertEqual((silent.speaks(), silent.voice_of("s1"), silent.describe()["operator"], silent.describe()["tts"]), (False, "", "", False))
+        self.assertEqual((silent.voice_of("s1"), silent.describe()["operator"], silent.describe()["tts"]), ("", "", False))
         deaf = engines.Speech(dataclasses.replace(self.engines, whisper=self.outside / "missing"), self.state / "deaf")
-        self.assertFalse(deaf.hears())
+        self.assertFalse(deaf.describe()["stt"])
+
+    @unittest.skipIf(os.geteuid() == 0, "root searches every directory")
+    def test_the_off_state_names_the_missing_part_with_its_path(self):
+        self.assertEqual({key: self.httpd.hub.speech.describe()[key] for key in ("tts", "stt", "tts_off", "stt_off")}, {"tts": True, "stt": True, "tts_off": "", "stt_off": ""})
+        lone = self.outside / "lone"
+        lone.mkdir()
+        (lone / "solo.onnx").write_bytes(b"onnx")
+        cases = (
+            ({"piper": self.outside / "piper"}, "tts_off", f"the Piper executable {self.outside / 'piper'} is missing or not executable"),
+            ({"voices": self.outside}, "tts_off", f"the voice directory {self.outside} holds no <model>.onnx voice"),
+            ({"voices": lone}, "tts_off", f"the voice config {lone / 'solo.onnx'}.json is missing, unreadable or names no 1 to {engines.SPEAKER_LIMIT} speakers"),
+            ({"whisper": self.outside / "whisper-cli"}, "stt_off", f"the whisper.cpp executable {self.outside / 'whisper-cli'} is missing or not executable"),
+            ({"whisper_model": self.outside / "model.bin"}, "stt_off", f"the whisper.cpp model {self.outside / 'model.bin'} is missing or not readable"),
+            ({"whisper_model": self.outside}, "stt_off", f"the whisper.cpp model {self.outside} is not a file"),
+        )
+        for number, (change, field, message) in enumerate(cases):
+            with self.subTest(change=change):
+                state = engines.Speech(dataclasses.replace(self.engines, **change), self.state / f"case-{number}").describe()
+                self.assertEqual((state[field[:3]], state[field]), (False, message))
+        voices = self.engines.voices
+        whisper = self.outside / "whisper" / "whisper-cli"
+        whisper.parent.mkdir()
+        whisper.write_bytes(self.engines.whisper.read_bytes())
+        whisper.chmod(0o755)
+        for folder in (voices, whisper.parent):
+            folder.chmod(0o644)
+            self.addCleanup(folder.chmod, 0o755)
+        image = engines.Speech(dataclasses.replace(self.engines, whisper=whisper), self.state / "image").describe()
+        self.assertEqual({key: image[key] for key in ("tts", "voices", "operator", "tts_off")}, {"tts": False, "voices": 0, "operator": "", "tts_off": f"the voice directory {voices} is missing or not searchable"})
+        self.assertEqual((image["stt"], image["stt_off"]), (False, f"the whisper.cpp executable {whisper} lies under {whisper.parent}, which the hub may not search"))
+        status, _, body = self.post_json("/api/tts", {"text": "radio check", "voice": OPERATOR_VOICE}, self.guard(self.host))
+        self.assertEqual((status, body.decode()), (503, f"speech output is off: the voice directory {voices} is missing or not searchable\n"))
 
     def test_speech_output_is_guarded_whitelisted_capped_and_cached(self):
         good = self.guard(self.host)
@@ -132,8 +166,8 @@ class TestHubSpeech(HubCase):
         self.assertEqual(post(long, good)[0], 200)
         status, _, body = post(wav_bytes(1, 2, engines.STT_RATE, b"FAIL" * 100), good)
         self.assertEqual(status, 502, body)
-        with mock.patch.object(self.httpd.hub.speech, "hears", return_value=False):
-            self.assertEqual(post(clip, good)[0], 503)
+        with mock.patch.object(self.httpd.hub.speech, "input_gap", return_value="the whisper.cpp model m is missing or not readable"):
+            self.assertEqual(post(clip, good), (503, mock.ANY, b"speech input is off: the whisper.cpp model m is missing or not readable\n"))
         self.assertEqual(self.scripts.calls, [])
         self.assertEqual(self.get("/api/stt")[0], 405)
 
@@ -158,6 +192,21 @@ class TestHubSpeech(HubCase):
         done = run(args)
         self.assertEqual(done.returncode, 2, done.stderr)
         self.assertIn("the operator voice 'en_US-test-high:9' is not installed", done.stderr)
+
+
+class TestSpeechImage(unittest.TestCase):
+    def test_every_directory_a_chmod_without_search_bit_creates_is_opened_again(self):
+        text = (HUB / "Dockerfile").read_text(encoding="utf-8").replace("\\\n", " ")
+        steps = [" ".join(step.split()) for step in text.splitlines() if step.strip() and not step.lstrip().startswith("#")]
+        closed: dict[str, int] = {}
+        for number, step in enumerate(steps):
+            found = re.fullmatch(r"(?:ADD|COPY) .*--chmod=([0-7]{3,4}) .* (/\S+)", step)
+            if found and not int(found[1], 8) & 0o111:
+                closed[str(PurePosixPath(found[2]).parent)] = number
+        self.assertEqual(sorted(closed), ["/opt/voices", "/opt/whisper"])
+        for folder, number in closed.items():
+            with self.subTest(folder=folder):
+                self.assertTrue(any(step.startswith("RUN chmod 0755 ") and folder in step.split()[3:] for step in steps[number + 1 :]), steps[number])
 
 
 class TestPhraseology(unittest.TestCase):

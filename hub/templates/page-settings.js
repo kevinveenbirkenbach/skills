@@ -103,7 +103,7 @@
       h("section", {}, h("h3", {}, "Funk vorlesen"),
         h("p", {class: "muted"}, state.speech.tts
           ? "Neuer Funk wird in Seefunk-Sprechweise (SMCP) vorgelesen, eine Meldung nach der anderen, jede Station mit eigener Stimme; Musik und Radio werden solange leiser. Die Lautstärke folgt den Tönen oben, MAYDAY wird immer und am lautesten gesprochen."
-          : "Piper oder seine Stimmen fehlen im Image; der Funk bleibt stumm."),
+          : `Der Funk bleibt stumm: ${state.speech.tts_off}.`),
         h("div", {class: "days"}, h("label", {class: "check"}, speechOn, "Funk vorlesen"), sample),
         h("div", {class: "days", role: "group", "aria-label": "Klassen"}, spoken.map((entry) => h("label", {class: "check"}, entry.box, entry.label))),
         stations.length ? h("div", {class: "days", role: "group", "aria-label": "Stationen"}, stations.map((entry) => h("label", {class: "check"}, entry.box, entry.label))) : null),

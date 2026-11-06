@@ -28,6 +28,13 @@ STT_TIMEOUT = 120
 NOISE = re.compile(r"\[[^\]\n]{0,40}\]")
 
 
+def voice_models(folder: Path) -> list[Path]:
+    try:
+        return sorted(folder.glob("*.onnx"))
+    except OSError:
+        return []
+
+
 def installed_voices(folder: Path) -> dict[str, tuple[str, int | None]]:
     """Args:
         folder: directory holding <model>.onnx files with <model>.onnx.json.
@@ -37,12 +44,8 @@ def installed_voices(folder: Path) -> dict[str, tuple[str, int | None]]:
         with one speaker), in model and speaker order; a model without a
         readable config or with an unsafe name is left out.
     """
-    try:
-        models = sorted(folder.glob("*.onnx"))
-    except OSError:
-        return {}
     found: dict[str, tuple[str, int | None]] = {}
-    for model in models:
+    for model in voice_models(folder):
         data = read_json(model.with_name(f"{model.name}.json"))
         count = data.get("num_speakers") if isinstance(data, dict) else None
         if not MODEL_NAME.fullmatch(model.stem) or isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= SPEAKER_LIMIT:
@@ -50,6 +53,25 @@ def installed_voices(folder: Path) -> dict[str, tuple[str, int | None]]:
         for speaker in range(count):
             found[f"{model.stem}:{speaker}"] = (model.stem, speaker if count > 1 else None)
     return found
+
+
+def unreachable(path: Path, part: str, mode: int, ability: str) -> str:
+    """Args:
+        path: a file or directory an engine needs.
+        part: what path is, such as "the Piper executable".
+        mode: the os.access mode the hub needs on path.
+        ability: what path must be for that mode, such as "executable".
+
+    Returns:
+        "" when the hub may use path, otherwise a message naming path and
+        the first directory above it the hub may not search, if any.
+    """
+    if os.access(path, mode):
+        return ""
+    closed = next((folder for folder in reversed(path.parents) if not os.access(folder, os.X_OK)), None)
+    if closed is not None:
+        return f"{part} {path} lies under {closed}, which the hub may not search"
+    return f"{part} {path} is missing or not {ability}"
 
 
 def voice_of(key: str, pool: list[str], operator: str) -> str:
@@ -121,11 +143,28 @@ class Speech:
         scratch = str(self.engines.scratch)
         return {"PATH": SAFE_PATH, "HOME": scratch, "TMPDIR": scratch, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}
 
-    def speaks(self) -> bool:
-        return bool(self.voices) and os.access(self.engines.piper, os.X_OK)
+    def output_gap(self) -> str:
+        """Returns:
+            "" when speech output works, otherwise why not, naming the Piper
+            executable, the voice directory or a voice config with its path.
+        """
+        folder = self.engines.voices
+        gap = unreachable(self.engines.piper, "the Piper executable", os.X_OK, "executable") or unreachable(folder, "the voice directory", os.R_OK | os.X_OK, "searchable")
+        if gap or self.voices:
+            return gap
+        models = voice_models(folder)
+        if not models:
+            return f"the voice directory {folder} holds no <model>.onnx voice"
+        return f"the voice config {models[0]}.json is missing, unreadable or names no 1 to {SPEAKER_LIMIT} speakers"
 
-    def hears(self) -> bool:
-        return os.access(self.engines.whisper, os.X_OK) and self.engines.whisper_model.is_file()
+    def input_gap(self) -> str:
+        """Returns:
+            "" when speech input works, otherwise why not, naming the
+            whisper.cpp executable or model with its path.
+        """
+        model = self.engines.whisper_model
+        gap = unreachable(self.engines.whisper, "the whisper.cpp executable", os.X_OK, "executable") or unreachable(model, "the whisper.cpp model", os.R_OK, "readable")
+        return gap or ("" if os.path.isfile(model) else f"the whisper.cpp model {model} is not a file")
 
     def voice_of(self, key: str) -> str:
         return voice_of(key, self.pool, self.operator)
@@ -133,11 +172,16 @@ class Speech:
     def describe(self) -> dict:
         operator = self.voice_of(HUMAN)
         sample = phrase("broadcast", HUMAN, [], "radio check")
-        return {"tts": self.speaks(), "stt": self.hears(), "voices": len(self.voices), "operator": operator, "sample": sample, "limit": SPEECH_LIMIT, "rate": STT_RATE, "seconds": STT_SECONDS}
+        silent, deaf = self.output_gap(), self.input_gap()
+        return {
+            "tts": not silent, "stt": not deaf, "tts_off": silent, "stt_off": deaf, "voices": len(self.voices), "operator": operator, "sample": sample,
+            "limit": SPEECH_LIMIT, "rate": STT_RATE, "seconds": STT_SECONDS,
+        }
 
     def synthesize(self, body: bytes) -> bytes:
-        if not self.speaks():
-            raise Unavailable("speech output is off: no Piper voice or executable is installed")
+        gap = self.output_gap()
+        if gap:
+            raise Unavailable(f"speech output is off: {gap}")
         payload = decode(body)
         expect(payload, ("text", "voice"))
         voice = payload["voice"]
@@ -189,8 +233,9 @@ class Speech:
             path.unlink(missing_ok=True)
 
     def transcribe(self, body: bytes) -> dict:
-        if not self.hears():
-            raise Unavailable("speech input is off: whisper.cpp or its model is missing")
+        gap = self.input_gap()
+        if gap:
+            raise Unavailable(f"speech input is off: {gap}")
         wav_seconds(body)
         command = [str(self.engines.whisper), "--model", str(self.engines.whisper_model), "--file", "-", "--output-txt", "--language", "auto", "--no-prints", "--suppress-nst"]
         with self.hearing:

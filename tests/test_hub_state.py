@@ -163,7 +163,7 @@ class TestHubState(HubCase):
         self.assertEqual([row["voice"] for row in state["radio"]], [speech.voice_of(row["source"]) for row in state["radio"]])
         self.assertTrue(all(row["voice"] in VOICES and row["voice"] != OPERATOR_VOICE for row in state["radio"]))
         self.assertEqual(state["speech"], {
-            "tts": True, "stt": True, "voices": len(VOICES), "operator": OPERATOR_VOICE, "sample": "all stations, this is Operator, radio check, out",
+            "tts": True, "stt": True, "tts_off": "", "stt_off": "", "voices": len(VOICES), "operator": OPERATOR_VOICE, "sample": "all stations, this is Operator, radio check, out",
             "limit": phrasing.SPEECH_LIMIT, "rate": engines.STT_RATE, "seconds": engines.STT_SECONDS,
         })
         self.assertAlmostEqual(state["now"] - state["since"], view.RADIO_WINDOW)
