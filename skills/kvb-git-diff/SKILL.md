@@ -1,8 +1,7 @@
 ---
 name: kvb-git-diff
 description: >
-  Approve a staged commit in the kvb-hub browser page instead of the chat;
-  the commit skills run it.
+  Approve staged commits in the kvb-hub page; the commit skills run it.
 ---
 
 The commit skills run this where they ask for the commit approval. A hub

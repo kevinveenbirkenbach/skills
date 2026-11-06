@@ -2,8 +2,7 @@
 name: kvb-git-commit-next
 description: >
   Search every branch for the staged fix, commit it with --no-verify, then
-  stage and brief the next bundle. Trigger on a request to commit and stage
-  next.
+  stage and brief the next bundle.
 ---
 
 1. Describe the staged bundle in one line, so a wrong search intent is

@@ -2,8 +2,7 @@
 name: kvb-code-tune
 description: >
   Speed up CI, deploys, builds and hot paths without losing logic or
-  coverage. Trigger on a job hitting its time budget or when asked where
-  time goes.
+  coverage. Trigger on a job over its time budget or where time goes.
 ---
 
 One rule outranks every optimization: **nothing that reduces logic, coverage or
