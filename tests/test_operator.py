@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -234,10 +236,57 @@ class TestOperator(unittest.TestCase):
         self._add("push", repo, "false", "branch ahead", f"pushed:{repo}")
         result = self._feed("y\n")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("$ git --no-pager log --oneline '@{u}..HEAD'", result.stdout)
+        self.assertIn("--no-pager --no-optional-locks log --oneline '@{u}..HEAD'", result.stdout)
         self.assertRegex(result.stdout, r"[0-9a-f]{7,} two")
         self.assertIn("failed operator/push: exit 1; the row stays open", result.stdout)
         self.assertEqual(self._open(), ["operator/push"])
+
+    def test_run_preview_runs_no_command_a_repo_config_names(self):
+        marker = self.base / "ran"
+        trap = self._repo("trap", upstream=False)
+        (trap / "keep").write_text("k", encoding="utf-8")
+        self._git(trap, "add", "keep")
+        self._git(trap, "commit", "-qm", "keep")
+        self._git(trap, "config", "core.fsmonitor", f"touch {marker}")
+        self._git(trap, "config", "diff.external", f"touch {marker}")
+        hook = trap / ".git" / "hooks" / "post-index-change"
+        hook.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+        hook.chmod(0o755)
+        future = time.time() + 1000
+        os.utime(trap / "keep", (future, future))
+        filtered = self._repo("filtered", upstream=False)
+        self._git(filtered, "config", "filter.x.clean", f"touch {marker}")
+        (filtered / ".gitattributes").write_text("* filter=x\n", encoding="utf-8")
+        for repo in (trap, filtered):
+            (repo / "one").write_text("changed", encoding="utf-8")
+            self._add(repo.name, repo, "true", "r", "manual")
+        result = self._feed("d\ns\nd\ns\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(" M one", result.stdout)
+        self.assertIn("+changed", result.stdout)
+        self.assertNotIn("?? 2", result.stdout)
+        self.assertFalse(marker.exists())
+
+    def test_list_and_preview_never_fetch_a_missing_object(self):
+        marker = self.base / "fetched"
+        repo = self._repo("lazy", upstream=True)
+        self._git(repo, "config", "remote.origin.promisor", "true")
+        self._git(repo, "config", "remote.origin.uploadpack", f"touch {marker}; git-upload-pack")
+        (repo / ".git" / "refs" / "remotes" / "origin" / "main").write_text("1" * 40 + "\n", encoding="utf-8")
+        self._add("lazy", repo, "true", "r", f"pushed:{repo}")
+        self._out("list")
+        self.assertEqual(self._feed("s\n").returncode, 0)
+        self.assertFalse(marker.exists())
+
+    def test_run_shows_control_characters_of_the_preview(self):
+        repo = self._repo("spoof", upstream=True)
+        (repo / "three").write_text("3", encoding="utf-8")
+        self._git(repo, "add", "three")
+        self._git(repo, "commit", "-qm", "x\x1b[1A\x1b[2Kfake")
+        self._add("spoof", repo, "true", "r", f"pushed:{repo}")
+        out = self._feed("s\n").stdout
+        self.assertNotIn("\x1b", out)
+        self.assertIn("x\\x1b[1A\\x1b[2Kfake", out)
 
     def test_decision_rows_stay_out_of_blocks_and_run(self):
         self._add("ask", self.base, "decide: keep fix B", "operator only", "decision")

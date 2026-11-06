@@ -31,7 +31,8 @@ Args:
         order. Per row it prints directory, command (control characters made
         visible), reason and check, then a preview of what the command
         changes, and asks [y]es / [s]kip / [d]iff / [q]uit; d shows the full
-        diff. y runs the command in its directory, then sets the row done
+        diff. A repo whose git config names filter commands gets no
+        preview. y runs the command in its directory, then sets the row done
         when its check passes (manual: when the command exits 0). A command
         the kvb-org-organize watch config calls heavy also shows the memory
         stage and `queue.py list`; once the config holds the queue keys and
@@ -100,6 +101,9 @@ META = re.compile(r"[\s|&;()<>$`\\\"'*?\[\]{}~!#]")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 COMMIT = re.compile(r"\bcommit\b")
 HEADER = "| # | Directory | Command | Why | Check |"
+# Trip-wire: agents name these repos, and git runs commands their config names (fsmonitor, hooks, pager, external diff, textconv, gpg, filters, lazy fetch) as the operator.
+GIT = ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "log.showSignature=false", "--no-pager", "--no-optional-locks"]
+DIFF = [*GIT, "diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all"]
 
 
 def fail(message: str) -> None:
@@ -148,11 +152,15 @@ def problem(check: str) -> str | None:
     return path_problem(arg, kind)
 
 
+def git_env() -> dict[str, str]:
+    return {**os.environ, "GIT_NO_LAZY_FETCH": "1"}
+
+
 def ahead(repo: str) -> int | None:
     try:
         result = subprocess.run(
-            ["git", "rev-list", "--count", "@{u}..HEAD"],
-            cwd=repo, capture_output=True, text=True, check=False,
+            [*GIT, "rev-list", "--count", "@{u}..HEAD"],
+            cwd=repo, env=git_env(), capture_output=True, text=True, check=False,
         )
     except OSError:
         return None
@@ -191,7 +199,7 @@ def passed(check: str) -> bool:
 
 
 def cell(text: object) -> str:
-    return " ".join(str(text).split()).replace("|", "\\|")
+    return visible(" ".join(str(text).split()), "").replace("|", "\\|")
 
 
 def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
@@ -269,10 +277,10 @@ def cmd_list(rasci: ModuleType, args: argparse.Namespace) -> int:
     steps = [(number, row) for number, row in enumerate(listed, 1) if runnable(row)]
     for number, row in steps:
         print()
-        print(f"{number}. {row['task']}")
+        print(f"{number}. {visible(row['task'], '')}")
         print("```bash")
         print(f"cd {shlex.quote(row['directory'])}")
-        print(row["command"])
+        print(visible(row["command"], ""))
         print("```")
     if steps:
         print()
@@ -295,7 +303,16 @@ def visible(text: str, keep: str) -> str:
 def git_tree(directory: str) -> bool:
     try:
         return subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"], cwd=directory, capture_output=True, check=False
+            [*GIT, "rev-parse", "--is-inside-work-tree"], cwd=directory, env=git_env(), capture_output=True, check=False
+        ).returncode == 0
+    except OSError:
+        return False
+
+
+def filtered(directory: str) -> bool:
+    try:
+        return subprocess.run(
+            [*GIT, "config", "--get-regexp", r"^filter\."], cwd=directory, env=git_env(), capture_output=True, check=False
         ).returncode == 0
     except OSError:
         return False
@@ -305,23 +322,17 @@ def evidence(check: str, directory: str, full: bool) -> list[tuple[list[str], st
     kind, _, arg = check.partition(":")
     if kind == "pushed":
         if full:
-            return [(["git", "diff", "@{u}..HEAD"], arg)]
-        return [
-            (["git", "--no-pager", "log", "--oneline", "@{u}..HEAD"], arg),
-            (["git", "--no-pager", "diff", "--stat", "@{u}..HEAD"], arg),
-        ]
+            return [([*DIFF, "@{u}..HEAD"], arg)]
+        return [([*GIT, "log", "--oneline", "@{u}..HEAD"], arg), ([*DIFF, "--stat", "@{u}..HEAD"], arg)]
     if kind == "installed":
         source, _, target = arg.partition("=")
         return [(["diff", "-ru" if full else "-rq", "--exclude=__pycache__", target, source], directory)]
     if kind == "absent":
         return [(["ls", "-la" if full else "-ld", "--", arg], directory)]
-    if kind == "manual" and git_tree(directory):
+    if kind == "manual" and git_tree(directory) and not filtered(directory):
         if full:
-            return [(["git", "diff", "HEAD"], directory)]
-        return [
-            (["git", "--no-pager", "log", "-1", "--oneline"], directory),
-            (["git", "--no-pager", "status", "--short"], directory),
-        ]
+            return [([*DIFF, "HEAD"], directory)]
+        return [([*GIT, "log", "-1", "--oneline"], directory), ([*GIT, "status", "--short", "--ignore-submodules=all"], directory)]
     return []
 
 
@@ -331,9 +342,14 @@ def show(commands: list[tuple[list[str], str]]) -> None:
     for argv, cwd in commands:
         print(f"$ {shlex.join(argv)}", flush=True)
         try:
-            subprocess.run(argv, cwd=cwd, check=False)
+            done = subprocess.run(
+                argv, cwd=cwd, env=git_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", check=False
+            )
         except OSError as error:
             print(f"  {error}", flush=True)
+            continue
+        for line in done.stdout.splitlines():
+            print(visible(line, "\t"), flush=True)
 
 
 def ask(holdable: bool, read: Callable[[str], str | None]) -> str:
@@ -432,7 +448,7 @@ def cmd_granted(rasci: ModuleType, args: argparse.Namespace) -> int:
               file=sys.stderr)
         return NOT_RUN
     row = approved[0]
-    print(f"\ngranted {row['task']}: the queue lets it run now; its tree may have changed while it waited")
+    print(f"\ngranted {visible(row['task'], '')}: the queue lets it run now; its tree may have changed while it waited")
     print(f"  directory: {visible(row['directory'], '')}")
     print(f"  command:   {visible(row['command'], '')}", flush=True)
     try:
@@ -464,11 +480,11 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
     cfg = watch.load_config()
     for number, row in enumerate(steps, 1):
         check = "manual" if problem(row["check"]) else row["check"]
-        print(f"\n[{number}/{len(steps)}] {row['task']}")
+        print(f"\n[{number}/{len(steps)}] {visible(row['task'], '')}")
         print(f"  directory: {visible(row['directory'], '')}")
         print(f"  command:   {visible(row['command'], '')}")
         print(f"  why:       {visible(row['why'] or '-', '')}")
-        print(f"  check:     {check}", flush=True)
+        print(f"  check:     {visible(check, '')}", flush=True)
         holdable = heavy_row(watch, cfg, row)
         answer = review(row, holdable, typed)
         if answer == "q":
