@@ -122,6 +122,8 @@ const SCRIPT_HOOKS = [
   ["kvb-org-radio/scripts/radio.py", "UserPromptSubmit", null, "hook", {}],
   ["kvb-org-radio/scripts/radio.py", "PostToolBatch", null, "tool", {}],
   ["kvb-org-radio/scripts/radio.py", "Stop", null, "listen", { asyncRewake: true, timeout: 21600 }],
+  ["kvb-org-radio/scripts/radio.py", "Stop", null, "mailbox", {}],
+  ["kvb-org-radio/scripts/radio.py", "PreToolUse", "Edit|Write|MultiEdit|NotebookEdit|Bash", "block", {}],
   ["kvb-org-organize/scripts/watch.py", "PostToolUse", "Bash", "watch", {}],
   ["kvb-org-organize/scripts/watch.py", "PreToolUse", "Bash", "block", {}],
   ["kvb-org-queue/scripts/queue.py", "PreToolUse", "Bash", "block", {}],

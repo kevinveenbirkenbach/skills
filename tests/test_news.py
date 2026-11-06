@@ -1,4 +1,4 @@
-"""Exercise the news.py shim: it forwards post, hook and show to radio.py, and a missing radio.py never blocks a prompt."""
+"""Exercise the news.py shim: it forwards post, hook, mailbox and show to radio.py, and a missing radio.py never blocks a prompt."""
 
 from __future__ import annotations
 
@@ -47,17 +47,23 @@ class TestNews(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return [line.split(" ", 3)[3] for line in result.stdout.splitlines()]
 
-    def test_every_session_sees_a_post_once_except_its_author(self):
-        self.assertEqual(self._cli("s1", "post", "core #1358   merged").stdout, "sent broadcast to all\n")
-        self.assertEqual(self._hook("s2"), ["One: core #1358 merged"])
+    def _mailbox(self, sid: str) -> list[str]:
+        result = self._exec(NEWS, None, json.dumps({"session_id": sid}), ("mailbox",))
+        self.assertIn(result.returncode, (0, 2), result.stderr)
+        return [line.split(" ", 3)[3] for line in result.stderr.splitlines()]
+
+    def test_every_session_sees_a_post_once_when_its_turn_ends_except_its_author(self):
+        self.assertEqual(self._cli("s1", "post", "core #1358   merged").stdout, "sent newsletter to all\n")
         self.assertEqual(self._hook("s2"), [])
-        self.assertEqual(self._hook("s3"), ["One: core #1358 merged"])
-        self.assertEqual(self._hook("s1"), [])
+        self.assertEqual(self._mailbox("s2"), ["One: core #1358 merged"])
+        self.assertEqual(self._mailbox("s2"), [])
+        self.assertEqual(self._mailbox("s3"), ["One: core #1358 merged"])
+        self.assertEqual(self._mailbox("s1"), [])
 
     def test_addressed_post_reaches_only_its_target(self):
         self._cli("s1", "post", "your gate is granted", "--to", "Two")
-        self.assertEqual(self._hook("s3"), [])
-        self.assertEqual(self._hook("s2"), ["One to Two: your gate is granted"])
+        self.assertEqual(self._mailbox("s3"), [])
+        self.assertEqual(self._mailbox("s2"), ["One to Two: your gate is granted"])
         self.assertEqual(len(self._cli("s1", "show", "--all").stdout.splitlines()), 1)
 
     def test_hook_never_fails_and_post_needs_a_session(self):

@@ -27,7 +27,8 @@ outranks them and appoints or recalls at will.
 4. Elected: complete the task the claim entered in the `kvb-org-rasci`
    register (objective, description, priority, roles); the listed claim
    announces it.
-5. Not elected: radio your findings to the holder (`direct`) and stop.
+5. Not elected: post your findings to the holder (`radio.py post --to`) and
+   stop.
 
 A hook (`council.py gate`) blocks worktree edits before a claim. Between
 machines the earliest announcement by message time wins; each host's claim
@@ -59,8 +60,8 @@ fix is known.
 - Hotfixes: `${CLAUDE_SKILL_DIR}/../kvb-git-hotfix/scripts/hotfix.py add` and
   `update`; merged ones go out as radio `security` by themselves.
 - Agents are reached through `kvb-org-radio`; status that asks nothing as
-  `broadcast` or `direct`.
-- `direct --wake` only when the recipient must act or answer: one batched
+  post or newsletter (`radio.py post`).
+- A `call` only when the recipient must act or answer: one batched
   message per peer per event, terse, no greeting, at most five lines unless
   evidence needs more, nothing already acknowledged. A message asking
   nothing gets no reply; end that turn in one line.

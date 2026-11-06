@@ -45,8 +45,8 @@ rules forbidding raw commands.
 ## Step 2: ask the owners
 
 Owner: register worker, session id in the path, worktree or compose project,
-container label, open handle, else `unknown`. `radio.py send direct --to
-<peer> --wake` the text in `ask.md` next to this file once to each local peer
+container label, open handle, else `unknown`. `radio.py send call --to
+<peer>` the text in `ask.md` next to this file once to each local peer
 owning candidates the register does not cover; go on meanwhile.
 
 ## Step 3: classify

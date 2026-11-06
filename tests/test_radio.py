@@ -1,10 +1,11 @@
-"""Exercise radio.py: class rules, the store shared with news.py, radio silence, the three hooks and the listener."""
+"""Exercise radio.py: the radio and post channels, the shared store, radio silence, the hooks and the listener."""
 
 from __future__ import annotations
 
 import fcntl
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,7 +15,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RADIO = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
-CLASSES = ("BROADCAST", "DIRECT", "SECURITY", "PAN-PAN", "MAYDAY")
+LINE = re.compile(r"^(?:RADIO|MAIL) (CALL|BROADCAST|SECURITY|PAN-PAN|MAYDAY|POST|NEWSLETTER) \d\d:\d\d (.*)$", re.DOTALL)
 LISTENER = (
     "import importlib.util, sys\n"
     "spec = importlib.util.spec_from_file_location('radio', sys.argv[1])\n"
@@ -27,10 +28,8 @@ LISTENER = (
 
 
 def strip(line: str) -> str:
-    parts = line.split(" ", 3)
-    if parts[0] != "RADIO" or parts[1] not in CLASSES:
-        return line
-    return f"{parts[1]} {parts[3]}"
+    match = LINE.match(line)
+    return f"{match[1]} {match[2]}" if match else line
 
 
 class TestRadio(unittest.TestCase):
@@ -86,6 +85,19 @@ class TestRadio(unittest.TestCase):
         self.assertEqual(output["hookEventName"], "PostToolBatch")
         return [strip(line) for line in output["additionalContext"].splitlines()]
 
+    def _mailbox(self, sid: str, **extra: str) -> tuple[int, list[str]]:
+        result = self._exec(None, json.dumps({"session_id": sid, **extra}), ("mailbox",))
+        self.assertIn(result.returncode, (0, 2), result.stderr)
+        self.assertEqual(result.stdout, "")
+        return result.returncode, [strip(line) for line in result.stderr.splitlines()]
+
+    def _block(self, sid: str, tool: str, command: str | None = None, **extra: str) -> int:
+        tool_input = {"command": command} if tool == "Bash" else {"file_path": "/tmp/x"}
+        payload = {"session_id": sid, "tool_name": tool, "tool_input": tool_input, **extra}
+        result = self._exec(None, json.dumps(payload), ("block",))
+        self.assertEqual(result.stdout, "")
+        return result.returncode
+
     def _rows(self) -> list[dict]:
         return [json.loads(line) for line in (self.root / "news.jsonl").read_text(encoding="utf-8").splitlines()]
 
@@ -113,52 +125,79 @@ class TestRadio(unittest.TestCase):
             proc.kill()
         proc.communicate()
 
-    def _finish(self, proc: subprocess.Popen) -> tuple[int, str]:
+    def _finish(self, proc: subprocess.Popen) -> tuple[int, list[str]]:
         _, err = proc.communicate(timeout=10)
-        return proc.returncode, err
+        return proc.returncode, [strip(line) for line in err.splitlines()]
 
-    def test_classes_are_validated(self):
+    def test_send_takes_only_radio_classes_and_post_takes_the_mail(self):
         for args in (
+            ("send", "post", "x", "--to", "Two"),
+            ("send", "newsletter", "x"),
+            ("send", "receipt", "x", "--to", "Two"),
             ("send", "broadcast", "x", "--to", "Two"),
+            ("send", "call", "x"),
             ("send", "direct", "x"),
             ("send", "mayday", "x", "--to", "Two"),
             ("send", "security", "x", "--wake"),
-            ("send", "broadcast", "x", "--wake"),
+            ("send", "call", "x", "--to", "Two", "--wake"),
             ("send", "bogus", "x"),
             ("send", "pan-pan", "   "),
+            ("post", "   "),
         ):
             with self.subTest(args=args):
                 self.assertEqual(self._cli("s1", *args).returncode, 2)
         self.assertEqual(self._cli(None, "send", "broadcast", "x").returncode, 2)
+        self.assertEqual(self._send("s1", "send", "call", "a   b", "--to", "Two", "--to", "Three")[0], "sent call to Two, Three")
+        self.assertEqual(self._send("s1", "post", "board"), ["sent newsletter to all"])
+        self.assertEqual(self._send("s1", "post", "one peer", "--to", "Two"), ["sent post to Two"])
+        self.assertEqual(self._send("s1", "send", "direct", "old mail", "--to", "Two"), ["sent post to Two"])
+        self.assertEqual(self._send("s1", "send", "direct", "old wake", "--to", "Two", "--wake")[0], "sent call to Two")
         self.assertEqual(
-            self._send("s1", "send", "direct", "a   b", "--to", "Two", "--to", "Three"), ["sent direct to Two, Three"]
-        )
-        self.assertEqual(self._send("s1", "post", "board"), ["sent broadcast to all"])
-        self.assertEqual(self._send("s1", "post", "one peer", "--to", "Two"), ["sent direct to Two"])
-        self.assertEqual(
-            [(r["class"], r["to"], r["text"], "wake" in r) for r in self._rows()],
-            [("direct", ["Two", "Three"], "a b", False), ("broadcast", [], "board", False), ("direct", ["Two"], "one peer", False)],
+            [(r["class"], r["to"], r["text"], r["v"], "wake" in r) for r in self._rows()],
+            [
+                ("call", ["Two", "Three"], "a b", 2, False),
+                ("newsletter", [], "board", 2, False),
+                ("post", ["Two"], "one peer", 2, False),
+                ("post", ["Two"], "old mail", 2, False),
+                ("call", ["Two"], "old wake", 2, False),
+            ],
         )
 
-    def test_old_rows_are_read_and_new_rows_keep_the_old_keys(self):
+    def test_rows_without_the_version_mark_keep_their_old_meaning(self):
         self.root.mkdir()
         now = time.time()
         old = [
-            {"ts": now - 10, "from": "Three", "to": [], "text": "old board"},
-            {"ts": now - 5, "from": "Three", "to": ["Two"], "text": "old direct"},
+            {"ts": now - 50, "from": "Three", "to": [], "text": "old board"},
+            {"ts": now - 40, "from": "Three", "to": ["Two"], "text": "old direct"},
+            {"ts": now - 30, "from": "Three", "to": [], "text": "old broadcast", "class": "broadcast"},
+            {"ts": now - 20, "from": "Three", "to": ["Two"], "text": "old wake", "class": "direct", "wake": True},
+            {"ts": now - 10, "from": "Three", "to": [], "text": "old security", "class": "security"},
         ]
         (self.root / "news.jsonl").write_text("".join(json.dumps(r) + "\n" for r in old), encoding="utf-8")
-        self.assertEqual(self._prompt("s2"), ["BROADCAST Three: old board", "DIRECT Three to Two: old direct"])
-        self.assertEqual(float((self.root / "news-seen" / "s2").read_text(encoding="utf-8")), now - 5)
+        self.assertEqual(
+            [strip(line) for line in self._send("s2", "show", "--all")],
+            [
+                "NEWSLETTER Three: old board",
+                "POST Three to Two: old direct",
+                "NEWSLETTER Three: old broadcast",
+                "CALL Three to Two: old wake",
+                "SECURITY Three: old security",
+            ],
+        )
+        self.assertEqual(self._prompt("s2"), ["SECURITY Three: old security", "CALL Three to Two: old wake"])
+        self.assertEqual(
+            self._mailbox("s2"),
+            (2, ["NEWSLETTER Three: old board", "POST Three to Two: old direct", "NEWSLETTER Three: old broadcast"]),
+        )
         self._send("s1", "send", "security", "new")
         rows = self._rows()
-        self.assertEqual(rows[:2], old)
+        self.assertEqual(rows[:5], old)
         for row in rows:
             self.assertIsInstance(row["ts"], float)
             self.assertIsInstance(row["from"], str)
             self.assertIsInstance(row["to"], list)
             self.assertIsInstance(row["text"], str)
-        self.assertEqual(rows[2]["class"], "security")
+        self.assertEqual((rows[-1]["class"], rows[-1]["v"]), ("security", 2))
 
     def test_ts_strictly_increases_under_the_lock(self):
         self.root.mkdir()
@@ -172,6 +211,7 @@ class TestRadio(unittest.TestCase):
 
     def test_mayday_sets_silence_and_only_its_sender_clears_it(self):
         self.assertEqual(self._send("s1", "clear"), ["no radio silence active"])
+        self.assertEqual(self._send("s2", "assist"), ["no radio silence active"])
         self.assertEqual(self._send("s1", "send", "mayday", "disk full")[0], "sent mayday to all")
         silence = self.root / "radio-silence.json"
         state = json.loads(silence.read_text(encoding="utf-8"))
@@ -188,57 +228,100 @@ class TestRadio(unittest.TestCase):
         self.assertEqual(self._send("s2", "clear", "--force"), ["cleared radio silence by One, forced by Two"])
         self.assertFalse(silence.exists())
 
-    def test_a_wake_names_every_addressee_without_a_live_listener(self):
+    def test_the_radio_names_every_addressee_without_a_live_listener_and_the_post_none(self):
         self._pidfile("s2").parent.mkdir(parents=True)
         self._pidfile("s2").write_text(str(os.getpid()), encoding="utf-8")
-        self.assertEqual(self._send("s1", "send", "mayday", "stop"), ["sent mayday to all", "wake: SendMessage to Three"])
+        for cls in ("mayday", "broadcast", "security", "pan-pan"):
+            with self.subTest(cls=cls):
+                self.assertEqual(self._send("s1", "send", cls, "stop"), [f"sent {cls} to all", "wake: SendMessage to Three"])
         self.assertEqual(
-            self._send("s1", "send", "direct", "answer", "--to", "Two", "--to", "Three", "--wake"),
-            ["sent direct to Two, Three", "wake: SendMessage to Three"],
+            self._send("s1", "send", "call", "answer", "--to", "Two", "--to", "Three"),
+            ["sent call to Two, Three", "wake: SendMessage to Three"],
         )
         dead = subprocess.Popen([sys.executable, "-c", "pass"])
         dead.wait()
         self._pidfile("s2").write_text(str(dead.pid), encoding="utf-8")
-        self.assertEqual(
-            self._send("s1", "send", "direct", "answer", "--to", "Two", "--wake"),
-            ["sent direct to Two", "wake: SendMessage to Two"],
-        )
-        self.assertEqual(self._send("s1", "send", "direct", "no wake", "--to", "Three"), ["sent direct to Three"])
-        self.assertEqual([r.get("wake") for r in self._rows()], [None, True, True, None])
+        self.assertEqual(self._send("s1", "send", "call", "answer", "--to", "Two"), ["sent call to Two", "wake: SendMessage to Two"])
+        self.assertEqual(self._send("s1", "post", "no wake", "--to", "Three"), ["sent post to Three"])
+        self.assertEqual(self._send("s1", "post", "no wake"), ["sent newsletter to all"])
 
-    def test_prompt_hook_puts_urgent_first_and_repeats_the_silence(self):
+    def test_prompt_hook_delivers_only_the_radio_alarms_first(self):
         self._send("s1", "post", "board")
         self._send("s1", "post", "for two", "--to", "Two")
+        self._send("s1", "send", "broadcast", "all")
+        self._send("s1", "send", "call", "ring", "--to", "Two")
         self._send("s1", "send", "security", "sec")
         self._send("s1", "send", "pan-pan", "pan")
         self._send("s1", "send", "mayday", "may")
         lines = self._prompt("s2")
-        self.assertRegex(lines[0], r"^MAYDAY ACTIVE since \d\d:\d\d by One: may; no new heavy jobs until radio\.py clear$")
+        self.assertRegex(
+            lines[0],
+            r"^MAYDAY ACTIVE since \d\d:\d\d by One: may; writing actions wait until radio\.py clear unless you help "
+            r"with radio\.py assist$",
+        )
         self.assertEqual(
             lines[1:],
-            ["MAYDAY One: may", "PAN-PAN One: pan", "SECURITY One: sec", "BROADCAST One: board", "DIRECT One to Two: for two"],
+            ["MAYDAY One: may", "PAN-PAN One: pan", "SECURITY One: sec", "CALL One to Two: ring", "BROADCAST One: all"],
         )
         self.assertEqual(len(self._prompt("s2")), 1)
-        self.assertNotIn("DIRECT One to Two: for two", self._prompt("s3"))
+        self.assertNotIn("CALL One to Two: ring", self._prompt("s3"))
         self.assertEqual(len(self._prompt("s1")), 1)
 
     def test_prompt_hook_shows_ten_and_counts_the_rest(self):
         self._send("s1", "send", "security", "early warning")
         for n in range(12):
-            self._send("s1", "post", f"item {n}")
+            self._send("s1", "send", "broadcast", f"item {n}")
         lines = self._prompt("s2")
         self.assertEqual(lines[0], "SECURITY One: early warning")
         self.assertEqual(lines[1:-1], [f"BROADCAST One: item {n}" for n in range(3, 12)])
         self.assertEqual(lines[-1], "RADIO 3 more items: radio.py show --all")
         self.assertEqual(self._prompt("s2"), [])
 
-    def test_tool_hook_delivers_urgent_rows_once_and_the_prompt_skips_them(self):
+    def test_the_mailbox_delivers_post_and_newsletters_once_when_the_turn_ends(self):
+        self._send("s1", "post", "board")
+        self._send("s1", "post", "for two", "--to", "Two")
+        self._send("s1", "send", "security", "sec")
+        self.assertEqual(self._mailbox("s2"), (2, ["NEWSLETTER One: board", "POST One to Two: for two"]))
+        self.assertEqual(self._mailbox("s2"), (0, []))
+        self.assertEqual(self._mailbox("s3"), (2, ["NEWSLETTER One: board"]))
+        self.assertEqual(self._mailbox("s1"), (0, []))
+        self.assertEqual(self._prompt("s2"), ["SECURITY One: sec"])
+
+    def test_the_mailbox_shows_ten_and_counts_the_rest(self):
+        for n in range(12):
+            self._send("s1", "post", f"item {n}")
+        code, lines = self._mailbox("s2")
+        self.assertEqual(code, 2)
+        self.assertEqual(lines[:-1], [f"NEWSLETTER One: item {n}" for n in range(2, 12)])
+        self.assertEqual(lines[-1], "MAIL 2 more items: radio.py show --all")
+        self.assertEqual(self._mailbox("s2"), (0, []))
+
+    def test_a_read_call_puts_one_receipt_in_the_callers_mailbox_without_waking_it(self):
+        caller = self._listen("s1")
+        self._send("s1", "send", "call", "ring", "--to", "Two")
+        self.assertEqual(self._tool("s2"), ["CALL One to Two: ring"])
+        self.assertEqual(self._tool("s2"), [])
+        self.assertEqual(self._prompt("s2"), [])
+        rows = self._rows()
+        receipts = [r for r in rows if r["class"] == "receipt"]
+        self.assertEqual([(r["from"], r["to"], r["text"], r["v"], r["call"]) for r in receipts], [("Two", ["One"], "ring", 2, rows[0]["ts"])])
+        time.sleep(0.5)
+        self.assertIsNone(caller.poll())
+        code, lines = self._mailbox("s1")
+        self.assertEqual(code, 2)
+        self.assertEqual(len(lines), 1)
+        self.assertRegex(lines[0], r"^MAIL CALL Two read \d\d:\d\d: ring$")
+        self.assertEqual(self._mailbox("s1"), (0, []))
+        self.assertEqual(self._mailbox("s2"), (0, []))
+
+    def test_tool_hook_delivers_radio_rows_once_and_leaves_the_mail_for_the_stop(self):
         self._send("s1", "post", "board")
         self.assertEqual(self._tool("s2"), [])
         self._send("s1", "send", "pan-pan", "pan")
         self.assertEqual(self._tool("s2"), ["PAN-PAN One: pan"])
         self.assertEqual(self._tool("s2"), [])
-        self.assertEqual(self._prompt("s2"), ["BROADCAST One: board"])
+        self.assertEqual(self._prompt("s2"), [])
+        self.assertEqual(self._mailbox("s2"), (2, ["NEWSLETTER One: board"]))
         self.assertEqual(self._tool("s3"), ["PAN-PAN One: pan"])
         self.assertEqual(self._tool("s1"), [])
 
@@ -257,8 +340,10 @@ class TestRadio(unittest.TestCase):
 
     def test_hooks_skip_subagents_and_never_fail(self):
         self._send("s1", "send", "pan-pan", "pan")
+        self._send("s1", "post", "board")
         self.assertEqual(self._hook("hook", "s2", agent_id="a1"), "")
         self.assertEqual(self._hook("tool", "s2", agent_id="a1"), "")
+        self.assertEqual(self._mailbox("s2", agent_id="a1"), (0, []))
         listen = subprocess.run(
             [sys.executable, "-c", LISTENER, str(RADIO)],
             input=json.dumps({"session_id": "s2", "agent_id": "a1"}),
@@ -266,8 +351,8 @@ class TestRadio(unittest.TestCase):
         )
         self.assertEqual((listen.returncode, listen.stderr), (0, ""))
         self.assertFalse(self._pidfile("s2").exists())
-        self.assertFalse((self.root / "news-seen" / "s2").exists())
-        for command in ("hook", "tool"):
+        self.assertFalse((self.root / "radio-seen" / "s2.json").exists())
+        for command in ("hook", "tool", "mailbox", "block"):
             for stdin in ("not json", "{}", "[]"):
                 with self.subTest(command=command, stdin=stdin):
                     result = self._exec(None, stdin, (command,))
@@ -284,36 +369,117 @@ class TestRadio(unittest.TestCase):
 
     def test_listener_wakes_on_mayday(self):
         proc = self._listen("s2")
-        self.assertEqual(
-            self._send("s1", "send", "mayday", "host down"), ["sent mayday to all", "wake: SendMessage to Three"]
-        )
-        code, err = self._finish(proc)
-        self.assertEqual(code, 2)
-        self.assertEqual([strip(line) for line in err.splitlines()], ["MAYDAY One: host down"])
+        self.assertEqual(self._send("s1", "send", "mayday", "host down"), ["sent mayday to all", "wake: SendMessage to Three"])
+        self.assertEqual(self._finish(proc), (2, ["MAYDAY One: host down"]))
         self.assertEqual(self._tool("s2"), [])
         self.assertEqual(len(self._prompt("s2")), 1)
 
-    def test_listener_wakes_only_on_a_direct_wake(self):
+    def test_listener_ignores_the_mail_and_wakes_on_a_broadcast(self):
         proc = self._listen("s2")
         self._send("s1", "post", "board")
         self._send("s1", "post", "plain", "--to", "Two")
-        self._send("s1", "send", "pan-pan", "pan")
-        self._send("s1", "send", "direct", "elsewhere", "--to", "Three", "--wake")
+        self._send("s1", "send", "call", "elsewhere", "--to", "Three")
         time.sleep(0.5)
         self.assertIsNone(proc.poll())
-        self.assertEqual(self._send("s1", "send", "direct", "answer me", "--to", "Two", "--wake"), ["sent direct to Two"])
-        code, err = self._finish(proc)
-        self.assertEqual(code, 2)
-        self.assertEqual([strip(line) for line in err.splitlines()], ["PAN-PAN One: pan", "DIRECT One to Two: answer me"])
-        self.assertEqual(self._prompt("s2"), ["BROADCAST One: board", "DIRECT One to Two: plain"])
+        self._send("s1", "send", "broadcast", "all hands")
+        self.assertEqual(self._finish(proc), (2, ["BROADCAST One: all hands"]))
+        self.assertEqual(self._prompt("s2"), [])
+        self.assertEqual(self._mailbox("s2"), (2, ["NEWSLETTER One: board", "POST One to Two: plain"]))
+
+    def test_listener_wakes_on_a_call_and_on_pan_pan(self):
+        proc = self._listen("s2")
+        self._send("s1", "send", "call", "answer me", "--to", "Two")
+        self.assertEqual(self._finish(proc), (2, ["CALL One to Two: answer me"]))
+        proc = self._listen("s2")
+        self._send("s1", "send", "pan-pan", "pan")
+        self.assertEqual(self._finish(proc), (2, ["PAN-PAN One: pan"]))
 
     def test_listener_yields_to_a_newer_one(self):
         first = self._listen("s2")
         second = self._listen("s2")
-        self.assertEqual(self._finish(first), (0, ""))
+        self.assertEqual(self._finish(first), (0, []))
         self.assertIsNone(second.poll())
         self._pidfile("s2").write_text("0", encoding="utf-8")
-        self.assertEqual(self._finish(second), (0, ""))
+        self.assertEqual(self._finish(second), (0, []))
+
+    def test_a_mayday_blocks_the_writing_actions_of_everyone_but_its_sender_and_helpers_until_clear(self):
+        self.assertEqual(self._block("s2", "Edit"), 0)
+        self._send("s1", "send", "mayday", "disk full")
+        for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+            with self.subTest(tool=tool):
+                self.assertEqual(self._block("s2", tool), 2)
+        self.assertEqual(self._block("s2", "Edit", agent_id="a1"), 2)
+        for command in (
+            "rm -rf build",
+            "git status",
+            f"python3 {RADIO} show; rm -rf build",
+            f"python3 {RADIO} show && touch x",
+            f"echo $(python3 {RADIO} show)",
+            "python3 /elsewhere/radio.py show",
+            f"python3 -W {RADIO} /tmp/other.py",
+            f"python3 -X {RADIO} /tmp/other.py",
+            f"python3 -c {RADIO}",
+            f"./python-other {RADIO} show",
+            f"/tmp/elsewhere/python3 {RADIO} show",
+            f"python3 -i {RADIO} show",
+            f'python3 {RADIO} show "$(touch x)"',
+            f"python3 {RADIO} show \\';touch x;\\'",
+            f"python3 {RADIO} \"it's\" ; touch x ; echo 'z'",
+            f"python3 {RADIO} show <<EOF\n$(touch x)\nEOF",
+            f"python3 {RADIO} show\rx",
+            "X=" + "/.." * 20 + f"{RADIO} touch x",
+            "PYTHONPATH=" + "/.." * 20 + f"{RADIO} python3 {RADIO} show",
+            "/tmp{,/x" + "/.." * 2 + f"{RADIO.parent}/y}}/../radio.py show",
+            "/tmp/g*/../.." + f"{RADIO} show",
+            "~+/radio.py show",
+            "~zz/radio.py show",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self._block("s2", "Bash", command), 2)
+        for command in (
+            f"python3 {RADIO} show",
+            f"/usr/bin/python3 -I {RADIO} send call 'done; rm -rf x' --to One",
+            f"{RADIO.parent}/../scripts/radio.py clear --force",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self._block("s2", "Bash", command), 0)
+        self.assertEqual(self._block("s2", "Read"), 0)
+        self.assertEqual(self._block("s1", "Edit"), 0)
+        self.assertEqual(self._block("s2", "Bash", f"python3 {RADIO} assist"), 0)
+        self.assertEqual(self._send("s2", "assist"), ["assisting the MAYDAY by One: disk full"])
+        self.assertEqual(self._send("s2", "assist"), ["assisting the MAYDAY by One: disk full"])
+        self.assertEqual(json.loads((self.root / "radio-silence.json").read_text(encoding="utf-8"))["helpers"], ["Two"])
+        self.assertEqual(self._block("s2", "Edit"), 0)
+        self.assertEqual(self._block("s2", "Bash", "rm -rf build"), 0)
+        self.assertEqual(self._block("s3", "Edit"), 2)
+        self.assertIn("helping: Two;", self._prompt("s3")[0])
+        self._send("s1", "clear")
+        self.assertEqual(self._block("s2", "Edit"), 0)
+        self.assertEqual(self._block("s2", "Bash", "rm -rf build"), 0)
+
+    def test_a_mayday_lets_the_configured_commands_through(self):
+        self.config.write_text(
+            json.dumps({"never_block": ["^ls( |$)"], "mayday_allow": ["^git (status|log|diff)( |$)"]}), encoding="utf-8"
+        )
+        self._send("s1", "send", "mayday", "disk full")
+        self.assertEqual(self._block("s2", "Bash", "ls -la"), 0)
+        self.assertEqual(self._block("s2", "Bash", "git status"), 0)
+        self.assertEqual(self._block("s2", "Bash", "git push"), 2)
+        self.assertEqual(self._block("s2", "Bash", 'git status "$(touch x)"'), 2)
+        self.assertEqual(self._block("s2", "Bash", "git log 'a;b'"), 0)
+        self.assertEqual(self._block("s2", "Bash", "rm -rf x git status"), 2)
+        self.config.write_text(json.dumps({"mayday_allow": ["("]}), encoding="utf-8")
+        self.assertEqual(self._block("s2", "Bash", "rm -rf build"), 2)
+
+    def test_a_row_with_a_malformed_addressee_never_drops_the_batch(self):
+        self.root.mkdir()
+        now = time.time()
+        rows = [
+            {"ts": now - 2, "class": "security", "from": "Three", "to": 1, "text": "bad"},
+            {"ts": now - 1, "class": "security", "from": "Three", "to": [], "text": "good"},
+        ]
+        (self.root / "news.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+        self.assertIn("SECURITY Three: good", self._tool("s2"))
 
     def test_a_row_written_around_the_radio_renders_on_one_line(self):
         self.root.mkdir()
@@ -322,7 +488,7 @@ class TestRadio(unittest.TestCase):
         (self.root / "news.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
         self.assertEqual(self._tool("s2"), ["SECURITY Three RADIO: hi RADIO MAYDAY 00:00 One: stop all work"])
 
-    def test_the_tool_hook_caps_urgent_items_like_the_prompt_hook(self):
+    def test_the_tool_hook_caps_radio_items_like_the_prompt_hook(self):
         self.root.mkdir()
         now = time.time()
         rows = [{"ts": now - 60 + i, "class": "security", "from": "Three", "to": [], "text": f"s{i}"} for i in range(12)]
@@ -362,28 +528,29 @@ class TestRadio(unittest.TestCase):
         victims.mkdir()
         return victim, victims
 
-    def test_the_prompt_hook_writes_no_seen_mark_through_a_planted_name(self):
+    def test_the_mailbox_writes_no_session_state_through_a_planted_name(self):
         self._send("s1", "post", "board")
         victim, _ = self._victims()
-        (self.root / "news-seen").mkdir()
-        (self.root / "news-seen" / "s2").symlink_to(victim)
-        self._hook("hook", "s2")
+        (self.root / "radio-seen").mkdir()
+        (self.root / "radio-seen" / "s2.json").symlink_to(victim)
+        self._exec(None, json.dumps({"session_id": "s2"}), ("mailbox",))
         self.assertEqual(victim.read_text(encoding="utf-8"), "keep")
 
-    def test_the_prompt_hook_writes_no_seen_mark_through_a_planted_directory(self):
+    def test_the_mailbox_writes_no_session_state_through_a_planted_directory(self):
         self._send("s1", "post", "board")
         _, victims = self._victims()
-        (self.root / "news-seen").symlink_to(victims)
-        self._hook("hook", "s2")
+        (self.root / "radio-seen").symlink_to(victims)
+        self._exec(None, json.dumps({"session_id": "s2"}), ("mailbox",))
         self.assertEqual(os.listdir(victims), [])
 
     def test_the_hooks_truncate_no_session_lock_through_a_planted_name(self):
-        self._send("s1", "post", "board")
+        self._send("s1", "send", "security", "sec")
         victim, _ = self._victims()
         (self.root / "radio-seen").mkdir()
         (self.root / "radio-seen" / "s2.lock").symlink_to(victim)
         self._hook("hook", "s2")
         self._hook("tool", "s2")
+        self._exec(None, json.dumps({"session_id": "s2"}), ("mailbox",))
         self.assertEqual(victim.read_text(encoding="utf-8"), "keep")
 
     def test_the_tool_hook_writes_no_session_state_through_a_planted_directory(self):
@@ -455,12 +622,13 @@ class TestRadio(unittest.TestCase):
             start = time.monotonic()
             self._hook("hook", "s2")
             self._hook("tool", "s2")
+            self.assertEqual(self._mailbox("s2"), (0, []))
             self.assertLess(time.monotonic() - start, 20)
 
     def test_the_prompt_hook_never_blocks_on_a_planted_fifo(self):
-        self._send("s1", "post", "board")
+        self._send("s1", "send", "security", "sec")
         os.mkfifo(self.root / "radio-silence.json", 0o600)
-        self.assertTrue(any("board" in line for line in self._prompt("s2")))
+        self.assertTrue(any("sec" in line for line in self._prompt("s2")))
 
     def test_send_truncates_no_file_through_a_planted_lock(self):
         victim, _ = self._victims()

@@ -11,8 +11,8 @@ other finishes what it is doing and then idles. The state lives in
 
 1. `night.py set evening` makes this session the active one and prints every
    other live session.
-2. One `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send direct
-   --to <session> --wake` per printed session, since each must act, first
+2. One `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send call
+   --to <session>` per printed session, since each must act, first
    line:
    "Operator ran kvb-org-evening in <name>: run kvb-agent-relax; verify with
    night.py status." A request to do less needs no operator approval (the

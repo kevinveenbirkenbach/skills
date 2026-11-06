@@ -8,8 +8,8 @@
    skill and the refs (the kvb-git-merge-fix skill's `find_fix.py`). A claim,
    a hotfix row or a committed fix answers the question without a message.
 2. **Claim** the office (Election in `SKILL.md`).
-3. **Ask** (`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send direct
-   --to <name> --wake`, since each must answer) only the peers whose lines
+3. **Ask** (`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send call
+   --to <name>`, since each must answer) only the peers whose lines
    the work touches, the lineage owners (`lineage.md`) and, for
    capacity, the chair. One batched message per peer: what you claimed, the
    evidence (failing line quoted literally, run id, measurement), the
