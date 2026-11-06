@@ -6,6 +6,8 @@ Environment:
         by rasci.py; the rows are its tasks operator/<slug>.
     CLAUDE_CODE_SESSION_ID: the adding session, recorded as A; other runtimes
         pass --session.
+    NO_COLOR: when set and not empty, run prints the command uncolored
+        (https://no-color.org).
     PATH: searched by the binary check.
     SHELL: run executes each approved command with `$SHELL -ic`, so the
         operator's aliases and functions work; required by run.
@@ -29,7 +31,8 @@ Args:
         set the passing ones done.
     run: walk the open rows that hold a directory and a command, in list
         order. Per row it prints directory, command (control characters made
-        visible), reason and check, then a preview of what the command
+        visible; bold cyan when stdout is a terminal and NO_COLOR is not
+        set), reason and check, then a preview of what the command
         changes, and asks [y]es / [s]kip / [d]iff / [q]uit; d shows the full
         diff. A repo whose git config names filter commands gets no
         preview. y runs the command in its directory, then sets the row done
@@ -104,6 +107,8 @@ HEADER = "| # | Directory | Command | Why | Check |"
 # Trip-wire: agents name these repos, and git runs commands their config names (fsmonitor, hooks, pager, external diff, textconv, gpg, filters, lazy fetch) as the operator.
 GIT = ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "log.showSignature=false", "--no-pager", "--no-optional-locks"]
 DIFF = [*GIT, "diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all"]
+HIGHLIGHT = "\x1b[1;36m"
+RESET = "\x1b[0m"
 
 
 def fail(message: str) -> None:
@@ -300,6 +305,12 @@ def visible(text: str, keep: str) -> str:
     return "".join(c if c.isprintable() or c in keep else c.encode("unicode_escape").decode() for c in text)
 
 
+def highlighted(text: str) -> str:
+    if sys.stdout.isatty() and not os.environ.get("NO_COLOR"):
+        return f"{HIGHLIGHT}{text}{RESET}"
+    return text
+
+
 def git_tree(directory: str) -> bool:
     try:
         return subprocess.run(
@@ -450,7 +461,7 @@ def cmd_granted(rasci: ModuleType, args: argparse.Namespace) -> int:
     row = approved[0]
     print(f"\ngranted {visible(row['task'], '')}: the queue lets it run now; its tree may have changed while it waited")
     print(f"  directory: {visible(row['directory'], '')}")
-    print(f"  command:   {visible(row['command'], '')}", flush=True)
+    print(f"  command:   {highlighted(visible(row['command'], ''))}", flush=True)
     try:
         answer = review(row, False, timed)
     except KeyboardInterrupt:
@@ -482,7 +493,7 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
         check = "manual" if problem(row["check"]) else row["check"]
         print(f"\n[{number}/{len(steps)}] {visible(row['task'], '')}")
         print(f"  directory: {visible(row['directory'], '')}")
-        print(f"  command:   {visible(row['command'], '')}")
+        print(f"  command:   {highlighted(visible(row['command'], ''))}")
         print(f"  why:       {visible(row['why'] or '-', '')}")
         print(f"  check:     {visible(check, '')}", flush=True)
         holdable = heavy_row(watch, cfg, row)

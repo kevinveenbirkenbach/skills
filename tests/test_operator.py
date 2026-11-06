@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import pty
 import shutil
 import subprocess
 import sys
@@ -93,6 +94,28 @@ class TestOperator(unittest.TestCase):
             input=answers, capture_output=True, text=True, env={**self.env, "SHELL": "/bin/sh"},
             cwd=self.tmp.name, check=False,
         )
+
+    def _tty(self, extra: dict[str, str]) -> str:
+        leader, follower = pty.openpty()
+        self.addCleanup(os.close, leader)
+        try:
+            result = subprocess.run(
+                [sys.executable, str(OPERATOR), "run"], input=b"q\n", stdout=follower, stderr=subprocess.PIPE,
+                env={**self.env, "SHELL": "/bin/sh", **extra}, cwd=self.tmp.name, check=False,
+            )
+        finally:
+            os.close(follower)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        chunks = []
+        while True:
+            try:
+                chunk = os.read(leader, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks).decode()
 
     def _open(self) -> list[str]:
         return [row["task"] for row in json.loads("\n".join(self._out("list", "--json")))]
@@ -230,6 +253,18 @@ class TestOperator(unittest.TestCase):
         self.assertIn("operator: stopped", out)
         self.assertNotIn("\x1b", out)
         self.assertEqual(self._open(), ["operator/second", "operator/third"])
+
+    def test_run_colors_the_command_only_on_a_terminal_without_no_color(self):
+        self._add("go", self.base, "true", "runnable", "manual")
+        piped = self._feed("q\n").stdout
+        self.assertIn("  command:   true\n", piped)
+        self.assertNotIn("\x1b", piped)
+        colored = self._tty({})
+        self.assertIn("  command:   \x1b[1;36mtrue\x1b[0m\r\n", colored)
+        self.assertEqual(colored.count("\x1b"), 2)
+        plain = self._tty({"NO_COLOR": "1"})
+        self.assertIn("  command:   true\r\n", plain)
+        self.assertNotIn("\x1b", plain)
 
     def test_run_previews_pushed_commits_and_keeps_failed_rows_open(self):
         repo = self._repo("ahead", upstream=True)
