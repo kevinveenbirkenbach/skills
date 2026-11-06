@@ -76,7 +76,7 @@ def sibling(name: str) -> ModuleType:
 
 nofollow = sibling("nofollow")
 hookpath = sibling("hookpath")
-ROOT =Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
+ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 CONFIG = Path(
     os.environ.get(
         "AGENTS_COUNCIL_CONFIG",
@@ -190,7 +190,6 @@ def unseen_alerts(session: str) -> list[str]:
 
 
 def write_text(path: Path, text: str) -> None:
-    # A full disk or a planted symlink refuses the write; the stage must still act, so it is dropped.
     try:
         nofollow.replace(ROOT, path, text, 0o600)
     except OSError:

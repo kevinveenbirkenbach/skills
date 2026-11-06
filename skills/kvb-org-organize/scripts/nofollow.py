@@ -1,15 +1,3 @@
-"""Open, read, lock, append, replace and unlink files below a trusted directory without following a symlink.
-
-The council root is writable by every sandboxed agent of the same uid, while
-its hooks run outside the sandbox: a symlink planted at any name or directory
-below the root would turn a hook's read or write into one outside it, and a
-FIFO planted at a name would hang every agent's hook. Every function here
-opens the root and each directory below it with O_NOFOLLOW, relative to the
-directory before, and the final name with O_NOFOLLOW and O_NONBLOCK; a planted
-symlink, a `..` part, a path outside the root or anything but a regular file
-raises OSError.
-"""
-
 from __future__ import annotations
 
 import contextlib

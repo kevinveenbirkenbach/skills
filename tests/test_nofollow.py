@@ -1,5 +1,3 @@
-"""Exercise nofollow.py: no open, read, lock, append, replace or unlink below a root follows a planted symlink."""
-
 from __future__ import annotations
 
 import importlib.util

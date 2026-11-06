@@ -225,7 +225,6 @@ def holding() -> Iterator[tuple[str, int]]:
         try:
             yield tag, handle.fileno()
         finally:
-            # A symlink planted over holds/ refuses the unlink; the job's exit code must still come through.
             with contextlib.suppress(OSError):
                 nofollow.unlink(watch.ROOT, path)
 
@@ -652,7 +651,6 @@ def uncommented(command: str) -> str:
 
 
 def segments(command: str) -> list[list[str]]:
-    # bash drops a backslash-newline between words and starts a comment only at a word start; shlex does neither
     lexer = shlex.shlex(uncommented(command.replace("\\\n", "")), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""
