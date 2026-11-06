@@ -140,6 +140,8 @@ install_hub() {
 	mkdir -p "${HUB}" "${STATE}" "${APPROVALS}" "${COUNCIL}" "${HOME}/.claude/projects" "${HOME}/Repositories" "${HOME}/.local/share/worktrees" "${UNITS}" "${APPROVERS}"
 	chmod 700 "${APPROVERS}"
 	cp -a "${REPO_ROOT}/orchestrator/." "${HUB}/"
+	# Python loads a cached .pyc whose header matches the source mtime and size, and cp -a keeps the mtime: one planted in the sandbox-writable tree would run on the host
+	find "${HUB}" -name __pycache__ -type d -prune -exec rm -rf {} +
 	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py"
 	log "skills: the PermissionRequest hook client is ${HUB}/client/permission_hook.py"
 	log "skills: approvals need a pinned passkey: settings, 'Passkey registrieren', then 'make orchestrator-pin CREDENTIAL=<blob>'; until then every executor refuses"

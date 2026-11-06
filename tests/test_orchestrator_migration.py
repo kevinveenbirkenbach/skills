@@ -137,6 +137,14 @@ class TestOrchestratorMigration(unittest.TestCase):
         legacy_calls = [call for call in second["calls"][len(first["calls"]) :] if any(OLD in arg for arg in call)]
         self.assertEqual(legacy_calls, [["docker", "image", "inspect", f"{OLD}:local"], ["claude", "mcp", "get", OLD]])
 
+    def test_install_ships_no_bytecode_from_the_tree(self):
+        planted = REPO_ROOT / "orchestrator" / "client" / "__pycache__" / "planted.cpython-0.pyc"
+        planted.parent.mkdir(exist_ok=True)
+        planted.write_bytes(b"planted")
+        self.addCleanup(planted.unlink, True)
+        self.install()
+        self.assertEqual(sorted((self.home / ".local" / "share" / NEW).rglob("__pycache__")), [])
+
     def test_old_names_live_only_in_the_migration(self):
         done = subprocess.run(["git", "grep", "-niE", "kvb[-_]hub", "--", ".", ":!docs/requirements", f":!{Path(__file__).relative_to(REPO_ROOT)}"], cwd=REPO_ROOT, capture_output=True, text=True, check=False)
         hits = sorted(line.split(":", 2)[0] + ":" + line.split(":", 2)[2].strip() for line in done.stdout.splitlines())
