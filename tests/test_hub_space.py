@@ -7,7 +7,7 @@ import subprocess
 import unittest
 
 from hub_support import SPACE
-from kvb_hub import settings
+from kvb_orchestrator import settings
 
 SPACE_NOW = 1_800_000_000
 SPACE_LOW = SPACE_NOW - 86400

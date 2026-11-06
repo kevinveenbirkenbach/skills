@@ -103,7 +103,7 @@ class HubCase(unittest.TestCase):
         return self.rpc("tools/call", {"name": name, "arguments": arguments})["result"]
 
     def guard(self, host: str) -> dict[str, str]:
-        return {"Host": host, "Origin": f"http://{host}", "X-Kvb-Hub": "1"}
+        return {"Host": host, "Origin": f"http://{host}", "X-Kvb-Orchestrator": "1"}
 
     def pin(self) -> Key:
         signer = key(-7, "main")
@@ -135,7 +135,7 @@ class HubCase(unittest.TestCase):
         return json.loads(body)
 
     def client(self) -> dict[str, str]:
-        return {"Host": self.host, "X-Kvb-Hub": "1"}
+        return {"Host": self.host, "X-Kvb-Orchestrator": "1"}
 
     def settle(self, check: Callable[[], bool]) -> None:
         deadline = time.monotonic() + 10
@@ -197,7 +197,7 @@ class HubCase(unittest.TestCase):
         return self.call("POST", path, json.dumps(payload).encode(), {**headers, "Content-Type": "application/json"})
 
     def local(self) -> dict[str, str]:
-        return {"Host": self.host, "X-Kvb-Hub": "1"}
+        return {"Host": self.host, "X-Kvb-Orchestrator": "1"}
 
     def create_ask(self, payload: dict) -> str:
         status, _, body = self.post_json("/api/asks", payload, self.local())

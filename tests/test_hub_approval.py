@@ -32,7 +32,7 @@ from hub_support import (
     verifier,
     zero_led,
 )
-from kvb_hub import language
+from kvb_orchestrator import language
 
 PASSKEY_PAGE = HUB / "templates" / "page-passkey.js"
 PASSKEY_PROBE = """
@@ -298,7 +298,7 @@ class TestApproval(unittest.TestCase):
             verifier.check(signer.proof(self.payload([self.item], int(self.now) + 60), ORIGIN), self.item, "", self.trust, self.now)
 
     def test_the_pin_cli_writes_the_pinned_keys_with_mode_0600(self):
-        approvers = self.base / "fresh" / "kvb-hub" / "approvers.json"
+        approvers = self.base / "fresh" / "kvb-orchestrator" / "approvers.json"
 
         def pin(blob: str, port: str) -> subprocess.CompletedProcess:
             argv = [sys.executable, str(APPROVAL), "pin", "--port", port, "--approvers", str(approvers), "--credential", blob]

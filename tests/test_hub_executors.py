@@ -23,7 +23,7 @@ from hub_support import (
     signing,
     verifier,
 )
-from kvb_hub import batches, rules, skill_scripts
+from kvb_orchestrator import batches, rules, skill_scripts
 
 # An import named key trips F402: test_rules_are_signed_once_and_checked_by_the_executor rebinds it in a comprehension.
 key = hub_support.key

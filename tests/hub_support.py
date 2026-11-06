@@ -16,16 +16,16 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-HUB = REPO_ROOT / "hub"
+HUB = REPO_ROOT / "orchestrator"
 sys.path[:0] = [str(HUB), str(HUB / "client")]
 CLIENT = HUB / "client" / "permission_hook.py"
 RUNNER = HUB / "client" / "runner.py"
 APPROVAL = HUB / "client" / "approval.py"
-SPEC = importlib.util.spec_from_file_location("kvb_hub_server", HUB / "server.py")
+SPEC = importlib.util.spec_from_file_location("kvb_orchestrator_server", HUB / "server.py")
 server = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = server
 SPEC.loader.exec_module(server)
-RUNNER_SPEC = importlib.util.spec_from_file_location("kvb_hub_runner", RUNNER)
+RUNNER_SPEC = importlib.util.spec_from_file_location("kvb_orchestrator_runner", RUNNER)
 runner = importlib.util.module_from_spec(RUNNER_SPEC)
 RUNNER_SPEC.loader.exec_module(runner)
 import hub_api  # noqa: F401
@@ -40,7 +40,7 @@ GIT_ENV = {
 }
 TREE = "0123456789abcdef0123456789abcdef01234567"
 PAGE = "<!doctype html><title>diff</title><script>document.title = 'page script'</script>"
-HOST_STATE = Path("/home/op/.local/state/kvb-hub")
+HOST_STATE = Path("/home/op/.local/state/kvb-orchestrator")
 ASK = {"tool": "Bash", "command": "make deploy", "cwd": "/repo", "session": "s1", "agent": "", "timeout": 60}
 HOOK = {
     "session_id": "s1",
@@ -61,6 +61,7 @@ STREAMS = [
 ]
 VOICE = HUB / "templates" / "voice.js"
 SPACE = HUB / "templates" / "space.js"
+NAV = HUB / "templates" / "nav.js"
 
 
 class FakeScripts:

@@ -10,7 +10,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import PAGE, TREE, key
-from kvb_hub import ledger, review_page, reviewing
+from kvb_orchestrator import ledger, review_page, reviewing
 
 REVIEW_PAGE = """<!DOCTYPE html><html><head><script>const x = "<details class='file'>";</script></head><body>
 <section class="group" id="staged" data-files="2">
@@ -139,8 +139,8 @@ class TestHubReviews(HubCase):
         review_id = self.request("feat: guarded", "")
         good = self.guard(self.host)
         for headers in (
-            {k: v for k, v in good.items() if k != "X-Kvb-Hub"},
-            {**good, "X-Kvb-Hub": "0"},
+            {k: v for k, v in good.items() if k != "X-Kvb-Orchestrator"},
+            {**good, "X-Kvb-Orchestrator": "0"},
             {k: v for k, v in good.items() if k != "Origin"},
             {**good, "Origin": "http://evil.example"},
             {**good, "Origin": "null"},

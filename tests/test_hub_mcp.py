@@ -6,7 +6,7 @@ import unittest
 
 from hub_case import HubCase
 from hub_support import PAGE, SCORE, TREE
-from kvb_hub import handler, mcp
+from kvb_orchestrator import handler, mcp
 
 TOOLS = {"review_request", "review_status", "review_wait", "review_list", "decision_request", "decision_wait", "operator_message"}
 
@@ -16,7 +16,7 @@ class TestHubMcp(HubCase):
         init = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}})
         self.assertEqual(init["result"]["protocolVersion"], "2025-06-18")
         self.assertIn("tools", init["result"]["capabilities"])
-        self.assertEqual(init["result"]["serverInfo"]["name"], "kvb-hub")
+        self.assertEqual(init["result"]["serverInfo"]["name"], "kvb-orchestrator")
         self.assertEqual(self.rpc("initialize", {"protocolVersion": "1999-01-01"})["result"]["protocolVersion"], mcp.PROTOCOLS[0])
         status, _, body = self.post_mcp({"jsonrpc": "2.0", "method": "notifications/initialized"}, {})
         self.assertEqual((status, body), (202, b""))
@@ -95,12 +95,12 @@ class TestHubMcp(HubCase):
     def test_every_post_guard_answers_before_the_body_arrives(self):
         guard = self.guard(self.host)
         for path, headers, status, text in (
-            ("/api/asks", {"Host": "evil.example", "X-Kvb-Hub": "1"}, 403, "forbidden host"),
-            ("/api/asks", {"Host": self.host}, 403, "forbidden: local POST with the X-Kvb-Hub header and no foreign origin only"),
+            ("/api/asks", {"Host": "evil.example", "X-Kvb-Orchestrator": "1"}, 403, "forbidden host"),
+            ("/api/asks", {"Host": self.host}, 403, "forbidden: local POST with the X-Kvb-Orchestrator header and no foreign origin only"),
             ("/mcp", {"Host": self.host, "Origin": "http://evil.example", "Content-Type": "application/json"}, 403, "foreign origin"),
             ("/mcp", {"Host": self.host, "Content-Type": "text/plain"}, 415, "use application/json"),
-            ("/api/runner/0123456789abcdef/report", guard, 403, "forbidden: the runner calls with the X-Kvb-Hub header and no origin only"),
-            ("/api/messages", self.client(), 403, "forbidden: same-origin POST with the X-Kvb-Hub header only"),
+            ("/api/runner/0123456789abcdef/report", guard, 403, "forbidden: the runner calls with the X-Kvb-Orchestrator header and no origin only"),
+            ("/api/messages", self.client(), 403, "forbidden: same-origin POST with the X-Kvb-Orchestrator header only"),
             ("/api/stt", {**guard, "Content-Type": "text/plain"}, 415, "use audio/wav"),
             ("/api/state", guard, 404, "not found"),
             ("/api/uploads", {**guard, "Content-Length": str(handler.UPLOAD_LIMIT + 1)}, 413, "body too large"),

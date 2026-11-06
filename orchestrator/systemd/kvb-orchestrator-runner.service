@@ -1,0 +1,12 @@
+[Unit]
+Description=Agent Orchestrator runner: runs the operator commands a pinned passkey signed in the Agent Orchestrator
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.local/share/kvb-orchestrator/.env
+ExecStart=/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/runner.py --port ${KVB_ORCHESTRATOR_PORT} --interval 2 --approvers %h/.config/kvb-orchestrator/approvers.json --replay %h/.local/state/kvb-orchestrator-approvals/runner.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from hub_case import HubCase
 from hub_support import ASK, HOST_STATE, iso, server
-from kvb_hub import handler, messaging, skill_scripts, transcripts
+from kvb_orchestrator import handler, messaging, skill_scripts, transcripts
 
 
 class TestHubBoard(HubCase):
@@ -30,33 +30,33 @@ class TestHubBoard(HubCase):
         with mock.patch.object(handler, "UPLOAD_LIMIT", 8):
             self.assertEqual(self.call("POST", "/api/uploads?name=big", b"123456789", headers)[0], 413)
             self.assertEqual(self.call("POST", "/api/uploads?name=fits", b"12345678", headers)[0], 201)
-        self.assertEqual(self.call("POST", "/api/uploads?name=x", b"1", {"Host": self.host, "X-Kvb-Hub": "1"})[0], 403)
+        self.assertEqual(self.call("POST", "/api/uploads?name=x", b"1", {"Host": self.host, "X-Kvb-Orchestrator": "1"})[0], 403)
         self.assertEqual(self.get("/api/uploads")[0], 405)
 
     def test_operator_messages_go_by_radio_and_verify_over_mcp(self):
         self.claim("s1", "Skills session")
         headers = {**self.guard(self.host), "Content-Type": "application/octet-stream"}
         upload = json.loads(self.call("POST", "/api/uploads?name=plan.md", b"# plan", headers)[2])
-        status, _, body = self.post_json("/api/messages", {"to": "Skills", "text": "please\n rebase", "upload": upload["id"]}, self.guard(self.host))
+        status, _, body = self.post_json("/api/messages", {"to": "Skills", "text": "please\n rebase", "upload": upload["id"], "class": "post"}, self.guard(self.host))
         self.assertEqual(status, 201, body)
         sent = json.loads(body)
         self.assertTrue(sent["ok"])
-        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["post", "--to", "Skills session", "--session", "Operator", f"[kvb-hub msg {sent['id']}] please rebase file: {upload['path']}"])])
+        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["post", "--to", "Skills session", "--session", "Operator", f"[kvb-orchestrator msg {sent['id']}] please rebase file: {upload['path']}"])])
         verified = self.tool("operator_message", {"id": sent["id"]})["structuredContent"]
         self.assertEqual((verified["to"], verified["text"], verified["upload"]), ("Skills", "please\n rebase", upload["path"]))
         self.assertEqual([(row["id"], row["to"], row["upload"]) for row in self.snapshot()["messages"]], [(sent["id"], "Skills", "plan.md")])
         self.assertTrue(self.tool("operator_message", {"id": "0123456789abcdef"})["isError"])
         self.assertTrue(self.tool("operator_message", {"id": "../x"})["isError"])
         for payload in (
-            {"to": "Skills", "text": "  ", "upload": ""},
-            {"to": "Skills", "text": "hi", "upload": "0123456789abcdef"},
-            {"to": "Skills", "text": "hi", "upload": "../../etc"},
-            {"to": "two\nlines", "text": "hi", "upload": ""},
-            {"to": "Skills", "text": "hi"},
+            {"to": "Skills", "text": "  ", "upload": "", "class": "post"},
+            {"to": "Skills", "text": "hi", "upload": "0123456789abcdef", "class": "post"},
+            {"to": "Skills", "text": "hi", "upload": "../../etc", "class": "post"},
+            {"to": "two\nlines", "text": "hi", "upload": "", "class": "post"},
+            {"to": "Skills", "text": "hi", "class": "post"},
         ):
             with self.subTest(payload=payload):
                 self.assertEqual(self.post_json("/api/messages", payload, self.guard(self.host))[0], 400)
-        self.assertEqual(self.post_json("/api/messages", {"to": "Skills", "text": "hi", "upload": ""}, {"Host": self.host, "X-Kvb-Hub": "1"})[0], 403)
+        self.assertEqual(self.post_json("/api/messages", {"to": "Skills", "text": "hi", "upload": "", "class": "post"}, {"Host": self.host, "X-Kvb-Orchestrator": "1"})[0], 403)
         self.assertEqual(len(self.scripts.calls), 1)
 
     def test_board_actions_run_the_skill_scripts(self):
@@ -78,9 +78,9 @@ class TestHubBoard(HubCase):
         status, result = board("clear-mayday", {})
         self.assertEqual((status, result["ok"], result["runs"][0]["stdout"]), (200, True, "done"))
         self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"]))
-        status, result = board("broadcast", {"text": "main is green"})
+        status, result = board("broadcast", {"text": "main is green", "class": "newsletter"})
         message_id = self.tool("operator_message", {"id": self.snapshot()["messages"][-1]["id"]})["structuredContent"]["id"]
-        self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["post", "--session", "Operator", f"[kvb-hub msg {message_id}] main is green"]))
+        self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["post", "--session", "Operator", f"[kvb-orchestrator msg {message_id}] main is green"]))
         self.assertEqual(board("order", {"agents": ["A", "B session"]})[0], 200)
         self.assertEqual(self.scripts.calls[-1], (skill_scripts.RASCI, ["order", "A,B session"]))
         for payload in ({"agents": ["A,B"]}, {"agents": ["A", "A"]}, {"agents": []}, {"agents": ["-x"]}, {"agents": "A"}, {"text": "x"}):
@@ -90,7 +90,7 @@ class TestHubBoard(HubCase):
         self.assertEqual(board("evening", {})[0], 200)
         self.assertEqual(self.scripts.calls[calls:], [
             (skill_scripts.NIGHT, ["set", "evening", "--session", "Operator"]),
-            (skill_scripts.RADIO, ["send", "direct", "--wake", "--to", "Gatekeeper", "--to", "Skills session", "--session", "Operator", messaging.NIGHTS["evening"][1]]),
+            (skill_scripts.RADIO, ["send", "call", "--to", "Gatekeeper", "--to", "Skills session", "--session", "Operator", messaging.NIGHTS["evening"][1]]),
         ])
         self.assertEqual(board("sunrise", {})[0], 200)
         self.assertEqual(self.scripts.calls[-2][1], ["clear", "--session", "Operator"])
@@ -99,14 +99,14 @@ class TestHubBoard(HubCase):
         status, result = board("sunset", {})
         self.assertEqual((status, result["ok"], self.scripts.calls[calls:]), (200, False, [(skill_scripts.NIGHT, ["set", "sunset", "--session", "Operator"])]))
         self.assertEqual(board("reboot", {})[0], 404)
-        self.assertEqual(board("broadcast", {"text": " "})[0], 400)
+        self.assertEqual(board("broadcast", {"text": " ", "class": "newsletter"})[0], 400)
         self.assertEqual(self.post_json("/api/board/sunset", {}, {"Host": self.host, "Origin": f"http://{self.host}"})[0], 403)
         self.assertEqual(self.get("/api/board/sunset")[0], 405)
 
     def test_nl_actions_are_validated_against_a_faked_endpoint(self):
         status, _, body = self.post_json("/api/nl", {"text": "approve all"}, self.guard(self.host))
         self.assertEqual(status, 400, body)
-        self.assertIn(b"KVB_HUB_LLM_URL", body)
+        self.assertIn(b"KVB_ORCHESTRATOR_LLM_URL", body)
         seen: list[tuple[str, str | None, dict]] = []
         replies: list[str] = []
 
@@ -142,14 +142,14 @@ class TestHubBoard(HubCase):
             {"name": "approve", "arguments": {"ids": [review_id, decision_id]}},
             {"name": "choose", "arguments": {"id": decision_id, "label": "Wait"}},
             {"name": "message", "arguments": {"to": "Skills", "text": "rebase"}},
-            {"name": "view", "arguments": {"name": "crons"}},
+            {"name": "view", "arguments": {"name": "funk"}},
             {"name": "snooze", "arguments": {"ids": [ask_id], "hours": 2}},
             {"name": "approve", "arguments": {"ids": ["ffffffffffffffff"]}},
             {"name": "reject", "arguments": {"ids": [decision_id]}},
             {"name": "message", "arguments": {"to": "Nobody", "text": "x"}},
             {"name": "shutdown", "arguments": {}},
             {"name": "snooze", "arguments": {"ids": [ask_id], "hours": 500}},
-            {"name": "view", "arguments": {"name": "crons", "extra": 1}},
+            {"name": "view", "arguments": {"name": "funk", "extra": 1}},
         ]}))
         status, _, body = self.post_json("/api/nl", {"text": "gib alles Grüne frei"}, self.guard(self.host))
         self.assertEqual(status, 200, body)

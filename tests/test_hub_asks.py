@@ -41,10 +41,10 @@ class TestHubAsks(HubCase):
         self.claim("s1", "Skills session")
         bad_headers = (
             {"Host": self.host},
-            {**self.local(), "X-Kvb-Hub": "0"},
+            {**self.local(), "X-Kvb-Orchestrator": "0"},
             {**self.local(), "Origin": "http://evil.example"},
             {**self.local(), "Origin": "null"},
-            {"Host": "evil.example", "X-Kvb-Hub": "1"},
+            {"Host": "evil.example", "X-Kvb-Orchestrator": "1"},
         )
         for headers in bad_headers:
             with self.subTest(headers=headers):
@@ -61,7 +61,7 @@ class TestHubAsks(HubCase):
         waiter = threading.Thread(target=lambda: results.append(self.ask_status(ask_id, "20")))
         waiter.start()
         time.sleep(0.3)
-        for headers in ({"Host": self.host, "X-Kvb-Hub": "1"}, {"Host": self.host, "Origin": f"http://{self.host}"}, {**self.guard(self.host), "Origin": "http://evil.example"}):
+        for headers in ({"Host": self.host, "X-Kvb-Orchestrator": "1"}, {"Host": self.host, "Origin": f"http://{self.host}"}, {**self.guard(self.host), "Origin": "http://evil.example"}):
             with self.subTest(headers=headers):
                 self.assertEqual(self.call("POST", f"/api/asks/{ask_id}/allow", b"", headers)[0], 403)
         signer = key(-7, "main")
@@ -115,7 +115,7 @@ class TestHubAsks(HubCase):
             return compromised
 
         code, out = asked(deny)
-        self.assertEqual((code, json.loads(out)), (0, {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "The operator denied this in the kvb-hub."}}}))
+        self.assertEqual((code, json.loads(out)), (0, {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "The operator denied this in the Agent Orchestrator."}}}))
         self.assertEqual(asked(allow_by(key(-7, "main"))), (0, ""))
         self.pin()
         self.assertEqual(asked(allow_by(key(-8, "stranger"))), (0, ""))
@@ -140,7 +140,7 @@ class TestHubAsks(HubCase):
             with self.subTest(name=name):
                 process = self.hook(self.port, "3", {**HOOK, **change})
                 self.assertEqual((self.finish(process), self.httpd.hub.asks.listed()), ((0, ""), []))
-                self.assertRegex(process.stderr.read(), rf"\Akvb-hub: [^\n]*\b{name}\b[^\n]*\n\Z")
+                self.assertRegex(process.stderr.read(), rf"\Akvb-orchestrator: [^\n]*\b{name}\b[^\n]*\n\Z")
         process = self.hook(self.port, "20", {**HOOK, "tool_input": {"command": "x" * 4000}})
         ask = self.first_ask()
         self.assertEqual(ask["command"], "x" * 4000)
@@ -182,7 +182,7 @@ class TestHubAsks(HubCase):
         waiter.start()
         time.sleep(0.3)
         path = f"/api/decisions/{decision_id}/choose"
-        self.assertEqual(self.post_json(path, {"label": "Merge now"}, {"Host": self.host, "X-Kvb-Hub": "1"})[0], 403)
+        self.assertEqual(self.post_json(path, {"label": "Merge now"}, {"Host": self.host, "X-Kvb-Orchestrator": "1"})[0], 403)
         self.assertEqual(self.post_json(path, {"label": "Later"}, self.guard(self.host))[0], 400)
         self.assertEqual(self.post_json(path, {"label": "Merge now", "x": 1}, self.guard(self.host))[0], 400)
         self.assertEqual(self.post_json(path, {"label": "Merge now"}, self.guard(self.host))[0], 200)
