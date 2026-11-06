@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import fcntl
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -58,7 +60,7 @@ class TestWatchCommands(unittest.TestCase):
             "disk": str(self.base),
             "thresholds_gb": LIMITS,
             "projection_minutes": 30,
-            "interval_seconds": 0,
+            "interval_seconds": 300,
             "cache_interval_seconds": 86400,
             "heavy_commands": ["^make compose-deploy", "^make swarm-"],
             "never_block": ["^make swarm-down"],
@@ -78,21 +80,23 @@ class TestWatchCommands(unittest.TestCase):
     def _write_config(self):
         self.config.write_text(json.dumps(self.cfg), encoding="utf-8")
 
-    def _run(self, *args: str, stdin: str = "") -> subprocess.CompletedProcess:
-        env = {
+    def _env(self) -> dict[str, str]:
+        return {
             "PATH": str(self.base),
             "HOME": str(self.base),
             "AGENTS_COUNCIL_ROOT": str(self.root),
             "AGENTS_COUNCIL_CONFIG": str(self.config),
         }
+
+    def _run(self, *args: str, stdin: str = "") -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(WATCH), *args],
-            capture_output=True, text=True, env=env, input=stdin, check=False,
+            capture_output=True, text=True, env=self._env(), input=stdin, check=False,
         )
 
     def _stage(self, stage: str) -> None:
         self.root.mkdir(exist_ok=True)
-        (self.root / "watch.json").write_text(json.dumps({"stage": stage}), encoding="utf-8")
+        (self.root / "watch.json").write_text(json.dumps({"stage": stage, "checked": time.time()}), encoding="utf-8")
 
     def _bash(self, command: str) -> str:
         return json.dumps({"tool_input": {"command": command}})
@@ -185,6 +189,66 @@ class TestWatchCommands(unittest.TestCase):
         with source.open("a", encoding="utf-8") as handle:
             handle.write('{"id": "b"}\n')
         self.assertEqual(kept_ids(), ["old", "a", "b"])
+
+    def _stale_ok_below_stop(self) -> Path:
+        self.cfg["thresholds_gb"] = {"warn": 1e9, "stop": 1e9, "critical": -1}
+        self._write_config()
+        self.root.mkdir()
+        state = self.root / "watch.json"
+        state.write_text(json.dumps({"stage": "ok", "checked": time.time() - 9000, "samples": []}), encoding="utf-8")
+        return state
+
+    def test_status_prints_the_live_stage_and_the_age_of_the_stored_one(self):
+        self._stale_ok_below_stop()
+        out = self._run("status").stdout
+        self.assertIn("stage=stop", out)
+        age = re.search(r"age=(\d+)s", out)
+        self.assertIsNotNone(age, out)
+        self.assertTrue(9000 <= int(age.group(1)) < 9060, out)
+
+    def test_block_measures_a_stale_stage_live_without_writing_it(self):
+        state = self._stale_ok_below_stop()
+        stale = state.read_text(encoding="utf-8")
+        self.assertEqual(self._run("block", stdin=self._bash("make compose-deploy")).returncode, 2)
+        self.assertEqual(state.read_text(encoding="utf-8"), stale)
+        self._stage("ok")
+        self.assertEqual(self._run("block", stdin=self._bash("make compose-deploy")).returncode, 0)
+
+    def _quiet_disk(self) -> Path:
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self._write_config()
+        self.root.mkdir()
+        return self.root / "queue-history.jsonl"
+
+    def _hook_within(self, seconds: float) -> int | None:
+        payload = json.dumps({"session_id": "s1", "hook_event_name": "PostToolUse"})
+        try:
+            return subprocess.run(
+                [sys.executable, str(WATCH), "watch"],
+                capture_output=True, text=True, env=self._env(), input=payload, timeout=seconds, check=False,
+            ).returncode
+        except subprocess.TimeoutExpired:
+            return None
+
+    def test_watch_writes_the_stage_before_a_hanging_mirror_can_stop_it(self):
+        os.mkfifo(self._quiet_disk())
+        self._hook_within(5)
+        state = self.root / "watch.json"
+        self.assertTrue(state.exists(), "the hook hung in the mirror before it wrote the stage")
+        self.assertEqual(json.loads(state.read_text(encoding="utf-8"))["stage"], "ok")
+
+    def test_watch_skips_the_mirror_round_while_its_lock_is_held(self):
+        self._quiet_disk().write_text('{"id": "a"}\n', encoding="utf-8")
+        kept = self.base / ".local" / "state" / "agents-council" / "queue-history.jsonl"
+        kept.parent.mkdir(parents=True)
+        kept.write_text("", encoding="utf-8")
+        os.utime(kept, (1, 1))
+        with kept.open("a+", encoding="utf-8") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX)
+            self.assertEqual(self._hook_within(5), 0, "the hook waited on the mirror lock")
+            self.assertEqual(kept.read_text(encoding="utf-8"), "")
+        self.assertEqual(self._hook_within(5), 0)
+        self.assertEqual(kept.read_text(encoding="utf-8"), '{"id": "a"}\n')
 
     def test_cache_trim_evicts_least_recently_used_first(self):
         old, new = self.cache / "old", self.cache / "new"

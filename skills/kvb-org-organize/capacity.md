@@ -58,4 +58,5 @@ and stays silent below the thresholds.
   projection window raises the stage by one at once.
 - Caches together stay under their budget; the least recently used go first.
 
-`watch.py status` shows the last measurement.
+`watch.py status` shows the stage computed from the live free space and the
+stored samples, and the age of the stored measurement.

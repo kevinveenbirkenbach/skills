@@ -17,7 +17,8 @@ Usage:
     watch.py cleanup (--caches | --full)
                        trim caches to their budget; --full also runs the
                        configured low-risk cleanup commands
-    watch.py status    print the last measurement
+    watch.py status    print the stage computed from the live free space and the
+                       stored samples, and the stored measurement's age in seconds
 
 Environment:
     AGENTS_COUNCIL_ROOT: shared state directory; /tmp/agents-council unless set,
@@ -250,7 +251,7 @@ def keep_rows(origin: Path, target: Path) -> None:
             return
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("a+", encoding="utf-8") as kept:
-            fcntl.flock(kept, fcntl.LOCK_EX)
+            fcntl.flock(kept, fcntl.LOCK_EX | fcntl.LOCK_NB)
             kept.seek(0)
             known = {row_id for row_id, _ in history_rows(kept.read())}
             for row_id, line in history_rows(nofollow.read_text(ROOT, origin)):
@@ -268,12 +269,15 @@ def keep_history() -> None:
         keep_rows(origin, target)
 
 
+def stale(state: dict, cfg: dict, now: float) -> bool:
+    return now - state.get("checked", 0) >= cfg["interval_seconds"]
+
+
 def cmd_watch(cfg: dict) -> int:
     payload = json.load(sys.stdin)
-    keep_history()
     now = time.time()
     state = read_json(STATE)
-    if now - state.get("checked", 0) >= cfg["interval_seconds"]:
+    if stale(state, cfg, now):
         free, _ = disk(cfg)
         samples = [s for s in state.get("samples", []) if now - s[0] <= cfg["projection_minutes"] * 60]
         stage = stage_for(free, samples, cfg, now)
@@ -288,6 +292,7 @@ def cmd_watch(cfg: dict) -> int:
             act(cfg, stage, previous, free)
         elif due:
             spawn_cleanup("--caches")
+    keep_history()
     texts = unseen_alerts(payload["session_id"])
     if texts:
         print(json.dumps({"hookSpecificOutput": {
@@ -313,7 +318,11 @@ def silence() -> dict | None:
 def cmd_block(cfg: dict) -> int:
     payload = json.load(sys.stdin)
     command = executable_text((payload.get("tool_input") or {}).get("command", ""))
-    stage = read_json(STATE).get("stage", "ok")
+    state = read_json(STATE)
+    now = time.time()
+    stage = state.get("stage", "ok")
+    if stale(state, cfg, now):
+        stage = stage_for(disk(cfg)[0], state.get("samples", []), cfg, now)
     mayday = silence()
     if stage not in ("stop", "critical") and not mayday:
         return 0
@@ -492,7 +501,10 @@ def cmd_cleanup(cfg: dict, args: argparse.Namespace) -> int:
 def cmd_status(cfg: dict) -> int:
     state = read_json(STATE)
     free, total = disk(cfg)
-    print(f"stage={state.get('stage', 'unmeasured')} free={free:.1f}GB total={total:.1f}GB samples={len(state.get('samples', []))}")
+    now = time.time()
+    samples = state.get("samples", [])
+    age = f"{now - state['checked']:.0f}s" if "checked" in state else "unmeasured"
+    print(f"stage={stage_for(free, samples, cfg, now)} free={free:.1f}GB total={total:.1f}GB samples={len(samples)} age={age}")
     return 0
 
 
