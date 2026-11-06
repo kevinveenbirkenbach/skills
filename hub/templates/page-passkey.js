@@ -5,6 +5,7 @@
   const b64url = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const unb64url = (text) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(text.length / 4) * 4, "=")), (char) => char.charCodeAt(0));
   const localLink = () => h("a", {href: localUrl()}, localUrl());
+  const KEEPASSXC_LOCALHOST = "KeePassXC lehnt Passkeys auf http://localhost ab, bis in KeePassXC unter Werkzeuge → Einstellungen → Browser-Integration → Fortgeschritten „Nutzung von localhost mit Passkeys zulassen“ (Allow using localhost with passkeys) angehakt ist; die Datenbank muss entsperrt sein. Sonst meldet KeePassXC-Browser „Passkeys request canceled.“ und Chrome öffnet seinen eigenen Passkey-Dialog.";
 
   async function assertion(prepared, label) {
     if (!onLocalhost()) {
@@ -67,7 +68,7 @@
         h("div", {class: "command"}, h("code", {}, command), copyButton(command)),
         h("label", {}, "Credential", h("textarea", {class: "field", readonly: true, rows: 3}, blob)));
     } catch (error) {
-      output.replaceChildren(h("p", {class: "muted"}, `nicht registriert: ${(error && error.name) || error}`));
+      output.replaceChildren(h("p", {class: "muted"}, `nicht registriert: ${(error && error.name) || error}`), h("p", {class: "muted"}, KEEPASSXC_LOCALHOST));
     }
   }
 
@@ -79,6 +80,7 @@
     return h("section", {}, h("h3", {}, "Passkey"),
       h("p", {class: "muted"}, "Freigaben von Asks, Reviews und Operator-Befehlen signiert ein Passkey in KeePassXC; Runner, Hook und Commit-Skills prüfen die Signatur selbst gegen die gepinnten Schlüssel."),
       keys,
+      h("p", {class: "muted"}, KEEPASSXC_LOCALHOST),
       onLocalhost() ? null : h("p", {class: "muted"}, "WebAuthn braucht die Domain: ", localLink()),
       h("div", {}, btn("Passkey registrieren", "btn small soft", () => registerPasskey(output))),
       output);

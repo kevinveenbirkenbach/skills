@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import datetime
 import functools
 import hashlib
@@ -80,6 +81,7 @@ KEYS = tempfile.TemporaryDirectory()
 ORIGIN = "http://localhost:8737"
 PRESENT = 0x05
 REGISTERED = 0x45
+ZERO_LED_TRIES = 4096
 KEY_SPECS = {
     -7: ["-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"],
     -8: ["-algorithm", "ED25519"],
@@ -140,7 +142,10 @@ class Key:
         return openssl(["dgst", "-sha256", "-sign", str(self.pem), str(message)], b"")
 
     def credential(self, origin: str, rp: str, flags: int) -> dict:
-        data = hashlib.sha256(rp.encode()).digest() + bytes([flags]) + bytes(4) + bytes(16) + len(self.raw_id).to_bytes(2, "big") + self.raw_id + cbor_encode(self.cose())
+        return self.registration(self.cose(), origin, rp, flags)
+
+    def registration(self, cose: dict, origin: str, rp: str, flags: int) -> dict:
+        data = hashlib.sha256(rp.encode()).digest() + bytes([flags]) + bytes(4) + bytes(16) + len(self.raw_id).to_bytes(2, "big") + self.raw_id + cbor_encode(cose)
         client = json.dumps({"type": "webauthn.create", "challenge": b64(os.urandom(32)), "origin": origin}).encode()
         return {"id": self.id, "attestationObject": b64(cbor_encode({"fmt": "none", "attStmt": {}, "authData": data})), "clientDataJSON": b64(client)}
 
@@ -163,3 +168,20 @@ class Key:
 @functools.cache
 def key(alg: int, name: str) -> Key:
     return Key(alg, name)
+
+
+@functools.cache
+def zero_led(label: int) -> Key:
+    """Args:
+        label: the COSE label of the coordinate, -2 for x or -3 for y.
+
+    Returns:
+        A fresh P-256 key whose coordinate starts with a zero byte, as
+        about one key in 256 does.
+    """
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        for start in range(0, ZERO_LED_TRIES, 64):
+            for signer in pool.map(lambda attempt: Key(-7, f"zero{label}-{attempt}"), range(start, start + 64)):
+                if signer.cose()[label][0] == 0:
+                    return signer
+    raise AssertionError(f"no P-256 key with a zero-led coordinate {label} in {ZERO_LED_TRIES} tries")

@@ -19,6 +19,7 @@ from unittest import mock
 
 from hub_support import (
     APPROVAL,
+    HUB,
     ORIGIN,
     PRESENT,
     REGISTERED,
@@ -29,8 +30,27 @@ from hub_support import (
     passkey,
     signing,
     verifier,
+    zero_led,
 )
 from kvb_hub import language
+
+PASSKEY_PAGE = HUB / "templates" / "page-passkey.js"
+PASSKEY_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const h = (tag, attrs, ...children) => ({tag, attrs, children: children.flat(Infinity)});
+const text = (node) => node === null || node === undefined ? "" : typeof node === "string" ? node : node.children.map(text).join(" ");
+const output = {children: [], replaceChildren(...nodes) { this.children = nodes; }};
+const closed = Object.assign(new Error("closed"), {name: "NotAllowedError"});
+const page = vm.createContext({
+  h, btoa, atob, TextEncoder, crypto: globalThis.crypto, state: {approvers: []},
+  btn: (label) => h("button", {}, label), pill: (label) => h("span", {}, label), copyButton: () => null, toast: () => null,
+  window: {location: {hostname: "localhost", port: "8737", pathname: "/", hash: ""}},
+  navigator: {credentials: {create: async () => { throw closed; }}},
+});
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), page);
+page.registerPasskey(output).then(() => console.log(JSON.stringify({section: text(page.passkeySection()), failed: text(output)})));
+"""
 
 
 class Redirect(http.server.BaseHTTPRequestHandler):
@@ -209,6 +229,38 @@ class TestApproval(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(signing.Refused, pattern):
                 passkey.attested(credential, ORIGIN)
 
+    def test_a_coordinate_keepassxc_sent_without_its_leading_zero_bytes_pins_and_verifies(self):
+        for label, name in ((-2, "x"), (-3, "y")):
+            with self.subTest(coordinate=name):
+                signer = zero_led(label)
+                cose = signer.cose()
+                short = {**cose, label: cose[label].lstrip(b"\x00")}
+                self.assertLess(len(short[label]), 32)
+                blob = b64(json.dumps(signer.registration(short, ORIGIN, "localhost", REGISTERED)).encode())
+                argv = [sys.executable, str(APPROVAL), "pin", "--port", "8737", "--approvers", str(self.approvers), "--credential", blob]
+                done = subprocess.run(argv, capture_output=True, text=True, timeout=60, check=False)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                pinned = verifier.pinned(self.approvers)[-1]
+                self.assertEqual((pinned["id"], pinned["alg"], pinned["spki"]), (signer.id, -7, b64(signer.spki)))
+                verifier.check(signer.proof(self.payload([self.item], int(self.now) + 60), ORIGIN), self.item, "", self.trust, self.now)
+
+    def test_a_coordinate_must_be_1_to_32_bytes_below_p_and_on_the_curve(self):
+        signer = key(-7, "main")
+        cose = signer.cose()
+        prime = 2**256 - 2**224 + 2**192 + 2**96 - 1
+        x, y = (int.from_bytes(cose[label], "big") for label in (-2, -3))
+        root = pow((y * y - x**3 + 3 * x) % prime, (prime + 1) // 4, prime).to_bytes(32, "big")
+        cases = [("x of p", {**cose, -2: prime.to_bytes(32, "big"), -3: root}), ("one-byte x off the curve", {**cose, -2: b"\x01"})]
+        for label, name in ((-2, "x"), (-3, "y")):
+            flipped = cose[label][:-1] + bytes([cose[label][-1] ^ 1])
+            cases += [(f"empty {name}", {**cose, label: b""}), (f"33-byte {name}", {**cose, label: b"\x00" + cose[label]}), (f"{name} off the curve", {**cose, label: flipped})]
+        for name, given in cases:
+            with self.subTest(name=name), self.assertRaisesRegex(signing.Refused, "none of ES256"):
+                passkey.attested(signer.registration(given, ORIGIN, "localhost", REGISTERED), ORIGIN)
+        with self.subTest(name="one-byte x of 0 on the curve"):
+            zero_x = passkey.attested(signer.registration({**cose, -2: b"\x00", -3: root}, ORIGIN, "localhost", REGISTERED), ORIGIN)
+            self.assertEqual(zero_x["spki"], b64(passkey.EC_PREFIX + b"\x04" + bytes(32) + root))
+
     def test_the_cbor_decoder_reads_what_webauthn_sends_and_nothing_else(self):
         value = {"fmt": "none", 1: -7, -2: b"\x00\xff", "list": [0, 23, 24, 255, 256, 65536, 2**32, True, False, None], "text": "ä"}
         encoded = cbor_encode(value)
@@ -271,6 +323,17 @@ class TestApproval(unittest.TestCase):
         approvers.chmod(0o664)
         with self.assertRaisesRegex(signing.Refused, "writable by others"):
             verifier.pinned(approvers)
+
+
+class TestPasskeyPage(unittest.TestCase):
+    def test_the_section_and_a_failed_registration_name_the_keepassxc_localhost_setting(self):
+        done = subprocess.run(["node", "-e", PASSKEY_PROBE, str(PASSKEY_PAGE)], capture_output=True, text=True, timeout=60, check=True)
+        shown = json.loads(done.stdout)
+        self.assertIn("nicht registriert: NotAllowedError", shown["failed"])
+        for where in ("section", "failed"):
+            for text in ("Nutzung von localhost mit Passkeys zulassen", "Allow using localhost with passkeys", "Passkeys request canceled.", "entsperrt"):
+                with self.subTest(where=where, text=text):
+                    self.assertIn(text, shown[where])
 
 
 if __name__ == "__main__":

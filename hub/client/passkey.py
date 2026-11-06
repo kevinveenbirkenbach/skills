@@ -20,6 +20,8 @@ except ImportError:
 FLAG_UP = 0x01
 FLAG_AT = 0x40
 EC_PREFIX = bytes.fromhex("3059301306072a8648ce3d020106082a8648ce3d030107034200")
+P256_PRIME = 2**256 - 2**224 + 2**192 + 2**96 - 1
+P256_B = 0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B
 ED_PREFIX = bytes.fromhex("302a300506032b6570032100")
 RSA_IDENTIFIER = bytes.fromhex("300d06092a864886f70d0101010500")
 B64URL = re.compile(r"[A-Za-z0-9_-]+")
@@ -101,12 +103,22 @@ def octets(value: object, size: int) -> bool:
     return isinstance(value, bytes) and len(value) == size
 
 
+def p256_point(x: object, y: object) -> bytes | None:
+    # KeePassXC 2.7.12 drops leading zero bytes of x and y (Botan BigInt as hex), against RFC 9053; pad them back to 32.
+    if not all(isinstance(value, bytes) and 1 <= len(value) <= 32 for value in (x, y)):
+        return None
+    left, right = int.from_bytes(x, "big"), int.from_bytes(y, "big")
+    if left >= P256_PRIME or right >= P256_PRIME or (right * right - left**3 + 3 * left - P256_B) % P256_PRIME:
+        return None
+    return b"\x04" + left.to_bytes(32, "big") + right.to_bytes(32, "big")
+
+
 def cose_key(key: object) -> tuple[int, bytes]:
     if not isinstance(key, dict):
         raise Refused("the credential public key is no COSE map")
     kty, alg = key.get(1), key.get(3)
-    if kty == 2 and alg == -7 and key.get(-1) == 1 and octets(key.get(-2), 32) and octets(key.get(-3), 32):
-        return alg, EC_PREFIX + b"\x04" + key[-2] + key[-3]
+    if kty == 2 and alg == -7 and key.get(-1) == 1 and (point := p256_point(key.get(-2), key.get(-3))):
+        return alg, EC_PREFIX + point
     if kty == 1 and alg == -8 and key.get(-1) == 6 and octets(key.get(-2), 32):
         return alg, ED_PREFIX + key[-2]
     if kty == 3 and alg == -257 and isinstance(key.get(-1), bytes) and isinstance(key.get(-2), bytes) and key[-1] and key[-2]:
