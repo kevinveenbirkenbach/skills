@@ -18,7 +18,7 @@ GIT_TIMEOUT = 10
 
 
 def git(cwd: Path, args: list[str], home: Path) -> str | None:
-    env = {"PATH": SAFE_PATH, "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1", "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
+    env = {"PATH": SAFE_PATH, "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1", "GIT_NO_LAZY_FETCH": "1", "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
     try:
         done = subprocess.run(
             ["git", "-c", "safe.directory=*", "-c", "core.fsmonitor=false", "-C", str(cwd), *args],

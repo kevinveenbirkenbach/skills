@@ -67,6 +67,25 @@ class TestHubTree(HubCase):
         self.assertEqual(dirty, {"github.com/me/trap": False, "github.com/me/filtered": None})
         self.assertFalse(marker.exists())
 
+    def test_tree_never_fetches_a_missing_object(self):
+        marker = self.outside / "fetched"
+        origin = self.outside / "lazy.git"
+        self.git(self.outside, "init", "--quiet", "--bare", "--initial-branch=main", str(origin))
+        repo = self.repos / "github.com" / "me" / "lazy"
+        repo.mkdir(parents=True)
+        self.git(repo, "init", "--quiet", "--initial-branch=main")
+        (repo / "a.txt").write_text("a", encoding="utf-8")
+        self.git(repo, "add", "a.txt")
+        self.git(repo, "commit", "--quiet", "-m", "a")
+        self.git(repo, "remote", "add", "origin", str(origin))
+        self.git(repo, "push", "--quiet", "-u", "origin", "main")
+        self.git(repo, "config", "remote.origin.promisor", "true")
+        self.git(repo, "config", "remote.origin.uploadpack", f"touch {marker}; git-upload-pack")
+        (repo / ".git" / "refs" / "remotes" / "origin" / "main").write_text("1" * 40 + "\n", encoding="utf-8")
+        status, _, body = self.get("/api/tree")
+        self.assertEqual(status, 200, body)
+        self.assertFalse(marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
