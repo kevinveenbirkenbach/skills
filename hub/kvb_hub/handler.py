@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+import re
+import secrets
+from collections.abc import Callable
+from http import HTTPStatus
+from urllib.parse import urlsplit
+
+from .engines import STT_LIMIT
+from .exchange import PLAIN_CSP, Exchange
+
+BODY_LIMIT = 1 << 20
+UPLOAD_LIMIT = 50 << 20
+PAGE_CSP = "sandbox allow-scripts"
+SETTINGS_ROUTE = "/api/settings"
+TTS_ROUTE = "/api/tts"
+WAV_TYPE = "audio/wav"
+STT_ROUTE = "/api/stt"
+ROUTE = re.compile(r"/reviews/([0-9a-f]{16})/(page|files|approve|reject)")
+ITEM = re.compile(r"/api/(asks|decisions)/([0-9a-f]{16})(?:/(allow|deny|choose))?")
+ENTRY = re.compile(r"/api/stream/([0-9]{1,12})")
+BOARD = re.compile(r"/api/board/([a-z-]{1,32})")
+UPLOADS = "/api/uploads"
+POSTS = ("/api/asks", UPLOADS, "/api/messages")
+STORED = {
+    "page": (".html", "text/html; charset=utf-8", PAGE_CSP),
+    "files": (".json", "application/json", PLAIN_CSP),
+}
+DECISIONS = {"approve": "approved", "reject": "rejected"}
+INBOX_ROUTE = re.compile(r"/api/inbox/(approve|mark)")
+UNDO_ROUTE = re.compile(r"/api/inbox/undo/([0-9a-f]{16})")
+RULE_ROUTE = re.compile(r"/api/rules/([0-9a-f]{16})/(enable|disable|delete)")
+RUNNER_ROUTE = re.compile(r"/api/runner/([0-9a-f]{16})/(claim|report)")
+PROOF_ROUTE = re.compile(r"/api/reviews/([0-9a-f]{16})")
+SIGN_ROUTE = "/api/sign"
+RULE_SIGN_ROUTE = "/api/rules/sign"
+ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE)
+
+
+class Handler(Exchange):
+    def speak(self, body: bytes) -> None:
+        headers = {"Content-Security-Policy": PLAIN_CSP}
+        self.attempt(lambda: self.server.hub.speech.synthesize(body), lambda wav: self.send(HTTPStatus.OK, WAV_TYPE, wav, headers))
+
+    def hear(self, body: bytes) -> None:
+        if self.headers.get_content_type() != WAV_TYPE:
+            self.send_text(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, f"use {WAV_TYPE}")
+            return
+        self.answer(lambda: self.server.hub.speech.transcribe(body), HTTPStatus.OK)
+
+    def do_GET(self) -> None:
+        path = urlsplit(self.path).path
+        hub = self.server.hub
+        route = ROUTE.fullmatch(path)
+        item = ITEM.fullmatch(path)
+        entry = ENTRY.fullmatch(path)
+        proof = PROOF_ROUTE.fullmatch(path)
+        if self.host() is None:
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
+        elif path == "/":
+            self.index()
+        elif proof:
+            self.answer(lambda: hub.review_proof(proof.group(1)), HTTPStatus.OK)
+        elif path == "/api/state":
+            self.answer(lambda: hub.window(self.query()), HTTPStatus.OK)
+        elif path == "/api/stream":
+            self.answer(lambda: hub.stream(self.query()), HTTPStatus.OK)
+        elif path == "/api/events":
+            self.answer(lambda: hub.events(self.query()), HTTPStatus.OK)
+        elif path == "/api/tree":
+            self.answer(hub.repositories, HTTPStatus.OK)
+        elif path == "/api/subagents":
+            self.answer(lambda: hub.subagents(self.query()), HTTPStatus.OK)
+        elif path == "/api/runner/jobs":
+            if self.client():
+                self.answer(hub.runner_jobs, HTTPStatus.OK)
+            else:
+                self.send_text(HTTPStatus.FORBIDDEN, "forbidden: the runner calls with the X-Kvb-Hub header and no origin only")
+        elif entry:
+            self.answer(lambda: hub.entry(int(entry.group(1))), HTTPStatus.OK)
+        elif item and item.group(1) == "asks" and item.group(3) is None:
+            self.answer(lambda: hub.ask_wait(item.group(2), self.query()), HTTPStatus.OK)
+        elif route and route.group(2) in STORED:
+            self.stored(route.group(1), route.group(2))
+        elif route or item or path == "/mcp" or path in POSTS or path in ACTION_POSTS or BOARD.fullmatch(path) or self.posted(path):
+            self.not_allowed()
+        else:
+            self.send_text(HTTPStatus.NOT_FOUND, "not found")
+
+    def action(self, path: str, body: bytes) -> Callable[[], None] | None:
+        hub = self.server.hub
+        route = ROUTE.fullmatch(path)
+        item = ITEM.fullmatch(path)
+        board = BOARD.fullmatch(path)
+        if route and route.group(2) in DECISIONS:
+            return lambda: self.answer(lambda: hub.verdict(route.group(1), DECISIONS[route.group(2)], body), HTTPStatus.OK)
+        if item and item.group(3):
+            return lambda: self.answer(lambda: hub.settle(item.group(1), item.group(2), item.group(3), body), HTTPStatus.OK)
+        if path == UPLOADS:
+            return lambda: self.answer(lambda: hub.upload(self.query(), body), HTTPStatus.CREATED)
+        if path == "/api/messages":
+            return lambda: self.answer(lambda: hub.message(body), HTTPStatus.CREATED)
+        if board:
+            return lambda: self.answer(lambda: hub.board(board.group(1), body), HTTPStatus.OK)
+        return self.inbox_action(path, body)
+
+    def inbox_action(self, path: str, body: bytes) -> Callable[[], None] | None:
+        hub = self.server.hub
+        inbox = INBOX_ROUTE.fullmatch(path)
+        undo = UNDO_ROUTE.fullmatch(path)
+        rule = RULE_ROUTE.fullmatch(path)
+        if inbox and inbox.group(1) == "approve":
+            return lambda: self.answer(lambda: hub.approve(body), HTTPStatus.ACCEPTED)
+        if path == SIGN_ROUTE:
+            return lambda: self.answer(lambda: hub.sign(body), HTTPStatus.OK)
+        if path == RULE_SIGN_ROUTE:
+            return lambda: self.answer(lambda: hub.sign_rule(body), HTTPStatus.OK)
+        if inbox:
+            return lambda: self.answer(lambda: hub.mark(body), HTTPStatus.OK)
+        if undo:
+            return lambda: self.answer(lambda: hub.undo(undo.group(1)), HTTPStatus.OK)
+        if path == "/api/rules":
+            return lambda: self.answer(lambda: hub.add_rule(body), HTTPStatus.CREATED)
+        if rule:
+            return lambda: self.answer(lambda: hub.rule_action(rule.group(1), rule.group(2)), HTTPStatus.OK)
+        if path == "/api/nl":
+            return lambda: self.answer(lambda: hub.nl(body), HTTPStatus.OK)
+        if path == SETTINGS_ROUTE:
+            return lambda: self.answer(lambda: hub.save_settings(body), HTTPStatus.OK)
+        if path == TTS_ROUTE:
+            return lambda: self.speak(body)
+        if path == STT_ROUTE:
+            return lambda: self.hear(body)
+        return None
+
+    def posted(self, path: str) -> bool:
+        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, RUNNER_ROUTE))
+
+    def runner(self, path: str, body: bytes) -> None:
+        hub = self.server.hub
+        route = RUNNER_ROUTE.fullmatch(path)
+        if not self.client():
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden: the runner calls with the X-Kvb-Hub header and no origin only")
+        elif route.group(2) == "claim":
+            self.answer(lambda: hub.claim(route.group(1)), HTTPStatus.OK)
+        else:
+            self.answer(lambda: hub.report(route.group(1), body), HTTPStatus.OK)
+
+    def do_POST(self) -> None:
+        path = urlsplit(self.path).path
+        body = self.body({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: STT_LIMIT}.get(path, BODY_LIMIT))
+        if body is None:
+            return
+        host = self.host()
+        if host is None:
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
+            return
+        if path == "/mcp":
+            self.mcp(host, body)
+            return
+        if path == "/api/asks":
+            if self.local(host):
+                self.answer(lambda: self.server.hub.ask(body), HTTPStatus.CREATED)
+            else:
+                self.send_text(HTTPStatus.FORBIDDEN, "forbidden: local POST with the X-Kvb-Hub header and no foreign origin only")
+            return
+        if RUNNER_ROUTE.fullmatch(path):
+            self.runner(path, body)
+            return
+        action = self.action(path, body)
+        if action is None:
+            self.send_text(HTTPStatus.NOT_FOUND, "not found")
+        elif not self.guarded(host):
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden: same-origin POST with the X-Kvb-Hub header only")
+        else:
+            action()
+
+    def index(self) -> None:
+        nonce = secrets.token_urlsafe(18)
+        page, csp = self.server.hub.render(nonce)
+        headers = {"Content-Security-Policy": csp, "X-Frame-Options": "DENY"}
+        self.send(HTTPStatus.OK, "text/html; charset=utf-8", page.encode("utf-8"), headers)
+
+    def stored(self, review_id: str, name: str) -> None:
+        suffix, content_type, csp = STORED[name]
+        reviews = self.server.hub.reviews
+        path = reviews.stored(review_id, suffix)
+        if reviews.get(review_id) is None or not path.is_file():
+            self.send_text(HTTPStatus.NOT_FOUND, "not found")
+            return
+        self.send(HTTPStatus.OK, content_type, path.read_bytes(), {"Content-Security-Policy": csp})
+
+    def mcp(self, host: str, body: bytes) -> None:
+        origins = self.headers.get_all("Origin")
+        if origins is not None and origins != [f"http://{host}"]:
+            self.send_text(HTTPStatus.FORBIDDEN, "foreign origin")
+            return
+        if self.headers.get_content_type() != "application/json":
+            self.send_text(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "use application/json")
+            return
+        status, reply = self.server.hub.rpc(body)
+        if reply is not None:
+            self.send_json(status, reply)
+            return
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        self.end_headers()

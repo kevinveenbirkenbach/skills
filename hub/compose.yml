@@ -1,0 +1,132 @@
+name: kvb-hub
+
+services:
+  hub:
+    build: .
+    image: kvb-hub:local
+    restart: unless-stopped
+    init: true
+    user: "${KVB_HUB_USER:?written into .env by scripts/install.sh}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "127.0.0.1:${KVB_HUB_PORT:?set in .env}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - --bind
+      - 0.0.0.0
+      - --listen-port
+      - "8080"
+      - --public-port
+      - "${KVB_HUB_PORT:?set in .env}"
+      - --council
+      - /tmp/agents-council
+      - --pages
+      - /tmp/kvb-git-diff
+      - --state
+      - /state
+      - --host-state
+      - "${KVB_HUB_STATE:?written into .env by scripts/install.sh}"
+      - --skills
+      - /skills
+      - --transcripts
+      - /projects
+      - --templates
+      - /app/templates
+      - --repos
+      - "${KVB_HUB_REPOS:?written into .env by scripts/install.sh}"
+      - --worktrees
+      - "${KVB_HUB_WORKTREES:?written into .env by scripts/install.sh}"
+      - --timers
+      - /timers
+      - --llm-url
+      - "${KVB_HUB_LLM_URL}"
+      - --llm-model
+      - "${KVB_HUB_LLM_MODEL}"
+      - --llm-key-file
+      - /run/kvb-hub/llm.key
+      - --piper
+      - /opt/piper/bin/piper
+      - --voices
+      - /opt/voices
+      - --operator-voice
+      - "${KVB_HUB_OPERATOR_VOICE:?set in .env}"
+      - --whisper
+      - /opt/whisper/whisper-cli
+      - --whisper-model
+      - /opt/whisper/ggml-base-q8_0.bin
+      - --scratch
+      - /scratch
+      - --approvers
+      - /approvers/approvers.json
+    tmpfs:
+      - /scratch:size=64m,mode=1777,noexec,nosuid,nodev
+    volumes:
+      - type: bind
+        source: /tmp
+        target: /tmp
+        read_only: true
+      - type: bind
+        source: "${KVB_HUB_COUNCIL:?written into .env by scripts/install.sh}"
+        target: /tmp/agents-council
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_HUB_SKILLS:?written into .env by scripts/install.sh}"
+        target: /skills
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_HUB_PROJECTS:?written into .env by scripts/install.sh}"
+        target: /projects
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_HUB_STATE:?written into .env by scripts/install.sh}"
+        target: /state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_HUB_REPOS:?written into .env by scripts/install.sh}"
+        target: "${KVB_HUB_REPOS:?written into .env by scripts/install.sh}"
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_HUB_WORKTREES:?written into .env by scripts/install.sh}"
+        target: "${KVB_HUB_WORKTREES:?written into .env by scripts/install.sh}"
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_HUB_TIMERS:?written into .env by scripts/install.sh}"
+        target: /timers
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_HUB_APPROVERS:?written into .env by scripts/install.sh}"
+        target: /approvers
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        # /dev/null is an empty key file, which server.py --llm-key-file reads as no key
+        source: "${KVB_HUB_LLM_KEY_FILE:-/dev/null}"
+        target: /run/kvb-hub/llm.key
+        read_only: true
+        bind:
+          create_host_path: false

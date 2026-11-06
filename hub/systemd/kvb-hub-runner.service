@@ -1,0 +1,12 @@
+[Unit]
+Description=kvb-hub runner: runs the operator commands a pinned passkey signed in the kvb-hub
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.local/share/kvb-hub/.env
+ExecStart=/usr/bin/env python3 %h/.local/share/kvb-hub/client/runner.py --port ${KVB_HUB_PORT} --interval 2 --approvers %h/.config/kvb-hub/approvers.json --replay %h/.local/state/kvb-hub-approvals/runner.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -48,6 +48,9 @@ description: >
 6. Close with the staged bundle's commit table (`score.py ...
    --commit-table <worktree>`: 📁 worktree, 🌿 branch, 📊 diff stat, scores,
    gate), what remains unstaged, and wait for the operator's commit
-   decision; never auto-commit the newly staged bundle. A gate exit 4 says
+   decision; never auto-commit the newly staged bundle. Ask through the
+   kvb-git-diff skill: a hub approval is the operator's commit decision for
+   that one bundle only once its `approval.py verify` step exits 0 on the
+   exact staged tree; otherwise the chat question stays the fallback. A gate exit 4 says
    up front that the bundle cannot be committed until its critical finding
    is fixed.

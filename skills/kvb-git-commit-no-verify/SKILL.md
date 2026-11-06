@@ -24,7 +24,10 @@ description: >
    the call is never sent, not even on the operator's word; fix and rescan
    first. Exit 1 (below 90/5) is shown, the operator's word decides; exit 3
    means ask the operator again before the commit, naming each cause the
-   gate prints. The same duty holds for every call that creates a commit,
+   gate prints. Ask through the kvb-git-diff skill: a hub approval is the
+   operator's word for this one commit only once its `approval.py verify`
+   step exits 0 on the exact staged tree; otherwise the chat question stays
+   the fallback. The same duty holds for every call that creates a commit,
    `git merge` included (there the incoming diff stat, and the incoming diff
    in the message before).
 4. Commit exactly the staging index with `git commit --no-verify` and a

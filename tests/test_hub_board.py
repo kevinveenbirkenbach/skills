@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import dataclasses
+import http.server
+import json
+import threading
+import time
+import unittest
+from unittest import mock
+from urllib.parse import quote
+
+from hub_case import HubCase
+from hub_support import ASK, HOST_STATE, iso, server
+from kvb_hub import handler, messaging, skill_scripts, transcripts
+
+
+class TestHubBoard(HubCase):
+    def test_uploads_are_sanitised_and_bounded(self):
+        headers = {**self.guard(self.host), "Content-Type": "application/octet-stream"}
+        status, _, body = self.call("POST", f"/api/uploads?name={quote('../../évil name.sh')}", b"data", headers)
+        self.assertEqual(status, 201, body)
+        upload = json.loads(body)
+        self.assertEqual(upload["name"], "_vil_name.sh")
+        self.assertEqual(upload["path"], str(HOST_STATE / "uploads" / upload["id"] / "_vil_name.sh"))
+        self.assertEqual((self.state / "uploads" / upload["id"] / "_vil_name.sh").read_bytes(), b"data")
+        for name, expected in (("..", "upload"), (".bashrc", "bashrc"), ("a\\b/c.txt", "c.txt"), ("x" * 300, "x" * 120)):
+            with self.subTest(name=name):
+                status, _, body = self.call("POST", f"/api/uploads?name={quote(name)}", b"1", headers)
+                self.assertEqual((status, json.loads(body)["name"]), (201, expected))
+        with mock.patch.object(handler, "UPLOAD_LIMIT", 8):
+            self.assertEqual(self.call("POST", "/api/uploads?name=big", b"123456789", headers)[0], 413)
+            self.assertEqual(self.call("POST", "/api/uploads?name=fits", b"12345678", headers)[0], 201)
+        self.assertEqual(self.call("POST", "/api/uploads?name=x", b"1", {"Host": self.host, "X-Kvb-Hub": "1"})[0], 403)
+        self.assertEqual(self.get("/api/uploads")[0], 405)
+
+    def test_operator_messages_go_by_radio_and_verify_over_mcp(self):
+        self.claim("s1", "Skills session")
+        headers = {**self.guard(self.host), "Content-Type": "application/octet-stream"}
+        upload = json.loads(self.call("POST", "/api/uploads?name=plan.md", b"# plan", headers)[2])
+        status, _, body = self.post_json("/api/messages", {"to": "Skills", "text": "please\n rebase", "upload": upload["id"]}, self.guard(self.host))
+        self.assertEqual(status, 201, body)
+        sent = json.loads(body)
+        self.assertTrue(sent["ok"])
+        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["post", "--to", "Skills session", "--session", "Operator", f"[kvb-hub msg {sent['id']}] please rebase file: {upload['path']}"])])
+        verified = self.tool("operator_message", {"id": sent["id"]})["structuredContent"]
+        self.assertEqual((verified["to"], verified["text"], verified["upload"]), ("Skills", "please\n rebase", upload["path"]))
+        self.assertEqual([(row["id"], row["to"], row["upload"]) for row in self.snapshot()["messages"]], [(sent["id"], "Skills", "plan.md")])
+        self.assertTrue(self.tool("operator_message", {"id": "0123456789abcdef"})["isError"])
+        self.assertTrue(self.tool("operator_message", {"id": "../x"})["isError"])
+        for payload in (
+            {"to": "Skills", "text": "  ", "upload": ""},
+            {"to": "Skills", "text": "hi", "upload": "0123456789abcdef"},
+            {"to": "Skills", "text": "hi", "upload": "../../etc"},
+            {"to": "two\nlines", "text": "hi", "upload": ""},
+            {"to": "Skills", "text": "hi"},
+        ):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.post_json("/api/messages", payload, self.guard(self.host))[0], 400)
+        self.assertEqual(self.post_json("/api/messages", {"to": "Skills", "text": "hi", "upload": ""}, {"Host": self.host, "X-Kvb-Hub": "1"})[0], 403)
+        self.assertEqual(len(self.scripts.calls), 1)
+
+    def test_board_actions_run_the_skill_scripts(self):
+        self.claim("s1", "Skills session")
+        self.claim("s2", "Gatekeeper")
+        now = time.time()
+        self.write_council({
+            "radio-silence.json": {"since": now, "until": now + 60, "by": "Docs", "text": "disk full"},
+            "night.json": {"mode": "evening", "active": "Operator", "awake": []},
+            "rasci.json": {"work/a": {"worker": "A", "status": "running", "prio": 2}, "work/b": {"worker": "B session", "status": "queued", "prio": 1}, "work/c": {"worker": "C", "status": "done"}},
+        })
+        state = self.snapshot()
+        self.assertEqual((state["silence"]["by"], state["night"], state["priority"]), ("Docs", "evening", ["B session", "A"]))
+
+        def board(action: str, payload: object) -> tuple[int, dict | None]:
+            status, _, body = self.post_json(f"/api/board/{action}", payload, self.guard(self.host))
+            return status, json.loads(body) if status == 200 else None
+
+        status, result = board("clear-mayday", {})
+        self.assertEqual((status, result["ok"], result["runs"][0]["stdout"]), (200, True, "done"))
+        self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"]))
+        status, result = board("broadcast", {"text": "main is green"})
+        message_id = self.tool("operator_message", {"id": self.snapshot()["messages"][-1]["id"]})["structuredContent"]["id"]
+        self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["post", "--session", "Operator", f"[kvb-hub msg {message_id}] main is green"]))
+        self.assertEqual(board("order", {"agents": ["A", "B session"]})[0], 200)
+        self.assertEqual(self.scripts.calls[-1], (skill_scripts.RASCI, ["order", "A,B session"]))
+        for payload in ({"agents": ["A,B"]}, {"agents": ["A", "A"]}, {"agents": []}, {"agents": ["-x"]}, {"agents": "A"}, {"text": "x"}):
+            with self.subTest(payload=payload):
+                self.assertEqual(board("order", payload)[0], 400)
+        calls = len(self.scripts.calls)
+        self.assertEqual(board("evening", {})[0], 200)
+        self.assertEqual(self.scripts.calls[calls:], [
+            (skill_scripts.NIGHT, ["set", "evening", "--session", "Operator"]),
+            (skill_scripts.RADIO, ["send", "direct", "--wake", "--to", "Gatekeeper", "--to", "Skills session", "--session", "Operator", messaging.NIGHTS["evening"][1]]),
+        ])
+        self.assertEqual(board("sunrise", {})[0], 200)
+        self.assertEqual(self.scripts.calls[-2][1], ["clear", "--session", "Operator"])
+        self.scripts.code = 1
+        calls = len(self.scripts.calls)
+        status, result = board("sunset", {})
+        self.assertEqual((status, result["ok"], self.scripts.calls[calls:]), (200, False, [(skill_scripts.NIGHT, ["set", "sunset", "--session", "Operator"])]))
+        self.assertEqual(board("reboot", {})[0], 404)
+        self.assertEqual(board("broadcast", {"text": " "})[0], 400)
+        self.assertEqual(self.post_json("/api/board/sunset", {}, {"Host": self.host, "Origin": f"http://{self.host}"})[0], 403)
+        self.assertEqual(self.get("/api/board/sunset")[0], 405)
+
+    def test_nl_actions_are_validated_against_a_faked_endpoint(self):
+        status, _, body = self.post_json("/api/nl", {"text": "approve all"}, self.guard(self.host))
+        self.assertEqual(status, 400, body)
+        self.assertIn(b"KVB_HUB_LLM_URL", body)
+        seen: list[tuple[str, str | None, dict]] = []
+        replies: list[str] = []
+
+        class Fake(http.server.BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                seen.append((self.path, self.headers.get("Authorization"), data))
+                answer = json.dumps({"choices": [{"message": {"content": replies[-1]}}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(answer)))
+                self.end_headers()
+                self.wfile.write(answer)
+
+            def log_message(self, *args: object) -> None:
+                return
+
+        fake = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fake)
+        threading.Thread(target=fake.serve_forever, args=(0.05,), daemon=True).start()
+        self.addCleanup(fake.server_close)
+        self.addCleanup(fake.shutdown)
+        self.httpd.hub = dataclasses.replace(self.httpd.hub, model=server.Model(url=f"http://127.0.0.1:{fake.server_address[1]}/v1", model="m", key="k"))
+        self.claim("s1", "Skills session")
+        transcript = self.projects / "-repo" / "s1.jsonl"
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text(self.jsonl([{"type": "user", "sessionId": "s1", "timestamp": iso(time.time()), "message": {"role": "user", "content": "SECRET-TRANSCRIPT"}}]), encoding="utf-8")
+        with mock.patch.object(transcripts, "STREAM_SCAN", 0):
+            self.assertEqual(len(self.events("kinds=transcript")["entries"]), 1)
+        review_id = self.request("feat: nl", "")
+        ask_id = self.create_ask(ASK)
+        decision_id = self.decision("Merge now")
+        replies.append(json.dumps({"actions": [
+            {"name": "approve", "arguments": {"ids": [review_id, decision_id]}},
+            {"name": "choose", "arguments": {"id": decision_id, "label": "Wait"}},
+            {"name": "message", "arguments": {"to": "Skills", "text": "rebase"}},
+            {"name": "view", "arguments": {"name": "crons"}},
+            {"name": "snooze", "arguments": {"ids": [ask_id], "hours": 2}},
+            {"name": "approve", "arguments": {"ids": ["ffffffffffffffff"]}},
+            {"name": "reject", "arguments": {"ids": [decision_id]}},
+            {"name": "message", "arguments": {"to": "Nobody", "text": "x"}},
+            {"name": "shutdown", "arguments": {}},
+            {"name": "snooze", "arguments": {"ids": [ask_id], "hours": 500}},
+            {"name": "view", "arguments": {"name": "crons", "extra": 1}},
+        ]}))
+        status, _, body = self.post_json("/api/nl", {"text": "gib alles Grüne frei"}, self.guard(self.host))
+        self.assertEqual(status, 200, body)
+        result = json.loads(body)
+        self.assertEqual([action["name"] for action in result["actions"]], ["approve", "choose", "message", "view", "snooze"])
+        self.assertEqual(result["actions"][0]["args"]["items"], [self.entry("review", review_id, "", ""), self.entry("decision", decision_id, "Merge now", "")])
+        self.assertEqual(result["actions"][4]["args"], {"keys": [{"kind": "ask", "id": ask_id}], "hours": 2})
+        self.assertEqual(len(result["rejected"]), 6)
+        path, key, sent = seen[-1]
+        self.assertEqual((path, key, sent["model"]), ("/v1/chat/completions", "Bearer k", "m"))
+        self.assertNotIn("SECRET-TRANSCRIPT", json.dumps(sent))
+        self.assertIn(review_id, sent["messages"][1]["content"])
+        self.assertIn("approve", sent["messages"][0]["content"])
+        replies.append("not json")
+        self.assertEqual(self.post_json("/api/nl", {"text": "x"}, self.guard(self.host))[0], 400)
+        self.assertEqual(self.post_json("/api/nl", {"text": "x"}, self.client())[0], 403)
+
+
+if __name__ == "__main__":
+    unittest.main()

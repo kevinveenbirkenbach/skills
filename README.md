@@ -59,6 +59,7 @@ flowchart LR
   git --> git_changelog[kvb-git-changelog]
   git --> git_hotfix[kvb-git-hotfix]
   git --> git_push[kvb-git-push]
+  git --> git_diff[kvb-git-diff]
   check --> check_legal[kvb-check-legal]
   check --> check_security[kvb-check-security]
   check --> check_principles[kvb-check-principles]
@@ -161,6 +162,7 @@ flowchart LR
     changelog[kvb-git-changelog]
     hotfix[kvb-git-hotfix]
     git_push[kvb-git-push]
+    git_diff[kvb-git-diff]
   end
   subgraph cat_check [check]
     advocate[kvb-check-legal]
@@ -248,6 +250,8 @@ flowchart LR
   clean --> sceptic
   clean --> refactor
   commit_no_verify --> advocate
+  commit_next --> git_diff
+  commit_no_verify --> git_diff
   advocate --> dialectic
   confidence --> break_risk
   confidence --> gate
@@ -376,6 +380,8 @@ flowchart LR
 
 - Node.js (provides `npx skills`).
 - `jq` (only required for `make update`).
+- Python `jinja2` for `make test` (pinned in `hub/requirements.txt`).
+- Docker with the compose plugin (optional, runs the kvb-hub review hub).
 
 ## Installation 🚀
 
@@ -392,6 +398,12 @@ make project TARGET=/path/to/repo
 ```
 
 Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `kvb-dream` points each agent at `/kvb-dream` at most once every twelve hours (stamped per session in `~/.claude/.dream-stamps/`), and `kvb-coach` runs its short form at the first prompt of every full hour, once across all agents (stamped in `~/.claude/.coach-hours/`); the global install also enables the `kvb-dream-notify.timer` systemd user timer, which recommends `/kvb-dream` in a GNOME notification daily at 17:00 local time and catches up once after a missed run. A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.claude/agents-council/config.json` exists, and because its hooks run that config's commands outside the sandbox, the install adds `Edit(~/.claude/agents-council/**)` to `permissions.deny`, which also covers Write in every permission mode. The `kvb-org-radio` skill registers five hooks: its prompt hook and a PostToolBatch hook deliver the immediate radio (`call`, `broadcast`, `security`, `pan-pan`, `mayday`) mid-turn, a Stop hook delivers the post (`post`, `newsletter` and call receipts) when the turn ends, an `asyncRewake` Stop hook wakes an idle session for the radio, and a PreToolUse hook refuses every writing action while a mayday holds, except those of its sender and of the agents that join it with `radio.py assist`. The PreToolUse hook of the `kvb-org-queue` skill sends heavy commands through `queue.py hold` once the config sets `queue_enforce`, and holds a held command to the settings' Bash deny and ask rules, which see only `queue.py hold`. The global install also installs the MEDUSA security scanner with pipx for `kvb-check-security`, unless `medusa` is already on the PATH. Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Every hook runs `/usr/bin/python3 -I`, so neither the `python3` of a sandbox-writable virtualenv on the `PATH` nor `PYTHONPATH` reaches the hooks, which run outside the sandbox; older bare `python3` hook entries are rewritten. The reminder hooks run `/usr/bin/bash` and pin `PATH=/usr/bin:/bin`, and the council scripts keep only the `PATH` directories this uid cannot write (`skills/kvb-org-organize/scripts/hookpath.py`), so no binary an agent plants on the inherited `PATH` runs outside the sandbox. Existing settings are preserved.
+
+The global install also runs the kvb-hub, a local review page in which the operator approves or rejects the agents' staged commits (the `kvb-git-diff` skill): it copies `hub/` to `~/.local/share/kvb-hub`, starts it there with `docker compose up -d --build` (restart `unless-stopped`, bound to `127.0.0.1` only, state in `~/.local/state/kvb-hub`) and registers its MCP server for Claude Code at user scope. Its port is `KVB_HUB_PORT` in `hub/.env`; the hub page is `http://localhost:<port>/`, the MCP endpoint `/mcp`. Without docker the hub is skipped and the commit skills ask in chat. The hub reads new radio traffic aloud in maritime phraseology and takes push-to-talk input; its image builds both engines from pinned, sha256-verified sources and runs each as a separate process: Piper (`piper-tts`, GPL-3.0-or-later) with the `en_US-libritts-high` voice (904 speakers, trained on LibriTTS, CC BY 4.0, from `rhasspy/piper-voices`) and whisper.cpp (MIT) with the multilingual `ggml-base-q8_0` model (OpenAI Whisper weights, MIT). The operator's own voice is `KVB_HUB_OPERATOR_VOICE` in `hub/.env`.
+
+Without reinstalling the skills, `make hub-install` installs, builds and starts only the hub, `make hub-check` checks the installed hub (image, container, logs, HTTP, pinned keys, hook, runner, disk; exit 1 on a failure), `make hub-pin CREDENTIAL=<blob>` pins the passkey that "Passkey registrieren" shows, `make hub-runner` enables the runner service, and `make hub-hook` registers the PermissionRequest hook in `~/.claude/settings.json`, replacing an earlier kvb-hub entry and keeping the file mode, after a copy to `settings.json.before-kvb-hub-hook` (Claude Code reads `~/.claude/settings.local.json` only in sessions started in the home directory). Agents that reach the Docker socket are root-equivalent: until the agent VMs of core requirement 093 isolate them, the signatures do not hold against such an agent. `make watch-check` shows whether the resource watch hook is stuck (running hooks, holders of the kept queue history, age of the stored stage).
+
+The hub is only a relay: every approval of an ask, a staged commit or an operator command is signed end to end with a WebAuthn passkey held in KeePassXC (through KeePassXC-Browser, relying party `localhost`, origin `http://localhost:<port>`; ES256, EdDSA and RS256, so a hardware key can be pinned beside it). To register, open the hub at `http://localhost:<port>/` (WebAuthn needs the domain; on `127.0.0.1` the page links there), choose "Passkey registrieren" in the settings and run the host command the page shows, `python3 ~/.local/share/kvb-hub/client/approval.py pin --port <port> --approvers ~/.config/kvb-hub/approvers.json --credential '<blob>'`, in a terminal outside every sandbox: it pins the key in `~/.config/kvb-hub/approvers.json` with mode 0600, a file no sandboxed agent can write and the hub mounts read-only; the hub never pins. Each approval, or one bulk selection, is one signature over the hashes of every item, a nonce and an expiry; each auto-approval rule is signed once. The executors verify it themselves against the pinned keys and fail closed: the runner (`client/runner.py`, the `kvb-hub-runner` user service) runs only signed commands, each signature once, recorded in `~/.local/state/kvb-hub-approvals/runner.json`; the PermissionRequest hook (`client/permission_hook.py --port <port> --timeout <seconds> --approvers ~/.config/kvb-hub/approvers.json --replay ~/.local/state/kvb-hub-approvals/hook.json`) allows only a signed item that matches its own tool, command, cwd and session, else it leaves the decision to Claude Code's own prompt; the commit skills run `approval.py verify` on the staged tree before committing, else they ask in the terminal. With no key pinned, every executor refuses; decisions and rejections stay unsigned. A signed rule never covers a command holding `;`, `&`, `|`, a backtick, `$`, `<`, `>`, parentheses or a line break: such a command always asks. The hub page is trusted while it asks for a signature or shows the blob to pin: whoever controls the hub container can show one item and have another signed, or hand over a key of its own. Any local process, sandboxed agents included, can also send the unsigned operator actions (messages, decision choices and rules, board actions, rejections) with the hub's guard headers, and the container reads the host `/tmp` for the review pages in `/tmp/kvb-git-diff`. All three close with the agent VMs of core requirement 093, like the Docker-socket gap.
 
 Restart your agent afterwards so it loads the new skills.
 

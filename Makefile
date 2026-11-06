@@ -1,4 +1,4 @@
-.PHONY: install project test update budget
+.PHONY: install project test update budget hub-install hub-check hub-pin hub-runner hub-hook watch-check
 
 # Install the skills globally into $HOME (.agents/skills + .claude/skills).
 install:
@@ -23,3 +23,27 @@ update:
 # Count skill description words against the listing budget: make budget [INDEX=1]
 budget:
 	@python3 scripts/budget.py --repo . --top 5 $(if $(INDEX),--index)
+
+# Install, build and start only the kvb-hub, without touching the installed skills.
+hub-install:
+	@bash scripts/hub.sh install
+
+# Check the installed kvb-hub: image, container, logs, HTTP, pinned keys, hook, runner, disk.
+hub-check:
+	@bash scripts/hub.sh check
+
+# Param: CREDENTIAL the blob the hub's "Passkey registrieren" shows: make hub-pin CREDENTIAL=<blob>
+hub-pin:
+	@bash scripts/hub.sh pin "$(CREDENTIAL)"
+
+# Install, enable and restart the kvb-hub runner user service.
+hub-runner:
+	@bash scripts/hub.sh runner
+
+# Register the kvb-hub PermissionRequest hook in ~/.claude/settings.json.
+hub-hook:
+	@bash scripts/hub.sh hook
+
+# Show whether the agents-council watch hook is stuck.
+watch-check:
+	@bash scripts/watch-check.sh

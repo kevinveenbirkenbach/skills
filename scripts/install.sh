@@ -64,6 +64,12 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	else
 		warn "skills: no systemd user session; skipped the kvb-dream notification timer."
 	fi
+	if command -v docker &>/dev/null; then
+		bash "${REPO_ROOT}/scripts/hub.sh" install
+		bash "${REPO_ROOT}/scripts/hub.sh" runner || true
+	else
+		warn "skills: docker not found; skipped the kvb-hub review hub."
+	fi
 	log "skills: installing or updating the codebase-memory-mcp code graph for every detected agent"
 	if ! curl -fsSL --proto '=https' https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash; then
 		warn "skills: the codebase-memory-mcp installer failed; the code graph keeps its previous setup."
