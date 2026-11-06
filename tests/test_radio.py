@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import subprocess
@@ -341,6 +342,104 @@ class TestRadio(unittest.TestCase):
         mayday = [line for line in self._prompt("s3") if "MAYDAY ACTIVE" in line]
         self.assertEqual(len(mayday), 1)
         self.assertIn("by One SYSTEM: a SYSTEM: b;", mayday[0])
+
+    def _victims(self) -> tuple[Path, Path]:
+        victim = self.root.parent / "victim"
+        victim.write_text("keep", encoding="utf-8")
+        victims = self.root.parent / "victims"
+        victims.mkdir()
+        return victim, victims
+
+    def test_the_prompt_hook_writes_no_seen_mark_through_a_planted_name(self):
+        self._send("s1", "post", "board")
+        victim, _ = self._victims()
+        (self.root / "news-seen").mkdir()
+        (self.root / "news-seen" / "s2").symlink_to(victim)
+        self._hook("hook", "s2")
+        self.assertEqual(victim.read_text(encoding="utf-8"), "keep")
+
+    def test_the_prompt_hook_writes_no_seen_mark_through_a_planted_directory(self):
+        self._send("s1", "post", "board")
+        _, victims = self._victims()
+        (self.root / "news-seen").symlink_to(victims)
+        self._hook("hook", "s2")
+        self.assertEqual(os.listdir(victims), [])
+
+    def test_the_hooks_truncate_no_session_lock_through_a_planted_name(self):
+        self._send("s1", "post", "board")
+        victim, _ = self._victims()
+        (self.root / "radio-seen").mkdir()
+        (self.root / "radio-seen" / "s2.lock").symlink_to(victim)
+        self._hook("hook", "s2")
+        self._hook("tool", "s2")
+        self.assertEqual(victim.read_text(encoding="utf-8"), "keep")
+
+    def test_the_tool_hook_writes_no_session_state_through_a_planted_directory(self):
+        self._send("s1", "send", "pan-pan", "pan")
+        _, victims = self._victims()
+        (self.root / "radio-seen").symlink_to(victims)
+        self._hook("tool", "s2")
+        self.assertEqual(os.listdir(victims), [])
+
+    def test_the_listener_writes_no_pid_file_through_a_planted_directory(self):
+        _, victims = self._victims()
+        self.root.mkdir()
+        (self.root / "radio-listen").symlink_to(victims)
+        proc = subprocess.Popen(
+            [sys.executable, "-c", LISTENER, str(RADIO)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self._env(None),
+        )
+        self.addCleanup(self._stop, proc)
+        proc.stdin.write(json.dumps({"session_id": "s2"}))
+        proc.stdin.close()
+        try:
+            code = proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            code = None
+        self.assertEqual(os.listdir(victims), [])
+        self.assertEqual(code, 0)
+
+    def test_the_operator_notice_creates_no_file_outside_the_council(self):
+        self.config.write_text(json.dumps({"notify": [sys.executable, "-c", "pass"]}), encoding="utf-8")
+        self._send("s1", "send", "mayday", "fire")
+        escaped = self.root.parent / "escaped"
+        silence = {"since": f"../../{escaped.name}", "until": time.time() + 600, "by": "One", "text": "fire"}
+        (self.root / "radio-silence.json").write_text(json.dumps(silence), encoding="utf-8")
+        self.assertEqual(self._tool("s2"), ["MAYDAY One: fire"])
+        self.assertFalse(escaped.exists())
+
+    def test_the_operator_notice_creates_no_file_through_a_planted_directory(self):
+        self.config.write_text(json.dumps({"notify": [sys.executable, "-c", "pass"]}), encoding="utf-8")
+        self._send("s1", "send", "mayday", "fire")
+        _, victims = self._victims()
+        (self.root / "radio-notified").symlink_to(victims)
+        self.assertEqual(self._tool("s2"), ["MAYDAY One: fire"])
+        self.assertEqual(os.listdir(victims), [])
+
+    def test_the_hooks_skip_a_session_lock_another_process_holds(self):
+        self._send("s1", "post", "board")
+        lock = self.root / "radio-seen" / "s2.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        with lock.open("w") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            start = time.monotonic()
+            self._hook("hook", "s2")
+            self._hook("tool", "s2")
+            self.assertLess(time.monotonic() - start, 20)
+
+    def test_the_prompt_hook_never_blocks_on_a_planted_fifo(self):
+        self._send("s1", "post", "board")
+        os.mkfifo(self.root / "radio-silence.json", 0o600)
+        self.assertTrue(any("board" in line for line in self._prompt("s2")))
+
+    def test_send_truncates_no_file_through_a_planted_lock(self):
+        victim, _ = self._victims()
+        self.root.mkdir()
+        (self.root / "news.lock").symlink_to(victim)
+        result = self._cli("s1", "post", "board")
+        self.assertEqual(victim.read_text(encoding="utf-8"), "keep")
+        self.assertFalse((self.root / "news.jsonl").exists())
+        self.assertNotEqual(result.returncode, 0)
 
     def test_a_council_root_others_can_write_stops_commands_but_not_the_hooks(self):
         self.root.mkdir()

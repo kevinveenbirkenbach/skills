@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -84,6 +85,23 @@ class TestCouncil(unittest.TestCase):
         self.assertEqual(self._run("s1", "gate", stdin=outside).returncode, 0)
         self._run("s1", "claim", "work/x", "--work", "w")
         self.assertEqual(self._run("s1", "gate", stdin=inside).returncode, 0)
+
+    def test_gate_still_blocks_past_a_planted_fifo_or_malformed_claim(self):
+        repo = Path(self.tmp.name) / "repo"
+        (repo / ".git").mkdir(parents=True)
+        inside = json.dumps({"session_id": "s1", "tool_input": {"file_path": str(repo / "f")}})
+        (self.root / "work" / "fifo").mkdir(parents=True)
+        os.mkfifo(self.root / "work" / "fifo" / "claim.json", 0o600)
+        for claim in ({}, [], {"session": "s2", "runtime": "claude-code"}):
+            with self.subTest(claim=claim):
+                (self.root / "work" / "bad").mkdir(exist_ok=True)
+                (self.root / "work" / "bad" / "claim.json").write_text(json.dumps(claim), encoding="utf-8")
+                env = {"PATH": "/usr/bin:/bin", "HOME": str(self.home), "AGENTS_COUNCIL_ROOT": str(self.root)}
+                result = subprocess.run(
+                    [sys.executable, str(COUNCIL), "gate"],
+                    capture_output=True, text=True, env=env, input=inside, check=False, timeout=30,
+                )
+                self.assertEqual(result.returncode, 2, result.stderr)
 
     def _two_claims(self) -> str:
         work = "fix the failing deploy of web-app-x on branch fix/web-app-x/deploy"

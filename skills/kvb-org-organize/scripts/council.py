@@ -26,6 +26,17 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import ModuleType
+
+
+def sibling(name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(f"kvb_council_{name}", Path(__file__).resolve().parent / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+nofollow = sibling("nofollow")
 
 ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 HEARTBEAT_LIMIT = 3600
@@ -66,9 +77,13 @@ def office_dir(office: str) -> Path:
 
 def read_claim(path: Path) -> dict | None:
     try:
-        return json.loads((path / CLAIM).read_text(encoding="utf-8"))
-    except (FileNotFoundError, ValueError):
+        claim = json.loads(nofollow.read_text(ROOT, path / CLAIM))
+    except (OSError, ValueError, RecursionError):
         return None
+    shaped = isinstance(claim, dict) and all(
+        isinstance(claim.get(key), kind) for key, kind in (("session", str), ("runtime", str), ("beat", (int, float)))
+    )
+    return claim if shaped else None
 
 
 def is_stale(claim: dict | None, live: dict[str, str | None]) -> bool:

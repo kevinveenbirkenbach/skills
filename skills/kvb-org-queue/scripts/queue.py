@@ -95,7 +95,6 @@ import shlex
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 from collections import Counter
 from collections.abc import Iterator
@@ -109,6 +108,7 @@ SIBLINGS = {
     "council": SKILLS / "kvb-org-organize" / "scripts" / "council.py",
     "rasci": SKILLS / "kvb-org-rasci" / "scripts" / "rasci.py",
     "history": Path(__file__).resolve().parent / "history.py",
+    "nofollow": SKILLS / "kvb-org-organize" / "scripts" / "nofollow.py",
 }
 POLL_SECONDS = 20
 TICK_SECONDS = 0.2
@@ -135,6 +135,7 @@ def sibling(name: str) -> ModuleType:
 
 watch = sibling("watch")
 history = sibling("history")
+nofollow = sibling("nofollow")
 STORE = watch.ROOT / "queue.json"
 LOCK = watch.ROOT / "queue.lock"
 HOLDS = watch.ROOT / "holds"
@@ -203,29 +204,30 @@ def held(tag: object) -> bool:
         return False
     path = HOLDS / f"{tag}.lock"
     try:
-        handle = path.open(encoding="utf-8")
+        fd = nofollow.open_below(watch.ROOT, path, os.O_RDONLY, 0)
     except FileNotFoundError:
         return False
-    with handle:
+    with open(fd, encoding="utf-8") as handle:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return True
-    path.unlink(missing_ok=True)
+    with contextlib.suppress(FileNotFoundError):
+        nofollow.unlink(watch.ROOT, path)
     return False
 
 
 @contextlib.contextmanager
 def holding() -> Iterator[tuple[str, int]]:
-    HOLDS.mkdir(parents=True, exist_ok=True)
     tag = f"{os.getpid()}-{time.time_ns()}"
     path = HOLDS / f"{tag}.lock"
-    with path.open("w", encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+    with nofollow.locked(watch.ROOT, path, 0o600, None) as handle:
         try:
             yield tag, handle.fileno()
         finally:
-            path.unlink(missing_ok=True)
+            # A symlink planted over holds/ refuses the unlink; the job's exit code must still come through.
+            with contextlib.suppress(OSError):
+                nofollow.unlink(watch.ROOT, path)
 
 
 def living(entry: dict) -> bool:
@@ -252,15 +254,10 @@ def read_store() -> dict:
 @contextlib.contextmanager
 def store() -> Iterator[dict]:
     watch.ROOT.mkdir(parents=True, exist_ok=True)
-    with LOCK.open("a", encoding="utf-8") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with nofollow.locked(watch.ROOT, LOCK, 0o600, None):
         data = read_store()
         yield data
-        with tempfile.NamedTemporaryFile(
-            "w", dir=watch.ROOT, prefix=".queue-", delete=False, encoding="utf-8"
-        ) as tmp:
-            json.dump(data, tmp, indent=1, sort_keys=True)
-        os.replace(tmp.name, STORE)
+        nofollow.replace(watch.ROOT, STORE, json.dumps(data, indent=1, sort_keys=True), 0o600)
 
 
 def ordered(waiting: list[dict], ranks: dict[str, int], now: float) -> list[dict]:
@@ -465,7 +462,7 @@ def supervise(cfg: dict, child: subprocess.Popen, samples: list[dict[str, float]
 
 def keep(row: dict) -> None:
     try:
-        history.record(watch.HISTORY, row)
+        nofollow.append(watch.ROOT, watch.HISTORY, history.line(row), 0o600)
     except OSError as error:
         # A full disk refuses the row; the job's exit code must still come through.
         print(f"queue: no history row for {row['id']}: {error.strerror}", file=sys.stderr)

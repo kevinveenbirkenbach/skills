@@ -42,7 +42,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime
-import fcntl
 import functools
 import importlib.util
 import json
@@ -50,7 +49,6 @@ import math
 import os
 import subprocess
 import sys
-import tempfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -74,6 +72,7 @@ URGENT = ("mayday", "pan-pan", "security")
 WINDOW = 86400
 SHOWN = 10
 CLIP = 1000
+SESSION_WAIT = 2
 KEPT = 500
 SILENCE_SECONDS = 7200
 NOTIFY_SECONDS = 10
@@ -104,7 +103,7 @@ def name_of(sid: str) -> str:
 
 def items() -> list[dict]:
     try:
-        lines = NEWS.read_text(encoding="utf-8").splitlines()
+        lines = organize("nofollow").read_text(ROOT, NEWS).splitlines()
     except OSError:
         return []
     rows = []
@@ -161,21 +160,19 @@ def for_me(row: dict, name: str) -> bool:
 
 def read_json(path: Path) -> dict:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(organize("nofollow").read_text(ROOT, path))
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 
 
 def write_atomic(path: Path, text: str) -> None:
-    with tempfile.NamedTemporaryFile("w", dir=path.parent, delete=False, encoding="utf-8") as handle:
-        handle.write(text)
-    os.replace(handle.name, path)
+    organize("nofollow").replace(ROOT, path, text, 0o600)
 
 
 def prompt_mark(sid: str) -> float:
     try:
-        return float((SEEN / sid).read_text(encoding="utf-8"))
+        return float(organize("nofollow").read_text(ROOT, SEEN / sid))
     except (OSError, ValueError):
         return NEVER
 
@@ -194,9 +191,7 @@ def news_mtime() -> float | None:
 
 @contextlib.contextmanager
 def session(sid: str) -> Iterator[dict]:
-    STATE.mkdir(parents=True, exist_ok=True)
-    with (STATE / f"{sid}.lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with organize("nofollow").locked(ROOT, STATE / f"{sid}.lock", 0o600, SESSION_WAIT):
         yield read_json(STATE / f"{sid}.json")
 
 
@@ -229,8 +224,8 @@ def notify_once(active: dict | None) -> None:
         return
     try:
         argv = json.loads(CONFIG.read_text(encoding="utf-8"))["notify"]
-        NOTIFIED.mkdir(parents=True, exist_ok=True)
-        os.close(os.open(NOTIFIED / str(active["since"]), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        marker = NOTIFIED / str(active["since"])
+        os.close(organize("nofollow").open_below(ROOT, marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
         subprocess.run(
             [*argv, f"Agents radio MAYDAY by {active['by']}: {active['text']}"],
             capture_output=True,
@@ -243,7 +238,7 @@ def notify_once(active: dict | None) -> None:
 
 def listening(sid: str) -> bool:
     try:
-        pid = int((LISTEN / f"{sid}.pid").read_text(encoding="utf-8"))
+        pid = int(organize("nofollow").read_text(ROOT, LISTEN / f"{sid}.pid"))
     except (OSError, ValueError):
         return False
     if pid <= 0:
@@ -280,8 +275,7 @@ def cmd_send(args: argparse.Namespace) -> int:
     sid, _ = council().caller(args.session)
     sender = name_of(sid)
     ROOT.mkdir(parents=True, exist_ok=True)
-    with LOCK.open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with organize("nofollow").locked(ROOT, LOCK, 0o600, None):
         rows = items()
         ts = time.time()
         if rows:
@@ -312,8 +306,7 @@ def cmd_clear(args: argparse.Namespace) -> int:
     sid, _ = council().caller(args.session)
     me = name_of(sid)
     ROOT.mkdir(parents=True, exist_ok=True)
-    with LOCK.open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with organize("nofollow").locked(ROOT, LOCK, 0o600, None):
         active = silence()
         if active is None:
             print("no radio silence active")
@@ -350,8 +343,7 @@ def cmd_hook(_: argparse.Namespace) -> int:
             rows = unseen(sid, name)
             out += capped([row for row in rows if not delivered(row, state)])
             if rows:
-                SEEN.mkdir(parents=True, exist_ok=True)
-                (SEEN / sid).write_text(str(max(row["ts"] for row in rows)), encoding="utf-8")
+                write_atomic(SEEN / sid, str(max(row["ts"] for row in rows)))
         if out:
             print("\n".join(out))
         notify_once(active)
@@ -414,14 +406,13 @@ def cmd_listen(_: argparse.Namespace) -> int:
         sid = hook_session()
         if not sid:
             return 0
-        LISTEN.mkdir(parents=True, exist_ok=True)
         pidfile = LISTEN / f"{sid}.pid"
         mine = str(os.getpid())
         write_atomic(pidfile, mine)
         parent = os.getppid()
         known: float | None = None
         # A listener outliving its session would poll forever; the session exiting changes its parent.
-        while pidfile.read_text(encoding="utf-8") == mine and os.getppid() == parent:
+        while organize("nofollow").read_text(ROOT, pidfile) == mine and os.getppid() == parent:
             mtime = news_mtime()
             if mtime != known:
                 known = mtime

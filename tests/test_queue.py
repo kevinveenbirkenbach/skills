@@ -617,6 +617,47 @@ class TestQueueCommands(unittest.TestCase):
         self.assertEqual(self.bash("ls"), 0)
         self.assertEqual(self.bash("echo it's"), 0)
 
+    def test_hold_creates_no_lock_in_a_planted_holds_directory(self):
+        victims = self.base / "victims"
+        victims.mkdir()
+        (self.root / "holds").symlink_to(victims)
+        seen = self.base / "seen.txt"
+        listing = "import os, sys; open(sys.argv[2], 'w').write(repr(os.listdir(sys.argv[1])))"
+        result = self.run_queue(
+            "hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--",
+            sys.executable, "-c", listing, str(victims), str(seen),
+        )
+        self.assertEqual(seen.read_text(encoding="utf-8") if seen.exists() else "[]", "[]")
+        self.assertEqual(os.listdir(victims), [])
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_list_unlinks_no_lock_in_a_planted_holds_directory(self):
+        victims = self.base / "victims"
+        victims.mkdir()
+        (victims / "1-2.lock").write_text("", encoding="utf-8")
+        (self.root / "holds").symlink_to(victims)
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        self.write_store([{**stored(1, "waiting", gone.pid, "1", None, None), "lock": "1-2"}])
+        self.run_queue("list")
+        self.assertEqual(os.listdir(victims), ["1-2.lock"])
+
+    def test_the_store_lock_creates_no_file_through_a_planted_name(self):
+        created = self.base / "created"
+        (self.root / "queue.lock").symlink_to(created)
+        result = self.run_queue("list")
+        self.assertFalse(created.exists())
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_hold_appends_no_history_row_through_a_planted_name(self):
+        victim = self.base / "victim"
+        victim.write_text("keep\n", encoding="utf-8")
+        self.history_file.symlink_to(victim)
+        result = self.run_queue("hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", "true")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no history row", result.stderr)
+        self.assertEqual(victim.read_text(encoding="utf-8"), "keep\n")
+
     def test_a_council_root_others_can_write_stops_commands_but_not_the_hook(self):
         self.root.chmod(0o777)
         refused = self.run_queue("list")

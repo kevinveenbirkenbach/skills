@@ -101,10 +101,8 @@ def row(job: dict, start: float, end: float, code: int, samples: list[dict[str, 
     }
 
 
-def record(path: Path, entry: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(entry, sort_keys=True) + "\n")
+def line(entry: dict) -> str:
+    return json.dumps(entry, sort_keys=True) + "\n"
 
 
 def read(paths: Iterable[Path]) -> list[dict]:

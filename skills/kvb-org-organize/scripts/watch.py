@@ -49,7 +49,9 @@ kind listed in kinds also needs CPU busy and RAM used below the limits.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
+import importlib.util
 import json
 import os
 import re
@@ -59,7 +61,17 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import ModuleType
 
+
+def sibling(name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(f"kvb_watch_{name}", Path(__file__).resolve().parent / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+nofollow = sibling("nofollow")
 ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 CONFIG = Path(
     os.environ.get(
@@ -79,6 +91,7 @@ ACCEPTED = ROOT / "security-accepted.jsonl"
 KEPT_ACCEPTED = KEPT / "security-accepted.jsonl"
 MIRRORED = ((HISTORY, KEPT_HISTORY), (ACCEPTED, KEPT_ACCEPTED))
 ALERT_TTL = 3600
+CLEANUP_LOCK = "cleanup.lock"
 LOCK_TTL = 1800
 GB = 1e9
 
@@ -112,20 +125,14 @@ def disk(cfg: dict) -> tuple[float, float]:
 
 def read_json(path: Path) -> dict:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        data = json.loads(nofollow.read_text(ROOT, path))
+    except (OSError, ValueError, RecursionError):
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 def write_json(path: Path, data: dict) -> None:
-    # A full disk refuses the write; the stage must still act, so it is dropped.
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.{os.getpid()}")
-        tmp.write_text(json.dumps(data), encoding="utf-8")
-        tmp.replace(path)
-    except OSError:
-        pass
+    write_text(path, json.dumps(data))
 
 
 def stage_for(free: float, samples: list[list[float]], cfg: dict, now: float) -> str:
@@ -147,8 +154,7 @@ def stage_for(free: float, samples: list[list[float]], cfg: dict, now: float) ->
 def alert(stage: str, text: str) -> None:
     try:
         ROOT.mkdir(parents=True, exist_ok=True)
-        with ALERTS.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"id": time.time_ns(), "stage": stage, "text": text}) + "\n")
+        nofollow.append(ROOT, ALERTS, json.dumps({"id": time.time_ns(), "stage": stage, "text": text}) + "\n", 0o600)
     except OSError:
         pass
 
@@ -156,25 +162,28 @@ def alert(stage: str, text: str) -> None:
 def unseen_alerts(session: str) -> list[str]:
     seen_path = ROOT / "seen" / session
     try:
-        seen = int(seen_path.read_text(encoding="utf-8"))
+        seen = int(nofollow.read_text(ROOT, seen_path))
     except (OSError, ValueError):
         seen = 0
     try:
-        lines = ALERTS.read_text(encoding="utf-8").splitlines()
+        text = nofollow.read_text(ROOT, ALERTS)
     except OSError:
         return []
     cutoff = time.time_ns() - ALERT_TTL * 10**9
-    fresh = [json.loads(line) for line in lines if line]
-    fresh = [a for a in fresh if a["id"] > max(seen, cutoff)]
+    fresh = [json.loads(line) for _, line in history_rows(text)]
+    fresh = [
+        a for a in fresh
+        if isinstance(a["id"], int) and isinstance(a.get("text"), str) and a["id"] > max(seen, cutoff)
+    ]
     if fresh:
         write_text(seen_path, str(fresh[-1]["id"]))
     return [a["text"] for a in fresh]
 
 
 def write_text(path: Path, text: str) -> None:
+    # A full disk or a planted symlink refuses the write; the stage must still act, so it is dropped.
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        nofollow.replace(ROOT, path, text, 0o600)
     except OSError:
         pass
 
@@ -225,7 +234,7 @@ def history_rows(text: str) -> list[tuple[str, str]]:
     for line in text.splitlines():
         try:
             row = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if isinstance(row, dict) and "id" in row:
             rows.append((row["id"], line))
@@ -244,7 +253,7 @@ def keep_rows(origin: Path, target: Path) -> None:
             fcntl.flock(kept, fcntl.LOCK_EX)
             kept.seek(0)
             known = {row_id for row_id, _ in history_rows(kept.read())}
-            for row_id, line in history_rows(origin.read_text(encoding="utf-8")):
+            for row_id, line in history_rows(nofollow.read_text(ROOT, origin)):
                 if row_id not in known:
                     known.add(row_id)
                     kept.write(line + "\n")
@@ -371,17 +380,20 @@ def cmd_admit(cfg: dict, args: argparse.Namespace) -> int:
     return 0 if verdict == "grant" else 3
 
 
-def cache_files(dirs: list[str]) -> list[tuple[float, int, str]]:
+def cache_files(dirs: list[str]) -> list[tuple[float, int, str, str]]:
     files = []
-    for root in dirs:
-        for base, _, names in os.walk(os.path.expanduser(root)):
+    seen: set[tuple[int, int]] = set()
+    for root in map(os.path.expanduser, dirs):
+        for base, _, names, fd in os.fwalk(root, follow_symlinks=False):
             for name in names:
-                path = os.path.join(base, name)
                 try:
-                    st = os.lstat(path)
+                    st = os.stat(name, dir_fd=fd, follow_symlinks=False)
                 except OSError:
                     continue
-                files.append((st.st_atime, st.st_size, path))
+                if (st.st_dev, st.st_ino) in seen:
+                    continue
+                seen.add((st.st_dev, st.st_ino))
+                files.append((st.st_atime, st.st_blocks * 512, os.path.join(base, name), root))
     return files
 
 
@@ -389,13 +401,13 @@ def trim_caches(cfg: dict) -> float:
     _, total = disk(cfg)
     budget = total * GB * cfg["cache_budget_percent"] / 100
     files = sorted(cache_files(cfg["cache_dirs"]))
-    used = sum(size for _, size, _ in files)
+    used = sum(size for _, size, _, _ in files)
     freed = 0
-    for _, size, path in files:
+    for _, size, path, root in files:
         if used - freed <= budget:
             break
         try:
-            os.remove(path)
+            nofollow.unlink(Path(root), Path(path))
             freed += size
         except OSError:
             continue
@@ -448,32 +460,32 @@ def run_cleanup(cfg: dict) -> list[str]:
 
 
 def cmd_cleanup(cfg: dict, args: argparse.Namespace) -> int:
-    lock = ROOT / "cleanup.lock"
-    ROOT.mkdir(parents=True, exist_ok=True)
+    root = nofollow.directory(ROOT, (), True)
     try:
-        if time.time() - lock.stat().st_mtime > LOCK_TTL:
-            lock.rmdir()
-    except FileNotFoundError:
-        pass
-    try:
-        lock.mkdir()
-    except FileExistsError:
-        return 0
-    try:
-        before, _ = disk(cfg)
-        results = run_cleanup(cfg) if args.full else []
-        cache_gb = trim_caches(cfg)
-        after, _ = disk(cfg)
-        failed = [r for r in results if not r.startswith("ok")]
-        if args.full or cache_gb:
-            alert(
-                "cleanup",
-                f"RESOURCE CLEANUP: freed {after - before:.1f} GB ({cache_gb:.1f} GB caches), "
-                f"/ now {after:.1f} GB free; {len(results) - len(failed)} commands ok"
-                + (f", failed: {' | '.join(failed)}" if failed else "."),
-            )
+        with contextlib.suppress(FileNotFoundError, NotADirectoryError):
+            if time.time() - os.stat(CLEANUP_LOCK, dir_fd=root, follow_symlinks=False).st_mtime > LOCK_TTL:
+                os.rmdir(CLEANUP_LOCK, dir_fd=root)
+        try:
+            os.mkdir(CLEANUP_LOCK, 0o700, dir_fd=root)
+        except FileExistsError:
+            return 0
+        try:
+            before, _ = disk(cfg)
+            results = run_cleanup(cfg) if args.full else []
+            cache_gb = trim_caches(cfg)
+            after, _ = disk(cfg)
+            failed = [r for r in results if not r.startswith("ok")]
+            if args.full or cache_gb:
+                alert(
+                    "cleanup",
+                    f"RESOURCE CLEANUP: freed {after - before:.1f} GB ({cache_gb:.1f} GB caches), "
+                    f"/ now {after:.1f} GB free; {len(results) - len(failed)} commands ok"
+                    + (f", failed: {' | '.join(failed)}" if failed else "."),
+                )
+        finally:
+            os.rmdir(CLEANUP_LOCK, dir_fd=root)
     finally:
-        lock.rmdir()
+        os.close(root)
     return 0
 
 
