@@ -73,7 +73,6 @@ CLASSES = ("broadcast", "direct", "security", "pan-pan", "mayday")
 URGENT = ("mayday", "pan-pan", "security")
 WINDOW = 86400
 SHOWN = 10
-CLIP = 1000
 SESSION_WAIT = 2
 KEPT = 500
 SILENCE_SECONDS = 7200
@@ -142,7 +141,7 @@ def clock(ts: float) -> str:
 
 
 def clip(value: object) -> str:
-    return " ".join(str(value).split())[:CLIP]
+    return organize("watch").clip(value)
 
 
 def line(row: dict) -> str:

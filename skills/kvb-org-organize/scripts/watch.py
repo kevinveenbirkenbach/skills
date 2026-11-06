@@ -95,6 +95,7 @@ ACCEPTED = ROOT / "security-accepted.jsonl"
 KEPT_ACCEPTED = KEPT / "security-accepted.jsonl"
 MIRRORED = ((HISTORY, KEPT_HISTORY), (ACCEPTED, KEPT_ACCEPTED))
 ALERT_TTL = 3600
+CLIP = 1000
 CLEANUP_LOCK = "cleanup.lock"
 LOCK_TTL = 1800
 GB = 1e9
@@ -125,6 +126,10 @@ def load_config() -> dict | None:
 def disk(cfg: dict) -> tuple[float, float]:
     st = os.statvfs(cfg["disk"])
     return st.f_bavail * st.f_frsize / GB, st.f_blocks * st.f_frsize / GB
+
+
+def clip(value: object) -> str:
+    return " ".join(str(value).split()).replace("<", "<\\")[:CLIP]
 
 
 def read_json(path: Path) -> dict:
@@ -181,7 +186,7 @@ def unseen_alerts(session: str) -> list[str]:
     ]
     if fresh:
         write_text(seen_path, str(fresh[-1]["id"]))
-    return [a["text"] for a in fresh]
+    return [clip(a["text"]) for a in fresh]
 
 
 def write_text(path: Path, text: str) -> None:
@@ -333,7 +338,7 @@ def cmd_block(cfg: dict) -> int:
         return 0
     if any(re.search(p, command) for p in cfg["heavy_commands"]):
         reason = (
-            f"a mayday by {mayday.get('by', '?')} holds radio silence: {mayday.get('text', '')}; "
+            f"a mayday by {clip(mayday.get('by', '?'))} holds radio silence: {clip(mayday.get('text', ''))}; "
             "it ends with radio.py clear"
             if mayday
             else f"resource stage is {stage}; new heavy jobs are blocked until the disk recovers"
