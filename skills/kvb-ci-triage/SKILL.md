@@ -26,7 +26,7 @@ steps 0 to 2; the judgement stays yours.
    lineage included: `${CLAUDE_SKILL_DIR}/../kvb-git-hotfix/scripts/hotfix.py
    match --line '<line>'` first; claim it; read `council.py list`, the
    register, the radio and `find_fix.py`; ask every live peer, one batched
-   `radio.py send direct --wake` per peer for all clusters nothing there
+   `radio.py send call --to <peer>` per peer for all clusters nothing there
    answers. Investigate
    while waiting; take their fix or keep yours. Register (`kvb-org-rasci`):
    objective the root cause fixed, one key result per failing job passing.

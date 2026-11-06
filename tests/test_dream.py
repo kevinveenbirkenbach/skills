@@ -188,7 +188,8 @@ class TestSettingsRegistration(unittest.TestCase):
             ("UserPromptSubmit", "kvb-org-radio/scripts/radio.py"): 1,
             ("UserPromptSubmit", "kvb-org-organize/scripts/news.py"): 0,
             ("PostToolBatch", "kvb-org-radio/scripts/radio.py"): 1,
-            ("Stop", "kvb-org-radio/scripts/radio.py"): 1,
+            ("Stop", "kvb-org-radio/scripts/radio.py"): 2,
+            ("PreToolUse", "kvb-org-radio/scripts/radio.py"): 1,
             ("PreToolUse", "kvb-org-organize/scripts/council.py"): 1,
             ("PreToolUse", "kvb-org-organize/scripts/watch.py"): 1,
             ("PreToolUse", "kvb-org-queue/scripts/queue.py"): 1,
@@ -202,10 +203,18 @@ class TestSettingsRegistration(unittest.TestCase):
 
     def test_radio_listener_wakes_asynchronously_and_hooks_survive_a_missing_script(self):
         data = self._patch()
-        (listen,) = self._hooks(data, "Stop", "kvb-org-radio/scripts/radio.py")
+        listen, mailbox = self._hooks(data, "Stop", "kvb-org-radio/scripts/radio.py")
         self.assertIs(listen["asyncRewake"], True)
         self.assertGreater(listen["timeout"], 3600)
         self.assertTrue(listen["command"].endswith(" listen"))
+        self.assertTrue(mailbox["command"].endswith(" mailbox"))
+        self.assertNotIn("asyncRewake", mailbox)
+        (block,) = [
+            entry
+            for entry in data["hooks"]["PreToolUse"]
+            if any(hook["command"].endswith("radio.py\" block") for hook in entry["hooks"])
+        ]
+        self.assertEqual(block["matcher"], "Edit|Write|MultiEdit|NotebookEdit|Bash")
         (gate,) = self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py")
         result = subprocess.run(["sh", "-c", gate["command"]], capture_output=True, check=False)
         self.assertEqual(result.returncode, 1)

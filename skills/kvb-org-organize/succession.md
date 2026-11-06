@@ -8,8 +8,8 @@
   live representative (by claim time) and posts it to the radio.
 - Chair handover is explicit: the outgoing chair sends the incoming chair the
   queue and the running grants
-  (`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send direct --to
-  <name> --wake`: it must confirm), posts the new holder to the radio, and
+  (`${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send call --to
+  <name>`: it must confirm), posts the new holder to the radio, and
   keeps allocating until the incoming chair confirms. Two allocators never
   run at once.
 - A claim is stale when its holder's session is gone: in Claude Code its

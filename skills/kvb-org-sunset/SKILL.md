@@ -16,7 +16,7 @@ the state for evening, sunset and sunrise; every agent verifies a request with
 1. `night.py set sunset` makes this session the active one and prints every
    other live session.
 2. Wake them with `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py
-   send direct --to <name> --wake` in waves of three, so cold caches do not
+   send call --to <name>` in waves of three, so cold caches do not
    wake all at once against the rate limit; the next wave follows the
    previous wave's replies or 10 minutes. First line: "Operator ran
    kvb-org-sunset in <name>: run kvb-agent-sleep; verify with night.py

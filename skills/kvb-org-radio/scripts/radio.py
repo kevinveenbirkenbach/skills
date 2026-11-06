@@ -1,42 +1,58 @@
 #!/usr/bin/env python3
-"""Reach other agents by radio: five classes, from a board line to a wake, in one shared store.
+"""Reach other agents: the radio is immediate, the post waits until a turn ends; one shared store.
 
 Environment:
     AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
         /tmp/agents-council unless set. Rows live in <root>/news.jsonl under
         <root>/news.lock, the store the old news.py reads and writes too.
-    AGENTS_COUNCIL_CONFIG: config file whose "notify" argv tells the operator
-        of a mayday; ~/.claude/agents-council/config.json unless set.
+    AGENTS_COUNCIL_CONFIG: config file; its "notify" argv tells the operator
+        of a mayday, its "never_block" and "mayday_allow" regexes name the
+        Bash commands a mayday lets through;
+        ~/.claude/agents-council/config.json unless set.
     CLAUDE_CODE_SESSION_ID: the calling session; hooks read the payload's
         session_id first, other runtimes pass --session.
     PATH: filtered to the directories the kvb-org-organize hookpath.py
         trusts before the notify argv runs.
 
 Args:
-    send <class> "<text>" [--to <name> ...] [--wake] [--session <id>]: add a
-        row. broadcast, security, pan-pan and mayday go to all and take no
-        --to; direct needs --to; --wake only with direct. mayday also sets
-        radio silence (<root>/radio-silence.json) for two hours. A wake
-        (mayday, direct --wake) then prints `wake: SendMessage to <name>`
-        for every addressee without a live listener.
-    post "<text>" [--to <name> ...] [--session <id>]: send broadcast, or
-        direct with --to.
+    send <class> "<text>" [--to <name> ...] [--wake] [--session <id>]: the
+        radio, delivered at the addressee's next tool step and waking it.
+        call needs --to; broadcast, security, pan-pan and mayday go to all
+        and take no --to. direct is the old alias: with --wake a call,
+        without it a post. mayday also sets radio silence
+        (<root>/radio-silence.json) for two hours. Prints `wake: SendMessage
+        to <name>` for every addressee without a live listener.
+    post "<text>" [--to <name> ...] [--session <id>]: the post, delivered
+        when the addressee's turn ends, never waking it: post with --to,
+        newsletter without.
     clear [--force] [--session <id>]: end radio silence; its sender may,
         anyone else only with --force.
-    hook: UserPromptSubmit hook; prints the active silence and the unseen
-        rows, mayday, pan-pan and security first, at most 10, and marks them
-        seen. Never fails the prompt.
-    tool: PostToolBatch hook; prints the unseen urgent rows as
+    assist [--session <id>]: join the active mayday as a helper, whom the
+        block lets through like its sender.
+    hook: UserPromptSubmit hook; prints the active silence and the
+        undelivered radio rows, mayday first, at most 10. Never fails.
+    tool: PostToolBatch hook; adds the undelivered radio rows as
         additionalContext. Never fails.
+    mailbox: Stop hook; prints the undelivered post, newsletters and call
+        receipts to stderr, at most 10, and exits 2 so the agent reads them
+        before it idles. Never fails.
     listen: Stop hook with asyncRewake; polls every POLL_SECONDS until a
-        mayday or a direct --wake reaches this session, prints it to stderr
-        and exits 2; exits 0 once a newer listener of the session took over.
-    show [--all] [--session <id>]: print the active silence and the unseen
-        rows, or every kept row, without marking them.
+        radio row reaches this session, prints it to stderr and exits 2;
+        exits 0 once a newer listener of the session took over.
+    block: PreToolUse hook; while a mayday holds, exits 2 for Edit, Write,
+        MultiEdit, NotebookEdit and every Bash command but a plain call of
+        this radio.py by absolute or ~/ path and a command a never_block or
+        mayday_allow regex matches from its start; a shell operator, double
+        quote or backslash outside single quotes, or any parse error, blocks.
+        The mayday's sender and its helpers pass. Never fails.
+    show [--all] [--session <id>]: print the active silence and the
+        undelivered rows, or every kept row, without delivering them.
+
+    Delivering a call stores a receipt in the caller's post.
 
 Exit codes:
-    0 done, 2 usage error (listen: wake the session), 3 radio silence held
-    by another session.
+    0 done, 2 usage error (listen and mailbox: wake the session; block:
+    refuse the tool call), 3 radio silence held by another session.
 """
 
 from __future__ import annotations
@@ -49,6 +65,8 @@ import importlib.util
 import json
 import math
 import os
+import re
+import shlex
 import subprocess
 import sys
 import time
@@ -69,8 +87,19 @@ LISTEN = ROOT / "radio-listen"
 SILENCE = ROOT / "radio-silence.json"
 NOTIFIED = ROOT / "radio-notified"
 ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
-CLASSES = ("broadcast", "direct", "security", "pan-pan", "mayday")
-URGENT = ("mayday", "pan-pan", "security")
+SELF = Path(__file__).resolve()
+RADIO = ("mayday", "pan-pan", "security", "call", "broadcast")
+MAIL = ("post", "newsletter", "receipt")
+ALARMS = ("mayday", "pan-pan", "security")
+ADDRESSED = ("call", "post", "receipt")
+SEND = ("call", "broadcast", "security", "pan-pan", "mayday", "direct")
+VERSION = 2
+WRITERS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+SHELL = re.compile(r"[;&|`$()<>\n\r\\\"]")
+SINGLE_QUOTED = re.compile(r"'[^']*'")
+INTERPRETER = re.compile(r"(?:(?:/usr(?:/local)?)?/bin/)?python3?(?:\.\d+)?")
+BARE_FLAGS = re.compile(r"-[bBdEIOPqsSuv]+")
+SCRIPT = re.compile(r"~?/[\w./-]+")
 WINDOW = 86400
 SHOWN = 10
 SESSION_WAIT = 2
@@ -119,17 +148,22 @@ def items() -> list[dict]:
 
 
 def kind(row: dict) -> str:
-    if row.get("class") in CLASSES:
-        return row["class"]
-    return "direct" if row.get("to") else "broadcast"
+    cls = row.get("class")
+    if row.get("v") == VERSION and cls in RADIO + MAIL:
+        return cls
+    if cls in ALARMS:
+        return cls
+    if cls == "direct" or (cls != "broadcast" and targets(row)):
+        return "call" if row.get("wake") else "post"
+    return "newsletter"
 
 
-def urgent(row: dict) -> bool:
-    return kind(row) in URGENT
+def channel(row: dict) -> str:
+    return "radio" if kind(row) in RADIO else "mail"
 
 
 def rank(row: dict) -> int:
-    return URGENT.index(kind(row)) if urgent(row) else len(URGENT)
+    return RADIO.index(kind(row)) if channel(row) == "radio" else len(RADIO)
 
 
 def ordered(rows: list[dict]) -> list[dict]:
@@ -145,18 +179,31 @@ def clip(value: object) -> str:
 
 
 def line(row: dict) -> str:
-    target = f" to {', '.join(clip(name) for name in row['to'])}" if row.get("to") else ""
-    return f"RADIO {kind(row).upper()} {clock(row['ts'])} {clip(row.get('from'))}{target}: {clip(row.get('text'))}"
+    if kind(row) == "receipt":
+        return f"MAIL CALL {clip(row.get('from'))} read {clock(row['ts'])}: {clip(row.get('text'))}"
+    target = f" to {', '.join(clip(name) for name in targets(row))}" if targets(row) else ""
+    return (
+        f"{channel(row).upper()} {kind(row).upper()} {clock(row['ts'])} "
+        f"{clip(row.get('from'))}{target}: {clip(row.get('text'))}"
+    )
 
 
 def capped(rows: list[dict]) -> list[str]:
     picked = sorted(rows, key=lambda row: (rank(row), -row["ts"]))[:SHOWN]
-    more = [f"RADIO {len(rows) - SHOWN} more items: radio.py show --all"] if len(rows) > SHOWN else []
+    more = (
+        [f"{channel(rows[0]).upper()} {len(rows) - SHOWN} more items: radio.py show --all"]
+        if len(rows) > SHOWN
+        else []
+    )
     return [line(row) for row in ordered(picked)] + more
 
 
+def targets(row: dict) -> list:
+    return row["to"] if isinstance(row.get("to"), list) else []
+
+
 def for_me(row: dict, name: str) -> bool:
-    return row.get("from") != name and (not row.get("to") or name in row["to"])
+    return row.get("from") != name and (not targets(row) or name in targets(row))
 
 
 def read_json(path: Path) -> dict:
@@ -165,6 +212,18 @@ def read_json(path: Path) -> dict:
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def config() -> dict:
+    try:
+        data = json.loads(CONFIG.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def listed(value: object) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
 def write_atomic(path: Path, text: str) -> None:
@@ -180,7 +239,7 @@ def prompt_mark(sid: str) -> float:
 
 def mark(state: dict, key: str) -> float:
     value = state.get(key)
-    return NEVER if value is None else value
+    return value if isinstance(value, int | float) else NEVER
 
 
 def news_mtime() -> float | None:
@@ -213,10 +272,16 @@ def silence() -> dict | None:
     return state if isinstance(until, int | float) and until > time.time() else None
 
 
+def responders(active: dict) -> list[str]:
+    return [active.get("by"), *listed(active.get("helpers"))]
+
+
 def silence_line(active: dict) -> str:
+    helpers = listed(active.get("helpers"))
+    helping = f"; helping: {', '.join(clip(name) for name in helpers)}" if helpers else ""
     return (
-        f"MAYDAY ACTIVE since {clock(active['since'])} by {clip(active['by'])}: {clip(active['text'])}; "
-        "no new heavy jobs until radio.py clear"
+        f"MAYDAY ACTIVE since {clock(active['since'])} by {clip(active['by'])}: {clip(active['text'])}{helping}; "
+        "writing actions wait until radio.py clear unless you help with radio.py assist"
     )
 
 
@@ -224,7 +289,7 @@ def notify_once(active: dict | None) -> None:
     if active is None:
         return
     try:
-        argv = json.loads(CONFIG.read_text(encoding="utf-8"))["notify"]
+        argv = config()["notify"]
         marker = NOTIFIED / str(active["since"])
         os.close(organize("nofollow").open_below(ROOT, marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
         subprocess.run(
@@ -255,52 +320,61 @@ def listening(sid: str) -> bool:
 
 def unreached(cls: str, to: list[str], sender: str) -> list[str]:
     live = council().live_sessions()
-    if cls == "mayday":
-        targets = [(name or sid, [sid]) for sid, name in live.items() if sid != sender]
-    else:
+    if cls in ADDRESSED:
         targets = [(name, [sid for sid, label in live.items() if name in (label, sid)]) for name in to]
+    else:
+        targets = [(name or sid, [sid]) for sid, name in live.items() if sid != sender]
     return [name for name, sids in targets if not any(map(listening, sids))]
 
 
-def cmd_send(args: argparse.Namespace) -> int:
-    to = args.to or []
-    if args.cls == "direct" and not to:
-        fail("direct needs --to")
-    if args.cls != "direct" and to:
-        fail(f"{args.cls} goes to all; drop --to")
-    if args.wake and args.cls != "direct":
-        fail("--wake only with direct")
-    text = " ".join(args.text.split())
+def store(entries: list[dict]) -> float:
+    rows = items()
+    ts = time.time()
+    if rows:
+        ts = max(ts, math.nextafter(max(row["ts"] for row in rows), math.inf))
+    for entry in entries:
+        entry["ts"] = ts
+        ts = math.nextafter(ts, math.inf)
+    write_atomic(NEWS, "".join(json.dumps(row) + "\n" for row in [*rows[-(KEPT - len(entries)):], *entries]))
+    return entries[-1]["ts"]
+
+
+def transmit(cls: str, to: list[str], text: str, caller: str | None) -> int:
+    if cls in ADDRESSED and not to:
+        fail(f"{cls} needs --to")
+    if cls not in ADDRESSED and to:
+        fail(f"{cls} goes to all; drop --to")
+    text = " ".join(text.split())
     if not text:
-        fail(f"{args.cls} needs a text")
-    sid, _ = council().caller(args.session)
+        fail(f"{cls} needs a text")
+    sid, _ = council().caller(caller)
     sender = name_of(sid)
     ROOT.mkdir(parents=True, exist_ok=True)
     with organize("nofollow").locked(ROOT, LOCK, 0o600, None):
-        rows = items()
-        ts = time.time()
-        if rows:
-            ts = max(ts, math.nextafter(max(row["ts"] for row in rows), math.inf))
-        entry = {"ts": ts, "from": sender, "to": to, "text": text, "class": args.cls}
-        if args.wake:
-            entry["wake"] = True
-        write_atomic(NEWS, "".join(json.dumps(row) + "\n" for row in [*rows[-(KEPT - 1):], entry]))
-        if args.cls == "mayday":
+        ts = store([{"from": sender, "to": to, "text": text, "class": cls, "v": VERSION}])
+        if cls == "mayday":
             write_atomic(
                 SILENCE,
                 json.dumps({"since": ts, "until": ts + SILENCE_SECONDS, "by": sender, "text": text}),
             )
-    print(f"sent {args.cls} to {', '.join(to) or 'all'}")
-    if args.wake or args.cls == "mayday":
-        for name in unreached(args.cls, to, sid):
-            print(f"wake: SendMessage to {name}")
+    print(f"sent {cls} to {', '.join(to) or 'all'}")
+    if cls in RADIO:
+        for name in unreached(cls, to, sid):
+            print(f"wake: SendMessage to {clip(name)}")
     return 0
 
 
+def cmd_send(args: argparse.Namespace) -> int:
+    cls = args.cls
+    if cls == "direct":
+        cls = "call" if args.wake else "post"
+    elif args.wake:
+        fail("--wake only with direct; a call always wakes")
+    return transmit(cls, args.to or [], args.text, args.session)
+
+
 def cmd_post(args: argparse.Namespace) -> int:
-    args.cls = "direct" if args.to else "broadcast"
-    args.wake = False
-    return cmd_send(args)
+    return transmit("post" if args.to else "newsletter", args.to or [], args.text, args.session)
 
 
 def cmd_clear(args: argparse.Namespace) -> int:
@@ -313,23 +387,63 @@ def cmd_clear(args: argparse.Namespace) -> int:
             print("no radio silence active")
             return 0
         if active["by"] != me and not args.force:
-            print(f"radio silence held by {active['by']}; only they clear it, anyone else with --force")
+            print(f"radio silence held by {clip(active['by'])}; only they clear it, anyone else with --force")
             return 3
         SILENCE.unlink(missing_ok=True)
     forced = f", forced by {me}" if active["by"] != me else ""
-    print(f"cleared radio silence by {active['by']}{forced}")
+    print(f"cleared radio silence by {clip(active['by'])}{forced}")
     return 0
 
 
-def unseen(sid: str, name: str) -> list[dict]:
-    floor = max(prompt_mark(sid), time.time() - WINDOW)
-    return [row for row in items() if row["ts"] > floor and for_me(row, name)]
+def cmd_assist(args: argparse.Namespace) -> int:
+    sid, _ = council().caller(args.session)
+    me = name_of(sid)
+    ROOT.mkdir(parents=True, exist_ok=True)
+    with organize("nofollow").locked(ROOT, LOCK, 0o600, None):
+        active = silence()
+        if active is None:
+            print("no radio silence active")
+            return 0
+        if me not in responders(active):
+            active["helpers"] = [*listed(active.get("helpers")), me]
+            write_atomic(SILENCE, json.dumps(active))
+    print(f"assisting the MAYDAY by {clip(active['by'])}: {clip(active['text'])}")
+    return 0
 
 
-def delivered(row: dict, state: dict) -> bool:
-    if urgent(row):
-        return row["ts"] <= mark(state, "urgent")
-    return bool(row.get("wake")) and row["ts"] <= mark(state, "listen")
+def pending(sid: str, name: str, state: dict, family: str) -> list[dict]:
+    floor = max(prompt_mark(sid), time.time() - WINDOW, mark(state, family))
+    return [row for row in items() if channel(row) == family and row["ts"] > floor and for_me(row, name)]
+
+
+def take(sid: str, family: str) -> list[dict]:
+    name = name_of(sid)
+    with session(sid) as state:
+        rows = pending(sid, name, state, family)
+        if rows:
+            state[family] = max(row["ts"] for row in rows)
+            save(sid, state)
+    return rows
+
+
+def acknowledge(sid: str, rows: list[dict]) -> None:
+    calls = [
+        row
+        for row in rows
+        if kind(row) == "call" and isinstance(row.get("from"), str) and isinstance(row.get("text"), str)
+    ]
+    if not calls:
+        return
+    me = name_of(sid)
+    receipts = [
+        {"from": me, "to": [row["from"]], "text": row["text"], "class": "receipt", "v": VERSION, "call": row["ts"]}
+        for row in calls
+    ]
+    try:
+        with organize("nofollow").locked(ROOT, LOCK, 0o600, SESSION_WAIT):
+            store(receipts)
+    except OSError:
+        return
 
 
 def cmd_hook(_: argparse.Namespace) -> int:
@@ -338,16 +452,12 @@ def cmd_hook(_: argparse.Namespace) -> int:
         if not sid:
             return 0
         active = silence()
-        out = [silence_line(active)] if active else []
-        name = name_of(sid)
-        with session(sid) as state:
-            rows = unseen(sid, name)
-            out += capped([row for row in rows if not delivered(row, state)])
-            if rows:
-                write_atomic(SEEN / sid, str(max(row["ts"] for row in rows)))
+        rows = take(sid, "radio")
+        out = ([silence_line(active)] if active else []) + capped(rows)
         if out:
             print("\n".join(out))
         notify_once(active)
+        acknowledge(sid, rows)
     except Exception:  # noqa: BLE001
         return 0
     return 0
@@ -362,44 +472,32 @@ def cmd_tool(_: argparse.Namespace) -> int:
             mtime = news_mtime()
             if mtime is None or mtime <= mark(state, "mtime"):
                 return 0
-            name = name_of(sid)
-            floor = max(mark(state, "urgent"), prompt_mark(sid), time.time() - WINDOW)
-            rows = ordered([row for row in items() if urgent(row) and row["ts"] > floor and for_me(row, name)])
+            rows = pending(sid, name_of(sid), state, "radio")
             state["mtime"] = mtime
             if rows:
-                state["urgent"] = max(row["ts"] for row in rows)
+                state["radio"] = max(row["ts"] for row in rows)
             save(sid, state)
         if rows:
             context = "\n".join(capped(rows))
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolBatch", "additionalContext": context}}))
             if any(kind(row) == "mayday" for row in rows):
                 notify_once(silence())
+            acknowledge(sid, rows)
     except Exception:  # noqa: BLE001
         return 0
     return 0
 
 
-def calls(sid: str) -> list[str]:
-    name = name_of(sid)
-    with session(sid) as state:
-        floor = max(prompt_mark(sid), time.time() - WINDOW)
-        heard = max(mark(state, "listen"), floor)
-        loud = max(mark(state, "urgent"), floor)
-        rows = [row for row in items() if row["ts"] > floor and for_me(row, name)]
-        wakes = [
-            row
-            for row in rows
-            if row["ts"] > heard
-            and ((kind(row) == "direct" and row.get("wake")) or (kind(row) == "mayday" and row["ts"] > loud))
-        ]
-        if not wakes:
-            return []
-        alarms = [row for row in rows if urgent(row) and row["ts"] > loud]
-        state["listen"] = max(row["ts"] for row in wakes)
-        if alarms:
-            state["urgent"] = max(row["ts"] for row in alarms)
-        save(sid, state)
-    return [line(row) for row in ordered(alarms + [row for row in wakes if not urgent(row)])]
+def cmd_mailbox(_: argparse.Namespace) -> int:
+    try:
+        sid = hook_session()
+        rows = take(sid, "mail") if sid else []
+    except Exception:  # noqa: BLE001
+        return 0
+    if not rows:
+        return 0
+    print("\n".join(capped(rows)), file=sys.stderr)
+    return 2
 
 
 def cmd_listen(_: argparse.Namespace) -> int:
@@ -417,15 +515,59 @@ def cmd_listen(_: argparse.Namespace) -> int:
             mtime = news_mtime()
             if mtime != known:
                 known = mtime
-                lines = calls(sid)
-                if lines:
-                    print("\n".join(lines), file=sys.stderr)
+                rows = take(sid, "radio")
+                if rows:
+                    print("\n".join(capped(rows)), file=sys.stderr)
                     notify_once(silence())
+                    acknowledge(sid, rows)
                     return 2
             time.sleep(POLL_SECONDS)
     except Exception:  # noqa: BLE001
         return 0
     return 0
+
+
+def passes(command: str) -> bool:
+    if SHELL.search(SINGLE_QUOTED.sub("", command)):
+        return False
+    try:
+        cfg = config()
+        if any(re.match(pattern, command) for key in ("never_block", "mayday_allow") for pattern in listed(cfg.get(key))):
+            return True
+        argv = shlex.split(command)
+        if argv and INTERPRETER.fullmatch(argv[0]):
+            argv = argv[1:]
+            while argv and BARE_FLAGS.fullmatch(argv[0]):
+                argv = argv[1:]
+        return bool(argv) and bool(SCRIPT.fullmatch(argv[0])) and Path(argv[0]).expanduser().resolve() == SELF
+    except (ValueError, RuntimeError, OSError, re.error):
+        return False
+
+
+def cmd_block(_: argparse.Namespace) -> int:
+    try:
+        payload = json.load(sys.stdin)
+        active = silence()
+        if active is None:
+            return 0
+        sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        if sid and name_of(sid) in responders(active):
+            return 0
+        tool = payload.get("tool_name")
+        if tool == "Bash" and passes(str((payload.get("tool_input") or {}).get("command") or "")):
+            return 0
+        if tool != "Bash" and tool not in WRITERS:
+            return 0
+        reason = (
+            f"kvb-org-radio: MAYDAY by {clip(active.get('by'))} holds radio silence: {clip(active.get('text'))}; "
+            "writing actions wait until radio.py clear. Read tools, the config's allowed commands and bare "
+            "radio.py calls (text in single quotes, no shell operators) still run; "
+            "to help fix it, join with radio.py assist first."
+        )
+    except Exception:  # noqa: BLE001
+        return 0
+    print(reason, file=sys.stderr)
+    return 2
 
 
 def cmd_show(args: argparse.Namespace) -> int:
@@ -436,7 +578,9 @@ def cmd_show(args: argparse.Namespace) -> int:
         rows = items()
     else:
         sid, _ = council().caller(args.session)
-        rows = ordered(unseen(sid, name_of(sid)))
+        name = name_of(sid)
+        with session(sid) as state:
+            rows = ordered(pending(sid, name, state, "radio") + pending(sid, name, state, "mail"))
     for row in rows:
         print(line(row))
     return 0
@@ -446,7 +590,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("send")
-    p.add_argument("cls", metavar="class", choices=CLASSES)
+    p.add_argument("cls", metavar="class", choices=SEND)
     p.add_argument("text")
     p.add_argument("--to", action="append")
     p.add_argument("--wake", action="store_true")
@@ -461,16 +605,24 @@ def main() -> int:
     p.add_argument("--force", action="store_true")
     p.add_argument("--session")
     p.set_defaults(func=cmd_clear)
-    sub.add_parser("hook").set_defaults(func=cmd_hook)
-    sub.add_parser("tool").set_defaults(func=cmd_tool)
-    sub.add_parser("listen").set_defaults(func=cmd_listen)
+    p = sub.add_parser("assist")
+    p.add_argument("--session")
+    p.set_defaults(func=cmd_assist)
+    for name, func in (
+        ("hook", cmd_hook),
+        ("tool", cmd_tool),
+        ("mailbox", cmd_mailbox),
+        ("listen", cmd_listen),
+        ("block", cmd_block),
+    ):
+        sub.add_parser(name).set_defaults(func=func)
     p = sub.add_parser("show")
     p.add_argument("--all", action="store_true")
     p.add_argument("--session")
     p.set_defaults(func=cmd_show)
     args = parser.parse_args()
     os.environ["PATH"] = organize("hookpath").trusted(os.environ.get("PATH", ""))
-    refused = organize("watch").guard_root(hook=args.command in ("hook", "tool", "listen"))
+    refused = organize("watch").guard_root(hook=args.command in ("hook", "tool", "mailbox", "listen", "block"))
     if refused is not None:
         return refused
     return args.func(args)
