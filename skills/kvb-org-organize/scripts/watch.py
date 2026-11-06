@@ -32,6 +32,8 @@ Environment:
         its commands outside the sandbox; a Docker daemon the sandbox can
         reach still writes it. Without a config file every command exits 0 and does
         nothing.
+    PATH: filtered to the directories hookpath.py trusts before any command
+        runs, the config's commands included.
 
 Config keys, all required: disk, thresholds_gb {warn, stop, critical},
 projection_minutes, interval_seconds, cache_interval_seconds, heavy_commands,
@@ -73,7 +75,8 @@ def sibling(name: str) -> ModuleType:
 
 
 nofollow = sibling("nofollow")
-ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
+hookpath = sibling("hookpath")
+ROOT =Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 CONFIG = Path(
     os.environ.get(
         "AGENTS_COUNCIL_CONFIG",
@@ -209,7 +212,7 @@ def notify(cfg: dict, text: str) -> None:
 
 def spawn_cleanup(mode: str) -> None:
     subprocess.Popen(
-        [sys.executable, str(Path(__file__).resolve()), "cleanup", mode],
+        [sys.executable, "-I", str(Path(__file__).resolve()), "cleanup", mode],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
@@ -523,6 +526,7 @@ def main() -> int:
     mode.add_argument("--full", action="store_true")
     sub.add_parser("status")
     args = parser.parse_args()
+    os.environ["PATH"] = hookpath.trusted(os.environ.get("PATH", ""))
     refused = guard_root(hook=args.cmd in ("watch", "block"))
     if refused is not None:
         return refused

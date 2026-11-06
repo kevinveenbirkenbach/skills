@@ -9,6 +9,8 @@ Environment:
         of a mayday; ~/.claude/agents-council/config.json unless set.
     CLAUDE_CODE_SESSION_ID: the calling session; hooks read the payload's
         session_id first, other runtimes pass --session.
+    PATH: filtered to the directories the kvb-org-organize hookpath.py
+        trusts before the notify argv runs.
 
 Args:
     send <class> "<text>" [--to <name> ...] [--wake] [--session <id>]: add a
@@ -468,6 +470,7 @@ def main() -> int:
     p.add_argument("--session")
     p.set_defaults(func=cmd_show)
     args = parser.parse_args()
+    os.environ["PATH"] = organize("hookpath").trusted(os.environ.get("PATH", ""))
     refused = organize("watch").guard_root(hook=args.command in ("hook", "tool", "listen"))
     if refused is not None:
         return refused

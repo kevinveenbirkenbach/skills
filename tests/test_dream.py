@@ -97,6 +97,29 @@ class TestDreamHook(unittest.TestCase):
                 self.assertEqual(self._run(payload), "")
         self.assertFalse(self.stamps.exists())
 
+    def test_a_binary_planted_on_the_inherited_path_never_runs(self):
+        planted = Path(self.tmp.name) / "planted"
+        planted.mkdir()
+        marker = Path(self.tmp.name) / "ran"
+        for name in ("python3", "date", "mkdir", "cat"):
+            fake = planted / name
+            fake.write_text(f"#!/bin/sh\n/usr/bin/touch '{marker}'\n", encoding="utf-8")
+            fake.chmod(0o755)
+        subprocess.run(
+            ["bash", str(HOOK)],
+            input=self._session("a1"),
+            capture_output=True,
+            text=True,
+            check=True,
+            env={
+                "PATH": f"{planted}:/usr/bin:/bin",
+                "HOME": self.tmp.name,
+                "DREAM_STAMP_DIR": str(self.stamps),
+                "DREAM_INTERVAL_SECONDS": "43200",
+            },
+        )
+        self.assertFalse(marker.exists())
+
 
 class TestDreamNotification(unittest.TestCase):
     def setUp(self):
@@ -232,6 +255,19 @@ class TestSettingsRegistration(unittest.TestCase):
                 self.assertIn("/usr/bin/python3 -I ", command)
                 self.assertNotRegex(command, r"(^|&& )python3 ")
         self.assertEqual(len(self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py")), 1)
+
+    def test_reminders_run_the_system_bash_and_old_entries_move_to_it(self):
+        old = f'bash "{self.tmp.name}/skills/kvb-dream/hooks/reminder.sh"'
+        self.settings.write_text(
+            json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": old}]}]}}),
+            encoding="utf-8",
+        )
+        data = self._patch()
+        reminders = [hook["command"] for hook in self._hooks(data, "UserPromptSubmit", "/hooks/reminder.sh")]
+        self.assertEqual(len(reminders), 2)
+        for command in reminders:
+            with self.subTest(command=command):
+                self.assertTrue(command.startswith("/usr/bin/bash "))
 
     def test_council_config_deny_is_added_once_next_to_existing_rules(self):
         self.settings.write_text(json.dumps({"permissions": {"deny": ["Bash(rm -rf:*)"]}}), encoding="utf-8")

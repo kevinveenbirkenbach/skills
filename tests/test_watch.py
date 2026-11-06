@@ -406,6 +406,32 @@ class TestWatchCommands(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_the_watch_hook_runs_no_binary_planted_on_the_path(self):
+        planted = self.base / "planted"
+        planted.mkdir()
+        marker = self.base / "ran"
+        for name in ("docker", "council-probe"):
+            fake = planted / name
+            fake.write_text(f"#!/bin/sh\n/usr/bin/touch '{marker}'\n", encoding="utf-8")
+            fake.chmod(0o755)
+        self.cfg["notify"] = ["council-probe"]
+        self.cfg["thresholds_gb"] = {"warn": 1e9, "stop": 1e9, "critical": 1e9}
+        self._write_config()
+        env = {
+            "PATH": str(planted),
+            "HOME": str(self.base),
+            "AGENTS_COUNCIL_ROOT": str(self.root),
+            "AGENTS_COUNCIL_CONFIG": str(self.config),
+        }
+        payload = {"session_id": "s1", "hook_event_name": "UserPromptSubmit"}
+        result = subprocess.run(
+            [sys.executable, str(WATCH), "watch"],
+            capture_output=True, text=True, env=env, input=json.dumps(payload), check=False, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("RESOURCE CRITICAL", result.stdout)
+        self.assertFalse(marker.exists())
+
     def test_the_watch_hook_skips_an_alert_line_that_is_no_alert(self):
         self.root.mkdir()
         (self.root / "alerts.jsonl").write_text(

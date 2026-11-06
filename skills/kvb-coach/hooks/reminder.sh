@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH=/usr/bin:/bin
 
 hours="${COACH_STAMP_DIR:-${HOME}/.claude/.coach-hours}"
 hour="${COACH_HOUR:-$(date +%Y-%m-%dT%H)}"

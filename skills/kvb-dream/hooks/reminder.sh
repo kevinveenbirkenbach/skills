@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH=/usr/bin:/bin
 
 interval="${DREAM_INTERVAL_SECONDS:-43200}"
 stamps="${DREAM_STAMP_DIR:-${HOME}/.claude/.dream-stamps}"

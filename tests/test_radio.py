@@ -416,6 +416,24 @@ class TestRadio(unittest.TestCase):
         self.assertEqual(self._tool("s2"), ["MAYDAY One: fire"])
         self.assertEqual(os.listdir(victims), [])
 
+    def test_the_operator_notice_runs_no_binary_planted_on_the_path(self):
+        planted = self.root.parent / "planted"
+        planted.mkdir()
+        marker = self.root.parent / "ran"
+        fake = planted / "council-probe"
+        fake.write_text(f"#!/bin/sh\n/usr/bin/touch '{marker}'\n", encoding="utf-8")
+        fake.chmod(0o755)
+        self.config.write_text(json.dumps({"notify": ["council-probe"]}), encoding="utf-8")
+        self._send("s1", "send", "mayday", "fire")
+        result = subprocess.run(
+            [sys.executable, str(RADIO), "tool"],
+            input=json.dumps({"session_id": "s2"}), capture_output=True, text=True,
+            env={**self._env(None), "PATH": str(planted)}, check=False, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("MAYDAY", result.stdout)
+        self.assertFalse(marker.exists())
+
     def test_the_hooks_skip_a_session_lock_another_process_holds(self):
         self._send("s1", "post", "board")
         lock = self.root / "radio-seen" / "s2.lock"

@@ -89,6 +89,28 @@ class TestCoachHour(unittest.TestCase):
         self.assertIn("kvb-coach", self._run("2026-11-03T15"))
         self.assertEqual(sorted(p.name for p in self.hours.iterdir()), ["2026-11-03T15"])
 
+    def test_a_binary_planted_on_the_inherited_path_never_runs(self):
+        planted = Path(self.tmp.name) / "planted"
+        planted.mkdir()
+        marker = Path(self.tmp.name) / "ran"
+        for name in ("mkdir", "find", "cat", "date"):
+            fake = planted / name
+            fake.write_text(f"#!/bin/sh\n/usr/bin/touch '{marker}'\n", encoding="utf-8")
+            fake.chmod(0o755)
+        subprocess.run(
+            ["bash", str(HOOK)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={
+                "PATH": f"{planted}:/usr/bin:/bin",
+                "HOME": self.tmp.name,
+                "COACH_STAMP_DIR": str(self.hours),
+                "COACH_HOUR": "2026-11-03T14",
+            },
+        )
+        self.assertFalse(marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

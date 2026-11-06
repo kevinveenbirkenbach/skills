@@ -6,6 +6,7 @@ Environment:
         /tmp/agents-council unless set, because all agents must agree on it.
     CLAUDE_CODE_SESSION_ID: the caller's session, taken over --session; other
         runtimes pass --session.
+    PATH: filtered to the directories hookpath.py trusts before git runs.
 
 Exit codes:
     0 done, 2 usage error, 3 office held by a live session,
@@ -282,6 +283,7 @@ def main() -> int:
     listing.set_defaults(func=cmd_list)
     sub.add_parser("gate").set_defaults(func=cmd_gate)
     args = parser.parse_args()
+    os.environ["PATH"] = sibling("hookpath").trusted(os.environ.get("PATH", ""))
     return args.func(args)
 
 

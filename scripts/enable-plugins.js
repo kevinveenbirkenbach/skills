@@ -61,6 +61,7 @@ for (const [plugin, marketplace] of Object.entries(RETIRED_PLUGINS)) {
 data.env = data.env || {};
 if (!data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "500000";
 const PYTHON = "/usr/bin/python3 -I";
+const ABSOLUTE = { python3: PYTHON, bash: "/usr/bin/bash" };
 const COUNCIL_CONFIG_DENY = "Edit(~/.claude/agents-council/**)";
 data.permissions = data.permissions || {};
 data.permissions.deny = [...new Set([...(data.permissions.deny || []), COUNCIL_CONFIG_DENY])];
@@ -91,7 +92,9 @@ for (const entries of Object.values(data.hooks)) {
       for (const [from, to] of Object.entries(RENAMED)) {
         hook.command = hook.command.replace(`/skills/${from}`, `/skills/${to}`);
       }
-      if (hook.command.includes("/skills/kvb-")) hook.command = hook.command.replace(/(^|&& )python3 /, `$1${PYTHON} `);
+      if (hook.command.includes("/skills/kvb-")) {
+        hook.command = hook.command.replace(/(^|&& )(python3|bash) /, (_, lead, binary) => `${lead}${ABSOLUTE[binary]} `);
+      }
     }
   }
 }
@@ -101,7 +104,7 @@ for (const skill of REMINDERS) {
   if (alreadyRegistered.includes(`${skill}/hooks/reminder.sh`)) continue;
   const reminder = path.join(path.dirname(settingsPath), "skills", skill, "hooks", "reminder.sh");
   data.hooks.UserPromptSubmit.push({
-    hooks: [{ type: "command", command: `bash ${JSON.stringify(reminder)}` }],
+    hooks: [{ type: "command", command: `${ABSOLUTE.bash} ${JSON.stringify(reminder)}` }],
   });
 }
 
