@@ -199,17 +199,23 @@ class TestWatchCommands(unittest.TestCase):
         self.assertFalse(old.exists())
         self.assertTrue(new.exists())
 
-    def test_full_cleanup_reaches_only_marked_running_worktrees(self):
-        marked, foreign = self.base / "marked", self.base / "foreign"
-        for tree in (marked, foreign):
+    def _mark_cleaned(self) -> list[str]:
+        return [sys.executable, "-c", "import sys; open(sys.argv[1], 'a').write('x')", str(self.base / "cleaned-{project}")]
+
+    def test_full_cleanup_reaches_only_marked_running_worktrees_with_a_compose_project(self):
+        marked, foreign, odd = self.base / "marked", self.base / "foreign", self.base / "odd"
+        for tree in (marked, foreign, odd):
             tree.mkdir()
-        (marked / "Makefile").write_text("", encoding="utf-8")
-        self.cfg["worktrees_command"] = f"echo {marked}; echo {foreign}; echo {marked}"
-        self.cfg["worktree_cleanup"] = ["echo x >> {worktree}/cleaned"]
+        for tree in (marked, odd):
+            (tree / "Makefile").write_text("", encoding="utf-8")
+        self.cfg["worktrees_command"] = (
+            f"printf '%s\\t%s\\n' {marked} stack-a {foreign} stack-b {marked} stack-a {odd} 'x;touch y' {odd}"
+        )
+        self.cfg["worktree_cleanup"] = [self._mark_cleaned()]
         self._write_config()
         self.assertEqual(self._run("cleanup", "--full").returncode, 0)
-        self.assertEqual((marked / "cleaned").read_text(encoding="utf-8"), "x\n")
-        self.assertFalse((foreign / "cleaned").exists())
+        self.assertEqual(sorted(p.name for p in self.base.glob("cleaned-*")), ["cleaned-stack-a"])
+        self.assertEqual((self.base / "cleaned-stack-a").read_text(encoding="utf-8"), "x")
 
     def test_full_cleanup_skips_a_worktree_where_a_busy_process_runs(self):
         idle, gated = self.base / "idle", self.base / "gated"
@@ -219,12 +225,31 @@ class TestWatchCommands(unittest.TestCase):
         gate = subprocess.Popen(["sleep", "60"], cwd=gated / "sub")
         self.addCleanup(gate.wait)
         self.addCleanup(gate.kill)
-        self.cfg["worktrees_command"] = f"echo {idle}; echo {gated}"
-        self.cfg["worktree_cleanup"] = ["echo x >> {worktree}/cleaned"]
+        self.cfg["worktrees_command"] = f"printf '%s\\t%s\\n' {idle} idle {gated} gated"
+        self.cfg["worktree_cleanup"] = [self._mark_cleaned()]
         self._write_config()
         self.assertEqual(self._run("cleanup", "--full").returncode, 0)
-        self.assertTrue((idle / "cleaned").exists())
-        self.assertFalse((gated / "cleaned").exists())
+        self.assertTrue((self.base / "cleaned-idle").exists())
+        self.assertFalse((self.base / "cleaned-gated").exists())
+
+    def test_a_group_writable_council_root_stops_commands_and_silences_hooks(self):
+        self.root.mkdir()
+        self.root.chmod(0o777)
+        result = self._run("status")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cannot write", result.stderr)
+        for hook in ("watch", "block"):
+            with self.subTest(hook=hook):
+                quiet = self._run(hook, stdin=self._bash("make compose-deploy"))
+                self.assertEqual(quiet.returncode, 0)
+                self.assertIn("council hooks stay off", quiet.stdout)
+        self.assertFalse((self.root / "watch.json").exists())
+
+    def test_a_symlinked_council_root_stops_every_command(self):
+        target = self.base / "elsewhere"
+        target.mkdir()
+        self.root.symlink_to(target)
+        self.assertEqual(self._run("status").returncode, 2)
 
     def test_without_config_every_command_is_a_no_op(self):
         self.config.unlink()

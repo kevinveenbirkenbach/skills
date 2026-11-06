@@ -21,15 +21,24 @@ Usage:
 
 Environment:
     AGENTS_COUNCIL_ROOT: shared state directory; /tmp/agents-council unless set,
-        because every agent on the host must agree on it.
-    AGENTS_COUNCIL_CONFIG: config file; ~/.config/agents-council/config.json
-        unless set. Without a config file every command exits 0 and does nothing.
+        because every agent on the host must agree on it. Every command creates
+        it with mode 700; while it is a symlink, another uid's, or group or
+        other writable, a hook mode prints why and exits 0 doing nothing and
+        any other mode exits 2. queue.py and radio.py check it the same way.
+    AGENTS_COUNCIL_CONFIG: config file; ~/.claude/agents-council/config.json
+        unless set, a path the install denies to Claude Code's file tools and
+        the sandbox's file rules do not let it write, because the hooks run
+        its commands outside the sandbox; a Docker daemon the sandbox can
+        reach still writes it. Without a config file every command exits 0 and does
+        nothing.
 
 Config keys, all required: disk, thresholds_gb {warn, stop, critical},
 projection_minutes, interval_seconds, cache_interval_seconds, heavy_commands,
-never_block (regexes), cleanup (shell commands), worktree_cleanup (shell
-commands with {worktree}), worktrees_command (shell command printing the
-running stacks' worktree paths, one per line), worktree_marker (path relative
+never_block (regexes), cleanup (shell commands), worktree_cleanup (argv lists
+with {project}, run without a shell in /, so no worktree file is read),
+worktrees_command (shell command printing per running stack its worktree path
+and compose project, tab-separated, one per line; a project that is not a
+compose project name is skipped), worktree_marker (path relative
 to a worktree that must exist), busy_processes (process names; a worktree
 where one of them runs is skipped), cache_dirs, cache_budget_percent,
 slot_need_gb {kind: GB}, notify (argv the alert text is appended to),
@@ -45,6 +54,7 @@ import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import time
@@ -54,9 +64,10 @@ ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 CONFIG = Path(
     os.environ.get(
         "AGENTS_COUNCIL_CONFIG",
-        str(Path.home() / ".config" / "agents-council" / "config.json"),
+        str(Path.home() / ".claude" / "agents-council" / "config.json"),
     )
 )
+PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]*")
 STAGES = ("ok", "warn", "stop", "critical")
 STATE = ROOT / "watch.json"
 SILENCE = ROOT / "radio-silence.json"
@@ -70,6 +81,22 @@ MIRRORED = ((HISTORY, KEPT_HISTORY), (ACCEPTED, KEPT_ACCEPTED))
 ALERT_TTL = 3600
 LOCK_TTL = 1800
 GB = 1e9
+
+
+def guard_root(hook: bool) -> int | None:
+    try:
+        ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except FileExistsError:
+        pass
+    st = ROOT.lstat()
+    if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o022:
+        return None
+    print(
+        f"agents council: {ROOT} must be a directory of uid {os.getuid()} that group and others cannot write; "
+        "the council hooks stay off until it is",
+        file=sys.stdout if hook else sys.stderr,
+    )
+    return 0 if hook else 2
 
 
 def load_config() -> dict | None:
@@ -375,15 +402,19 @@ def trim_caches(cfg: dict) -> float:
     return freed / GB
 
 
-def running_worktrees(cfg: dict) -> list[str]:
+def running_worktrees(cfg: dict) -> list[tuple[str, str]]:
     try:
         out = subprocess.run(
             cfg["worktrees_command"], shell=True, capture_output=True, text=True, timeout=60, check=False
         ).stdout
     except subprocess.TimeoutExpired:
         return []
-    trees = sorted({line.strip() for line in out.splitlines() if line.strip()})
-    return [t for t in trees if os.path.exists(os.path.join(t, cfg["worktree_marker"]))]
+    pairs = {tuple(line.split("\t")) for line in out.splitlines()}
+    return sorted(
+        (tree, project)
+        for tree, project in (pair for pair in pairs if len(pair) == 2)
+        if PROJECT.fullmatch(project) and os.path.exists(os.path.join(tree, cfg["worktree_marker"]))
+    )
 
 
 def busy(tree: str, names: list[str]) -> bool:
@@ -401,18 +432,18 @@ def busy(tree: str, names: list[str]) -> bool:
 
 
 def run_cleanup(cfg: dict) -> list[str]:
-    commands = list(cfg["cleanup"])
-    for tree in running_worktrees(cfg):
+    commands = [(command, True) for command in cfg["cleanup"]]
+    for tree, project in running_worktrees(cfg):
         if busy(tree, cfg["busy_processes"]):
             continue
-        commands += [t.format(worktree=shlex.quote(tree)) for t in cfg["worktree_cleanup"]]
+        commands += [([arg.format(project=project) for arg in argv], False) for argv in cfg["worktree_cleanup"]]
     results = []
-    for command in commands:
+    for command, shell in commands:
         try:
-            code = subprocess.run(command, shell=True, capture_output=True, timeout=900, check=False).returncode
+            code = subprocess.run(command, shell=shell, cwd="/", capture_output=True, timeout=900, check=False).returncode
         except subprocess.TimeoutExpired:
             code = "timeout"
-        results.append(f"{'ok' if code == 0 else f'failed ({code})'}: {command}")
+        results.append(f"{'ok' if code == 0 else f'failed ({code})'}: {command if shell else shlex.join(command)}")
     return results
 
 
@@ -468,6 +499,9 @@ def main() -> int:
     mode.add_argument("--full", action="store_true")
     sub.add_parser("status")
     args = parser.parse_args()
+    refused = guard_root(hook=args.cmd in ("watch", "block"))
+    if refused is not None:
+        return refused
     cfg = load_config()
     if cfg is None:
         return 0

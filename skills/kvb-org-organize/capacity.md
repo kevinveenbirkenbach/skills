@@ -41,8 +41,11 @@ not answer.
 The chair keeps the system from running out instead of reacting once it has.
 `${CLAUDE_SKILL_DIR}/scripts/watch.py` measures as hooks in every session, so
 no agent probes the disk by hand; it reads thresholds, job patterns, cleanup
-commands and cache directories from `~/.config/agents-council/config.json`
-(keys in the script's docstring) and stays silent below the thresholds.
+commands and cache directories from `~/.claude/agents-council/config.json`
+(keys in the script's docstring; there because its hooks run outside the
+sandbox, whose file rules keep it out of `~/.claude` unless a Docker daemon it
+can reach mounts it, and the install denies agents' edits of that directory)
+and stays silent below the thresholds.
 
 - **Warn**: the chair and every session get the biggest consumers; the chair
   plans a cleanup and grants no large slot.

@@ -17,7 +17,7 @@ queue.py hold --kind <kind> --task <register task> -- <command>
 Start it in the background (`run_in_background` or equivalent) and end the
 turn: hold waits, runs the command on its grant and exits with its code.
 
-- `<kind>`: a key of `slot_need_gb` in `~/.config/agents-council/config.json`.
+- `<kind>`: a key of `slot_need_gb` in `~/.claude/agents-council/config.json`.
 - `<register task>`: your open `kvb-org-rasci` task; its rank places you.
 - `--hotfix <slug>`: the job proves the register row `hotfix/<slug>`
   (`kvb-git-hotfix`) and goes first.

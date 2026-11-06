@@ -60,6 +60,10 @@ for (const [plugin, marketplace] of Object.entries(RETIRED_PLUGINS)) {
 }
 data.env = data.env || {};
 if (!data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "500000";
+const PYTHON = "/usr/bin/python3 -I";
+const COUNCIL_CONFIG_DENY = "Edit(~/.claude/agents-council/**)";
+data.permissions = data.permissions || {};
+data.permissions.deny = [...new Set([...(data.permissions.deny || []), COUNCIL_CONFIG_DENY])];
 
 const pluginRepos = new Set(Object.values(MARKETPLACES).map((entry) => entry.source.repo));
 const lock = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "skills-lock.json"), "utf8"));
@@ -87,6 +91,7 @@ for (const entries of Object.values(data.hooks)) {
       for (const [from, to] of Object.entries(RENAMED)) {
         hook.command = hook.command.replace(`/skills/${from}`, `/skills/${to}`);
       }
+      if (hook.command.includes("/skills/kvb-")) hook.command = hook.command.replace(/(^|&& )python3 /, `$1${PYTHON} `);
     }
   }
 }
@@ -105,7 +110,7 @@ if (!JSON.stringify(data.hooks.PreToolUse).includes("kvb-org-organize/scripts/co
   const council = path.join(path.dirname(settingsPath), "skills", "kvb-org-organize", "scripts", "council.py");
   data.hooks.PreToolUse.push({
     matcher: "Edit|Write|MultiEdit|NotebookEdit",
-    hooks: [{ type: "command", command: `python3 ${JSON.stringify(council)} gate` }],
+    hooks: [{ type: "command", command: `${PYTHON} ${JSON.stringify(council)} gate` }],
   });
 }
 
@@ -128,7 +133,7 @@ for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
   if (registered) continue;
   const file = JSON.stringify(path.join(path.dirname(settingsPath), "skills", ...script.split("/")));
   // Trip-wire: python3 on a missing file exits 2, which blocks every prompt or tool call; the test makes it exit 1.
-  const command = `[ -f ${file} ] && python3 ${file} ${sub}`;
+  const command = `[ -f ${file} ] && ${PYTHON} ${file} ${sub}`;
   const entry = { hooks: [{ type: "command", command, ...extra }] };
   data.hooks[event].push(matcher ? { matcher, ...entry } : entry);
 }

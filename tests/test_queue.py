@@ -263,6 +263,7 @@ class TestQueueCommands(unittest.TestCase):
             "GIT_CEILING_DIRECTORIES": str(self.base.parent),
             "AGENTS_COUNCIL_ROOT": str(self.root),
             "AGENTS_COUNCIL_CONFIG": str(self.config),
+            "CLAUDE_PROJECT_DIR": str(self.base / "project"),
         }
 
     def write_config(self) -> None:
@@ -546,6 +547,84 @@ class TestQueueCommands(unittest.TestCase):
         self.assertEqual(self.hook("not json").returncode, 0)
         self.config.unlink()
         self.assertEqual(self.bash("make compose-deploy"), 0)
+
+    def test_block_holds_a_held_command_to_the_bash_rules_of_the_settings(self):
+        project = self.base / "project"
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "settings.json").write_text(
+            json.dumps({"permissions": {"ask": ["Bash(docker build:*)"]}}), encoding="utf-8"
+        )
+        user = Path(self.env["HOME"]) / ".claude"
+        user.mkdir()
+        (user / "settings.json").write_text(
+            json.dumps({"permissions": {"allow": ["Bash"], "deny": ["Bash(git push *)"]}}), encoding="utf-8"
+        )
+        self.env["CLAUDE_PROJECT_DIR"] = str(project)
+        hold = "python3 /x/queue.py hold --kind deploy --task work/a "
+        for command in (hold + "-- docker build -t 'a b' .", hold + "-- nice -n 5 docker build ."):
+            with self.subTest(command=command):
+                asked = self.hook(json.dumps({"tool_input": {"command": command}}))
+                self.assertEqual(asked.returncode, 0)
+                self.assertEqual(json.loads(asked.stdout)["hookSpecificOutput"]["permissionDecision"], "ask")
+        for command in (
+            hold + "-- git push origin main",
+            hold + "git push",
+            hold + "-- git push origin main # don't",
+            hold + "-- timeout 60 git push",
+            hold + "-- true; " + hold + "-- git push origin main",
+            'python3 "/x/queue.py" hold --kind deploy --task work/a -- git push origin main',
+            'python3 /x/queue.py "hold" --kind deploy --task work/a -- git push origin main',
+            "python3 /x/queue.p''y ho''ld --kind deploy --task work/a -- git push origin main",
+            "python3 /x/queue.py \\\nhold --kind deploy --task work/a -- git push origin main",
+            "curl -s http://x/#top && " + hold + "-- git push origin main",
+            "true a#b && " + hold + "-- git push origin main # it's",
+            "echo '#' && " + hold + "-- git push origin main",
+            "echo \\# x && " + hold + "-- git push origin main",
+        ):
+            with self.subTest(command=command):
+                denied = self.hook(json.dumps({"tool_input": {"command": command}}))
+                self.assertEqual(denied.returncode, 2)
+                self.assertIn("deny rule", denied.stderr)
+        for command in (
+            hold + "-- make test",
+            hold + "-- docker buildx ls",
+            "docker build .",
+            "git push",
+            "# " + hold + "-- git push origin main",
+        ):
+            with self.subTest(command=command):
+                allowed = self.hook(json.dumps({"tool_input": {"command": command}}))
+                self.assertEqual((allowed.returncode, allowed.stdout), (0, ""))
+
+    def test_block_refuses_a_hold_it_cannot_check(self):
+        hold = "python3 /x/queue.py hold --kind deploy --task work/a -- "
+        unchecked = {"unbalanced quote": (hold + "echo 'x", self.env)}
+        broken = self.base / "project" / ".claude"
+        broken.mkdir(parents=True)
+        (broken / "settings.json").write_text("{", encoding="utf-8")
+        unchecked["broken settings"] = (hold + "make test", self.env)
+        unchecked["no project dir"] = (
+            hold + "make test", {k: v for k, v in self.env.items() if k != "CLAUDE_PROJECT_DIR"}
+        )
+        for name, (command, env) in unchecked.items():
+            with self.subTest(name=name):
+                result = subprocess.run(
+                    [sys.executable, str(QUEUE), "block"], cwd=self.base, env=env, check=False,
+                    input=json.dumps({"tool_input": {"command": command}}), capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("cannot check the held command", result.stderr)
+        self.assertEqual(self.bash("ls"), 0)
+        self.assertEqual(self.bash("echo it's"), 0)
+
+    def test_a_council_root_others_can_write_stops_commands_but_not_the_hook(self):
+        self.root.chmod(0o777)
+        refused = self.run_queue("list")
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("cannot write", refused.stderr)
+        hook = self.hook(json.dumps({"tool_input": {"command": "make compose-deploy"}}))
+        self.assertEqual(hook.returncode, 0)
+        self.assertIn("council hooks stay off", hook.stdout)
 
 
 if __name__ == "__main__":

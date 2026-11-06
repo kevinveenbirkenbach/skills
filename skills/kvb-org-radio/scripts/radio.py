@@ -6,7 +6,7 @@ Environment:
         /tmp/agents-council unless set. Rows live in <root>/news.jsonl under
         <root>/news.lock, the store the old news.py reads and writes too.
     AGENTS_COUNCIL_CONFIG: config file whose "notify" argv tells the operator
-        of a mayday; ~/.config/agents-council/config.json unless set.
+        of a mayday; ~/.claude/agents-council/config.json unless set.
     CLAUDE_CODE_SESSION_ID: the calling session; hooks read the payload's
         session_id first, other runtimes pass --session.
 
@@ -59,7 +59,7 @@ from types import ModuleType
 # Every agent on the host must agree on one council directory and one config without being told.
 ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 CONFIG = Path(
-    os.environ.get("AGENTS_COUNCIL_CONFIG", str(Path.home() / ".config" / "agents-council" / "config.json"))
+    os.environ.get("AGENTS_COUNCIL_CONFIG", str(Path.home() / ".claude" / "agents-council" / "config.json"))
 )
 NEWS = ROOT / "news.jsonl"
 LOCK = ROOT / "news.lock"
@@ -68,11 +68,12 @@ STATE = ROOT / "radio-seen"
 LISTEN = ROOT / "radio-listen"
 SILENCE = ROOT / "radio-silence.json"
 NOTIFIED = ROOT / "radio-notified"
-COUNCIL = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "council.py"
+ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
 CLASSES = ("broadcast", "direct", "security", "pan-pan", "mayday")
 URGENT = ("mayday", "pan-pan", "security")
 WINDOW = 86400
 SHOWN = 10
+CLIP = 1000
 KEPT = 500
 SILENCE_SECONDS = 7200
 NOTIFY_SECONDS = 10
@@ -86,11 +87,15 @@ def fail(message: str) -> None:
 
 
 @functools.cache
-def council() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("council", COUNCIL)
+def organize(name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(f"kvb_radio_{name}", ORGANIZE / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def council() -> ModuleType:
+    return organize("council")
 
 
 def name_of(sid: str) -> str:
@@ -135,9 +140,19 @@ def clock(ts: float) -> str:
     return datetime.datetime.fromtimestamp(ts).strftime("%H:%M")
 
 
+def clip(value: object) -> str:
+    return " ".join(str(value).split())[:CLIP]
+
+
 def line(row: dict) -> str:
-    target = f" to {', '.join(row['to'])}" if row.get("to") else ""
-    return f"RADIO {kind(row).upper()} {clock(row['ts'])} {row.get('from')}{target}: {row.get('text')}"
+    target = f" to {', '.join(clip(name) for name in row['to'])}" if row.get("to") else ""
+    return f"RADIO {kind(row).upper()} {clock(row['ts'])} {clip(row.get('from'))}{target}: {clip(row.get('text'))}"
+
+
+def capped(rows: list[dict]) -> list[str]:
+    picked = sorted(rows, key=lambda row: (rank(row), -row["ts"]))[:SHOWN]
+    more = [f"RADIO {len(rows) - SHOWN} more items: radio.py show --all"] if len(rows) > SHOWN else []
+    return [line(row) for row in ordered(picked)] + more
 
 
 def for_me(row: dict, name: str) -> bool:
@@ -204,7 +219,7 @@ def silence() -> dict | None:
 
 def silence_line(active: dict) -> str:
     return (
-        f"MAYDAY ACTIVE since {clock(active['since'])} by {active['by']}: {active['text']}; "
+        f"MAYDAY ACTIVE since {clock(active['since'])} by {clip(active['by'])}: {clip(active['text'])}; "
         "no new heavy jobs until radio.py clear"
     )
 
@@ -333,11 +348,7 @@ def cmd_hook(_: argparse.Namespace) -> int:
         name = name_of(sid)
         with session(sid) as state:
             rows = unseen(sid, name)
-            fresh = [row for row in rows if not delivered(row, state)]
-            picked = sorted(fresh, key=lambda row: (rank(row), -row["ts"]))[:SHOWN]
-            out += [line(row) for row in ordered(picked)]
-            if len(fresh) > SHOWN:
-                out.append(f"RADIO {len(fresh) - SHOWN} more items: radio.py show --all")
+            out += capped([row for row in rows if not delivered(row, state)])
             if rows:
                 SEEN.mkdir(parents=True, exist_ok=True)
                 (SEEN / sid).write_text(str(max(row["ts"] for row in rows)), encoding="utf-8")
@@ -366,7 +377,7 @@ def cmd_tool(_: argparse.Namespace) -> int:
                 state["urgent"] = max(row["ts"] for row in rows)
             save(sid, state)
         if rows:
-            context = "\n".join(line(row) for row in rows)
+            context = "\n".join(capped(rows))
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolBatch", "additionalContext": context}}))
             if any(kind(row) == "mayday" for row in rows):
                 notify_once(silence())
@@ -466,6 +477,9 @@ def main() -> int:
     p.add_argument("--session")
     p.set_defaults(func=cmd_show)
     args = parser.parse_args()
+    refused = organize("watch").guard_root(hook=args.command in ("hook", "tool", "listen"))
+    if refused is not None:
+        return refused
     return args.func(args)
 
 

@@ -217,6 +217,29 @@ class TestSettingsRegistration(unittest.TestCase):
         self.settings.write_text(json.dumps({"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"}}), encoding="utf-8")
         self.assertEqual(self._patch()["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "300000")
 
+    def test_hooks_run_the_system_python_isolated_and_old_entries_move_to_it(self):
+        old = f'[ -f "{self.tmp.name}/skills/kvb-org-queue/scripts/queue.py" ] && python3 "{self.tmp.name}/skills/kvb-org-queue/scripts/queue.py" block'
+        self.settings.write_text(
+            json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": old}]}]}}),
+            encoding="utf-8",
+        )
+        data = self._patch()
+        commands = [h["command"] for entries in data["hooks"].values() for e in entries for h in e.get("hooks", [])]
+        python = [c for c in commands if ".py" in c]
+        self.assertTrue(python)
+        for command in python:
+            with self.subTest(command=command):
+                self.assertIn("/usr/bin/python3 -I ", command)
+                self.assertNotRegex(command, r"(^|&& )python3 ")
+        self.assertEqual(len(self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py")), 1)
+
+    def test_council_config_deny_is_added_once_next_to_existing_rules(self):
+        self.settings.write_text(json.dumps({"permissions": {"deny": ["Bash(rm -rf:*)"]}}), encoding="utf-8")
+        self._patch()
+        self.assertEqual(
+            self._patch()["permissions"]["deny"], ["Bash(rm -rf:*)", "Edit(~/.claude/agents-council/**)"]
+        )
+
     def test_plugin_skills_are_not_copied_twice(self):
         skills = Path(self.tmp.name) / "skills"
         for name in ("caveman", "ponytail-review", "cavecrew", "archify", "kvb-dream"):

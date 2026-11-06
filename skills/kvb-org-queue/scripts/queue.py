@@ -21,9 +21,11 @@ Environment:
         ~/.local/state/agents-council/queue-history.jsonl, and reading merges
         both by row id.
     AGENTS_COUNCIL_CONFIG: the config of the kvb-org-organize watch.py;
-        ~/.config/agents-council/config.json unless set.
+        ~/.claude/agents-council/config.json unless set.
     CLAUDE_CODE_SESSION_ID: the caller's session, taken over --session; other
         runtimes pass --session.
+    CLAUDE_PROJECT_DIR: block reads the project's .claude/settings.json and
+        settings.local.json there, next to the managed and user settings.
 
 Args:
     hold: enqueue CMD, then every POLL_SECONDS evaluate the whole queue under
@@ -48,8 +50,13 @@ Args:
     history: a markdown table per command signature and one per kind of what
         the last 30 days of history teach, with each slot limit's source.
     cancel ID: remove the caller's waiting entry ID; its hold exits 3.
-    block: read the hook payload on stdin; with queue_enforce true in the
-        config, refuse a command matching heavy_commands or `gate.py run|hold`
+    block: read the hook payload on stdin. The permission matcher sees only
+        `queue.py hold`, so every hold in the command is parsed like hold
+        itself, and a held command any of whose word-started tails meets a
+        Bash deny rule of the settings is refused, one meeting an ask rule
+        asks the operator, with or without queue_enforce; a hold that cannot
+        be parsed or checked is refused. With queue_enforce true in the config,
+        refuse a command matching heavy_commands or `gate.py run|hold`
         unless it matches never_block or runs `queue.py hold`.
 
 Config keys: slot_limits {kind: N}, optional, caps the learned slot limit of a
@@ -67,7 +74,9 @@ Exit codes:
         reached hold.
     list, history: 0 done, 2 config error.
     cancel: 0 removed, 2 no waiting entry of the caller with that id.
-    block: 0 allow, 2 refuse the tool call; every error allows.
+    block: 0 allow, or ask when it prints an ask decision, or a council root
+        that watch.py refuses; 2 refuse the tool call; every other error allows.
+    list, history, cancel, hold: 2 on a council root that watch.py refuses.
 """
 
 from __future__ import annotations
@@ -108,6 +117,11 @@ CANCELLED = 3
 FORWARDED = (signal.SIGINT, signal.SIGTERM)
 GATE = re.compile(r"\bgate\.py\s+(run|hold)\b")
 THROUGH_QUEUE = re.compile(r"\bqueue\.py\s+hold\b")
+BASH_RULE = re.compile(r"Bash(?:\((.*)\))?", re.DOTALL)
+RULE_PART = re.compile(r"( \*|\*)")
+SEPARATOR = re.compile(r"[();<>|&]+")
+WORD_BREAK = " \t\n;&|()<>"
+MANAGED = Path("/etc/claude-code")
 HOTFIX = "hotfix/"
 
 
@@ -573,8 +587,126 @@ def cmd_cancel(args: argparse.Namespace) -> int:
     return 0
 
 
+def settings_files(project: Path) -> list[Path]:
+    user = Path.home() / ".claude"
+    return [
+        MANAGED / "managed-settings.json",
+        *sorted((MANAGED / "managed-settings.d").glob("*.json")),
+        user / "settings.json",
+        user / "settings.local.json",
+        project / ".claude" / "settings.json",
+        project / ".claude" / "settings.local.json",
+    ]
+
+
+def bash_rule(rule: str) -> re.Pattern | None:
+    match = BASH_RULE.fullmatch(rule)
+    if match is None:
+        return None
+    body = match.group(1) or "*"
+    if body.endswith(":*"):
+        body = body[:-2] + " *"
+    return re.compile(
+        "".join(
+            r"(?:\s.*)?" if part == " *" else ".*" if part == "*" else re.escape(part)
+            for part in RULE_PART.split(body)
+        ),
+        re.DOTALL,
+    )
+
+
+def permission(commands: list[str], project: Path) -> str | None:
+    settings = []
+    for path in settings_files(project):
+        with contextlib.suppress(FileNotFoundError):
+            settings.append(json.loads(path.read_text(encoding="utf-8")).get("permissions") or {})
+    for decision in ("deny", "ask"):
+        rules = [bash_rule(rule) for permissions in settings for rule in permissions.get(decision) or []]
+        if any(rule and rule.fullmatch(command) for rule in rules for command in commands):
+            return decision
+    return None
+
+
+def uncommented(command: str) -> str:
+    kept: list[str] = []
+    quote = ""
+    escaped = skipping = False
+    word_start = True
+    for char in command:
+        if skipping and char != "\n":
+            continue
+        skipping = False
+        if escaped:
+            escaped = False
+        elif quote == "'":
+            quote = "" if char == "'" else quote
+        elif char == "\\":
+            escaped = True
+        elif quote == '"':
+            quote = "" if char == '"' else quote
+        elif char in "'\"":
+            quote = char
+        elif char == "#" and word_start:
+            skipping = True
+            continue
+        kept.append(char)
+        word_start = not quote and not escaped and char in WORD_BREAK
+    return "".join(kept)
+
+
+def segments(command: str) -> list[list[str]]:
+    # bash drops a backslash-newline between words and starts a comment only at a word start; shlex does neither
+    lexer = shlex.shlex(uncommented(command.replace("\\\n", "")), posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    parts: list[list[str]] = [[]]
+    for token in lexer:
+        if SEPARATOR.fullmatch(token):
+            parts.append([])
+        else:
+            parts[-1].append(token)
+    return parts
+
+
+def held_commands(command: str) -> list[list[str]]:
+    return [
+        cli().parse_args(part[at + 1 :]).command
+        for part in segments(command)
+        for at, token in enumerate(part)
+        if token.endswith("queue.py") and part[at + 1 : at + 2] == ["hold"]
+    ]
+
+
+def tails(argv: list[str]) -> list[str]:
+    return [shlex.join(argv[at:]) for at, word in enumerate(argv) if not word.startswith("-")]
+
+
 def cmd_block() -> int:
     payload = json.load(sys.stdin)
+    raw = (payload.get("tool_input") or {}).get("command") or ""
+    try:
+        holds = held_commands(raw)
+        commands = [t for argv in holds for t in tails(argv)]
+        decision = permission(commands, Path(os.environ["CLAUDE_PROJECT_DIR"])) if commands else None
+    except (ValueError, KeyError, OSError, SystemExit) as error:
+        if "queue" in raw:
+            print(
+                f"kvb-org-queue: cannot check the held command against the settings ({error!r}); "
+                "fix the settings or run the command outside queue.py hold.",
+                file=sys.stderr,
+            )
+            return 2
+        holds, decision = [], None
+    shown = " ; ".join(shlex.join(argv) for argv in holds)
+    if decision == "deny":
+        print(f"kvb-org-queue: the held command `{shown}` meets a deny rule of the settings.", file=sys.stderr)
+        return 2
+    if decision == "ask":
+        reason = f"kvb-org-queue: the held command `{shown}` meets an ask rule of the settings"
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": reason,
+        }}))
+        return 0
     cfg = watch.load_config()
     if cfg is None or cfg.get("queue_enforce") is not True:
         return 0
@@ -591,7 +723,7 @@ def cmd_block() -> int:
     return 0
 
 
-def main() -> int:
+def cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
     hold = sub.add_parser("hold")
@@ -607,7 +739,14 @@ def main() -> int:
     cancel.add_argument("id")
     cancel.add_argument("--session")
     sub.add_parser("block")
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = cli().parse_args()
+    refused = watch.guard_root(hook=args.cmd == "block")
+    if refused is not None:
+        return refused
     if args.cmd == "block":
         try:
             return cmd_block()
