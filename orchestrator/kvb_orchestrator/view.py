@@ -60,6 +60,7 @@ class View:
         sampled = single(query, "track")
         if sampled not in (None, "1"):
             raise ToolError("track must be 1 or left out")
+        self.tree.beat()
         return self.state(begin, end, now, TRACK_STEPS if sampled else 0)
 
     def first(self, news: list[dict], history: list[dict], claims: list[dict], now: float) -> float:

@@ -1,90 +1,74 @@
 from __future__ import annotations
 
+import ast
+import datetime
 import json
+import os
 import unittest
 
 from hub_case import HubCase
-from hub_support import PAGE
+from hub_support import HUB, PAGE
+
+GENERATED = datetime.datetime(2026, 11, 6, 12, tzinfo=datetime.UTC).timestamp()
+
+
+def starts_git(path) -> list[int]:
+    lines = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.split(" ")[0] in ("git", "/usr/bin/git"):
+            lines.append(node.lineno)
+    return lines
 
 
 class TestHubTree(HubCase):
-    def test_tree_lists_repos_branches_and_worktrees(self):
-        origin = self.outside / "origin.git"
-        self.git(self.outside, "init", "--quiet", "--bare", "--initial-branch=main", str(origin))
-        repo = self.repos / "github.com" / "me" / "demo"
-        repo.mkdir(parents=True)
-        self.git(repo, "init", "--quiet", "--initial-branch=main")
-        (repo / "a.txt").write_text("a", encoding="utf-8")
-        self.git(repo, "add", "a.txt")
-        self.git(repo, "commit", "--quiet", "-m", "a")
-        self.git(repo, "remote", "add", "origin", str(origin))
-        self.git(repo, "push", "--quiet", "-u", "origin", "main")
-        (repo / "b.txt").write_text("b", encoding="utf-8")
-        self.git(repo, "add", "b.txt")
-        self.git(repo, "commit", "--quiet", "-m", "b")
-        feature = self.worktrees / "github.com" / "me" / "demo" / "feature"
-        self.git(repo, "worktree", "add", "--quiet", "-b", "feature", str(feature))
-        (feature / "dirty.txt").write_text("x", encoding="utf-8")
-        other = self.outside / "elsewhere"
-        other.mkdir()
-        self.git(other, "init", "--quiet", "--initial-branch=main")
-        (other / "c.txt").write_text("c", encoding="utf-8")
-        self.git(other, "add", "c.txt")
-        self.git(other, "commit", "--quiet", "-m", "c")
-        lone = self.worktrees / "x" / "y" / "lone"
-        self.git(other, "worktree", "add", "--quiet", "-b", "lone", str(lone))
-        feature, repo, other, lone = (path.resolve() for path in (feature, repo, other, lone))
-        self.write_council({"rasci.json": {"work/feature": {"title": "F", "status": "running", "worker": "Skills session", "workdir": str(feature)}}})
-        self.tool("review_request", {**self.arguments("feat: tree", "", self.page("tree.html", PAGE)), "worktree": str(feature), "branch": "feature"})
+    def test_tree_serves_the_pkgmgr_file_with_workers_and_reviews(self):
+        root = self.write_tree()
+        demo, feature = f"{root}/repos/github.com/me/demo", f"{root}/worktrees/github.com/me/demo/feature"
+        self.write_council({"rasci.json": {"work/feature": {"title": "F", "status": "running", "worker": "Skills session", "workdir": feature}}})
+        self.tool("review_request", {**self.arguments("feat: tree", "", self.page("tree.html", PAGE)), "worktree": feature, "branch": "feature"})
         status, _, body = self.get("/api/tree")
         self.assertEqual(status, 200, body)
         data = json.loads(body)
-        repos = {entry["name"]: entry for entry in data["repos"]}
-        self.assertEqual(set(repos), {"github.com/me/demo", str(other)})
-        demo = {entry["name"]: entry for entry in repos["github.com/me/demo"]["branches"]}
-        self.assertEqual((demo["main"]["upstream"], demo["main"]["ahead"], demo["main"]["behind"]), ("origin/main", 1, 0))
-        trees = [(tree["path"], tree["dirty"], tree["workers"], tree["review"]) for tree in demo["main"]["worktrees"] + demo["feature"]["worktrees"]]
-        self.assertEqual(trees, [(str(repo), False, [], None), (str(feature), True, ["Skills"], {"status": "pending", "gate": "pass", "title": "feat: tree"})])
-        self.assertEqual([tree["path"] for tree in {entry["name"]: entry for entry in repos[str(other)]["branches"]}["lone"]["worktrees"]], [str(lone)])
-        self.assertEqual(json.loads(self.get("/api/tree")[2])["scanned"], data["scanned"])
+        repos = {entry["path"]: entry for entry in data["repos"]}
+        self.assertEqual((repos[demo]["name"], repos[demo]["known"], repos[f"{root}/outside/elsewhere"]["known"]), ("github.com/me/demo", True, False))
+        self.assertEqual((data["scanned"], data["delete_ready"], data["delete_reason"]), (GENERATED, False, "Secret Service locked"))
+        branches = {entry["name"]: entry for entry in repos[demo]["branches"]}
+        main = branches["main"]
+        self.assertEqual((main["upstream"], main["ahead"], main["behind"], main["gone"], main["state"]), ("origin/main", 1, 0, False, "protected"))
+        self.assertEqual((branches["feature"]["state"], branches["feature"]["reason"]), ("dirty", "dirty: 1 paths"))
+        trees = [(tree["path"], tree["dirty"], tree["untracked"], tree["workers"], tree["review"]) for tree in main["worktrees"] + branches["feature"]["worktrees"]]
+        self.assertEqual(trees, [(demo, False, 0, [], None), (feature, True, 1, ["Skills"], {"status": "pending", "gate": "pass", "title": "feat: tree"})])
+        self.assertEqual([(tree["path"], tree["workers"]) for tree in repos[demo]["detached"]], [(f"{root}/worktrees/github.com/me/demo/detached", [])])
 
-    def test_tree_runs_no_command_a_repo_config_names(self):
-        marker = self.outside / "ran"
-        trap, filtered = (self.repos / "github.com" / "me" / name for name in ("trap", "filtered"))
-        for repo in (trap, filtered):
-            repo.mkdir(parents=True)
-            self.git(repo, "init", "--quiet", "--initial-branch=main")
-            (repo / "a.txt").write_text("a", encoding="utf-8")
-            self.git(repo, "add", "a.txt")
-            self.git(repo, "commit", "--quiet", "-m", "a")
-        self.git(trap, "config", "core.fsmonitor", f"touch {marker}")
-        self.git(filtered, "config", "filter.x.clean", f"touch {marker}")
-        (filtered / ".gitattributes").write_text("* filter=x\n", encoding="utf-8")
-        (filtered / "a.txt").write_text("b", encoding="utf-8")
+    def test_tree_reads_the_file_again_once_it_changes(self):
+        self.write_tree()
+        self.assertEqual(len(json.loads(self.get("/api/tree")[2])["repos"]), 2)
+        data = json.loads(self.tree_file.read_text(encoding="utf-8"))
+        data["repos"] = data["repos"][:1]
+        self.tree_file.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(len(json.loads(self.get("/api/tree")[2])["repos"]), 1)
+
+    def test_a_missing_or_broken_file_answers_with_the_reason(self):
         status, _, body = self.get("/api/tree")
         self.assertEqual(status, 200, body)
-        dirty = {entry["name"]: entry["branches"][0]["worktrees"][0]["dirty"] for entry in json.loads(body)["repos"]}
-        self.assertEqual(dirty, {"github.com/me/trap": False, "github.com/me/filtered": None})
-        self.assertFalse(marker.exists())
+        self.assertEqual((json.loads(body)["repos"], json.loads(body)["scanned"]), ([], None))
+        self.assertIn("no pkgmgr tree file", json.loads(body)["error"])
+        self.tree_file.write_text('{"repos": [{"path": "/x"}]}', encoding="utf-8")
+        self.assertIn("unreadable", json.loads(self.get("/api/tree")[2])["error"])
 
-    def test_tree_never_fetches_a_missing_object(self):
-        marker = self.outside / "fetched"
-        origin = self.outside / "lazy.git"
-        self.git(self.outside, "init", "--quiet", "--bare", "--initial-branch=main", str(origin))
-        repo = self.repos / "github.com" / "me" / "lazy"
-        repo.mkdir(parents=True)
-        self.git(repo, "init", "--quiet", "--initial-branch=main")
-        (repo / "a.txt").write_text("a", encoding="utf-8")
-        self.git(repo, "add", "a.txt")
-        self.git(repo, "commit", "--quiet", "-m", "a")
-        self.git(repo, "remote", "add", "origin", str(origin))
-        self.git(repo, "push", "--quiet", "-u", "origin", "main")
-        self.git(repo, "config", "remote.origin.promisor", "true")
-        self.git(repo, "config", "remote.origin.uploadpack", f"touch {marker}; git-upload-pack")
-        (repo / ".git" / "refs" / "remotes" / "origin" / "main").write_text("1" * 40 + "\n", encoding="utf-8")
-        status, _, body = self.get("/api/tree")
-        self.assertEqual(status, 200, body)
-        self.assertFalse(marker.exists())
+    def test_the_state_poll_beats_the_heartbeat_the_tree_timer_waits_for(self):
+        heartbeat = self.state / "tree-heartbeat"
+        self.assertFalse(heartbeat.exists())
+        self.snapshot()
+        self.assertTrue(heartbeat.is_file())
+        os.utime(heartbeat, (0, 0))
+        self.snapshot()
+        self.assertGreater(heartbeat.stat().st_mtime, 0)
+
+    def test_no_module_of_the_orchestrator_starts_git(self):
+        sources = [HUB / "server.py", *sorted((HUB / "kvb_orchestrator").glob("*.py"))]
+        found = {path.name: starts_git(path) for path in sources}
+        self.assertEqual({name: lines for name, lines in found.items() if lines}, {})
 
 
 if __name__ == "__main__":

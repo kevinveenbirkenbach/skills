@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,14 +26,13 @@ from .skill_scripts import Runner
 from .sources import Sources
 from .timeline import Timeline
 from .transcripts import Transcripts
-from .tree import Tree
+from .tree import TREE_HEARTBEAT, Tree
 from .view import View
 
 
 @dataclass(frozen=True)
 class Places:
-    repos: Path
-    worktrees: Path
+    tree_file: Path
     timers: Path
 
 
@@ -99,7 +97,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         names=Names(state / "names.json"),
         settings=Settings(state / "settings.json"),
         watch=Watch(),
-        tree=Tree(repos=places.repos, worktrees=places.worktrees, home=state, lock=threading.Lock(), cached=None, scanned=-math.inf),
+        tree=Tree(file=places.tree_file, heartbeat=state / TREE_HEARTBEAT, lock=threading.Lock(), cached=None, stamp=None),
         model=model,
         timers=places.timers,
         council=council,

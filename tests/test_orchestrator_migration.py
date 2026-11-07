@@ -82,7 +82,7 @@ class TestOrchestratorMigration(unittest.TestCase):
             (stubs / tool).symlink_to("stub")
         self.state = self.root / "stub.json"
         self.state.write_text(json.dumps({"calls": [], "images": [f"{OLD}:local"], "mcp": {OLD: "http://127.0.0.1:8737/mcp"}, "enabled": [f"{OLD}-runner.service"]}), encoding="utf-8")
-        self.env = {**os.environ, "HOME": str(self.home), "PATH": f"{stubs}:{os.environ['PATH']}", "STUB_STATE": str(self.state), "AGENTS_COUNCIL_ROOT": str(self.root / "council")}
+        self.env = {**os.environ, "HOME": str(self.home), "PATH": f"{stubs}:{os.environ['PATH']}", "STUB_STATE": str(self.state), "AGENTS_COUNCIL_ROOT": str(self.root / "council"), "PKGMGR_REPO": str(self.root / "no-pkgmgr")}
         share, local, config = self.home / ".local" / "share", self.home / ".local" / "state", self.home / ".config"
         self.write(share / OLD / "compose.yml", f"name: {OLD}\n")
         self.write(share / OLD / ".env", "KVB_HUB_PORT=8737\n")

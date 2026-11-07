@@ -99,13 +99,7 @@ class TestOrchestratorE2E(HubCase):
         })
         self.request("feat: orchestrator", "")
         self.create_ask(ASK)
-        repo = self.repos / "github.com" / "me" / "demo"
-        repo.mkdir(parents=True)
-        self.git(repo, "init", "--quiet", "--initial-branch=main")
-        (repo / "a.txt").write_text("a\n", encoding="utf-8")
-        self.git(repo, "add", "a.txt")
-        self.git(repo, "commit", "--quiet", "-m", "a")
-        self.git(repo, "worktree", "add", "--quiet", "-b", "feature", str(self.worktrees / "github.com" / "me" / "demo" / "feature"))
+        self.write_tree()
         self.base = f"http://{self.host}/"
 
     def drive(self, steps: list[dict]) -> dict:

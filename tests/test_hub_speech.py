@@ -174,8 +174,8 @@ class TestHubSpeech(HubCase):
     def test_the_server_requires_every_engine_argument(self):
         args = {
             "--bind": "127.0.0.1", "--listen-port": "0", "--public-port": "1", "--council": str(self.council), "--pages": str(self.pages), "--state": str(self.state),
-            "--host-state": str(HOST_STATE), "--skills": str(self.outside), "--transcripts": str(self.projects), "--templates": str(HUB / "templates"), "--repos": str(self.repos),
-            "--worktrees": str(self.worktrees), "--timers": str(self.timers), "--llm-key-file": os.devnull, "--llm-url": "", "--llm-model": "",
+            "--host-state": str(HOST_STATE), "--skills": str(self.outside), "--transcripts": str(self.projects), "--templates": str(HUB / "templates"),
+            "--tree-file": str(self.tree_file), "--timers": str(self.timers), "--llm-key-file": os.devnull, "--llm-url": "", "--llm-model": "",
             "--piper": str(self.engines.piper), "--voices": str(self.engines.voices), "--operator-voice": "en_US-test-high:9", "--whisper": str(self.engines.whisper),
             "--whisper-model": str(self.engines.whisper_model), "--scratch": str(self.engines.scratch), "--approvers": str(self.approvers),
         }

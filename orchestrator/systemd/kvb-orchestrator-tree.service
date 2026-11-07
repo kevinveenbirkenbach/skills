@@ -1,0 +1,11 @@
+[Unit]
+Description=Agent Orchestrator tree: pkgmgr branch tree into the file the orchestrator reads, while its page polls
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/bin:/bin
+ExecCondition=/bin/sh -c 'test -n "$(find %h/.local/state/kvb-orchestrator/tree-heartbeat -mmin -5 2>/dev/null)"'
+ExecStart=%h/.local/share/kvb-orchestrator/pkgmgr/bin/pkgmgr branch tree --format json --output %h/.local/state/pkgmgr/tree/branch-tree.json
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=55
