@@ -40,12 +40,11 @@ class HubCase(unittest.TestCase):
         self.state = base / "state"
         self.outside = base / "outside"
         self.projects = base / "projects"
-        self.repos = base / "repos"
-        self.worktrees = base / "worktrees"
+        self.tree_file = base / "tree" / "branch-tree.json"
         self.timers = base / "timers"
         self.approvers = base / "config" / "approvers.json"
         self.replay = base / "replay"
-        for path in (self.pages, self.state, self.outside, self.projects, self.repos, self.worktrees, self.timers):
+        for path in (self.pages, self.state, self.outside, self.projects, self.tree_file.parent, self.timers):
             path.mkdir()
         silence = mock.patch.object(server.Handler, "log_message")
         silence.start()
@@ -64,7 +63,7 @@ class HubCase(unittest.TestCase):
             transcripts=self.projects,
             scripts=self.scripts,
             templates=HUB / "templates",
-            places=server.Places(repos=self.repos, worktrees=self.worktrees, timers=self.timers),
+            places=server.Places(tree_file=self.tree_file, timers=self.timers),
             model=server.Model(url="", model="", key=""),
             engines=self.engines,
             approvers=self.approvers,
@@ -189,6 +188,12 @@ class HubCase(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             text = content if isinstance(content, str) else json.dumps(content)
             path.write_text(text, encoding="utf-8")
+
+    def write_tree(self) -> Path:
+        root = self.outside / "scan"
+        sample = (Path(__file__).parent / "branch-tree.json").read_text(encoding="utf-8")
+        self.tree_file.write_text(sample.replace("@ROOT@", str(root)), encoding="utf-8")
+        return root
 
     def jsonl(self, rows: list[dict]) -> str:
         return "".join(json.dumps(row) + "\n" for row in rows)

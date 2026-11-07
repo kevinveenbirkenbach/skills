@@ -45,8 +45,9 @@
     if (!tree.dom) {
       return;
     }
-    if (!tree.data) {
-      tree.dom.list.replaceChildren(emptyState(tree.busy ? "Lese Repositories …" : "Kein Tree", "Die Repositories werden höchstens jede Minute neu gelesen."));
+    if (!tree.data || tree.data.error) {
+      tree.dom.count.textContent = "";
+      tree.dom.list.replaceChildren(emptyState(tree.busy ? "Lese Repositories …" : "Kein Tree", tree.data ? tree.data.error : "pkgmgr schreibt den Tree jede Minute, solange diese Seite offen ist."));
       return;
     }
     const q = tree.q.trim().toLowerCase();
