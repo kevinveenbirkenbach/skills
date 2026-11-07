@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .council import NEWS, ordered, read_claims
+from .denying import DENIABLE
 from .errors import ToolError
 from .events import VIEWS
 from .fields import bounded, decode, expect, message_text
@@ -29,7 +30,7 @@ SCREENS = ("stream", "inbox", "rules", "agents", "artifacts")
 IDS = {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Ids from items."}
 NL_ACTIONS = [
     {"name": "approve", "description": "Approve inbox items; a decision takes its recommended option.", "parameters": {"ids": IDS}},
-    {"name": "reject", "description": "Reject reviews or deny asks.", "parameters": {"ids": IDS}},
+    {"name": "reject", "description": "Reject reviews, or deny asks, operator rows and rule requests; the requesting agent gets a post.", "parameters": {"ids": IDS}},
     {"name": "choose", "description": "Pick an option label of a decision.", "parameters": {"id": {"type": "string"}, "label": {"type": "string"}}},
     {"name": "snooze", "description": "Hide inbox items for some hours.", "parameters": {"ids": IDS, "hours": {"type": "number", "minimum": 1, "maximum": 192}}},
     {"name": "pin", "description": "Pin inbox items to the top.", "parameters": {"ids": IDS}},
@@ -62,7 +63,8 @@ def nl_ids(arguments: dict, items: dict[str, dict]) -> list[dict]:
 
 
 def nl_item(item: dict, verb: str, label: str) -> dict:
-    return {"kind": item["kind"], "id": item["id"], "verb": verb, "label": label, "sha256": item["sha256"]}
+    entry = {"kind": item["kind"], "id": item["id"], "verb": verb, "label": label, "sha256": item["sha256"]}
+    return {**entry, "channel": "post", "reason": ""} if verb == "reject" and item["kind"] in DENIABLE else entry
 
 
 def nl_action(raw: object, items: dict[str, dict], agents: list[str]) -> dict:
@@ -75,8 +77,10 @@ def nl_action(raw: object, items: dict[str, dict], agents: list[str]) -> dict:
     expect(arguments, tuple(schema["parameters"]))
     if name in ("approve", "reject"):
         picked = nl_ids(arguments, items)
-        if name == "reject" and any(item["kind"] not in ("review", "ask") for item in picked):
-            raise ToolError("reject takes reviews and asks only")
+        if name == "reject" and any(item["kind"] not in ("review", *DENIABLE) or (item["kind"] != "review" and not item["deniable"]) for item in picked):
+            raise ToolError("reject takes reviews, asks, operator rows and rule requests that wait")
+        if name == "approve" and any(item["kind"] == "rule" for item in picked):
+            raise ToolError("a rule request is accepted in its row with the passkey")
         if name == "approve" and any(item["kind"] == "decision" and not item["recommended"] for item in picked):
             raise ToolError("a decision without a recommended option needs choose")
         if name == "approve" and any(item["kind"] == "operator" and not item["runnable"] for item in picked):

@@ -26,7 +26,7 @@ ANSWERS = {"allow": "allowed", "deny": "denied"}
 
 def ask_state(ask: dict, now: float) -> dict:
     status = "expired" if ask["status"] == "pending" and ask["expires"] <= now else ask["status"]
-    return {"id": ask["id"], "status": status, "decided": ask["decided"], "proof": ask.get("proof")}
+    return {"id": ask["id"], "status": status, "decided": ask["decided"], "proof": ask.get("proof"), "channel": ask.get("channel", ""), "reason": ask.get("reason", "")}
 
 
 def ask_row(ask: dict, names: dict[str, str]) -> dict:
@@ -59,7 +59,7 @@ class Asking:
         created = time.time()
         fields = {**values, "tool": field(payload, "tool").strip(), "status": "pending", "decided": None, "proof": None}
         record = self.asks.add({**fields, "created_ts": created, "expires": created + lifetime})
-        self.automate("ask", record, {"item": ask_signed(record), "gate": ""})
+        self.automate("ask", record)
         return {"id": record["id"], "status": record["status"]}
 
     def ask_wait(self, ask_id: str, query: dict[str, list[str]]) -> dict:
@@ -116,7 +116,7 @@ class Asking:
             raise ToolError("recommended must be one of the option labels or an empty string")
         fields = {"question": question, "options": parsed, "agent": field(arguments, "agent").strip(), "recommended": recommended.strip()}
         record = self.decisions.add({**fields, "status": "pending", "choice": None, "decided": None, "created_ts": time.time()})
-        self.automate("decision", record, {"recommended": record["recommended"], "agent": record["agent"]})
+        self.automate("decision", record)
         return {"id": record["id"], "status": record["status"], "url": self.url()}
 
     def decision_wait(self, arguments: dict) -> dict:

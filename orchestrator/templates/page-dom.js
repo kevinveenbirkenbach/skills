@@ -56,7 +56,7 @@
   const visibleInbox = () => state.inbox.filter((item) => ui.snoozed || !item.until);
   const waitingCount = () => state.inbox.filter((item) => !item.until).length;
   const isGreen = (item) => item.green && !item.held && !item.until && item.kind !== "operator";
-  const selectable = (item) => !item.held && !(item.kind === "review" && item.gate !== "pass") && !(item.kind === "operator" && !item.runnable) && !(item.kind === "decision" && !item.recommended);
+  const selectable = (item) => !item.held && item.kind !== "rule" && !(item.kind === "review" && item.gate !== "pass") && !(item.kind === "operator" && !item.runnable) && !(item.kind === "decision" && !item.recommended);
   const entryOf = (item, verb, label) => ({kind: item.kind, id: item.id, verb, label, sha256: item.sha256 || ""});
 
   function tick() {

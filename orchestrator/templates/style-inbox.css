@@ -1,0 +1,20 @@
+.console { display: grid; margin-top: var(--sp-2); overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); }
+.console[data-status="failed"], .console[data-status="refused"] { border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
+.console-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: 5px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.console-out { min-height: 3.2em; max-height: min(40vh, 320px); margin: 0; padding: 8px 10px; overflow: auto; color: var(--text); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior: contain; }
+.console-out:focus-visible { outline-offset: -2px; }
+.deny-split { display: inline-flex; }
+.deny-split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.deny-split > .btn + .btn { min-width: 22px; margin-left: -1px; padding-right: 5px; padding-left: 5px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.deny-channels { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: var(--sp-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.deny-channels legend { margin-bottom: var(--sp-2); padding: 0; color: var(--muted); font-size: var(--fs-xs); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.deny-channel { display: flex; align-items: flex-start; gap: var(--sp-2); padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; }
+.deny-channel:has(input:checked) { border-color: var(--bad); box-shadow: inset 3px 0 0 var(--bad); }
+.deny-channel input { margin-top: 3px; accent-color: var(--bad); }
+.deny-channel span { display: grid; gap: 1px; }
+.deny-channel small { color: var(--muted); font-size: var(--fs-xs); }
+.deny-reason { display: grid; gap: var(--sp-1); color: var(--muted); font-size: var(--fs-sm); }
+.rule-request { display: grid; gap: var(--sp-1); margin-top: var(--sp-2); padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); }
+.rule-request p { margin: 0; }
+.rule-request .meta { margin: 0; }
+.dry-run-count strong { color: var(--text); font-variant-numeric: tabular-nums; }

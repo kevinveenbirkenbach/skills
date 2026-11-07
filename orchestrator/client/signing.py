@@ -107,6 +107,23 @@ def office_problem(order: object) -> str | None:
     return None
 
 
+def rule_request_item(request_id: str, kind: str, tool: str, pattern: str, scope: str, expires: int) -> dict:
+    return {"kind": "rule-request", "id": request_id, "rule": kind, "tool": tool, "pattern": pattern, "scope": scope, "expires": expires}
+
+
+def denial_item(subject: dict, channel: str, reason: str) -> dict:
+    """Args:
+        subject: the item an approval of it would sign.
+        channel: the radio class that tells the requesting agent.
+        reason: the operator's reason, possibly empty.
+
+    Returns:
+        The item a denial signs: its hash never equals the subject's, so no
+        denial signature approves anything.
+    """
+    return {"kind": "deny", "subject": item_hash(subject), "channel": channel, "reason": reason}
+
+
 def approval_payload(hashes: list[str], nonce: str, expires: int) -> dict:
     return {"v": VERSION, "kind": "approve", "items": sorted(set(hashes)), "nonce": nonce, "expires": expires}
 

@@ -49,6 +49,9 @@
   }
 
   function approveOne(item) {
+    if (item.kind === "rule") {
+      return acceptRule(item);
+    }
     if (item.kind === "decision") {
       if (!item.recommended) {
         openItem(item);
@@ -116,12 +119,22 @@
       return [h("span", {class: "muted"}, "wird wirksam …")];
     }
     const buttons = [];
-    if (item.kind === "review" || item.kind === "ask") {
+    if (item.kind === "review") {
       buttons.push(iconBtn("bi-check-lg", "Freigeben", "btn small primary", () => approveOne(item)), iconBtn("bi-x-lg", "Ablehnen", "btn small danger", () => rejectOne(item)));
+    } else if (item.kind === "ask") {
+      buttons.push(iconBtn("bi-check-lg", "Freigeben", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "decision" && item.recommended) {
       buttons.push(h("button", {type: "button", class: "btn small primary", ...named(`Empfehlung: ${item.recommended}`), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), item.recommended));
     } else if (item.kind === "operator" && item.runnable) {
       buttons.push(iconBtn("bi-play-fill", "Ausführen", "btn small primary", () => approveOne(item)));
+    } else if (item.kind === "rule") {
+      buttons.push(h("button", {type: "button", class: "btn small primary", ...named("Annehmen", "Annehmen: der Passkey signiert genau diese Regel, dann gilt sie"), on: {click: () => approveOne(item)}}, icon("bi-shield-check"), "Annehmen"));
+    }
+    if (item.deniable) {
+      buttons.push(denySplit(item));
+    }
+    if (item.job && !jobOpen(item.job)) {
+      buttons.push(iconBtn("bi-x-circle", "Schließen", "btn small ghost", () => dismissJob(item.job), "Schließen: Konsole ausblenden, eine erledigte Zeile verschwindet mit ihr"));
     }
     return buttons;
   }
@@ -144,7 +157,9 @@
         item.agent ? h("div", {class: "muted"}, "von ", person(item.agent)) : null,
         item.kind === "review" ? h("div", {class: "muted"}, item.detail, item.score ? ` · ${item.score}` : "") : null,
         item.kind === "operator" && item.title !== item.command ? h("div", {class: "command"}, h("code", {}, item.command)) : null,
-        item.kind === "operator" ? h("div", {class: "muted"}, `in ${dash(item.directory)}`, item.detail !== "-" ? ` · ${item.detail}` : "") : null,
+        item.kind === "operator" ? h("div", {class: "muted"}, `in ${dash(item.directory)}`, item.detail && item.detail !== "-" ? ` · ${item.detail}` : "") : null,
+        item.job ? consoleOf(item.job) : null,
+        item.kind === "rule" ? ruleRequestBody(item) : null,
         item.kind === "ask" ? h("div", {class: "muted"}, `in ${dash(item.directory)}`) : null,
         item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
           type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, disabled: item.held, on: {click: () => chooseOne(item, option.label)},
@@ -176,8 +191,9 @@
         ui.selected.delete(key);
       }
     }
-    const sig = JSON.stringify([items, [...ui.selected], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60)]);
+    const sig = JSON.stringify([items.map(withoutOutput), [...ui.selected], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60)]);
     if (sig === inboxSig) {
+      repaintConsoles(items);
       return;
     }
     inboxSig = sig;
@@ -194,8 +210,9 @@
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Inbox", counter(waitingCount())), h("span", {class: "spacer"}),
         hidden ? h("label", {class: "check"}, snoozed, `${hidden} zurückgestellt`) : null),
       h("div", {class: "inbox-actions"}, choose, all),
-      onLocalhost() ? null : h("p", {class: "muted"}, "Freigaben signiert der Passkey nur unter ", localLink()),
+      onLocalhost() ? "" : h("p", {class: "muted"}, "Freigaben signiert der Passkey nur unter ", localLink()),
       items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("Alles erledigt", "Gerade wartet nichts auf dich."));
+    settleConsoles(items);
     const current = inboxDom.querySelector(`.item[data-index="${ui.cursor}"]`);
     if (current && document.activeElement === document.body) {
       current.scrollIntoView({block: "nearest"});
@@ -214,6 +231,7 @@
       h("div", {class: "who"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? face(item.agent, false) : null, item.agent ? person(item.agent) : null, when(item.ts)),
       h("p", {class: "text"}, item.title),
       item.command ? h("div", {class: "command"}, h("code", {}, item.command), copyButton(item.command)) : null,
+      item.kind === "rule" ? ruleRequestBody(item) : null,
       meta([["Verzeichnis", item.directory], ["Warnungen", item.warnings.join(", ")], ["Id", item.id]]),
       item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
         type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, disabled: item.held, on: {click: () => {

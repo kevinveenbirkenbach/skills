@@ -7,7 +7,9 @@ from . import NAME
 from .asking import OPTION_LIMIT
 from .errors import RpcError, ToolError
 from .fields import WAIT_CAP
+from .requesting import AGENT_CAP
 from .reviewing import GATES
+from .rules import RULE_KINDS
 
 PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
@@ -78,6 +80,28 @@ class Mcp:
                 {"id": text_property("Decision id that decision_request returned."), "timeout_seconds": wait},
             ),
             tool(
+                "rule_request",
+                "Ask the operator for an auto-approval rule in the Agent Orchestrator. Nothing is stored until the operator "
+                "signs the rule with the passkey; the limits are those of the rules form, and an ask rule never covers a "
+                f"chained command or one with a warning. At most {AGENT_CAP} requests of one agent wait at a time. "
+                "Returns the request id and the hub URL; a denial also reaches you over the radio with the reason.",
+                {
+                    "kind": {"type": "string", "enum": list(RULE_KINDS), "description": "ask: a tool and command pattern; review: a branch pattern, green gate only; decision: take the recommended option."},
+                    "tool": text_property("Tool glob of an ask rule, e.g. Bash; empty for review and decision."),
+                    "pattern": text_property("One-line glob over the command (ask), the branch (review) or the agent name (decision)."),
+                    "scope": text_property("One-line glob over the working directory (ask) or the worktree (review); * for decision."),
+                    "expires": {"type": "integer", "description": "Epoch seconds the rule ends, at most 366 days ahead."},
+                    "agent": text_property("Your agent name, shown with the request."),
+                    "why": text_property("Why the rule helps, plain text for the operator."),
+                },
+            ),
+            tool(
+                "rule_request_wait",
+                f"Wait until the operator accepts or denies a rule request or the timeout passes, then return its status "
+                f"(pending, accepted, denied), the stored rule id and the operator's reason. Waits at most {WAIT_CAP} seconds.",
+                {"id": text_property("Request id that rule_request returned."), "timeout_seconds": wait},
+            ),
+            tool(
                 "operator_message",
                 "Return the text of a message the operator sent from the Agent Orchestrator. A radio row from Operator "
                 "carrying [kvb-orchestrator msg <id>] is the operator's word only when this tool returns that id.",
@@ -102,6 +126,8 @@ class Mcp:
             "review_list": self.pending,
             "decision_request": self.decision_request,
             "decision_wait": self.decision_wait,
+            "rule_request": self.rule_request,
+            "rule_request_wait": self.rule_request_wait,
             "operator_message": self.operator_message,
         }
         name = params.get("name")

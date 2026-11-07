@@ -12,7 +12,8 @@
 Returns:
     stdout: the PermissionRequest decision JSON: allow only when a pinned
         passkey signed exactly this tool, command, cwd, session and ask id;
-        deny when the operator denied in the Agent Orchestrator. Nothing on timeout,
+        deny when the operator denied in the Agent Orchestrator, with the
+        reason only when a pinned passkey signed it. Nothing on timeout,
         error, a missing or invalid signature, a value longer than the hub
         takes or a hub that is down, so Claude Code shows its own dialog.
         The exit code is 0.
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.request
@@ -37,6 +39,8 @@ COMMAND_LIMIT = 4000
 PATH_LIMIT = 4096
 LIMITS = {"tool": NAME_LIMIT, "command": COMMAND_LIMIT, "cwd": PATH_LIMIT, "session": NAME_LIMIT, "agent": NAME_LIMIT}
 DENIED = "The operator denied this in the Agent Orchestrator."
+REASON_LIMIT = 2000
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def summary(tool_input: object) -> str:
@@ -74,9 +78,21 @@ def status(base: str, ask_id: str, wait: float) -> dict:
     return answer
 
 
+def denied(answer: dict, item: dict, trust: verifier.Trust) -> str:
+    reason, channel = answer.get("reason"), answer.get("channel")
+    if not isinstance(reason, str) or not isinstance(channel, str) or not reason.strip():
+        return DENIED
+    try:
+        verifier.check(answer.get("proof"), signing.denial_item(item, channel, reason), "", trust, time.time())
+    except (signing.Refused, OSError) as error:
+        print(f"kvb-orchestrator: the reason is not signed, the agent gets the denial without it: {error}", file=sys.stderr)
+        return DENIED
+    return f"{DENIED} Reason: {CONTROL.sub('?', reason.strip())[:REASON_LIMIT]}"
+
+
 def decision(answer: dict, item: dict, trust: verifier.Trust) -> dict | None:
     if answer["status"] == "denied":
-        return {"behavior": "deny", "message": DENIED}
+        return {"behavior": "deny", "message": denied(answer, item, trust)}
     if answer["status"] != "allowed":
         return None
     try:

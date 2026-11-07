@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from hub_case import HubCase
-from hub_support import ASK, iso, verifier
+from hub_support import ASK, RUNNER, iso, verifier
 from test_hub_cleanup import DONE_TIP, FAKE_PKGMGR, host
 from test_hub_offices import COUNCIL_SCRIPT
 from test_hub_offices import host as office_host
@@ -209,6 +209,91 @@ AFTER = """(async () => {@HELPERS@
   const past = await until(() => all("#main details.repo").find((details) => details.textContent.includes("Zuletzt gelöscht")), 15000);
   return {past: past ? [past.querySelector("[data-result]").dataset.result, name(past.querySelector("span.state"))] : null, branches: all("#main details.repo").filter((details) => details !== past).flatMap((details) => all(".branch-name strong", details)).map(text)};
 })()""".replace("@HELPERS@", HELPERS)
+
+
+LABELS = """
+  const unlabelled = (root) => all("svg.bi", root).filter((svg) => !svg.closest(".sprite")).map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160));
+  const wide = () => document.documentElement.scrollWidth > window.innerWidth + 1;
+  const rowOf = (words) => all("#main .inbox-list > li").find((li) => li.textContent.includes(words));
+  const press = (root, label) => all("button", root).find((button) => name(button) === label).click();
+  const out = () => document.querySelector("#main .console .console-out");
+  const atEnd = () => out().scrollTop + out().clientHeight >= out().scrollHeight - 12;
+  const line = () => text(document.querySelector("#main .console .console-status"));
+"""
+RUN_START = """(async () => {@HELPERS@@LABELS@
+  const row = await until(() => rowOf("Zeile"), 8000);
+  if (!row) {
+    return {error: text(document.getElementById("main"))};
+  }
+  press(row, "Ausführen");
+  const toast = await until(() => all("#toasts .toast.wait").find((box) => box.textContent.includes("Ausführen")), 8000);
+  const queued = await until(() => out() && line(), 15000);
+  await until(() => out().textContent.includes("Zeile 60"), 20000);
+  return {toast: text(toast), queued, running: line(), overflows: out().scrollHeight > out().clientHeight, followed: atEnd()};
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+RUN_HELD = """(async () => {@HELPERS@@LABELS@
+  out().scrollTop = 0;
+  await sleep(300);
+  await until(() => out().textContent.includes("Zeile 80"), 20000);
+  await sleep(300);
+  return {held: out().scrollTop, running: line()};
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+RUN_DONE = """(async () => {@HELPERS@@LABELS@
+  out().scrollTop = out().scrollHeight;
+  await until(() => document.querySelector("#main .console").dataset.status === "done", 20000);
+  await sleep(500);
+  const lines = out().textContent.trim().split("\\n");
+  return {done: line(), last: lines[lines.length - 1], lines: lines.length, followed: atEnd(), actions: all(".item-actions button", out().closest("li")).map(name)};
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+LAYOUT = """(async () => {@HELPERS@@LABELS@
+  await until(() => document.querySelector("#main .console") && rowOf("Regelwunsch"), 8000);
+  const rule = rowOf("Regelwunsch");
+  return {
+    kinds: all("#main .inbox-list > li").map((li) => text(li.querySelector(".pill"))),
+    splits: all("#main .deny-split").map((group) => all("button", group).map(name)),
+    console: line(),
+    followed: atEnd(),
+    fits: out().getBoundingClientRect().right <= window.innerWidth,
+    dry: text(rule.querySelector(".dry-run-count")),
+    fields: all(".rule-request dt", rule).map(text),
+    accept: all("button", rule).filter((button) => name(button) === "Annehmen").length,
+    unlabelled: unlabelled(document),
+    wide: wide(),
+  };
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+DENY_SHEET = """(async () => {@HELPERS@@LABELS@
+  const row = await until(() => rowOf("git push"), 8000);
+  press(row, "Ablehnen über …");
+  const box = await until(() => document.querySelector(".sheet-box"), 4000);
+  return {
+    title: text(box.querySelector(".panel-title")),
+    channels: all(".deny-channels input[type=radio]", box).map((input) => [input.value, input.checked]),
+    hints: all(".deny-channel small", box).map(text),
+    reason: Boolean(box.querySelector("textarea")),
+    unlabelled: unlabelled(box),
+    wide: wide(),
+  };
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+DENY = """(async () => {@HELPERS@@LABELS@
+  const row = await until(() => rowOf("Bash: make deploy"), 8000);
+  press(row, "Ablehnen über …");
+  const box = await until(() => document.querySelector(".sheet-box"), 4000);
+  box.querySelector('input[value="call"]').click();
+  box.querySelector("textarea").value = "erst das Gate grün machen";
+  press(box.querySelector(".actions"), "Ablehnen");
+  const undo = await until(() => all("#toasts .toast.wait").find((toast) => toast.textContent.includes("Ablehnung")), 8000);
+  return {undo: text(undo), sheet: !document.getElementById("sheet").hidden};
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+DENIED = """(async () => {@HELPERS@@LABELS@
+  return {gone: Boolean(await until(() => !rowOf("Bash: make deploy"), 20000))};
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+ACCEPT = """(async () => {@HELPERS@@LABELS@
+  press(rowOf("Regelwunsch"), "Annehmen");
+  const toast = await until(() => all("#toasts .toast").find((box) => box.textContent.includes("Angelegt: Regel")), 15000);
+  await until(() => !rowOf("Regelwunsch"), 8000);
+  return {toast: text(toast), left: Boolean(rowOf("Regelwunsch"))};
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+SLOW = "seq -f 'Zeile %g' 1 60; sleep 4; seq -f 'Zeile %g' 61 80; sleep 4; echo fertig"
 
 
 def labelled(probe: dict) -> dict:
@@ -458,6 +543,104 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual((claim["session"], claim["work"]), ("s1", "oidc line"))
         written = [json.loads(path.read_text(encoding="utf-8")) for path in results.glob("*.json")]
         self.assertEqual([[(item["office"], item["action"], item["status"]) for item in result["items"]] for result in written], [[("identity/oidc", "takeover", "done")]])
+
+    def inbox_work(self) -> None:
+        stage = {"title": "Stage line", "status": "running", "worker": "Stage (this session)", "roles": {"Stage (this session)": "RA"}}
+        greet = {"title": SLOW, "workdir": str(self.outside), "description": "zählt", "check": "manual", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
+        push = {"title": "git push", "workdir": "/repo", "description": "ship", "check": "manual", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
+        self.write_council({"rasci.json": {"work/stage": stage, "operator/greet": greet, "operator/push": push}})
+        arguments = {"kind": "ask", "tool": "Bash", "pattern": "make deploy", "scope": "/repo*", "expires": int(time.time()) + 7 * 86400, "agent": "Skills", "why": "deploy runs after every green gate"}
+        self.assertFalse(self.tool("rule_request", arguments)["isError"])
+
+    def layout(self, probe: dict) -> None:
+        self.assertNotIn("error", probe)
+        self.assertEqual(sorted(probe["kinds"]), ["Ask", "Operator", "Operator", "Regelwunsch", "Review"])
+        self.assertIn(["Ablehnen", "Ablehnen über …"], probe["splits"])
+        self.assertEqual(len(probe["splits"]), 4)
+        self.assertEqual(probe["fields"], ["Art", "Werkzeug (Glob)", "Muster (Glob)", "Verzeichnis (Glob)", "Läuft ab am"])
+        self.assertEqual(probe["dry"], "Trockenlauf: Die Regel hätte 1 von 1 Asks der letzten 7 Tage freigegeben.")
+        self.assertEqual(probe["accept"], 1)
+        self.assertTrue(probe["fits"] and probe["followed"], probe)
+        self.assertEqual((probe["unlabelled"], probe["wide"]), ([], False))
+
+    def test_chromium_runs_a_command_into_its_console_denies_by_call_and_accepts_a_rule(self):
+        self.inbox_work()
+        signer = self.pin()
+        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json")]
+
+        def run_jobs() -> None:
+            if any(job["status"] == "queued" for job in self.httpd.hub.jobs.listed()):
+                subprocess.run([sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, "--once"], capture_output=True, timeout=120, check=False)
+
+        self.beside(run_jobs)
+        private = "".join(line for line in signer.pem.read_text(encoding="utf-8").splitlines() if not line.startswith("-----"))
+        authenticator = {"credentialId": base64.b64encode(signer.raw_id).decode(), "privateKey": private, "rpId": "localhost"}
+        inbox = f"http://localhost:{self.port}/#stream/inbox"
+        steps = [
+            {"width": 1366, "height": 768, "url": inbox, "wait": 1200, "probe": RUN_START, "shot": self.shot("1366-inbox-console-running")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": RUN_HELD, "shot": self.shot("1366-inbox-console-scrolled-up")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": RUN_DONE, "shot": self.shot("1366-inbox-console-done")},
+        ]
+        for width, height in WIDTHS:
+            fresh = f"http://localhost:{self.port}/?{width}#stream/inbox"
+            steps.append({"width": width, "height": height, "url": fresh, "wait": 1200, "probe": LAYOUT, "shot": self.shot(f"{width}-inbox-console")})
+            steps.append({"width": width, "height": height, "url": None, "wait": 0, "probe": DENY_SHEET, "shot": self.shot(f"{width}-inbox-deny-sheet")})
+        steps += [
+            {"width": 1366, "height": 768, "url": inbox, "wait": 1200, "probe": DENY, "shot": self.shot("1366-inbox-deny-undo")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": DENIED, "shot": None},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": ACCEPT, "shot": self.shot("1366-inbox-rule-accepted")},
+        ]
+        data = self.drive(steps, authenticator)
+        (OUT / "chromium-inbox.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        started, held, done, *rest = data["results"]
+        self.assertNotIn("error", started)
+        self.assertIn("wird in", started["toast"])
+        self.assertTrue(started["running"].startswith("läuft"), started)
+        self.assertTrue(started["overflows"] and started["followed"], started)
+        self.assertLess(held["held"], 50, held)
+        self.assertEqual((done["last"], done["lines"], done["followed"]), ("fertig", 81, True))
+        self.assertRegex(done["done"], r"^erledigtExit-Code 0 nach \d+ s$")
+        self.assertIn("Schließen", done["actions"])
+        layouts, sheets = rest[0:6:2], rest[1:6:2]
+        for probe, sheet, (width, _) in zip(layouts, sheets, WIDTHS, strict=True):
+            with self.subTest(width=width):
+                self.layout(probe)
+                self.assertTrue(probe["console"].startswith("erledigtExit-Code 0"), probe)
+                self.assertEqual(sheet["title"], "Ablehnen")
+                self.assertEqual(sheet["channels"], [["post", True], ["call", False], ["newsletter", False], ["broadcast", False], ["pan-pan", False], ["security", False]])
+                self.assertEqual(sheet["hints"][:3], ["an Skills, sobald sein Zug endet", "an Skills, sofort, weckt ihn", "an alle, sobald ihr Zug endet"])
+                self.assertEqual((sheet["reason"], sheet["unlabelled"], sheet["wide"]), (True, [], False))
+        denied, gone, accepted = rest[6:]
+        self.assertTrue(denied["undo"].startswith("Ablehnung (Call): Bash: make deploy"), denied)
+        self.assertFalse(denied["sheet"])
+        self.assertTrue(gone["gone"])
+        self.assertEqual((accepted["toast"], accepted["left"]), ("Angelegt: Regel: ask Bash make deploy in /repo*", False))
+        ask = self.httpd.hub.asks.listed()[0]
+        self.assertEqual((ask["status"], ask["reason"], ask["channel"]), ("denied", "erst das Gate grün machen", "call"))
+        calls = [args for script, args in self.scripts.calls if script.endswith("radio.py")]
+        self.assertEqual(calls[-1][:4], ["send", "call", "--to", "Skills session"])
+        self.assertTrue(calls[-1][-1].endswith("Reason: erst das Gate grün machen"), calls[-1])
+        self.assertEqual([(rule["kind"], rule["pattern"], rule["proof"] is not None) for rule in self.httpd.hub.rules.listed()], [("ask", "make deploy", True)])
+        self.assertEqual([(job["status"], job["code"]) for job in self.httpd.hub.jobs.listed()], [("done", 0)])
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_draws_the_inbox_console_and_the_rule_request_at_three_widths(self):
+        self.inbox_work()
+        now = time.time()
+        fields = {"task": "operator/greet", "command": SLOW, "directory": str(self.outside), "sha256": "", "status": "done", "proof": None}
+        output = "".join(f"Zeile {number}\n" for number in range(1, 81)) + "fertig\n"
+        self.httpd.hub.jobs.add({**fields, "code": 0, "output": output, "created_ts": now - 20, "started": now - 19, "finished": now - 10, "dismissed": False})
+        shots = [(width, height, OUT / f"firefox-{width}-inbox-console.png") for width, height in WIDTHS]
+        steps = [{"width": width, "height": height, "url": f"{self.base}#stream/inbox", "wait": 1200, "probe": LAYOUT, "shot": str(shot)} for width, height, shot in shots]
+        data = self.drive(steps, None, "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
+        (OUT / "firefox-inbox.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        for probe, (width, _, shot) in zip(data["results"], shots, strict=True):
+            with self.subTest(width=width):
+                self.layout(probe)
+                self.assertEqual(probe["console"], "erledigtExit-Code 0 nach 9 s")
+                self.assertTrue(shot.is_file() and shot.stat().st_size > 1000, shot)
 
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
     def test_firefox_walks_every_screen_at_three_widths(self):

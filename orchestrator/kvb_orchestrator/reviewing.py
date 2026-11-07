@@ -66,7 +66,7 @@ class Reviewing:
         page = self.read_page(field(arguments, "page"))
         extra = {"notes": notes, "gate": arguments["gate"], "score": score}
         review = self.reviews.submit({**fields, "title": fields["title"].strip(), **extra}, page, review_files(page))
-        self.automate("review", review, {"item": review_signed(review), "gate": review["gate"]})
+        self.automate("review", review)
         return {"id": review["id"], "status": review["status"], "url": self.url()}
 
     def review_proof(self, review_id: str) -> dict:

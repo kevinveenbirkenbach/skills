@@ -12,7 +12,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install --yes --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install --yes --no-install-recommends git openssl && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --root-user-action=ignore --requirement /app/requirements.txt
@@ -36,8 +36,10 @@ RUN chmod 0755 /opt/voices /opt/whisper
 
 COPY server.py /app/server.py
 COPY kvb_orchestrator /app/kvb_orchestrator
-COPY client/signing.py /app/client/signing.py
+COPY client/signing.py client/passkey.py client/verifier.py /app/client/
 COPY templates /app/templates
 COPY vendor /app/vendor
 
+USER 65534:65534
+HEALTHCHECK CMD ["python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2).close()"]
 ENTRYPOINT ["python3", "/app/server.py"]

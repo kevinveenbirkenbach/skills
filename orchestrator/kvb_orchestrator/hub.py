@@ -12,6 +12,7 @@ from .artifacts import Touched
 from .asking import Asking
 from .batches import Pending
 from .cleanup import Cleaning, Spool
+from .denying import Denying
 from .engines import Engines, Speech
 from .events import Log, Watch
 from .icons import sheet
@@ -23,6 +24,7 @@ from .mcp import Mcp
 from .messaging import Messaging
 from .names import Names
 from .offices import Offices
+from .requesting import Requesting
 from .reviewing import Reviewing
 from .rules import Rules
 from .settings import Settings
@@ -57,7 +59,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Cleaning, Offices, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Denying, Requesting, Cleaning, Offices, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -65,6 +67,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Cleaning, Offices, Inbox
     asks: Ledger
     decisions: Ledger
     messages: Ledger
+    rule_requests: Ledger
     uploads: Path
     host_state: Path
     transcripts: Transcripts
@@ -88,6 +91,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Cleaning, Offices, Inbox
     spool: Spool
     office_spool: Spool
     touched: Touched
+    replay: Path
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -108,6 +112,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         touched=Touched(reviews.stored),
         approvers=approvers,
         speech=Speech(engines, state / "tts"),
+        replay=state / "replay" / "messages.json",
         rules=Ledger(state / "rules.json"),
         jobs=Ledger(state / "jobs.json"),
         marks=Marks(state / "marks.json"),
@@ -126,6 +131,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         asks=Ledger(state / "asks.json"),
         decisions=Ledger(state / "decisions.json"),
         messages=Ledger(state / "messages.json"),
+        rule_requests=Ledger(state / "rule-requests.json"),
         uploads=uploads,
         host_state=host_state,
         transcripts=Transcripts(transcripts),

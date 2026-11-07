@@ -3,22 +3,46 @@ from __future__ import annotations
 import time
 
 from .errors import Conflict, Missing, ToolError
-from .fields import bounded, decode, expect
+from .fields import bounded, decode, expect, field
 from .register import OPERATOR, REGISTER, operator_rows, read_register, runnable
 from .signed import operator_signed
-from .skill_scripts import OPERATOR_SCRIPT
+from .skill_scripts import OPERATOR_SCRIPT, OUTPUT_LIMIT
 
 JOB_OPEN = ("queued", "running")
 RUN_OUTPUT = 64 << 10
+CONSOLE = ("id", "status", "code", "output", "created_ts", "started", "finished")
 
 
 def runner_job(job: dict) -> dict:
     return {**{key: job[key] for key in ("id", "task", "command", "directory", "sha256")}, "proof": job.get("proof")}
 
 
+def console_of(job: dict | None) -> dict | None:
+    return None if job is None else {**{key: job[key] for key in CONSOLE}, "output": job["output"][-OUTPUT_LIMIT:]}
+
+
 class Jobs:
     def open_jobs(self) -> set[str]:
         return {job["task"] for job in self.jobs.listed() if job["status"] in JOB_OPEN}
+
+    def consoles(self) -> dict[str, dict]:
+        latest: dict[str, dict] = {}
+        for job in sorted(self.jobs.listed(), key=lambda job: job["created_ts"]):
+            latest[job["task"]] = job
+        # Trip-wire: jobs queued before the inbox console carry no dismissed key and must not flood the inbox after an upgrade.
+        return {task: job for task, job in latest.items() if job.get("dismissed") is False}
+
+    def dismiss(self, body: bytes) -> dict:
+        payload = decode(body)
+        expect(payload, ("id",))
+        job_id = field(payload, "id")
+        record = self.jobs.get(job_id)
+        if record is None:
+            raise Missing(job_id)
+        if record["status"] in JOB_OPEN:
+            raise Conflict({"id": job_id, "status": record["status"]})
+        self.jobs.change(job_id, {"dismissed": True})
+        return {"id": job_id, "dismissed": True}
 
     def queue_job(self, item: dict, proof: dict | None) -> str:
         row = next((row for row in operator_rows(read_register(self.council / REGISTER)) if row["task"] == item["id"]), None)
@@ -27,7 +51,7 @@ class Jobs:
         if item["id"] in self.open_jobs():
             return "läuft schon"
         job = {"task": row["task"], "command": row["command"], "directory": row["directory"], "sha256": item["sha256"], "status": "queued", "proof": proof}
-        self.jobs.add({**job, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None})
+        self.jobs.add({**job, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None, "dismissed": False})
         return "an den Runner übergeben"
 
     def runner_jobs(self) -> dict:

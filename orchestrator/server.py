@@ -46,8 +46,10 @@
         input off.
     --whisper-model: the ggml model whisper.cpp loads.
     --scratch: writable directory the engines use as HOME and TMPDIR.
-    --approvers: the pinned passkeys, mounted read-only; the hub only lists
-        their ids and algorithms for the page and never verifies or pins.
+    --approvers: the pinned passkeys, mounted read-only; the hub lists their
+        ids and algorithms for the page, never pins, and verifies a signature
+        only for the denials and rules it acts on itself; every other approval
+        its executor verifies.
 """
 
 from __future__ import annotations

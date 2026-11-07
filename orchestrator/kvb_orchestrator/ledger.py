@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import secrets
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from .records import read_json, stamp, write_atomic
@@ -36,6 +37,17 @@ class Ledger:
     def add(self, fields: dict) -> dict:
         with self.changed:
             return self.insert(self.fresh(), fields)
+
+    def add_checked(self, fields: dict, check: Callable[[list[dict]], None]) -> dict:
+        """Args:
+            fields: the record to add.
+            check: raises to refuse the record; it sees every record under
+                the lock the add holds, so parallel callers cannot pass a
+                cap together.
+        """
+        with self.changed:
+            check(self.listed())
+            return self.add(fields)
 
     def get(self, item_id: str) -> dict | None:
         with self.changed:

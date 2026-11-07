@@ -8,7 +8,7 @@ from hub_case import HubCase
 from hub_support import PAGE, SCORE, TREE
 from kvb_orchestrator import handler, mcp
 
-TOOLS = {"review_request", "review_status", "review_wait", "review_list", "decision_request", "decision_wait", "operator_message"}
+TOOLS = {"review_request", "review_status", "review_wait", "review_list", "decision_request", "decision_wait", "rule_request", "rule_request_wait", "operator_message"}
 
 
 class TestHubMcp(HubCase):

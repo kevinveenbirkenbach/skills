@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .council import agent, ordered
+from .council import HUMAN, agent, ordered
 from .fields import ORDER_NAME
 from .records import read_json, shown
 
@@ -43,6 +43,10 @@ def parties(row: dict) -> dict[str, str]:
         if name and isinstance(letters, str):
             found[name] = found.get(name, "") + letters
     return found
+
+
+def adder(row: dict) -> str:
+    return next((name for name, letters in parties(row).items() if "A" in letters and name != HUMAN), "")
 
 
 def is_open(task: str, row: dict, operator: bool) -> bool:

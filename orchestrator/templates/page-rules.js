@@ -1,5 +1,12 @@
+  const RULE_KINDS = {ask: "Ask: Werkzeug + Befehlsmuster", review: "Review: Branch-Muster + Gate grün", decision: "Entscheidung: Empfehlung nehmen"};
+  const RULE_HINTS = {
+    ask: "Gibt passende Asks in passenden Verzeichnissen frei, nie einen Befehl mit Warnung (rm -r, push, --force, sudo, Pipe in eine Shell …). Der Passkey signiert die Regel einmal; der Hook prüft Signatur und Muster selbst.",
+    review: "Gibt Reviews passender Branches und Worktrees frei, nur wenn ihr Gate grün ist. Der Passkey signiert die Regel einmal; der Commit-Skill prüft Signatur und Muster selbst.",
+    decision: "Nimmt bei Entscheidungen passender Agenten die empfohlene Option. Der Passkey signiert die Regel einmal; die Entscheidungen selbst bleiben unsigniert.",
+  };
+
   function rulesScreen() {
-    const kind = h("select", {class: "field", "aria-label": "Art"}, h("option", {value: "ask"}, "Ask: Werkzeug + Befehlsmuster"), h("option", {value: "review"}, "Review: Branch-Muster + Gate grün"), h("option", {value: "decision"}, "Entscheidung: Empfehlung nehmen"));
+    const kind = h("select", {class: "field", "aria-label": "Art"}, Object.entries(RULE_KINDS).map(([value, label]) => h("option", {value}, label)));
     const tool = h("input", {class: "field", type: "text", placeholder: "Bash", value: "Bash"});
     const pattern = h("input", {class: "field", type: "text", placeholder: "make test*"});
     const scope = h("input", {class: "field", type: "text", value: "*", placeholder: "/home/…/Repositories/*"});
@@ -13,11 +20,7 @@
       toolField.hidden = kind.value !== "ask";
       scopeField.hidden = kind.value === "decision";
       pattern.placeholder = {ask: "make test*", review: "feature/*", decision: "* (Agent-Muster)"}[kind.value];
-      hint.textContent = {
-        ask: "Gibt passende Asks in passenden Verzeichnissen frei, nie einen Befehl mit Warnung (rm -r, push, --force, sudo, Pipe in eine Shell …). Der Passkey signiert die Regel einmal; der Hook prüft Signatur und Muster selbst.",
-        review: "Gibt Reviews passender Branches und Worktrees frei, nur wenn ihr Gate grün ist. Der Passkey signiert die Regel einmal; der Commit-Skill prüft Signatur und Muster selbst.",
-        decision: "Nimmt bei Entscheidungen passender Agenten die empfohlene Option; Entscheidungen bleiben unsigniert.",
-      }[kind.value];
+      hint.textContent = RULE_HINTS[kind.value];
     };
     kind.addEventListener("change", sync);
     sync();
@@ -58,7 +61,7 @@
       rule.tool ? h("code", {}, rule.tool) : null,
       h("code", {}, rule.pattern),
       rule.kind === "decision" ? null : h("code", {title: "Verzeichnis"}, rule.scope || "–"),
-      rule.kind === "decision" ? null : pill(rule.signed ? "signiert" : "unsigniert: wirkt nicht", rule.signed ? "ok" : "bad"),
+      pill(rule.signed ? "signiert" : "unsigniert: wirkt nicht", rule.signed ? "ok" : "bad"),
       rule.expires <= now ? pill("abgelaufen", "bad") : h("span", {class: "muted"}, `bis ${absolute.format(stampOf(rule.expires))}`),
       rule.enabled ? pill("aktiv", "ok") : pill("aus", "neutral"),
       h("span", {class: "spacer"}),

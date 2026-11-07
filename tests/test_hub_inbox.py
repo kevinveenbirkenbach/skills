@@ -31,7 +31,7 @@ class TestHubInbox(HubCase):
         prepared = self.prepare(batch)
         listed = [signing.item_hash(signing.review_item(green, "/repo/.git", "/repo/.worktrees/feature/x", "feature/x", TREE)), signing.item_hash(signing.ask_item(ask_id, "Bash", "make deploy", "/repo", "s1"))]
         self.assertEqual((prepared["payload"]["items"], prepared["challenge"]), (sorted(listed), signing.challenge(prepared["payload"])))
-        unsigned = [self.entry("decision", decision_id, "Merge now", ""), {**self.entry("ask", risky, "", ""), "verb": "reject"}]
+        unsigned = [self.entry("decision", decision_id, "Merge now", ""), {**self.entry("review", red, "", ""), "verb": "reject"}]
         self.assertIsNone(self.prepare(unsigned)["payload"])
         partial = signer.proof(self.prepare(batch[:1])["payload"], self.origin)
         for proof in (None, partial, {"payload": prepared["payload"]}, {"payload": {**prepared["payload"], "expires": int(time.time()) - 1}, "assertion": {}}):

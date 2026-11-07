@@ -27,9 +27,10 @@ STORED = {
     "files": (".json", "application/json", PLAIN_CSP),
 }
 DECISIONS = {"approve": "approved", "reject": "rejected"}
-INBOX_ROUTE = re.compile(r"/api/inbox/(approve|mark)")
+INBOX_ROUTE = re.compile(r"/api/inbox/(approve|mark|dismiss)")
 UNDO_ROUTE = re.compile(r"/api/inbox/undo/([0-9a-f]{16})")
 RULE_ROUTE = re.compile(r"/api/rules/([0-9a-f]{16})/(enable|disable|delete)")
+REQUEST_ROUTE = re.compile(r"/api/rule-requests/([0-9a-f]{16})/(sign|accept)")
 RUNNER_ROUTE = re.compile(r"/api/runner/([0-9a-f]{16})/(claim|report)")
 PROOF_ROUTE = re.compile(r"/api/reviews/([0-9a-f]{16})")
 SIGN_ROUTE = "/api/sign"
@@ -122,8 +123,15 @@ class Handler(Exchange):
         inbox = INBOX_ROUTE.fullmatch(path)
         undo = UNDO_ROUTE.fullmatch(path)
         rule = RULE_ROUTE.fullmatch(path)
+        request = REQUEST_ROUTE.fullmatch(path)
         if inbox and inbox.group(1) == "approve":
             return lambda body: self.answer(lambda: hub.approve(body), HTTPStatus.ACCEPTED)
+        if inbox and inbox.group(1) == "dismiss":
+            return lambda body: self.answer(lambda: hub.dismiss(body), HTTPStatus.OK)
+        if request and request.group(2) == "sign":
+            return lambda _body: self.answer(lambda: hub.sign_request(request.group(1)), HTTPStatus.OK)
+        if request:
+            return lambda body: self.answer(lambda: hub.accept_request(request.group(1), body), HTTPStatus.CREATED)
         if path == SIGN_ROUTE:
             return lambda body: self.answer(lambda: hub.sign(body), HTTPStatus.OK)
         if path == RULE_SIGN_ROUTE:
@@ -151,7 +159,7 @@ class Handler(Exchange):
         return None
 
     def posted(self, path: str) -> bool:
-        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, RUNNER_ROUTE))
+        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE))
 
     def runner(self, path: str, body: bytes) -> None:
         hub = self.server.hub

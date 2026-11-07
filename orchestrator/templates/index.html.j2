@@ -403,6 +403,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 .graph3d .scene-container { position: relative; }
 .float-tooltip-kap { position: absolute; z-index: 9; padding: 4px 8px; border-radius: 6px; background: var(--glass-card); color: var(--text); font-size: var(--fs-sm); white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
 {% include "style-hierarchy.css" %}
+
+{% include "style-inbox.css" %}
 </style>
 </head>
 <body>
@@ -471,6 +473,12 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-screens.js" %}
 
 {% include "page-inbox.js" %}
+
+{% include "page-console.js" %}
+
+{% include "page-deny.js" %}
+
+{% include "page-rule-request.js" %}
 
 {% include "page-review.js" %}
 

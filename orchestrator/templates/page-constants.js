@@ -9,7 +9,7 @@
   const PART_TONES = {user: "info", assistant: "ok", tool_call: "violet", tool_result: "teal", system: "neutral"};
   const KIND_TONES = {radio: "teal", review: "info", ask: "warn", decision: "violet", operator: "bad", register: "neutral", rename: "info", cron: "teal", rule: "ok", approval: "ok", run: "info", transcript: "neutral"};
   const VIEW_ICONS = {"fuer-dich": "bi-person-check", funk: "bi-broadcast", arbeit: "bi-briefcase", transkripte: "bi-chat-left-text"};
-  const ITEM_LABELS = {review: "Review", ask: "Ask", decision: "Entscheidung", operator: "Operator"};
+  const ITEM_LABELS = {review: "Review", ask: "Ask", decision: "Entscheidung", operator: "Operator", rule: "Regelwunsch"};
   const NIGHT = {day: ["Tag", "ok"], evening: ["Abend", "warn"], sunset: ["Nacht", "violet"]};
   const ACTIONS = [["clear-mayday", "Mayday aufheben", "Die Funkstille des aktiven Maydays aufheben?"], ["evening", "Abend", "Alle Agenten in den Abend schicken (kvb-agent-relax)?"], ["sunset", "Sonnenuntergang", "Alle Agenten schlafen legen (kvb-agent-sleep)?"], ["sunrise", "Sonnenaufgang", "Alle Agenten wecken (kvb-agent-wakeup)?"]];
   const UPLOAD_LIMIT = 50 * 1024 * 1024;

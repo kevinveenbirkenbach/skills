@@ -5,18 +5,26 @@ import time
 
 from .errors import Conflict, Missing, ToolError
 from .fields import COMMAND_LIMIT, PATH_LIMIT, bounded, decode, expect
-from .signed import signing
+from .signed import ask_signed, passkey, review_signed, signing, verifier
 
 RULE_KINDS = ("ask", "review", "decision")
 
 
 def rule_matches(rule: dict, kind_name: str, subject: dict, now: float) -> bool:
-    if not rule["enabled"] or rule["expires"] <= now or rule["kind"] != kind_name:
+    proof = rule.get("proof")
+    if not rule["enabled"] or rule["expires"] <= now or rule["kind"] != kind_name or proof is None:
         return False
     if kind_name == "decision":
         return subject["recommended"] != "" and fnmatch.fnmatchcase(subject["agent"], rule["pattern"])
-    proof = rule.get("proof")
-    return proof is not None and signing.rule_allows(proof["payload"], subject["item"], subject["gate"], now)
+    return signing.rule_allows(proof["payload"], subject["item"], subject["gate"], now)
+
+
+def subject_of(kind_name: str, record: dict) -> dict:
+    if kind_name == "ask":
+        return {"item": ask_signed(record), "gate": ""}
+    if kind_name == "review":
+        return {"item": review_signed(record), "gate": record.get("gate", "")}
+    return {"recommended": record["recommended"], "agent": record["agent"]}
 
 
 def rule_fields(raw: dict, now: float) -> dict:
@@ -34,38 +42,58 @@ def rule_fields(raw: dict, now: float) -> dict:
     return {"kind": kind_name, "tool": tool_name, "pattern": pattern, "scope": scope, "expires": int(expires)}
 
 
+def signed_fields(rule: object, now: float) -> dict:
+    try:
+        signing.checked_rule(rule, now)
+    except signing.Refused as error:
+        raise ToolError(f"rule: {error}") from None
+    if len(rule["kinds"]) != 1:
+        raise ToolError("a rule names exactly one kind")
+    fields = rule_fields({**{name: rule[name] for name in ("tool", "pattern", "scope", "expires")}, "kind": rule["kinds"][0]}, now)
+    if fields["tool"] != rule["tool"]:
+        raise ToolError("tool must not carry surrounding blanks")
+    return fields
+
+
 class Rules:
+    def rule_offer(self, fields: dict) -> dict:
+        rule = signing.rule_payload(self.rules.fresh(), [fields["kind"]], fields["tool"], fields["pattern"], fields["scope"], fields["expires"])
+        return {"payload": rule, "challenge": signing.challenge(rule), "credentials": [key["id"] for key in self.keys()]}
+
+    def proven_rule(self, rule: dict, assertion: object) -> dict:
+        """Args:
+            rule: the rule payload, already checked by signed_fields.
+            assertion: the passkey assertion over its challenge.
+
+        Returns:
+            The proof to store. The hub verifies it itself, since it settles
+            matching items by the rule.
+        """
+        try:
+            passkey.verify_assertion(assertion, rule, verifier.pinned(self.approvers), signing.origin_of(self.public_port))
+        except signing.Refused as error:
+            raise ToolError(f"nicht signiert: {error}") from None
+        return {"payload": rule, "assertion": assertion}
+
+    def store_rule(self, rule: dict, fields: dict, proof: dict, enabled: bool, now: float) -> dict:
+        return self.rules.insert(rule["id"], {**fields, "expires": float(fields["expires"]), "enabled": enabled, "created_ts": now, "proof": proof})
+
     def sign_rule(self, body: bytes) -> dict:
         payload = decode(body)
         expect(payload, ("kind", "tool", "pattern", "scope", "expires"))
-        fields = rule_fields(payload, time.time())
-        rule = signing.rule_payload(self.rules.fresh(), [fields["kind"]], fields["tool"], fields["pattern"], fields["scope"], fields["expires"])
-        credentials = [key["id"] for key in self.keys()]
-        return {"payload": rule, "challenge": signing.challenge(rule), "sign": fields["kind"] != "decision", "credentials": credentials}
+        return {**self.rule_offer(rule_fields(payload, time.time())), "sign": True}
 
     def add_rule(self, body: bytes) -> dict:
         payload = decode(body)
         expect(payload, ("rule", "assertion", "enabled"))
-        rule, assertion = payload["rule"], payload["assertion"]
+        rule = payload["rule"]
         now = time.time()
-        try:
-            signing.checked_rule(rule, now)
-        except signing.Refused as error:
-            raise ToolError(f"rule: {error}") from None
-        if len(rule["kinds"]) != 1:
-            raise ToolError("a rule names exactly one kind")
-        fields = rule_fields({**{name: rule[name] for name in ("tool", "pattern", "scope", "expires")}, "kind": rule["kinds"][0]}, now)
-        if fields["tool"] != rule["tool"]:
-            raise ToolError("tool must not carry surrounding blanks")
-        signed = fields["kind"] != "decision"
-        if not (isinstance(assertion, dict) if signed else assertion is None):
-            raise ToolError("an ask or review rule carries the passkey assertion; a decision rule carries null")
+        fields = signed_fields(rule, now)
         if not isinstance(payload["enabled"], bool):
             raise ToolError("enabled must be true or false")
         if self.rules.get(rule["id"]) is not None:
             raise Conflict({"id": rule["id"], "status": "exists"})
-        proof = {"payload": rule, "assertion": assertion} if signed else None
-        return self.rules.insert(rule["id"], {**fields, "expires": float(fields["expires"]), "enabled": payload["enabled"], "created_ts": now, "proof": proof})
+        return self.store_rule(rule, fields, self.proven_rule(rule, payload["assertion"]), payload["enabled"], now)
 
     def rule_action(self, rule_id: str, verb: str) -> dict:
         if verb == "delete":

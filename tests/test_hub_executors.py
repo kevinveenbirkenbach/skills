@@ -69,7 +69,8 @@ class TestHubExecutors(HubCase):
         self.assertEqual([(job["task"], job["command"], job["directory"], job["sha256"]) for job in queued], [("operator/greet", command, str(self.outside), digest)])
         proof = queued[0]["proof"]
         self.assertIn(signing.item_hash(signing.operator_item("operator/greet", command, str(self.outside))), proof["payload"]["items"])
-        self.assertNotIn("operator/greet", [item["id"] for item in self.snapshot()["inbox"]])
+        row = next(item for item in self.snapshot()["inbox"] if item["id"] == "operator/greet")
+        self.assertEqual((row["runnable"], row["job"]["status"]), (False, "queued"))
         self.run_runner()
         job = self.snapshot()["jobs"][-1]
         self.assertEqual((job["status"], job["code"], job["output"]), ("done", 0, "hello\nworld\n"))
@@ -148,6 +149,8 @@ class TestHubExecutors(HubCase):
         signed = signer.assertion(ask_rule["payload"], self.origin, "localhost", PRESENT, 0)
         for payload, assertion in (
             (ask_rule["payload"], None),
+            (ask_rule["payload"], {}),
+            (ask_rule["payload"], key(-8, "stranger").assertion(ask_rule["payload"], self.origin, "localhost", PRESENT, 0)),
             ({**ask_rule["payload"], "kinds": ["ask", "review"]}, signed),
             ({**ask_rule["payload"], "expires": now + 400 * 86400}, signed),
             ({**ask_rule["payload"], "id": "x"}, signed),
@@ -160,12 +163,13 @@ class TestHubExecutors(HubCase):
         review_rule = prepared({"kind": "review", "tool": "", "pattern": "feature/*", "scope": "/repo/*", "expires": now + 3600})
         self.assertEqual(created(review_rule["payload"], signer.assertion(review_rule["payload"], self.origin, "localhost", PRESENT, 0))[0], 201)
         decision_rule = prepared({"kind": "decision", "tool": "", "pattern": "*", "scope": "*", "expires": now + 3600})
-        self.assertFalse(decision_rule["sign"])
+        self.assertTrue(decision_rule["sign"])
         self.assertEqual(created(decision_rule["payload"], signed)[0], 400)
-        self.assertEqual(created(decision_rule["payload"], None)[0], 201)
+        self.assertEqual(created(decision_rule["payload"], None)[0], 400)
+        self.assertEqual(created(decision_rule["payload"], signer.assertion(decision_rule["payload"], self.origin, "localhost", PRESENT, 0))[0], 201)
         forged_rule = prepared({**rule, "pattern": "cargo *"})
-        self.assertEqual(created(forged_rule["payload"], key(-8, "stranger").assertion(forged_rule["payload"], self.origin, "localhost", PRESENT, 0))[0], 201)
-        self.assertEqual(sorted((entry["kind"], entry["signed"]) for entry in self.snapshot()["rules"]), [("ask", True), ("ask", True), ("decision", False), ("review", True)])
+        self.assertEqual(created(forged_rule["payload"], key(-8, "stranger").assertion(forged_rule["payload"], self.origin, "localhost", PRESENT, 0))[0], 400)
+        self.assertEqual(sorted((entry["kind"], entry["signed"]) for entry in self.snapshot()["rules"]), [("ask", True), ("decision", True), ("review", True)])
         with mock.patch.object(batches, "UNDO", 0.05):
             matched = self.create_ask(ASK)
             risky = self.create_ask({**ASK, "command": "make deploy && git push"})
@@ -177,17 +181,14 @@ class TestHubExecutors(HubCase):
             chosen = self.decision("Wait")
             plain = self.decision("")
             self.settle(lambda: self.ask_status(matched, "0") == "allowed")
-            self.settle(lambda: self.ask_status(cargo, "0") == "allowed")
             self.settle(lambda: self.status(green) == "approved")
             self.settle(lambda: self.choice(chosen) == "Wait")
             time.sleep(0.3)
-        self.assertEqual([self.ask_status(ask, "0") for ask in (risky, other, outside)], ["pending", "pending", "pending"])
+        self.assertEqual([self.ask_status(ask, "0") for ask in (risky, other, outside, cargo)], ["pending", "pending", "pending", "pending"])
         self.assertEqual((self.status(red), self.choice(plain)), ("pending", None))
-        self.assertEqual(len(self.events("kinds=rule")["events"]), 4)
+        self.assertEqual(len(self.events("kinds=rule")["events"]), 3)
         hook = self.trust("hook")
         verifier.check(json.loads(self.get(f"/api/asks/{matched}?wait=0")[2])["proof"], signing.ask_item(matched, "Bash", "make deploy", "/repo", "s1"), "", hook, time.time())
-        with self.assertRaisesRegex(signing.Refused, "not pinned"):
-            verifier.check(json.loads(self.get(f"/api/asks/{cargo}?wait=0")[2])["proof"], signing.ask_item(cargo, "Bash", "cargo build", "/repo", "s1"), "", hook, time.time())
         relayed = json.loads(self.get(f"/api/reviews/{green}")[2])["proof"]
         commit = signing.review_item(green, "/repo/.git", "/repo/.worktrees/feature/x", "feature/x", TREE)
         verifier.check(relayed, commit, "pass", self.trust("commit"), time.time())
