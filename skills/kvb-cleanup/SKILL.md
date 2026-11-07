@@ -31,7 +31,8 @@ rules forbidding raw commands.
 - **Docker**, **worktrees**: read `docker.md` (its `⚠ Volumes` checklist
   joins Step 4) and `worktrees.md` next to this file when present. Only at
   watch stage `warn` or worse, or with worktrees among the biggest consumers:
-  `kvb-git-orphans-find --sizes`, its largest orphaned worktrees as candidates.
+  `kvb-git-worktree-orphans --sizes`, its largest orphaned worktrees as
+  candidates.
 - **Agent dirs**: pip, npm, pre-commit, act, gh, buildx caches; Ansible and
   build temp dirs.
 - **Register**: `council.py list --long`; `rasci.py artifacts` (`kvb-org-artefacts`,

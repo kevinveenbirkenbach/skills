@@ -24,7 +24,7 @@ class TestDreamSkill(unittest.TestCase):
         text = SKILL.read_text(encoding="utf-8")
         self.assertIn("name: kvb-dream", text)
         self.assertIn("multiSelect: false", text)
-        for skill in ("`kvb-optimize`", "`kvb-cleanup`", "`kvb-git-branch-gc`"):
+        for skill in ("`kvb-optimize`", "`kvb-cleanup`", "`kvb-git-gc`"):
             self.assertIn(skill, text)
 
     def test_optimize_covers_every_optimization_skill(self):

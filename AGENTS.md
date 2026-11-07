@@ -26,6 +26,14 @@ distributions.
   natively from v2.1.277; Gemini CLI once its `context.fileName` setting
   lists `AGENTS.md`.
 
+## Scope against package-manager
+
+Deterministic logic an operator could run without an agent (branches,
+worktrees, cleanups, releases) lives in
+[package-manager](https://github.com/kevinveenbirkenbach/package-manager) as
+a `pkgmgr` command with its tests, never as a script in a skill. A skill
+wrapping it holds only the agent discipline: claims, picks, handover.
+
 ## Code questions
 
 Ask the codebase-memory-mcp graph first (`search_graph`, `trace_path`,

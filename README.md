@@ -55,8 +55,11 @@ flowchart LR
   git --> git_pr_create[kvb-git-pr-create]
   git --> git_pr_label[kvb-git-pr-label]
   git --> git_update_branches[kvb-git-update-branches]
-  git --> git_branch_gc[kvb-git-branch-gc]
-  git --> git_orphans_find[kvb-git-orphans-find]
+  git --> git_branch_cleanup[kvb-git-branch-cleanup]
+  git --> git_worktree_cleanup[kvb-git-worktree-cleanup]
+  git --> git_gc[kvb-git-gc]
+  git --> git_worktree_up[kvb-git-worktree-up]
+  git --> git_worktree_orphans[kvb-git-worktree-orphans]
   release --> release_changelog[kvb-release-changelog]
   release --> release_article[kvb-release-article]
   release --> release_post[kvb-release-post]
@@ -164,8 +167,11 @@ flowchart LR
     pr_create[kvb-git-pr-create]
     pr_label[kvb-git-pr-label]
     update_branches[kvb-git-update-branches]
-    branch_gc[kvb-git-branch-gc]
-    orphans_find[kvb-git-orphans-find]
+    branch_cleanup[kvb-git-branch-cleanup]
+    worktree_cleanup[kvb-git-worktree-cleanup]
+    git_gc[kvb-git-gc]
+    worktree_up[kvb-git-worktree-up]
+    worktree_orphans[kvb-git-worktree-orphans]
     hotfix[kvb-git-hotfix]
     git_push[kvb-git-push]
     git_diff[kvb-git-diff]
@@ -287,11 +293,16 @@ flowchart LR
 
   coordinate --> democracy
   cleanup --> democracy
-  cleanup --> orphans_find
-  branch_gc --> democracy
-  orphans_find --> branch_gc
-  orphans_find --> choice
-  orphans_find --> operator
+  cleanup --> worktree_orphans
+  branch_cleanup --> democracy
+  worktree_cleanup --> branch_cleanup
+  git_gc --> branch_cleanup
+  git_gc --> worktree_cleanup
+  worktree_up --> democracy
+  worktree_up --> rasci
+  worktree_orphans --> git_gc
+  worktree_orphans --> choice
+  worktree_orphans --> operator
   funnel --> democracy
   funnel --> dialectic
   funnel --> subagent_model
@@ -302,7 +313,7 @@ flowchart LR
   unify --> funnel
   unify --> rasci
   unify --> gate
-  unify --> branch_gc
+  unify --> branch_cleanup
   unify --> cleanup
   unify --> radio
   status_matrix --> rasci
@@ -349,7 +360,7 @@ flowchart LR
   dream --> dialectic
   dream --> optimize
   dream --> cleanup
-  dream --> orphans_find
+  dream --> worktree_orphans
   optimize --> skill_cleanup
   optimize --> transcend
   optimize --> autoskill
@@ -409,6 +420,18 @@ flowchart LR
   test --> clean
   refactor --> clean
 ```
+
+## pkgmgr wrappers 🔗
+
+These `git` skills are thin wrappers: the [pkgmgr](https://github.com/kevinveenbirkenbach/package-manager#worktrees-and-garbage-collection) command holds the logic, the skill adds claims, picks and the operator handover.
+
+| Skill | pkgmgr command |
+| --- | --- |
+| `kvb-git-worktree-up` | [`pkgmgr worktree up`](https://github.com/kevinveenbirkenbach/package-manager#worktrees-and-garbage-collection) |
+| `kvb-git-worktree-cleanup` | [`pkgmgr worktree cleanup`](https://github.com/kevinveenbirkenbach/package-manager#worktrees-and-garbage-collection) |
+| `kvb-git-branch-cleanup` | [`pkgmgr branch cleanup`](https://github.com/kevinveenbirkenbach/package-manager#worktrees-and-garbage-collection), `pkgmgr branch purge` |
+| `kvb-git-gc` | [`pkgmgr gc`](https://github.com/kevinveenbirkenbach/package-manager#worktrees-and-garbage-collection) |
+| `kvb-git-worktree-orphans` | [`pkgmgr worktree orphans`](https://github.com/kevinveenbirkenbach/package-manager#worktrees-and-garbage-collection) |
 
 ## Requirements 📦
 

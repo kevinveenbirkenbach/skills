@@ -1,42 +1,44 @@
 ---
-name: kvb-git-branch-gc
+name: kvb-git-branch-cleanup
 description: >
-  Remove merged branches and worktrees with `pkgmgr branch gc` after a dry
-  run the operator picks from. Trigger on "branches aufräumen",
-  "worktrees aufräumen".
+  Remove merged branches no worktree holds.
 ---
 
-`pkgmgr branch gc` decides what is merged and does the removing; this skill
-decides what may go and who has to agree first. The dry run changes nothing,
-and nothing is removed before the operator's pick in this run.
+`pkgmgr branch cleanup` decides what is merged and does the removing; this
+skill decides what may go and who has to agree first. The dry run changes
+nothing, and nothing is removed before the operator's pick in this run. The
+`kvb-git-worktree-cleanup` and `kvb-git-gc` skills run these steps with their
+own command.
 
 ## Step 0: claim and chair
 
-1. Claim `work/branch-gc-<repo>`, or `work/branch-gc-all` for every
+1. Claim `work/branch-cleanup-<repo>`, or `work/branch-cleanup-all` for every
    repository, through the `kvb-org-organize` skill.
-2. The apply takes stacks down and ends with a host-wide
-   `docker image prune -f` and `docker builder prune -f`, which reach every
-   session's images and build cache. When another session holds the chair,
-   request the grant (what, where, how long) and wait for it; the prune never
-   runs during a peer's build.
+2. The apply ends with a host-wide `docker image prune -f` and
+   `docker builder prune -f`, which reach every session's images and build
+   cache. When another session holds the chair, request the grant (what,
+   where, how long) and wait for it; the prune never runs during a peer's
+   build.
 
 ## Step 1: dry run
 
-`pkgmgr branch gc --json --sizes --min-age 24 --merged-into <line>`, one
+`pkgmgr branch cleanup --json --min-age 24 --merged-into <line>`, one
 `--merged-into` per integration line the project merges features into
 (default branch excluded, it always counts), with `--all` only when the
-operator asked for every repository, output to `/tmp/branch-gc-<N>.json`. A
-line is protected, and a checkout at its tip stays as fresh work; an item
+operator asked for every repository, output to `/tmp/branch-cleanup-<N>.json`.
+A line is protected, and a checkout at its tip stays as fresh work; an item
 merged into a line names it in `merged_into`. No `git fetch` of your own
-before it: gc fetches without auto-maintenance, while a plain fetch on git
+before it: pkgmgr fetches without auto-maintenance, while a plain fetch on git
 2.50 or later may prune the sandbox's bind-mount stubs. Every repository's
-`warnings` (a failed fetch) go to the top of the plan. Sort the items:
+`warnings` (a failed fetch) go to the top of the plan; `forge unavailable`
+skips every item: hand the operator the dry run for the host. Sort the items:
 
-- **Candidates**: `state` `merged-clean`, non-empty `actions`, and `skip`
-  null or `lock: liveness unknown`.
-- **Step 5**: `state` `unmerged` or `dirty`.
-- **Reported only**: `protected`, every other `skip`, and `stale` as one count
-  per repository.
+- **Candidates**: non-empty `actions`, and `skip` null or
+  `lock: liveness unknown`.
+- **Step 5**: `state` `unmerged` or `dirty` without `actions`.
+- **Reported only**: `protected`, every other `skip` (`checked out in
+  worktree <path>` belongs to `kvb-git-gc`), and `stale` as one count per
+  repository.
 
 Never override a state: a branch without own commits is `unmerged` even
 though git sees its tip on the default branch, because it is fresh work.
@@ -59,8 +61,8 @@ Then ask with `AskUserQuestion`:
 
 - **Call 1** (`multiSelect: true`): the candidates, grouped by repository,
   nothing preselected. Each description names `merged_by` and every action
-  (stack with volumes, the `images`, worktree, local and remote branches), and
-  `lock checked at apply` where liveness was unknown.
+  (hook, stack with volumes, the `images`, worktree, local and remote
+  branches), and `lock checked at apply` where liveness was unknown.
 - **Call 2** (`multiSelect: false`): `Apply: <n> items (Recommended)`,
   `Revise the selection`, `Abort`. Revise repeats call 1.
 
