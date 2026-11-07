@@ -124,8 +124,9 @@ from three views down to any agent, branch or artefact.
 22. **Organisation update**: a new skill `kvb-org-update` tells every agent
     and client which skills changed and how to use them, as one
     `newsletter` per update; phase 1 announces the radio change through it.
-23. **Phase 5** (23 to 38 operator-confirmed 2026-11-07): the console output shows under "Ausführen"; a deny picks its
-    channel (default `post`); agents request auto-approval rules through the
+23. **Phase 5** (23 to 42 operator-confirmed 2026-11-07): the console
+    output shows under "Ausführen" (Run); a deny picks its channel (default
+    `post`); agents request auto-approval rules through the
     inbox; the rules form and the Ort fields never overlap; the radio plays
     with one line per station and highlights the speaking agent; the
     operator composer sends text or voice, recorded, transcribed locally with
@@ -196,15 +197,31 @@ from three views down to any agent, branch or artefact.
     and v2.3.0 has no `branch tree`, so no tree file exists. The Tree names
     that cause and the operator step (the pkgmgr release) instead of a bare
     "Kein Tree"; with pkgmgr 2.4.0 released the timer writes the file.
-37. **Resources**: a tab Ressourcen shows charts on the shared time axis:
+37. **Resources**: a tab Resources shows charts on the shared time axis:
     tokens per agent and accumulated (from the usage fields of the session
     transcripts), and CPU, RAM, disk and load of the host, sampled by a host
     unit into the state directory; several values per chart.
 38. **Order of phase 6**: serial subtrees, each in its own worktree under
-    `kvb-org-robot`, merged into master before the next starts: S1 fixes
-    (fit, rename once, radio, squelch, tree cause) → S2 popups and search →
-    S3 faces → S4 night commands → S5 Tasks with asks and choices → S6
-    Firewall → S7 Resources.
+    `kvb-org-robot`, merged into master before the next starts: S0 English
+    and radio speech → S1 fixes (fit, rename once, radio, squelch, tree
+    cause) → S2 popups and search → S3 faces → S4 night commands → S5 Tasks
+    with asks and choices → S6 Firewall → S7 Resources.
+39. **Sécurité**: the class `security` keeps its id and shows as "Sécurité";
+    the radio speaks it as in maritime radio, "say-cure-ee-tay", three times.
+40. **Hashes spoken**: a hex run of 7 or more characters with at least one
+    letter and one digit (commit, session and message ids) is spoken in the
+    NATO alphabet, one character at a time (alfa, bravo, charlie, delta,
+    echo, foxtrot and the digits of decision 41).
+41. **Digits spoken**: every digit is spoken on its own in ICAO radio
+    pronunciation: zero, one, two, tree, four, fife, six, seven, eight,
+    niner; `42305` is "four two tree zero fife". Only the spoken text
+    changes; the displayed text keeps the digits and hashes.
+42. **English**: the whole skills repository is English: every orchestrator
+    label, message, spoken text, script output, document and test string
+    (Regeln → Firewall, Hierarchie → Hierarchy, Ressourcen → Resources,
+    Steuerung → Controls, Ausführen → Run). Kept: trigger phrases in skill
+    descriptions that quote what the operator says in German, and the rule
+    that agents answer the operator in the operator's language.
 
 ## Approach
 
@@ -254,7 +271,7 @@ flowchart TD
     VF -- "👍 fits" --> D1["🏁 Full gate, commit with operator OK, push hand-over"]
 ```
 
-Phases 5 and 6 (decisions 23 to 38):
+Phases 5 and 6 (decisions 23 to 42):
 
 ```mermaid
 flowchart TD
@@ -266,16 +283,17 @@ flowchart TD
     end
     W4 --> L1
     subgraph L["👂 6.0 · Listen and record"]
-        L1["❓ kvb-think-listen: names, Firewall writes, choices, groups"] --> L2["📋 Decisions 24 to 38 in this file on master"]
+        L1["❓ kvb-think-listen: names, Firewall writes, choices, groups"] --> L2["📋 Decisions 24 to 42 in this file on master"]
     end
-    L2 --> S1
-    subgraph S["🤖 6.1 to 6.7 · Serial subtrees under kvb-org-robot"]
-        S1["🩹 S1 fit, rename once, radio, squelch, tree cause"] --> S2["🪟 S2 agent and node popups, search"]
+    L2 --> S0
+    subgraph S["🤖 6.0 to 6.7 · Serial subtrees under kvb-org-robot"]
+        S0["🇬🇧 S0 English, Sécurité, NATO hashes, ICAO digits"] --> S1["🩹 S1 fit, rename once, radio, squelch, tree cause"]
+        S1 --> S2["🪟 S2 agent and node popups, search"]
         S2 --> S3["🙂 S3 animated faces"]
         S3 --> S4["🌙 S4 drain, suspend, resume"]
         S4 --> S5["🗳️ S5 Tasks with asks and choices"]
         S5 --> S6["🧱 S6 Firewall and settings writes"]
-        S6 --> S7["📈 S7 Ressourcen charts"]
+        S6 --> S7["📈 S7 Resources charts"]
     end
     subgraph G["🔁 Each subtree"]
         G1["🔴 Red tests"] --> G2["🛠️ Change"]
@@ -499,6 +517,17 @@ flowchart TD
 - [ ] `rasci.py agents order` writes only `agent-order.json` and no `--prio`.
 - [ ] W1 to W4 are merged into master, each commit with its score block.
 
+### Phase 6: English and radio speech (S0)
+
+- [ ] The text handed to the speech engine for a `security` row starts with
+      "say-cure-ee-tay" three times; the page shows "Sécurité".
+- [ ] `8e180be` is spoken "eight echo one eight zero bravo echo" and
+      `42305` "four two tree zero fife" (unit test on the pronunciation step);
+      the displayed line is unchanged.
+- [ ] A scan of the tree finds no German UI, message or document text
+      outside quoted trigger phrases (test with an allowlist of those
+      phrases).
+
 ### Phase 6: fixes (S1)
 
 - [ ] `#agents/orbit` at 1920, 1366 and 390 px has
@@ -557,7 +586,7 @@ flowchart TD
       passkey check, only to a listed file, with a backup beside it; a forged,
       replayed or unlisted-file job changes nothing (unit tests).
 
-### Phase 6: Ressourcen (S7)
+### Phase 6: Resources (S7)
 
 - [ ] The tab shows tokens per agent and accumulated, and CPU, RAM, disk and
       load, on the shared time axis, several values per chart.
@@ -579,8 +608,10 @@ flowchart TD
         item and a branch name with pattern characters are each refused.
   - [ ] Orchestrator: the scratch-HOME migration, routing including old
         hashes, badge counts.
-  - [ ] Phase 6: rename-once timeline, squelch scheduler, face generator,
-        settings writer (forged, replayed, unlisted file), token sums.
+  - [ ] Phase 6: pronunciation (Sécurité, NATO hashes, ICAO digits),
+        rename-once timeline, squelch scheduler, face generator, settings
+        writer (forged, replayed, unlisted file), token sums, German text
+        scan.
 - **Integration**
   - [ ] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's
@@ -602,4 +633,4 @@ flowchart TD
         runs the delete flow: dry-run dialog, signature, result.
   - [ ] Phase 6: no page scrollbar on any view, agent and node popups,
         choice request and signed answer, Firewall settings diff and
-        signature, Ressourcen charts, each at 1920, 1366 and 390 px.
+        signature, Resources charts, each at 1920, 1366 and 390 px.
