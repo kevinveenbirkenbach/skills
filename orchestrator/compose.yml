@@ -44,10 +44,8 @@ services:
       - /projects
       - --templates
       - /app/templates
-      - --repos
-      - "${KVB_ORCHESTRATOR_REPOS:?written into .env by scripts/install.sh}"
-      - --worktrees
-      - "${KVB_ORCHESTRATOR_WORKTREES:?written into .env by scripts/install.sh}"
+      - --tree-file
+      - /tree/branch-tree.json
       - --timers
       - /timers
       - --llm-url
@@ -100,14 +98,9 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: "${KVB_ORCHESTRATOR_REPOS:?written into .env by scripts/install.sh}"
-        target: "${KVB_ORCHESTRATOR_REPOS:?written into .env by scripts/install.sh}"
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${KVB_ORCHESTRATOR_WORKTREES:?written into .env by scripts/install.sh}"
-        target: "${KVB_ORCHESTRATOR_WORKTREES:?written into .env by scripts/install.sh}"
+        # the directory, not the file: pkgmgr replaces the file, and a file mount keeps showing the old inode
+        source: "${KVB_ORCHESTRATOR_TREE:?written into .env by scripts/orchestrator.sh}"
+        target: /tree
         read_only: true
         bind:
           create_host_path: false

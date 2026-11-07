@@ -101,14 +101,19 @@ from three views down to any agent, branch or artefact.
 21. **Delete from the tree**: merged, orphaned branches are deleted by click
     in the Artifacts Tree (phase 4), per item and as "Alle gemergten
     löschen":
-    - **Credentials**: only while KeePassXC is unlocked; it hands pkgmgr the
-      GitHub token through the Secret Service and the SSH key through its SSH
-      agent, and no secret passes the orchestrator container. Rejected: the
-      master password typed into the dialog (secret crosses container and
-      browser), a token-only, local-only delete.
-    - **Scope**: exactly what `pkgmgr branch gc --apply` deletes for a
-      `merged-clean` item (worktree, local and remote branch, compose stack,
-      images); a gc skip reason locks the button. Rejected: local only.
+    - **Credentials**: only while the Secret Service hands pkgmgr the GitHub
+      token, which proves the merge and the missing open pull request; no
+      secret passes the orchestrator container. Rejected: the master password
+      typed into the dialog (secret crosses container and browser), the SSH
+      key through the KeePassXC agent (a local delete pushes nothing;
+      operator 2026-11-06).
+    - **Scope**: local only (operator 2026-11-06): the worktree, the local
+      branch, the compose stack without its volumes and its images of a
+      `merged-clean` item, never a remote branch; a gc skip reason locks the
+      button, and the dry run lists ignored files, any beyond known caches
+      (`__pycache__`, `node_modules`, `.venv`) locking it too. Rejected: what
+      `pkgmgr branch gc --apply` deletes today (remote branch and
+      `compose down -v`).
     - **Confirmation**: the click shows the gc dry-run lines of the chosen
       items, and "Löschen" needs the operator signature (`/api/sign`).
       Rejected: a second click without signature, one click without preview.
@@ -296,8 +301,8 @@ flowchart TD
       without one the file says `forge: unavailable` and "merged by" falls
       back to ancestor and line.
 - [ ] `delete_ready` is true only while the token resolves through the
-      Secret Service and the KeePassXC SSH agent holds a key; otherwise it is
-      false with the reason.
+      Secret Service, which the scan never unlocks; otherwise it is false
+      with the reason.
 - [ ] `--format yaml` prints the same data.
 - [ ] `--output FILE` writes it atomically.
 - [ ] The scan starts no hook, filter, fsmonitor, pager or external diff of a
@@ -305,10 +310,11 @@ flowchart TD
       `core.fsmonitor`).
 - [ ] `pkgmgr branch open|close|drop|gc` rewrite the file when it exists.
 - [ ] The orchestrator install enables a systemd user timer that writes it
-      every 60 s.
+      every 60 s while the page polled within the last 5 min, with pkgmgr
+      built from the newest signed tag.
 - [ ] The orchestrator mounts the file read-only and reads only it.
-- [ ] `hub/kvb_hub/tree.py`'s git scan is gone and no module of the
-      orchestrator starts `git`.
+- [ ] `orchestrator/kvb_orchestrator/tree.py`'s git scan is gone and no
+      module of the orchestrator starts `git`.
 
 ### Agents and Artifacts views
 
@@ -342,8 +348,10 @@ flowchart TD
       and tip sha per item, no command) into a host-mounted job directory and
       holds no git, token or key.
 - [ ] A systemd user path unit verifies the signature on the host and runs
-      `pkgmgr branch gc --apply` for exactly the signed items, matched
-      exactly, never as a pattern.
+      `pkgmgr branch gc --apply --local` for exactly the signed items, matched
+      exactly, never as a pattern; `--local` removes the worktree, the local
+      branch, the compose stack without `-v` and its images, never a remote
+      branch, and needs no SSH key.
 - [ ] The unit refuses, and changes nothing for, an item whose tip or state
       differs from the signed one, an unknown repository, a non-`merged-clean`
       item and a job with a bad or missing signature, and reports why.

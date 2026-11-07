@@ -2,8 +2,9 @@
 # Usage: orchestrator.sh install | migrate | check | pin <blob> | runner | hook
 #   install  migrate, then copy orchestrator/ to ~/.local/share/kvb-orchestrator,
 #            write its .env, build and start the container, register the MCP
-#            server for Claude Code; re-enable the runner and re-register the
-#            hook when the migration took them over
+#            server for Claude Code, build pkgmgr from the newest signed tag of
+#            PKGMGR_REPO and enable the tree timer; re-enable the runner and
+#            re-register the hook when the migration took them over
 #   migrate  move every trace of the earlier name to the kvb-orchestrator names
 #            once: container, image, code, state, approvals, pinned keys, MCP
 #            server, PermissionRequest hook, runner unit; a second run changes
@@ -31,6 +32,9 @@ SETTINGS="${HOME}/.claude/settings.json"
 LOCAL_SETTINGS="${HOME}/.claude/settings.local.json"
 HOOK_TIMEOUT=110
 RUNNER="${NAME}-runner.service"
+TREE_UNIT="${NAME}-tree"
+TREE_DIR="${HOME}/.local/state/pkgmgr/tree"
+PKGMGR_REPO="${PKGMGR_REPO:-https://github.com/kevinveenbirkenbach/package-manager.git}"
 IMAGE="${NAME}:local"
 FLOOR_GB=15
 FAILED=0
@@ -137,7 +141,7 @@ install_hub() {
 	port="$(port_of "${REPO_ROOT}/orchestrator/.env")"
 	log "skills: starting the Agent Orchestrator on http://localhost:${port}/"
 	rm -rf "${HUB}"
-	mkdir -p "${HUB}" "${STATE}" "${APPROVALS}" "${COUNCIL}" "${HOME}/.claude/projects" "${HOME}/Repositories" "${HOME}/.local/share/worktrees" "${UNITS}" "${APPROVERS}"
+	mkdir -p "${HUB}" "${STATE}" "${APPROVALS}" "${COUNCIL}" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}"
 	chmod 700 "${APPROVERS}"
 	cp -a "${REPO_ROOT}/orchestrator/." "${HUB}/"
 	# Python loads a cached .pyc whose header matches the source mtime and size, and cp -a keeps the mtime: one planted in the sandbox-writable tree would run on the host
@@ -145,8 +149,8 @@ install_hub() {
 	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py"
 	log "skills: the PermissionRequest hook client is ${HUB}/client/permission_hook.py"
 	log "skills: approvals need a pinned passkey: settings, 'Passkey registrieren', then 'make orchestrator-pin CREDENTIAL=<blob>'; until then every executor refuses"
-	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_REPOS=%s\nKVB_ORCHESTRATOR_WORKTREES=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\n' \
-		"$(id -u)" "$(id -g)" "${STATE}" "${COUNCIL}" "${HOME}/.claude/skills" "${HOME}/.claude/projects" "${HOME}/Repositories" "${HOME}/.local/share/worktrees" "${UNITS}" "${APPROVERS}" >>"${HUB}/.env"
+	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\n' \
+		"$(id -u)" "$(id -g)" "${STATE}" "${COUNCIL}" "${HOME}/.claude/skills" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" >>"${HUB}/.env"
 	if ! docker compose --file "${HUB}/compose.yml" up -d --build; then
 		warn "skills: docker compose failed; the Agent Orchestrator stays down until 'make orchestrator-install' succeeds."
 	fi
@@ -162,9 +166,64 @@ install_hub() {
 	fi
 }
 
+# Args: scratch directory. Prints the newest v* tag of PKGMGR_REPO that a fully
+# trusted key signed and unpacks its tree into <scratch>/src. A fresh clone,
+# because the local checkout's config is sandbox-writable and git runs its
+# gpg.program, hooks and fsmonitor on the host.
+fetch_pkgmgr() {
+	local scratch="$1" tag
+	if ! git clone --quiet --bare --filter=blob:none "${PKGMGR_REPO}" "${scratch}/mirror"; then
+		warn "skills: cloning ${PKGMGR_REPO} failed; the tree timer stays off."
+		return 1
+	fi
+	for tag in $(git -C "${scratch}/mirror" tag --list 'v*' --sort=-v:refname); do
+		if git -C "${scratch}/mirror" -c gpg.minTrustLevel=fully verify-tag "${tag}" &>/dev/null; then
+			mkdir "${scratch}/src"
+			git -C "${scratch}/mirror" archive "${tag}" | tar -x -C "${scratch}/src"
+			printf '%s\n' "${tag}"
+			return 0
+		fi
+	done
+	warn "skills: no v* tag of ${PKGMGR_REPO} carries a fully trusted signature; the tree timer stays off."
+	return 1
+}
+
+build_pkgmgr() {
+	local scratch tag venv="${HUB}/pkgmgr" built=1
+	scratch="$(mktemp -d)"
+	if tag="$(fetch_pkgmgr "${scratch}")"; then
+		if ! grep -qs '"tree"' "${scratch}/src/src/pkgmgr/cli/parser/branch_cmd.py"; then
+			warn "skills: pkgmgr ${tag} has no 'branch tree'; the tree timer stays off until a release has it."
+		else
+			rm -rf "${venv}"
+			if python3 -m venv "${venv}" && "${venv}/bin/pip" install --quiet "${scratch}/src[keyring]"; then
+				log "skills: built pkgmgr ${tag} into ${venv}"
+				built=0
+			else
+				warn "skills: installing pkgmgr ${tag} into ${venv} failed; the tree timer stays off."
+			fi
+		fi
+	fi
+	rm -rf "${scratch}"
+	return "${built}"
+}
+
+tree_timer() {
+	if ! has_systemd; then
+		warn "skills: no systemd user session; the pkgmgr tree file stays unwritten."
+		return 0
+	fi
+	build_pkgmgr || return 0
+	cp -f "${HUB}/systemd/${TREE_UNIT}.service" "${HUB}/systemd/${TREE_UNIT}.timer" "${UNITS}/"
+	systemctl --user daemon-reload
+	systemctl --user enable --now "${TREE_UNIT}.timer"
+	log "skills: ${TREE_UNIT}.timer writes ${TREE_DIR}/branch-tree.json every 60 s while the Agent Orchestrator page polls"
+}
+
 install_all() {
 	migrate || return 0
 	install_hub
+	tree_timer
 	if ((TOOK_RUNNER)); then runner || true; fi
 	if ((TOOK_HOOK)); then
 		if [[ -f "${HUB}/client/permission_hook.py" ]]; then hook; else warn "skills: run 'make orchestrator-hook' once the Agent Orchestrator is installed"; fi
@@ -222,6 +281,11 @@ check() {
 		journalctl --user -u "${RUNNER}" -n 10 --no-pager
 	else
 		todo "runner off: make orchestrator-runner"
+	fi
+	if [[ "$(systemctl --user is-active "${TREE_UNIT}.timer" 2>/dev/null || true)" == "active" ]]; then
+		ok "${TREE_UNIT}.timer active"
+	else
+		todo "${TREE_UNIT}.timer off: make orchestrator-install with a signed pkgmgr tag that has 'branch tree'"
 	fi
 	free="$(df --output=avail -BG / | tail -1 | tr -dc '0-9')"
 	if ((free >= FLOOR_GB)); then ok "/ has ${free} GB free"; else fail "/ has ${free} GB free, floor ${FLOOR_GB} GB"; fi
