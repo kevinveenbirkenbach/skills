@@ -53,7 +53,8 @@ def open_below(root: Path, path: Path, flags: int, mode: int) -> int:
       mode: permission bits of a created file.
 
     Returns:
-      The file descriptor of a regular file; the caller closes it.
+      The file descriptor of a regular file with a single link; the caller
+      closes it.
     """
     *dirs, name = parts_below(root, path)
     fd = directory(root, tuple(dirs), bool(flags & os.O_CREAT))
@@ -61,9 +62,10 @@ def open_below(root: Path, path: Path, flags: int, mode: int) -> int:
         file = os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, mode, dir_fd=fd)
     finally:
         os.close(fd)
-    if not stat.S_ISREG(os.fstat(file).st_mode):
+    info = os.fstat(file)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         os.close(file)
-        raise OSError(errno.EINVAL, "not a regular file", str(path))
+        raise OSError(errno.EINVAL, "not a regular file with a single link", str(path))
     return file
 
 

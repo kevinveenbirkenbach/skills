@@ -15,21 +15,22 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime
-import fcntl
 import importlib.util
 import json
 import os
 import re
 import statistics
 import sys
-import tempfile
 from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 
 ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 DB = ROOT / "rasci.json"
 LOCK = ROOT / "rasci.lock"
-COUNCIL = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "council.py"
+FILE_MODE = 0o600
+ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
+COUNCIL = ORGANIZE / "council.py"
 TASK = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$")
 LETTERS = re.compile(r"^(?!.*(.).*\1)[RASCI]+$")
 ORDER = "RASCI"
@@ -75,27 +76,41 @@ def letters_of(*parts: str) -> str:
     return "".join(letter for letter in ORDER if any(letter in part for part in parts))
 
 
+def script(name: str, path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, path)
+    loaded = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(loaded)
+    return loaded
+
+
+nofollow = script("kvb_rasci_nofollow", ORGANIZE / "nofollow.py")
+
+
 def load() -> dict[str, dict]:
     try:
-        return json.loads(DB.read_text(encoding="utf-8"))
+        tasks = json.loads(nofollow.read_text(ROOT, DB))
     except FileNotFoundError:
         return {}
-    except ValueError:
+    except (ValueError, RecursionError):
         fail(f"{DB} is not valid JSON")
+    except OSError as error:
+        fail(f"{DB} is no regular file below {ROOT}: {error.strerror}")
+    if not isinstance(tasks, dict) or not all(isinstance(entry, dict) for entry in tasks.values()):
+        fail(f"{DB} is not an object of task objects")
+    return tasks
 
 
 @contextlib.contextmanager
 def database() -> Iterator[dict[str, dict]]:
-    ROOT.mkdir(parents=True, exist_ok=True)
-    with LOCK.open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with contextlib.ExitStack() as held:
+        try:
+            ROOT.mkdir(parents=True, exist_ok=True)
+            held.enter_context(nofollow.locked(ROOT, LOCK, FILE_MODE, None))
+        except OSError as error:
+            fail(f"cannot lock {LOCK}: {error.strerror}")
         tasks = load()
         yield tasks
-        with tempfile.NamedTemporaryFile(
-            "w", dir=ROOT, prefix=".rasci-", delete=False, encoding="utf-8"
-        ) as tmp:
-            json.dump(tasks, tmp, indent=1, sort_keys=True)
-        os.replace(tmp.name, DB)
+        nofollow.replace(ROOT, DB, json.dumps(tasks, indent=1, sort_keys=True), FILE_MODE)
 
 
 def open_results(entry: dict) -> int:
@@ -152,9 +167,7 @@ def track(task: str, holder: str, status: str, *, description: str | None = None
 def claimed() -> dict[str, dict]:
     if not COUNCIL.is_file():
         return {}
-    spec = importlib.util.spec_from_file_location("council", COUNCIL)
-    council = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(council)
+    council = script("council", COUNCIL)
     live = council.live_sessions()
     rows = {}
     for office, claim in council.claims():

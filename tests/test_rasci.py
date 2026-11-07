@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -35,7 +36,7 @@ class TestRasci(unittest.TestCase):
                 json.dumps({"sessionId": sid, "name": name}), encoding="utf-8"
             )
 
-    def _run(self, *args: str, script: Path = RASCI, sid: str = "s1") -> subprocess.CompletedProcess:
+    def _run(self, *args: str, script: Path = RASCI, sid: str = "s1", timeout: float | None = None) -> subprocess.CompletedProcess:
         env = {
             "PATH": "/usr/bin:/bin",
             "HOME": str(self.home),
@@ -49,6 +50,7 @@ class TestRasci(unittest.TestCase):
             env=env,
             cwd=self.tmp.name,
             check=False,
+            timeout=timeout,
         )
 
     def _out(self, *args: str) -> list[str]:
@@ -332,6 +334,56 @@ class TestRasci(unittest.TestCase):
         for args in (("order", "Gamma,Nobody"), ("order", "Beta,Beta"), ("order", " , ")):
             with self.subTest(args=args):
                 self.assertEqual(self._run(*args).returncode, 2)
+
+    def test_a_symlinked_register_is_refused_and_never_copied_into_the_council(self):
+        outside = Path(self.tmp.name) / "outside.json"
+        outside.write_text(json.dumps({"outside": {"title": "marker-outside"}}), encoding="utf-8")
+        self.root.mkdir()
+        (self.root / "rasci.json").symlink_to(outside)
+        for args in (("show", "--all"), ("set", "work/a", "--title", "A")):
+            with self.subTest(args=args):
+                result = self._run(*args, timeout=60)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertNotIn("outside", result.stdout)
+        self.assertTrue((self.root / "rasci.json").is_symlink())
+        copies = [p.name for p in self.root.iterdir() if p.is_file() and not p.is_symlink()
+                  and "marker-outside" in p.read_text(encoding="utf-8")]
+        self.assertEqual(copies, [])
+
+    def test_a_hard_linked_register_is_refused(self):
+        outside = Path(self.tmp.name) / "outside.json"
+        outside.write_text(json.dumps({"outside": {"title": "marker-outside"}}), encoding="utf-8")
+        self.root.mkdir()
+        os.link(outside, self.root / "rasci.json")
+        result = self._run("show", "--all", timeout=60)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertNotIn("outside", result.stdout)
+
+    def test_a_symlinked_lock_is_refused_and_creates_nothing_at_its_target(self):
+        aimed = Path(self.tmp.name) / "elsewhere" / "aimed"
+        aimed.parent.mkdir()
+        self.root.mkdir()
+        (self.root / "rasci.lock").symlink_to(aimed)
+        result = self._run("set", "work/a", "--title", "A", timeout=60)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertFalse(aimed.exists())
+        self.assertFalse((self.root / "rasci.json").exists())
+
+    def test_a_fifo_register_fails_instead_of_hanging(self):
+        self.root.mkdir()
+        os.mkfifo(self.root / "rasci.json")
+        for args in (("show",), ("set", "work/a")):
+            with self.subTest(args=args):
+                self.assertEqual(self._run(*args, timeout=20).returncode, 2)
+
+    def test_a_register_that_is_no_object_of_tasks_exits_2(self):
+        self.root.mkdir()
+        for text in ("[1, 2]", json.dumps({"work/a": 3}), "[" * 100000):
+            with self.subTest(text=text[:12]):
+                (self.root / "rasci.json").write_text(text, encoding="utf-8")
+                result = self._run("show", "--all", timeout=60)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("rasci:", result.stderr)
 
 
 class TestOrgSkillsUseTheRegister(unittest.TestCase):

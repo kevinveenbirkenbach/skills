@@ -100,6 +100,17 @@ class TestNofollow(unittest.TestCase):
                     write(link)
                 self.assertFalse(dangling.exists())
 
+    def test_a_hard_linked_name_is_refused_and_its_target_kept(self):
+        followers = {name: write for name, write in self.writes(self.root).items() if name not in ("replace", "create")}
+        for name, write in followers.items():
+            with self.subTest(write=name):
+                link = self.root / name
+                os.link(self.victim, link)
+                with self.assertRaises(OSError):
+                    write(link)
+                self.assertEqual(self.victim.read_text(encoding="utf-8"), "keep")
+                link.unlink()
+
     def test_a_symlinked_directory_is_refused_and_nothing_lands_in_its_target(self):
         (self.root / "d").symlink_to(self.victims)
         (self.victims / "f").write_text("keep", encoding="utf-8")
