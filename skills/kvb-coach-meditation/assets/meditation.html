@@ -13,13 +13,17 @@
   #progress { position: fixed; left: 0; bottom: 0; height: 3px; width: 0; background: linear-gradient(90deg, #9cf, #c9f); box-shadow: 0 0 12px #9cf9; opacity: .7; }
   #level { position: fixed; top: 1rem; right: 1rem; opacity: 0; transition: opacity .6s; letter-spacing: .2em; text-shadow: 0 0 10px #fff8; }
   button { font: inherit; font-size: 1.4rem; letter-spacing: .4em; text-transform: lowercase; padding: .8rem 2.4rem; border-radius: 2rem; border: 1px solid #fff6; background: #fff1; color: #fff; cursor: pointer; text-shadow: 0 0 12px #fff8; }
+  .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .bi { width: 1.4em; height: 1.4em; fill: currentColor; vertical-align: -.25em; filter: drop-shadow(0 0 8px #fff8); }
+  #level .bi { width: 1em; height: 1em; margin-right: .4em; vertical-align: -.125em; }
 </style>
 </head>
 <body>
+<svg xmlns="http://www.w3.org/2000/svg" class="sprite" aria-hidden="true" focusable="false"><symbol id="bi-brightness-high" viewBox="0 0 16 16"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6m0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/></symbol><symbol id="bi-play-fill" viewBox="0 0 16 16"><path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393"/></symbol></svg>
 <canvas id="view"></canvas>
-<div id="ui"><div id="breath"></div><button id="start">Start</button></div>
+<div id="ui"><div id="breath"></div><button id="start" title="Start" aria-label="Start"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-play-fill"></use></svg></button></div>
 <div id="clock"></div>
-<div id="level"></div>
+<div id="level" title="Brightness" aria-label="Brightness"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-brightness-high"></use></svg><span id="level-text"></span></div>
 <div id="progress"></div>
 <script>
 "use strict";
@@ -124,6 +128,7 @@ void main() {
 }
 
 const levelEl = document.getElementById("level");
+const levelText = document.getElementById("level-text");
 const progressEl = document.getElementById("progress");
 const BRIGHTNESS = "kvb-coach-meditation-brightness";
 const stored = () => {
@@ -153,7 +158,7 @@ addEventListener("keydown", (event) => {
   brightness = Math.min(1.6, Math.max(0.2, Math.round((brightness + step) * 10) / 10));
   showBrightness();
   const saved = store(brightness);
-  levelEl.textContent = `☀ ${Math.round(brightness * 100)} %${saved ? "" : " (not saved)"}`;
+  levelText.textContent = `${Math.round(brightness * 100)} %${saved ? "" : " (not saved)"}`;
   levelEl.style.opacity = "1";
   clearTimeout(levelTimer);
   levelTimer = setTimeout(() => { levelEl.style.opacity = "0"; }, 1200);

@@ -27,7 +27,7 @@
     }
     const permission = "Notification" in window ? Notification.permission : "unsupported";
     const labels = {granted: "Benachrichtigungen an", denied: "Benachrichtigungen blockiert", default: "Benachrichtigungen aktivieren", unsupported: "Benachrichtigungen fehlen im Browser"};
-    button.textContent = labels[permission] || labels.default;
+    relabel(button, "bi-bell", labels[permission] || labels.default);
     button.disabled = permission !== "default";
   }
 

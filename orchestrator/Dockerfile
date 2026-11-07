@@ -38,5 +38,6 @@ COPY server.py /app/server.py
 COPY kvb_orchestrator /app/kvb_orchestrator
 COPY client/signing.py /app/client/signing.py
 COPY templates /app/templates
+COPY vendor /app/vendor
 
 ENTRYPOINT ["python3", "/app/server.py"]

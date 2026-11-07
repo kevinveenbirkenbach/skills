@@ -1,30 +1,10 @@
-  const depth = () => (space.views.graph.axis === "spawn" ? "spawn" : "time");
-
-  function spaceTools() {
-    return h("div", {class: "space-tools"},
-      h("div", {class: "segmented", role: "group", "aria-label": "Tiefenachse"}, AXES.map(([id, label, hint]) => h("button", {type: "button", "aria-pressed": String(depth() === id), title: hint, "aria-label": `Tiefenachse ${label}: ${hint}`, on: {click: () => chooseAxis(id)}}, label))),
-      h("button", {type: "button", class: "btn small ghost", title: "Drehung, Zoom und Verschiebung zurücksetzen (Taste 0)", "aria-label": "3D-Ansicht zurücksetzen", on: {click: () => resetView("graph")}}, "⟲ Ansicht"),
-      h("span", {class: "muted", id: "space-help"}, "Ziehen dreht · Umschalt+Ziehen verschiebt · Rad oder zwei Finger zoomen · Pfeile, + / −, 0"));
-  }
-
-  const graph3d = () => ui.screen === "agents" && ui.views.agents === "3d";
-  const wantsTrack = () => graph3d() && depth() === "time";
-
-  function chooseAxis(id) {
-    if (id === depth()) {
-      return;
-    }
-    setView("graph", {...space.views.graph, axis: id}, false);
-    render(false);
-  }
-
   function stage() {
     if (!graphDom || ui.screen !== "agents" || ui.views.agents === "tree") {
       return;
     }
     graphDom.pulses = null;
-    if (graph3d()) {
-      stageSpace();
+    if (ui.views.agents === "3d") {
+      stage3d("agents", graphDom.stage);
       return;
     }
     graphDom.stage.replaceChildren({orbit, chord, swimlane}[ui.views.agents]());
@@ -59,9 +39,7 @@
     space.edits += 1;
     window.clearTimeout(space.timer);
     space.timer = window.setTimeout(persistViews, SAVE_DELAY);
-    if (kind === "graph") {
-      requestSpace();
-    } else {
+    if (kind === "sky") {
       redrawSky();
     }
   }
@@ -167,16 +145,6 @@
     }, {passive: false});
     element.addEventListener("keydown", (event) => steerKey(event, kind, hooks));
   }
-
-  const graphHooks = {
-    rotate: (dx, dy) => nudge("graph", (view) => ({...view, yaw: view.yaw - dx * 0.4, pitch: view.pitch + dy * 0.4}), false),
-    pan: (dx, dy) => nudge("graph", (view) => ({...view, pan_x: view.pan_x + dx / (space.cam ? space.cam.scale : 1), pan_y: view.pan_y + dy / (space.cam ? space.cam.scale : 1)}), false),
-    zoom: (factor) => nudge("graph", (view) => ({...view, zoom: view.zoom * factor}), false),
-    turnStep: (x, y) => nudge("graph", (view) => ({...view, yaw: view.yaw - x * TURN, pitch: view.pitch + y * TURN}), true),
-    panStep: (x, y) => nudge("graph", (view) => ({...view, pan_x: view.pan_x + x * NUDGE, pan_y: view.pan_y + y * NUDGE}), true),
-    zoomStep: (factor) => nudge("graph", (view) => ({...view, zoom: view.zoom * factor}), true),
-    pick: (x, y) => pickSpace(x, y),
-  };
 
   const skyLens = () => Space.lens(seenView("sky"), window.innerWidth, window.innerHeight);
 

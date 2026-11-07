@@ -22,7 +22,7 @@
     root.style.setProperty("--card", `${glass ? Ambience.CARD * 100 : 100}%`);
     root.style.colorScheme = mode;
     root.dataset.mode = mode;
-    requestSpace();
+    refresh3d();
   }
 
   function drawMoon(paint, at, radius, moon) {
@@ -191,16 +191,16 @@
 
   function skyPanel() {
     const panel = document.getElementById("sky-panel");
-    const step = (text, label, run) => h("button", {type: "button", class: "btn small", title: label, "aria-label": label, on: {click: run}}, text);
+    const step = (name, label, run) => iconBtn(name, label, "btn small", run);
     space.compass = h("span", {class: "compass", "aria-live": "polite"});
     panel.append(space.compass,
-      step("◀", "Blick nach links drehen (Pfeil links)", () => skyHooks.turnStep(-1, 0)),
-      step("▶", "Blick nach rechts drehen (Pfeil rechts)", () => skyHooks.turnStep(1, 0)),
-      step("▲", "Blick heben (Pfeil hoch)", () => skyHooks.turnStep(0, -1)),
-      step("▼", "Blick senken (Pfeil runter)", () => skyHooks.turnStep(0, 1)),
-      step("−", "Sichtfeld weiten (Minus)", () => skyHooks.zoomStep(1 / ZOOM)),
-      step("+", "Hineinzoomen (Plus)", () => skyHooks.zoomStep(ZOOM)),
-      step("⟲ Zurücksetzen", "Blick zurücksetzen: Süden, Horizont, Sichtfeld 180° (Taste 0)", () => resetView("sky")),
-      step("Fertig", "Himmel verlassen (Esc)", () => skyLook(false)));
+      step("bi-caret-left-fill", "Blick nach links drehen (Pfeil links)", () => skyHooks.turnStep(-1, 0)),
+      step("bi-caret-right-fill", "Blick nach rechts drehen (Pfeil rechts)", () => skyHooks.turnStep(1, 0)),
+      step("bi-caret-up-fill", "Blick heben (Pfeil hoch)", () => skyHooks.turnStep(0, -1)),
+      step("bi-caret-down-fill", "Blick senken (Pfeil runter)", () => skyHooks.turnStep(0, 1)),
+      step("bi-zoom-out", "Sichtfeld weiten (Minus)", () => skyHooks.zoomStep(1 / ZOOM)),
+      step("bi-zoom-in", "Hineinzoomen (Plus)", () => skyHooks.zoomStep(ZOOM)),
+      step("bi-arrow-counterclockwise", "Blick zurücksetzen: Süden, Horizont, Sichtfeld 180° (Taste 0)", () => resetView("sky")),
+      step("bi-check-lg", "Himmel verlassen (Esc)", () => skyLook(false)));
     steer(sky.canvas, "sky", skyHooks);
   }

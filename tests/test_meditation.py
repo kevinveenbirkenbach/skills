@@ -83,6 +83,26 @@ class TestPageMatchesScript(unittest.TestCase):
             found = re.findall(r'^\s*"?(\w+)"?:', block, re.MULTILINE)
             self.assertEqual(sorted(found), sorted(module.CHOICES[choices]))
 
+    def test_buttons_show_vendored_icons_with_their_former_text(self):
+        page = PAGE.read_text(encoding="utf-8")
+        sprite = (REPO_ROOT / "orchestrator" / "vendor" / "bootstrap-icons" / "bootstrap-icons.svg").read_text(encoding="utf-8")
+        vendored = dict(re.findall(r'<symbol class="bi bi-[a-z0-9-]+" viewBox="0 0 16 16" id="([a-z0-9-]+)">(.*?)</symbol>', sprite, re.DOTALL))
+        embedded = dict(re.findall(r'<symbol id="bi-([a-z0-9-]+)" viewBox="0 0 16 16">(.*?)</symbol>', page, re.DOTALL))
+        used = re.findall(r'<use href="#bi-([a-z0-9-]+)">', page)
+        self.assertTrue(used)
+        self.assertEqual(sorted(embedded), sorted(set(used)))
+        for name in used:
+            with self.subTest(icon=name):
+                self.assertEqual(embedded[name], vendored[name])
+        buttons = re.findall(r"<button\b([^>]*)>(.*?)</button>", page, re.DOTALL)
+        self.assertEqual([re.sub(r"<[^>]+>", "", inner).strip() for _, inner in buttons], [""])
+        for attributes, inner in buttons:
+            self.assertIn('<use href="#bi-play-fill">', inner)
+            self.assertIn('title="Start"', attributes)
+            self.assertIn('aria-label="Start"', attributes)
+        self.assertNotIn("☀", page)
+        self.assertIsNone(re.search(r'(?:src|href)="(?:https?:)?//', page))
+
 
 if __name__ == "__main__":
     unittest.main()

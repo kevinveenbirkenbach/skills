@@ -3,13 +3,15 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 
-// Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, probe, shot}.
+// Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, probe, shot, media} and an optional
+// authenticator {credentialId, privateKey, rpId}: base64 id and PKCS#8 key of a passkey the page may sign with.
 // Prints {results, errors}: one probe value per step and every uncaught page exception.
 const [binary, planFile] = process.argv.slice(2);
 const plan = JSON.parse(readFileSync(planFile, "utf8"));
 const profile = mkdtempSync(join(tmpdir(), "cdp-"));
 // --no-sandbox: the agent sandbox already forbids the user namespaces Chromium's own sandbox needs.
-const flags = ["--headless", "--no-sandbox", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"];
+// --enable-unsafe-swiftshader: without a GPU, headless Chromium gives WebGL only through SwiftShader, which it no longer enables by itself.
+const flags = ["--headless", "--no-sandbox", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"];
 const browser = spawn(binary, flags, {stdio: ["ignore", "ignore", "pipe"]});
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -65,8 +67,14 @@ try {
   const {sessionId} = await send("Target.attachToTarget", {targetId, flatten: true});
   const page = (method, params) => send(method, params, sessionId);
   await page("Runtime.enable", {});
+  if (plan.authenticator) {
+    await page("WebAuthn.enable", {enableUI: false});
+    const {authenticatorId} = await page("WebAuthn.addVirtualAuthenticator", {options: {protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true}});
+    await page("WebAuthn.addCredential", {authenticatorId, credential: {...plan.authenticator, isResidentCredential: false, signCount: 0}});
+  }
   for (const step of plan.steps) {
     await page("Emulation.setDeviceMetricsOverride", {width: step.width, height: step.height, deviceScaleFactor: 1, mobile: false});
+    await page("Emulation.setEmulatedMedia", {features: step.media || []});
     if (step.url) {
       await page("Page.navigate", {url: step.url});
     }

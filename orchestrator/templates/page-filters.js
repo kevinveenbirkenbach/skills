@@ -103,7 +103,9 @@
       return;
     }
     const kinds = activeKinds();
-    stream.dom.categories.replaceChildren(...Object.entries(state.views).map(([id, view]) => h("button", {type: "button", class: "chip preset", "aria-pressed": String(filter.view === id), on: {click: () => useView(id)}}, view.label)));
+    stream.dom.categories.replaceChildren(...Object.entries(state.views).map(([id, view]) => h("button", {
+      type: "button", class: "chip preset icon-only", ...named(view.label), "aria-pressed": String(filter.view === id), on: {click: () => useView(id)},
+    }, icon(VIEW_ICONS[id] || "bi-funnel"))));
     const mine = userViews.map((view) => h("span", {class: "chip", "aria-pressed": String(!filter.view && filter.saved === view.name), role: "button", tabindex: 0, on: {
       click: () => useSaved(view),
       keydown: (event) => {
@@ -111,11 +113,11 @@
           useSaved(view);
         }
       },
-    }}, view.name, h("button", {type: "button", class: "x", "aria-label": `${view.name} löschen`, on: {click: (event) => {
+    }}, view.name, h("button", {type: "button", class: "x", ...named(`${view.name} löschen`), on: {click: (event) => {
       event.stopPropagation();
       dropView(view.name);
-    }}}, "×")));
-    stream.dom.saved.replaceChildren(...mine, btn("＋ Ansicht speichern", "btn small ghost", saveView));
+    }}}, icon("bi-x-lg"))));
+    stream.dom.saved.replaceChildren(...mine, iconBtn("bi-save", "Ansicht speichern", "btn small ghost", saveView));
     const kindChips = KINDS.map(([id, label]) => h("button", {type: "button", class: "chip", "aria-pressed": String(kinds.has(id)), on: {click: () => {
       customize();
       if (filter.kinds.has(id) && filter.kinds.size > 1) {
@@ -141,11 +143,11 @@
     }}}, label)) : [h("span", {class: "muted"}, "Erst mit der Art Transkripte.")];
     stream.dom.parts.replaceChildren(...parts);
     const focus = filter.sub || filter.session || filter.agent ? h("span", {class: "chip", "aria-pressed": "true"}, filter.sub ? `Subagent ${filter.sub.slice(0, 12)}` : filter.session ? `Session ${filter.session.slice(0, 8)}` : `Agent ${filter.agent}`,
-      h("button", {type: "button", class: "x", "aria-label": "Filter entfernen", on: {click: () => {
+      h("button", {type: "button", class: "x", ...named("Filter entfernen"), on: {click: () => {
         filter.sub = "";
         filter.session = "";
         filter.agent = "";
         refilter();
-      }}}, "×")) : null;
+      }}}, icon("bi-x-lg"))) : null;
     stream.dom.focus.replaceChildren(...(focus ? [focus] : []));
   }

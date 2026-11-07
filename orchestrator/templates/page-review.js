@@ -46,7 +46,7 @@
       meta([["Repo", review.worktree], ["Branch", review.branch], ["Tree", (review.tree || "").slice(0, 12), review.tree], ["Score", review.score]]),
       review.notes ? h("pre", {class: "notes"}, review.notes) : null,
       h("div", {class: "actions"},
-        h("a", {class: "btn ghost", href: `/reviews/${encodeURIComponent(review.id)}/page`, target: "_blank", rel: "noopener noreferrer"}, "Vollständige Seite öffnen ↗"),
+        h("a", {class: "btn ghost icon-only", href: `/reviews/${encodeURIComponent(review.id)}/page`, target: "_blank", rel: "noopener noreferrer", ...named("Vollständige Seite öffnen", "Vollständige Seite öffnen (neuer Tab)")}, icon("bi-box-arrow-up-right")),
         h("span", {class: "spacer"}),
         item ? actionsFor(item).map((node) => {
           node.addEventListener("click", closeSheet);

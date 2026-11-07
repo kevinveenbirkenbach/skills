@@ -2,7 +2,7 @@
 
   function tabButton(id, label, hint) {
     const badge = Object.hasOwn(state.badges, id) ? h("span", {class: "badge", hidden: true}) : null;
-    const button = h("button", {type: "button", id: `tab-${id}`, "aria-controls": "main", title: hint ? `${label} (${hint})` : label, on: {click: () => go(id, null)}}, label, badge);
+    const button = h("button", {type: "button", id: `tab-${id}`, class: "icon-only", "aria-controls": "main", ...named(label, hint ? `${label} (${hint})` : label), on: {click: () => go(id, null)}}, icon(Nav.ICONS[id]), badge);
     navButtons.set(id, {button, badge});
     return button;
   }
@@ -42,7 +42,7 @@
 
   function signature() {
     if (ui.screen === "agents") {
-      return JSON.stringify([ui.views.agents, depth()]);
+      return JSON.stringify([ui.views.agents]);
     }
     return JSON.stringify(ui.screen === "artifacts" ? [ui.views.artifacts] : ui.screen === "rules" ? state.rules : []);
   }
@@ -70,9 +70,13 @@
       main.replaceChildren(screenOf());
       drawn.screen = ui.screen;
       drawn.sig = sig;
+      if (g3.host && !g3.host.isConnected) {
+        dispose3d();
+      }
     }
     stage();
     drawSide();
+    drawSpawn();
     drawToolbar();
     drawInbox();
     drawStatus();
@@ -89,7 +93,7 @@
     const banner = document.getElementById("mayday");
     const silence = state.silence;
     banner.hidden = !silence;
-    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), btn("aufheben", "btn small", () => confirmAct("clear-mayday"))] : []));
+    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "aufheben", "btn small", () => confirmAct("clear-mayday"), "aufheben: Mayday beenden (radio.py clear)")] : []));
     document.title = `${state.badges.inbox ? `(${state.badges.inbox}) ` : ""}Agent Orchestrator`;
     window.setTimeout(measure, 0);
   }

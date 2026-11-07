@@ -1,0 +1,9 @@
+[Unit]
+Description=Agent Orchestrator cleanup: verify the operator signature, then delete exactly the signed merged branches locally through pkgmgr
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/bin:/bin
+EnvironmentFile=%h/.local/share/kvb-orchestrator/.env
+ExecStart=/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/cleanup.py --port ${KVB_ORCHESTRATOR_PORT} --jobs %h/.local/state/kvb-orchestrator/cleanup/jobs --results %h/.local/state/kvb-orchestrator/cleanup/results --approvers %h/.config/kvb-orchestrator/approvers.json --replay %h/.local/state/kvb-orchestrator-approvals/cleanup.json --tree %h/.local/state/pkgmgr/tree/branch-tree.json --pkgmgr %h/.local/share/kvb-orchestrator/pkgmgr/bin/pkgmgr
+TimeoutStartSec=1800

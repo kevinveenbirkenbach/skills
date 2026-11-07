@@ -42,9 +42,9 @@
         text.value = "";
       }
     };
-    return h("details", {class: "menu", id: "to-all"}, h("summary", {}, "Funk an alle ▾"), h("div", {class: "menu-box"},
+    return h("details", {class: "menu", id: "to-all"}, h("summary", named("Funk an alle"), icon("bi-broadcast-pin"), caret()), h("div", {class: "menu-box"},
       text, classes, h("p", {class: "muted"}, "Newsletter kommt als Post am Ende des Zuges; Broadcast, Pan-Pan, Security und Mayday sofort."),
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Senden", "btn soft", send))));
+      h("div", {class: "actions"}, h("span", {class: "spacer"}), iconBtn("bi-send", "Senden", "btn soft", send, "Senden an alle"))));
   }
 
   function openToAll() {
@@ -59,12 +59,12 @@
   }
 
   function agentsToolbar() {
-    const clear = btn("Mayday aufheben", "btn small danger", () => confirmAct("clear-mayday"));
+    const clear = iconBtn("bi-life-preserver", "Mayday aufheben", "btn small danger", () => confirmAct("clear-mayday"));
     const mode = h("span", {});
-    const night = h("details", {class: "menu"}, h("summary", {}, "Tag/Nacht ▾"), h("div", {class: "menu-box"}, mode,
+    const night = h("details", {class: "menu"}, h("summary", named("Tag/Nacht"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box"}, mode,
       h("p", {class: "muted"}, "Abend: Agenten beenden ihre Aufgabe. Sonnenuntergang: sie schlafen. Sonnenaufgang: alle wachen auf."),
       h("div", {class: "actions"}, ACTIONS.slice(1).map(([id, label]) => btn(label, "btn small", () => confirmAct(id))))));
-    return {bar: h("div", {class: "toolbar", role: "toolbar", "aria-label": "Steuerung"}, toAll(), clear, btn("Priorität", "btn small", prioritySheet), night), clear, mode};
+    return {bar: h("div", {class: "toolbar", role: "toolbar", "aria-label": "Steuerung"}, toAll(), clear, iconBtn("bi-sort-down", "Priorität", "btn small", prioritySheet), night), clear, mode};
   }
 
   function drawToolbar() {

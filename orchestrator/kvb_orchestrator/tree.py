@@ -8,6 +8,7 @@ from pathlib import Path
 from .council import agent
 from .records import iso_epoch
 from .register import ENDED, status_of
+from .signed import signing
 
 LABEL_PARTS = 3
 # renaming it silently stops the tree timer: kvb-orchestrator-tree.service tests this file's age
@@ -31,19 +32,47 @@ def worktree(item: dict) -> dict:
     }
 
 
-def branch(item: dict) -> dict:
+def dry_run(item: dict) -> list[str]:
+    """Returns:
+        The lines `pkgmgr branch cleanup --local` would act on for one tree
+        item, read from the gc plan the tree file carries; a remote branch
+        always stays.
+    """
+    tip = (item["local_sha"] or item["head"] or "")[:12]
+    merged = f", gemergt durch {item['merged_by']}" if item["merged_by"] else ""
+    lines = [f"{item['branch']} @ {tip}: {item['state']}{merged}"]
+    for action in item["actions"]:
+        if action == "worktree":
+            lines.append(f"entfernt den Worktree {item['worktree']}")
+        elif action == "local-branch":
+            lines.append(f"löscht den lokalen Branch {item['branch']}")
+        elif action.startswith("remote"):
+            lines.append(f"bleibt: {action} (nur lokal)")
+        else:
+            lines.append(action)
+    lines += [f"stoppt den Compose-Stack {name} ohne -v" for name in item["compose_projects"]]
+    lines += [f"entfernt das Image {name}" for name in item["images"]]
+    return lines
+
+
+def branch(item: dict, path: str) -> dict:
     remote = next(iter(item["remotes"].values()), "")
+    head = item["local_sha"] or item["head"] or remote
+    open_to_delete = item["state"] == "merged-clean" and not item["skip"] and bool(item["local_sha"])
     return {
         "name": item["branch"],
-        "head": item["local_sha"] or item["head"] or remote,
+        "head": head,
         "upstream": item["upstream"] or "",
         "ahead": item["ahead"] or 0,
         "behind": item["behind"] or 0,
         "gone": item["gone"],
         "state": item["state"],
         "merged_by": item["merged_by"],
+        "merged_into": item["merged_into"],
         "skip": item["skip"],
         "reason": item["reason"],
+        "plan": dry_run(item),
+        "cleanup": signing.cleanup_item(path, item["branch"], item["worktree"] or "", item["local_sha"]) if open_to_delete else None,
         "worktrees": [worktree(item)] if item["worktree"] else [],
     }
 
@@ -53,9 +82,13 @@ def repo(entry: dict) -> dict:
     return {
         **{key: value for key, value in entry.items() if key != "items"},
         "name": "/".join(Path(entry["path"]).parts[-LABEL_PARTS:]),
-        "branches": [branch(item) for item in items if item["branch"]],
+        "branches": [branch(item, entry["path"]) for item in items if item["branch"]],
         "detached": [worktree(item) for item in items if item["detached"]],
     }
+
+
+def offered(scan: dict) -> list[dict]:
+    return [entry["cleanup"] for repository in scan["repos"] for entry in repository["branches"] if entry["cleanup"] is not None]
 
 
 def read_tree(path: Path) -> dict:
@@ -75,6 +108,13 @@ def inside(path: str, folder: str) -> bool:
     return path == folder or path.startswith(f"{folder.rstrip('/')}/")
 
 
+def owns(row: dict, path: str, name: str) -> bool:
+    workdir = row.get("workdir")
+    if isinstance(workdir, str):
+        return workdir.startswith("/") and inside(workdir, path)
+    return row.get("branch") == name
+
+
 def assign(scan: dict, tasks: dict[str, dict], claims: list[dict], reviews: list[dict]) -> dict:
     current = {task: row for task, row in tasks.items() if status_of(row) not in ENDED}
     holders: dict[str, set[str]] = {}
@@ -92,10 +132,7 @@ def assign(scan: dict, tasks: dict[str, dict], claims: list[dict], reviews: list
             for tree in item["worktrees"]:
                 workers = set()
                 for task, row in current.items():
-                    workdir, name = row.get("workdir"), row.get("branch")
-                    by_dir = isinstance(workdir, str) and workdir.startswith("/") and inside(workdir, tree["path"])
-                    by_branch = not isinstance(workdir, str) and name == item["name"]
-                    if by_dir or by_branch:
+                    if owns(row, tree["path"], item["name"]):
                         workers |= holders[task]
                 trees.append({**tree, "workers": sorted(workers, key=str.lower), "review": latest.get(tree["path"])})
             branches.append({**item, "worktrees": trees})

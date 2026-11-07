@@ -1,4 +1,6 @@
   const NS = "http://www.w3.org/2000/svg";
+  const NONCE = document.currentScript ? document.currentScript.nonce : "";
+  const ACTIVE_BEAT = 900;
   const DAY = 86400;
   const CHAIR = "Maintainer";
   const HUMAN = "Operator";
@@ -7,6 +9,7 @@
   const PARTS = [["user", "Nutzer"], ["assistant", "Assistent"], ["tool_call", "Werkzeugaufruf"], ["tool_result", "Werkzeugergebnis"], ["system", "System"]];
   const PART_TONES = {user: "info", assistant: "ok", tool_call: "violet", tool_result: "teal", system: "neutral"};
   const KIND_TONES = {radio: "teal", review: "info", ask: "warn", decision: "violet", operator: "bad", register: "neutral", rename: "info", cron: "teal", rule: "ok", approval: "ok", run: "info", transcript: "neutral"};
+  const VIEW_ICONS = {"fuer-dich": "bi-person-check", funk: "bi-broadcast", arbeit: "bi-briefcase", transkripte: "bi-chat-left-text"};
   const ITEM_LABELS = {review: "Review", ask: "Ask", decision: "Entscheidung", operator: "Operator"};
   const NIGHT = {day: ["Tag", "ok"], evening: ["Abend", "warn"], sunset: ["Nacht", "violet"]};
   const ACTIONS = [["clear-mayday", "Mayday aufheben", "Die Funkstille des aktiven Maydays aufheben?"], ["evening", "Abend", "Alle Agenten in den Abend schicken (kvb-agent-relax)?"], ["sunset", "Sonnenuntergang", "Alle Agenten schlafen legen (kvb-agent-sleep)?"], ["sunrise", "Sonnenaufgang", "Alle Agenten wecken (kvb-agent-wakeup)?"]];
@@ -42,15 +45,11 @@
   const STAGE_LABELS = {night: "Nacht", astronomical: "Astronomische Dämmerung", nautical: "Nautische Dämmerung", civil: "Bürgerliche Dämmerung", golden: "Goldene Stunde", day: "Tag"};
   const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const COMPASS = [["N", "Norden"], ["NO", "Nordosten"], ["O", "Osten"], ["SO", "Südosten"], ["S", "Süden"], ["SW", "Südwesten"], ["W", "Westen"], ["NW", "Nordwesten"]];
-  const AXES = [["time", "Zeit", "Tiefe = Zeit im gewählten Zeitraum: jeder Agent eine Weltlinie"], ["spawn", "Spawn-Tiefe", "Tiefe = Spawn-Tiefe: Subagenten hängen als Baum unter ihrer Session"]];
   const SUBS_TTL = 60000;
   const TURN = 10;
-  const NUDGE = 40;
   const ZOOM = 1.2;
   const GLIDE = 320;
-  const PLANE = 450;
   const SAVE_DELAY = 700;
-  const TRACK_RETRY = 5000;
   const CALM = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2];
   const TENSE = [1, 16 / 15, 6 / 5, 45 / 32, 3 / 2, 8 / 5];
   const BASE = 110;
@@ -62,7 +61,7 @@
     direct: [[740, 0, 0.2]],
     radio: [[520, 0, 0.07]],
   };
-  const KEYS = [["Strg+K", "Befehle, Ansichten, Agenten und KI-Befehl"], ["1 · 2 · 3", "Stream · Agents · Artifacts"], ["j / k", "Inbox: nächster / vorheriger Eintrag"], ["x", "Inbox: Eintrag auswählen"], ["a", "Inbox: Eintrag freigeben (3 s rückgängig)"], ["Enter", "Inbox: Eintrag öffnen"], ["/", "Stream durchsuchen"], ["h", "Himmel ansehen: ziehen dreht den Blick, Rad oder zwei Finger zoomen, Esc beendet"], ["Pfeile · + / − · 0", "3D-Graph und Himmel (fokussiert): drehen · zoomen · zurücksetzen"], ["Umschalt+Pfeile", "3D-Graph: verschieben (auch Umschalt+Ziehen)"], ["🎙 halten", "Spracheingabe ins Agentenfeld oder die Befehlszeile, nie automatisch gesendet"], ["?", "Diese Hilfe"], ["Esc", "Schließen"]];
+  const KEYS = [["Strg+K", "Befehle, Ansichten, Agenten und KI-Befehl"], ["1 · 2 · 3", "Stream · Agents · Artifacts"], ["j / k", "Inbox: nächster / vorheriger Eintrag"], ["x", "Inbox: Eintrag auswählen"], ["a", "Inbox: Eintrag freigeben (3 s rückgängig)"], ["Enter", "Inbox: Eintrag öffnen"], ["/", "Stream durchsuchen"], ["h", "Himmel ansehen: ziehen dreht den Blick, Rad oder zwei Finger zoomen, Esc beendet"], ["Pfeile · + / − · 0", "Himmel (fokussiert): drehen · zoomen · zurücksetzen"], ["Ziehen · Rad", "3D: drehen, rechts ziehen verschiebt, Rad zoomt"],["🎙 halten", "Spracheingabe ins Agentenfeld oder die Befehlszeile, nie automatisch gesendet"], ["?", "Diese Hilfe"], ["Esc", "Schließen"]];
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
   const relative = new Intl.RelativeTimeFormat("de", {numeric: "auto"});
   const absolute = new Intl.DateTimeFormat("de-DE", {dateStyle: "medium", timeStyle: "short"});

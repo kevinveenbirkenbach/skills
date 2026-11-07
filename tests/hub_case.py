@@ -42,6 +42,7 @@ class HubCase(unittest.TestCase):
         self.projects = base / "projects"
         self.tree_file = base / "tree" / "branch-tree.json"
         self.timers = base / "timers"
+        self.cleanup = base / "state" / "cleanup"
         self.approvers = base / "config" / "approvers.json"
         self.replay = base / "replay"
         for path in (self.pages, self.state, self.outside, self.projects, self.tree_file.parent, self.timers):
@@ -63,7 +64,7 @@ class HubCase(unittest.TestCase):
             transcripts=self.projects,
             scripts=self.scripts,
             templates=HUB / "templates",
-            places=server.Places(tree_file=self.tree_file, timers=self.timers),
+            places=server.Places(tree_file=self.tree_file, timers=self.timers, vendor=HUB / "vendor", cleanup=self.cleanup),
             model=server.Model(url="", model="", key=""),
             engines=self.engines,
             approvers=self.approvers,

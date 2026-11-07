@@ -17,6 +17,10 @@
   }
   const h = (tag, attrs, ...children) => build(document.createElement(tag), attrs, children);
   const s = (tag, attrs, ...children) => build(document.createElementNS(NS, tag), attrs, children);
+  const icon = (name, cls) => s("svg", {class: cls ? `bi ${cls}` : "bi", "aria-hidden": "true", focusable: "false"}, s("use", {href: `#${name}`}));
+  const caret = () => icon("bi-caret-down-fill", "caret");
+  const named = (label, hint) => ({title: hint || label, "aria-label": label});
+  const iconBtn = (name, label, cls, run, hint) => h("button", {type: "button", class: `${cls} icon-only`, ...named(label, hint), on: {click: run}}, icon(name));
   const dash = (value) => (value === "" || value === "-" || value === null || value === undefined ? "–" : value);
   const targetsOf = (row) => (row.to.length ? row.to.join(", ") : "alle");
   const fixed = (value) => value.toFixed(1);
@@ -91,18 +95,22 @@
     return (data.runs || []).flatMap((run) => [`$ ${run.command} → ${run.code}`, run.stdout.trim(), run.stderr.trim()].filter(Boolean));
   }
 
+  function relabel(button, name, label, hint) {
+    button.replaceChildren(icon(name));
+    button.setAttribute("aria-label", label);
+    button.title = hint || label;
+  }
+
   function copyButton(text) {
-    const button = h("button", {type: "button", class: "btn small ghost", title: "In die Zwischenablage kopieren"}, "Kopieren");
+    const button = iconBtn("bi-clipboard", "Kopieren", "btn small ghost", null, "Kopieren: in die Zwischenablage");
     button.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(text);
-        button.textContent = "Kopiert";
+        relabel(button, "bi-clipboard-check", "Kopiert");
       } catch {
-        button.textContent = "Nicht möglich";
+        relabel(button, "bi-x-circle", "Nicht möglich");
       }
-      window.setTimeout(() => {
-        button.textContent = "Kopieren";
-      }, 1600);
+      window.setTimeout(() => relabel(button, "bi-clipboard", "Kopieren"), 1600);
     });
     return button;
   }
@@ -118,7 +126,7 @@
   function openSheet(title, body, wide) {
     const sheet = document.getElementById("sheet");
     sheet.replaceChildren(h("div", {class: `sheet-box${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": title},
-      h("div", {class: "sheet-head"}, h("h2", {class: "panel-title"}, title), h("span", {class: "spacer"}), h("button", {type: "button", class: "btn small ghost", "aria-label": "Schließen", on: {click: closeSheet}}, "×")),
+      h("div", {class: "sheet-head"}, h("h2", {class: "panel-title"}, title), h("span", {class: "spacer"}), iconBtn("bi-x-lg", "Schließen", "btn small ghost", closeSheet)),
       h("div", {class: "sheet-body"}, body)));
     sheet.hidden = false;
   }

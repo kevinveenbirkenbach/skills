@@ -94,7 +94,7 @@
     ui.agent = key;
     const text = h("textarea", {"aria-label": `Nachricht an ${name}`, placeholder: `Nachricht an ${name} …`});
     const file = h("input", {type: "file", class: "field", "aria-label": "Datei anhängen"});
-    const button = h("button", {type: "submit", class: "btn primary"}, "Senden");
+    const button = h("button", {type: "submit", class: "btn primary icon-only", ...named("Senden")}, icon("bi-send"));
     const classes = choice("to-one", TO_ONE, "post");
     const form = h("form", {class: "drawer-form"}, text, file, classes,
       h("p", {class: "muted"}, "Post kommt am Ende des Zuges an, Call sofort mit Lesebestätigung; prüfbar mit operator_message."),
@@ -118,7 +118,7 @@
     const former = (people()[key] || {names: []}).names.filter((entry) => entry !== name);
     drawer.replaceChildren(
       h("div", {class: "drawer-head"}, face(name, true), life, h("div", {}, h("h2", {class: "panel-title"}, name), h("span", {class: "muted"}, former.length ? `Agent · früher ${former.join(", ")}` : "Agent")), h("span", {class: "spacer"}),
-        h("button", {type: "button", class: "btn small ghost", "aria-label": "Schließen", on: {click: closeAgent}}, "×")),
+        iconBtn("bi-x-lg", "Schließen", "btn small ghost", closeAgent)),
       h("div", {class: "drawer-body"}, info, h("h3", {}, "Subagenten"), subs, h("h3", {}, "Verlauf"), log),
       form);
     drawer.hidden = false;

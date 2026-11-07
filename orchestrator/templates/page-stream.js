@@ -115,7 +115,7 @@
       return [h("div", {class: "command"}, h("code", {}, entry.kind === "ask" ? entry.text : entry.title), copyButton(entry.kind === "ask" ? entry.text : entry.title)), h("span", {class: "muted"}, `in ${dash(where)}`), entry.kind === "operator" && entry.text !== "-" ? h("p", {class: "text"}, entry.text) : null];
     }
     if (entry.kind === "review") {
-      return [entry.text ? h("pre", {class: "notes"}, entry.text) : null, h("div", {class: "line-actions"}, btn("Diff ansehen", "btn small soft", () => reviewSheet(entry.ref.id)))];
+      return [entry.text ? h("pre", {class: "notes"}, entry.text) : null, h("div", {class: "line-actions"}, iconBtn("bi-eye", "Diff ansehen", "btn small soft", () => reviewSheet(entry.ref.id)))];
     }
     if (entry.kind === "cron") {
       const ref = entry.ref;
@@ -174,7 +174,7 @@
     const saved = h("div", {class: "chips", role: "group", "aria-label": "Gespeicherte Ansichten"});
     const focus = h("div", {class: "chips"});
     const list = h("div", {});
-    const more = h("details", {class: "menu"}, h("summary", {}, "Filter ▾"), h("div", {class: "menu-box end"},
+    const more = h("details", {class: "menu"}, h("summary", named("Filter", "Filter: Arten, Transkript-Teile, gespeicherte Ansichten, eigener Zeitraum"), icon("bi-funnel"), caret()), h("div", {class: "menu-box end"},
       h("h3", {}, "Arten"), kinds, h("h3", {}, "Transkript-Teile"), parts, h("h3", {}, "Gespeicherte Ansichten"), saved, h("h3", {}, "Eigener Zeitraum"), customRange()));
     stream.dom = {search, count, categories, kinds, parts, saved, focus, list};
     window.setTimeout(() => {

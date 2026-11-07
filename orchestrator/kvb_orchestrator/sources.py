@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import time
 
+from .artifacts import enrich
 from .council import HUMAN, agent, read_claims
 from .crons import cron_state, queue_rows, timer_rows
 from .errors import ToolError
 from .fields import single
 from .lifetimes import edge_times, lifetime, session_gone, subagent_rows
 from .names import PSEUDO, SESSION_ID, Directory, title_sightings
-from .records import epoch, iso_epoch
+from .records import epoch, iso_epoch, read_jsonl
 from .register import REGISTER, read_register
 from .tree import assign
 
@@ -45,7 +46,10 @@ class Sources:
 
     def repositories(self) -> dict:
         tasks = read_register(self.council / REGISTER)
-        return assign(self.tree.get(), tasks, read_claims(self.council), self.reviews.listed())
+        reviews = self.reviews.listed()
+        scan = assign(self.tree.get(), tasks, read_claims(self.council), reviews)
+        history = read_jsonl(self.council / "queue-history.jsonl")
+        return {**enrich(scan, tasks, reviews, self.touched, history, self.jobs.listed()), "cleanups": self.cleanup_results()}
 
     def schedules(self, claims: list[dict], now: float) -> list[dict]:
         beats = {claim["session"]: claim["beat"] for claim in claims if claim["beat"] is not None}

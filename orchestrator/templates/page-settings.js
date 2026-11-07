@@ -4,7 +4,7 @@
     if (space.edits === space.saved) {
       space.views = {graph: {...next.space.graph}, sky: {...next.space.sky}};
       space.glides = {graph: null, sky: null};
-      requestSpace();
+      refresh3d();
     }
     sky.mode = "";
     drawSky();
@@ -56,15 +56,15 @@
   }
 
   function ambience() {
-    const tool = (id, label, title, run) => h("button", {type: "button", id, class: "btn small", title, on: {click: run}}, label);
+    const tool = (id, name, label, title, run) => h("button", {type: "button", id, class: "btn small icon-only", ...named(label, title), on: {click: run}}, icon(name));
     const section = h("section", {}, h("h3", {}, "Ambiente"), h("div", {class: "toolbar"},
-      tool("sky-look", "🔭 Himmel", "Himmel ansehen: ziehen dreht den Blick (Taste h)", () => {
+      tool("sky-look", "bi-stars", "Himmel", "Himmel ansehen: ziehen dreht den Blick (Taste h)", () => {
         closeSheet();
         skyLook(true);
       }),
-      tool("music-toggle", "♪ Musik", "Generative Musik an oder aus", toggleMusic),
-      tool("leitstand", "Leitstand", "Leitstand: Vollbild mit großer Schrift", toggleLeitstand),
-      tool("notify", "Benachrichtigungen", "Desktop-Benachrichtigungen des Browsers erlauben", askNotify)));
+      tool("music-toggle", "bi-music-note-beamed", "Musik", "Musik: generative Musik an oder aus", toggleMusic),
+      tool("leitstand", "bi-display", "Leitstand", "Leitstand: Vollbild mit großer Schrift", toggleLeitstand),
+      tool("notify", "bi-bell", "Benachrichtigungen", "Benachrichtigungen: Desktop-Benachrichtigungen des Browsers erlauben", askNotify)));
     window.setTimeout(() => {
       musicButton();
       notifyLabel();

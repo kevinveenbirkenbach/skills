@@ -30,7 +30,7 @@
   const ui = {screen: "stream", views: {agents: "orbit", artifacts: "tree"}, preset: DAY, from: null, to: null, asOf: null, playing: false, busy: false, offline: false, agent: null, order: null, draft: "", node: null, cursor: 0, selected: new Set(), snoozed: false, review: null, file: 0};
   const filter = {view: "fuer-dich", saved: "", kinds: new Set(state.views["fuer-dich"].kinds), waiting: true, q: "", agent: "", session: "", sub: "", parts: new Set(PARTS.map(([id]) => id))};
   const stream = {key: null, events: [], entries: [], last: 0, sessions: {}, busy: false, again: false, dom: null, error: ""};
-  const tree = {data: null, busy: false, q: "", open: new Set(), dom: null};
+  const tree = {data: null, model: null, busy: false, q: "", open: new Set(), dom: null};
   const palette = {items: [], index: 0, input: null, list: null, plan: null, box: null};
   const known = {inbox: null, alarms: null, radio: null, batches: new Set()};
   const motion = {current: new Map(), from: new Map(), target: new Map(), start: 0, duration: 0, frame: 0, asOf: undefined};
@@ -43,9 +43,7 @@
   const speech = {pending: [], busy: false, warned: 0};
   const mic = {recorder: null, held: false, busy: false, timer: 0};
   const space = {
-    views: {graph: {...state.settings.space.graph}, sky: {...state.settings.space.sky}}, glides: {graph: null, sky: null}, edits: 0, saved: 0, timer: 0,
-    scene: null, sceneCursor: null, cam: null, frame: 0, look: false, compass: null, subs: new Map(), loading: false, version: 0,
-    cursor: {from: 0, to: null, start: 0}, style: null, styleKey: "", trackAsked: 0,
+    views: {graph: {...state.settings.space.graph}, sky: {...state.settings.space.sky}}, glides: {graph: null, sky: null}, edits: 0, saved: 0, timer: 0, look: false, compass: null,
   };
   let userViews = validViews(stored(STORE.views, stored("kvb-hub.views", [])));
   let settings = state.settings;

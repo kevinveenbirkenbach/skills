@@ -36,7 +36,7 @@
     const presets = h("div", {class: "segmented", role: "group", "aria-label": "Zeitraum"});
     const summary = h("summary", {title: "Zeitraum und Wiedergabe"});
     const slider = h("input", {type: "range", min: 0, max: 1000, step: 1, value: 1000, "aria-label": "Stand der Wiedergabe"});
-    const play = h("button", {type: "button", class: "btn small soft"}, "▶ Wiedergabe");
+    const play = iconBtn("bi-play-fill", "Wiedergabe", "btn small soft", null);
     const liveButton = h("button", {type: "button", class: "btn small ghost"}, "Live");
     const label = h("span", {class: "window-label"});
     for (const [seconds, name] of PRESETS.filter(([seconds]) => seconds !== -1)) {
@@ -102,7 +102,7 @@
     const resume = ui.asOf !== null && ui.asOf < state.now - 60;
     let progress = resume ? (ui.asOf - began) / span : 0;
     ui.playing = true;
-    timeDom.play.textContent = "❚❚ Pause";
+    relabel(timeDom.play, "bi-pause-fill", "Pause");
     const advance = async () => {
       if (!ui.playing) {
         return;
@@ -127,6 +127,6 @@
     ui.playing = false;
     window.clearTimeout(replay);
     if (timeDom) {
-      timeDom.play.textContent = "▶ Wiedergabe";
+      relabel(timeDom.play, "bi-play-fill", "Wiedergabe");
     }
   }
