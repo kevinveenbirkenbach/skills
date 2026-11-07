@@ -46,7 +46,11 @@ h1 { margin: 0; font-size: var(--fs-lg); font-weight: 680; letter-spacing: -.01e
 .subtabs { display: inline-flex; gap: 2px; padding-left: var(--sp-1); border-left: 1px solid var(--line); }
 .subtabs button { font-size: var(--fs-sm); }
 .tabs button { display: inline-flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-weight: 560; cursor: pointer; transition: background .15s, color .15s; }
-.icon-btn { min-width: 34px; justify-content: center; font-size: var(--fs-lg); line-height: 1; }
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.bi { flex: none; width: 1em; height: 1em; fill: currentColor; vertical-align: -.125em; }
+.icon-only { min-width: 34px; justify-content: center; font-size: var(--fs-lg); line-height: 1; }
+.btn.small.icon-only { min-width: 30px; padding: 4px 8px; font-size: var(--fs-md); }
+.bi.caret { width: .7em; height: .7em; opacity: .7; }
 .btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .tabs button:hover { background: var(--hover); color: var(--text); }
 .tabs button[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
@@ -256,6 +260,23 @@ svg .mark:hover { opacity: 1; }
 svg .mark:hover line, svg .mark:hover path { stroke-width: 2.6; }
 svg .pulse { fill: var(--c); filter: drop-shadow(0 0 4px var(--c)); }
 svg .pulse-ring { fill: none; stroke: var(--c); stroke-width: 2.5; }
+svg .node.a-repo circle, svg .node.sun circle { fill: color-mix(in srgb, var(--warn) 70%, var(--panel)); stroke: var(--warn); stroke-width: 3; }
+svg .node.a-worktree circle { fill: var(--sunken); stroke: var(--muted); }
+svg .node.a-worktree.dirty circle { fill: var(--warn-soft); stroke: var(--warn); }
+svg .node.satellite circle { fill: var(--accent); stroke: none; }
+svg .node.cargo circle { fill: var(--teal); stroke: none; }
+svg .node.tone-ok circle { fill: var(--ok-soft); stroke: var(--ok); }
+svg .node.tone-warn circle { fill: var(--warn-soft); stroke: var(--warn); }
+svg .node.tone-bad circle { fill: var(--bad-soft); stroke: var(--bad); }
+svg .node.tone-info circle { fill: var(--info-soft); stroke: var(--info); }
+svg .node.tone-violet circle { fill: var(--violet-soft); stroke: var(--violet); }
+svg .node.selected circle { stroke: var(--accent); stroke-width: 3.5; }
+svg .edge.merge { stroke-dasharray: 5 5; }
+svg .lane-mark { stroke-width: 1.2; }
+svg .lane-mark.tone-ok { fill: var(--ok); stroke: var(--ok); }
+svg .lane-mark.tone-bad { fill: var(--bad); stroke: var(--bad); }
+svg .lane-mark.tone-info { fill: var(--info); stroke: var(--info); }
+svg .lane-mark.tone-neutral { fill: var(--muted); stroke: var(--muted); }
 input[type="datetime-local"] { padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font-size: var(--fs-sm); }
 .custom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .avatar { display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--sunken); border: 1px solid var(--line); font-size: var(--fs-lg); line-height: 1; }
@@ -358,16 +379,40 @@ body.sky-look .sky:active { cursor: grabbing; }
 .sky-panel { position: fixed; bottom: var(--sp-5); left: 50%; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; max-width: calc(100vw - 24px); padding: 8px 12px; transform: translateX(-50%); background: var(--glass-card); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow-lift); }
 .sky-panel[hidden] { display: none; }
 .compass { min-width: 220px; font-weight: 620; font-variant-numeric: tabular-nums; text-align: center; }
+.states { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.state { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; background: var(--neutral-soft); color: var(--muted); font-size: var(--fs-xs); font-weight: 650; line-height: 20px; white-space: nowrap; }
+.state[data-tone="ok"] { background: var(--ok-soft); color: var(--ok); }
+.state[data-tone="bad"] { background: var(--bad-soft); color: var(--bad); }
+.state[data-tone="warn"] { background: var(--warn-soft); color: var(--warn); }
+.state[data-tone="info"] { background: var(--info-soft); color: var(--info); }
+.state[data-tone="violet"] { background: var(--violet-soft); color: var(--violet); }
+.wt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%; }
+.leaves { display: grid; gap: 4px; width: 100%; margin: 0; padding: 0 0 0 18px; list-style: none; }
+.leaf { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.hint { color: var(--muted); font-size: var(--fs-xs); }
+.delete-all { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dry-run { margin: 4px 0 0; padding: 8px 10px; background: var(--sunken); border-radius: 8px; font-family: var(--mono); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radius: 8px; font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.spawn-tree { display: grid; gap: 4px; margin: 0; padding: 0 0 0 18px; list-style: none; }
+.spawn-tree.root { padding-left: 0; }
+.spawn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 5px 8px; border-radius: 8px; }
+.spawn-row:hover { background: var(--hover); }
+.graph3d { position: relative; width: 100%; height: clamp(360px, 68vh, 820px); overflow: hidden; border-radius: var(--radius-sm); cursor: grab; touch-action: none; }
+.graph3d:active { cursor: grabbing; }
+.graph3d .scene-nav-info, .graph3d .graph-info-msg { display: none; }
+.graph3d .scene-container { position: relative; }
+.float-tooltip-kap { position: absolute; z-index: 9; padding: 4px 8px; border-radius: 6px; background: var(--glass-card); color: var(--text); font-size: var(--fs-sm); white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
 </style>
 </head>
 <body>
+{{ icons }}
 <canvas class="sky" id="sky" aria-hidden="true"></canvas>
 <div class="head" id="head">
 <header class="top">
   <div class="brand"><span class="logo" aria-hidden="true"></span><div class="brand-text"><h1>Agent Orchestrator</h1><span class="sky-note" id="sky-note"></span></div></div>
   <div class="tools">
-    <button type="button" class="btn small ghost" id="palette-open" title="Befehle (Strg+K)" aria-label="Befehle">⌘K</button>
-    <button type="button" class="btn small ghost icon-btn" id="settings-open" title="Einstellungen und Ambiente" aria-label="Einstellungen">⚙</button>
+    <button type="button" class="btn small ghost icon-only" id="palette-open" title="Befehle (Strg+K)" aria-label="Befehle"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-command"></use></svg></button>
+    <button type="button" class="btn small ghost icon-only" id="settings-open" title="Einstellungen und Ambiente" aria-label="Einstellungen"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-gear"></use></svg></button>
   </div>
 </header>
 <div class="navbar">
@@ -438,9 +483,15 @@ body.sky-look .sky:active { cursor: grabbing; }
 
 {% include "page-space-steer.js" %}
 
-{% include "page-space-scene.js" %}
+{% include "page-spawn.js" %}
+
+{% include "page-graph3d.js" %}
+
+{% include "page-artifacts.js" %}
 
 {% include "page-tree.js" %}
+
+{% include "page-cleanup.js" %}
 
 {% include "page-time.js" %}
 

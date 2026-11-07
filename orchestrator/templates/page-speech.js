@@ -60,13 +60,13 @@
   }
 
   function micButton(field) {
-    const button = h("button", {type: "button", class: "btn small ghost icon-btn mic", "aria-pressed": "false", "aria-label": "Spracheingabe: gedrückt halten und sprechen", title: "Gedrückt halten und sprechen; der Text landet im Feld und wird nicht gesendet"}, "🎙");
+    const button = h("button", {type: "button", class: "btn small ghost icon-only mic", "aria-pressed": "false", ...named("Spracheingabe", "Spracheingabe: gedrückt halten und sprechen; der Text landet im Feld und wird nicht gesendet")}, icon("bi-mic"));
     const reason = !window.isSecureContext || !navigator.mediaDevices
       ? "Das Mikrofon braucht einen sicheren Kontext: öffne den Hub über 127.0.0.1 oder localhost"
       : !window.MediaRecorder ? "Dieser Browser kann nicht aufnehmen" : !state.speech.stt ? `Spracheingabe ist aus: ${state.speech.stt_off}` : "";
     if (reason) {
       button.disabled = true;
-      button.title = reason;
+      button.title = `Spracheingabe: ${reason}`;
       return button;
     }
     const press = (event) => {

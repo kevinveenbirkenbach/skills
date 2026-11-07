@@ -175,7 +175,8 @@ class TestHubSpeech(HubCase):
         args = {
             "--bind": "127.0.0.1", "--listen-port": "0", "--public-port": "1", "--council": str(self.council), "--pages": str(self.pages), "--state": str(self.state),
             "--host-state": str(HOST_STATE), "--skills": str(self.outside), "--transcripts": str(self.projects), "--templates": str(HUB / "templates"),
-            "--tree-file": str(self.tree_file), "--timers": str(self.timers), "--llm-key-file": os.devnull, "--llm-url": "", "--llm-model": "",
+            "--tree-file": str(self.tree_file), "--timers": str(self.timers), "--vendor": str(HUB / "vendor"), "--cleanup": str(self.cleanup),
+            "--llm-key-file": os.devnull, "--llm-url": "", "--llm-model": "",
             "--piper": str(self.engines.piper), "--voices": str(self.engines.voices), "--operator-voice": "en_US-test-high:9", "--whisper": str(self.engines.whisper),
             "--whisper-model": str(self.engines.whisper_model), "--scratch": str(self.engines.scratch), "--approvers": str(self.approvers),
         }
@@ -184,7 +185,7 @@ class TestHubSpeech(HubCase):
             argv = [part for pair in given.items() for part in pair]
             return subprocess.run([sys.executable, str(HUB / "server.py"), *argv], capture_output=True, text=True, timeout=60, check=False)
 
-        for name in ("--piper", "--voices", "--operator-voice", "--whisper", "--whisper-model", "--scratch", "--approvers"):
+        for name in ("--piper", "--voices", "--operator-voice", "--whisper", "--whisper-model", "--scratch", "--approvers", "--vendor", "--cleanup"):
             with self.subTest(name=name):
                 done = run({key: value for key, value in args.items() if key != name})
                 self.assertEqual(done.returncode, 2, done.stderr)

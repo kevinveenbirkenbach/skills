@@ -5,12 +5,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import jinja2
+from markupsafe import Markup
 
 from .approving import Approving
+from .artifacts import Touched
 from .asking import Asking
 from .batches import Pending
+from .cleanup import Cleaning, Spool
 from .engines import Engines, Speech
 from .events import Log, Watch
+from .icons import sheet
 from .inbox import Inbox
 from .jobs import Jobs
 from .language import Language, Model
@@ -34,6 +38,8 @@ from .view import View
 class Places:
     tree_file: Path
     timers: Path
+    vendor: Path
+    cleanup: Path
 
 
 def environment(templates: Path) -> jinja2.Environment:
@@ -49,7 +55,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Cleaning, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -75,6 +81,10 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Inbox, Rules, Jobs, Sour
     settings: Settings
     speech: Speech
     approvers: Path
+    vendor: Path
+    icons: Markup
+    spool: Spool
+    touched: Touched
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -86,7 +96,12 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Inbox, Rules, Jobs, Sour
 def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_state: Path, transcripts: Path, scripts: Runner, templates: Path, places: Places, model: Model, engines: Engines, approvers: Path) -> Hub:
     uploads = state / "uploads"
     uploads.mkdir(exist_ok=True)
+    reviews = Reviews(state)
     return Hub(
+        vendor=places.vendor,
+        icons=sheet(places.vendor, templates),
+        spool=Spool(places.cleanup).ready(),
+        touched=Touched(reviews.stored),
         approvers=approvers,
         speech=Speech(engines, state / "tts"),
         rules=Ledger(state / "rules.json"),
@@ -103,7 +118,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         council=council,
         pages=pages,
         public_port=public_port,
-        reviews=Reviews(state),
+        reviews=reviews,
         asks=Ledger(state / "asks.json"),
         decisions=Ledger(state / "decisions.json"),
         messages=Ledger(state / "messages.json"),

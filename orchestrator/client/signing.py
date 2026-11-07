@@ -65,6 +65,10 @@ def operator_item(task: str, command: str, directory: str) -> dict:
     return {"kind": "operator", "id": task, "command": command, "directory": directory}
 
 
+def cleanup_item(repository: str, branch: str, worktree: str, tip: str) -> dict:
+    return {"kind": "cleanup", "repository": repository, "branch": branch, "worktree": worktree, "tip": tip}
+
+
 def approval_payload(hashes: list[str], nonce: str, expires: int) -> dict:
     return {"v": VERSION, "kind": "approve", "items": sorted(set(hashes)), "nonce": nonce, "expires": expires}
 

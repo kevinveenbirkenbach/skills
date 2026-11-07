@@ -3,6 +3,10 @@ const Nav = (() => {
   const TABS = [["stream", "Stream"], ["agents", "Agents"], ["artifacts", "Artifacts"]];
   const SUBS = {stream: [["inbox", "Inbox"], ["rules", "Regeln"]]};
   const VIEWS = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]];
+  const ICONS = {
+    stream: "bi-activity", inbox: "bi-inbox", rules: "bi-card-checklist", agents: "bi-people", artifacts: "bi-git",
+    orbit: "bi-globe2", chord: "bi-bezier2", swimlane: "bi-bar-chart-steps", tree: "bi-diagram-3", "3d": "bi-badge-3d",
+  };
   const OLD = {graph: ["agents", "orbit"], tree: ["artifacts", "tree"]};
   const known = (view) => VIEWS.some(([id]) => id === view);
 
@@ -30,7 +34,7 @@ const Nav = (() => {
     return {screen: "stream", view: null, redirect: null};
   }
 
-  return {TABS, SUBS, VIEWS, route, hashOf, tabOf};
+  return {TABS, SUBS, VIEWS, ICONS, route, hashOf, tabOf};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Nav;

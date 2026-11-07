@@ -34,7 +34,12 @@ RUNNER_ROUTE = re.compile(r"/api/runner/([0-9a-f]{16})/(claim|report)")
 PROOF_ROUTE = re.compile(r"/api/reviews/([0-9a-f]{16})")
 SIGN_ROUTE = "/api/sign"
 RULE_SIGN_ROUTE = "/api/rules/sign"
-ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE)
+CLEANUP_ROUTE = "/api/cleanup"
+CLEANUP_STATE = re.compile(r"/api/cleanup/([0-9a-f]{16})")
+VENDOR_ROUTE = re.compile(r"/vendor/([a-z0-9.-]{1,64})")
+VENDOR = {"3d-force-graph.min.js": "3d-force-graph/3d-force-graph.min.js", "three.module.js": "three/three.module.js", "three.core.js": "three/three.core.js"}
+SCRIPT_TYPE = "text/javascript; charset=utf-8"
+ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE)
 
 
 class Handler(Exchange):
@@ -52,10 +57,16 @@ class Handler(Exchange):
         item = ITEM.fullmatch(path)
         entry = ENTRY.fullmatch(path)
         proof = PROOF_ROUTE.fullmatch(path)
+        vendored = VENDOR_ROUTE.fullmatch(path)
+        cleanup = CLEANUP_STATE.fullmatch(path)
         if self.host() is None:
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
         elif path == "/":
             self.index()
+        elif vendored and vendored.group(1) in VENDOR:
+            self.vendored(VENDOR[vendored.group(1)])
+        elif cleanup:
+            self.answer(lambda: hub.cleanup_state(cleanup.group(1)), HTTPStatus.OK)
         elif proof:
             self.answer(lambda: hub.review_proof(proof.group(1)), HTTPStatus.OK)
         elif path == "/api/state":
@@ -112,6 +123,8 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.sign(body), HTTPStatus.OK)
         if path == RULE_SIGN_ROUTE:
             return lambda body: self.answer(lambda: hub.sign_rule(body), HTTPStatus.OK)
+        if path == CLEANUP_ROUTE:
+            return lambda body: self.answer(lambda: hub.cleanup(body), HTTPStatus.ACCEPTED)
         if inbox:
             return lambda body: self.answer(lambda: hub.mark(body), HTTPStatus.OK)
         if undo:
@@ -187,6 +200,10 @@ class Handler(Exchange):
         page, csp = self.server.hub.render(nonce)
         headers = {"Content-Security-Policy": csp, "X-Frame-Options": "DENY"}
         self.send(HTTPStatus.OK, "text/html; charset=utf-8", page.encode("utf-8"), headers)
+
+    def vendored(self, name: str) -> None:
+        headers = {"Content-Security-Policy": PLAIN_CSP, "Cache-Control": "private, max-age=86400"}
+        self.attempt((self.server.hub.vendor / name).read_bytes, lambda data: self.send(HTTPStatus.OK, SCRIPT_TYPE, data, headers))
 
     def stored(self, review_id: str, name: str) -> None:
         suffix, content_type, csp = STORED[name]

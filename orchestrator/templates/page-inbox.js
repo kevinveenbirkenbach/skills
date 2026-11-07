@@ -22,7 +22,7 @@
 
   function undoToast(batch, label) {
     const left = h("span", {class: "muted"});
-    const button = h("button", {type: "button", class: "btn small"}, "Rückgängig");
+    const button = h("button", {type: "button", class: "btn small", ...named("Rückgängig")}, icon("bi-arrow-counterclockwise"), "Rückgängig");
     const box = h("div", {class: "toast wait", role: "status"}, h("strong", {}, label), h("div", {class: "undo-row"}, left, h("span", {class: "spacer"}), button));
     let timer = 0;
     const count = () => {
@@ -117,11 +117,11 @@
     }
     const buttons = [];
     if (item.kind === "review" || item.kind === "ask") {
-      buttons.push(btn("Freigeben", "btn small primary", () => approveOne(item)), btn("Ablehnen", "btn small danger", () => rejectOne(item)));
+      buttons.push(iconBtn("bi-check-lg", "Freigeben", "btn small primary", () => approveOne(item)), iconBtn("bi-x-lg", "Ablehnen", "btn small danger", () => rejectOne(item)));
     } else if (item.kind === "decision" && item.recommended) {
-      buttons.push(btn(`Empfehlung: ${item.recommended}`, "btn small primary", () => approveOne(item)));
+      buttons.push(h("button", {type: "button", class: "btn small primary", ...named(`Empfehlung: ${item.recommended}`), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), item.recommended));
     } else if (item.kind === "operator" && item.runnable) {
-      buttons.push(btn("Ausführen", "btn small primary", () => approveOne(item)));
+      buttons.push(iconBtn("bi-play-fill", "Ausführen", "btn small primary", () => approveOne(item)));
     }
     return buttons;
   }
@@ -153,10 +153,10 @@
         actionsFor(item),
         item.kind === "operator" ? copyButton(item.command) : null,
         h("span", {class: "spacer"}),
-        btn("1 h", "btn small ghost", () => mark(item, nowSeconds() + 3600, item.pinned)),
-        btn("morgen", "btn small ghost", () => mark(item, tomorrow(), item.pinned)),
-        item.until ? btn("wecken", "btn small ghost", () => mark(item, 0, item.pinned)) : null,
-        btn(item.pinned ? "lösen" : "anheften", "btn small ghost", () => mark(item, item.until, !item.pinned))));
+        iconBtn("bi-hourglass-split", "1 h", "btn small ghost", () => mark(item, nowSeconds() + 3600, item.pinned), "1 h: eine Stunde zurückstellen"),
+        iconBtn("bi-sunrise", "morgen", "btn small ghost", () => mark(item, tomorrow(), item.pinned), "morgen: bis morgen 8 Uhr zurückstellen"),
+        item.until ? iconBtn("bi-alarm", "wecken", "btn small ghost", () => mark(item, 0, item.pinned), "wecken: wieder zeigen") : null,
+        iconBtn(item.pinned ? "bi-pin-angle-fill" : "bi-pin-angle", item.pinned ? "lösen" : "anheften", "btn small ghost", () => mark(item, item.until, !item.pinned))));
   }
 
   function inboxScreen() {
@@ -188,8 +188,8 @@
       ui.snoozed = event.target.checked;
       drawInbox();
     }}});
-    const choose = h("button", {type: "button", class: "btn small soft", disabled: !chosen.length || ui.busy, on: {click: () => bulk(chosen, "Auswahl freigeben")}}, `Auswahl freigeben (${chosen.length})`);
-    const all = h("button", {type: "button", class: "btn small primary", disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Alle grünen freigeben")}}, `Alle grünen freigeben (${green.length})`);
+    const choose = h("button", {type: "button", class: "btn small soft", ...named(`Auswahl freigeben (${chosen.length})`), disabled: !chosen.length || ui.busy, on: {click: () => bulk(chosen, "Auswahl freigeben")}}, icon("bi-check2-square"), String(chosen.length));
+    const all = h("button", {type: "button", class: "btn small primary", ...named(`Alle grünen freigeben (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Alle grünen freigeben")}}, icon("bi-check2-all"), String(green.length));
     inboxDom.replaceChildren(
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Inbox", counter(waitingCount())), h("span", {class: "spacer"}),
         hidden ? h("label", {class: "check"}, snoozed, `${hidden} zurückgestellt`) : null),

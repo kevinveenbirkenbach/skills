@@ -45,6 +45,70 @@
           "result": null
         },
         {
+          "branch": "feature/done",
+          "worktree": "@ROOT@/worktrees/github.com/me/demo/feature-done",
+          "head": "5b1e6fd3a7c0e2d94f8a61b3c2d7e9f0a1b2c3d4",
+          "detached": false,
+          "locked": null,
+          "worktree_state": "clean",
+          "staged": 0,
+          "unstaged": 0,
+          "untracked": 0,
+          "upstream": "origin/feature/done",
+          "ahead": 0,
+          "behind": 0,
+          "gone": true,
+          "local_sha": "5b1e6fd3a7c0e2d94f8a61b3c2d7e9f0a1b2c3d4",
+          "remotes": {},
+          "compose_projects": [
+            "demo-feature-done"
+          ],
+          "images": [
+            "demo:feature-done"
+          ],
+          "state": "merged-clean",
+          "merged_by": "#12",
+          "merged_into": "main",
+          "size_bytes": 4096,
+          "skip": null,
+          "actions": [
+            "worktree",
+            "local-branch",
+            "remote-branch"
+          ],
+          "reason": "merged into main by #12",
+          "result": null
+        },
+        {
+          "branch": "feature/kept",
+          "worktree": null,
+          "head": null,
+          "detached": false,
+          "locked": null,
+          "worktree_state": "none",
+          "staged": null,
+          "unstaged": null,
+          "untracked": null,
+          "upstream": null,
+          "ahead": null,
+          "behind": null,
+          "gone": false,
+          "local_sha": "0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d",
+          "remotes": {},
+          "compose_projects": [],
+          "images": [],
+          "state": "merged-clean",
+          "merged_by": "ancestor",
+          "merged_into": "main",
+          "size_bytes": null,
+          "skip": "ignored files beyond known caches: notes.txt",
+          "actions": [
+            "local-branch"
+          ],
+          "reason": "merged into main",
+          "result": null
+        },
+        {
           "branch": "main",
           "worktree": "@ROOT@/repos/github.com/me/demo",
           "head": "e7a0755c85d1c17bcdd24a7dc622681e2af5fc2a",

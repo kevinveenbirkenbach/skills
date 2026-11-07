@@ -25,7 +25,7 @@
   window.addEventListener("hashchange", apply);
   window.addEventListener("resize", measure);
   window.addEventListener("resize", redrawSky);
-  window.addEventListener("resize", requestSpace);
+  window.addEventListener("resize", refresh3d);
   skyPanel();
   radio.element = h("audio", {preload: "none"});
   radio.element.addEventListener("error", () => {

@@ -118,8 +118,8 @@ from three views down to any agent, branch or artefact.
       items, and "Löschen" needs the operator signature (`/api/sign`).
       Rejected: a second click without signature, one click without preview.
     - **Execution**: the orchestrator writes a signed job into a host
-      directory; a systemd user path unit runs `pkgmgr branch gc --apply` for
-      exactly those items and writes the result back. Rejected: an
+      directory; a systemd user path unit runs `pkgmgr branch cleanup --apply
+      --local` for exactly those items and writes the result back. Rejected: an
       `operator.py` row (not direct).
 22. **Organisation update**: a new skill `kvb-org-update` tells every agent
     and client which skills changed and how to use them, as one
@@ -348,8 +348,8 @@ flowchart TD
       and tip sha per item, no command) into a host-mounted job directory and
       holds no git, token or key.
 - [ ] A systemd user path unit verifies the signature on the host and runs
-      `pkgmgr branch gc --apply --local` for exactly the signed items, matched
-      exactly, never as a pattern; `--local` removes the worktree, the local
+      `pkgmgr branch cleanup --apply --local` for exactly the signed items,
+      matched exactly, never as a pattern; `--local` removes the worktree, the local
       branch, the compose stack without `-v` and its images, never a remote
       branch, and needs no SSH key.
 - [ ] The unit refuses, and changes nothing for, an item whose tip or state

@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Orchestrator cleanup: wake on a signed branch deletion the Agent Orchestrator wrote
+
+[Path]
+DirectoryNotEmpty=%h/.local/state/kvb-orchestrator/cleanup/jobs
+MakeDirectory=true
+DirectoryMode=0700
+
+[Install]
+WantedBy=default.target

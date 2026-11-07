@@ -48,6 +48,10 @@ services:
       - /tree/branch-tree.json
       - --timers
       - /timers
+      - --vendor
+      - /app/vendor
+      - --cleanup
+      - /state/cleanup
       - --llm-url
       - "${KVB_ORCHESTRATOR_LLM_URL}"
       - --llm-model

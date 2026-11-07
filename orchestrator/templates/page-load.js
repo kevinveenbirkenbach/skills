@@ -1,6 +1,6 @@
   async function load() {
     try {
-      const response = await fetch(`/api/state?${windowQuery()}${wantsTrack() ? "&track=1" : ""}`, {cache: "no-store"});
+      const response = await fetch(`/api/state?${windowQuery()}`, {cache: "no-store"});
       if (!response.ok) {
         throw new Error(String(response.status));
       }

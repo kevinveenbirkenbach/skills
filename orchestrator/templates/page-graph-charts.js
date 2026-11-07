@@ -157,28 +157,20 @@
   }
 
   function legend() {
-    const axis = graph3d() ? depth() : "none";
-    const words = {
-      none: "Linienstärke = Anzahl · Nähe = Zusammenarbeit der letzten Zeit",
-      time: "Weltlinie = Agent, Lage = Nähe der Zusammenarbeit zu ihrer Zeit · Bogen = ein Ereignis · Ebene = Stand der Wiedergabe",
-      spawn: "Ebenen = Spawn-Tiefe · Bogen = Nachrichten im Zeitraum, Zahl im Stream",
-    };
     return h("div", {class: "legend"}, LEGEND.map(([name, label]) => h("span", {}, h("i", {class: `swatch t-${name}`}), label)),
-      axis === "none" ? null : h("span", {}, h("i", {class: "swatch t-spawn"}), "Spawn"),
-      h("span", {class: "muted"}, words[axis]));
+      h("span", {class: "muted"}, "Linienstärke = Anzahl · Nähe = Zusammenarbeit der letzten Zeit"));
   }
 
   function side() {
     const node = state.graph.nodes.find((entry) => entry.id === ui.node);
     if (!node) {
-      const where = graph3d() ? "eine Weltlinie oder darunter auf ihren Namen" : "einen Knoten";
-      return [h("h2", {class: "panel-title"}, "Details"), h("p", {class: "muted"}, `Klicke auf ${where}: sein Panel zeigt Aufgaben, Claims, Subagenten und Verlauf.`)];
+      return [h("h2", {class: "panel-title"}, "Details"), h("p", {class: "muted"}, "Klicke auf einen Knoten: sein Panel zeigt Aufgaben, Claims, Subagenten und Verlauf.")];
     }
     const messages = state.radio.filter((row) => row.source === node.id || row.targets.includes(node.id)).slice(-10).reverse();
     return [
       h("div", {class: "panel-head"},
         h("div", {}, h("h2", {class: "panel-title"}, node.label), h("span", {class: "muted"}, `${NODE_KINDS[node.kind]}${node.parent ? ` von ${labelOf(node.parent)}` : ""}`)),
-        h("button", {type: "button", class: "btn small ghost", "aria-label": "Schließen", on: {click: () => select(node.id)}}, "×")),
+        iconBtn("bi-x-lg", "Schließen", "btn small ghost", () => select(node.id))),
       h("h3", {}, "Letzte Nachrichten", counter(messages.length)),
       messages.length ? h("ul", {class: "mini"}, messages.map((row) => h("li", {},
         h("div", {class: "row"}, klass(row.class), when(row.ts)),
@@ -188,22 +180,17 @@
   }
 
   function viewSwitch(screen) {
-    return h("div", {class: "segmented", role: "group", "aria-label": "Ansicht"}, Nav.VIEWS.map(([id, name]) => h("button", {type: "button", "aria-pressed": String(ui.views[screen] === id), on: {click: () => go(screen, id)}}, name)));
+    return h("div", {class: "segmented", role: "group", "aria-label": "Ansicht"}, Nav.VIEWS.map(([id, name]) => h("button", {
+      type: "button", class: "icon-only", ...named(name), "aria-pressed": String(ui.views[screen] === id), on: {click: () => go(screen, id)},
+    }, icon(Nav.ICONS[id]))));
   }
-
-  const later = (what) => emptyState(`${what} folgt`, "Diese Ansicht ist geplant und kommt mit dem nächsten Ausbau.");
 
   function agentsScreen() {
     const view = ui.views.agents;
     const stageBox = h("div", {class: "stage"});
     const aside = h("aside", {class: "card panel", "aria-live": "polite"});
     const toolbar = agentsToolbar();
-    graphDom = {stage: stageBox, aside, pulses: null, space: null, toolbar};
-    const body = view === "tree" ? later("Der Spawn-Baum") : h("div", {class: "graph-body"}, h("div", {class: "card stage-card"}, stageBox, legend()), aside);
-    return h("div", {class: "graph"}, toolbar.bar, h("div", {class: "card controls"}, viewSwitch("agents"), view === "3d" ? spaceTools() : null), body);
-  }
-
-  function artifactsScreen() {
-    const view = ui.views.artifacts;
-    return h("div", {class: "graph"}, h("div", {class: "card controls"}, viewSwitch("artifacts")), view === "tree" ? treeScreen() : later(`Artifacts ${Nav.VIEWS.find(([id]) => id === view)[1]}`));
+    graphDom = {stage: stageBox, aside, pulses: null, toolbar};
+    const body = view === "tree" ? spawnScreen() : h("div", {class: "graph-body"}, h("div", {class: "card stage-card"}, stageBox, view === "3d" ? null : legend()), aside);
+    return h("div", {class: "graph"}, toolbar.bar, h("div", {class: "card controls"}, viewSwitch("agents"), view === "3d" ? layoutTools("agents") : null), body);
   }

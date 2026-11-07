@@ -3,8 +3,9 @@
 #   install  migrate, then copy orchestrator/ to ~/.local/share/kvb-orchestrator,
 #            write its .env, build and start the container, register the MCP
 #            server for Claude Code, build pkgmgr from the newest signed tag of
-#            PKGMGR_REPO and enable the tree timer; re-enable the runner and
-#            re-register the hook when the migration took them over
+#            PKGMGR_REPO and enable the tree timer and the cleanup path unit;
+#            re-enable the runner and re-register the hook when the migration
+#            took them over
 #   migrate  move every trace of the earlier name to the kvb-orchestrator names
 #            once: container, image, code, state, approvals, pinned keys, MCP
 #            server, PermissionRequest hook, runner unit; a second run changes
@@ -33,6 +34,7 @@ LOCAL_SETTINGS="${HOME}/.claude/settings.local.json"
 HOOK_TIMEOUT=110
 RUNNER="${NAME}-runner.service"
 TREE_UNIT="${NAME}-tree"
+CLEANUP_UNIT="${NAME}-cleanup"
 TREE_DIR="${HOME}/.local/state/pkgmgr/tree"
 PKGMGR_REPO="${PKGMGR_REPO:-https://github.com/kevinveenbirkenbach/package-manager.git}"
 IMAGE="${NAME}:local"
@@ -146,7 +148,7 @@ install_hub() {
 	cp -a "${REPO_ROOT}/orchestrator/." "${HUB}/"
 	# Python loads a cached .pyc whose header matches the source mtime and size, and cp -a keeps the mtime: one planted in the sandbox-writable tree would run on the host
 	find "${HUB}" -name __pycache__ -type d -prune -exec rm -rf {} +
-	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py"
+	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py" "${HUB}/client/cleanup.py"
 	log "skills: the PermissionRequest hook client is ${HUB}/client/permission_hook.py"
 	log "skills: approvals need a pinned passkey: settings, 'Passkey registrieren', then 'make orchestrator-pin CREDENTIAL=<blob>'; until then every executor refuses"
 	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\n' \
@@ -214,10 +216,11 @@ tree_timer() {
 		return 0
 	fi
 	build_pkgmgr || return 0
-	cp -f "${HUB}/systemd/${TREE_UNIT}.service" "${HUB}/systemd/${TREE_UNIT}.timer" "${UNITS}/"
+	cp -f "${HUB}/systemd/${TREE_UNIT}.service" "${HUB}/systemd/${TREE_UNIT}.timer" "${HUB}/systemd/${CLEANUP_UNIT}.service" "${HUB}/systemd/${CLEANUP_UNIT}.path" "${UNITS}/"
 	systemctl --user daemon-reload
-	systemctl --user enable --now "${TREE_UNIT}.timer"
+	systemctl --user enable --now "${TREE_UNIT}.timer" "${CLEANUP_UNIT}.path"
 	log "skills: ${TREE_UNIT}.timer writes ${TREE_DIR}/branch-tree.json every 60 s while the Agent Orchestrator page polls"
+	log "skills: ${CLEANUP_UNIT}.path deletes the merged branches the operator signs in the Artifacts Tree, locally only"
 }
 
 install_all() {
@@ -286,6 +289,11 @@ check() {
 		ok "${TREE_UNIT}.timer active"
 	else
 		todo "${TREE_UNIT}.timer off: make orchestrator-install with a signed pkgmgr tag that has 'branch tree'"
+	fi
+	if [[ "$(systemctl --user is-active "${CLEANUP_UNIT}.path" 2>/dev/null || true)" == "active" ]]; then
+		ok "${CLEANUP_UNIT}.path active"
+	else
+		todo "${CLEANUP_UNIT}.path off: deleting merged branches from the Artifacts Tree waits for make orchestrator-install"
 	fi
 	free="$(df --output=avail -BG / | tail -1 | tr -dc '0-9')"
 	if ((free >= FLOOR_GB)); then ok "/ has ${free} GB free"; else fail "/ has ${free} GB free, floor ${FLOOR_GB} GB"; fi
