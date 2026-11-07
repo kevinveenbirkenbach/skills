@@ -503,6 +503,40 @@ class TestHotfix(unittest.TestCase):
         result = self.sync(self.feature, "work/feature")
         self.assertEqual((result.returncode, result.stdout), (0, f"merged\torigin/main\t{self.fix}\n"), result.stderr)
 
+    def fake_flow(self, flow: dict) -> None:
+        fake = self.base / "bin" / "pkgmgr"
+        fake.parent.mkdir(exist_ok=True)
+        fake.write_text(f"#!/bin/sh\nprintf '%s' '{json.dumps(flow)}'\n", encoding="utf-8")
+        fake.chmod(0o755)
+        self.env["PATH"] = f"{fake.parent}:/usr/bin:/bin"
+        (self.work / ".git" / "pkgmgr").mkdir()
+        (self.work / ".git" / "pkgmgr" / "flow.yml").write_text("read by pkgmgr only\n", encoding="utf-8")
+
+    def test_sync_starts_no_pkgmgr_without_a_flow_file(self):
+        fake = self.base / "bin" / "pkgmgr"
+        fake.parent.mkdir()
+        fake.write_text(f"#!/bin/sh\ntouch {self.base / 'pkgmgr-ran'}\nexit 2\n", encoding="utf-8")
+        fake.chmod(0o755)
+        self.env["PATH"] = f"{fake.parent}:/usr/bin:/bin"
+        self.assertEqual(self.merges(self.sync(self.work, "work/side")), [["merged", "origin/main"], ["merged", "line"]])
+        self.assertFalse((self.base / "pkgmgr-ran").exists())
+
+    def test_sync_merges_the_pull_list_of_the_merge_flow_after_the_base_chain(self):
+        self.commit(self.feature, "feat.txt", "feat\n", "feature work")
+        self.fake_flow({"source": "file", "pull": ["origin/main", "feature"], "push": ["line"], "warnings": []})
+        result = self.sync(self.work, "work/side")
+        self.assertEqual(self.merges(result), [["merged", "origin/main"], ["merged", "line"], ["merged", "feature"]])
+        self.assertTrue((self.work / "feat.txt").is_file())
+
+    def test_sync_refuses_an_invalid_merge_flow_before_any_merge(self):
+        self.fake_flow({"source": "invalid", "pull": [], "push": [], "warnings": ["pkgmgr/flow.yml ignored: not a mapping"]})
+        before = self.head(self.work)
+        result = self.sync(self.work, "work/side")
+        self.assertEqual((result.returncode, result.stdout), (2, ""))
+        self.assertIn("is invalid", result.stderr)
+        self.assertIn("not a mapping", result.stderr)
+        self.assertEqual(self.head(self.work), before)
+
     def test_the_base_chain_follows_only_open_rows_of_this_repository(self):
         self.git(self.other, "branch", "line")
         gone = self.base / "gone"
