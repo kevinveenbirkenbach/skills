@@ -124,6 +124,87 @@ from three views down to any agent, branch or artefact.
 22. **Organisation update**: a new skill `kvb-org-update` tells every agent
     and client which skills changed and how to use them, as one
     `newsletter` per update; phase 1 announces the radio change through it.
+23. **Phase 5** (23 to 38 operator-confirmed 2026-11-07): the console output shows under "Ausführen"; a deny picks its
+    channel (default `post`); agents request auto-approval rules through the
+    inbox; the rules form and the Ort fields never overlap; the radio plays
+    with one line per station and highlights the speaking agent; the
+    operator composer sends text or voice, recorded, transcribed locally with
+    whisper in the container and kept as audio, to a recipient by `post` or
+    `call`; a Hierarchie view shows the council offices with appoint and
+    recall; the agent order (drag list) is separate from task priority (WSJF
+    plus the operator's pin) and only breaks ties; one Tasks tab holds list,
+    board and RASCI matrix, the inbox as its "waits on Operator" filter and
+    the queue state; the merge flow, a pkgmgr-managed YAML per worktree with
+    several pull sources and push targets, shows in Artifacts and Tasks.
+24. **Firewall**: the tab Regeln becomes Firewall and holds every form of
+    allow-listing: the hub's auto-approval rules (ask, review, decision),
+    allow and deny command patterns, and the Claude settings permissions
+    (`allow`, `ask`, `deny`) and sandbox entries. Rejected: a separate
+    settings page.
+25. **Settings writes**: a change to a Claude settings file shows as a diff,
+    is signed with the passkey and applied by a host executor that verifies
+    the signature, writes only files of a fixed list (`~/.claude/settings.json`
+    and `<project>/.claude/settings.json` of the known projects) and keeps a
+    backup. Rejected: an `operator.py` row only (no one-click path); an agent
+    writing settings (never).
+26. **Groups**: a rule applies to one agent, a named agent group or all
+    agents; rules form named rule sets that are taken over as a whole for an
+    agent, a group or all. The Firewall reads the existing settings files and
+    groups their entries by tool and command prefix by itself.
+27. **Decisions are tasks**: asks, rule requests, operator rows and choices
+    appear only in the Tasks tab, under its "waits on Operator" filter.
+    Rejected: a Choices column of its own (a choice is a decision the operator
+    takes, so it is a task).
+28. **Request choices**: the Tasks tab has one button per channel, `post` and
+    `call` with a multi-select of agents, `newsletter`, `broadcast`,
+    `security`, `mayday` and `pan-pan`, that sends the fixed request "send me
+    your open decisions as choices" without free text. Agents answer with
+    `kvb-think-choice` items, shown as choice cards; the operator's click on
+    an option is the passkey-signed answer.
+29. **Night commands**: evening, sunset and sunrise become `drain` (finish the
+    current task, accept nothing new), `suspend` (park work, write the
+    handover, idle) and `resume` (continue from the handover). Skills:
+    `kvb-org-evening` → `kvb-org-drain`, `kvb-org-sunset` → `kvb-org-suspend`,
+    `kvb-org-sunrise` → `kvb-org-resume`, `kvb-agent-relax` →
+    `kvb-agent-drain`, `kvb-agent-sleep` → `kvb-agent-suspend`,
+    `kvb-agent-wakeup` → `kvb-agent-resume`; `night.py` and the Steuerung
+    menu follow, `kvb-skill-cleanup` removes the old names. Rejected:
+    sleep / hibernate / wakeup, pause / park / resume.
+30. **Agent popup**: a click on an agent opens a fading popup with a simple,
+    clear layout (face, name, earlier names, offices, tasks, claims,
+    composer) instead of the Details side panel, which goes.
+31. **Node popup**: a click on a node in any graph view enlarges it, marks it
+    red and opens a slightly transparent popup in the foreground, tied to the
+    node by a leader line. A search field with suggestions replaces the list
+    of every node.
+32. **Faces**: agents get simple animated 2D faces instead of emojis, built
+    from independent attributes (shape, colour, eyes, brows, mouth, hair or
+    headwear, accessory) with at least 1000 combinations, chosen
+    deterministically from the agent's stable id; the mouth moves while the
+    agent speaks.
+33. **Fit to window**: every view sizes to the window height; no page
+    scrollbar on `#agents/orbit`.
+34. **Rename once**: a name change appears once in the Stream per session
+    and name pair, never again per state build; earlier names show in the
+    agent popup.
+35. **Radio**: the configured Deutschlandfunk stream
+    `https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac?aggregator=web`
+    plays (root cause proven first, redirects and `media-src` included). A
+    squelch control suppresses the radio beep; at 0 no beep plays, music on
+    or off.
+36. **Tree cause**: the tree timer builds pkgmgr from the newest signed tag,
+    and v2.3.0 has no `branch tree`, so no tree file exists. The Tree names
+    that cause and the operator step (the pkgmgr release) instead of a bare
+    "Kein Tree"; with pkgmgr 2.4.0 released the timer writes the file.
+37. **Resources**: a tab Ressourcen shows charts on the shared time axis:
+    tokens per agent and accumulated (from the usage fields of the session
+    transcripts), and CPU, RAM, disk and load of the host, sampled by a host
+    unit into the state directory; several values per chart.
+38. **Order of phase 6**: serial subtrees, each in its own worktree under
+    `kvb-org-robot`, merged into master before the next starts: S1 fixes
+    (fit, rename once, radio, squelch, tree cause) → S2 popups and search →
+    S3 faces → S4 night commands → S5 Tasks with asks and choices → S6
+    Firewall → S7 Resources.
 
 ## Approach
 
@@ -171,6 +252,41 @@ flowchart TD
         VF -- "✏️ changes" --> V2
     end
     VF -- "👍 fits" --> D1["🏁 Full gate, commit with operator OK, push hand-over"]
+```
+
+Phases 5 and 6 (decisions 23 to 38):
+
+```mermaid
+flowchart TD
+    subgraph W["🧩 5 · Inbox, UI, Hierarchie, Tasks"]
+        W1["🛠️ W1 to W4 in own worktrees"] --> W2["🕵️ Skeptic round, fix round per worktree"]
+        W2 --> W3{"🧪 Suite, e2e, MEDUSA, score green?"}
+        W3 -- "🔴 no: fix" --> W2
+        W3 -- "🟢 yes" --> W4["🔀 Rebase on master, commit, merge one by one"]
+    end
+    W4 --> L1
+    subgraph L["👂 6.0 · Listen and record"]
+        L1["❓ kvb-think-listen: names, Firewall writes, choices, groups"] --> L2["📋 Decisions 24 to 38 in this file on master"]
+    end
+    L2 --> S1
+    subgraph S["🤖 6.1 to 6.7 · Serial subtrees under kvb-org-robot"]
+        S1["🩹 S1 fit, rename once, radio, squelch, tree cause"] --> S2["🪟 S2 agent and node popups, search"]
+        S2 --> S3["🙂 S3 animated faces"]
+        S3 --> S4["🌙 S4 drain, suspend, resume"]
+        S4 --> S5["🗳️ S5 Tasks with asks and choices"]
+        S5 --> S6["🧱 S6 Firewall and settings writes"]
+        S6 --> S7["📈 S7 Ressourcen charts"]
+    end
+    subgraph G["🔁 Each subtree"]
+        G1["🔴 Red tests"] --> G2["🛠️ Change"]
+        G2 --> G3{"🧪 Suite, e2e, MEDUSA, score green?"}
+        G3 -- "🔴 no: fix" --> G2
+        G3 -- "🟢 yes" --> G4["📸 Screenshots 1920 / 1366 / 390 px"]
+        G4 --> GF{"💬 Operator feedback?"}
+        GF -- "✏️ changes" --> G2
+        GF -- "👍 fits" --> G5["🔀 Commit, merge into master, next subtree"]
+    end
+    S7 --> D2["🏁 install-skills-master row, push hand-over"]
 ```
 
 ## Acceptance Criteria
@@ -370,6 +486,85 @@ flowchart TD
 - [ ] Every icon element has a `title` and an `aria-label` that carry the
       former text (DOM test over every page).
 
+### Phase 5: inbox, UI, Hierarchie, Tasks
+
+- [ ] A deny is refused by the hub unless its passkey proof verifies; the
+      PermissionRequest hook quotes a deny reason only when it verifies.
+- [ ] A rule, also one an agent requested, is stored only with a passkey
+      assertion the hub verified against the pinned keys.
+- [ ] `operator_message(id, text, to)` answers `match` only for a verified
+      proof whose signed text and recipient equal the arguments.
+- [ ] The offices unit and the runner stay off while the installed
+      `council.py`, `nofollow.py` or `rasci.py` differ from the tree.
+- [ ] `rasci.py agents order` writes only `agent-order.json` and no `--prio`.
+- [ ] W1 to W4 are merged into master, each commit with its score block.
+
+### Phase 6: fixes (S1)
+
+- [ ] `#agents/orbit` at 1920, 1366 and 390 px has
+      `document.documentElement.scrollHeight <= innerHeight` (e2e probe).
+- [ ] Two state builds with the same claims add no second rename event to
+      the Stream (unit test on the timeline).
+- [ ] The Deutschlandfunk AAC stream plays in Chromium and Firefox through
+      the radio (e2e with a recorded fixture of its redirect chain) and the
+      root cause is named in the commit message.
+- [ ] With squelch at 0 no beep plays, music on or off (unit test on the
+      audio scheduler).
+- [ ] Without a tree file the Tree names the missing `pkgmgr branch tree`
+      and the release step.
+
+### Phase 6: popups and search (S2)
+
+- [ ] A click on an agent opens the popup with a fade; Escape and a click
+      outside close it; the Details side panel no longer exists.
+- [ ] A click on a node enlarges it, marks it red and draws a leader line to
+      a translucent popup; a second click elsewhere restores the node.
+- [ ] A search field with suggestions replaces the node chip list; no view
+      renders more than one chip per search hit.
+
+### Phase 6: faces (S3)
+
+- [ ] The face generator yields at least 1000 distinct attribute
+      combinations and the same face for the same agent id (unit test).
+- [ ] A speaking agent's face animates its mouth; a silent one does not
+      (DOM test on the class while the radio plays).
+
+### Phase 6: night commands (S4)
+
+- [ ] `kvb-org-drain`, `kvb-org-suspend`, `kvb-org-resume`,
+      `kvb-agent-drain`, `kvb-agent-suspend` and `kvb-agent-resume` exist;
+      the old six names exist nowhere in the tree except in the migration
+      and `kvb-skill-cleanup` history (grep test).
+- [ ] The Steuerung menu shows Drain, Suspend and Resume and each needs the
+      passkey, like the board actions today.
+
+### Phase 6: Tasks with asks and choices (S5)
+
+- [ ] Every pending ask, rule request, operator row and choice card shows in
+      the Tasks tab under "waits on Operator"; no Choices column exists.
+- [ ] Each channel button sends the fixed choice request with no text field;
+      `post` and `call` take a multi-select of agents.
+- [ ] A click on a choice option sends a passkey-signed answer the agent can
+      check with `operator_message`.
+
+### Phase 6: Firewall (S6)
+
+- [ ] The tab is called Firewall and lists hub rules, allow and deny
+      patterns and the settings permissions, grouped by tool and prefix as
+      read from the settings files.
+- [ ] A rule or rule set applies to one agent, a named group or all agents.
+- [ ] A settings change is written only by the host executor after the
+      passkey check, only to a listed file, with a backup beside it; a forged,
+      replayed or unlisted-file job changes nothing (unit tests).
+
+### Phase 6: Ressourcen (S7)
+
+- [ ] The tab shows tokens per agent and accumulated, and CPU, RAM, disk and
+      load, on the shared time axis, several values per chart.
+- [ ] Token counts equal the sum of the transcript usage fields of a fixture
+      (unit test); host samples come from the host unit's file, not from the
+      container.
+
 ### Tests
 
 - **Unit**
@@ -384,6 +579,8 @@ flowchart TD
         item and a branch name with pattern characters are each refused.
   - [ ] Orchestrator: the scratch-HOME migration, routing including old
         hashes, badge counts.
+  - [ ] Phase 6: rename-once timeline, squelch scheduler, face generator,
+        settings writer (forged, replayed, unlisted file), token sums.
 - **Integration**
   - [ ] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's
@@ -403,3 +600,6 @@ flowchart TD
         Stream.
   - [ ] On fixture data it shows the state icons in the Artifacts Tree and
         runs the delete flow: dry-run dialog, signature, result.
+  - [ ] Phase 6: no page scrollbar on any view, agent and node popups,
+        choice request and signed answer, Firewall settings diff and
+        signature, Ressourcen charts, each at 1920, 1366 and 390 px.
