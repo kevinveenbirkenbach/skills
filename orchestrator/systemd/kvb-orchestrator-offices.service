@@ -1,0 +1,9 @@
+[Unit]
+Description=Agent Orchestrator offices: verify the operator signature, then appoint, hand over or recall exactly the signed office through council.py
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/bin:/bin
+EnvironmentFile=%h/.local/share/kvb-orchestrator/.env
+ExecStart=/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/offices.py --port ${KVB_ORCHESTRATOR_PORT} --jobs %h/.local/state/kvb-orchestrator/offices/jobs --results %h/.local/state/kvb-orchestrator/offices/results --approvers %h/.config/kvb-orchestrator/approvers.json --replay %h/.local/state/kvb-orchestrator-approvals/offices.json --council ${KVB_ORCHESTRATOR_COUNCIL} --script ${KVB_ORCHESTRATOR_SKILLS}/kvb-org-organize/scripts/council.py
+TimeoutStartSec=600

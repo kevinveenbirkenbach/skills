@@ -402,6 +402,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 .graph3d .scene-nav-info, .graph3d .graph-info-msg { display: none; }
 .graph3d .scene-container { position: relative; }
 .float-tooltip-kap { position: absolute; z-index: 9; padding: 4px 8px; border-radius: 6px; background: var(--glass-card); color: var(--text); font-size: var(--fs-sm); white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
+{% include "style-hierarchy.css" %}
 </style>
 </head>
 <body>
@@ -485,6 +486,10 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 
 {% include "page-spawn.js" %}
 
+{% include "page-hierarchy.js" %}
+
+{% include "page-agent-order.js" %}
+
 {% include "page-graph3d.js" %}
 
 {% include "page-artifacts.js" %}
@@ -492,6 +497,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-tree.js" %}
 
 {% include "page-cleanup.js" %}
+
+{% include "page-offices.js" %}
 
 {% include "page-time.js" %}
 

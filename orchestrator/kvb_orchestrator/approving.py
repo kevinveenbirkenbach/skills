@@ -7,6 +7,7 @@ from .asking import ask_state
 from .cleanup import cleanup_request
 from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field
+from .offices import office_request
 from .records import digest, shown
 from .register import REGISTER, operator_rows, read_register, runnable
 from .rules import rule_matches
@@ -144,7 +145,12 @@ class Approving:
         payload = decode(body)
         expect(payload, ("items",))
         raw = payload["items"]
-        signed = self.deletable(raw) if cleanup_request(raw) else [item["signed"] for item in self.checked(raw) if item["signed"] is not None]
+        if cleanup_request(raw):
+            signed = self.deletable(raw)
+        elif office_request(raw):
+            signed = self.appointable(raw)
+        else:
+            signed = [item["signed"] for item in self.checked(raw) if item["signed"] is not None]
         hashes = [signing.item_hash(item) for item in signed]
         credentials = [key["id"] for key in self.keys()]
         if not hashes:

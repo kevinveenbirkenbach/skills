@@ -8,6 +8,7 @@ from .council import HUMAN, ordered, read_claims
 from .errors import Missing, ToolError
 from .fields import NAME_LIMIT, ORDER_NAME, decode, expect, field, message_text, single
 from .records import write_atomic
+from .register import REGISTER, agent_order, read_register
 from .skill_scripts import NIGHT, RADIO, RASCI
 
 NIGHTS = {
@@ -111,7 +112,11 @@ class Messaging:
                 raise ToolError("agents must be a non-empty list of agent names without commas")
             if len(set(names)) != len(names):
                 raise ToolError("agents must be distinct")
-            runs = [self.scripts.run(RASCI, ["order", ",".join(names)])]
+            known = agent_order(read_register(self.council / REGISTER), read_claims(self.council), [])
+            unknown = [name for name in names if name not in known]
+            if unknown:
+                raise ToolError(f"unknown agents: {', '.join(unknown)[:300]}; the register and the council know {', '.join(known)[:600] or 'none'}")
+            runs = [self.scripts.run(RASCI, ["agents", "order", ",".join(names)])]
         elif action in NIGHTS:
             command, text = NIGHTS[action]
             runs = [self.scripts.run(NIGHT, [*command, "--session", HUMAN])]

@@ -1,5 +1,5 @@
   function stage() {
-    if (!graphDom || ui.screen !== "agents" || ui.views.agents === "tree") {
+    if (!graphDom || ui.screen !== "agents" || ui.views.agents === "tree" || ui.views.agents === "hierarchy") {
       return;
     }
     graphDom.pulses = null;
@@ -11,7 +11,7 @@
   }
 
   function drawSide() {
-    if (graphDom && ui.screen === "agents" && ui.views.agents !== "tree") {
+    if (graphDom && ui.screen === "agents" && ui.views.agents !== "tree" && ui.views.agents !== "hierarchy") {
       graphDom.aside.replaceChildren(...side());
     }
   }

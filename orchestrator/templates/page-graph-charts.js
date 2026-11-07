@@ -180,7 +180,7 @@
   }
 
   function viewSwitch(screen) {
-    return h("div", {class: "segmented", role: "group", "aria-label": "Ansicht"}, Nav.VIEWS.map(([id, name]) => h("button", {
+    return h("div", {class: "segmented", role: "group", "aria-label": "Ansicht"}, Nav.viewsOf(screen).map(([id, name]) => h("button", {
       type: "button", class: "icon-only", ...named(name), "aria-pressed": String(ui.views[screen] === id), on: {click: () => go(screen, id)},
     }, icon(Nav.ICONS[id]))));
   }
@@ -191,6 +191,6 @@
     const aside = h("aside", {class: "card panel", "aria-live": "polite"});
     const toolbar = agentsToolbar();
     graphDom = {stage: stageBox, aside, pulses: null, toolbar};
-    const body = view === "tree" ? spawnScreen() : h("div", {class: "graph-body"}, h("div", {class: "card stage-card"}, stageBox, view === "3d" ? null : legend()), aside);
+    const body = view === "tree" ? spawnScreen() : view === "hierarchy" ? hierarchyScreen() : h("div", {class: "graph-body"}, h("div", {class: "card stage-card"}, stageBox, view === "3d" ? null : legend()), aside);
     return h("div", {class: "graph"}, toolbar.bar, h("div", {class: "card controls"}, viewSwitch("agents"), view === "3d" ? layoutTools("agents") : null), body);
   }

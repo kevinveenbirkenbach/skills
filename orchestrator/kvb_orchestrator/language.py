@@ -11,7 +11,7 @@ from .errors import ToolError
 from .events import VIEWS
 from .fields import bounded, decode, expect, message_text
 from .records import read_jsonl
-from .register import REGISTER, priority, read_register
+from .register import REGISTER, agent_order, read_register
 
 NL_LIMIT = 2000
 NL_ACTION_LIMIT = 20
@@ -183,6 +183,6 @@ class Language:
         directory = self.directory(claims, read_jsonl(self.council / NEWS), now)
         self.watch.see(tasks, now)
         items = self.inbox(now, tasks, directory)
-        agents = ordered({claim["agent"] for claim in claims if claim["agent"]} | set(priority(tasks)))
+        agents = ordered({claim["agent"] for claim in claims if claim["agent"]} | set(agent_order(tasks, [], [])))
         shown_items = [{"id": item["id"], "kind": item["kind"], "title": item["title"][:200]} for item in items]
         return nl_actions(self.model.complete(nl_messages(text, shown_items, agents)), items, agents)

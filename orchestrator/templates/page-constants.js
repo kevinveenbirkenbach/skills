@@ -2,7 +2,6 @@
   const NONCE = document.currentScript ? document.currentScript.nonce : "";
   const ACTIVE_BEAT = 900;
   const DAY = 86400;
-  const CHAIR = "Maintainer";
   const HUMAN = "Operator";
   const PRESETS = [[3600, "1 h"], [21600, "6 h"], [DAY, "24 h"], [7 * DAY, "7 d"], [0, "alle"], [-1, "eigener"]];
   const EMOJI = ["🦊", "🐙", "🦉", "🐝", "🐢", "🦄", "🐳", "🦋", "🐧", "🦁", "🐼", "🐨", "🦜", "🐬", "🦀", "🐸", "🦔", "🦩", "🐞", "🌵", "🍀", "🌻", "🍄", "🌙", "⭐", "🔥", "🌊", "⚡", "🎈", "🎲", "🧭", "🚀", "🪐", "🔭", "🧩", "🎯", "🪁", "🧪", "🔮", "🗿", "🌋", "🍉", "🍋", "🥨", "🐋", "🦚", "🐌", "🌈"];

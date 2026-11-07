@@ -47,30 +47,36 @@
       return false;
     }
     outcome.replaceChildren(h("p", {class: "muted", "data-cleanup": result.data.id}, `Signiert und an den Host übergeben (Job ${result.data.id}); die Path-Unit löscht jetzt.`));
-    followCleanup(result.data.id, outcome, Date.now());
+    followJob(`/api/cleanup/${encodeURIComponent(result.data.id)}`, outcome, Date.now(), (data) => {
+      const {good, lines} = showJob(data, outcome, "branch", RESULT_LABELS);
+      toast(`Löschen: ${good ? "erledigt" : "nicht alles gelöscht"}`, lines, good);
+      fetchTree();
+    });
     return true;
   }
 
-  async function followCleanup(id, outcome, began) {
+  async function followJob(url, outcome, began, finish) {
     let data = null;
     try {
-      const response = await fetch(`/api/cleanup/${encodeURIComponent(id)}`, {cache: "no-store"});
+      const response = await fetch(url, {cache: "no-store"});
       data = response.ok ? await response.json() : null;
     } catch {
       data = null;
     }
     if (!data || data.status !== "done") {
       if (Date.now() - began < CLEANUP_PATIENCE && outcome.isConnected) {
-        window.setTimeout(() => followCleanup(id, outcome, began), CLEANUP_POLL);
+        window.setTimeout(() => followJob(url, outcome, began, finish), CLEANUP_POLL);
       }
       return;
     }
-    const lines = data.items.map((item) => `${item.branch}: ${(RESULT_LABELS[item.status] || [item.status])[0]}${item.reason ? ` (${item.reason})` : ""}`);
+    finish(data);
+  }
+
+  function showJob(data, outcome, key, labels) {
+    const lines = data.error ? [data.error] : data.items.map((item) => `${item[key]}: ${(labels[item.status] || [item.status])[0]}${item.reason ? ` (${item.reason})` : ""}`);
     outcome.replaceChildren(h("ul", {class: "mini", "aria-label": "Ergebnis"}, data.error ? h("li", {}, data.error) : data.items.map((item) => {
-      const [label, tone] = RESULT_LABELS[item.status] || [item.status, "neutral"];
-      return h("li", {"data-result": item.status}, h("div", {class: "row"}, h("code", {}, item.branch), pill(label, tone)), item.reason ? h("span", {class: "muted"}, item.reason) : null);
+      const [label, tone] = labels[item.status] || [item.status, "neutral"];
+      return h("li", {"data-result": item.status}, h("div", {class: "row"}, h("code", {}, item[key]), pill(label, tone)), item.reason ? h("span", {class: "muted"}, item.reason) : null);
     })));
-    const good = !data.error && data.items.every((item) => item.status === "done");
-    toast(`Löschen: ${good ? "erledigt" : "nicht alles gelöscht"}`, data.error ? [data.error] : lines, good);
-    fetchTree();
+    return {good: !data.error && data.items.every((item) => item.status === "done"), lines};
   }

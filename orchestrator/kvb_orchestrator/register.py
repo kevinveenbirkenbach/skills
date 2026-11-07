@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .council import agent
+from .council import agent, ordered
 from .fields import ORDER_NAME
 from .records import read_json, shown
 
 REGISTER = "rasci.json"
+AGENT_ORDER = "agent-order.json"
 OPERATOR = "operator/"
 ENDED = ("done", "stopped")
 
@@ -98,10 +99,31 @@ def register_rows(tasks: dict[str, dict]) -> list[dict]:
     return [register_row(task, row) for task, row in sorted(tasks.items(), key=pinned) if is_open(task, row, False)]
 
 
-def priority(tasks: dict[str, dict]) -> list[str]:
+def stored_order(path: Path) -> list[str]:
+    data = read_json(path)
+    names = data.get("agents") if isinstance(data, dict) else None
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        return []
+    return names
+
+
+def agent_order(tasks: dict[str, dict], claims: list[dict], stored: list[str]) -> list[str]:
+    """Args:
+        tasks: the register.
+        claims: every office claim; its holder is an agent too.
+        stored: the operator's agent order, as `rasci.py agents order` wrote it.
+
+    Returns:
+        The agents `rasci.py agents order` accepts: the stored ones it still
+        knows first, in their order, then the workers of open tasks by pin,
+        then the remaining office holders by name.
+    """
     names: list[str] = []
     for _, row in sorted(tasks.items(), key=pinned):
         worker = row.get("worker")
-        if status_of(row) not in ENDED and isinstance(worker, str) and ORDER_NAME.fullmatch(worker) and worker not in names:
+        if status_of(row) not in ENDED and isinstance(worker, str) and worker not in names:
             names.append(worker)
-    return names
+    names += [name for name in ordered({claim["address"] or claim["session"] for claim in claims}) if name not in names]
+    known = [name for name in names if ORDER_NAME.fullmatch(name)]
+    listed = [name for name in dict.fromkeys(stored) if name in known]
+    return [*listed, *(name for name in known if name not in listed)]

@@ -17,12 +17,15 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime
+import errno
 import importlib.util
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -43,6 +46,7 @@ ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 HEARTBEAT_LIMIT = 3600
 OFFICE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$")
 CLAIM = "claim.json"
+CLAIM_MODE = 0o644
 WORK_WIDTH = 40
 RASCI = Path(__file__).resolve().parents[2] / "kvb-org-rasci" / "scripts" / "rasci.py"
 
@@ -114,11 +118,50 @@ def write_claim(path: Path, office: str, sid: str, runtime: str, work: str) -> d
         "beat": time.time(),
         "work": work,
     }
-    (path / CLAIM).write_text(json.dumps(claim), encoding="utf-8")
+    nofollow.replace(ROOT, path / CLAIM, json.dumps(claim), CLAIM_MODE)
     return claim
 
 
+def make_office(path: Path) -> bool:
+    *dirs, name = nofollow.parts_below(ROOT, path)
+    ROOT.mkdir(parents=True, exist_ok=True)
+    fd = nofollow.directory(ROOT, tuple(dirs), True)
+    try:
+        os.mkdir(name, nofollow.DIRECTORY_MODE, dir_fd=fd)
+    except FileExistsError:
+        return False
+    finally:
+        os.close(fd)
+    return True
+
+
+def remove_office(path: Path) -> None:
+    *dirs, name = nofollow.parts_below(ROOT, path)
+    try:
+        fd = nofollow.directory(ROOT, tuple(dirs), False)
+    except FileNotFoundError:
+        return
+    try:
+        try:
+            found = os.lstat(name, dir_fd=fd)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISDIR(found.st_mode):
+            raise OSError(errno.ENOTDIR, "the office is no directory", str(path))
+        tomb = f"{name}.stale-{os.getpid()}-{time.time_ns()}"
+        try:
+            os.rename(name, tomb, src_dir_fd=fd, dst_dir_fd=fd)
+        except FileNotFoundError:
+            return
+        shutil.rmtree(tomb, dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
 def here() -> dict[str, str | None]:
+    # The Agent Orchestrator's office runner claims from / for the successor: / is no task's workdir.
+    if os.getcwd() == os.sep:
+        return {}
     try:
         head = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, check=False
@@ -144,10 +187,12 @@ def register(office: str, holder: str, status: str, **extra: str | None) -> None
 def cmd_claim(args: argparse.Namespace) -> int:
     sid, runtime = caller(args.session)
     path = office_dir(args.office)
-    path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        path.mkdir()
-    except FileExistsError:
+        created = make_office(path)
+    except OSError as error:
+        print(f"council: cannot open {args.office}: {error.strerror}", file=sys.stderr)
+        return 2
+    if not created:
         claim = read_claim(path)
         if claim is not None and claim["session"] == sid:
             claim = write_claim(path, args.office, sid, runtime, args.work)
@@ -179,14 +224,11 @@ def cmd_takeover(args: argparse.Namespace) -> int:
         args.previous = claim["name"] or claim["session"]
     # Two successors racing between this check and the rename can both win;
     # kvb-org-organize names exactly one successor per office to keep that window closed.
-    if path.exists():
-        tomb = path.with_name(f"{path.name}.stale-{os.getpid()}-{time.time_ns()}")
-        try:
-            path.rename(tomb)
-        except FileNotFoundError:
-            pass
-        else:
-            shutil.rmtree(tomb)
+    try:
+        remove_office(path)
+    except OSError as error:
+        print(f"council: cannot take over {args.office}: {error.strerror}", file=sys.stderr)
+        return 2
     return cmd_claim(args)
 
 
@@ -200,7 +242,11 @@ def cmd_release(args: argparse.Namespace) -> int:
     if claim["session"] != sid and not is_stale(claim, live_sessions()):
         print(json.dumps(claim))
         return 3
-    shutil.rmtree(path)
+    try:
+        remove_office(path)
+    except OSError as error:
+        print(f"council: cannot release {args.office}: {error.strerror}", file=sys.stderr)
+        return 2
     register(args.office, claim["name"] or claim["session"], "done")
     print(f"released {args.office}")
     return 0
@@ -211,7 +257,8 @@ def cmd_beat(args: argparse.Namespace) -> int:
     for office, claim in claims():
         if claim["session"] == sid:
             claim["beat"] = time.time()
-            (ROOT / office / CLAIM).write_text(json.dumps(claim), encoding="utf-8")
+            with contextlib.suppress(FileNotFoundError):
+                nofollow.rewrite(ROOT, ROOT / office / CLAIM, json.dumps(claim), CLAIM_MODE)
     return 0
 
 

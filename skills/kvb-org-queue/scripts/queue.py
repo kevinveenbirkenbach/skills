@@ -36,7 +36,8 @@ Args:
         queue.
         --kind: a key of slot_need_gb in the config.
         --task: an open task of the kvb-org-rasci register; its rank orders
-            the queue.
+            the queue, and the operator's agent order (`rasci.py agents
+            order`) of the holding session breaks ties.
         --need-gb: disk the job takes, in GB; when omitted the need learned
             for the command's signature, else slot_need_gb[kind].
         --hotfix: the slug of the register row hotfix/<slug> the job proves;
@@ -259,17 +260,19 @@ def store() -> Iterator[dict]:
         nofollow.replace(watch.ROOT, STORE, json.dumps(data, indent=1, sort_keys=True), 0o600)
 
 
-def ordered(waiting: list[dict], ranks: dict[str, int], now: float) -> list[dict]:
+def ordered(waiting: list[dict], ranks: dict[str, int], agents: dict[str, int], now: float) -> list[dict]:
     def key(entry: dict) -> tuple:
         hours = int((now - entry["enqueued"]) // HOUR)
         rank = ranks[entry["task"]] if entry["task"] in ranks else len(ranks)
-        return (not entry["hotfix"], rank - hours, entry["seq"])
+        agent = agents[entry["name"]] if entry["name"] in agents else len(agents)
+        return (not entry["hotfix"], rank - hours, agent, entry["seq"])
 
     return sorted(waiting, key=key)
 
 
 def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, silenced: bool,
-             slot_limits: dict[str, int], ranks: dict[str, int], now: float) -> dict[str, str | None]:
+             slot_limits: dict[str, int], ranks: dict[str, int], agents: dict[str, int],
+             now: float) -> dict[str, str | None]:
     """Decide every waiting entry in grant order, without disk or processes.
 
     Args:
@@ -281,6 +284,9 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, sile
       slot_limits: {kind: max concurrent jobs}.
       ranks: {task: index in the register's ranking}; a task missing there
         ranks after all of them.
+      agents: {agent name: index in the operator's agent order}; it breaks
+        ties of equal rank only, an entry whose holder is missing there after
+        all of them.
       now: epoch seconds; each whole hour waited moves an entry one rank up.
 
     Returns:
@@ -293,7 +299,7 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, sile
     counts = Counter(e["kind"] for e in active)
     busy = {e["workdir"] for e in active}
     verdicts: dict[str, str | None] = {}
-    for entry in ordered([e for e in entries if e["status"] == "waiting"], ranks, now):
+    for entry in ordered([e for e in entries if e["status"] == "waiting"], ranks, agents, now):
         kind, need, workdir = entry["kind"], entry["need_gb"], entry["workdir"]
         reason = None
         if stage in ("stop", "critical"):
@@ -324,6 +330,10 @@ def register_ranks() -> dict[str, int]:
     return {task: index for index, task in enumerate(rasci.ranked(rasci.merged(False)))}
 
 
+def agent_ranks() -> dict[str, int]:
+    return {name: index for index, name in enumerate(sibling("rasci").agent_order())}
+
+
 def stage(cfg: dict, free_gb: float, now: float) -> str:
     state = watch.read_json(watch.STATE)
     return state["stage"] if "stage" in state else watch.stage_for(free_gb, [], cfg, now)
@@ -338,7 +348,7 @@ def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, kinds: di
     slots = {kind: limit for kind, (limit, _) in limits(cfg, kinds, entries).items()}
     return evaluate(
         entries, free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now), silenced(now),
-        slots, register_ranks(), now,
+        slots, register_ranks(), agent_ranks(), now,
     )
 
 

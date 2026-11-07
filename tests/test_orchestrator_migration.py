@@ -13,6 +13,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "orchestrator.sh"
+HOST_SCRIPTS = ("kvb-org-organize/scripts/council.py", "kvb-org-organize/scripts/nofollow.py", "kvb-org-rasci/scripts/rasci.py")
 OLD = "kvb-hub"
 NEW = "kvb-orchestrator"
 STUB = r'''#!/usr/bin/env python3
@@ -97,6 +98,8 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.other = {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-hook"}]}
         legacy = {"matcher": "Bash", "hooks": [{"type": "command", "command": f"python3 {share}/{OLD}/client/permission_hook.py --port 8737"}]}
         self.write(self.home / ".claude" / "settings.json", json.dumps({"model": "x", "hooks": {"PermissionRequest": [self.other, legacy], "Stop": [self.other]}}), 0o640)
+        for script in HOST_SCRIPTS:
+            self.write(self.home / ".claude" / "skills" / script, (REPO_ROOT / "skills" / script).read_text(encoding="utf-8"))
 
     def write(self, path: Path, text: str, mode: int = 0o644) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -127,7 +130,7 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.assertIn(f"{share / NEW}/client/permission_hook.py", hooks[1]["hooks"][0]["command"])
         self.assertEqual(settings.stat().st_mode & 0o777, 0o640)
         self.assertIn(f"{OLD}/client", (self.home / ".claude" / f"settings.json.before-{NEW}-migration").read_text(encoding="utf-8"))
-        self.assertEqual((first["images"], first["mcp"], first["enabled"]), ([f"{NEW}:local"], {NEW: "http://127.0.0.1:8737/mcp"}, [f"{NEW}-runner.service"]))
+        self.assertEqual((first["images"], first["mcp"], first["enabled"]), ([f"{NEW}:local"], {NEW: "http://127.0.0.1:8737/mcp"}, [f"{NEW}-offices.path", f"{NEW}-runner.service"]))
         self.assertIn(["docker", "compose", "--file", str(share / OLD / "compose.yml"), "down", "--remove-orphans"], first["calls"])
 
         before = snapshot(self.home)
@@ -136,6 +139,15 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.assertEqual({key: second[key] for key in ("images", "mcp", "enabled")}, {key: first[key] for key in ("images", "mcp", "enabled")})
         legacy_calls = [call for call in second["calls"][len(first["calls"]) :] if any(OLD in arg for arg in call)]
         self.assertEqual(legacy_calls, [["docker", "image", "inspect", f"{OLD}:local"], ["claude", "mcp", "get", OLD]])
+
+    def test_the_offices_unit_waits_for_the_installed_skill_scripts_of_this_tree(self):
+        self.install()
+        stale = self.home / ".claude" / "skills" / HOST_SCRIPTS[2]
+        stale.write_text(stale.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        done = subprocess.run(["bash", str(SCRIPT), "install"], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("run 'make install' to enable", done.stderr)
+        self.assertNotIn(f"{NEW}-offices.path", json.loads(self.state.read_text(encoding="utf-8"))["enabled"])
 
     def test_install_ships_no_bytecode_from_the_tree(self):
         planted = REPO_ROOT / "orchestrator" / "client" / "__pycache__" / "planted.cpython-0.pyc"

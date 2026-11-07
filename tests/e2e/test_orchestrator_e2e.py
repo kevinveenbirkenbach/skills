@@ -19,11 +19,13 @@ sys.path.insert(0, str(HERE.parent))
 from hub_case import HubCase
 from hub_support import ASK, iso, verifier
 from test_hub_cleanup import DONE_TIP, FAKE_PKGMGR, host
+from test_hub_offices import COUNCIL_SCRIPT
+from test_hub_offices import host as office_host
 
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
-SCREENS = ["stream", "stream/inbox", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS)]
+SCREENS = ["stream", "stream/inbox", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const until = async (check, ms) => {
@@ -78,8 +80,56 @@ PROBE = """(async () => {@HELPERS@
     marks: all("#main svg.chart .node").length,
     note: text(document.querySelector("#main .space-note")),
     canvas: Boolean(document.querySelector("#main .graph3d canvas")),
+    org: all("#main .org-chart .org-row[data-office]").map((row) => [row.dataset.office, text(row.querySelector(".org-holder"))]),
+    toggles: all("#main .org-toggle").map((button) => [name(button), button.getAttribute("aria-expanded")]),
+    order: all("#main .agent-order li").map((item) => item.dataset.name),
     wide: document.documentElement.scrollWidth > window.innerWidth + 1,
   };
+})()""".replace("@HELPERS@", HELPERS)
+ORG_OPEN = """(async () => {@HELPERS@
+  const row = await until(() => document.querySelector('#main .org-row[data-office="identity/oidc"]'), 8000);
+  if (!row) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const toggle = all("#main .org-toggle").find((button) => name(button) === "Zuklappen: identity");
+  toggle.focus();
+  return {focused: document.activeElement.dataset.focus, offices: all("#main .org-row[data-office]").map((entry) => entry.dataset.office)};
+})()""".replace("@HELPERS@", HELPERS)
+ORG_FOLDED = """(async () => {@HELPERS@
+  const toggle = document.activeElement;
+  const folded = {focused: toggle.dataset.focus, expanded: toggle.getAttribute("aria-expanded"), label: name(toggle), hidden: document.getElementById(toggle.getAttribute("aria-controls")).hidden, seen: all("#main .org-row[data-office]").filter((entry) => entry.offsetParent !== null).map((entry) => entry.dataset.office)};
+  toggle.click();
+  await sleep(200);
+  const before = all("#main .agent-order li").map((item) => item.dataset.name);
+  all("#main .agent-order li")[1].querySelector('[data-focus^="up:"]').focus();
+  return {...folded, again: toggle.getAttribute("aria-expanded"), before};
+})()""".replace("@HELPERS@", HELPERS)
+ORDER_MOVED = """(async () => {@HELPERS@
+  const after = all("#main .agent-order li").map((item) => item.dataset.name);
+  const focused = document.activeElement.dataset.focus || null;
+  const save = all("#main .agent-order button").find((button) => text(button) === "Reihenfolge speichern");
+  const disabled = save.disabled;
+  save.click();
+  const toast = await until(() => all("#toasts .toast").find((box) => text(box).startsWith("Priorität")), 8000);
+  return {after, focused, disabled, toast: text(toast)};
+})()""".replace("@HELPERS@", HELPERS)
+OPEN_TAKEOVER = """(async () => {@HELPERS@
+  document.querySelector('#main [data-focus="takeover:identity/oidc"]').click();
+  await sleep(400);
+  return {title: text(document.querySelector(".sheet-head .panel-title")), options: all(".sheet-box select option").map((option) => option.value), work: document.querySelector('.sheet-box input[aria-label="Arbeit"]').value, focused: document.activeElement.tagName};
+})()""".replace("@HELPERS@", HELPERS)
+CONFIRM_TAKEOVER = """(async () => {@HELPERS@
+  all(".sheet-box button").find((button) => name(button) === "Übergeben").click();
+  const done = await until(() => document.querySelector(".sheet-box [data-result]"), 30000);
+  return {result: done ? done.dataset.result : null, text: text(done), toasts: all("#toasts .toast").map(text)};
+})()""".replace("@HELPERS@", HELPERS)
+AFTER_TAKEOVER = """(async () => {@HELPERS@
+  document.querySelector(".sheet-head button").click();
+  const row = await until(() => {
+    const found = document.querySelector('#main .org-row[data-office="identity/oidc"] .org-holder');
+    return found && !text(found).endsWith("Stage") ? found : null;
+  }, 15000);
+  return {holder: text(row)};
 })()""".replace("@HELPERS@", HELPERS)
 ACTIONS = """(async () => {@HELPERS@
   const press = async (key) => {
@@ -174,6 +224,8 @@ class TestOrchestratorE2E(HubCase):
         self.claim("s1", "Skills session")
         self.write_council({
             "work/s2/claim.json": {"office": "work/s2", "session": "s2", "runtime": "claude", "name": "Stage", "since": iso(now - 7200), "beat": now - 2000, "work": "x"},
+            "chair/claim.json": {"office": "chair", "session": "s1", "runtime": "claude", "name": "Skills session", "since": iso(now - 7200), "beat": now, "work": "allocate"},
+            "identity/oidc/claim.json": {"office": "identity/oidc", "session": "s2", "runtime": "claude", "name": "Stage", "since": iso(now - 7200), "beat": now - 2000, "work": "oidc line"},
             "rasci.json": {"work/stage": {"title": "Stage line", "status": "running", "worker": "Stage (this session)", "roles": {"Stage (this session)": "RA"}}},
             "radio-silence.json": {"since": now - 60, "until": now + 3600, "by": "Docs", "text": "disk full"},
             "news.jsonl": self.jsonl([
@@ -253,15 +305,20 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual([probe["chips"] for probe in probes if probe["hash"] == "#stream"], [["Für dich", "Funk", "Arbeit", "Transkripte"]] * len(WIDTHS))
         self.assertEqual((stream["menus"], stream["custom"]), (["Filter"], True))
         self.assertEqual(by_hash["#stream/inbox"]["inbox"], 2)
-        for tab in ("agents", "artifacts"):
+        for tab, own in (("agents", ["Hierarchie"]), ("artifacts", [])):
             with self.subTest(tab=tab):
-                self.assertEqual(by_hash[f"#{tab}/orbit"]["views"], ["Orbit", "Chord", "Swimlane", "Tree", "3D"])
+                self.assertEqual(by_hash[f"#{tab}/orbit"]["views"], ["Orbit", "Chord", "Swimlane", "Tree", "3D", *own])
                 self.assertEqual(by_hash[f"#{tab}/3d"]["layouts"], ["Kraft", "Zeit", "Spawn-Tiefe"])
                 self.assertTrue(by_hash[f"#{tab}/3d"]["canvas"], by_hash[f"#{tab}/3d"]["note"])
                 self.assertRegex(by_hash[f"#{tab}/3d"]["note"], r"^\d+ Knoten · \d+ Kanten · Kraft$")
         agents = by_hash["#agents/orbit"]
         self.assertEqual(agents["toolbar"], ["Funk an alle", "Mayday aufheben", "Priorität", "Tag/Nacht"])
         self.assertEqual(agents["toAll"], [["newsletter", True], ["broadcast", False], ["pan-pan", False], ["security", False], ["mayday", False]])
+        hierarchy = by_hash["#agents/hierarchy"]
+        self.assertEqual([office for office, _ in hierarchy["org"]], ["chair", "identity/oidc", "work/s1", "work/s2"])
+        self.assertEqual(hierarchy["toggles"], [["Zuklappen: Operator", "true"], ["Zuklappen: Chair", "true"], ["Zuklappen: identity", "true"], ["Zuklappen: Präsidenten", "true"]])
+        self.assertEqual(hierarchy["toolbar"], agents["toolbar"])
+        self.assertGreaterEqual(len(hierarchy["order"]), 2)
         self.assertEqual(by_hash["#agents/tree"]["spawn"][0], ["operator", None])
         self.assertIn(["twig", "true"], by_hash["#agents/tree"]["spawn"])
         self.assertIn(["twig", "false"], by_hash["#agents/tree"]["spawn"])
@@ -362,6 +419,45 @@ class TestOrchestratorE2E(HubCase):
             ["branch", "cleanup", "--apply", "--json", "--local", "--branch", "feature/done"],
             ["branch", "tree", "--format", "json", "--output", str(self.tree_file)],
         ])
+
+    def test_chromium_folds_the_hierarchy_by_keyboard_reorders_agents_and_hands_an_office_over_with_a_signature(self):
+        signer = self.pin()
+        trust = verifier.Trust(approvers=self.approvers, replay=self.replay / "offices.json", origin=self.origin)
+        runner = office_host.Offices(trust, self.council, COUNCIL_SCRIPT, self.outside / "home")
+        jobs, results = self.offices / "jobs", self.offices / "results"
+        self.beside(lambda: any(jobs.iterdir()) and office_host.cycle(jobs, results, runner))
+        private = "".join(line for line in signer.pem.read_text(encoding="utf-8").splitlines() if not line.startswith("-----"))
+        authenticator = {"credentialId": base64.b64encode(signer.raw_id).decode(), "privateKey": private, "rpId": "localhost"}
+        local = f"http://localhost:{self.port}/"
+        steps = [
+            {"width": 1366, "height": 768, "url": f"{local}#agents/hierarchy", "wait": 1200, "probe": ORG_OPEN, "shot": self.shot("1366-hierarchy-open")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "keys": ["Enter"], "probe": ORG_FOLDED, "shot": None},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "keys": ["Enter"], "probe": ORDER_MOVED, "shot": self.shot("1366-hierarchy-order")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": OPEN_TAKEOVER, "shot": self.shot("1366-hierarchy-takeover")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": CONFIRM_TAKEOVER, "shot": self.shot("1366-hierarchy-takeover-result")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": AFTER_TAKEOVER, "shot": self.shot("1366-hierarchy-after")},
+        ]
+        data = self.drive(steps, authenticator)
+        (OUT / "chromium-hierarchy.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        opened, folded, moved, sheet, confirmed, after = data["results"]
+        self.assertNotIn("error", opened)
+        self.assertEqual(opened["focused"], "toggle:dimension:identity")
+        self.assertEqual((folded["focused"], folded["expanded"], folded["label"], folded["hidden"], folded["again"]), ("toggle:dimension:identity", "false", "Aufklappen: identity", True, "true"))
+        self.assertNotIn("identity/oidc", folded["seen"])
+        before = folded["before"]
+        self.assertEqual(moved["after"], [before[1], before[0], *before[2:]])
+        self.assertEqual((moved["focused"], moved["disabled"]), (f"down:{before[1]}", False))
+        self.assertTrue(moved["toast"].startswith("Priorität"), moved)
+        self.assertIn(("rasci.py", ["agents", "order", ",".join(moved["after"])]), [(Path(script).name, args) for script, args in self.scripts.calls])
+        self.assertEqual((sheet["title"], sheet["options"], sheet["work"], sheet["focused"]), ("identity/oidc: Übergeben", ["s1"], "oidc line", "SELECT"))
+        self.assertEqual((confirmed["result"], confirmed["text"]), ("done", "identity/oidcerledigt"), confirmed)
+        self.assertIn("Übergeben: erledigtidentity/oidc: erledigt", confirmed["toasts"])
+        self.assertNotIn("error", after)
+        claim = json.loads((self.council / "identity" / "oidc" / "claim.json").read_text(encoding="utf-8"))
+        self.assertEqual((claim["session"], claim["work"]), ("s1", "oidc line"))
+        written = [json.loads(path.read_text(encoding="utf-8")) for path in results.glob("*.json")]
+        self.assertEqual([[(item["office"], item["action"], item["status"]) for item in result["items"]] for result in written], [[("identity/oidc", "takeover", "done")]])
 
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
     def test_firefox_walks_every_screen_at_three_widths(self):

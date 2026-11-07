@@ -52,6 +52,8 @@ services:
       - /app/vendor
       - --cleanup
       - /state/cleanup
+      - --offices
+      - /state/offices
       - --llm-url
       - "${KVB_ORCHESTRATOR_LLM_URL}"
       - --llm-model

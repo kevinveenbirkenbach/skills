@@ -4,7 +4,10 @@
 Environment:
     AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
         the register is <root>/rasci.json, and `show` also lists every work/
-        and cluster/ claim of the council there. /tmp/agents-council unless set.
+        and cluster/ claim of the council there. The operator's agent order
+        (`agents order`) lies beside it in <root>/agent-order.json, apart from
+        every task row: it breaks ties of equal task priority only.
+        /tmp/agents-council unless set.
 
 Exit codes:
     0 done, 2 usage error.
@@ -28,6 +31,7 @@ from types import ModuleType
 ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 DB = ROOT / "rasci.json"
 LOCK = ROOT / "rasci.lock"
+AGENT_ORDER = ROOT / "agent-order.json"
 FILE_MODE = 0o600
 ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
 COUNCIL = ORGANIZE / "council.py"
@@ -164,10 +168,21 @@ def track(task: str, holder: str, status: str, *, description: str | None = None
             roles[holder] = letters_of(roles.get(holder, ""), "R" if accountable else "RA")
 
 
+def council_module() -> ModuleType | None:
+    return script("council", COUNCIL) if COUNCIL.is_file() else None
+
+
+def office_holders() -> list[str]:
+    council = council_module()
+    if council is None:
+        return []
+    return [claim["name"] or claim["session"] for _, claim in council.claims()]
+
+
 def claimed() -> dict[str, dict]:
-    if not COUNCIL.is_file():
+    council = council_module()
+    if council is None:
         return {}
-    council = script("council", COUNCIL)
     live = council.live_sessions()
     rows = {}
     for office, claim in council.claims():
@@ -219,12 +234,26 @@ def wsjf(row: dict) -> tuple[float, float, float] | None:
     return value, complexity, round(value / complexity, 2)
 
 
+def agent_order() -> list[str]:
+    try:
+        data = json.loads(nofollow.read_text(ROOT, AGENT_ORDER))
+    except (OSError, ValueError, RecursionError):
+        return []
+    names = data.get("agents") if isinstance(data, dict) else None
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        return []
+    return names
+
+
 def ranked(rows: dict[str, dict]) -> list[str]:
+    order = {name: index for index, name in enumerate(agent_order())}
+
     def key(task: str) -> tuple:
         row = rows[task]
         score = wsjf(row)
         pinned = row.get("prio")
-        return (pinned is None, pinned or 0, score is None, -(score[2] if score else 0), task)
+        agent = order.get(row.get("worker"), len(order))
+        return (pinned is None, pinned or 0, score is None, -(score[2] if score else 0), agent, task)
 
     return sorted(rows, key=key)
 
@@ -236,29 +265,45 @@ def by_agent(rows: dict[str, dict]) -> dict[str, list[str]]:
     return agents
 
 
-def cmd_agents(_: argparse.Namespace) -> int:
-    for rank, (agent, tasks) in enumerate(by_agent(merged(include_done=False)).items(), 1):
-        print(f"{rank}\t{agent}\t{len(tasks)}\t{', '.join(tasks)}")
+def agents_ranked(rows: dict[str, dict]) -> dict[str, list[str]]:
+    tasks = by_agent(rows)
+    for holder in office_holders():
+        tasks.setdefault(holder, [])
+    listed = [name for name in agent_order() if name in tasks]
+    return {name: tasks[name] for name in [*listed, *(name for name in tasks if name not in listed)]}
+
+
+def store_order(text: str) -> int:
+    names = [name.strip() for name in text.split(",") if name.strip()]
+    known = agents_ranked(merged(include_done=False))
+    unknown = [name for name in names if name not in known]
+    if not names or unknown or len(set(names)) != len(names):
+        fail(f"agents order needs distinct agents from `agents`; unknown: {', '.join(unknown) or '-'}")
+    try:
+        ROOT.mkdir(parents=True, exist_ok=True)
+        with nofollow.locked(ROOT, LOCK, FILE_MODE, None):
+            nofollow.replace(ROOT, AGENT_ORDER, json.dumps({"agents": names, "set": stamp()}, indent=1), FILE_MODE)
+    except OSError as error:
+        fail(f"agents order cannot write {AGENT_ORDER}: {error.strerror or error}")
+    print(f"agent order: {', '.join(names)}; the others follow by register rank; task --prio pins unchanged")
+    return 0
+
+
+def cmd_agents(args: argparse.Namespace) -> int:
+    if args.action == "order":
+        return store_order(args.agents)
+    for rank, (agent, tasks) in enumerate(agents_ranked(merged(include_done=False)).items(), 1):
+        print(f"{rank}\t{agent}\t{len(tasks)}\t{', '.join(tasks) or '-'}")
     return 0
 
 
 def cmd_order(args: argparse.Namespace) -> int:
-    names = [name.strip() for name in args.agents.split(",") if name.strip()]
-    agents = by_agent(merged(include_done=False))
-    unknown = [name for name in names if name not in agents]
-    if not names or unknown or len(set(names)) != len(names):
-        fail(f"order needs distinct agents from `agents`; unknown: {', '.join(unknown) or '-'}")
-    with database() as tasks:
-        prio = 0
-        for name in names:
-            for task in agents[name]:
-                prio += 1
-                tasks.setdefault(task, {})["prio"] = prio
-        for name in agents.keys() - set(names):
-            for task in agents[name]:
-                tasks.get(task, {}).pop("prio", None)
-    print(f"pinned {prio} tasks of {len(names)} agents; the others rank by WSJF after them")
-    return 0
+    print(
+        "rasci: `order` is now `agents order`: it stores the agent order beside the register "
+        "and no longer writes --prio pins",
+        file=sys.stderr,
+    )
+    return store_order(args.agents)
 
 
 def okr(row: dict) -> str:
@@ -549,7 +594,10 @@ def main() -> int:
     p.add_argument("--task")
     p.set_defaults(func=cmd_artifacts)
     sub.add_parser("tools").set_defaults(func=cmd_tools)
-    sub.add_parser("agents").set_defaults(func=cmd_agents)
+    p = sub.add_parser("agents")
+    p.set_defaults(func=cmd_agents)
+    order = p.add_subparsers(dest="action").add_parser("order")
+    order.add_argument("agents")
     p = sub.add_parser("order")
     p.add_argument("agents")
     p.set_defaults(func=cmd_order)

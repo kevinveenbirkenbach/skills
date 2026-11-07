@@ -2,13 +2,23 @@ from __future__ import annotations
 
 from collections import Counter
 
-from .council import HUMAN, agent, ordered, subagent
+from .council import CHAIR_OFFICE, HUMAN, agent, ordered, subagent
 from .names import Directory
 from .orbits import affinity
 from .records import shown
 from .register import ENDED, parties, status_of
 
-CHAIR = "Maintainer"
+
+def chair_of(claims: list[dict], directory: Directory, end: float) -> str:
+    """Returns:
+        The node key of the chair office's holder, empty while it is vacant.
+    """
+    claim = next((claim for claim in claims if claim["office"] == CHAIR_OFFICE), None)
+    if claim is None:
+        return ""
+    if claim["session"] != "-":
+        return claim["session"]
+    return directory.key(claim["agent"], end)
 
 
 def parent_of(roles: dict[str, str], known: set[str], fallback: str) -> str:
@@ -36,13 +46,14 @@ def edges(radio: list[dict], grant_rows: list[dict], chair: str) -> list[dict]:
 
 def graph(radio: list[dict], grant_rows: list[dict], tasks: dict[str, dict], claims: list[dict], end: float, directory: Directory) -> dict:
     current = {task: row for task, row in sorted(tasks.items()) if status_of(row) not in ENDED}
-    chair = directory.key(CHAIR, end)
+    chair = chair_of(claims, directory, end)
+    top = chair or HUMAN
     workers = {task: agent(row.get("worker")) for task, row in current.items()}
     keys = {row["source"] for row in radio} | {key for row in radio for key in row["targets"]}
     keys |= {claim["session"] for claim in claims if claim["agent"] and claim["session"] != "-"}
     keys |= {directory.key(name, end) for name in workers.values() if not subagent(name)}
     found = sorted(keys - {"", HUMAN, chair}, key=lambda key: (directory.label(key, end).lower(), key))
-    known = {chair, *found}
+    known = {chair, *found} - {""}
     moons: dict[str, tuple[str, str]] = {}
     holders: dict[str, dict[str, dict]] = {}
     for task, row in current.items():
@@ -53,14 +64,15 @@ def graph(radio: list[dict], grant_rows: list[dict], tasks: dict[str, dict], cla
         worker = workers[task]
         holder = directory.key(worker, end)
         if subagent(worker):
-            parent = parent_of(roles, known, chair)
+            parent = parent_of(roles, known, top)
             holder = f"{worker} @ {parent}"
             moons[holder] = (parent, worker)
         if holder:
             duties(holder, task, row, holders)["worker"] = True
         for key, letters in roles.items():
             duties(key, task, row, holders)["letters"] += letters
-    plan = [(HUMAN, "operator", None, HUMAN), (chair, "chair", None, directory.label(chair, end))]
+    plan = [(HUMAN, "operator", None, HUMAN)]
+    plan += [(chair, "chair", None, directory.label(chair, end))] if chair else []
     plan += [(key, "session", None, directory.label(key, end)) for key in found]
     plan += [(moon, "subagent", *moons[moon]) for moon in ordered(set(moons))]
     nodes = [
@@ -77,4 +89,4 @@ def graph(radio: list[dict], grant_rows: list[dict], tasks: dict[str, dict], cla
         for key, node_kind, parent, label in plan
     ]
     layout = affinity(nodes, radio, tasks, claims, end, lambda name: directory.key(name, end))
-    return {"nodes": nodes, "edges": edges(radio, grant_rows, chair), "layout": layout}
+    return {"nodes": nodes, "edges": edges(radio, grant_rows, top), "layout": layout}

@@ -36,7 +36,7 @@ class TestRasci(unittest.TestCase):
                 json.dumps({"sessionId": sid, "name": name}), encoding="utf-8"
             )
 
-    def _run(self, *args: str, script: Path = RASCI, sid: str = "s1", timeout: float | None = None) -> subprocess.CompletedProcess:
+    def _run(self, *args: str, script: Path = RASCI, sid: str = "s1", timeout: float = 120) -> subprocess.CompletedProcess:
         env = {
             "PATH": "/usr/bin:/bin",
             "HOME": str(self.home),
@@ -312,28 +312,82 @@ class TestRasci(unittest.TestCase):
                 self.assertEqual([line.split("\t")[1] for line in self._out(*args)],
                                  ["work/a"] if args == ("artifacts",) else [])
 
-    def test_order_pins_the_agents_in_the_operators_order(self):
+    def _ranked(self) -> list[str]:
+        return [line.split(" | ")[2].split(":")[0] for line in self._out("show")[2:] if line.startswith("| ")]
+
+    def test_agents_order_breaks_ties_only_and_never_touches_the_task_pins(self):
         self._run("set", "work/a1", "--worker", "Alpha", "--prio", "1")
-        self._run("set", "work/a2", "--worker", "Alpha", "--prio", "2")
-        self._run("set", "work/b1", "--worker", "Beta", "--prio", "3")
+        self._run("set", "work/b1", "--worker", "Beta", "--prio", "1")
+        self._run("set", "work/b2", "--worker", "Beta", "--prio", "2")
         self._run("set", "work/c1", "--worker", "Gamma")
-        self._run("estimate", "work/c1", "One", "--value", "8", "--complexity", "2")
+        self._run("set", "work/d1", "--worker", "Delta")
+        self._claim("security/gui", "s9", "Epsilon", "line")
         self.assertEqual(
             self._out("agents"),
-            ["1\tAlpha\t2\twork/a1, work/a2", "2\tBeta\t1\twork/b1", "3\tGamma\t1\twork/c1"],
+            ["1\tAlpha\t1\twork/a1", "2\tBeta\t2\twork/b1, work/b2", "3\tGamma\t1\twork/c1", "4\tDelta\t1\twork/d1", "5\tEpsilon\t0\t-"],
         )
+        self.assertEqual(self._ranked(), ["work/a1", "work/b1", "work/b2", "work/c1", "work/d1"])
+        register = (self.root / "rasci.json").read_text(encoding="utf-8")
         self.assertEqual(
-            self._out("order", "Gamma, Beta"), ["pinned 2 tasks of 2 agents; the others rank by WSJF after them"]
+            self._out("agents", "order", "Gamma, Beta,Epsilon"),
+            ["agent order: Gamma, Beta, Epsilon; the others follow by register rank; task --prio pins unchanged"],
         )
+        self.assertEqual((self.root / "rasci.json").read_text(encoding="utf-8"), register)
+        stored = json.loads((self.root / "agent-order.json").read_text(encoding="utf-8"))
+        self.assertEqual(stored["agents"], ["Gamma", "Beta", "Epsilon"])
         self.assertEqual(
             self._out("agents"),
-            ["1\tGamma\t1\twork/c1", "2\tBeta\t1\twork/b1", "3\tAlpha\t2\twork/a1, work/a2"],
+            ["1\tGamma\t1\twork/c1", "2\tBeta\t2\twork/b1, work/b2", "3\tEpsilon\t0\t-", "4\tAlpha\t1\twork/a1", "5\tDelta\t1\twork/d1"],
         )
-        self.assertTrue(self._out("show")[2].startswith("| 1 | 4 | work/c1 |"))
-        self.assertNotIn("prio: 1", self._out("get", "work/a1"))
-        for args in (("order", "Gamma,Nobody"), ("order", "Beta,Beta"), ("order", " , ")):
+        self.assertEqual(self._ranked(), ["work/b1", "work/a1", "work/b2", "work/c1", "work/d1"])
+        self.assertIn("prio: 1", self._out("get", "work/a1"))
+        for args in (("agents", "order", "Gamma,Nobody"), ("agents", "order", "Beta,Beta"), ("agents", "order", " , "), ("agents", "sort")):
             with self.subTest(args=args):
                 self.assertEqual(self._run(*args).returncode, 2)
+        self.assertEqual(json.loads((self.root / "agent-order.json").read_text(encoding="utf-8")), stored)
+
+    def test_the_old_order_command_stores_the_agent_order_and_says_so(self):
+        self._run("set", "work/a1", "--worker", "Alpha", "--prio", "3")
+        self._run("set", "work/b1", "--worker", "Beta")
+        done = self._run("order", "Beta,Alpha")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("rasci: `order` is now `agents order`", done.stderr)
+        self.assertIn("no longer writes --prio pins", done.stderr)
+        self.assertEqual(json.loads((self.root / "agent-order.json").read_text(encoding="utf-8"))["agents"], ["Beta", "Alpha"])
+        self.assertIn("prio: 3", self._out("get", "work/a1"))
+        self.assertNotIn("prio: 1", self._out("get", "work/b1"))
+
+    def test_a_broken_agent_order_file_ranks_like_none(self):
+        self._run("set", "work/a1", "--worker", "Alpha")
+        self._run("set", "work/b1", "--worker", "Beta")
+        for text in ("{not json", json.dumps({"agents": "Beta"}), json.dumps({"agents": [1, "Beta"]}), json.dumps([1])):
+            with self.subTest(text=text):
+                (self.root / "agent-order.json").write_text(text, encoding="utf-8")
+                self.assertEqual(self._ranked(), ["work/a1", "work/b1"])
+
+    def test_the_agent_order_never_reads_or_writes_through_a_link_fifo_or_deep_nesting(self):
+        self._run("set", "work/a1", "--worker", "Alpha")
+        self._run("set", "work/b1", "--worker", "Beta")
+        outside = Path(self.tmp.name) / "outside.json"
+        outside.write_text(json.dumps({"agents": ["Beta"]}), encoding="utf-8")
+        order = self.root / "agent-order.json"
+        order.symlink_to(outside)
+        self.assertEqual(self._ranked(), ["work/a1", "work/b1"])
+        order.unlink()
+        order.write_text("[" * 100000, encoding="utf-8")
+        self.assertEqual(self._ranked(), ["work/a1", "work/b1"])
+        order.unlink()
+        os.mkfifo(order, 0o600)
+        self.assertEqual(self._run("agents", timeout=20).stdout.splitlines(), ["1\tAlpha\t1\twork/a1", "2\tBeta\t1\twork/b1"])
+        order.unlink()
+        lock = self.root / "rasci.lock"
+        lock.unlink(missing_ok=True)
+        planted = Path(self.tmp.name) / "planted.lock"
+        lock.symlink_to(planted)
+        refused = self._run("agents", "order", "Beta,Alpha")
+        self.assertEqual(refused.returncode, 2, refused.stderr)
+        self.assertIn("agents order", refused.stderr)
+        self.assertFalse(planted.exists() or order.exists())
 
     def test_a_symlinked_register_is_refused_and_never_copied_into_the_council(self):
         outside = Path(self.tmp.name) / "outside.json"

@@ -77,6 +77,7 @@
     stage();
     drawSide();
     drawSpawn();
+    drawHierarchy(force);
     drawToolbar();
     drawInbox();
     drawStatus();

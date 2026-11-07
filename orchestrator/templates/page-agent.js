@@ -135,6 +135,6 @@
   }
 
   function agentNames() {
-    const names = new Set([...state.graph.nodes.filter((node) => node.kind === "session" || node.kind === "chair").map((node) => nameOf(node.id)), ...state.priority]);
+    const names = new Set([...state.graph.nodes.filter((node) => node.kind === "session" || node.kind === "chair").map((node) => nameOf(node.id)), ...state.agent_order]);
     return [...names].sort((a, b) => a.localeCompare(b));
   }

@@ -27,6 +27,7 @@ BASE = {
     "silenced": False,
     "slot_limits": {"test": 5, "deploy": 1},
     "ranks": {"work/a": 0, "work/b": 1, "work/c": 2},
+    "agents": {},
     "now": NOW,
 }
 CHILD = (
@@ -62,7 +63,7 @@ def history_row(seq: int, **fields: object) -> dict:
 def job(seq: int, **fields: object) -> dict:
     return {
         "id": f"j{seq}", "seq": seq, "kind": "test", "task": "work/a", "need_gb": 1, "hotfix": None,
-        "workdir": f"/w{seq}", "status": "waiting", "enqueued": NOW, **fields,
+        "workdir": f"/w{seq}", "name": "s1", "status": "waiting", "enqueued": NOW, **fields,
     }
 
 
@@ -97,6 +98,14 @@ class TestEvaluate(unittest.TestCase):
         self.assertEqual(list(self.decide([fresh, aged, almost])), ["j2", "j1", "j3"])
         tied = job(4, task="work/c", enqueued=NOW - 2 * HOUR)
         self.assertEqual(list(self.decide([tied, fresh])), ["j1", "j4"])
+
+    def test_the_agent_order_breaks_ties_of_equal_rank_only(self):
+        entries = [job(1, name="Beta"), job(2, name="Alpha"), job(3, task="work/b", name="Alpha"), job(4, name="Stranger")]
+        self.assertEqual(list(self.decide(entries)), ["j1", "j2", "j4", "j3"])
+        self.assertEqual(list(self.decide(entries, agents={"Alpha": 0, "Beta": 1})), ["j2", "j1", "j4", "j3"])
+        tied = [job(5, task="work/b", name="Beta", enqueued=NOW - HOUR), job(6, name="Alpha")]
+        self.assertEqual(list(self.decide(tied)), ["j5", "j6"])
+        self.assertEqual(list(self.decide(tied, agents={"Alpha": 0, "Beta": 1})), ["j6", "j5"])
 
     def test_the_slot_limit_counts_active_jobs_per_kind(self):
         verdicts = self.decide([job(1, kind="deploy", status="active"), job(2, kind="deploy"), job(3)])

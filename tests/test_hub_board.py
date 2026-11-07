@@ -69,7 +69,11 @@ class TestHubBoard(HubCase):
             "rasci.json": {"work/a": {"worker": "A", "status": "running", "prio": 2}, "work/b": {"worker": "B session", "status": "queued", "prio": 1}, "work/c": {"worker": "C", "status": "done"}},
         })
         state = self.snapshot()
-        self.assertEqual((state["silence"]["by"], state["night"], state["priority"]), ("Docs", "evening", ["B session", "A"]))
+        self.assertEqual((state["silence"]["by"], state["night"]), ("Docs", "evening"))
+        self.assertEqual(state["agent_order"], ["B session", "A", "Gatekeeper", "Skills session"])
+        self.write_council({"agent-order.json": {"agents": ["Gatekeeper", "Nobody", "A", "A"], "set": "2026-11-07T10:00:00+00:00"}})
+        self.assertEqual(self.snapshot()["agent_order"], ["Gatekeeper", "A", "B session", "Skills session"])
+        register = (self.council / "rasci.json").read_text(encoding="utf-8")
 
         def board(action: str, payload: object) -> tuple[int, dict | None]:
             status, _, body = self.post_json(f"/api/board/{action}", payload, self.guard(self.host))
@@ -81,11 +85,14 @@ class TestHubBoard(HubCase):
         status, result = board("broadcast", {"text": "main is green", "class": "newsletter"})
         message_id = self.tool("operator_message", {"id": self.snapshot()["messages"][-1]["id"]})["structuredContent"]["id"]
         self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["post", "--session", "Operator", f"[kvb-orchestrator msg {message_id}] main is green"]))
-        self.assertEqual(board("order", {"agents": ["A", "B session"]})[0], 200)
-        self.assertEqual(self.scripts.calls[-1], (skill_scripts.RASCI, ["order", "A,B session"]))
-        for payload in ({"agents": ["A,B"]}, {"agents": ["A", "A"]}, {"agents": []}, {"agents": ["-x"]}, {"agents": "A"}, {"text": "x"}):
+        self.assertEqual(board("order", {"agents": ["Gatekeeper", "A", "B session"]})[0], 200)
+        self.assertEqual(self.scripts.calls[-1], (skill_scripts.RASCI, ["agents", "order", "Gatekeeper,A,B session"]))
+        calls = len(self.scripts.calls)
+        for payload in ({"agents": ["A,B"]}, {"agents": ["A", "A"]}, {"agents": []}, {"agents": ["-x"]}, {"agents": "A"}, {"text": "x"}, {"agents": ["A", "Nobody"]}, {"agents": ["C"]}):
             with self.subTest(payload=payload):
                 self.assertEqual(board("order", payload)[0], 400)
+        self.assertEqual(len(self.scripts.calls), calls)
+        self.assertEqual((self.council / "rasci.json").read_text(encoding="utf-8"), register)
         calls = len(self.scripts.calls)
         self.assertEqual(board("evening", {})[0], 200)
         self.assertEqual(self.scripts.calls[calls:], [

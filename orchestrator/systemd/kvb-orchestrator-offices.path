@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Orchestrator offices: wake on a signed office order the Agent Orchestrator wrote
+
+[Path]
+DirectoryNotEmpty=%h/.local/state/kvb-orchestrator/offices/jobs
+MakeDirectory=true
+DirectoryMode=0700
+
+[Install]
+WantedBy=default.target

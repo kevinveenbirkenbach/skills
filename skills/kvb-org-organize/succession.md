@@ -22,3 +22,5 @@
   radio; everyone else leaves it alone.
 - After a restart or reboot, run `council.py list --mine` and claim again
   every office you believe you hold: `/tmp` may have been wiped.
+- Only the operator, through the Orchestrator's passkey-signed Hierarchie
+  view, removes a live holder; agents have no override.

@@ -142,8 +142,25 @@ def replace(root: Path, path: Path, text: str, mode: int) -> None:
       text: the new content, UTF-8 encoded.
       mode: permission bits of the new file.
     """
+    swap(root, path, text, mode, True)
+
+
+def rewrite(root: Path, path: Path, text: str, mode: int) -> None:
+    """Replace a file below root like replace, inside directories that still exist.
+
+    Args:
+      root: the trusted directory.
+      path: the file, below root; a missing directory on the way raises
+        FileNotFoundError and nothing is made.
+      text: the new content, UTF-8 encoded.
+      mode: permission bits of the new file.
+    """
+    swap(root, path, text, mode, False)
+
+
+def swap(root: Path, path: Path, text: str, mode: int, create: bool) -> None:
     *dirs, name = parts_below(root, path)
-    fd = directory(root, tuple(dirs), True)
+    fd = directory(root, tuple(dirs), create)
     try:
         temp = f".{name}.{os.urandom(8).hex()}"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC

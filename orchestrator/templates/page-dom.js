@@ -81,7 +81,7 @@
   const labelOf = (key) => (people()[key] || {name: String(key).replace(/^name:/, "")}).name;
   const nameOf = (key) => (people()[key] || {now: String(key).replace(/^name:/, "")}).now;
   const agentKey = (who) => (people()[who] ? who : (Object.entries(people()).find(([, entry]) => entry.now === who || entry.names.includes(who)) || [who])[0]);
-  const chairKey = () => (state.graph.nodes.find((node) => node.kind === "chair") || {id: CHAIR}).id;
+  const chairKey = () => (state.graph.nodes.find((node) => node.kind === "chair") || {id: HUMAN}).id;
   const stamp = (life) => [life.born ? `🐣 ${life.born}` : "", life.died ? `🪦 ${life.died}` : ""].filter(Boolean).join(" · ");
 
   function toast(title, lines, good) {

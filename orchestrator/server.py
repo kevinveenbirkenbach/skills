@@ -27,6 +27,10 @@
     --cleanup: host-mounted directory the hub writes signed branch deletions
         into (jobs/) and reads their results from (results/); the host's
         kvb-orchestrator-cleanup path unit runs them.
+    --offices: host-mounted directory the hub writes signed office orders
+        (appoint, take over, recall) into (jobs/) and reads their results
+        from (results/); the host's kvb-orchestrator-offices path unit runs
+        council.py for them.
     --llm-url: base URL of an OpenAI-compatible chat endpoint; empty turns the
         natural-language command line off.
     --llm-model: model name sent to that endpoint; empty turns it off.
@@ -66,7 +70,7 @@ def main() -> int:
     parser.add_argument("--bind", required=True)
     for name in ("--listen-port", "--public-port"):
         parser.add_argument(name, type=int, required=True)
-    paths = ("--council", "--pages", "--state", "--host-state", "--skills", "--transcripts", "--templates", "--tree-file", "--timers", "--vendor", "--cleanup", "--llm-key-file", "--approvers")
+    paths = ("--council", "--pages", "--state", "--host-state", "--skills", "--transcripts", "--templates", "--tree-file", "--timers", "--vendor", "--cleanup", "--offices", "--llm-key-file", "--approvers")
     for name in (*paths, "--piper", "--voices", "--whisper", "--whisper-model", "--scratch"):
         parser.add_argument(name, type=Path, required=True)
     for name in ("--llm-url", "--llm-model", "--operator-voice"):
@@ -82,7 +86,7 @@ def main() -> int:
             transcripts=args.transcripts,
             scripts=Scripts(skills=args.skills, council=args.council, home=args.state),
             templates=args.templates,
-            places=Places(tree_file=args.tree_file, timers=args.timers, vendor=args.vendor, cleanup=args.cleanup),
+            places=Places(tree_file=args.tree_file, timers=args.timers, vendor=args.vendor, cleanup=args.cleanup, offices=args.offices),
             model=Model(url=args.llm_url.strip(), model=args.llm_model.strip(), key=read_key(args.llm_key_file)),
             engines=Engines(piper=args.piper, voices=args.voices, operator_voice=args.operator_voice, whisper=args.whisper, whisper_model=args.whisper_model, scratch=args.scratch),
             approvers=args.approvers,

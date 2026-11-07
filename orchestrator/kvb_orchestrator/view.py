@@ -22,7 +22,15 @@ from .messaging import message_row
 from .orbits import TRACK_STEPS, track
 from .phrasing import phrase
 from .records import epoch, iso_epoch, read_jsonl
-from .register import REGISTER, operator_rows, priority, read_register, register_rows
+from .register import (
+    AGENT_ORDER,
+    REGISTER,
+    agent_order,
+    operator_rows,
+    read_register,
+    register_rows,
+    stored_order,
+)
 from .reviewing import review_row
 from .settings import media_origins
 from .skill_scripts import OUTPUT_LIMIT
@@ -117,7 +125,7 @@ class View:
             "messages": [message_row(message) for message in self.messages.listed() if begin <= message["created_ts"] <= end],
             "operator": operator_rows(tasks),
             "register": register_rows(tasks),
-            "priority": priority(tasks),
+            "agent_order": agent_order(tasks, claims, stored_order(self.council / AGENT_ORDER)),
             "radio": radio,
             "claims": claims,
             "grants": grant_rows,

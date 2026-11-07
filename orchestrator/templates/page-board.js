@@ -64,7 +64,7 @@
     const night = h("details", {class: "menu"}, h("summary", named("Tag/Nacht"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box"}, mode,
       h("p", {class: "muted"}, "Abend: Agenten beenden ihre Aufgabe. Sonnenuntergang: sie schlafen. Sonnenaufgang: alle wachen auf."),
       h("div", {class: "actions"}, ACTIONS.slice(1).map(([id, label]) => btn(label, "btn small", () => confirmAct(id))))));
-    return {bar: h("div", {class: "toolbar", role: "toolbar", "aria-label": "Steuerung"}, toAll(), clear, iconBtn("bi-sort-down", "Priorität", "btn small", prioritySheet), night), clear, mode};
+    return {bar: h("div", {class: "toolbar", role: "toolbar", "aria-label": "Steuerung"}, toAll(), clear, iconBtn("bi-sort-down", "Priorität", "btn small", openAgentOrder, "Priorität: Reihenfolge der Agenten in der Hierarchie"), night), clear, mode};
   }
 
   function drawToolbar() {
@@ -74,55 +74,4 @@
     const [mode, tone] = NIGHT[state.night] || [state.night, "neutral"];
     graphDom.toolbar.clear.disabled = !state.silence;
     graphDom.toolbar.mode.replaceChildren(pill(mode, tone));
-  }
-
-  function priorityContent() {
-    if (ui.order === null || ui.order.some((name) => !state.priority.includes(name)) || ui.order.length !== state.priority.length) {
-      ui.order = [...state.priority];
-    }
-    const list = h("ol", {class: "order-list"});
-    let dragged = null;
-    ui.order.forEach((name, index) => {
-      const item = h("li", {draggable: "true", "data-name": name}, h("span", {class: "rank"}, `${index + 1}.`), face(name, false), person(name));
-      item.addEventListener("dragstart", (event) => {
-        dragged = name;
-        item.classList.add("dragging");
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", name);
-      });
-      item.addEventListener("dragend", () => item.classList.remove("dragging"));
-      item.addEventListener("dragover", (event) => event.preventDefault());
-      item.addEventListener("drop", (event) => {
-        event.preventDefault();
-        if (dragged === null || dragged === name) {
-          return;
-        }
-        const next = ui.order.filter((entry) => entry !== dragged);
-        next.splice(next.indexOf(name) + (ui.order.indexOf(dragged) < ui.order.indexOf(name) ? 1 : 0), 0, dragged);
-        ui.order = next;
-        prioritySheet();
-      });
-      list.append(item);
-    });
-    const changed = JSON.stringify(ui.order) !== JSON.stringify(state.priority);
-    return [
-      ui.order.length ? list : h("p", {class: "muted"}, "Kein Agent mit offener Aufgabe."),
-      h("div", {class: "actions"},
-        h("span", {class: "muted"}, "Ziehen zum Umsortieren"),
-        h("span", {class: "spacer"}),
-        h("button", {type: "button", class: "btn ghost", disabled: !changed, on: {click: () => {
-          ui.order = [...state.priority];
-          prioritySheet();
-        }}}, "Zurücksetzen"),
-        h("button", {type: "button", class: "btn primary", disabled: !changed, on: {click: async () => {
-          if (await act("order", "Priorität", {agents: ui.order})) {
-            ui.order = null;
-            prioritySheet();
-          }
-        }}}, "Reihenfolge speichern")),
-    ];
-  }
-
-  function prioritySheet() {
-    openSheet("Priorität der Agenten", priorityContent(), false);
   }

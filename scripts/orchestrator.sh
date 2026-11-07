@@ -3,8 +3,8 @@
 #   install  migrate, then copy orchestrator/ to ~/.local/share/kvb-orchestrator,
 #            write its .env, build and start the container, register the MCP
 #            server for Claude Code, build pkgmgr from the newest signed tag of
-#            PKGMGR_REPO and enable the tree timer and the cleanup path unit;
-#            re-enable the runner and re-register the hook when the migration
+#            PKGMGR_REPO and enable the tree timer and the cleanup path unit,
+#            enable the offices path unit; re-enable the runner and re-register the hook when the migration
 #            took them over
 #   migrate  move every trace of the earlier name to the kvb-orchestrator names
 #            once: container, image, code, state, approvals, pinned keys, MCP
@@ -35,6 +35,9 @@ HOOK_TIMEOUT=110
 RUNNER="${NAME}-runner.service"
 TREE_UNIT="${NAME}-tree"
 CLEANUP_UNIT="${NAME}-cleanup"
+OFFICES_UNIT="${NAME}-offices"
+INSTALLED_SKILLS="${HOME}/.claude/skills"
+HOST_SCRIPTS=(kvb-org-organize/scripts/council.py kvb-org-organize/scripts/nofollow.py kvb-org-rasci/scripts/rasci.py)
 TREE_DIR="${HOME}/.local/state/pkgmgr/tree"
 PKGMGR_REPO="${PKGMGR_REPO:-https://github.com/kevinveenbirkenbach/package-manager.git}"
 IMAGE="${NAME}:local"
@@ -148,7 +151,7 @@ install_hub() {
 	cp -a "${REPO_ROOT}/orchestrator/." "${HUB}/"
 	# Python loads a cached .pyc whose header matches the source mtime and size, and cp -a keeps the mtime: one planted in the sandbox-writable tree would run on the host
 	find "${HUB}" -name __pycache__ -type d -prune -exec rm -rf {} +
-	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py" "${HUB}/client/cleanup.py"
+	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py" "${HUB}/client/cleanup.py" "${HUB}/client/offices.py"
 	log "skills: the PermissionRequest hook client is ${HUB}/client/permission_hook.py"
 	log "skills: approvals need a pinned passkey: settings, 'Passkey registrieren', then 'make orchestrator-pin CREDENTIAL=<blob>'; until then every executor refuses"
 	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\n' \
@@ -223,10 +226,34 @@ tree_timer() {
 	log "skills: ${CLEANUP_UNIT}.path deletes the merged branches the operator signs in the Artifacts Tree, locally only"
 }
 
+skills_current() {
+	local script
+	for script in "${HOST_SCRIPTS[@]}"; do
+		cmp -s "${REPO_ROOT}/skills/${script}" "${INSTALLED_SKILLS}/${script}" || return 1
+	done
+}
+
+offices_unit() {
+	if ! has_systemd; then
+		warn "skills: no systemd user session; the office changes signed in the Hierarchie view wait."
+		return 0
+	fi
+	if ! skills_current; then
+		systemctl --user disable --now "${OFFICES_UNIT}.path" >/dev/null 2>&1 || true
+		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py or rasci.py than this tree; run 'make install' to enable ${OFFICES_UNIT}.path."
+		return 0
+	fi
+	cp -f "${HUB}/systemd/${OFFICES_UNIT}.service" "${HUB}/systemd/${OFFICES_UNIT}.path" "${UNITS}/"
+	systemctl --user daemon-reload
+	systemctl --user enable --now "${OFFICES_UNIT}.path"
+	log "skills: ${OFFICES_UNIT}.path runs council.py for the office changes the operator signs in the Hierarchie view"
+}
+
 install_all() {
 	migrate || return 0
 	install_hub
 	tree_timer
+	offices_unit
 	if ((TOOK_RUNNER)); then runner || true; fi
 	if ((TOOK_HOOK)); then
 		if [[ -f "${HUB}/client/permission_hook.py" ]]; then hook; else warn "skills: run 'make orchestrator-hook' once the Agent Orchestrator is installed"; fi
@@ -294,6 +321,11 @@ check() {
 		ok "${CLEANUP_UNIT}.path active"
 	else
 		todo "${CLEANUP_UNIT}.path off: deleting merged branches from the Artifacts Tree waits for make orchestrator-install"
+	fi
+	if [[ "$(systemctl --user is-active "${OFFICES_UNIT}.path" 2>/dev/null || true)" == "active" ]]; then
+		ok "${OFFICES_UNIT}.path active"
+	else
+		todo "${OFFICES_UNIT}.path off: office changes from the Hierarchie view wait for make orchestrator-install"
 	fi
 	free="$(df --output=avail -BG / | tail -1 | tr -dc '0-9')"
 	if ((free >= FLOOR_GB)); then ok "/ has ${free} GB free"; else fail "/ has ${free} GB free, floor ${FLOOR_GB} GB"; fi

@@ -16,6 +16,12 @@ HASH = re.compile(r"[0-9a-f]{64}")
 NONCE = re.compile(r"[0-9a-f]{32}")
 ID = re.compile(r"[0-9a-f]{16}")
 CHAINED = re.compile(r"[;&|`$<>()\n\r]")
+OFFICE = re.compile(r"chair|[a-z0-9][a-z0-9._-]{0,63}/[a-z0-9][a-z0-9._-]{0,63}")
+SESSION = re.compile(r"(?!-)[A-Za-z0-9_-]{1,128}")
+WORK = re.compile(r"(?=[^\x00-\x1f\x7f]*\S)[^\x00-\x1f\x7f]{1,300}")
+HOLDER = re.compile(r"[^\x00-\x1f\x7f]{0,200}")
+OFFICE_ACTIONS = ("appoint", "takeover", "recall")
+OFFICE_KEYS = ("action", "office", "holder", "session", "work")
 APPROVAL_KEYS = {"v", "kind", "items", "nonce", "expires"}
 RULE_KEYS = {"v", "kind", "id", "kinds", "tool", "pattern", "scope", "expires"}
 WARNINGS = (
@@ -67,6 +73,38 @@ def operator_item(task: str, command: str, directory: str) -> dict:
 
 def cleanup_item(repository: str, branch: str, worktree: str, tip: str) -> dict:
     return {"kind": "cleanup", "repository": repository, "branch": branch, "worktree": worktree, "tip": tip}
+
+
+def office_item(action: str, office: str, holder: str, session: str, work: str) -> dict:
+    return {"kind": "office", "action": action, "office": office, "holder": holder, "session": session, "work": work}
+
+
+def office_problem(order: object) -> str | None:
+    """Args:
+        order: {"action", "office", "holder", "session", "work"}: appoint
+            gives a vacant office to the session, takeover hands the
+            holder's office to the session, recall takes it from the
+            holder; work is the claim's one-line --work.
+
+    Returns:
+        Why the order is malformed, or None.
+    """
+    if not isinstance(order, dict) or set(order) != set(OFFICE_KEYS) or not all(isinstance(order[name], str) for name in OFFICE_KEYS):
+        return "an office order holds exactly action, office, holder, session and work as text"
+    action, office, holder, session, work = (order[name] for name in OFFICE_KEYS)
+    if action not in OFFICE_ACTIONS:
+        return f"action must be one of {', '.join(OFFICE_ACTIONS)}"
+    if not OFFICE.fullmatch(office):
+        return "office must be chair, <dimension>/<line>, cluster/<slug> or work/<slug>"
+    if not HOLDER.fullmatch(holder) or (action == "appoint") != (holder == ""):
+        return "appoint names no holder, takeover and recall the current one"
+    if action == "recall":
+        return None if session == work == "" else "a recall names no successor and no work"
+    if not SESSION.fullmatch(session) or session == holder:
+        return "session must be the successor's session id, not the holder's"
+    if not WORK.fullmatch(work):
+        return "work must be one line of 1 to 300 characters"
+    return None
 
 
 def approval_payload(hashes: list[str], nonce: str, expires: int) -> dict:

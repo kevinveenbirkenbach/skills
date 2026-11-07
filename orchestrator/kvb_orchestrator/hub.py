@@ -22,6 +22,7 @@ from .ledger import Ledger, Marks, Reviews
 from .mcp import Mcp
 from .messaging import Messaging
 from .names import Names
+from .offices import Offices
 from .reviewing import Reviewing
 from .rules import Rules
 from .settings import Settings
@@ -40,6 +41,7 @@ class Places:
     timers: Path
     vendor: Path
     cleanup: Path
+    offices: Path
 
 
 def environment(templates: Path) -> jinja2.Environment:
@@ -55,7 +57,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Cleaning, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Cleaning, Offices, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -84,6 +86,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Cleaning, Inbox, Rules, 
     vendor: Path
     icons: Markup
     spool: Spool
+    office_spool: Spool
     touched: Touched
 
     def hosts(self) -> tuple[str, str]:
@@ -101,6 +104,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         vendor=places.vendor,
         icons=sheet(places.vendor, templates),
         spool=Spool(places.cleanup).ready(),
+        office_spool=Spool(places.offices).ready(),
         touched=Touched(reviews.stored),
         approvers=approvers,
         speech=Speech(engines, state / "tts"),

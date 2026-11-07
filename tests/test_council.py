@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import importlib.util
 import json
 import os
 import subprocess
@@ -9,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COUNCIL = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "council.py"
@@ -30,7 +33,7 @@ class TestCouncil(unittest.TestCase):
             json.dumps({"sessionId": sid, "name": name}), encoding="utf-8"
         )
 
-    def _run(self, sid: str, *args: str, stdin: str = "") -> subprocess.CompletedProcess:
+    def _run(self, sid: str, *args: str, stdin: str = "", cwd: str | None = None) -> subprocess.CompletedProcess:
         env = {
             "PATH": "/usr/bin:/bin",
             "HOME": str(self.home),
@@ -43,6 +46,7 @@ class TestCouncil(unittest.TestCase):
             text=True,
             env=env,
             input=stdin,
+            cwd=cwd,
             check=False,
         )
 
@@ -73,6 +77,58 @@ class TestCouncil(unittest.TestCase):
         self.assertEqual(self._run("s2", "release", "work/x").returncode, 3)
         self.assertEqual(self._run("s1", "release", "work/x").returncode, 0)
         self.assertFalse((self.root / "work/x").exists())
+
+    def test_no_flag_lets_an_agent_take_over_or_release_a_live_holder(self):
+        self._run("s1", "claim", "security/gui", "--work", "w")
+        before = (self.root / "security/gui/claim.json").read_text(encoding="utf-8")
+        for args in (("takeover", "security/gui", "--work", "w2"), ("takeover", "security/gui", "--work", "w2", "--operator"), ("release", "security/gui"), ("release", "security/gui", "--operator")):
+            with self.subTest(args=args):
+                self.assertIn(self._run("s2", *args).returncode, (2, 3))
+        self.assertEqual((self.root / "security/gui/claim.json").read_text(encoding="utf-8"), before)
+
+    def test_no_office_operation_follows_a_planted_link(self):
+        outside = Path(self.tmp.name) / "outside"
+        (outside / "gui").mkdir(parents=True)
+        (outside / "gui" / "keep.txt").write_text("x", encoding="utf-8")
+        (outside / "gui" / "claim.json").write_text(json.dumps({"session": "s1", "runtime": "claude-code", "beat": 1.0}), encoding="utf-8")
+        self.root.mkdir()
+        (self.root / "security").symlink_to(outside)
+        for args in (
+            ("takeover", "security/gui", "--work", "w"),
+            ("release", "security/gui"),
+            ("claim", "security/new", "--work", "w"),
+            ("claim", "security/gui", "--work", "w"),
+        ):
+            with self.subTest(args=args):
+                self.assertNotEqual(self._run("s2", *args).stdout.split(" ")[0], "elected")
+        self.assertEqual(sorted(path.name for path in outside.rglob("*")), ["claim.json", "gui", "keep.txt"])
+        (self.root / "work").mkdir()
+        (self.root / "work" / "x").symlink_to(outside / "gui")
+        self.assertEqual(self._run("s2", "takeover", "work/x", "--work", "w").returncode, 3)
+        self.assertTrue((outside / "gui" / "keep.txt").exists())
+
+    def test_a_claim_from_the_root_directory_records_no_workdir_or_branch(self):
+        self.assertEqual(self._run("s2", "claim", "work/y", "--work", "appointed", cwd="/").returncode, 0)
+        row = json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))["work/y"]
+        self.assertEqual((row["worker"], row["description"], row["status"]), ("Two", "appointed", "running"))
+        self.assertNotIn("workdir", row)
+        self.assertNotIn("branch", row)
+
+    def test_a_vacant_office_is_taken_over_without_a_council_root_or_group(self):
+        self.assertEqual(self._run("s1", "takeover", "work/x", "--work", "w").stdout, "elected work/x\n")
+        self.assertEqual(self._run("s1", "takeover", "security/gui", "--work", "w").stdout, "elected security/gui\n")
+
+    def test_a_beat_racing_a_release_never_brings_the_office_back(self):
+        spec = importlib.util.spec_from_file_location("council_beat_race", COUNCIL)
+        council = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(council)
+        self.root.mkdir()
+        council.ROOT = self.root
+        released = {"session": "s1", "runtime": "claude-code", "beat": 1.0}
+        council.claims = lambda: [("work/gone", dict(released))]
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "s1"}):
+            self.assertEqual(council.cmd_beat(argparse.Namespace(session=None)), 0)
+        self.assertEqual(sorted(self.root.rglob("*")), [])
 
     def test_gate_blocks_unclaimed_edits_in_a_git_worktree_only(self):
         repo = Path(self.tmp.name) / "repo"

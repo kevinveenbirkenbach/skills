@@ -1,25 +1,25 @@
 ---
 name: kvb-org-priority
 description: >
-  Let the operator reorder the agents' priority from a selection; pins their
-  tasks in that order. Trigger on "prioritaet", "reihenfolge der agents".
+  Let the operator reorder the agents; it breaks ties of grants and equal task
+  priority. Trigger on "prioritaet", "reihenfolge der agents".
 ---
 
-The operator's order of the agents outranks every WSJF score. It is written
-as `--prio` pins into the `kvb-org-rasci` register, so the grants of the
-`kvb-org-queue` skill follow it. The script is
-`${CLAUDE_SKILL_DIR}/../kvb-org-rasci/scripts/rasci.py`.
+The agent order is separate from task priority: it lies in
+`agent-order.json` beside the `kvb-org-rasci` register, writes no `--prio`
+pin and only breaks ties of equal task rank, also among `kvb-org-queue`
+grants. The script is `${CLAUDE_SKILL_DIR}/../kvb-org-rasci/scripts/rasci.py`.
 
 ```bash
 rasci.py agents
-rasci.py order "<agent>,<agent>,..."
+rasci.py agents order "<agent>,<agent>,..."
 ```
 
 ## Step 1: current order
 
-`rasci.py agents` prints one line per agent with open tasks, in the
-register's rank: number, agent, task count, tasks. Show it as a table with
-each agent's status and OKR from `rasci.py show --wide`.
+`rasci.py agents` prints one line per agent with open tasks or an office, in
+stored order, then register rank: number, agent, task count, tasks. Show it as a table with each agent's status and OKR from
+`rasci.py show --wide`.
 
 ## Step 2: selection
 
@@ -33,15 +33,13 @@ One `AskUserQuestion`, `multiSelect: false`, the order of each option in its
 - The operator's own order arrives through `Other`, as agent names or the
   numbers of step 1 (map them to names), comma-separated.
 
-An agent left out of the chosen order loses its pins and ranks by WSJF after
-the listed ones; say so in the question.
+An agent left out of the chosen order follows the listed ones in register
+rank; say so in the question.
 
 ## Step 3: apply
 
-`rasci.py order "<A>,<B>,..."` pins the listed agents' tasks 1..n in that
-order, keeping each agent's own task order. It writes other sessions' rows:
-the operator decides priority, so this is the one exception to "write only
-your own rows". Show `rasci.py agents` again, then post the new ranks for the
+`rasci.py agents order "<A>,<B>,..."` stores the order and touches no task
+row. Show `rasci.py agents` again, then post the new order for the
 resource chair of the `kvb-org-organize` skill and every reordered agent as
 one `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post "<text>"`,
 not as wakes.

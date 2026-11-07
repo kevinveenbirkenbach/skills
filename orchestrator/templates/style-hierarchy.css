@@ -1,0 +1,21 @@
+.hierarchy-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+@media (max-width: 960px) { .hierarchy-body { grid-template-columns: minmax(0, 1fr); } }
+.org-chart .inbox-head { flex-wrap: wrap; }
+.org-tree { display: grid; gap: 4px; margin: 0; padding: 0 0 0 16px; list-style: none; border-left: 1px solid var(--line); margin-left: 14px; }
+.org-tree.root { margin-left: 0; padding-left: 0; border-left: 0; }
+.org-tree[hidden] { display: none; }
+.org-line { display: flex; align-items: flex-start; gap: 4px; }
+.org-toggle { margin-top: 3px; }
+.org-gap { flex: none; width: 30px; }
+.org-row { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; padding: 5px 8px; border-radius: 8px; }
+.org-row:hover { background: var(--hover); }
+.org-row.vacant { border: 1px dashed var(--line-strong); }
+.org-row.group .org-office { color: var(--muted); }
+.org-office, .org-holder { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.org-work { flex: 1 1 140px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-actions { display: inline-flex; gap: 2px; margin-left: auto; }
+.agent-order .order-list li { gap: 8px; padding: 6px 8px; }
+.agent-order .order-list .linkish { min-width: 0; }
+.agent-order .grip { flex: none; color: var(--muted); }
+.office-form { display: grid; gap: 10px; margin: 10px 0; }
+.office-form label { display: grid; gap: 4px; color: var(--muted); font-size: var(--fs-sm); }

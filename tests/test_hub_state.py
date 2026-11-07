@@ -68,10 +68,10 @@ class TestHubState(HubCase):
         self.assertEqual(self.status(review_id), "pending")
 
     def test_state_is_empty_without_council_files(self):
-        empty = {"reviews": [], "operator": [], "register": [], "radio": [], "claims": [], "grants": []}
+        empty = {"reviews": [], "operator": [], "register": [], "radio": [], "claims": [], "grants": [], "agent_order": []}
         state = self.snapshot()
         self.assertEqual({key: state[key] for key in empty}, empty)
-        self.assertEqual([(node["id"], node["kind"]) for node in state["graph"]["nodes"]], [("Operator", "operator"), ("name:Maintainer", "chair")])
+        self.assertEqual([(node["id"], node["kind"]) for node in state["graph"]["nodes"]], [("Operator", "operator")])
         self.assertEqual(state["graph"]["edges"], [])
         self.index()
         self.write_council({"rasci.json": "{not json", "queue-history.jsonl": "[" * 100000 + "\n", "work/x/claim.json": "[1]"})
@@ -129,6 +129,8 @@ class TestHubState(HubCase):
         ]
         claim = {"office": "work/hub", "session": "s1", "runtime": "claude", "name": "Skills", "since": "2026-11-05T10:00:00+00:00", "beat": now, "work": "build the hub"}
         gate = {"office": "cluster/gate", "session": "s2", "runtime": "codex", "name": "Gatekeeper", "since": "2026-11-05T09:00:00+00:00", "beat": now, "work": "gate"}
+        chair = {"office": "chair", "session": "s3", "runtime": "claude-code", "name": "Maintainer", "since": "2026-11-05T08:00:00+00:00", "beat": now, "work": "allocate"}
+        line = {"office": "identity/oidc", "session": "s1", "runtime": "claude", "name": "Skills", "since": "2026-11-05T10:00:00+00:00", "beat": now, "work": "oidc line"}
         history = [
             {"id": "q1", "kind": "gate", "signature": "make test", "workdir": "/repo/.worktrees/hub/sub", "start": now - 15, "end": now - 5, "exit": 0, "minutes": 0.2},
             {"id": "q2", "kind": "deploy", "signature": "make deploy", "workdir": "/elsewhere", "start": now - 15, "end": now - 5, "exit": 0, "minutes": 0.2},
@@ -139,6 +141,8 @@ class TestHubState(HubCase):
             "news.jsonl": self.jsonl(news),
             "work/hub/claim.json": claim,
             "cluster/gate/claim.json": gate,
+            "chair/claim.json": chair,
+            "identity/oidc/claim.json": line,
             "work/broken/claim.json": "not json",
             "queue-history.jsonl": self.jsonl(history),
         })
@@ -147,7 +151,7 @@ class TestHubState(HubCase):
             set(state),
             {
                 "now", "since", "until", "first", "alarm_since", "reviews", "asks", "decisions", "messages", "operator",
-                "register", "priority", "radio", "claims", "grants", "night", "silence", "graph",
+                "register", "agent_order", "radio", "claims", "grants", "night", "silence", "graph",
                 "inbox", "pending", "rules", "approvers", "jobs", "views", "llm", "people", "settings", "media", "speech",
                 "badges", "kinds",
             },
@@ -168,7 +172,8 @@ class TestHubState(HubCase):
             "limit": phrasing.SPEECH_LIMIT, "rate": engines.STT_RATE, "seconds": engines.STT_SECONDS,
         })
         self.assertAlmostEqual(state["now"] - state["since"], view.RADIO_WINDOW)
-        self.assertEqual((state["night"], state["silence"], state["priority"]), ("day", None, ["Skills session", "subagent general-purpose (default)"]))
+        self.assertEqual((state["night"], state["silence"]), ("day", None))
+        self.assertEqual(state["agent_order"], ["Skills session", "subagent general-purpose (default)", "Gatekeeper", "Maintainer", "Skills"])
         radio = [(row["from"], row["to"], row["class"], row["text"]) for row in state["radio"]]
         self.assertEqual(radio, [
             ("Skills", ["Maintainer"], "post", "ready"),
@@ -178,12 +183,17 @@ class TestHubState(HubCase):
             ("Docs", ["Skills"], "pan-pan", "PAN-PAN slow"),
             ("Maintainer", ["Skills", "Docs"], "security", "rotate"),
         ])
-        self.assertEqual([(row["office"], row["agent"], row["runtime"]) for row in state["claims"]], [("cluster/gate", "Gatekeeper", "codex"), ("work/hub", "Skills", "claude")])
+        self.assertEqual([(row["office"], row["agent"], row["runtime"], row["kind"], row["dimension"], row["line"]) for row in state["claims"]], [
+            ("chair", "Maintainer", "claude-code", "chair", "", ""),
+            ("cluster/gate", "Gatekeeper", "codex", "cluster", "", ""),
+            ("identity/oidc", "Skills", "claude", "line", "identity", "oidc"),
+            ("work/hub", "Skills", "claude", "work", "", ""),
+        ])
         self.assertEqual([(row["to"], row["kind"], row["id"]) for row in state["grants"]], [("Skills", "gate", "q1")])
         self.assertEqual([row["task"] for row in state["operator"]], ["operator/push"])
         nodes = {node["id"]: node for node in state["graph"]["nodes"]}
         moon = "subagent general-purpose (default) @ s1"
-        self.assertEqual(list(nodes), ["Operator", "name:Maintainer", "name:Docs", "s2", "s1", moon])
+        self.assertEqual(list(nodes), ["Operator", "s3", "name:Docs", "s2", "s1", moon])
         self.assertEqual([nodes[key]["kind"] for key in nodes], ["operator", "chair", "session", "session", "session", "subagent"])
         self.assertEqual([nodes[key]["label"] for key in nodes][:5], ["Operator", "Maintainer", "Docs", "Gatekeeper", "Skills"])
         self.assertEqual((nodes[moon]["parent"], nodes[moon]["label"]), ("s1", "subagent general-purpose (default)"))
@@ -191,17 +201,18 @@ class TestHubState(HubCase):
         self.assertEqual(skills, [("operator/push", False, "A"), ("work/hub", True, "R"), ("work/sub", False, "A")])
         self.assertEqual([(task["task"], task["letters"]) for task in nodes["Operator"]["tasks"]], [("operator/push", "R")])
         self.assertEqual([task["task"] for task in nodes[moon]["tasks"]], ["work/sub"])
-        self.assertEqual([claim["office"] for claim in nodes["s1"]["claims"]], ["work/hub"])
+        self.assertEqual([claim["office"] for claim in nodes["s1"]["claims"]], ["identity/oidc", "work/hub"])
+        self.assertEqual([claim["office"] for claim in nodes["s3"]["claims"]], ["chair"])
         self.assertEqual((state["people"]["s1"]["now"], state["radio"][0]["source"], state["grants"][0]["target"]), ("Skills", "s1", "s1"))
         edges = {(edge["source"], edge["target"], edge["class"]): edge["count"] for edge in state["graph"]["edges"]}
         self.assertEqual(edges, {
             ("name:Docs", "*", "mayday"): 1,
             ("name:Docs", "s1", "pan-pan"): 1,
-            ("name:Maintainer", "*", "newsletter"): 1,
-            ("name:Maintainer", "name:Docs", "security"): 1,
-            ("name:Maintainer", "s1", "grant"): 1,
-            ("name:Maintainer", "s1", "security"): 1,
-            ("s1", "name:Maintainer", "post"): 2,
+            ("s3", "*", "newsletter"): 1,
+            ("s3", "name:Docs", "security"): 1,
+            ("s3", "s1", "grant"): 1,
+            ("s3", "s1", "security"): 1,
+            ("s1", "s3", "post"): 2,
         })
 
     def test_state_needs_the_host(self):

@@ -3,7 +3,8 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 
-// Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, probe, shot, media} and an optional
+// Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, probe, shot, media}, keys
+// being real key presses (Enter, Tab) on the focused element before the probe, and an optional
 // authenticator {credentialId, privateKey, rpId}: base64 id and PKCS#8 key of a passkey the page may sign with.
 // Prints {results, errors}: one probe value per step and every uncaught page exception.
 const [binary, planFile] = process.argv.slice(2);
@@ -14,6 +15,7 @@ const profile = mkdtempSync(join(tmpdir(), "cdp-"));
 const flags = ["--headless", "--no-sandbox", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"];
 const browser = spawn(binary, flags, {stdio: ["ignore", "ignore", "pipe"]});
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const KEYS = {Enter: [13, "\r"], Tab: [9, ""]};
 
 const address = await new Promise((resolve, reject) => {
   let text = "";
@@ -79,6 +81,12 @@ try {
       await page("Page.navigate", {url: step.url});
     }
     await sleep(step.wait);
+    for (const key of step.keys || []) {
+      const [code, text] = KEYS[key];
+      await page("Input.dispatchKeyEvent", {type: "keyDown", key, code: key, windowsVirtualKeyCode: code, text});
+      await page("Input.dispatchKeyEvent", {type: "keyUp", key, code: key, windowsVirtualKeyCode: code});
+      await sleep(250);
+    }
     let value = null;
     if (step.probe) {
       const {result, exceptionDetails} = await page("Runtime.evaluate", {expression: step.probe, awaitPromise: true, returnByValue: true});

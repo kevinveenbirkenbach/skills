@@ -25,7 +25,7 @@ rasci.py estimate <task> "<party>" --value <fib> --complexity <fib>
 rasci.py wsjf [--all]
 rasci.py tools
 rasci.py agents
-rasci.py order "<agent>,<agent>,..."
+rasci.py agents order "<agent>,<agent>,..."
 ```
 
 ## Objective and key results
@@ -60,10 +60,9 @@ published). `done` is refused while one is open; a task ended short of them is
   tool the task ran (`--tool`): `tools` ranks them for `kvb-dream`.
 - Priority is the rank of the `kvb-org-wsjf` skill: an operator's pin
   (`--prio`) first, then WSJF from the estimates the chair collects; `show`
-  prints the rank as Prio and the score as WSJF.
+  prints the rank as Prio and the score as WSJF; the agent order of
+  `kvb-org-priority` only breaks ties.
 - Write only your own rows; another session's task belongs to that session.
-  The one exception is `order`, the operator's pick through the
-  `kvb-org-priority` skill.
 - Read `show` (Prio, WSJF, Task, Status, Worker, A; cells cut short) or
   `get` instead of asking a peer what it works on. `show --wide` adds OKR,
   Artifacts, Start, End and every RASCI letter.

@@ -36,10 +36,12 @@ SIGN_ROUTE = "/api/sign"
 RULE_SIGN_ROUTE = "/api/rules/sign"
 CLEANUP_ROUTE = "/api/cleanup"
 CLEANUP_STATE = re.compile(r"/api/cleanup/([0-9a-f]{16})")
+OFFICES_ROUTE = "/api/offices"
+OFFICE_STATE = re.compile(r"/api/offices/([0-9a-f]{16})")
 VENDOR_ROUTE = re.compile(r"/vendor/([a-z0-9.-]{1,64})")
 VENDOR = {"3d-force-graph.min.js": "3d-force-graph/3d-force-graph.min.js", "three.module.js": "three/three.module.js", "three.core.js": "three/three.core.js"}
 SCRIPT_TYPE = "text/javascript; charset=utf-8"
-ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE)
+ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE)
 
 
 class Handler(Exchange):
@@ -59,6 +61,7 @@ class Handler(Exchange):
         proof = PROOF_ROUTE.fullmatch(path)
         vendored = VENDOR_ROUTE.fullmatch(path)
         cleanup = CLEANUP_STATE.fullmatch(path)
+        office = OFFICE_STATE.fullmatch(path)
         if self.host() is None:
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
         elif path == "/":
@@ -67,6 +70,8 @@ class Handler(Exchange):
             self.vendored(VENDOR[vendored.group(1)])
         elif cleanup:
             self.answer(lambda: hub.cleanup_state(cleanup.group(1)), HTTPStatus.OK)
+        elif office:
+            self.answer(lambda: hub.office_state(office.group(1)), HTTPStatus.OK)
         elif proof:
             self.answer(lambda: hub.review_proof(proof.group(1)), HTTPStatus.OK)
         elif path == "/api/state":
@@ -125,6 +130,8 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.sign_rule(body), HTTPStatus.OK)
         if path == CLEANUP_ROUTE:
             return lambda body: self.answer(lambda: hub.cleanup(body), HTTPStatus.ACCEPTED)
+        if path == OFFICES_ROUTE:
+            return lambda body: self.answer(lambda: hub.appoint(body), HTTPStatus.ACCEPTED)
         if inbox:
             return lambda body: self.answer(lambda: hub.mark(body), HTTPStatus.OK)
         if undo:

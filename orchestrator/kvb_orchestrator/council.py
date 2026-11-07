@@ -18,6 +18,10 @@ MODES = ("evening", "sunset")
 RADIO_LIMIT = 5000
 GRANT_LIMIT = 50
 MAYDAY_ACTIVE = 7200
+CHAIR_OFFICE = "chair"
+GROUPS = ("work", "cluster")
+CLAIM_FILES = ("*/claim.json", "*/*/claim.json")
+OFFICE = re.compile(r"[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?")
 
 
 def agent(name: object) -> str:
@@ -74,10 +78,33 @@ def radio_rows(rows: list[dict], begin: float, end: float) -> list[dict]:
     return sorted(found, key=lambda row: row["ts"])[-RADIO_LIMIT:]
 
 
-def claim_row(data: dict) -> dict:
+def office_kind(office: str) -> tuple[str, str, str]:
+    """Args:
+        office: an office of one or two segments.
+
+    Returns:
+        (kind, dimension, line): kind is chair, line for <dimension>/<line>,
+        work or cluster for their groups, other for any other single
+        segment; dimension and line are empty unless the kind is line.
+    """
+    head, _, rest = office.partition("/")
+    if office == CHAIR_OFFICE:
+        return "chair", "", ""
+    if not rest:
+        return "other", "", ""
+    if head in GROUPS:
+        return head, "", ""
+    return "line", head, rest
+
+
+def claim_row(office: str, data: dict) -> dict:
     name = data.get("name")
+    kind, dimension, line = office_kind(office)
     return {
-        "office": shown(data.get("office")),
+        "office": office,
+        "kind": kind,
+        "dimension": dimension,
+        "line": line,
         "agent": agent(name),
         "address": name.strip() if isinstance(name, str) else "",
         "session": shown(data.get("session")),
@@ -89,8 +116,14 @@ def claim_row(data: dict) -> dict:
 
 
 def read_claims(council: Path) -> list[dict]:
-    paths = sorted([*council.glob("cluster/*/claim.json"), *council.glob("work/*/claim.json")])
-    return [claim_row(data) for data in map(read_json, paths) if isinstance(data, dict)]
+    found = []
+    for pattern in CLAIM_FILES:
+        for path in council.glob(pattern):
+            office = path.parent.relative_to(council).as_posix()
+            data = read_json(path)
+            if OFFICE.fullmatch(office) and isinstance(data, dict):
+                found.append(claim_row(office, data))
+    return sorted(found, key=lambda row: row["office"])
 
 
 def sessions(claims: list[dict]) -> dict[str, str]:
