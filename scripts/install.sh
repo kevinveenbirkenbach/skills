@@ -102,9 +102,9 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	if command -v jscpd &>/dev/null; then
 		log "skills: jscpd is installed"
 	elif ! command -v npm &>/dev/null; then
-		warn "skills: npm not found; install jscpd with 'npm install --global ${jscpd_pin}'. Until then principles.py skips its clone hits."
-	elif npm install --global "${jscpd_pin}"; then
-		log "skills: installed ${jscpd_pin} for the principles.py clone hits"
+		warn "skills: npm not found; install jscpd with 'npm install --global --prefix ~/.local ${jscpd_pin}'. Until then principles.py skips its clone hits."
+	elif npm install --global --prefix "${HOME}/.local" "${jscpd_pin}"; then
+		log "skills: installed ${jscpd_pin} into ~/.local/bin for the principles.py clone hits"
 	else
 		warn "skills: the jscpd install failed; principles.py skips its clone hits."
 	fi
