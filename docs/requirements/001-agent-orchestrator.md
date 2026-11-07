@@ -124,7 +124,7 @@ from three views down to any agent, branch or artefact.
 22. **Organisation update**: a new skill `kvb-org-update` tells every agent
     and client which skills changed and how to use them, as one
     `newsletter` per update; phase 1 announces the radio change through it.
-23. **Phase 5** (23 to 42 operator-confirmed 2026-11-07): the console
+23. **Phase 5** (23 to 43 operator-confirmed 2026-11-07): the console
     output shows under "Ausführen" (Run); a deny picks its channel (default
     `post`); agents request auto-approval rules through the
     inbox; the rules form and the Ort fields never overlap; the radio plays
@@ -222,6 +222,14 @@ from three views down to any agent, branch or artefact.
     Steuerung → Controls, Ausführen → Run). Kept: trigger phrases in skill
     descriptions that quote what the operator says in German, and the rule
     that agents answer the operator in the operator's language.
+43. **Shared cache** (core concept settled by the operator 2026-11-07
+    18:40, owner IAM, report `/tmp/shared-model-cache-base-20261107.md`):
+    the image build fetches every model, voice and source archive from
+    `${INFINITO_ARTEFACT_BASE}/<host>/<path>` with the same sha256 pins, and
+    from the real upstream when the build arg is unset. Speech uses the
+    core role `svc-ai-speech` when its URL is configured, else the
+    in-container whisper and piper. `make orchestrator-install` without any
+    core stack stays the standalone path. Subtree S8, after S7.
 
 ## Approach
 
@@ -294,6 +302,7 @@ flowchart TD
         S4 --> S5["🗳️ S5 Tasks with asks and choices"]
         S5 --> S6["🧱 S6 Firewall and settings writes"]
         S6 --> S7["📈 S7 Resources charts"]
+        S7 --> S8["🗄️ S8 artefact base URL, optional core speech"]
     end
     subgraph G["🔁 Each subtree"]
         G1["🔴 Red tests"] --> G2["🛠️ Change"]
@@ -304,7 +313,7 @@ flowchart TD
         GF -- "✏️ changes" --> G2
         GF -- "👍 fits" --> G5["🔀 Commit, merge into master, next subtree"]
     end
-    S7 --> D2["🏁 install-skills-master row, push hand-over"]
+    S8 --> D2["🏁 install-skills-master row, push hand-over"]
 ```
 
 ## Acceptance Criteria
@@ -593,6 +602,16 @@ flowchart TD
 - [ ] Token counts equal the sum of the transcript usage fields of a fixture
       (unit test); host samples come from the host unit's file, not from the
       container.
+
+### Phase 6: shared cache (S8)
+
+- [ ] With `INFINITO_ARTEFACT_BASE` set, every `ADD` and clone of the image
+      build uses `<base>/<host>/<path>` and the unchanged sha256 pins; unset,
+      the build uses the upstream URLs (test over the rendered Dockerfile).
+- [ ] With a configured `svc-ai-speech` URL the hub sends STT and TTS there;
+      without it the in-container engines answer (unit test with a stub).
+- [ ] `make orchestrator-install` succeeds in a scratch HOME without any core
+      stack.
 
 ### Tests
 
