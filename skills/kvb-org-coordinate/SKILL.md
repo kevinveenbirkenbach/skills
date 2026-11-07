@@ -2,8 +2,7 @@
 name: kvb-org-coordinate
 description: >
   Coordinate a failure or fix with agents on related branches through
-  merges: claim, ask, report. Trigger when a fix touches code other
-  branches share.
+  merges: claim, ask, report. Trigger when a fix touches shared code.
 ---
 
 Run the `kvb-org-organize` skill's **Peer protocol**, its `lineage.md`

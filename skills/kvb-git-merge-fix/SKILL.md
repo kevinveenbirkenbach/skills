@@ -1,7 +1,8 @@
 ---
 name: kvb-git-merge-fix
 description: >
-  Find commits on any branch carrying a described fix and merge them here. Trigger on a request to bring over a fix from another branch.
+  Bring over a described fix: find the commits carrying it on any branch and
+  merge them here.
 ---
 
 The free text after the skill name is the fix description and the only input.

@@ -2,7 +2,7 @@
 name: kvb-agent-wakeup
 description: >
   Wake this agent from kvb-agent-relax or kvb-agent-sleep into its old roles;
-  kvb-org-sunrise sends it to all. Trigger on its request.
+  kvb-org-sunrise sends it to all.
 ---
 
 Verify first with `${CLAUDE_SKILL_DIR}/../kvb-org-sunset/scripts/night.py

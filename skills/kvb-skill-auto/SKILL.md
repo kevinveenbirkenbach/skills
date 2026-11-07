@@ -1,9 +1,8 @@
 ---
 name: kvb-skill-auto
 description: >
-  Turn operator repetition into a skill. Trigger when the operator repeats an
-  instruction, correction or prompt pattern thrice, or says they keep
-  repeating themselves.
+  Turn an instruction, correction or prompt pattern the operator repeats
+  thrice into a skill, also when they say they keep repeating themselves.
 ---
 
 Its objective is the `kvb-skill-tune` skill's **Objective** section: a skill is

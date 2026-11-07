@@ -1,8 +1,8 @@
 ---
 name: kvb-think-explain
 description: >
-  Explain code and its interactions. Trigger when the operator asks what code
-  does, how a mechanism works or why components interact.
+  Explain on request what code does, how a mechanism works or why
+  components interact.
 ---
 
 Explain the named code so an engineer who has never seen it can follow it:

@@ -1,8 +1,8 @@
 ---
 name: kvb-skill-compile
 description: >
-  Turn deterministic skill steps into tested scripts in the skill's own repo.
-  Trigger on a skill step that is a fixed command sequence.
+  Turn deterministic skill steps (fixed command sequences) into tested
+  scripts in the skill's own repo.
 ---
 
 A deterministic step's result follows from its inputs alone: fixed command

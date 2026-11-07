@@ -2,7 +2,7 @@
 name: kvb-agent-sleep
 description: >
   Put this agent to sleep on kvb-org-sunset: park work, end loops, write a
-  morning handover, stay idle. Trigger on its request.
+  morning handover, stay idle.
 ---
 
 Verify first: `${CLAUDE_SKILL_DIR}/../kvb-org-sunset/scripts/night.py status`

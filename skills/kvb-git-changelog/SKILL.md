@@ -1,9 +1,9 @@
 ---
 name: kvb-git-changelog
 description: >
-  Write the release message for `pkgmgr release`; prints only. Trigger on
-  "release message", "changelog entry", before cutting a
-  release, or on pkgmgr's markdown-lint rejection.
+  Write the `pkgmgr release` message; prints only. Trigger on "release
+  message", "changelog entry", before cutting a release, or pkgmgr's
+  markdown-lint rejection.
 ---
 
 Read `reasons.md` next to this file when a rule seems not to fit or a lint

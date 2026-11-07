@@ -2,8 +2,7 @@
 name: kvb-org-robot
 description: >
   Work fully autonomously to a goal: no check-ins, no stop before it, only
-  commands already cleared. Trigger when the operator wants hands-off,
-  uninterrupted execution.
+  commands already cleared. Trigger on a hands-off request.
 ---
 
 Operate as an autonomous robot: given a goal, reach it without hand-holding.

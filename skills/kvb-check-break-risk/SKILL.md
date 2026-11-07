@@ -2,8 +2,8 @@
 name: kvb-check-break-risk
 description: >
   Derive the break-risk percentage from measurement, not feel, for every
-  `kvb-check-confidence` report; also when the operator asks "what could this
-  break?" or names a break-risk threshold.
+  `kvb-check-confidence` report; also on "what could this break?" or a named
+  break-risk threshold.
 ---
 
 Break risk is the probability the change breaks something it did not intend to

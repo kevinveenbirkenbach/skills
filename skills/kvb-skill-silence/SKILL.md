@@ -1,8 +1,8 @@
 ---
 name: kvb-skill-silence
 description: >
-  Cut the tokens and agent messages the skills of this repository and of the
-  skills repo cost. kvb-optimize runs it.
+  Cut the tokens and agent messages this repository's skills and the skills
+  repo cost. kvb-optimize runs it.
 ---
 
 Every word in the skill listing, a loaded SKILL.md or a hook's output is paid

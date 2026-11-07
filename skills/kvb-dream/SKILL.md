@@ -2,8 +2,7 @@
 name: kvb-dream
 description: >
   Process the last 24 hours of every repository and session: memory,
-  improvements, kvb-optimize, cleanups. Trigger on a request to learn from
-  recent work.
+  improvements, kvb-optimize, cleanups. Trigger to learn from recent work.
 ---
 
 Replay what happened, separate what held from what broke, keep only

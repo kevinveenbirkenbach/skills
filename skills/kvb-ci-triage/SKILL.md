@@ -1,8 +1,8 @@
 ---
 name: kvb-ci-triage
 description: >
-  Triage a failing CI run to verified root causes and real fixes, one
-  cluster per worktree. Trigger when a build, test or deploy pipeline fails.
+  Triage a failing CI run or build, test or deploy pipeline to verified root
+  causes and real fixes, one cluster per worktree.
 ---
 
 Drive a red pipeline green by root cause. Every failing job is its own

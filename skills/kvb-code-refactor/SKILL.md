@@ -2,8 +2,7 @@
 name: kvb-code-refactor
 description: >
   Refactor every uncommitted file to the project's standards without
-  changing behaviour. Trigger when asked to clean up, tidy or polish the
-  current changes.
+  changing behaviour. Trigger when asked to clean up, tidy or polish them.
 ---
 
 The unit of work is the uncommitted change set, not the repository. Behaviour

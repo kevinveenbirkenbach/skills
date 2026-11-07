@@ -2,7 +2,7 @@
 name: kvb-agent-relax
 description: >
   Relax this agent on kvb-org-evening: finish its task, end its loops, start
-  nothing new. Trigger on its request.
+  nothing new.
 ---
 
 Verify first: `${CLAUDE_SKILL_DIR}/../kvb-org-sunset/scripts/night.py status`
