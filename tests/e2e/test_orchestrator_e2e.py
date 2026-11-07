@@ -32,8 +32,10 @@ from test_hub_offices import host as office_host
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
-SCREENS = ["stream", "stream/inbox", "stream/rules", "stream/radio", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy"]
+TASK_VIEWS = ("list", "board", "rasci")
+SCREENS = ["stream", "stream/inbox", "stream/rules", "stream/radio", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
 SUBS = ["Inbox", "Regeln", "Radio"]
+TABS = ["Stream", "Agents", "Artifacts", "Tasks"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const until = async (check, ms) => {
@@ -91,6 +93,13 @@ PROBE = """(async () => {@HELPERS@
     org: all("#main .org-chart .org-row[data-office]").map((row) => [row.dataset.office, text(row.querySelector(".org-holder"))]),
     toggles: all("#main .org-toggle").map((button) => [name(button), button.getAttribute("aria-expanded")]),
     order: all("#main .agent-order li").map((item) => item.dataset.name),
+    taskFilters: all('#main [aria-label="Aufgabenfilter"] button').map((button) => [button.dataset.filter, button.getAttribute("aria-pressed"), text(button.querySelector(".count"))]),
+    taskRows: all("#main .task-row").map((row) => [row.dataset.task, row.classList.contains("open-work")]),
+    columns: all("#main .task-column").map((column) => [column.dataset.column, all(".task-card", column).map((card) => card.dataset.task)]),
+    matrix: [all("#main table.matrix thead th").length, all("#main table.matrix tbody tr").length, all("#main table.matrix td .letter").map(text).join("")],
+    flows: all("#main .flow").map((flow) => flow.dataset.flow),
+    flowEdges: all("#main svg.chart path.flow").map((path) => path.dataset.side),
+    openWork: all("#main .open-work").length,
     wide: document.documentElement.scrollWidth > window.innerWidth + 1,
   };
 })()""".replace("@HELPERS@", HELPERS)
@@ -139,13 +148,38 @@ AFTER_TAKEOVER = """(async () => {@HELPERS@
   }, 15000);
   return {holder: text(row)};
 })()""".replace("@HELPERS@", HELPERS)
+INBOX_CHIP = """(async () => {@HELPERS@
+  const chip = (id) => document.querySelector(`#main [aria-label="Aufgabenfilter"] button[data-filter="${id}"]`);
+  chip("operator").click();
+  await until(() => location.hash === "#stream/inbox" && document.querySelector("#main .inbox-list"), 4000);
+  const inbox = {hash: location.hash, items: all("#main .inbox-list > li").length, counted: Number(text(chip("operator").querySelector(".count"))), pressed: chip("operator").getAttribute("aria-pressed"), current: all("#tabs button[aria-current=page]").map(name)};
+  chip("freigabe").click();
+  await until(() => location.hash.startsWith("#tasks/"), 4000);
+  await sleep(300);
+  return {inbox, back: {hash: location.hash, rows: all("#main .task-row").map((row) => [row.dataset.task, text(row.querySelector(".pill"))])}};
+})()""".replace("@HELPERS@", HELPERS)
+PIN = """(async () => {@HELPERS@
+  const row = await until(() => all("#main .task-row").find((item) => item.dataset.task === "work/docs"), 8000);
+  if (!row) {
+    return {error: text(document.getElementById("main"))};
+  }
+  row.querySelector('button[aria-label="Priorität"]').click();
+  await sleep(400);
+  const field = document.querySelector('.sheet-box input[aria-label="Priorität"]');
+  field.value = "2";
+  field.dispatchEvent(new Event("input", {bubbles: true}));
+  const preview = all(".sheet-box .task-edit .command code").map(text);
+  all(".sheet-box button").find((button) => name(button) === "Anheften").click();
+  const done = await until(() => document.querySelector(".sheet-box [data-jobs]"), 20000);
+  return {title: text(document.querySelector(".sheet-head .panel-title")), preview, jobs: done ? done.dataset.jobs : null, toasts: all("#toasts .toast").map(text)};
+})()""".replace("@HELPERS@", HELPERS)
 ACTIONS = """(async () => {@HELPERS@
   const press = async (key) => {
     document.dispatchEvent(new KeyboardEvent("keydown", {key, bubbles: true}));
     await sleep(300);
     return location.hash;
   };
-  const found = {keys: [await press("2"), await press("3"), await press("1")]};
+  const found = {keys: [await press("2"), await press("3"), await press("4"), await press("1")]};
   document.getElementById("settings-open").click();
   await sleep(300);
   found.ambience = all(".sheet-box form > section:first-child button").map((button) => button.id);
@@ -554,12 +588,25 @@ class TestOrchestratorE2E(HubCase):
         super().setUp()
         OUT.mkdir(parents=True, exist_ok=True)
         now = time.time()
+        self.root = self.write_tree()
+        feature = f"{self.root}/worktrees/github.com/me/demo/feature"
         self.claim("s1", "Skills session")
         self.write_council({
             "work/s2/claim.json": {"office": "work/s2", "session": "s2", "runtime": "claude", "name": "Stage", "since": iso(now - 7200), "beat": now - 2000, "work": "x"},
             "chair/claim.json": {"office": "chair", "session": "s1", "runtime": "claude", "name": "Skills session", "since": iso(now - 7200), "beat": now, "work": "allocate"},
             "identity/oidc/claim.json": {"office": "identity/oidc", "session": "s2", "runtime": "claude", "name": "Stage", "since": iso(now - 7200), "beat": now - 2000, "work": "oidc line"},
-            "rasci.json": {"work/stage": {"title": "Stage line", "status": "running", "worker": "Stage (this session)", "roles": {"Stage (this session)": "RA"}}},
+            "rasci.json": {
+                "work/stage": {"title": "Stage line", "status": "running", "worker": "Stage (this session)", "roles": {"Stage (this session)": "RA"}},
+                "work/feature": {
+                    "title": "Merge-Flow im Hub zeigen", "status": "running", "worker": "Skills session", "objective": "Der Operator sieht, wohin ein Branch fließt", "workdir": feature, "prio": 1,
+                    "roles": {"Skills session": "RA", "Operator": "C", "Docs": "I"}, "key_results": [{"text": "Flow im Tree", "met": True}, {"text": "Flow in Tasks", "met": False}],
+                    "estimates": {"Skills": {"value": 8, "complexity": 3, "at": iso(now - 600)}},
+                },
+                "work/docs": {"title": "README nachziehen", "status": "blocked", "worker": "Docs", "branch": "main", "roles": {"Docs": "R", "Maintainer": "A", "Skills": "S"}, "estimates": {"Docs": {"value": 3, "complexity": 2}}},
+                "work/old": {"title": "Alte Linie", "status": "done", "worker": "Stage", "end": iso(now - 86400), "roles": {"Stage": "RA"}},
+                "operator/push": {"title": "git push", "workdir": "/repo", "status": "done", "roles": {"Operator": "R"}},
+            },
+            "queue.json": {"seq": 3, "entries": [{"id": "gate-3", "kind": "gate", "task": "work/feature", "workdir": feature, "session": "s1", "name": "Skills", "status": "waiting", "enqueued": now - 120, "cmd": "make test"}]},
             "radio-silence.json": {"since": now - 60, "until": now + 3600, "by": "Docs", "text": "disk full"},
             "news.jsonl": self.jsonl([
                 {"ts": now - 600, "from": "Skills", "to": ["Stage"], "text": "rebase please", "class": "post", "v": 2},
@@ -572,7 +619,6 @@ class TestOrchestratorE2E(HubCase):
         self.subagents(now)
         self.request("feat: orchestrator", "")
         self.create_ask(ASK)
-        self.root = self.write_tree()
         self.base = f"http://{self.host}/"
 
     def subagents(self, now: float) -> None:
@@ -722,6 +768,7 @@ class TestOrchestratorE2E(HubCase):
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#artifacts/3d", "wait": 900, "probe": PICK_3D.replace("@PREFIX@", "branch:"), "shot": self.shot("1366-artifacts-3d-picked")})
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#agents/3d", "wait": 900, "probe": PICK_3D.replace("@PREFIX@", "s2"), "shot": self.shot("1366-agents-3d-picked")})
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#artifacts/3d", "wait": 900, "probe": PROBE, "shot": self.shot("1366-artifacts-3d-reduced-motion"), "media": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+        steps.append({"width": 1366, "height": 768, "url": f"{self.base}#tasks/list", "wait": 900, "probe": INBOX_CHIP, "shot": self.shot("1366-tasks-freigabe")})
         data = self.drive(steps, None)
         (OUT / "chromium-walk.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
@@ -731,8 +778,8 @@ class TestOrchestratorE2E(HubCase):
                 self.assertNotIn("error", probe)
                 self.assertEqual((probe["title"], probe["h1"]), ("(2) Agent Orchestrator", "Agent Orchestrator"))
                 self.assertEqual(probe["header"], ["palette-open", "settings-open"])
-                self.assertEqual((probe["tabs"], probe["subs"]), (["Stream", "Agents", "Artifacts"], SUBS))
-                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-inbox": "2", "tab-rules": None, "tab-radio": None, "tab-agents": "1", "tab-artifacts": None})
+                self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
+                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-inbox": "2", "tab-rules": None, "tab-radio": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": None})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")
                 self.assertFalse(probe["rail"])
                 self.assertEqual((probe["time"], probe["replay"]), ("24 h ▾", True))
@@ -769,11 +816,25 @@ class TestOrchestratorE2E(HubCase):
         for view in ("orbit", "chord"):
             with self.subTest(view=view):
                 self.assertGreaterEqual(by_hash[f"#artifacts/{view}"]["marks"], 4)
+        self.assertEqual((artifacts["flows"], artifacts["openWork"]), (["file", "invalid"], 5))
+        for state in ("offene Arbeit: nicht committet, Aufgabe offen", "offene Arbeit: ungepusht, Aufgabe offen", "offene Arbeit: nicht gemergt", "3 Worktrees mit offener Arbeit"):
+            with self.subTest(state=state):
+                self.assertIn(state, artifacts["states"])
+        self.assertEqual(by_hash["#artifacts/chord"]["flowEdges"], ["pull", "push"])
+        order = ["work/feature", "work/docs", "work/stage", "queue/gate-3", "work/old", "operator/push"]
+        listed = by_hash["#tasks/list"]
+        self.assertEqual(listed["views"], ["Liste", "Board", "RASCI"])
+        self.assertEqual(listed["taskFilters"], [["alle", "true", "6"], ["offen", "false", "4"], ["arbeit", "false", "4"], ["operator", "false", "2"], ["freigabe", "false", "1"], ["beendet", "false", "2"]])
+        self.assertEqual(listed["taskRows"], [[task, task not in ("work/old", "operator/push")] for task in order])
+        self.assertEqual(listed["flows"], ["file", "file"])
+        self.assertEqual(by_hash["#tasks/board"]["columns"], [["queued", ["queue/gate-3"]], ["running", ["work/feature", "work/stage"]], ["blocked", ["work/docs"]], ["done", ["work/old", "operator/push"]], ["stopped", []]])
+        self.assertEqual(by_hash["#tasks/rasci"]["matrix"], [6, 6, "CIRARASRARAR"])
+        self.assertEqual([probe["taskFilters"][3][1] for probe in probes if probe["hash"] == "#stream/inbox"], ["true"] * len(WIDTHS))
         extra = data["results"][len(probes) :]
         self.assertEqual([probe["hash"] for probe in extra[:3]], ["#agents/orbit", "#agents/chord", "#artifacts/tree"])
         actions = extra[3]
         self.assertNotIn("error", actions)
-        self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#stream"])
+        self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/rasci", "#stream"])
         self.assertEqual(actions["ambience"], ["sky-look", "music-toggle", "leitstand", "notify"])
         self.assertEqual((actions["settingsUnlabelled"], actions["drawerUnlabelled"]), (0, 0))
         self.assertEqual([name for name, _, _ in actions["speech"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "SECURITE"])
@@ -782,10 +843,13 @@ class TestOrchestratorE2E(HubCase):
             with self.subTest(tool=tool):
                 self.assertTrue(any(tool in entry for entry in actions["palette"]), actions["palette"])
         self.assertEqual(actions["drawer"], [["post", True], ["call", False]])
-        artifact_pick, agent_pick, calm = extra[4:]
+        artifact_pick, agent_pick, calm, chips = extra[4:]
         self.assertEqual(artifact_pick["panel"], artifact_pick["label"])
         self.assertEqual(agent_pick["panel"], agent_pick["label"])
         self.assertRegex(calm["note"], r"Kraft · ohne Bewegung \(prefers-reduced-motion\)$")
+        self.assertEqual({key: value for key, value in chips["inbox"].items() if key != "counted"}, {"hash": "#stream/inbox", "items": chips["inbox"]["counted"], "pressed": "true", "current": ["Inbox"]})
+        self.assertGreaterEqual(chips["inbox"]["items"], 1)
+        self.assertEqual(chips["back"], {"hash": "#tasks/list", "rows": [["queue/gate-3", "Queue-Job"]]})
 
     def test_chromium_sends_a_call_from_the_agent_panel_and_shows_its_receipt(self):
         handled = []
@@ -1055,6 +1119,25 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual(probe["console"], "erledigtExit-Code 0 nach 9 s")
                 self.assertTrue(shot.is_file() and shot.stat().st_size > 1000, shot)
 
+    def test_chromium_pins_a_task_priority_after_signature_and_the_runner_applies_it(self):
+        signer = self.pin()
+        private = "".join(line for line in signer.pem.read_text(encoding="utf-8").splitlines() if not line.startswith("-----"))
+        authenticator = {"credentialId": base64.b64encode(signer.raw_id).decode(), "privateKey": private, "rpId": "localhost"}
+        local = f"http://localhost:{self.port}/"
+        data = self.drive([{"width": 1366, "height": 768, "url": f"{local}#tasks/list", "wait": 1200, "probe": PIN, "shot": self.shot("1366-tasks-priority-signed")}], authenticator)
+        (OUT / "chromium-task-priority.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        pinned = data["results"][0]
+        self.assertNotIn("error", pinned)
+        self.assertEqual((pinned["title"], pinned["preview"][0]), ("work/docs", "rasci.py set work/docs --prio 2"))
+        self.assertEqual(pinned["toasts"], ["Priorität work/docs: an den Runner übergebenrasci.py set work/docs --prio 2"])
+        jobs = self.runner_jobs()
+        self.assertEqual([(job["id"], job["kind"], job["argv"]) for job in jobs], [(pinned["jobs"], "task", ["set", "work/docs", "--prio", "2"])])
+        self.run_runner()
+        register = json.loads((self.council / "rasci.json").read_text(encoding="utf-8"))
+        self.assertEqual((register["work/docs"]["prio"], register["work/feature"]["prio"]), (2, 1))
+        self.assertEqual([(row["task"], row["prio"]) for row in self.snapshot()["tasks"][:2]], [("work/feature", 1), ("work/docs", 2)])
+
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
     def test_firefox_walks_every_screen_at_three_widths(self):
         shots = [(width, height, screen, OUT / f"firefox-{width}-{screen.replace('/', '-')}.png") for width, height in WIDTHS for screen in SCREENS]
@@ -1071,7 +1154,7 @@ class TestOrchestratorE2E(HubCase):
             with self.subTest(width=width, screen=screen):
                 self.assertNotIn("error", probe)
                 self.assertEqual(probe["hash"], f"#{screen}")
-                self.assertEqual((probe["tabs"], probe["subs"]), (["Stream", "Agents", "Artifacts"], SUBS))
+                self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
                 self.assertEqual(labelled(probe), {"unlabelled": [], "broken": []})
                 self.assertFalse(probe["wide"], "the page scrolls sideways")
                 self.assertTrue(shot.is_file() and shot.stat().st_size > 1000, shot)

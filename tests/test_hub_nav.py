@@ -10,16 +10,19 @@ NAV_PROBE = """
 const N = require(process.argv[1]);
 const hashes = ["", "#stream", "#stream/inbox", "#stream/rules", "#stream/nope", "#agents/chord", "#agents/3d", "#agents", "#agents/nope",
   "#artifacts/tree", "#artifacts/orbit", "#graph", "#graph/swimlane", "#graph/orbit", "#tree", "#bogus", "#agents%2Fswimlane",
-  "#agents/hierarchy", "#artifacts/hierarchy", "#graph/hierarchy", "#tree/hierarchy", "#stream/radio", "#radio"];
+  "#agents/hierarchy", "#artifacts/hierarchy", "#graph/hierarchy", "#tree/hierarchy", "#stream/radio", "#radio",
+  "#tasks", "#tasks/board", "#tasks/rasci", "#tasks/orbit", "#agents/board", "#tasks/hierarchy"];
 console.log(JSON.stringify({
   tabs: N.TABS.map(([id, label]) => [id, label, (N.SUBS[id] || []).map(([sub, name]) => [sub, name])]),
   views: N.VIEWS.map(([id, label]) => [id, label]),
+  taskViews: N.TASK_VIEWS.map(([id, label]) => [id, label]),
   agents: N.viewsOf("agents").map(([id, label]) => [id, label]),
   artifacts: N.viewsOf("artifacts").map(([id, label]) => [id, label]),
+  tasks: N.viewsOf("tasks").map(([id, label]) => [id, label]),
   icon: N.ICONS.hierarchy,
   routes: hashes.map((hash) => N.route(hash)),
-  hashes: [["stream", null], ["inbox", null], ["rules", null], ["radio", null], ["agents", "chord"], ["artifacts", "3d"]].map(([screen, view]) => N.hashOf(screen, view)),
-  tabOf: ["stream", "inbox", "rules", "radio", "agents", "artifacts"].map((screen) => N.tabOf(screen)),
+  hashes: [["stream", null], ["inbox", null], ["rules", null], ["radio", null], ["agents", "chord"], ["artifacts", "3d"], ["tasks", "board"]].map(([screen, view]) => N.hashOf(screen, view)),
+  tabOf: ["stream", "inbox", "rules", "radio", "agents", "artifacts", "tasks"].map((screen) => N.tabOf(screen)),
 }));
 """
 
@@ -30,12 +33,14 @@ class TestNavModule(unittest.TestCase):
         done = subprocess.run(["node", "-e", NAV_PROBE, str(NAV)], capture_output=True, text=True, timeout=60, check=True)
         cls.data = json.loads(done.stdout)
 
-    def test_the_navigation_has_three_entries_and_stream_has_inbox_rules_and_radio(self):
-        self.assertEqual(self.data["tabs"], [["stream", "Stream", [["inbox", "Inbox"], ["rules", "Regeln"], ["radio", "Radio"]]], ["agents", "Agents", []], ["artifacts", "Artifacts", []]])
+    def test_the_navigation_has_four_entries_and_stream_has_inbox_rules_and_radio(self):
+        stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Regeln"], ["radio", "Radio"]]]
+        self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []]])
 
-    def test_agents_and_artifacts_offer_five_views_in_order(self):
+    def test_agents_and_artifacts_offer_five_views_in_order_and_tasks_three(self):
         shared = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]]
         self.assertEqual((self.data["views"], self.data["artifacts"]), (shared, shared))
+        self.assertEqual((self.data["taskViews"], self.data["tasks"]), ([["list", "Liste"], ["board", "Board"], ["rasci", "RASCI"]],) * 2)
 
     def test_only_agents_add_the_hierarchy_after_3d(self):
         self.assertEqual(self.data["agents"][-2:], [["3d", "3D"], ["hierarchy", "Hierarchie"]])
@@ -67,11 +72,17 @@ class TestNavModule(unittest.TestCase):
             {"screen": "artifacts", "view": "tree", "redirect": "#artifacts/tree"},
             {"screen": "radio", "view": None, "redirect": None},
             stream,
+            {"screen": "tasks", "view": None, "redirect": None},
+            {"screen": "tasks", "view": "board", "redirect": None},
+            {"screen": "tasks", "view": "rasci", "redirect": None},
+            {"screen": "tasks", "view": None, "redirect": None},
+            {"screen": "agents", "view": None, "redirect": None},
+            {"screen": "tasks", "view": None, "redirect": None},
         ])
 
     def test_every_screen_has_its_own_hash_and_tab(self):
-        self.assertEqual(self.data["hashes"], ["#stream", "#stream/inbox", "#stream/rules", "#stream/radio", "#agents/chord", "#artifacts/3d"])
-        self.assertEqual(self.data["tabOf"], ["stream", "stream", "stream", "stream", "agents", "artifacts"])
+        self.assertEqual(self.data["hashes"], ["#stream", "#stream/inbox", "#stream/rules", "#stream/radio", "#agents/chord", "#artifacts/3d", "#tasks/board"])
+        self.assertEqual(self.data["tabOf"], ["stream", "stream", "stream", "stream", "agents", "artifacts", "tasks"])
 
 
 if __name__ == "__main__":

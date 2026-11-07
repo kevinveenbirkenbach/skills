@@ -22,6 +22,11 @@ WORK = re.compile(r"(?=[^\x00-\x1f\x7f]*\S)[^\x00-\x1f\x7f]{1,300}")
 HOLDER = re.compile(r"[^\x00-\x1f\x7f]{0,200}")
 OFFICE_ACTIONS = ("appoint", "takeover", "recall")
 OFFICE_KEYS = ("action", "office", "holder", "session", "work")
+TASK = re.compile(r"[a-z0-9][a-z0-9._-]{0,99}(?:/[a-z0-9][a-z0-9._-]{0,99}){0,7}")
+PRIO = re.compile(r"[1-9][0-9]{0,2}")
+FIBONACCI = ("1", "2", "3", "5", "8", "13", "21", "34", "55", "89")
+ESTIMATOR = "Operator"
+COMMANDS = "operator/"
 APPROVAL_KEYS = {"v", "kind", "items", "nonce", "expires"}
 RULE_KEYS = {"v", "kind", "id", "kinds", "tool", "pattern", "scope", "expires"}
 WARNINGS = (
@@ -136,6 +141,36 @@ def board_item(action: str) -> dict:
 
 def stream_item(origins: list[str]) -> dict:
     return {"kind": "streams", "origins": origins}
+
+
+def task_item(task: str, argv: list[str]) -> dict:
+    return {"kind": "task", "id": task, "argv": argv}
+
+
+def task_argv(task: object, argv: object) -> list[str]:
+    """Args:
+        task: the register task the change is for, a rasci.py slug outside
+            operator/.
+        argv: the rasci.py arguments, one of `set <task> --prio <1-999>`,
+            `estimate <task> Operator --value <fib> --complexity <fib>` or
+            `estimate <task> Operator --drop`.
+
+    Returns:
+        argv, the hub and the runner check it the same way.
+
+    Raises:
+        Refused for every other task or argv.
+    """
+    if not isinstance(task, str) or not TASK.fullmatch(task) or task.startswith(COMMANDS):
+        raise Refused("the task is no register task slug outside operator/")
+    if not isinstance(argv, list) or not all(isinstance(part, str) for part in argv):
+        raise Refused("the argv is no list of texts")
+    rest = argv[3:]
+    pinned = argv[:3] == ["set", task, "--prio"] and len(argv) == 4 and bool(PRIO.fullmatch(argv[3]))
+    estimated = len(rest) == 4 and rest[0] == "--value" and rest[1] in FIBONACCI and rest[2] == "--complexity" and rest[3] in FIBONACCI
+    if pinned or (argv[:3] == ["estimate", task, ESTIMATOR] and (estimated or rest == ["--drop"])):
+        return argv
+    raise Refused("the argv is no task priority or WSJF estimate change of this task")
 
 
 def approval_payload(hashes: list[str], nonce: str, expires: int) -> dict:

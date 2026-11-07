@@ -5,6 +5,7 @@ import itertools
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -20,6 +21,8 @@ from hub_support import (
     HUB,
     OPTIONS,
     PAGE,
+    RASCI,
+    RUNNER,
     SCORE,
     TREE,
     FakeScripts,
@@ -155,6 +158,18 @@ class HubCase(unittest.TestCase):
 
     def client(self) -> dict[str, str]:
         return {"Host": self.host, "X-Kvb-Orchestrator": "1"}
+
+    def runner_jobs(self) -> list[dict]:
+        status, _, body = self.call("GET", "/api/runner/jobs", None, self.client())
+        self.assertEqual(status, 200, body)
+        return json.loads(body)["jobs"]
+
+    def run_runner(self, register: bool = True, council: Path | None = None) -> None:
+        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json")]
+        flags = ["--rasci", str(RASCI), "--council", str(council or self.council)] if register else []
+        command = [sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, *flags, "--once"]
+        done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
+        self.assertEqual(done.returncode, 0, done.stderr)
 
     def settle(self, check: Callable[[], bool]) -> None:
         deadline = time.monotonic() + 10

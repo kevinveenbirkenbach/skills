@@ -4,8 +4,9 @@
 #            write its .env, build and start the container, register the MCP
 #            server for Claude Code, build pkgmgr from the newest signed tag of
 #            PKGMGR_REPO and enable the tree timer and the cleanup path unit,
-#            enable the offices path unit; re-enable the runner and re-register the hook when the migration
-#            took them over
+#            enable the offices path unit; re-enable the runner and re-register
+#            the hook when the migration took them over; an enabled runner gets
+#            the fresh unit and a restart
 #   migrate  move every trace of the earlier name to the kvb-orchestrator names
 #            once: container, image, code, state, approvals, pinned keys, MCP
 #            server, PermissionRequest hook, runner unit; a second run changes
@@ -13,7 +14,9 @@
 #   check    image imports, container, logs, HTTP, pinned keys, hook, runner,
 #            disk; exit 1 when a check fails
 #   pin      pin the credential blob the "Passkey registrieren" settings show
-#   runner   install, enable and restart the runner user service
+#   runner   install, enable and restart the runner user service; disable it
+#            and exit 1 while the installed council.py, nofollow.py or
+#            rasci.py differ from this tree
 #   hook     register the PermissionRequest hook in ~/.claude/settings.json,
 #            replacing an earlier entry, keeping everything else and the file
 #            mode, after a copy to settings.json.before-kvb-orchestrator-hook
@@ -254,15 +257,24 @@ install_all() {
 	install_hub
 	tree_timer
 	offices_unit
-	if ((TOOK_RUNNER)); then runner || true; fi
+	if ((TOOK_RUNNER)) || runner_enabled; then runner || true; fi
 	if ((TOOK_HOOK)); then
 		if [[ -f "${HUB}/client/permission_hook.py" ]]; then hook; else warn "skills: run 'make orchestrator-hook' once the Agent Orchestrator is installed"; fi
 	fi
 }
 
+runner_enabled() {
+	has_systemd && [[ "$(systemctl --user is-enabled "${RUNNER}" 2>/dev/null || true)" == "enabled" ]]
+}
+
 runner() {
 	if ! has_systemd; then
 		warn "skills: no systemd user session; the runner is off and approved operator commands wait."
+		return 1
+	fi
+	if ! skills_current; then
+		systemctl --user disable --now "${RUNNER}" >/dev/null 2>&1 || true
+		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py or rasci.py than this tree; run 'make install' to enable ${RUNNER}."
 		return 1
 	fi
 	cp -f "${HUB}/systemd/${RUNNER}" "${UNITS}/"

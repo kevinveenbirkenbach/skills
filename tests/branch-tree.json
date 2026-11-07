@@ -42,7 +42,18 @@
             "local-branch"
           ],
           "reason": "dirty: 1 paths",
-          "result": null
+          "result": null,
+          "flow": {
+            "pull": [
+              "origin/main",
+              "store-i18n"
+            ],
+            "push": [
+              "main",
+              "production"
+            ],
+            "source": "file"
+          }
         },
         {
           "branch": "feature/done",
@@ -77,7 +88,8 @@
             "remote-branch"
           ],
           "reason": "merged into main by #12",
-          "result": null
+          "result": null,
+          "flow": null
         },
         {
           "branch": "feature/kept",
@@ -135,7 +147,8 @@
           "skip": null,
           "actions": [],
           "reason": "default or protected branch",
-          "result": null
+          "result": null,
+          "flow": null
         },
         {
           "branch": null,
@@ -164,7 +177,12 @@
             "worktree"
           ],
           "reason": "unmerged: 1 commits not in origin/main",
-          "result": null
+          "result": null,
+          "flow": {
+            "pull": [],
+            "push": [],
+            "source": "invalid"
+          }
         }
       ]
     },

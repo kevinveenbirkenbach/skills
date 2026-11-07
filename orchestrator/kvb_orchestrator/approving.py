@@ -21,6 +21,7 @@ from .signed import (
     signing,
     verifier,
 )
+from .tasking import task_request
 
 BATCH_LIMIT = 100
 INBOX_KINDS = ("review", "ask", "decision", "operator", "rule")
@@ -242,6 +243,8 @@ class Approving:
             signed = self.deletable(raw)
         elif office_request(raw):
             signed = self.appointable(raw)
+        elif task_request(raw):
+            signed = self.task_changes(raw)
         else:
             signed = [item["signed"] for item in self.checked(raw) if item["signed"] is not None]
         return self.challenge_for(signed)

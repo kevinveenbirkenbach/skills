@@ -44,11 +44,11 @@
     if (ui.screen === "agents") {
       return JSON.stringify([ui.views.agents]);
     }
-    return JSON.stringify(ui.screen === "artifacts" ? [ui.views.artifacts] : ui.screen === "rules" ? state.rules : []);
+    return JSON.stringify(ui.screen === "artifacts" || ui.screen === "tasks" ? [ui.views[ui.screen]] : ui.screen === "rules" ? state.rules : []);
   }
 
   function screenOf() {
-    return {stream: streamScreen, inbox: inboxScreen, rules: rulesScreen, radio: radioScreen, agents: agentsScreen, artifacts: artifactsScreen}[ui.screen]();
+    return {stream: streamScreen, inbox: tasksScreen, rules: rulesScreen, radio: radioScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen}[ui.screen]();
   }
 
   function render(force) {
@@ -66,6 +66,7 @@
       radioDom = null;
       inboxDom = null;
       inboxSig = "";
+      taskView.dom = null;
       const main = document.getElementById("main");
       main.setAttribute("aria-labelledby", `tab-${ui.screen}`);
       main.replaceChildren(screenOf());
@@ -82,6 +83,7 @@
     drawToolbar();
     drawInbox();
     drawRadio();
+    drawTasks();
     drawStatus();
     tick();
   }

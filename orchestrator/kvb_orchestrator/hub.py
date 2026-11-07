@@ -31,6 +31,7 @@ from .settings import Settings
 from .signed import signing
 from .skill_scripts import Runner
 from .sources import Sources
+from .tasking import Tasking
 from .timeline import Timeline
 from .transcripts import Transcripts
 from .tree import TREE_HEARTBEAT, Tree
@@ -60,7 +61,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Denying, Requesting, Cleaning, Offices, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int

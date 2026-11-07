@@ -26,7 +26,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 LLM_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
-SCREENS = ("stream", "inbox", "rules", "agents", "artifacts")
+SCREENS = ("stream", "inbox", "rules", "agents", "artifacts", "tasks")
 IDS = {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Ids from items."}
 NL_ACTIONS = [
     {"name": "approve", "description": "Approve inbox items; a decision takes its recommended option.", "parameters": {"ids": IDS}},

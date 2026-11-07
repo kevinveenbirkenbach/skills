@@ -149,6 +149,49 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.assertIn("run 'make install' to enable", done.stderr)
         self.assertNotIn(f"{NEW}-offices.path", json.loads(self.state.read_text(encoding="utf-8"))["enabled"])
 
+    def test_the_runner_unit_waits_for_the_installed_skill_scripts_of_this_tree(self):
+        self.assertIn(f"{NEW}-runner.service", self.install()["enabled"])
+        runner = f"{NEW}-runner.service"
+        for script in HOST_SCRIPTS:
+            with self.subTest(script=script):
+                installed = self.home / ".claude" / "skills" / script
+                kept = installed.read_text(encoding="utf-8")
+                installed.write_text(kept + "\n", encoding="utf-8")
+                state = json.loads(self.state.read_text(encoding="utf-8"))
+                self.state.write_text(json.dumps({**state, "calls": [], "enabled": sorted({*state["enabled"], runner})}), encoding="utf-8")
+                done = subprocess.run(["bash", str(SCRIPT), "install"], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn(f"run 'make install' to enable {runner}", done.stderr)
+                after = json.loads(self.state.read_text(encoding="utf-8"))
+                self.assertNotIn(runner, after["enabled"])
+                self.assertNotIn(["systemctl", "--user", "restart", runner], after["calls"])
+                refused = subprocess.run(["bash", str(SCRIPT), "runner"], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+                self.assertEqual(refused.returncode, 1, refused.stderr)
+                self.assertNotIn(runner, json.loads(self.state.read_text(encoding="utf-8"))["enabled"])
+                installed.write_text(kept, encoding="utf-8")
+
+    def test_install_refreshes_and_restarts_only_an_enabled_runner_unit(self):
+        units = self.home / ".config" / "systemd" / "user"
+        (units / "default.target.wants" / f"{OLD}-runner.service").unlink()
+        (units / f"{OLD}-runner.service").unlink()
+        shipped = (REPO_ROOT / "orchestrator" / "systemd" / f"{NEW}-runner.service").read_text(encoding="utf-8")
+        restart = ["systemctl", "--user", "restart", f"{NEW}-runner.service"]
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                self.write(units / f"{NEW}-runner.service", "[Unit]\nstale\n")
+                state = json.loads(self.state.read_text(encoding="utf-8"))
+                self.state.write_text(json.dumps({**state, "calls": [], "enabled": [f"{NEW}-runner.service"] if enabled else []}), encoding="utf-8")
+                calls = self.install()["calls"]
+                self.assertEqual((units / f"{NEW}-runner.service").read_text(encoding="utf-8") == shipped, enabled)
+                self.assertEqual(restart in calls, enabled)
+
+    def test_every_shipped_service_pins_the_path(self):
+        units = sorted((REPO_ROOT / "orchestrator" / "systemd").glob("*.service"))
+        self.assertIn(f"{NEW}-runner.service", [unit.name for unit in units])
+        for unit in units:
+            with self.subTest(unit=unit.name):
+                self.assertIn("Environment=PATH=/usr/bin:/bin", unit.read_text(encoding="utf-8").splitlines())
+
     def test_install_ships_no_bytecode_from_the_tree(self):
         planted = REPO_ROOT / "orchestrator" / "client" / "__pycache__" / "planted.cpython-0.pyc"
         planted.parent.mkdir(exist_ok=True)

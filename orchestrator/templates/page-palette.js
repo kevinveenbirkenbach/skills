@@ -1,7 +1,7 @@
   function paletteItems() {
     return [
       ...Nav.TABS.flatMap(([id, label], index) => [{label: `Ansicht: ${label}`, hint: String(index + 1), run: () => go(id, null)}, ...(Nav.SUBS[id] || []).map(([sub, name]) => ({label: `Ansicht: ${label} › ${name}`, hint: Nav.hashOf(sub, null), run: () => go(sub, null)}))]),
-      ...["agents", "artifacts"].flatMap((screen) => Nav.viewsOf(screen).map(([id, name]) => ({label: `${Nav.TABS.find(([tab]) => tab === screen)[1]}: ${name}`, hint: Nav.hashOf(screen, id), run: () => go(screen, id)}))),
+      ...["agents", "artifacts", "tasks"].flatMap((screen) => Nav.viewsOf(screen).map(([id, name]) => ({label: `${Nav.TABS.find(([tab]) => tab === screen)[1]}: ${name}`, hint: Nav.hashOf(screen, id), run: () => go(screen, id)}))),
       ...Object.entries(state.views).map(([id, view]) => ({label: `Stream: ${view.label}`, hint: "Kategorie", run: () => useView(id)})),
       ...userViews.map((view) => ({label: `Stream: ${view.name}`, hint: "eigene Ansicht", run: () => useSaved(view)})),
       ...agentNames().map((name) => ({label: `${avatar(name)} ${name}`, hint: "Agent", run: () => openAgent(name)})),

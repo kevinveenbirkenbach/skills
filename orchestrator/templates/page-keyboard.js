@@ -54,7 +54,7 @@
     const inInbox = ui.screen === "inbox";
     const current = inInbox ? visibleInbox()[ui.cursor] : null;
     const index = Number(event.key) - 1;
-    if (/^[1-3]$/.test(event.key)) {
+    if (/^[1-9]$/.test(event.key) && index < Nav.TABS.length) {
       event.preventDefault();
       go(Nav.TABS[index][0], null);
     } else if (inInbox && (event.key === "j" || event.key === "k")) {

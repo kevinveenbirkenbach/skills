@@ -21,6 +21,7 @@ sys.path[:0] = [str(HUB), str(HUB / "client")]
 CLIENT = HUB / "client" / "permission_hook.py"
 RUNNER = HUB / "client" / "runner.py"
 APPROVAL = HUB / "client" / "approval.py"
+RASCI = REPO_ROOT / "skills" / "kvb-org-rasci" / "scripts" / "rasci.py"
 SPEC = importlib.util.spec_from_file_location("kvb_orchestrator_server", HUB / "server.py")
 server = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = server

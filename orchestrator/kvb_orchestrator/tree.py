@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,24 +12,57 @@ from .register import ENDED, status_of
 from .signed import signing
 
 LABEL_PARTS = 3
+FLOW_LIMIT = 16
+FLOW_REF = re.compile(r"[^\x00-\x20\x7f]{1,255}")
+FLOW_SOURCE = re.compile(r"[a-z][a-z0-9-]{0,31}")
+INVALID = "invalid"
 # renaming it silently stops the tree timer: kvb-orchestrator-tree.service tests this file's age
 TREE_HEARTBEAT = "tree-heartbeat"
+
+
+def flow(item: dict) -> dict | None:
+    """Returns:
+        The worktree's pkgmgr merge flow: pull, the sources merged into the
+        branch before a gate, and push, the targets the finished branch
+        merges into, each capped at FLOW_LIMIT; None when the item names no
+        flow, source invalid with empty lists when pkgmgr found the flow
+        file broken or the field has the wrong shape.
+    """
+    raw = item.get("flow")
+    if raw is None:
+        return None
+    broken = {"pull": [], "push": [], "source": INVALID}
+    if not isinstance(raw, dict) or not isinstance(raw.get("source"), str) or not FLOW_SOURCE.fullmatch(raw["source"]) or raw["source"] == INVALID:
+        return broken
+    lists = [raw.get(side)[:FLOW_LIMIT] if isinstance(raw.get(side), list) else None for side in ("pull", "push")]
+    if not all(names is not None and all(isinstance(name, str) and FLOW_REF.fullmatch(name) for name in names) for names in lists):
+        return broken
+    return {"pull": lists[0], "push": lists[1], "source": raw["source"]}
+
+
+def work(item: dict, dirty: bool | None) -> list[str]:
+    ahead = item["ahead"]
+    found = (("dirty", dirty is True), ("unpushed", isinstance(ahead, int) and ahead > 0), ("unmerged", item["state"] == "unmerged"))
+    return [reason for reason, hit in found if hit]
 
 
 def worktree(item: dict) -> dict:
     state = item["worktree_state"]
     unread = state == "changed" and item["staged"] is None
+    dirty = None if state == "missing" or unread else state == "changed"
     return {
         "path": item["worktree"],
         "head": item["head"] or "",
         "branch": item["branch"] or "",
         "prunable": state == "missing",
-        "dirty": None if state == "missing" or unread else state == "changed",
+        "dirty": dirty,
         "state": state,
         "staged": item["staged"],
         "unstaged": item["unstaged"],
         "untracked": item["untracked"],
         "locked": item["locked"],
+        "flow": flow(item),
+        "open_work": work(item, dirty),
     }
 
 
@@ -131,12 +165,13 @@ def assign(scan: dict, tasks: dict[str, dict], claims: list[dict], reviews: list
             trees = []
             for tree in item["worktrees"]:
                 workers = set()
-                for task, row in current.items():
-                    if owns(row, tree["path"], item["name"]):
-                        workers |= holders[task]
-                trees.append({**tree, "workers": sorted(workers, key=str.lower), "review": latest.get(tree["path"])})
+                held = sorted(task for task, row in current.items() if owns(row, tree["path"], item["name"]))
+                for task in held:
+                    workers |= holders[task]
+                open_work = [*tree["open_work"], "task"] if held else tree["open_work"]
+                trees.append({**tree, "workers": sorted(workers, key=str.lower), "review": latest.get(tree["path"]), "tasks": held, "open_work": open_work})
             branches.append({**item, "worktrees": trees})
-        repos.append({**entry, "branches": branches, "detached": [{**tree, "workers": [], "review": latest.get(tree["path"])} for tree in entry["detached"]]})
+        repos.append({**entry, "branches": branches, "detached": [{**tree, "workers": [], "review": latest.get(tree["path"]), "tasks": []} for tree in entry["detached"]]})
     return {**scan, "repos": repos}
 
 

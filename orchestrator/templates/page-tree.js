@@ -50,16 +50,21 @@
       h("code", {}, found.ref), h("span", {class: "muted"}, found.task), found.ended ? pill("Aufgabe beendet", "warn") : null);
   }
 
+  function openWork(wt) {
+    return wt.open_work.length ? chip("bi-lightning-charge", `offene Arbeit: ${wt.open_work.map((reason) => (WORK_CHIPS[reason] || [null, reason])[1]).join(", ")}`, "warn", wt.open_work.length) : null;
+  }
+
   function worktreeRow(wt) {
     const review = wt.review;
-    return h("div", {class: "wt"},
+    return h("div", {class: wt.open_work.length ? "wt open-work" : "wt", "data-open-work": wt.open_work.join(" ") || null},
       h("div", {class: "wt-head"},
-        h("span", {class: "states"}, worktreeStates(wt)),
+        h("span", {class: "states"}, worktreeStates(wt), openWork(wt)),
         h("code", {}, wt.path),
         h("span", {class: "muted", title: wt.head}, wt.head.slice(0, 10)),
         wt.workers.length ? h("span", {class: "who"}, wt.workers.map((name) => [face(name, false), person(name)])) : h("span", {class: "muted"}, "niemand"),
         review ? [status(review.status), review.gate ? pill(review.gate === "pass" ? "Gate grün" : "Gate rot", review.gate === "pass" ? "ok" : "bad") : null] : null,
         copyButton(wt.path)),
+      flowLine(wt.flow, wt.branch),
       wt.artefacts && wt.artefacts.length ? h("ul", {class: "leaves", "aria-label": "Artefakte"}, wt.artefacts.map(leafRow)) : null);
   }
 
@@ -114,9 +119,11 @@
       const trees = repo.branches.flatMap((entry) => entry.worktrees).concat(repo.detached);
       const dirty = trees.filter((wt) => wt.dirty).length;
       const merged = repo.branches.filter((entry) => entry.cleanup).length;
+      const busy = trees.filter((wt) => wt.open_work.length).length;
       const details = h("details", {class: "card repo", open: Boolean(q) || tree.open.has(repo.path)},
         h("summary", {}, icon("bi-git"), h("span", {}, repo.name), counter(`${repo.branches.length} Branches`), counter(`${trees.length} Worktrees`),
-          dirty ? chip("bi-pencil-square", `${dirty} Worktrees mit Änderungen`, "warn", dirty) : null, merged ? chip("bi-sign-merge-left", `${merged} gemergt, löschbar`, "ok", merged) : null),
+          dirty ? chip("bi-pencil-square", `${dirty} Worktrees mit Änderungen`, "warn", dirty) : null, merged ? chip("bi-sign-merge-left", `${merged} gemergt, löschbar`, "ok", merged) : null,
+          busy ? chip("bi-lightning-charge", `${busy} Worktrees mit offener Arbeit`, "warn", busy) : null),
         branches.map((entry) => branchRow(repo, entry)),
         detached.length ? h("div", {class: "branch-row"}, h("div", {class: "branch-name"}, h("strong", {}, "losgelöster HEAD")), detached.map(worktreeRow)) : null);
       details.addEventListener("toggle", () => {

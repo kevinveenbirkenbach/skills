@@ -41,14 +41,24 @@ def timer_rows(folder: Path) -> list[dict]:
     return rows
 
 
-def queue_rows(council: Path) -> list[dict]:
+def queue_entries(council: Path) -> list[tuple[dict, float]]:
+    """Returns:
+        Each kvb-org-queue entry of queue.json with its enqueue time; an
+        entry without one is no entry.
+    """
     data = read_json(council / "queue.json")
     entries = data.get("entries") if isinstance(data, dict) else None
-    rows = []
+    found = []
     for entry in entries if isinstance(entries, list) else []:
         created = epoch(entry.get("enqueued")) if isinstance(entry, dict) else None
-        if created is None:
-            continue
+        if created is not None:
+            found.append((entry, created))
+    return found
+
+
+def queue_rows(council: Path) -> list[dict]:
+    rows = []
+    for entry, created in queue_entries(council):
         running = "läuft" if entry.get("status") == "active" else "wartet"
         rows.append({
             "key": f"queue:{shown(entry.get('id'))}", "type": "queue", "session": shown(entry.get("session")), "sub": "", "created": created,

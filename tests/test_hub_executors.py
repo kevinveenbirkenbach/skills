@@ -17,7 +17,6 @@ from hub_support import (
     GIT_ENV,
     PAGE,
     PRESENT,
-    RUNNER,
     TREE,
     runner,
     signing,
@@ -32,17 +31,6 @@ key = hub_support.key
 class TestHubExecutors(HubCase):
     def trust(self, name: str) -> verifier.Trust:
         return verifier.Trust(approvers=self.approvers, replay=self.replay / f"{name}.json", origin=self.origin)
-
-    def runner_jobs(self) -> list[dict]:
-        status, _, body = self.call("GET", "/api/runner/jobs", None, self.client())
-        self.assertEqual(status, 200, body)
-        return json.loads(body)["jobs"]
-
-    def run_runner(self) -> None:
-        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json")]
-        command = [sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, "--once"]
-        done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
-        self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_the_runner_runs_only_signed_commands_once(self):
         command = "echo hello && echo world >&2"

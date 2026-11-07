@@ -151,7 +151,7 @@ class TestHubState(HubCase):
             set(state),
             {
                 "now", "since", "until", "first", "alarm_since", "reviews", "asks", "decisions", "messages", "operator",
-                "register", "agent_order", "radio", "claims", "grants", "night", "silence", "graph",
+                "register", "tasks", "agent_order", "radio", "claims", "grants", "night", "silence", "graph",
                 "inbox", "pending", "rules", "approvers", "jobs", "views", "llm", "people", "settings", "media", "speech",
                 "badges", "kinds",
             },

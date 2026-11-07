@@ -13,6 +13,7 @@ from .council import (
     sessions,
     silence_of,
 )
+from .crons import queue_entries
 from .errors import ToolError
 from .events import KINDS, VIEWS
 from .fields import decode, instant, single
@@ -35,6 +36,7 @@ from .reviewing import review_row
 from .settings import media_origins, valid_settings
 from .signed import signing
 from .skill_scripts import OUTPUT_LIMIT
+from .tasks import task_rows
 
 RADIO_WINDOW = 86400
 JOBS_SHOWN = 20
@@ -126,6 +128,7 @@ class View:
             "messages": [message_row(message) for message in self.messages.listed() if begin <= message["created_ts"] <= end],
             "operator": operator_rows(tasks),
             "register": register_rows(tasks),
+            "tasks": task_rows(tasks, queue_entries(self.council), self.tree.get()),
             "agent_order": agent_order(tasks, claims, stored_order(self.council / AGENT_ORDER)),
             "radio": radio,
             "claims": claims,

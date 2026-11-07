@@ -49,6 +49,9 @@
       for (const overlap of repo.overlaps || []) {
         links.push({source: `branch:${repo.path}\u0000${overlap.a}`, target: `branch:${repo.path}\u0000${overlap.b}`, kind: "overlap", count: overlap.count});
       }
+      for (const edge of flowEdges(repo)) {
+        links.push({source: `branch:${repo.path}\u0000${edge.from}`, target: `branch:${repo.path}\u0000${edge.into}`, kind: "flow", side: edge.side});
+      }
     }
     for (const task of data.tasks || []) {
       const tid = add({id: `task:${task.task}`, kind: "task", label: task.task, depth: 0, ts: nowSeconds(), parent: null, data: task, repo: ""});
@@ -113,7 +116,7 @@
         const holder = model.byId.get(`wt:${wt.path}`);
         const leaves = model.nodes.filter((entry) => entry.parent === holder.id);
         leaves.forEach((leaf, place) => layer.append(artMark(leaf, around(moon, place, leaves.length, 15), 4.5, leaf.kind === "agent" ? "satellite" : "cargo", null)));
-        layer.append(artMark(holder, moon, 7, wt.state === "changed" ? "dirty" : "", null));
+        layer.append(artMark(holder, moon, 7, [wt.state === "changed" ? "dirty" : "", wt.open_work.length ? "open" : ""].filter(Boolean).join(" "), null));
       });
       layer.append(artMark(node, at, radius, `tone-${toneOf(branch)}`, repo.branches.length <= 40 ? short(branch.name).slice(0, 28) : null));
     });
@@ -147,6 +150,13 @@
         arcs.append(s("path", {class: "edge t-grant merge", d: `M${fixed(from.x)},${fixed(from.y)} Q${fixed(control.x)},${fixed(control.y)} ${fixed(to.x)},${fixed(to.y)}`, "stroke-width": 2, "marker-end": "url(#tip-grant)"},
           s("title", {}, `${merge.from} → ${merge.into}: gemergt durch ${merge.by}`)));
       }
+    }
+    for (const edge of flowEdges(repo)) {
+      const from = spots.get(edge.from);
+      const to = spots.get(edge.into);
+      const bend = edge.side === "pull" ? 0.55 : 0.15;
+      arcs.append(s("path", {class: "edge t-direct flow", "data-side": edge.side, d: `M${fixed(from.x)},${fixed(from.y)} Q${fixed((from.x + to.x) * bend)},${fixed((from.y + to.y) * bend)} ${fixed(to.x)},${fixed(to.y)}`, "stroke-width": 2, "marker-end": "url(#tip-direct)"},
+        s("title", {}, `${edge.from} → ${edge.into}: Merge-Flow, ${edge.side === "pull" ? `${edge.into} zieht ${edge.ref} vor dem Gate` : `${edge.from} mergt fertig in ${edge.ref}`}`)));
     }
     const marks = branches.map((branch) => artMark({id: `branch:${repo.path}\u0000${branch.name}`, kind: "branch", label: branch.name}, spots.get(branch.name), 8, `tone-${toneOf(branch)}`, null));
     const labels = branches.map((branch) => {
@@ -192,7 +202,7 @@
   function artLegend(view) {
     const words = {
       orbit: "Sonne = Repository · Planet = Branch, Größe = Commits voraus · Mond = Worktree · Satellit = Agent oder Artefakt",
-      chord: "Band = Dateien, die beide Branches ändern (aus den Reviews im Hub, nur dort bekannt) · gestrichelt = Merge laut gc-Klassifikation",
+      chord: "Band = Dateien, die beide Branches ändern (aus den Reviews im Hub, nur dort bekannt) · gestrichelt = Merge laut gc-Klassifikation · gepunktet = Merge-Flow des Worktrees",
       swimlane: "Commit = freigegebenes Review · Gate = Review-Gate und Queue-Läufe · Push = Runner-Befehl mit push · Zeitraum = 24 h ▾",
     };
     const marks = view === "swimlane" ? Object.values(LANE_MARKS).map(([label, name]) => h("span", {}, icon(name), label)) : [];
@@ -212,9 +222,11 @@
         h("p", {class: "muted"}, `${data.branches.length} Branches · ${data.branches.reduce((sum, entry) => sum + entry.worktrees.length, 0) + data.detached.length} Worktrees`));
     } else if (node.kind === "branch") {
       body.push(h("div", {class: "states"}, branchStates(data)), meta([["Upstream", data.upstream], ["Kopf", data.head.slice(0, 12), data.head], ["Gemergt in", data.merged_into], ["Grund", data.reason]]),
+        data.worktrees.map((wt) => flowDetails(wt.flow, data.name)),
         h("h3", {}, "Trockenlauf"), h("pre", {class: "notes"}, data.plan.join("\n")), h("div", {class: "actions"}, deleteButton(data)));
     } else if (node.kind === "worktree") {
-      body.push(h("div", {class: "states"}, worktreeStates(data)), meta([["Pfad", data.path], ["Branch", data.branch], ["HEAD", data.head.slice(0, 12), data.head]]),
+      body.push(h("div", {class: "states"}, worktreeStates(data)), workChips(data.open_work), meta([["Pfad", data.path], ["Branch", data.branch], ["HEAD", data.head.slice(0, 12), data.head]]),
+        flowDetails(data.flow, data.branch),
         data.workers.length ? h("div", {class: "who"}, data.workers.map((name) => [face(name, false), person(name)])) : h("p", {class: "muted"}, "Kein Agent arbeitet hier."),
         data.review ? h("div", {class: "who"}, status(data.review.status), h("span", {}, data.review.title)) : null, h("div", {class: "actions"}, copyButton(data.path)));
     } else if (node.kind === "agent") {

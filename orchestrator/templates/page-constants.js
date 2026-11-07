@@ -60,7 +60,7 @@
     direct: [[740, 0, 0.2]],
     radio: [[520, 0, 0.07]],
   };
-  const KEYS = [["Strg+K", "Befehle, Ansichten, Agenten und KI-Befehl"], ["1 · 2 · 3", "Stream · Agents · Artifacts"], ["j / k", "Inbox: nächster / vorheriger Eintrag"], ["x", "Inbox: Eintrag auswählen"], ["a", "Inbox: Eintrag freigeben (3 s rückgängig)"], ["Enter", "Inbox: Eintrag öffnen"], ["/", "Stream durchsuchen"], ["h", "Himmel ansehen: ziehen dreht den Blick, Rad oder zwei Finger zoomen, Esc beendet"], ["Pfeile · + / − · 0", "Himmel (fokussiert): drehen · zoomen · zurücksetzen"], ["Ziehen · Rad", "3D: drehen, rechts ziehen verschiebt, Rad zoomt"],["🎙 halten", "Spracheingabe ins Agentenfeld oder die Befehlszeile, nie automatisch gesendet"], ["?", "Diese Hilfe"], ["Esc", "Schließen"]];
+  const KEYS = [["Strg+K", "Befehle, Ansichten, Agenten und KI-Befehl"], ["1 · 2 · 3 · 4", "Stream · Agents · Artifacts · Tasks"], ["j / k", "Inbox: nächster / vorheriger Eintrag"], ["x", "Inbox: Eintrag auswählen"], ["a", "Inbox: Eintrag freigeben (3 s rückgängig)"], ["Enter", "Inbox: Eintrag öffnen"], ["/", "Stream durchsuchen"], ["h", "Himmel ansehen: ziehen dreht den Blick, Rad oder zwei Finger zoomen, Esc beendet"], ["Pfeile · + / − · 0", "Himmel (fokussiert): drehen · zoomen · zurücksetzen"], ["Ziehen · Rad", "3D: drehen, rechts ziehen verschiebt, Rad zoomt"],["🎙 halten", "Spracheingabe ins Agentenfeld oder die Befehlszeile, nie automatisch gesendet"], ["?", "Diese Hilfe"], ["Esc", "Schließen"]];
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
   const relative = new Intl.RelativeTimeFormat("de", {numeric: "auto"});
   const absolute = new Intl.DateTimeFormat("de-DE", {dateStyle: "medium", timeStyle: "short"});
