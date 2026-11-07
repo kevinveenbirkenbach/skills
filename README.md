@@ -68,6 +68,7 @@ flowchart LR
   check --> check_gate[kvb-check-gate]
   check --> check_efficiency[kvb-check-efficiency]
   check --> check_speed[kvb-check-speed]
+  check --> check_ansible[kvb-check-ansible]
   check --> check_score[kvb-check-score]
   org --> org_organize[kvb-org-organize]
   org --> org_split[kvb-org-split]
@@ -173,6 +174,7 @@ flowchart LR
     gate[kvb-check-gate]
     efficiency[kvb-check-efficiency]
     speed[kvb-check-speed]
+    check_ansible[kvb-check-ansible]
     score[kvb-check-score]
   end
   subgraph cat_org [org]
@@ -306,6 +308,8 @@ flowchart LR
   tune --> funnel
   tune --> merge_fix
   tune --> dialectic
+  tune --> check_ansible
+  check_ansible -. heavy commands .-> queue
 
   dialectic --> active_listening
   criticize --> dialectic

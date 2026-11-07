@@ -1,0 +1,8 @@
+- name: Skipped
+  ansible.builtin.debug:
+    msg: never
+  when: false
+
+- name: Ran
+  ansible.builtin.debug:
+    msg: once

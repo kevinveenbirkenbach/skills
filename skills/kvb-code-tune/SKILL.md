@@ -41,6 +41,7 @@ operator to decide, never applied as a tuning.
   beats a 60 s download paid once.
 - **The baseline is the newest log of the current code**; an older one may
   carry a step since replaced, and a saving against it is fiction.
+- **Ansible**: measure with the `kvb-check-ansible` skill first.
 
 ## Coordinate every cost cluster
 

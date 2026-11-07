@@ -1,0 +1,12 @@
+- name: Bench the controller cost per task
+  hosts: bench
+  gather_facts: false
+  tasks:
+    - name: Park the synthetic fact
+      ansible.builtin.set_fact:
+        bench_carrier: "{{ lookup('ansible.builtin.file', bench_carrier_file) | from_json }}"
+      when: bench_carrier_file | default('') | length > 0
+
+    - name: Include one skipped and one run task per item
+      ansible.builtin.include_tasks: one.yml
+      loop: "{{ range(0, bench_count | int) | list }}"
