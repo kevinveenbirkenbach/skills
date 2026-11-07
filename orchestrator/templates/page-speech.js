@@ -41,12 +41,25 @@
       gain.gain.value = loudness(item.tone);
       source.buffer = buffer;
       source.connect(gain).connect(sound.destination);
-      source.addEventListener("ended", next, {once: true});
+      source.addEventListener("ended", () => {
+        Object.assign(speech, {current: null, source: null});
+        drawSpeaker();
+        next();
+      }, {once: true});
       duck(buffer.duration);
+      Object.assign(speech, {current: item, source});
+      drawSpeaker();
       source.start();
     } catch (error) {
       speechFailed([String(error.message || error)]);
       next();
+    }
+  }
+
+  function cancelSpeech() {
+    speech.pending = [];
+    if (speech.source) {
+      speech.source.stop();
     }
   }
 
@@ -55,15 +68,20 @@
       return;
     }
     for (const row of rows.filter((entry) => entry.ts >= state.now - SPEECH_FRESH && Voice.speakable(entry, settings.speech))) {
-      say({text: row.speech, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class});
+      const line = row.text.split("\n").map((part) => part.trim()).find(Boolean) || "";
+      say({text: row.speech, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, line: short(line)});
     }
+  }
+
+  function micGap() {
+    return !window.isSecureContext || !navigator.mediaDevices
+      ? "Das Mikrofon braucht einen sicheren Kontext: öffne den Hub über 127.0.0.1 oder localhost"
+      : !window.MediaRecorder ? "Dieser Browser kann nicht aufnehmen" : !state.speech.stt ? `Spracheingabe ist aus: ${state.speech.stt_off}` : "";
   }
 
   function micButton(field) {
     const button = h("button", {type: "button", class: "btn small ghost icon-only mic", "aria-pressed": "false", ...named("Spracheingabe", "Spracheingabe: gedrückt halten und sprechen; der Text landet im Feld und wird nicht gesendet")}, icon("bi-mic"));
-    const reason = !window.isSecureContext || !navigator.mediaDevices
-      ? "Das Mikrofon braucht einen sicheren Kontext: öffne den Hub über 127.0.0.1 oder localhost"
-      : !window.MediaRecorder ? "Dieser Browser kann nicht aufnehmen" : !state.speech.stt ? `Spracheingabe ist aus: ${state.speech.stt_off}` : "";
+    const reason = micGap();
     if (reason) {
       button.disabled = true;
       button.title = `Spracheingabe: ${reason}`;
@@ -135,6 +153,22 @@
     }
   }
 
+  async function wavOf(blob, sound) {
+    const decoded = await sound.decodeAudioData(await blob.arrayBuffer());
+    const rate = state.speech.rate;
+    const length = Voice.frames(decoded.duration, rate, state.speech.seconds);
+    if (length < rate / 4) {
+      throw new Error("zu kurz: sprich mindestens eine Viertelsekunde");
+    }
+    const offline = new OfflineAudioContext(1, length, rate);
+    const source = offline.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offline.destination);
+    source.start();
+    const rendered = await offline.startRendering();
+    return Voice.wav(rendered.getChannelData(0), rate);
+  }
+
   async function transcribe(blob, field, button) {
     const sound = context();
     if (!sound || !blob.size) {
@@ -143,19 +177,7 @@
     mic.busy = true;
     button.disabled = true;
     try {
-      const decoded = await sound.decodeAudioData(await blob.arrayBuffer());
-      const rate = state.speech.rate;
-      const length = Voice.frames(decoded.duration, rate, state.speech.seconds);
-      if (length < rate / 4) {
-        throw new Error("zu kurz: halte die Taste, solange du sprichst");
-      }
-      const offline = new OfflineAudioContext(1, length, rate);
-      const source = offline.createBufferSource();
-      source.buffer = decoded;
-      source.connect(offline.destination);
-      source.start();
-      const rendered = await offline.startRendering();
-      const result = await send("/api/stt", Voice.wav(rendered.getChannelData(0), rate), "audio/wav");
+      const result = await send("/api/stt", await wavOf(blob, sound), "audio/wav");
       if (!result.ok || !result.data) {
         throw new Error(`${result.status} ${result.text}`.trim());
       }

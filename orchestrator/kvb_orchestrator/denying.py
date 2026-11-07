@@ -5,24 +5,46 @@ import time
 from .asking import ASK_LIFETIME, ask_state
 from .council import HUMAN, read_claims
 from .errors import ToolError
-from .messaging import DIRECT, TO_ALL
+from .messaging import DIRECT, EVERYONE, TO_ALL
 from .register import REGISTER, adder, operator_rows, read_register
 from .signed import operator_signed, signing
 from .skill_scripts import RADIO, RASCI
 
 DENIABLE = ("ask", "operator", "rule")
-DENY_KEYS = ("channel", "reason")
+DENY_KEYS = ("channel", "reason", "to")
 DENY_CHANNELS = {**DIRECT, **{name: words for name, words in TO_ALL.items() if name != "mayday"}}
 REASON_LIMIT = 2000
 
 
-def denial_note(raw: dict) -> dict:
+def denial_note(raw: dict, requester: str) -> dict:
+    """Args:
+        raw: the page's denial entry with channel and reason.
+        requester: the requesting agent's name as the operator saw it when
+            signing; the signature binds it as the addressee.
+    """
     channel, reason = raw["channel"], raw["reason"]
     if not isinstance(channel, str) or channel not in DENY_CHANNELS:
         raise ToolError(f"channel must be one of {', '.join(DENY_CHANNELS)}")
     if not isinstance(reason, str) or len(reason) > REASON_LIMIT:
         raise ToolError(f"reason must be text of at most {REASON_LIMIT} characters")
-    return {"channel": channel, "reason": " ".join(reason.split())}
+    return {"channel": channel, "reason": " ".join(reason.split()), "to": requester if channel in DIRECT else EVERYONE}
+
+
+def requester_of(claims: list[dict], who: str) -> tuple[str, str]:
+    """Args:
+        claims: the council's claims.
+        who: an agent name or session; empty when unknown.
+
+    Returns:
+        The agent name and radio address of the claims whose agent or
+        session is who, else who for both. Empty for an empty who and when
+        those claims name more than one agent, so a planted claim makes a
+        denial reach nobody rather than the planter.
+    """
+    found = [claim for claim in claims if claim["address"] and who in (claim["agent"], claim["session"])] if who else []
+    if len({claim["agent"] for claim in found}) > 1:
+        return ("", "")
+    return (found[0]["agent"], found[0]["address"]) if found else (who, who)
 
 
 def denial_text(what: str, requester: str, reason: str) -> str:
@@ -53,7 +75,7 @@ class Denying:
         if item["kind"] == "operator":
             tasks = read_register(self.council / REGISTER)
             row = next((row for row in operator_rows(tasks) if row["task"] == item["id"]), None)
-            if row is None or signing.denial_item(operator_signed(row), note["channel"], note["reason"]) != item["signed"]:
+            if row is None or signing.denial_item(operator_signed(row), note["channel"], note["reason"], note["to"]) != item["signed"]:
                 return "verweigert: die Zeile hat sich seit der Ablehnung geändert"
             if item["id"] in self.open_jobs():
                 return "läuft schon"
@@ -61,7 +83,7 @@ class Denying:
             if run["code"] != 0:
                 return f"fehlgeschlagen: {run['command']} → {run['code']}"
             command, directory = row["command"][:200], row["directory"]
-            return f"gestoppt · {self.tell(note, proof, adder(tasks[item['id']]), f'operator command {command} in {directory}')}"
+            return f"gestoppt · {self.tell(item, proof, adder(tasks[item['id']]), f'operator command {command} in {directory}')}"
         ledger = self.asks if item["kind"] == "ask" else self.rule_requests
         record = ledger.get(item["id"])
         if record is None:
@@ -74,12 +96,17 @@ class Denying:
             return f"schon {record['status']}"
         if item["kind"] == "ask":
             tool, command = record["tool"], record["command"][:200]
-            return f"abgelehnt · {self.tell(note, proof, record['session'], f'ask {tool}: {command}')}"
-        return f"abgelehnt · {self.tell(note, proof, record['agent'], f'rule request {request_words(record)}')}"
+            return f"abgelehnt · {self.tell(item, proof, record['session'], f'ask {tool}: {command}')}"
+        return f"abgelehnt · {self.tell(item, proof, record['agent'], f'rule request {request_words(record)}')}"
 
-    def tell(self, note: dict, proof: dict | None, who: str, what: str) -> str:
+    def addressee(self, who: str) -> tuple[str, str]:
+        return requester_of(read_claims(self.council), who)
+
+    def tell(self, item: dict, proof: dict | None, who: str, what: str) -> str:
         """Args:
-            note: the chosen channel and the reason.
+            item: the denied inbox item: its note holds the chosen channel,
+                the reason and the signed addressee, its signed the denial
+                item the proof lists.
             proof: the operator's signature over the denial, kept with the
                 message operator_message proves.
             who: the requesting agent's name or session; empty when unknown.
@@ -88,15 +115,16 @@ class Denying:
         Returns:
             The class and addressee for the outcome line.
         """
-        claim = next((claim for claim in read_claims(self.council) if who and claim["address"] and who in (claim["agent"], claim["session"])), None)
-        name, address = (claim["agent"], claim["address"]) if claim else (who, who)
+        note = item["note"]
         channel = note["channel"]
         direct = channel in DIRECT
+        address = self.addressee(note["to"])[1] if direct else EVERYONE
         if direct and not address:
             return f"kein Empfänger für {channel}"
-        text = denial_text(what, name, note["reason"])
-        to, where = (address, f"{channel} an {address}") if direct else ("*", f"{channel} an alle")
-        record = self.messages.add({"to": name if direct else "*", "address": to, "text": text, "upload": None, "class": channel, "proof": proof, "created_ts": time.time()})
+        text = denial_text(what, self.addressee(who)[0], note["reason"])
+        where = f"{channel} an {address}" if direct else f"{channel} an alle"
+        fields = {"to": note["to"], "address": address, "text": text, "upload": None, "voice": None, "voice_sha256": "", "class": channel}
+        record = self.messages.add({**fields, "denial": item["signed"], "proof": proof, "created_ts": time.time()})
         targets = ["--to", address] if direct else []
         run = self.scripts.run(RADIO, [*DENY_CHANNELS[channel], *targets, "--session", HUMAN, f"[kvb-orchestrator msg {record['id']}] {' '.join(text.split())}"])
         return where if run["code"] == 0 else f"{where} fehlgeschlagen ({run['code']})"

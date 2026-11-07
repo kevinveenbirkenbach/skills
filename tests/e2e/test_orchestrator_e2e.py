@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import array
 import base64
+import contextlib
+import http.server
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -12,12 +16,15 @@ import time
 import unittest
 from collections.abc import Callable
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from hub_case import HubCase
-from hub_support import ASK, RUNNER, iso, verifier
+from hub_engines import wav_bytes
+from hub_support import ASK, HOST_STATE, RUNNER, iso, verifier
+from kvb_orchestrator import skill_scripts
 from test_hub_cleanup import DONE_TIP, FAKE_PKGMGR, host
 from test_hub_offices import COUNCIL_SCRIPT
 from test_hub_offices import host as office_host
@@ -25,7 +32,8 @@ from test_hub_offices import host as office_host
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
-SCREENS = ["stream", "stream/inbox", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy"]
+SCREENS = ["stream", "stream/inbox", "stream/rules", "stream/radio", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy"]
+SUBS = ["Inbox", "Regeln", "Radio"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const until = async (check, ms) => {
@@ -209,6 +217,246 @@ AFTER = """(async () => {@HELPERS@
   const past = await until(() => all("#main details.repo").find((details) => details.textContent.includes("Zuletzt gelöscht")), 15000);
   return {past: past ? [past.querySelector("[data-result]").dataset.result, name(past.querySelector("span.state"))] : null, branches: all("#main details.repo").filter((details) => details !== past).flatMap((details) => all(".branch-name strong", details)).map(text)};
 })()""".replace("@HELPERS@", HELPERS)
+OVERLAP = """
+  const shown = (node) => node.getClientRects().length > 0 && node.getBoundingClientRect().width > 0;
+  const words = (label) => [...label.childNodes].filter((node) => node.nodeType === 3).map((node) => node.textContent).join("").trim();
+  const called = (node) => node.getAttribute("aria-label") || (node.closest("label") ? words(node.closest("label")) : "") || text(node) || node.type;
+  const clashes = (root) => {
+    const boxes = all("input, select, textarea, button", root).filter(shown).map((node) => ({node, box: node.getBoundingClientRect()}));
+    const found = [];
+    boxes.forEach((a, index) => boxes.slice(index + 1).forEach((b) => {
+      const x = Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left);
+      const y = Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top);
+      if (x > 0.5 && y > 0.5) {
+        found.push(`${called(a.node)} × ${called(b.node)}`);
+      }
+    }));
+    const outside = boxes.filter(({box}) => box.right > root.getBoundingClientRect().right + 0.5).map(({node}) => called(node));
+    return {found, outside};
+  };
+"""
+RULES_OVERLAP = """(async () => {@HELPERS@@CLASHES@
+  const open = document.querySelector(".sheet-head button");
+  if (open) {
+    open.click();
+  }
+  const rules = await until(() => document.querySelector("#main .rule-form"), 8000);
+  const kind = rules.querySelector("select");
+  const found = {};
+  for (const value of ["decision", "review", "ask"]) {
+    kind.value = value;
+    kind.dispatchEvent(new Event("change", {bubbles: true}));
+    await sleep(150);
+    found[value] = {...clashes(rules), labels: all("label", rules).filter(shown).map(words)};
+  }
+  return found;
+})()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP)
+SETTINGS_OVERLAP = """(async () => {@HELPERS@@CLASHES@
+  document.getElementById("settings-open").click();
+  const settings = await until(() => document.querySelector(".sheet-box form.settings"), 8000);
+  all("button", settings).find((button) => text(button) === "+ Sender").click();
+  const theme = all("select", settings).find((select) => [...select.options].some((option) => option.value === "custom"));
+  theme.value = "custom";
+  theme.dispatchEvent(new Event("change", {bubbles: true}));
+  await sleep(250);
+  const place = all("section", settings).find((section) => text(section.querySelector("h3")) === "Ort");
+  place.scrollIntoView({block: "start"});
+  return clashes(settings);
+})()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP)
+MEDIA_LOG = """() => {
+  const keep = (entry) => {
+    try {
+      const list = JSON.parse(sessionStorage.getItem("e2e-media") || "[]");
+      list.push({...entry, page: Math.round(performance.timeOrigin)});
+      sessionStorage.setItem("e2e-media", JSON.stringify(list));
+    } catch (error) {
+      return;
+    }
+  };
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function () {
+    window.e2eAudio = this;
+    const src = this.getAttribute("src") || "";
+    const result = play.call(this);
+    result.then(() => keep({play: "ok", src}), (error) => keep({play: error.name, src}));
+    return result;
+  };
+  document.addEventListener("securitypolicyviolation", (event) => keep({csp: event.effectiveDirective, blocked: event.blockedURI}));
+}"""
+MEDIA = """
+  const log = () => JSON.parse(sessionStorage.getItem("e2e-media") || "[]");
+  const sample = () => (window.e2eAudio ? {paused: window.e2eAudio.paused, time: window.e2eAudio.currentTime, error: window.e2eAudio.error ? window.e2eAudio.error.code : null, src: window.e2eAudio.getAttribute("src")} : null);
+  const advancing = async () => {
+    const first = sample();
+    await sleep(1500);
+    const second = sample();
+    return {first, second, playing: Boolean(first && second && !second.paused && second.time - first.time > 0.5)};
+  };
+"""
+ADD_STATION = """(async () => {@HELPERS@
+  const clock = (date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  document.getElementById("settings-open").click();
+  const form = await until(() => document.querySelector(".sheet-box form.settings"), 8000);
+  all("button", form).find((button) => text(button) === "+ Sender").click();
+  await sleep(200);
+  const row = all(".stream-row", form).pop();
+  const [label, address, start, end] = all("input.field", row);
+  const set = (input, value) => {
+    input.value = value;
+    input.dispatchEvent(new Event("input", {bubbles: true}));
+  };
+  set(label, "@NAME@");
+  set(address, "@STATION@");
+  set(start, clock(new Date(Date.now() - 3600000)));
+  set(end, clock(new Date(Date.now() + 3600000)));
+  all('.days input[type="checkbox"]', row).forEach((box) => {
+    box.checked = true;
+  });
+  all("button", form).find((button) => button.type === "submit").click();
+  await until(() => all("#toasts .toast").map(text).find((toast) => toast.startsWith("Neuer Sender")), 8000);
+  return {toasts: all("#toasts .toast").map(text)};
+})()""".replace("@HELPERS@", HELPERS)
+STATION_NAME = "E2E Ton mit einem sehr langen Sendernamen, der in keine Zeile passt"
+RADIO_STATE = """(async () => {@HELPERS@@MEDIA@
+  await until(() => log().some((entry) => entry.play), 8000);
+  return {log: log(), media: await advancing(), toasts: all("#toasts .toast").map(text)};
+})()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
+RADIO_VIEW = """(async () => {@HELPERS@@MEDIA@
+  location.hash = "#stream/radio";
+  const row = await until(() => document.querySelector('#main [data-station="0"]'), 8000);
+  if (!row) {
+    const initial = JSON.parse(document.getElementById("state").textContent);
+    return {error: "no station row", log: log(), wrapped: !String(HTMLMediaElement.prototype.play).includes("[native code]"), streams: initial.settings.streams, media: initial.media, now: new Date().toString()};
+  }
+  const label = row.querySelector(".station-name");
+  const style = getComputedStyle(label);
+  return {
+    state: row.dataset.state,
+    note: text(row.querySelector(".station-note")),
+    title: label.title,
+    line: [style.whiteSpace, style.textOverflow, label.scrollWidth > label.clientWidth, label.getBoundingClientRect().height < 2 * parseFloat(style.lineHeight)],
+    media: await advancing(),
+    log: log(),
+    toasts: all("#toasts .toast").map(text),
+  };
+})()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
+RADIO_CLICK = """(async () => {@HELPERS@@MEDIA@
+  const row = document.querySelector('#main [data-station="0"]');
+  if (!row) {
+    return {error: "no station row", log: log(), media: await advancing()};
+  }
+  const play = row.querySelector('button[data-action="play"]');
+  const clicked = Boolean(sample() && sample().paused && play);
+  if (clicked) {
+    play.click();
+  }
+  await until(() => sample() && !sample().paused, 6000);
+  const media = await advancing();
+  const now = document.querySelector('#main [data-station="0"]');
+  return {clicked, state: now.dataset.state, note: text(now.querySelector(".station-note")), media, log: log()};
+})()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
+SPEAKING = """
+  const caption = () => {
+    const node = document.querySelector("#main .radio-caption");
+    return node && !node.hidden ? node : null;
+  };
+  const ring = (chip) => (chip ? getComputedStyle(chip.querySelector(".speaker-face"), "::after").animationName : null);
+  const cue = async (word) => {
+    await until(() => document.querySelector("#main .speakers .speaker"), 8000);
+    await fetch("/api/tts", {method: "POST", headers: {"X-Kvb-Orchestrator": "1", "Content-Type": "application/json"}, body: JSON.stringify({text: word, voice: ""}), cache: "no-store"});
+    const found = await until(caption, 25000);
+    const chip = document.querySelector("#main .speaker.speaking");
+    return found ? {who: text(found.querySelector("strong")), line: text(found.querySelector(".caption-line")), chip: chip ? chip.dataset.key : null, ring: ring(chip)} : {error: "no caption", toasts: all("#toasts .toast").map(text)};
+  };
+"""
+SPEAK = """(async () => {@HELPERS@@SPEAKING@
+  return cue("@CUE@");
+})()""".replace("@HELPERS@", HELPERS).replace("@SPEAKING@", SPEAKING)
+SPEAK_GRAPH = """(async () => {@HELPERS@@SPEAKING@
+  location.hash = "#agents/orbit";
+  const node = await until(() => document.querySelector("#main svg .node.speaking"), 6000);
+  return {node: node ? node.getAttribute("aria-label") : null, ring: node ? getComputedStyle(node.querySelector("circle")).animationName : null};
+})()""".replace("@HELPERS@", HELPERS).replace("@SPEAKING@", SPEAKING)
+SPEAK_END = """(async () => {@HELPERS@@SPEAKING@
+  const ended = Boolean(await until(() => !document.querySelector("#main svg .node") || !document.querySelector("#main svg .node.speaking"), 20000));
+  location.hash = "#stream/radio";
+  await until(() => document.querySelector("#main .radio-caption"), 6000);
+  await sleep(300);
+  return {ended, caption: Boolean(caption()), chips: all("#main .speaker.speaking").length};
+})()""".replace("@HELPERS@", HELPERS).replace("@SPEAKING@", SPEAKING)
+COMPOSE = """(async () => {@HELPERS@
+  const form = await until(() => document.querySelector("#main form.composer"), 8000);
+  if (!form) {
+    return {error: "no composer"};
+  }
+  const [channel, recipient] = all("select", form);
+  await until(() => [...recipient.options].some((option) => option.value === "@TO@"), 8000);
+  channel.value = "call";
+  channel.dispatchEvent(new Event("change", {bubbles: true}));
+  recipient.value = "@TO@";
+  const record = all("button", form).find((button) => button.hasAttribute("aria-pressed"));
+  record.click();
+  await sleep(1500);
+  const recording = record.getAttribute("aria-pressed");
+  record.click();
+  const field = form.querySelector("textarea");
+  await until(() => field.value && form.querySelector('.voice-note input[type="checkbox"]'), 60000);
+  const replay = form.querySelector(".voice-note audio");
+  const attach = form.querySelector('.voice-note input[type="checkbox"]');
+  return {
+    channels: all("option", channel).map((option) => option.value),
+    recipients: all("option", recipient).map((option) => option.value),
+    recording,
+    text: field.value,
+    replay: replay ? replay.getAttribute("src") : null,
+    attach: attach ? [text(attach.closest("label")), attach.checked] : null,
+    status: text(form.querySelector(".composer-status")),
+    toasts: all("#toasts .toast").map(text),
+    clashes: (() => {@CLASHES@
+      return clashes(form);
+    })(),
+  };
+})()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP)
+COMPOSE_SEND = """(async () => {@HELPERS@
+  const form = document.querySelector("#main form.composer");
+  const field = form.querySelector("textarea");
+  field.value = `${field.value} bitte`;
+  field.dispatchEvent(new Event("input", {bubbles: true}));
+  form.querySelector('.voice-note input[type="checkbox"]').checked = @ATTACH@;
+  const before = all("#toasts .toast").length;
+  form.querySelector('button[type="submit"]').click();
+  const sent = await until(() => all("#toasts .toast").slice(before).map(text).find((toast) => toast.startsWith("Call an")), 20000);
+  return {sent, left: field.value, voice: Boolean(form.querySelector(".voice-note audio"))};
+})()""".replace("@HELPERS@", HELPERS)
+CLEAR_MAYDAY = """(async () => {@HELPERS@
+  window.confirm = () => true;
+  const button = await until(() => all('#main [role="toolbar"] button').find((node) => name(node) === "Mayday aufheben" && !node.disabled), 8000);
+  if (!button) {
+    return {error: "no enabled Mayday aufheben button"};
+  }
+  button.click();
+  const done = await until(() => all("#toasts .toast").map(text).find((toast) => toast.startsWith("Mayday aufheben")), 15000);
+  return {done, toasts: all("#toasts .toast").map(text)};
+})()""".replace("@HELPERS@", HELPERS)
+
+
+def tone(seconds: int, rate: int) -> bytes:
+    frames = array.array("h", (int(6000 * math.sin(2 * math.pi * 440 * n / rate)) for n in range(seconds * rate)))
+    return wav_bytes(1, 2, rate, frames.tobytes())
+
+
+class Station(http.server.BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        body = self.server.body
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        with contextlib.suppress(OSError):
+            self.wfile.write(body)
+
+    def log_message(self, *args: object) -> None:
+        return
 
 
 LABELS = """
@@ -338,9 +586,9 @@ class TestOrchestratorE2E(HubCase):
             (folder / f"agent-{ident}.meta.json").write_text(json.dumps({"agentType": "Explore", "description": f"look {ident}", "spawnDepth": 1, "finished": finished}), encoding="utf-8")
             (folder / f"agent-{ident}.jsonl").write_text(self.jsonl([line(now - 1800), line(now - 60)]), encoding="utf-8")
 
-    def drive(self, steps: list[dict], authenticator: dict | None, driver: str = "cdp.mjs", binary: str = os.environ.get("CHROMIUM", "chromium")) -> dict:
+    def drive(self, steps: list[dict], authenticator: dict | None, driver: str = "cdp.mjs", binary: str = os.environ.get("CHROMIUM", "chromium"), init: str | None = None) -> dict:
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
-            json.dump({"steps": steps, "authenticator": authenticator}, handle)
+            json.dump({"steps": steps, "authenticator": authenticator, "init": init}, handle)
         self.addCleanup(os.unlink, handle.name)
         done = subprocess.run(["node", str(HERE / driver), binary, handle.name], capture_output=True, text=True, timeout=900, check=False)
         self.assertEqual(done.returncode, 0, done.stderr[-2000:])
@@ -361,6 +609,112 @@ class TestOrchestratorE2E(HubCase):
     def shot(self, name: str) -> str:
         return str(OUT / f"chromium-{name}.png")
 
+    def authenticator(self) -> dict:
+        signer = self.pin()
+        private = "".join(line for line in signer.pem.read_text(encoding="utf-8").splitlines() if not line.startswith("-----"))
+        return {"credentialId": base64.b64encode(signer.raw_id).decode(), "privateKey": private, "rpId": "localhost"}
+
+    def speaks(self, cues: tuple[str, ...]) -> None:
+        hub = self.httpd.hub
+        hub.settings.put({**hub.settings.get(), "speech": {"on": True, "classes": ["mayday", "pan-pan", "security"], "muted": []}})
+        spoken = tone(6, 8000)
+
+        def synthesize(body: bytes) -> bytes:
+            word = json.loads(body)["text"]
+            if word in cues:
+                row = {"ts": time.time(), "from": "Stage", "to": [], "text": f"Platte fast voll ({word})\nzweite Zeile", "class": "security", "v": 2}
+                with (self.council / "news.jsonl").open("a", encoding="utf-8") as handle:
+                    handle.write(self.jsonl([row]))
+            return spoken
+
+        patch = mock.patch.object(hub.speech, "synthesize", synthesize)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def station(self) -> str:
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Station)
+        httpd.body = tone(30, 22050)
+        thread = threading.Thread(target=httpd.serve_forever, args=(0.05,), daemon=True)
+        thread.start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(thread.join, 10)
+        self.addCleanup(httpd.shutdown)
+        return f"http://127.0.0.1:{httpd.server_address[1]}/tone.wav"
+
+    def check_overlaps(self, browser: str, driver: str, binary: str) -> None:
+        steps = []
+        for width, height in WIDTHS:
+            steps.append({"width": width, "height": height, "url": f"{self.base}#stream/rules", "wait": 900, "probe": RULES_OVERLAP, "shot": str(OUT / f"{browser}-{width}-rules-form.png")})
+            steps.append({"width": width, "height": height, "url": None, "wait": 0, "probe": SETTINGS_OVERLAP, "shot": str(OUT / f"{browser}-{width}-settings-form.png")})
+        data = self.drive(steps, None, driver, binary)
+        (OUT / f"{browser}-overlap.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        hidden = {"decision": ("Werkzeug (Glob)", "Verzeichnis (Glob)"), "review": ("Werkzeug (Glob)",), "ask": ()}
+        for index, (width, _) in enumerate(WIDTHS):
+            rules, settings = data["results"][2 * index : 2 * index + 2]
+            with self.subTest(browser=browser, width=width):
+                self.assertNotIn("error", rules)
+                self.assertNotIn("error", settings)
+                for kind, found in rules.items():
+                    self.assertEqual((found["found"], found["outside"]), ([], []), kind)
+                    self.assertEqual([label for label in hidden[kind] if label in found["labels"]], [], kind)
+                self.assertIn("Verzeichnis (Glob)", rules["review"]["labels"])
+                self.assertEqual(settings, {"found": [], "outside": []})
+
+    def check_radio(self, browser: str, driver: str, binary: str) -> dict:
+        """Args:
+            driver: cdp.mjs saves the station through the settings form and
+                signs its new origin with a virtual passkey; bidi.mjs has no
+                virtual authenticator, so the station is saved before the page
+                loads.
+        """
+        station = self.station()
+        signs = driver == "cdp.mjs"
+        if signs:
+            first = {"width": 1366, "height": 768, "url": f"http://localhost:{self.port}/#stream", "wait": 900, "probe": ADD_STATION.replace("@STATION@", station).replace("@NAME@", STATION_NAME), "shot": None, "gesture": True}
+        else:
+            hub = self.httpd.hub
+            hub.settings.put({**hub.settings.get(), "streams": [{"name": STATION_NAME, "url": station, "from": "00:00", "to": "24:00", "days": list(range(7)), "on": True}]})
+            first = {"width": 1366, "height": 768, "url": f"{self.base}#stream", "wait": 900, "probe": None, "shot": None}
+        steps = [
+            first,
+            {"width": 390, "height": 844, "url": None, "wait": 3000, "probe": RADIO_VIEW, "shot": str(OUT / f"{browser}-390-radio-station.png")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": RADIO_CLICK, "shot": str(OUT / f"{browser}-1366-radio-playing.png"), "gesture": True},
+        ]
+        data = self.drive(steps, self.authenticator() if signs else None, driver, binary, MEDIA_LOG)
+        (OUT / f"{browser}-radio.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        saved, view, click = data["results"]
+        if signs:
+            self.assertTrue(any(toast.startswith("Neuer Sender") for toast in saved["toasts"]), saved)
+        self.assertNotIn("error", view)
+        self.assertEqual(view["title"], STATION_NAME)
+        self.assertEqual(view["line"], ["nowrap", "ellipsis", True, True])
+        blocked = [entry for entry in view["log"] if entry.get("play") == "NotAllowedError"]
+        if not view["media"]["playing"]:
+            self.assertTrue(blocked, view)
+            self.assertEqual(view["state"], "blocked", view)
+            self.assertIn("Klick", view["note"])
+            self.assertTrue(any("blockiert" in toast for toast in view["toasts"]), view["toasts"])
+            self.assertTrue(click["clicked"], click)
+        self.assertNotIn("error", click)
+        self.assertTrue(click["media"]["playing"], click)
+        self.assertEqual(click["state"], "playing", click)
+        self.assertEqual([entry for entry in click["log"] if entry.get("csp") == "media-src"], [])
+        return data
+
+    def test_chromium_form_controls_never_overlap(self):
+        self.check_overlaps("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"))
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_form_controls_never_overlap(self):
+        self.check_overlaps("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
+
+    def test_chromium_plays_a_saved_station(self):
+        self.check_radio("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"))
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_plays_a_saved_station(self):
+        self.check_radio("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
+
     def test_chromium_walks_every_screen_at_three_widths(self):
         steps = [{"width": width, "height": height, "url": f"{self.base}#{screen}", "wait": 900, "probe": PROBE, "shot": self.shot(f"{width}-{screen.replace('/', '-')}")} for width, height in WIDTHS for screen in SCREENS]
         steps += [{"width": 1366, "height": 768, "url": f"{self.base}#{old}", "wait": 600, "probe": PROBE, "shot": None} for old in ("graph", "graph/chord", "tree")]
@@ -377,8 +731,8 @@ class TestOrchestratorE2E(HubCase):
                 self.assertNotIn("error", probe)
                 self.assertEqual((probe["title"], probe["h1"]), ("(2) Agent Orchestrator", "Agent Orchestrator"))
                 self.assertEqual(probe["header"], ["palette-open", "settings-open"])
-                self.assertEqual((probe["tabs"], probe["subs"]), (["Stream", "Agents", "Artifacts"], ["Inbox", "Regeln"]))
-                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-inbox": "2", "tab-rules": None, "tab-agents": "1", "tab-artifacts": None})
+                self.assertEqual((probe["tabs"], probe["subs"]), (["Stream", "Agents", "Artifacts"], SUBS))
+                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-inbox": "2", "tab-rules": None, "tab-radio": None, "tab-agents": "1", "tab-artifacts": None})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")
                 self.assertFalse(probe["rail"])
                 self.assertEqual((probe["time"], probe["replay"]), ("24 h ▾", True))
@@ -446,12 +800,73 @@ class TestOrchestratorE2E(HubCase):
                         handle.write(self.jsonl(rows))
 
         self.beside(answer)
-        data = self.drive([{"width": 1366, "height": 768, "url": f"{self.base}#stream", "wait": 900, "probe": CALL, "shot": self.shot("1366-call-receipt")}], None)
+        local = f"http://localhost:{self.port}/"
+        data = self.drive([{"width": 1366, "height": 768, "url": f"{local}#stream", "wait": 900, "probe": CALL, "shot": self.shot("1366-call-receipt")}], self.authenticator())
         self.assertEqual(data["errors"], [])
         result = data["results"][0]
         self.assertNotIn("error", result)
         self.assertIsNotNone(result["receipt"], result)
         self.assertIn("Gelesen", result["receipt"])
+
+    def test_chromium_shows_who_speaks_while_a_message_is_read(self):
+        self.speaks(("e2e-cue-1", "e2e-cue-2"))
+        steps = [
+            {"width": 1366, "height": 768, "url": f"{self.base}#stream/radio", "wait": 900, "probe": SPEAK.replace("@CUE@", "e2e-cue-1"), "shot": self.shot("1366-radio-speaking"), "gesture": True},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": SPEAK_GRAPH, "shot": self.shot("1366-agents-speaking")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": SPEAK_END, "shot": None},
+            {"width": 390, "height": 844, "url": None, "wait": 0, "probe": SPEAK.replace("@CUE@", "e2e-cue-2"), "shot": self.shot("390-radio-speaking-reduced-motion"), "gesture": True, "media": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+        ]
+        data = self.drive(steps, None)
+        (OUT / "chromium-speaking.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        speaking, graph, ended, calm = data["results"]
+        self.assertEqual((speaking["who"], speaking["line"], speaking["chip"], speaking["ring"]), ("Stage spricht", "Platte fast voll (e2e-cue-1)", "s2", "speaking"), speaking)
+        self.assertEqual((graph["node"] or "").split(",")[0], "Stage", graph)
+        self.assertEqual(graph["ring"], "speaking-node")
+        self.assertEqual(ended, {"ended": True, "caption": False, "chips": 0})
+        self.assertEqual((calm["who"], calm["line"], calm["ring"]), ("Stage spricht", "Platte fast voll (e2e-cue-2)", "none"), calm)
+
+    def test_chromium_records_transcribes_and_sends_a_signed_call_with_voice(self):
+        local = f"http://localhost:{self.port}/"
+        steps = [
+            {"width": 1366, "height": 768, "url": f"{local}#stream/radio", "wait": 1200, "probe": COMPOSE.replace("@TO@", "Stage"), "shot": self.shot("1366-radio-composer"), "gesture": True},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": COMPOSE_SEND.replace("@ATTACH@", "false"), "shot": None},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": COMPOSE.replace("@TO@", "Stage"), "shot": None, "gesture": True},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": COMPOSE_SEND.replace("@ATTACH@", "true"), "shot": self.shot("1366-radio-composer-sent")},
+        ]
+        data = self.drive(steps, self.authenticator())
+        (OUT / "chromium-composer.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        composed, plain, again, sent = data["results"]
+        self.assertNotIn("error", composed)
+        self.assertEqual(composed["channels"], ["post", "call", "newsletter", "broadcast", "pan-pan", "security", "mayday"])
+        self.assertIn("Stage", composed["recipients"])
+        self.assertEqual(composed["recording"], "true")
+        self.assertEqual(composed["text"], "hello from the mic second line", composed)
+        self.assertRegex(composed["replay"] or "", r"^/api/voice/[0-9a-f]{16}\.wav$")
+        self.assertEqual(composed["attach"], ["Aufnahme anhängen", False])
+        self.assertEqual(composed["clashes"], {"found": [], "outside": []})
+        self.assertEqual(again["attach"], ["Aufnahme anhängen", False])
+        note = again["replay"].removeprefix("/api/voice/").removesuffix(".wav")
+        for result in (plain, sent):
+            self.assertEqual((result["left"], result["voice"]), ("", False), result)
+            self.assertTrue(result["sent"].startswith("Call an Stage: gesendet"), result)
+        calls = [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
+        self.assertEqual(len(calls), 2, self.scripts.calls)
+        self.assertEqual([call[:4] for call in calls], [["send", "call", "--to", "Stage"]] * 2)
+        self.assertTrue(calls[0][-1].endswith("] hello from the mic second line bitte"), calls[0])
+        self.assertTrue(calls[1][-1].endswith(f"] hello from the mic second line bitte voice: {HOST_STATE}/voice/{note}.wav"), calls[1])
+        status, _, body = self.get(f"/api/voice/{note}.wav")
+        self.assertEqual((status, body[:4]), (200, b"RIFF"))
+
+    def test_chromium_clears_the_mayday_only_after_the_passkey_signs(self):
+        local = f"http://localhost:{self.port}/"
+        data = self.drive([{"width": 1366, "height": 768, "url": f"{local}#agents/orbit", "wait": 1200, "probe": CLEAR_MAYDAY, "shot": self.shot("1366-mayday-cleared")}], self.authenticator())
+        self.assertEqual(data["errors"], [])
+        result = data["results"][0]
+        self.assertNotIn("error", result)
+        self.assertTrue((result["done"] or "").startswith("Mayday aufheben: erledigt"), result)
+        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])])
 
     def test_chromium_deletes_a_merged_branch_after_dry_run_and_signature(self):
         tree = json.loads(self.tree_file.read_text(encoding="utf-8"))
@@ -468,13 +883,11 @@ class TestOrchestratorE2E(HubCase):
         following = json.loads(json.dumps(tree))
         following["repos"][0]["items"] = [item for item in following["repos"][0]["items"] if item["branch"] != "feature/done"]
         (fake.parent / "next-tree.json").write_text(json.dumps(following), encoding="utf-8")
-        signer = self.pin()
+        authenticator = self.authenticator()
         trust = verifier.Trust(approvers=self.approvers, replay=self.replay / "cleanup.json", origin=self.origin)
         runner = host.Cleanup(trust, self.tree_file, fake)
         jobs, results = self.cleanup / "jobs", self.cleanup / "results"
         self.beside(lambda: any(jobs.iterdir()) and host.cycle(jobs, results, runner))
-        private = "".join(line for line in signer.pem.read_text(encoding="utf-8").splitlines() if not line.startswith("-----"))
-        authenticator = {"credentialId": base64.b64encode(signer.raw_id).decode(), "privateKey": private, "rpId": "localhost"}
         local = f"http://localhost:{self.port}/"
         steps = [
             {"width": 1366, "height": 768, "url": f"{local}#artifacts/tree", "wait": 1200, "probe": OPEN_DELETE, "shot": self.shot("1366-delete-dry-run")},
@@ -658,7 +1071,7 @@ class TestOrchestratorE2E(HubCase):
             with self.subTest(width=width, screen=screen):
                 self.assertNotIn("error", probe)
                 self.assertEqual(probe["hash"], f"#{screen}")
-                self.assertEqual((probe["tabs"], probe["subs"]), (["Stream", "Agents", "Artifacts"], ["Inbox", "Regeln"]))
+                self.assertEqual((probe["tabs"], probe["subs"]), (["Stream", "Agents", "Artifacts"], SUBS))
                 self.assertEqual(labelled(probe), {"unlabelled": [], "broken": []})
                 self.assertFalse(probe["wide"], "the page scrolls sideways")
                 self.assertTrue(shot.is_file() and shot.stat().st_size > 1000, shot)

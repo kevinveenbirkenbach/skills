@@ -11,9 +11,12 @@
     --pages: directory every review page must lie in.
     --state: writable directory for reviews.json, asks.json, decisions.json,
         messages.json, rules.json, jobs.json, marks.json, settings.json,
-        log.jsonl, the page copies and uploads/<id>/<name>.
+        log.jsonl, the page copies, uploads/<id>/<name>, the operator's last
+        50 voice recordings beside those a stored message carries as
+        voice/<id>.wav and the replay store of the signatures the hub checks
+        itself as replay/messages.json.
     --host-state: the state directory's path on the host, named in the radio
-        rows that carry an upload.
+        rows that carry an upload or a voice recording.
     --skills: installed skills directory holding the kvb-org-radio,
         kvb-org-rasci and kvb-org-sunset scripts.
     --transcripts: directory the Claude Code transcripts (*.jsonl) lie under.
@@ -48,8 +51,9 @@
     --scratch: writable directory the engines use as HOME and TMPDIR.
     --approvers: the pinned passkeys, mounted read-only; the hub lists their
         ids and algorithms for the page, never pins, and verifies a signature
-        only for the denials and rules it acts on itself; every other approval
-        its executor verifies.
+        only for the operator messages, denials and rules it acts on itself,
+        and for the mayday and day/night board actions and new stream origins
+        it runs as the operator; every other approval its executor verifies.
 """
 
 from __future__ import annotations

@@ -35,6 +35,7 @@ from .timeline import Timeline
 from .transcripts import Transcripts
 from .tree import TREE_HEARTBEAT, Tree
 from .view import View
+from .voicenotes import VoiceNotes
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Denying, Requesting, Cle
     spool: Spool
     office_spool: Spool
     touched: Touched
+    voice_notes: VoiceNotes
     replay: Path
 
     def hosts(self) -> tuple[str, str]:
@@ -104,6 +106,8 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
     uploads = state / "uploads"
     uploads.mkdir(exist_ok=True)
     reviews = Reviews(state)
+    speech = Speech(engines, state / "tts")
+    messages = Ledger(state / "messages.json")
     return Hub(
         vendor=places.vendor,
         icons=sheet(places.vendor, templates),
@@ -111,7 +115,8 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         office_spool=Spool(places.offices).ready(),
         touched=Touched(reviews.stored),
         approvers=approvers,
-        speech=Speech(engines, state / "tts"),
+        speech=speech,
+        voice_notes=VoiceNotes(state / "voice", host_state / "voice", speech, lambda: {message["voice"] for message in messages.listed() if message.get("voice")}),
         replay=state / "replay" / "messages.json",
         rules=Ledger(state / "rules.json"),
         jobs=Ledger(state / "jobs.json"),
@@ -130,7 +135,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         reviews=reviews,
         asks=Ledger(state / "asks.json"),
         decisions=Ledger(state / "decisions.json"),
-        messages=Ledger(state / "messages.json"),
+        messages=messages,
         rule_requests=Ledger(state / "rule-requests.json"),
         uploads=uploads,
         host_state=host_state,

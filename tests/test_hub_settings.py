@@ -4,7 +4,7 @@ import json
 import unittest
 
 from hub_case import HubCase
-from hub_support import STREAMS
+from hub_support import STREAMS, Key, key
 from kvb_orchestrator import settings
 
 
@@ -21,6 +21,49 @@ class TestHubSettings(HubCase):
     def media_src(self) -> str:
         csp = self.get("/")[1]["content-security-policy"]
         return next(part.strip() for part in csp.split(";") if part.strip().startswith("media-src"))
+
+    def prepared(self, payload: dict) -> dict:
+        status, _, body = self.post_json("/api/settings/sign", payload, self.guard(self.host))
+        self.assertEqual(status, 200, body)
+        return json.loads(body)
+
+    def save(self, payload: dict, signer: Key) -> tuple[int, dict, bytes]:
+        request = self.prepared(payload)["payload"]
+        proof = None if request is None else signer.proof(request, self.origin)
+        return self.post_json("/api/settings", {**payload, "proof": proof}, self.guard(self.host))
+
+    def test_a_new_stream_origin_needs_the_passkey(self):
+        good = self.guard(self.host)
+        payload = self.settings_payload(STREAMS)
+        self.assertEqual(self.post_json("/api/settings", payload, good)[:3:2], (400, b"nicht signiert: no signature\n"))
+        self.assertFalse((self.state / "settings.json").exists())
+        signer = self.pin()
+        request = self.prepared(payload)["payload"]
+        stranger = key(-7, "stranger").proof(request, self.origin)
+        self.assertEqual(self.post_json("/api/settings", {**payload, "proof": stranger}, good)[:3:2], (400, b"nicht signiert: the signing key is not pinned\n"))
+        self.assertEqual(self.media_src(), "media-src 'self'")
+        proof = signer.proof(request, self.origin)
+        status, _, body = self.post_json("/api/settings", {**payload, "proof": proof}, good)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.media_src(), "media-src 'self' http://10.0.0.5:8000 https://other.example:8443 https://radio.example")
+        moved = self.settings_payload([{**STREAMS[0], "url": "https://radio.example/abend"}, STREAMS[1]])
+        self.assertIsNone(self.prepared(moved)["payload"])
+        status, _, body = self.post_json("/api/settings", moved, good)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.media_src(), "media-src 'self' http://10.0.0.5:8000 https://radio.example")
+        self.assertEqual(self.post_json("/api/settings", {**payload, "proof": proof}, good)[:3:2], (400, b"nicht signiert: this signature was already used for this item\n"))
+        evil = self.settings_payload([*moved["streams"], {**STREAMS[0], "url": "https://evil.example/listen"}])
+        self.assertEqual(self.post_json("/api/settings", {**evil, "proof": signer.proof(self.prepared(payload)["payload"], self.origin)}, good)[:3:2], (400, b"nicht signiert: the signature does not list this item\n"))
+        self.assertEqual(self.post_json("/api/settings", evil, good)[0], 400)
+        self.assertEqual(self.media_src(), "media-src 'self' http://10.0.0.5:8000 https://radio.example")
+        status, _, body = self.save(evil, signer)
+        self.assertEqual(status, 200, body)
+        self.assertIn("https://evil.example", self.media_src())
+        for broken in ({**payload, "theme": "neon"}, {**payload, "proof": None}):
+            with self.subTest(broken=list(broken)):
+                self.assertEqual(self.post_json("/api/settings/sign", broken, good)[0], 400)
+        self.assertEqual(self.post_json("/api/settings/sign", payload, self.client())[0], 403)
+        self.assertEqual(self.get("/api/settings/sign")[0], 405)
 
     def test_settings_are_guarded_validated_and_persisted(self):
         self.assertEqual(self.snapshot()["settings"], settings.SETTINGS)
@@ -60,7 +103,7 @@ class TestHubSettings(HubCase):
                 {"extra": 1},
             )),
             {**payload, "speech": {"on": True, "classes": ["mayday"]}},
-            {key: value for key, value in payload.items() if key != "speech"},
+            {name: value for name, value in payload.items() if name != "speech"},
             *({**payload, "space": change} for change in (
                 "flat",
                 {"graph": payload["space"]["graph"]},
@@ -78,7 +121,7 @@ class TestHubSettings(HubCase):
                 {"pan_y": float("nan")},
                 {"roll": 0},
             )),
-            {**payload, "space": {**payload["space"], "graph": {key: value for key, value in payload["space"]["graph"].items() if key != "pan_y"}}},
+            {**payload, "space": {**payload["space"], "graph": {name: value for name, value in payload["space"]["graph"].items() if name != "pan_y"}}},
             *({**payload, "space": {**payload["space"], "sky": {**payload["space"]["sky"], **change}}} for change in (
                 {"azimuth": -1},
                 {"azimuth": 360.5},
@@ -88,11 +131,11 @@ class TestHubSettings(HubCase):
                 {"fov": float("inf")},
                 {"zoom": 1},
             )),
-            {key: value for key, value in payload.items() if key != "space"},
+            {name: value for name, value in payload.items() if name != "space"},
         ):
             with self.subTest(broken=broken):
                 self.assertEqual(self.post_json("/api/settings", broken, good)[0], 400)
-        status, _, body = self.post_json("/api/settings", payload, good)
+        status, _, body = self.save(payload, self.pin())
         self.assertEqual(status, 200, body)
         self.assertEqual(json.loads(body), payload)
         self.assertEqual(json.loads((self.state / "settings.json").read_text(encoding="utf-8")), payload)
@@ -118,7 +161,7 @@ class TestHubSettings(HubCase):
     def test_csp_media_src_lists_exactly_the_stream_origins(self):
         self.assertEqual(self.media_src(), "media-src 'self'")
         streams = [*STREAMS, {**STREAMS[0], "name": "Gleich", "url": "https://Radio.Example:443/zweiter?x=1"}]
-        status, _, body = self.post_json("/api/settings", self.settings_payload(streams), self.guard(self.host))
+        status, _, body = self.save(self.settings_payload(streams), self.pin())
         self.assertEqual(status, 200, body)
         origins = ["http://10.0.0.5:8000", "https://other.example:8443", "https://radio.example"]
         self.assertEqual(self.media_src(), " ".join(["media-src 'self'", *origins]))

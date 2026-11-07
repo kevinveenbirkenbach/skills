@@ -48,7 +48,7 @@
   }
 
   function screenOf() {
-    return {stream: streamScreen, inbox: inboxScreen, rules: rulesScreen, agents: agentsScreen, artifacts: artifactsScreen}[ui.screen]();
+    return {stream: streamScreen, inbox: inboxScreen, rules: rulesScreen, radio: radioScreen, agents: agentsScreen, artifacts: artifactsScreen}[ui.screen]();
   }
 
   function render(force) {
@@ -63,6 +63,7 @@
       graphDom = null;
       stream.dom = null;
       tree.dom = null;
+      radioDom = null;
       inboxDom = null;
       inboxSig = "";
       const main = document.getElementById("main");
@@ -80,6 +81,7 @@
     drawHierarchy(force);
     drawToolbar();
     drawInbox();
+    drawRadio();
     drawStatus();
     tick();
   }

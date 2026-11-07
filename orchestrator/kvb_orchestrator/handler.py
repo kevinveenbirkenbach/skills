@@ -42,7 +42,13 @@ OFFICE_STATE = re.compile(r"/api/offices/([0-9a-f]{16})")
 VENDOR_ROUTE = re.compile(r"/vendor/([a-z0-9.-]{1,64})")
 VENDOR = {"3d-force-graph.min.js": "3d-force-graph/3d-force-graph.min.js", "three.module.js": "three/three.module.js", "three.core.js": "three/three.core.js"}
 SCRIPT_TYPE = "text/javascript; charset=utf-8"
-ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE)
+VOICE_ROUTE = "/api/voice"
+VOICE_ITEM = re.compile(r"/api/voice/([0-9a-f]{16})(\.wav)?")
+MESSAGE_SIGN_ROUTE = "/api/messages/sign"
+BOARD_SIGN_ROUTE = "/api/board/sign"
+SETTINGS_SIGN_ROUTE = "/api/settings/sign"
+WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
+ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE)
 
 
 class Handler(Exchange):
@@ -52,6 +58,10 @@ class Handler(Exchange):
 
     def hear(self, body: bytes) -> None:
         self.answer(lambda: self.server.hub.speech.transcribe(body), HTTPStatus.OK)
+
+    def replay_voice(self, note_id: str) -> None:
+        headers = {"Content-Security-Policy": PLAIN_CSP}
+        self.attempt(lambda: self.server.hub.voice_notes.audio(note_id), lambda wav: self.send(HTTPStatus.OK, WAV_TYPE, wav, headers))
 
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
@@ -63,12 +73,17 @@ class Handler(Exchange):
         vendored = VENDOR_ROUTE.fullmatch(path)
         cleanup = CLEANUP_STATE.fullmatch(path)
         office = OFFICE_STATE.fullmatch(path)
+        voice = VOICE_ITEM.fullmatch(path)
         if self.host() is None:
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
         elif path == "/":
             self.index()
         elif vendored and vendored.group(1) in VENDOR:
             self.vendored(VENDOR[vendored.group(1)])
+        elif voice and voice.group(2):
+            self.replay_voice(voice.group(1))
+        elif voice:
+            self.answer(lambda: hub.voice_notes.get(voice.group(1)), HTTPStatus.OK)
         elif cleanup:
             self.answer(lambda: hub.cleanup_state(cleanup.group(1)), HTTPStatus.OK)
         elif office:
@@ -114,6 +129,8 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.upload(self.query(), body), HTTPStatus.CREATED)
         if path == "/api/messages":
             return lambda body: self.answer(lambda: hub.message(body), HTTPStatus.CREATED)
+        if path == BOARD_SIGN_ROUTE:
+            return lambda body: self.answer(lambda: hub.sign_board(body), HTTPStatus.OK)
         if board:
             return lambda body: self.answer(lambda: hub.board(board.group(1), body), HTTPStatus.OK)
         return self.inbox_action(path)
@@ -152,10 +169,16 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.nl(body), HTTPStatus.OK)
         if path == SETTINGS_ROUTE:
             return lambda body: self.answer(lambda: hub.save_settings(body), HTTPStatus.OK)
+        if path == SETTINGS_SIGN_ROUTE:
+            return lambda body: self.answer(lambda: hub.sign_settings(body), HTTPStatus.OK)
         if path == TTS_ROUTE:
             return self.speak
         if path == STT_ROUTE:
             return self.hear
+        if path == VOICE_ROUTE:
+            return lambda body: self.answer(lambda: hub.voice_notes.submit(body), HTTPStatus.ACCEPTED)
+        if path == MESSAGE_SIGN_ROUTE:
+            return lambda body: self.answer(lambda: hub.sign_message(body), HTTPStatus.OK)
         return None
 
     def posted(self, path: str) -> bool:
@@ -191,7 +214,7 @@ class Handler(Exchange):
             self.send_text(HTTPStatus.NOT_FOUND, "not found")
         elif not self.guarded(host):
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden: same-origin POST with the X-Kvb-Orchestrator header only")
-        elif path == STT_ROUTE and self.headers.get_content_type() != WAV_TYPE:
+        elif path in WAV_POSTS and self.headers.get_content_type() != WAV_TYPE:
             self.send_text(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, f"use {WAV_TYPE}")
         else:
             return action
@@ -199,7 +222,7 @@ class Handler(Exchange):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: STT_LIMIT}.get(path, BODY_LIMIT))
+        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: STT_LIMIT, VOICE_ROUTE: STT_LIMIT}.get(path, BODY_LIMIT))
         if length is None:
             return
         host = self.host()

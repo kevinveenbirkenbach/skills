@@ -119,7 +119,7 @@
 
   function nodeMark(node, at, gap) {
     const r = RADIUS[node.kind];
-    const classes = ["node", `k-${node.kind}`, ui.node === node.id ? "selected" : "", node.claims.length ? "claimed" : ""].filter(Boolean).join(" ");
+    const classes = ["node", `k-${node.kind}`, ui.node === node.id ? "selected" : "", node.claims.length ? "claimed" : "", speech.current && speech.current.who === node.id ? "speaking" : ""].filter(Boolean).join(" ");
     const tasks = node.tasks.length ? ` · ${node.tasks.length} Aufgaben` : "";
     return s("g", {
       class: classes, transform: `translate(${fixed(at.x)} ${fixed(at.y)})`, tabindex: 0, role: "button", "aria-label": `${node.label}, ${NODE_KINDS[node.kind]}`,

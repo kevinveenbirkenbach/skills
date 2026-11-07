@@ -111,17 +111,31 @@ def rule_request_item(request_id: str, kind: str, tool: str, pattern: str, scope
     return {"kind": "rule-request", "id": request_id, "rule": kind, "tool": tool, "pattern": pattern, "scope": scope, "expires": expires}
 
 
-def denial_item(subject: dict, channel: str, reason: str) -> dict:
+def denial_item(subject: dict, channel: str, reason: str, to: str) -> dict:
     """Args:
         subject: the item an approval of it would sign.
         channel: the radio class that tells the requesting agent.
         reason: the operator's reason, possibly empty.
+        to: the requesting agent's name for a direct channel, "*" for a
+            class to all.
 
     Returns:
         The item a denial signs: its hash never equals the subject's, so no
         denial signature approves anything.
     """
-    return {"kind": "deny", "subject": item_hash(subject), "channel": channel, "reason": reason}
+    return {"kind": "deny", "subject": item_hash(subject), "channel": channel, "reason": reason, "to": to}
+
+
+def message_item(to: str, cls: str, text: str, upload: str, voice: str, voice_sha256: str) -> dict:
+    return {"kind": "message", "to": to, "class": cls, "text": text, "upload": upload, "voice": voice, "voice_sha256": voice_sha256}
+
+
+def board_item(action: str) -> dict:
+    return {"kind": "board", "action": action}
+
+
+def stream_item(origins: list[str]) -> dict:
+    return {"kind": "streams", "origins": origins}
 
 
 def approval_payload(hashes: list[str], nonce: str, expires: int) -> dict:

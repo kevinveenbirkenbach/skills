@@ -6,6 +6,7 @@ import re
 import secrets
 import subprocess
 import threading
+import time
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,10 @@ STT_RATE = 16000
 STT_SECONDS = 120
 STT_LIMIT = 44 + STT_RATE * 2 * STT_SECONDS
 STT_TIMEOUT = 120
+HEARING_WINDOW = 60
+HEARING_RATE = 6
+HEARING_HOUR = 3600
+HEARING_BUDGET = 5 * STT_SECONDS
 NOISE = re.compile(r"\[[^\]\n]{0,40}\]")
 
 
@@ -138,6 +143,8 @@ class Speech:
         self.pool = [voice for voice in self.voices if voice != self.operator]
         self.speaking = threading.Lock()
         self.hearing = threading.Lock()
+        self.metering = threading.Lock()
+        self.admitted: list[tuple[float, float]] = []
 
     def env(self) -> dict[str, str]:
         scratch = str(self.engines.scratch)
@@ -232,11 +239,29 @@ class Speech:
         for path in kept[TTS_KEEP:]:
             path.unlink(missing_ok=True)
 
+    def admit(self, seconds: float) -> None:
+        """Raises:
+            Unavailable when HEARING_RATE recordings were admitted in the last
+            HEARING_WINDOW seconds, or when this one would take the audio
+            admitted in the last hour past HEARING_BUDGET seconds.
+        """
+        now = time.monotonic()
+        with self.metering:
+            recent = [(at, length) for at, length in self.admitted if at > now - HEARING_HOUR]
+            if sum(1 for at, _ in recent if at > now - HEARING_WINDOW) >= HEARING_RATE:
+                raise Unavailable(f"the hub transcribes at most {HEARING_RATE} recordings per {HEARING_WINDOW} s: try again in a minute")
+            if sum(length for _, length in recent) + seconds > HEARING_BUDGET:
+                raise Unavailable(f"the hub transcribes at most {HEARING_BUDGET} s of audio per hour; the budget refills as the hour passes")
+            self.admitted = [*recent, (now, seconds)]
+
     def transcribe(self, body: bytes) -> dict:
         gap = self.input_gap()
         if gap:
             raise Unavailable(f"speech input is off: {gap}")
-        wav_seconds(body)
+        self.admit(wav_seconds(body))
+        return self.whisper(body)
+
+    def whisper(self, body: bytes) -> dict:
         command = [str(self.engines.whisper), "--model", str(self.engines.whisper_model), "--file", "-", "--output-txt", "--language", "auto", "--no-prints", "--suppress-nst"]
         with self.hearing:
             try:

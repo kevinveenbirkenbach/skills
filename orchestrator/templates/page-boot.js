@@ -27,14 +27,7 @@
   window.addEventListener("resize", redrawSky);
   window.addEventListener("resize", refresh3d);
   skyPanel();
-  radio.element = h("audio", {preload: "none"});
-  radio.element.addEventListener("error", () => {
-    if (radio.element.getAttribute("src")) {
-      radio.playing = false;
-      radio.url = "";
-      tuneMusic(FADE / 1000);
-    }
-  });
+  radio.element = radioElement();
   drawSky();
   musicButton();
   syncMusic();

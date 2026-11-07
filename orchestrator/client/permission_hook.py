@@ -79,11 +79,11 @@ def status(base: str, ask_id: str, wait: float) -> dict:
 
 
 def denied(answer: dict, item: dict, trust: verifier.Trust) -> str:
-    reason, channel = answer.get("reason"), answer.get("channel")
-    if not isinstance(reason, str) or not isinstance(channel, str) or not reason.strip():
+    reason, channel, to = answer.get("reason"), answer.get("channel"), answer.get("to")
+    if not all(isinstance(value, str) for value in (reason, channel, to)) or not reason.strip():
         return DENIED
     try:
-        verifier.check(answer.get("proof"), signing.denial_item(item, channel, reason), "", trust, time.time())
+        verifier.check(answer.get("proof"), signing.denial_item(item, channel, reason, to), "", trust, time.time())
     except (signing.Refused, OSError) as error:
         print(f"kvb-orchestrator: the reason is not signed, the agent gets the denial without it: {error}", file=sys.stderr)
         return DENIED

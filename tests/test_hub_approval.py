@@ -4,6 +4,7 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import secrets
 import stat
 import subprocess
@@ -296,6 +297,20 @@ class TestApproval(unittest.TestCase):
         signer.pin(self.approvers, ORIGIN)
         with mock.patch.object(passkey, "serialization", None):
             verifier.check(signer.proof(self.payload([self.item], int(self.now) + 60), ORIGIN), self.item, "", self.trust, self.now)
+
+    def test_openssl_without_a_temporary_directory_refuses_cleanly(self):
+        signer = key(-7, "main")
+        data = os.urandom(64)
+        signature = signer.sign(data)
+        with mock.patch.object(tempfile, "tempdir", str(self.base / "no-such-tmp")), self.assertRaisesRegex(signing.Refused, "no writable temporary directory"):
+            passkey.by_openssl(-7, signer.spki, data, signature)
+        self.assertTrue(passkey.by_openssl(-7, signer.spki, data, signature))
+
+    def test_the_container_points_tmpdir_at_a_tmpfs(self):
+        compose = (HUB / "compose.yml").read_text(encoding="utf-8")
+        tmpdir = re.search(r"(?m)^ {6}TMPDIR: (/\S+)$", compose)
+        self.assertIsNotNone(tmpdir, "compose.yml sets no TMPDIR for the hub")
+        self.assertRegex(compose, rf"(?m)^ {{6}}- {re.escape(tmpdir.group(1))}:size=")
 
     def test_the_pin_cli_writes_the_pinned_keys_with_mode_0600(self):
         approvers = self.base / "fresh" / "kvb-orchestrator" / "approvers.json"

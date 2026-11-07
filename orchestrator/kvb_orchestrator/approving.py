@@ -10,11 +10,12 @@ from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field
 from .offices import office_request
 from .records import digest, shown
-from .register import REGISTER, operator_rows, read_register, runnable
+from .register import REGISTER, adder, operator_rows, read_register, runnable
 from .rules import rule_matches, subject_of
 from .signed import (
     ask_signed,
     operator_signed,
+    passkey,
     request_signed,
     review_signed,
     signing,
@@ -27,20 +28,21 @@ VERBS = ("approve", "reject")
 ITEM_KEYS = ("kind", "id", "verb", "label", "sha256")
 
 
-def inbox_item(raw: dict, label: str, title: str, gate: str, subject: dict | None) -> dict:
+def inbox_item(raw: dict, label: str, title: str, gate: str, subject: dict | None, requester: str) -> dict:
     """Args:
         raw: the page's entry, already checked for its keys and types.
         label: the chosen option of a decision, else empty.
         title: what the stream logs for the item.
         gate: the review gate, else empty.
         subject: what an approval signs; None for a decision.
+        requester: the requesting agent's name for a denial, else empty.
 
     Returns:
         The batch item. A denial of a deniable kind signs its own item and
         carries the note that tells the requesting agent.
     """
-    note = denial_note(raw) if raw["verb"] == "reject" and raw["kind"] in DENIABLE else None
-    signed = subject if raw["verb"] == "approve" else None if note is None else signing.denial_item(subject, note["channel"], note["reason"])
+    note = denial_note(raw, requester) if raw["verb"] == "reject" and raw["kind"] in DENIABLE else None
+    signed = subject if raw["verb"] == "approve" else None if note is None else signing.denial_item(subject, note["channel"], note["reason"], note["to"])
     sha256 = raw["sha256"] if raw["kind"] == "operator" else ""
     return {"kind": raw["kind"], "id": raw["id"], "verb": raw["verb"], "label": label, "sha256": sha256, "title": shown(title)[:200], "gate": gate, "signed": signed, "note": note}
 
@@ -52,6 +54,46 @@ class Approving:
         except signing.Refused:
             return []
         return [{"id": entry["id"], "alg": signing.ALGORITHMS[entry["alg"]]} for entry in entries]
+
+    def challenge_for(self, items: list[dict]) -> dict:
+        """Returns:
+            The approval payload over the items, its WebAuthn challenge and the
+            pinned credential ids; payload and challenge are None for no item.
+        """
+        credentials = [key["id"] for key in self.keys()]
+        if not items:
+            return {"payload": None, "challenge": None, "credentials": credentials}
+        request = signing.approval_payload([signing.item_hash(item) for item in items], secrets.token_hex(16), int(time.time()) + signing.LIFETIME)
+        return {"payload": request, "challenge": signing.challenge(request), "credentials": credentials}
+
+    def operator_proven(self, proof: object, item: dict) -> dict:
+        """Args:
+            proof: {"payload", "assertion"} the page sends for an act the hub
+                runs itself as the operator.
+            item: the hub's own item for that act.
+
+        Returns:
+            The proof, once a pinned key signed an unexpired approval listing
+            the item, used here for the first time.
+        """
+        trust = verifier.Trust(approvers=self.approvers, replay=self.replay, origin=signing.origin_of(self.public_port))
+        try:
+            verifier.check(proof, item, "", trust, time.time())
+        except signing.Refused as error:
+            raise ToolError(f"nicht signiert: {error}") from None
+        return proof
+
+    def still_signed(self, proof: dict, item: dict) -> None:
+        """Raises:
+            ToolError unless a pinned key signed the stored proof and it lists
+            the item; expiry and replay held when the hub stored it.
+        """
+        try:
+            if signing.item_hash(item) not in proof["payload"]["items"]:
+                raise signing.Refused("the signature does not list this item")
+            passkey.verify_assertion(proof["assertion"], proof["payload"], verifier.pinned(self.approvers), signing.origin_of(self.public_port))
+        except signing.Refused as error:
+            raise ToolError(f"nicht signiert: {error}") from None
 
     def covered(self, proof: object, signed: list[dict], now: float) -> dict | None:
         """Args:
@@ -79,16 +121,8 @@ class Approving:
             raise ToolError("proof must carry the assertion and list every approved item")
         for item in signed:
             if item["kind"] == "deny":
-                self.proven(proof, item)
+                self.operator_proven(proof, item)
         return {"payload": payload, "assertion": proof["assertion"]}
-
-    def proven(self, proof: object, item: dict) -> dict:
-        trust = verifier.Trust(approvers=self.approvers, replay=self.replay, origin=signing.origin_of(self.public_port))
-        try:
-            verifier.check(proof, item, "", trust, time.time())
-        except signing.Refused as error:
-            raise ToolError(f"nicht signiert: {error}") from None
-        return proof
 
     def automate(self, kind_name: str, record: dict) -> None:
         now = time.time()
@@ -133,9 +167,24 @@ class Approving:
             return "unbekannt"
         return record["status"] if changed else f"schon {record['status']}"
 
+    def requester(self, raw: dict, who: str) -> str:
+        """Returns:
+            The requester a denial addresses, empty for every other item.
+
+        Raises:
+            Conflict when it is no longer the one the inbox showed the
+            operator, sent back as raw["to"].
+        """
+        if raw["verb"] != "reject" or raw["kind"] not in DENIABLE:
+            return ""
+        name = self.addressee(who)[0]
+        if raw["to"] != name:
+            raise Conflict({"id": raw["id"], "status": "recipient changed", "to": name})
+        return name
+
     def item_of(self, raw: object, tasks: dict[str, dict]) -> dict:
         if not isinstance(raw, dict):
-            raise ToolError("every item must be an object with kind, id, verb, label and sha256, and a denial also channel and reason")
+            raise ToolError("every item must be an object with kind, id, verb, label and sha256, and a denial also channel, reason and to")
         kind_name, verb = raw.get("kind"), raw.get("verb")
         expect(raw, (*ITEM_KEYS, *DENY_KEYS) if verb == "reject" and kind_name in DENIABLE else ITEM_KEYS)
         if kind_name not in INBOX_KINDS or verb not in VERBS or not isinstance(raw["label"], str) or not isinstance(raw["sha256"], str):
@@ -150,7 +199,7 @@ class Approving:
                 raise Conflict({"id": row["task"], "status": "changed"})
             if row["task"] in self.open_jobs():
                 raise Conflict({"id": row["task"], "status": "queued"})
-            return inbox_item(raw, "", row["command"], "", operator_signed(row))
+            return inbox_item(raw, "", row["command"], "", operator_signed(row), self.requester(raw, adder(tasks[row["task"]])))
         if kind_name == "rule" and verb == "approve":
             raise ToolError("a rule request is accepted in its row, with the passkey signature over the rule itself")
         item_id = field(raw, "id")
@@ -166,10 +215,10 @@ class Approving:
                 raise ToolError("a decision is approved with one of its option labels")
             label = raw["label"]
         if kind_name == "rule":
-            return inbox_item(raw, "", f"Regel {request_words(record)}", "", request_signed(record))
+            return inbox_item(raw, "", f"Regel {request_words(record)}", "", request_signed(record), self.requester(raw, record["agent"]))
         title = {"review": record.get("title"), "ask": f"{record.get('tool')} {record.get('command')}", "decision": record.get("question")}[kind_name]
         subject = {"review": review_signed, "ask": ask_signed}[kind_name](record) if kind_name != "decision" else None
-        return inbox_item(raw, label, title, record.get("gate", ""), subject)
+        return inbox_item(raw, label, title, record.get("gate", ""), subject, self.requester(raw, record["session"] if kind_name == "ask" else ""))
 
     def checked(self, raw: object) -> list[dict]:
         if not isinstance(raw, list) or not 1 <= len(raw) <= BATCH_LIMIT:
@@ -195,12 +244,7 @@ class Approving:
             signed = self.appointable(raw)
         else:
             signed = [item["signed"] for item in self.checked(raw) if item["signed"] is not None]
-        hashes = [signing.item_hash(item) for item in signed]
-        credentials = [key["id"] for key in self.keys()]
-        if not hashes:
-            return {"payload": None, "challenge": None, "credentials": credentials}
-        request = signing.approval_payload(hashes, secrets.token_hex(16), int(time.time()) + signing.LIFETIME)
-        return {"payload": request, "challenge": signing.challenge(request), "credentials": credentials}
+        return self.challenge_for(signed)
 
     def approve(self, body: bytes) -> dict:
         payload = decode(body)

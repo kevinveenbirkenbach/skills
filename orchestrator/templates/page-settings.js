@@ -14,7 +14,11 @@
   }
 
   async function saveSettings(next) {
-    const result = await sendJson("/api/settings", next);
+    const signed = await signedProof("/api/settings/sign", next, "Einstellungen");
+    if (!signed) {
+      return false;
+    }
+    const result = await sendJson("/api/settings", {...next, proof: signed.proof});
     if (!result.ok || !result.data) {
       toast("Einstellungen nicht gespeichert", [`${result.status} ${result.text}`.trim()], false);
       return false;
@@ -22,7 +26,7 @@
     const fresh = result.data.streams.map((stream) => new URL(stream.url).origin).filter((origin) => !pageMedia.has(origin));
     adoptSettings(result.data);
     if (fresh.length) {
-      toast("Neuer Sender", ["Die Seite lädt neu, damit der Browser ihn abspielen darf."], true);
+      toast("Neuer Sender", ["Die Seite lädt neu, damit der Browser ihn abspielen darf. Blockiert der Browser danach das Abspielen, startet ein Klick den Sender."], true);
       window.setTimeout(() => window.location.reload(), 1500);
     }
     return true;
@@ -104,7 +108,7 @@
     const stations = Object.entries(people()).sort(([, a], [, b]) => a.now.localeCompare(b.now))
       .map(([key, entry]) => ({key, label: entry.now, box: h("input", {type: "checkbox", checked: !settings.speech.muted.includes(key), "aria-label": `${entry.now} vorlesen`})}));
     const absent = settings.speech.muted.filter((key) => !people()[key]);
-    const sample = btn("Test", "btn small ghost", () => say({text: state.speech.sample, voice: state.speech.operator, tone: "direct", cls: "newsletter"}));
+    const sample = btn("Test", "btn small ghost", () => say({text: state.speech.sample, voice: state.speech.operator, tone: "direct", cls: "newsletter", who: HUMAN, line: "radio check"}));
     sample.disabled = !state.speech.tts;
     const list = h("div", {class: "mini"});
     const rows = [];
@@ -125,8 +129,8 @@
         h("div", {class: "days"}, h("label", {class: "check"}, speechOn, "Funk vorlesen"), sample),
         h("div", {class: "days", role: "group", "aria-label": "Klassen"}, spoken.map((entry) => h("label", {class: "check"}, entry.box, entry.label))),
         stations.length ? h("div", {class: "days", role: "group", "aria-label": "Stationen"}, stations.map((entry) => h("label", {class: "check"}, entry.box, entry.label))) : null),
-      h("section", {}, h("h3", {}, "Radio"), h("p", {class: "muted"}, "Internetradio zu festen Zeiten mit 3 s Ein- und Ausblenden; die Musik pausiert solange. Die Seite darf nur von diesen Adressen Ton laden."),
-        list, h("div", {}, btn("+ Sender", "btn small soft", () => streamRow({name: "", url: "", from: "07:00", to: "09:00", days: [0, 1, 2, 3, 4], on: true}, rows, list)))),
+      h("section", {}, h("h3", {}, "Radio"), h("p", {class: "muted"}, "Internetradio zu festen Zeiten mit 3 s Ein- und Ausblenden; die Musik pausiert solange. Ein neuer Sender läuft rund um die Uhr, bis du seine Zeiten änderst; unter Stream → Radio startest und stoppst du ihn von Hand. Die Seite darf nur von diesen Adressen Ton laden; eine neue Adresse signiert dein Passkey."),
+        list, h("div", {}, btn("+ Sender", "btn small soft", () => streamRow({name: "", url: "", from: "00:00", to: "24:00", days: [0, 1, 2, 3, 4, 5, 6], on: true}, rows, list)))),
       passkeySection(),
       h("div", {class: "sheet-foot"}, h("span", {class: "spacer"}), btn("Abbrechen", "btn ghost", closeSheet), h("button", {type: "submit", class: "btn primary"}, "Speichern")));
     form.addEventListener("submit", async (event) => {

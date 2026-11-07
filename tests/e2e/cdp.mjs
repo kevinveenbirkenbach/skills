@@ -3,16 +3,17 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 
-// Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, probe, shot, media}, keys
-// being real key presses (Enter, Tab) on the focused element before the probe, and an optional
-// authenticator {credentialId, privateKey, rpId}: base64 id and PKCS#8 key of a passkey the page may sign with.
+// Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, probe, shot, media, gesture},
+// keys being real key presses (Enter, Tab) on the focused element before the probe and gesture running the probe with a
+// user activation like a click, an optional init, the text of a function every new document runs before its own scripts,
+// and an optional authenticator {credentialId, privateKey, rpId}: base64 id and PKCS#8 key of a passkey the page may sign with.
 // Prints {results, errors}: one probe value per step and every uncaught page exception.
 const [binary, planFile] = process.argv.slice(2);
 const plan = JSON.parse(readFileSync(planFile, "utf8"));
 const profile = mkdtempSync(join(tmpdir(), "cdp-"));
 // --no-sandbox: the agent sandbox already forbids the user namespaces Chromium's own sandbox needs.
 // --enable-unsafe-swiftshader: without a GPU, headless Chromium gives WebGL only through SwiftShader, which it no longer enables by itself.
-const flags = ["--headless", "--no-sandbox", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"];
+const flags = ["--headless", "--no-sandbox", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"];
 const browser = spawn(binary, flags, {stdio: ["ignore", "ignore", "pipe"]});
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const KEYS = {Enter: [13, "\r"], Tab: [9, ""]};
@@ -69,6 +70,10 @@ try {
   const {sessionId} = await send("Target.attachToTarget", {targetId, flatten: true});
   const page = (method, params) => send(method, params, sessionId);
   await page("Runtime.enable", {});
+  if (plan.init) {
+    await page("Page.enable", {});
+    await page("Page.addScriptToEvaluateOnNewDocument", {source: `(${plan.init})();`});
+  }
   if (plan.authenticator) {
     await page("WebAuthn.enable", {enableUI: false});
     const {authenticatorId} = await page("WebAuthn.addVirtualAuthenticator", {options: {protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true}});
@@ -89,7 +94,7 @@ try {
     }
     let value = null;
     if (step.probe) {
-      const {result, exceptionDetails} = await page("Runtime.evaluate", {expression: step.probe, awaitPromise: true, returnByValue: true});
+      const {result, exceptionDetails} = await page("Runtime.evaluate", {expression: step.probe, awaitPromise: true, returnByValue: true, userGesture: Boolean(step.gesture)});
       value = exceptionDetails ? {error: exceptionDetails.exception ? exceptionDetails.exception.description : exceptionDetails.text} : result.value;
     }
     if (step.shot) {

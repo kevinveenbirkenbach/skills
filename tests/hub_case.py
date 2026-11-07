@@ -122,6 +122,24 @@ class HubCase(unittest.TestCase):
     def proven(self, items: list[dict], signer: Key) -> bytes:
         return json.dumps({"proof": self.signed(items, signer)}).encode()
 
+    def message_proof(self, payload: dict, signer: Key) -> dict:
+        status, _, body = self.post_json("/api/messages/sign", payload, self.guard(self.host))
+        self.assertEqual(status, 200, body)
+        return signer.proof(json.loads(body)["payload"], self.origin)
+
+    def board_proof(self, action: str, signer: Key) -> dict:
+        status, _, body = self.post_json("/api/board/sign", {"action": action}, self.guard(self.host))
+        self.assertEqual(status, 200, body)
+        return signer.proof(json.loads(body)["payload"], self.origin)
+
+    def say(self, payload: dict, signer: Key) -> tuple[int, dict, bytes]:
+        proof = self.message_proof({"upload": "", "voice": "", **payload}, signer)
+        return self.post_json("/api/messages", {"upload": "", "voice": "", **payload, "proof": proof}, self.guard(self.host))
+
+    def tell_all(self, payload: dict, signer: Key) -> tuple[int, dict, bytes]:
+        proof = self.message_proof({"to": "*", "upload": "", "voice": "", **payload}, signer)
+        return self.post_json("/api/board/broadcast", {"voice": "", **payload, "proof": proof}, self.guard(self.host))
+
     def page(self, name: str, text: str) -> str:
         path = self.pages / name
         path.write_text(text, encoding="utf-8")

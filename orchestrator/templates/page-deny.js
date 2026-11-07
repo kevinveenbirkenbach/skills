@@ -1,9 +1,9 @@
   const DENY_CHANNELS = [["post", true, "sobald sein Zug endet"], ["call", true, "sofort, weckt ihn"], ["newsletter", false, "sobald ihr Zug endet"], ["broadcast", false, "sofort"], ["pan-pan", false, "sofort, dringend"], ["security", false, "sofort, als Sicherheitsmeldung"]];
   const DENY_REASON = 2000;
-  const requesterOf = (item) => item.agent || "den anfragenden Agenten";
+  const requesterOf = (item) => item.to || "niemanden (Empfänger unklar)";
 
   function denyNow(item, channel, reason) {
-    return submit([{...entryOf(item, "reject", ""), channel, reason}], `Ablehnung (${CLASSES[channel]}): ${short(item.title)}`);
+    return submit([{...entryOf(item, "reject", ""), channel, reason, to: item.to}], `Ablehnung (${CLASSES[channel]}): ${short(item.title)}`);
   }
 
   function denySheet(item) {
@@ -23,7 +23,7 @@
       h("p", {class: "text"}, item.title),
       h("fieldset", {class: "deny-channels"}, h("legend", {}, "Kanal"), choices),
       h("label", {class: "deny-reason"}, "Grund (optional, der Agent liest ihn mit)", reason),
-      h("p", {class: "muted"}, "Der Passkey signiert die Ablehnung samt Kanal und Grund; danach bleiben 3 s zum Rückgängigmachen.",
+      h("p", {class: "muted"}, "Der Passkey signiert die Ablehnung samt Kanal, Empfänger und Grund; danach bleiben 3 s zum Rückgängigmachen.",
         " Mayday bleibt dem Operator vorbehalten."),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Abbrechen", "btn ghost", closeSheet), confirm)], false);
     reason.focus();

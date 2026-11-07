@@ -1,7 +1,7 @@
   function history(key) {
     const known = (people()[key] || {names: [nameOf(key)]}).names;
     const radio = state.radio.filter((row) => row.source === key || row.targets.includes(key)).map((row) => ({ts: row.ts, mine: row.from === HUMAN, who: row.from, text: row.text}));
-    const sent = state.messages.filter((message) => known.includes(message.to) || message.to === "*").map((message) => ({ts: message.created_ts, mine: true, who: HUMAN, text: message.upload ? `${message.text}\n📎 ${message.upload}` : message.text, id: message.id}));
+    const sent = state.messages.filter((message) => known.includes(message.to) || message.to === "*").map((message) => ({ts: message.created_ts, mine: true, who: HUMAN, text: message.upload ? `${message.text}\n📎 ${message.upload}` : message.text, id: message.id, voice: message.voice}));
     const hubIds = new Set(sent.map((entry) => entry.id));
     const relayed = radio.filter((entry) => !(entry.who === HUMAN && [...hubIds].some((id) => entry.text.includes(`[kvb-orchestrator msg ${id}]`))));
     return [...relayed, ...sent].sort((a, b) => a.ts - b.ts).slice(-80);
@@ -27,7 +27,7 @@
         h("span", {class: "muted"}, `${dash(claim.runtime)} · seit ${dash(claim.since)}`)))) : h("p", {class: "muted"}, "Keine Claims."));
     const rows = history(ui.agent);
     drawerDom.history.replaceChildren(rows.length
-      ? h("div", {}, rows.map((row) => h("div", {class: `bubble ${row.mine ? "mine" : "theirs"}`}, h("span", {class: "muted"}, `${row.who} · `, when(row.ts)), row.text)))
+      ? h("div", {}, rows.map((row) => h("div", {class: `bubble ${row.mine ? "mine" : "theirs"}`}, h("span", {class: "muted"}, `${row.who} · `, when(row.ts)), row.text, voiceReplay(row.voice))))
       : h("p", {class: "muted"}, "Kein Verlauf im gewählten Zeitraum."));
   }
 
@@ -75,16 +75,8 @@
     return message(nameOf(ui.agent), text, upload, cls);
   }
 
-  async function message(to, text, upload, cls) {
-    const label = TO_ONE.find(([id]) => id === cls)[1];
-    const result = await sendJson("/api/messages", {to, text, upload, class: cls});
-    if (!result.ok || !result.data) {
-      toast(`${label} an ${to} fehlgeschlagen`, [`${result.status} ${result.text}`.trim()], false);
-      return false;
-    }
-    toast(`${label} an ${to}: ${result.data.ok ? "gesendet" : "gespeichert, Senden fehlgeschlagen"}`, [`kvb-orchestrator msg ${result.data.id}`, ...runLines(result.data)], result.data.ok);
-    await load();
-    return true;
+  function message(to, text, upload, cls) {
+    return radioSend({to, text, upload, cls, voice: ""});
   }
 
   function openAgent(who) {
@@ -97,7 +89,7 @@
     const button = h("button", {type: "submit", class: "btn primary icon-only", ...named("Senden")}, icon("bi-send"));
     const classes = choice("to-one", TO_ONE, "post");
     const form = h("form", {class: "drawer-form"}, text, file, classes,
-      h("p", {class: "muted"}, "Post kommt am Ende des Zuges an, Call sofort mit Lesebestätigung; prüfbar mit operator_message."),
+      h("p", {class: "muted"}, "Post kommt am Ende des Zuges an, Call sofort mit Lesebestätigung; dein Passkey signiert, prüfbar mit operator_message."),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), micButton(text), button));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();

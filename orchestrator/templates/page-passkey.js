@@ -32,8 +32,8 @@
     }
   }
 
-  async function proofFor(entries, label) {
-    const result = await sendJson("/api/sign", {items: entries});
+  async function signedProof(path, fields, label) {
+    const result = await sendJson(path, fields);
     if (!result.ok || !result.data) {
       toast(`${label}: nicht möglich`, fail(result), false);
       return null;
@@ -43,6 +43,10 @@
     }
     const signed = await assertion(result.data, label);
     return signed ? {proof: {payload: result.data.payload, assertion: signed}} : null;
+  }
+
+  function proofFor(entries, label) {
+    return signedProof("/api/sign", {items: entries}, label);
   }
 
   async function registerPasskey(output) {

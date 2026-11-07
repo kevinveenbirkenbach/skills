@@ -202,19 +202,22 @@ def key_type(alg: int, spki: bytes) -> bool:
 def by_openssl(alg: int, spki: bytes, data: bytes, signature: bytes) -> bool:
     if not key_type(alg, spki):
         return False
-    with tempfile.TemporaryDirectory(prefix="kvb-orchestrator-verify-") as folder:
-        key, message, sealed = (Path(folder) / name for name in ("key.pem", "data.bin", "signature.bin"))
-        key.write_text(f"-----BEGIN PUBLIC KEY-----\n{base64.encodebytes(spki).decode('ascii')}-----END PUBLIC KEY-----\n", encoding="ascii")
-        message.write_bytes(data)
-        sealed.write_bytes(signature)
-        if alg == -8:
-            argv = ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(key), "-rawin", "-in", str(message), "-sigfile", str(sealed)]
-        else:
-            argv = ["openssl", "dgst", "-sha256", "-verify", str(key), "-signature", str(sealed), str(message)]
-        try:
-            done = subprocess.run(argv, capture_output=True, timeout=TIMEOUT, check=False)
-        except (OSError, subprocess.TimeoutExpired):
-            return False
+    try:
+        with tempfile.TemporaryDirectory(prefix="kvb-orchestrator-verify-") as folder:
+            key, message, sealed = (Path(folder) / name for name in ("key.pem", "data.bin", "signature.bin"))
+            key.write_text(f"-----BEGIN PUBLIC KEY-----\n{base64.encodebytes(spki).decode('ascii')}-----END PUBLIC KEY-----\n", encoding="ascii")
+            message.write_bytes(data)
+            sealed.write_bytes(signature)
+            if alg == -8:
+                argv = ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(key), "-rawin", "-in", str(message), "-sigfile", str(sealed)]
+            else:
+                argv = ["openssl", "dgst", "-sha256", "-verify", str(key), "-signature", str(sealed), str(message)]
+            try:
+                done = subprocess.run(argv, capture_output=True, timeout=TIMEOUT, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                return False
+    except OSError as error:
+        raise Refused(f"openssl found no writable temporary directory (TMPDIR): {error.strerror}") from None
     return done.returncode == 0
 
 

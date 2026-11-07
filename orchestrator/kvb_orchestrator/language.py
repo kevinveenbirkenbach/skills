@@ -64,7 +64,7 @@ def nl_ids(arguments: dict, items: dict[str, dict]) -> list[dict]:
 
 def nl_item(item: dict, verb: str, label: str) -> dict:
     entry = {"kind": item["kind"], "id": item["id"], "verb": verb, "label": label, "sha256": item["sha256"]}
-    return {**entry, "channel": "post", "reason": ""} if verb == "reject" and item["kind"] in DENIABLE else entry
+    return {**entry, "channel": "post", "reason": "", "to": item["to"]} if verb == "reject" and item["kind"] in DENIABLE else entry
 
 
 def nl_action(raw: object, items: dict[str, dict], agents: list[str]) -> dict:

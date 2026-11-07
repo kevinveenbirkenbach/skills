@@ -11,10 +11,14 @@
     return result.ok && result.data && result.data.ok;
   }
 
-  function confirmAct(action) {
+  async function confirmAct(action) {
     const [, label, question] = ACTIONS.find(([id]) => id === action);
-    if (window.confirm(question)) {
-      act(action, label, {});
+    if (!window.confirm(question)) {
+      return;
+    }
+    const signed = await signedProof("/api/board/sign", {action}, label);
+    if (signed) {
+      await act(action, label, {proof: signed.proof});
     }
   }
 
@@ -33,17 +37,16 @@
     const classes = choice("to-all", TO_ALL, "newsletter");
     const send = async () => {
       const cls = picked(classes);
-      const label = TO_ALL.find(([id]) => id === cls)[1];
-      if (!ui.draft.trim() || (cls === "mayday" && !window.confirm("Mayday an alle senden? Alle Agenten pausieren schreibende Schritte, bis du ihn aufhebst."))) {
+      if (!ui.draft.trim() || (cls === "mayday" && !confirmMayday())) {
         return;
       }
-      if (await act("broadcast", `Funk an alle (${label})`, {text: ui.draft, class: cls})) {
+      if (await radioSend({to: "*", text: ui.draft, upload: "", cls, voice: ""})) {
         ui.draft = "";
         text.value = "";
       }
     };
     return h("details", {class: "menu", id: "to-all"}, h("summary", named("Funk an alle"), icon("bi-broadcast-pin"), caret()), h("div", {class: "menu-box"},
-      text, classes, h("p", {class: "muted"}, "Newsletter kommt als Post am Ende des Zuges; Broadcast, Pan-Pan, Security und Mayday sofort."),
+      text, classes, h("p", {class: "muted"}, "Newsletter kommt als Post am Ende des Zuges; Broadcast, Pan-Pan, Security und Mayday sofort. Dein Passkey signiert jede Nachricht."),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), iconBtn("bi-send", "Senden", "btn soft", send, "Senden an alle"))));
   }
 

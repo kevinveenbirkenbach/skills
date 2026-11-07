@@ -10,7 +10,7 @@ from unittest import mock
 from urllib.parse import quote
 
 from hub_case import HubCase
-from hub_support import ASK, HOST_STATE, iso, server
+from hub_support import ASK, HOST_STATE, iso, key, server
 from kvb_orchestrator import handler, messaging, skill_scripts, transcripts
 
 
@@ -35,28 +35,30 @@ class TestHubBoard(HubCase):
 
     def test_operator_messages_go_by_radio_and_verify_over_mcp(self):
         self.claim("s1", "Skills session")
+        signer = self.pin()
         headers = {**self.guard(self.host), "Content-Type": "application/octet-stream"}
         upload = json.loads(self.call("POST", "/api/uploads?name=plan.md", b"# plan", headers)[2])
-        status, _, body = self.post_json("/api/messages", {"to": "Skills", "text": "please\n rebase", "upload": upload["id"], "class": "post"}, self.guard(self.host))
+        status, _, body = self.say({"to": "Skills", "text": "please\n rebase", "upload": upload["id"], "class": "post"}, signer)
         self.assertEqual(status, 201, body)
         sent = json.loads(body)
         self.assertTrue(sent["ok"])
         self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["post", "--to", "Skills session", "--session", "Operator", f"[kvb-orchestrator msg {sent['id']}] please rebase file: {upload['path']}"])])
-        verified = self.tool("operator_message", {"id": sent["id"]})["structuredContent"]
-        self.assertEqual((verified["to"], verified["text"], verified["upload"]), ("Skills", "please\n rebase", upload["path"]))
-        self.assertEqual([(row["id"], row["to"], row["upload"]) for row in self.snapshot()["messages"]], [(sent["id"], "Skills", "plan.md")])
-        self.assertTrue(self.tool("operator_message", {"id": "0123456789abcdef"})["isError"])
-        self.assertTrue(self.tool("operator_message", {"id": "../x"})["isError"])
+        verified = self.tool("operator_message", {"id": sent["id"], "text": f"please rebase file: {upload['path']}", "to": "Skills session"})["structuredContent"]
+        self.assertEqual((verified["match"], verified["to"], verified["text"], verified["upload"], verified["voice"]), (True, "Skills", "please\n rebase", upload["path"], None))
+        self.assertEqual([(row["id"], row["to"], row["upload"], row["signed"]) for row in self.snapshot()["messages"]], [(sent["id"], "Skills", "plan.md", True)])
+        self.assertTrue(self.tool("operator_message", {"id": "0123456789abcdef", "text": "please rebase", "to": "Skills"})["isError"])
+        self.assertTrue(self.tool("operator_message", {"id": "../x", "text": "please rebase", "to": "Skills"})["isError"])
         for payload in (
-            {"to": "Skills", "text": "  ", "upload": "", "class": "post"},
-            {"to": "Skills", "text": "hi", "upload": "0123456789abcdef", "class": "post"},
-            {"to": "Skills", "text": "hi", "upload": "../../etc", "class": "post"},
-            {"to": "two\nlines", "text": "hi", "upload": "", "class": "post"},
-            {"to": "Skills", "text": "hi", "class": "post"},
+            {"to": "Skills", "text": "  ", "upload": "", "class": "post", "voice": "", "proof": None},
+            {"to": "Skills", "text": "hi", "upload": "0123456789abcdef", "class": "post", "voice": "", "proof": None},
+            {"to": "Skills", "text": "hi", "upload": "../../etc", "class": "post", "voice": "", "proof": None},
+            {"to": "two\nlines", "text": "hi", "upload": "", "class": "post", "voice": "", "proof": None},
+            {"to": "Skills", "text": "hi", "class": "post", "voice": "", "proof": None},
+            {"to": "Skills", "text": "hi", "upload": "", "class": "post", "voice": "", "proof": None},
         ):
             with self.subTest(payload=payload):
                 self.assertEqual(self.post_json("/api/messages", payload, self.guard(self.host))[0], 400)
-        self.assertEqual(self.post_json("/api/messages", {"to": "Skills", "text": "hi", "upload": "", "class": "post"}, {"Host": self.host, "X-Kvb-Orchestrator": "1"})[0], 403)
+        self.assertEqual(self.post_json("/api/messages", {"to": "Skills", "text": "hi", "upload": "", "class": "post", "voice": "", "proof": None}, {"Host": self.host, "X-Kvb-Orchestrator": "1"})[0], 403)
         self.assertEqual(len(self.scripts.calls), 1)
 
     def test_board_actions_run_the_skill_scripts(self):
@@ -75,15 +77,20 @@ class TestHubBoard(HubCase):
         self.assertEqual(self.snapshot()["agent_order"], ["Gatekeeper", "A", "B session", "Skills session"])
         register = (self.council / "rasci.json").read_text(encoding="utf-8")
 
+        signer = self.pin()
+
         def board(action: str, payload: object) -> tuple[int, dict | None]:
             status, _, body = self.post_json(f"/api/board/{action}", payload, self.guard(self.host))
             return status, json.loads(body) if status == 200 else None
 
-        status, result = board("clear-mayday", {})
+        def signed(action: str) -> dict:
+            return {"proof": self.board_proof(action, signer)}
+
+        status, result = board("clear-mayday", signed("clear-mayday"))
         self.assertEqual((status, result["ok"], result["runs"][0]["stdout"]), (200, True, "done"))
         self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"]))
-        status, result = board("broadcast", {"text": "main is green", "class": "newsletter"})
-        message_id = self.tool("operator_message", {"id": self.snapshot()["messages"][-1]["id"]})["structuredContent"]["id"]
+        self.assertEqual(self.tell_all({"text": "main is green", "class": "newsletter"}, signer)[0], 200)
+        message_id = self.tool("operator_message", {"id": self.snapshot()["messages"][-1]["id"], "text": "main is green", "to": "*"})["structuredContent"]["id"]
         self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["post", "--session", "Operator", f"[kvb-orchestrator msg {message_id}] main is green"]))
         self.assertEqual(board("order", {"agents": ["Gatekeeper", "A", "B session"]})[0], 200)
         self.assertEqual(self.scripts.calls[-1], (skill_scripts.RASCI, ["agents", "order", "Gatekeeper,A,B session"]))
@@ -94,21 +101,45 @@ class TestHubBoard(HubCase):
         self.assertEqual(len(self.scripts.calls), calls)
         self.assertEqual((self.council / "rasci.json").read_text(encoding="utf-8"), register)
         calls = len(self.scripts.calls)
-        self.assertEqual(board("evening", {})[0], 200)
+        self.assertEqual(board("evening", signed("evening"))[0], 200)
         self.assertEqual(self.scripts.calls[calls:], [
             (skill_scripts.NIGHT, ["set", "evening", "--session", "Operator"]),
             (skill_scripts.RADIO, ["send", "call", "--to", "Gatekeeper", "--to", "Skills session", "--session", "Operator", messaging.NIGHTS["evening"][1]]),
         ])
-        self.assertEqual(board("sunrise", {})[0], 200)
+        self.assertEqual(board("sunrise", signed("sunrise"))[0], 200)
         self.assertEqual(self.scripts.calls[-2][1], ["clear", "--session", "Operator"])
         self.scripts.code = 1
         calls = len(self.scripts.calls)
-        status, result = board("sunset", {})
+        status, result = board("sunset", signed("sunset"))
         self.assertEqual((status, result["ok"], self.scripts.calls[calls:]), (200, False, [(skill_scripts.NIGHT, ["set", "sunset", "--session", "Operator"])]))
         self.assertEqual(board("reboot", {})[0], 404)
-        self.assertEqual(board("broadcast", {"text": " ", "class": "newsletter"})[0], 400)
+        self.assertEqual(board("broadcast", {"text": " ", "class": "newsletter", "voice": "", "proof": None})[0], 400)
         self.assertEqual(self.post_json("/api/board/sunset", {}, {"Host": self.host, "Origin": f"http://{self.host}"})[0], 403)
         self.assertEqual(self.get("/api/board/sunset")[0], 405)
+
+    def test_board_actions_that_speak_for_the_operator_need_the_passkey(self):
+        self.claim("s1", "Skills session")
+        signer = self.pin()
+        good = self.guard(self.host)
+        for action, other in (("clear-mayday", "sunrise"), ("evening", "sunset"), ("sunset", "evening"), ("sunrise", "clear-mayday")):
+            with self.subTest(action=action):
+                self.assertEqual(self.post_json(f"/api/board/{action}", {}, good)[0], 400)
+                self.assertEqual(self.post_json(f"/api/board/{action}", {"proof": None}, good)[:3:2], (400, b"nicht signiert: no signature\n"))
+                stranger = key(-7, "stranger").proof(self.board_proof(action, signer)["payload"], self.origin)
+                self.assertEqual(self.post_json(f"/api/board/{action}", {"proof": stranger}, good)[:3:2], (400, b"nicht signiert: the signing key is not pinned\n"))
+                proof = self.board_proof(action, signer)
+                self.assertEqual(self.post_json(f"/api/board/{other}", {"proof": proof}, good)[:3:2], (400, b"nicht signiert: the signature does not list this item\n"))
+        self.assertEqual(self.scripts.calls, [])
+        proof = self.board_proof("clear-mayday", signer)
+        self.assertEqual(self.post_json("/api/board/clear-mayday", {"proof": proof}, good)[0], 200)
+        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])])
+        self.assertEqual(self.post_json("/api/board/clear-mayday", {"proof": proof}, good)[:3:2], (400, b"nicht signiert: this signature was already used for this item\n"))
+        for payload in ({"action": "order"}, {"action": "broadcast"}, {"action": "reboot"}, {"action": 1}, {}, {"action": "evening", "extra": 1}):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.post_json("/api/board/sign", payload, good)[0], 400)
+        self.assertEqual(self.post_json("/api/board/sign", {"action": "evening"}, self.client())[0], 403)
+        self.assertEqual(self.get("/api/board/sign")[0], 405)
+        self.assertEqual(len(self.scripts.calls), 1)
 
     def test_nl_actions_are_validated_against_a_faked_endpoint(self):
         status, _, body = self.post_json("/api/nl", {"text": "approve all"}, self.guard(self.host))

@@ -1,0 +1,46 @@
+.rule-form { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.rule-form > label, .settings .grid > label { min-width: 0; }
+.rule-form .field, .settings .grid .field { width: 100%; min-width: 0; }
+.rule-form [hidden] { display: none; }
+.rule-form > label.check { display: inline-flex; min-height: 34px; }
+.radio-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
+@media (max-width: 960px) { .radio-grid { grid-template-columns: minmax(0, 1fr); } }
+.radio-talk { display: grid; gap: var(--sp-3); }
+.speakers { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.speaker { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 3px 10px 3px 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-size: var(--fs-sm); }
+.speaker.speaking { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
+.speaker-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.speaker-face { position: relative; display: inline-grid; flex: none; border-radius: 50%; }
+.speaker.speaking .speaker-face::after, .radio-caption .speaker-face::after { content: ""; position: absolute; inset: -4px; border: 2px solid var(--ok); border-radius: 50%; pointer-events: none; animation: speaking 1.3s var(--ease) infinite; }
+@keyframes speaking { from { opacity: .95; transform: scale(1); } to { opacity: 0; transform: scale(1.6); } }
+.radio-caption { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2) var(--sp-3); border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: var(--radius-sm); background: var(--ok-soft); }
+.radio-caption[hidden] { display: none; }
+.radio-caption strong { white-space: nowrap; }
+.caption-line { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+svg .node.speaking circle { stroke: var(--ok); stroke-width: 4; animation: speaking-node 1.3s ease-in-out infinite; }
+@keyframes speaking-node { 50% { stroke-width: 10; stroke-opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .speaker.speaking .speaker-face::after, .radio-caption .speaker-face::after, svg .node.speaking circle { animation: none; }
+}
+.stations { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.station { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-2); min-width: 0; padding: 3px 3px 3px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--sunken); }
+.station-name, .station-when { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.station-name { font-weight: 600; }
+.station-when { color: var(--muted); font-size: var(--fs-sm); }
+.station[data-state="playing"] { border-color: color-mix(in srgb, var(--ok) 55%, var(--line)); }
+.station[data-state="blocked"] { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+.station[data-state="error"] { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
+@media (max-width: 640px) {
+  .station { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .station-when { display: none; }
+}
+.composer { display: grid; gap: var(--sp-2); }
+.composer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--sp-2) var(--sp-3); }
+.composer-grid label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
+.composer-grid .field { width: 100%; min-width: 0; }
+.composer [hidden] { display: none; }
+.composer .actions { margin-top: 0; }
+.composer-status { min-width: 0; overflow-wrap: anywhere; }
+.voice-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.voice-replay { max-width: 100%; height: 34px; }
+.mini .voice-replay, .bubble .voice-replay { width: 100%; }

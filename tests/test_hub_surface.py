@@ -73,6 +73,8 @@ class TestHubSurface(HubCase):
         self.assertEqual(settings.Settings(stored).get()["speech"]["classes"], ["post", "call", "mayday", "pan-pan"])
 
     def test_funk_an_alle_sends_the_chosen_class_and_newsletter_goes_by_post(self):
+        signer = self.pin()
+
         def board(payload: object) -> int:
             return self.post_json("/api/board/broadcast", payload, self.guard(self.host))[0]
 
@@ -82,23 +84,25 @@ class TestHubSurface(HubCase):
             self.assertRegex(args[-1], r"^\[kvb-orchestrator msg [0-9a-f]{16}\] ")
             return args[:-1], args[-1].split("] ", 1)[1]
 
-        self.assertEqual(board({"text": "main is green", "class": "newsletter"}), 200)
+        self.assertEqual(self.tell_all({"text": "main is green", "class": "newsletter"}, signer)[0], 200)
         self.assertEqual(sent(), (["post", "--session", "Operator"], "main is green"))
         for cls in ("broadcast", "pan-pan", "security", "mayday"):
             with self.subTest(cls=cls):
-                self.assertEqual(board({"text": "hear me", "class": cls}), 200)
+                self.assertEqual(self.tell_all({"text": "hear me", "class": cls}, signer)[0], 200)
                 self.assertEqual(sent(), (["send", cls, "--session", "Operator"], "hear me"))
         calls = len(self.scripts.calls)
-        for payload in ({"text": "x", "class": "post"}, {"text": "x", "class": "call"}, {"text": "x"}, {"text": "x", "class": 1}):
+        proof = self.message_proof({"to": "*", "text": "x", "upload": "", "class": "newsletter", "voice": ""}, signer)
+        for payload in ({"text": "x", "class": "post"}, {"text": "x", "class": "call"}, {"text": "x"}, {"text": "x", "class": 1}, {"text": "x", "class": "mayday"}):
             with self.subTest(payload=payload):
-                self.assertEqual(board(payload), 400)
+                self.assertEqual(board({"voice": "", "proof": proof, **payload}), 400)
         self.assertEqual(len(self.scripts.calls), calls)
 
     def test_the_agent_panel_sends_a_post_or_a_call(self):
         self.claim("s1", "Skills session")
+        signer = self.pin()
 
         def send(payload: dict) -> tuple[int, dict]:
-            status, _, body = self.post_json("/api/messages", {"to": "Skills", "text": "rebase", "upload": "", **payload}, self.guard(self.host))
+            status, _, body = self.say({"to": "Skills", "text": "rebase", **payload}, signer)
             return status, json.loads(body) if status == 201 else {}
 
         status, sent = send({"class": "post"})
@@ -107,9 +111,11 @@ class TestHubSurface(HubCase):
         status, sent = send({"class": "call"})
         self.assertEqual(status, 201)
         self.assertEqual(self.scripts.calls[-1], (skill_scripts.RADIO, ["send", "call", "--to", "Skills session", "--session", "Operator", f"[kvb-orchestrator msg {sent['id']}] rebase"]))
+        proof = self.message_proof({"to": "Skills", "text": "rebase", "upload": "", "class": "post", "voice": ""}, signer)
         for payload in ({"class": "newsletter"}, {"class": "mayday"}, {}):
             with self.subTest(payload=payload):
-                self.assertEqual(send(payload)[0], 400)
+                status, _, _ = self.post_json("/api/messages", {"to": "Skills", "text": "rebase", "upload": "", "voice": "", "proof": proof, **payload}, self.guard(self.host))
+                self.assertEqual(status, 400)
 
     def test_the_stream_has_four_categories_and_transcripts_stay_out_by_default(self):
         self.assertEqual({key: value["label"] for key, value in events.VIEWS.items()}, {"fuer-dich": "Für dich", "funk": "Funk", "arbeit": "Arbeit", "transkripte": "Transkripte"})

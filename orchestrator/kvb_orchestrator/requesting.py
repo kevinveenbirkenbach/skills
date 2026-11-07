@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from .denying import request_status, request_words
+from .denying import request_status, request_words, requester_of
 from .errors import Conflict, Missing, ToolError
 from .fields import WAIT_CAP, bounded, decode, expect, field, seconds
 from .records import iso_epoch
@@ -74,11 +74,11 @@ class Requesting:
         subjects = [subject_of(kind_name, entry) for entry in ledger.listed() if created_of(entry) >= since]
         return {"matched": sum(rule_matches(rule, kind_name, subject, now) for subject in subjects), "total": len(subjects), "days": RECENT_DAYS}
 
-    def request_items(self, base: dict, now: float) -> list[dict]:
+    def request_items(self, base: dict, now: float, claims: list[dict]) -> list[dict]:
         items = []
         for record in self.open_requests(now):
             rule = {key: record[key] for key in RULE_FIELDS}
-            fields = {"title": f"Regel: {request_words(record)}", "agent": record["agent"], "detail": record["why"], "rule": rule, "dry_run": self.dry_run(record, now), "deniable": True}
+            fields = {"title": f"Regel: {request_words(record)}", "agent": record["agent"], "to": requester_of(claims, record["agent"])[0], "detail": record["why"], "rule": rule, "dry_run": self.dry_run(record, now), "deniable": True}
             items.append({**base, "kind": "rule", "id": record["id"], "ts": record["created_ts"], **fields})
         return items
 

@@ -135,7 +135,7 @@ class TestHubRuleRequests(HubCase):
             self.assertEqual(self.waited(first[0])["status"], "expired")
             self.assertIsNone(self.item(first[0]))
             self.assertEqual(self.action(first[0], "sign", {}, self.guard(self.host))[0], 409)
-            entry = {**self.entry("rule", first[0], "", ""), "verb": "reject", "channel": "post", "reason": ""}
+            entry = {**self.entry("rule", first[0], "", ""), "verb": "reject", "channel": "post", "reason": "", "to": "Skills"}
             self.assertEqual(self.post_json("/api/sign", {"items": [entry]}, self.guard(self.host))[0], 409)
             self.requested(self.ask_rule(pattern="make lint*"))
         self.assertEqual(self.waited(first[0])["status"], "pending")
@@ -147,8 +147,9 @@ class TestHubRuleRequests(HubCase):
         self.assertTrue(refused["isError"])
         self.assertIn("pending", refused["content"][0]["text"])
         other = self.requested(self.ask_rule(agent="Docs"))
-        entry = {**self.entry("rule", first[0], "", ""), "verb": "reject", "channel": "post", "reason": "too broad"}
-        self.assertEqual(self.prepare([entry])["payload"]["items"], [signing.item_hash(signing.denial_item(signing.rule_request_item(first[0], "ask", "Bash", "make test0*", "/repo*", self.httpd.hub.rule_requests.get(first[0])["expires"]), "post", "too broad"))])
+        entry = {**self.entry("rule", first[0], "", ""), "verb": "reject", "channel": "post", "reason": "too broad", "to": self.item(first[0])["to"]}
+        self.assertEqual(entry["to"], "Skills")
+        self.assertEqual(self.prepare([entry])["payload"]["items"], [signing.item_hash(signing.denial_item(signing.rule_request_item(first[0], "ask", "Bash", "make test0*", "/repo*", self.httpd.hub.rule_requests.get(first[0])["expires"]), "post", "too broad", "Skills"))])
         with mock.patch.object(batches, "UNDO", 0.3):
             self.assertEqual(self.approve([entry], self.signed([entry], self.pin()))[0], 202)
             self.assertEqual(self.action(first[0], "sign", {}, self.guard(self.host))[0], 409)

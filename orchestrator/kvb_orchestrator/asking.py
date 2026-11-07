@@ -26,7 +26,7 @@ ANSWERS = {"allow": "allowed", "deny": "denied"}
 
 def ask_state(ask: dict, now: float) -> dict:
     status = "expired" if ask["status"] == "pending" and ask["expires"] <= now else ask["status"]
-    return {"id": ask["id"], "status": status, "decided": ask["decided"], "proof": ask.get("proof"), "channel": ask.get("channel", ""), "reason": ask.get("reason", "")}
+    return {"id": ask["id"], "status": status, "decided": ask["decided"], "proof": ask.get("proof"), "channel": ask.get("channel", ""), "reason": ask.get("reason", ""), "to": ask.get("to", "")}
 
 
 def ask_row(ask: dict, names: dict[str, str]) -> dict:

@@ -4,7 +4,8 @@ import {createServer} from "node:net";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 
-// Args: <firefox binary> <plan.json>; the plan lists steps {width, height, url, wait, probe, shot} like cdp.mjs.
+// Args: <firefox binary> <plan.json>; the plan lists steps {width, height, url, wait, probe, shot, gesture} and an optional
+// init like cdp.mjs.
 // Prints {results, errors}: one probe value per step and every JavaScript error the page logged.
 const [binary, planFile] = process.argv.slice(2);
 const plan = JSON.parse(readFileSync(planFile, "utf8"));
@@ -67,6 +68,9 @@ const results = [];
 try {
   await send("session.new", {capabilities: {}});
   await send("session.subscribe", {events: ["log.entryAdded"]});
+  if (plan.init) {
+    await send("script.addPreloadScript", {functionDeclaration: plan.init});
+  }
   const {contexts} = await send("browsingContext.getTree", {});
   const context = contexts[0].context;
   for (const step of plan.steps) {
@@ -77,7 +81,7 @@ try {
     await sleep(step.wait);
     let value = null;
     if (step.probe) {
-      const answer = await send("script.evaluate", {expression: `(async () => JSON.stringify(await ${step.probe}))()`, target: {context}, awaitPromise: true, resultOwnership: "none"});
+      const answer = await send("script.evaluate", {expression: `(async () => JSON.stringify(await ${step.probe}))()`, target: {context}, awaitPromise: true, resultOwnership: "none", userActivation: Boolean(step.gesture)});
       value = answer.type === "success" ? JSON.parse(answer.result.value) : {error: answer.exceptionDetails.text};
     }
     if (step.shot) {

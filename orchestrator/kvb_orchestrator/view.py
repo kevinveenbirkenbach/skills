@@ -32,7 +32,8 @@ from .register import (
     stored_order,
 )
 from .reviewing import review_row
-from .settings import media_origins
+from .settings import media_origins, valid_settings
+from .signed import signing
 from .skill_scripts import OUTPUT_LIMIT
 
 RADIO_WINDOW = 86400
@@ -134,8 +135,25 @@ class View:
             "graph": drawn,
         }
 
+    def stream_change(self, raw: dict) -> dict | None:
+        """Returns:
+            The item the operator's passkey signs when the settings let the
+            page load audio from an origin the saved ones do not, else None.
+        """
+        origins = media_origins(valid_settings(raw))
+        return signing.stream_item(origins) if set(origins) - set(media_origins(self.settings.get())) else None
+
+    def sign_settings(self, body: bytes) -> dict:
+        change = self.stream_change(decode(body))
+        return self.challenge_for([] if change is None else [change])
+
     def save_settings(self, body: bytes) -> dict:
-        return self.settings.put(decode(body))
+        payload = decode(body)
+        proof = payload.pop("proof", None)
+        change = self.stream_change(payload)
+        if change is not None:
+            self.operator_proven(proof, change)
+        return self.settings.put(payload)
 
     def render(self, nonce: str) -> tuple[str, str]:
         now = time.time()

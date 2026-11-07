@@ -49,3 +49,8 @@ def operator_signed(row: dict) -> dict:
 
 def request_signed(request: dict) -> dict:
     return signing.rule_request_item(request["id"], request["kind"], request["tool"], request["pattern"], request["scope"], int(request["expires"]))
+
+
+def message_signed(message: dict) -> dict:
+    upload = message["upload"]
+    return signing.message_item(message["to"], message["class"], message["text"], "" if upload is None else upload["id"], message["voice"] or "", message["voice_sha256"])

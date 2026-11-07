@@ -8,6 +8,8 @@ services:
     init: true
     user: "${KVB_ORCHESTRATOR_USER:?written into .env by scripts/install.sh}"
     read_only: true
+    environment:
+      TMPDIR: /scratch
     cap_drop:
       - ALL
     security_opt:
