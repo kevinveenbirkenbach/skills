@@ -25,14 +25,11 @@ Code: `sandbox.filesystem.allowWrite`) and session scratch dirs; never
 another user's files. Prefer the project's cleanup and teardown targets; obey
 rules forbidding raw commands.
 
-- **/tmp**: `du -sh` per own top-level entry; system entries (`.X11-unix`,
-  `.ICE-unix`, `systemd-private-*`, `ssh-*`, `tmux-*`, sockets) are never
-  candidates.
+- **/tmp**: `pkgmgr gc --report --docker --root /tmp --root <write dir>`,
+  else `du -sh` per own entry; system entries (`.X11-unix`, `.ICE-unix`, `systemd-private-*`,
+  `ssh-*`, `tmux-*`, sockets) are never candidates.
 - **Docker**, **worktrees**: read `docker.md` (its `⚠ Volumes` checklist
-  joins Step 4) and `worktrees.md` next to this file when present. Only at
-  watch stage `warn` or worse, or with worktrees among the biggest consumers:
-  `kvb-git-worktree-orphans --sizes`, its largest orphaned worktrees as
-  candidates.
+  joins Step 4) and `worktrees.md` next to this file when present.
 - **Agent dirs**: pip, npm, pre-commit, act, gh, buildx caches; Ansible and
   build temp dirs.
 - **Register**: `council.py list --long`; `rasci.py artifacts` (`kvb-org-artefacts`,
