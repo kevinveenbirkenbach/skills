@@ -1,6 +1,6 @@
   function helpSheet() {
-    openSheet("Tastenkürzel", [h("dl", {class: "keys"}, KEYS.map(([key, text]) => [h("dt", {}, key), h("dd", {}, text)])),
-      h("p", {class: "muted"}, "Leitstand: Vollbild mit großer Schrift für den zweiten Bildschirm, unter ⚙ Ambiente. j, k, x, a und Enter wirken in der Inbox.")], false);
+    openSheet("Keyboard shortcuts", [h("dl", {class: "keys"}, KEYS.map(([key, text]) => [h("dt", {}, key), h("dd", {}, text)])),
+      h("p", {class: "muted"}, "Control room: full screen with large type for a second screen, under ⚙ Ambience. j, k, x, a and Enter work in the inbox.")], false);
   }
 
   function overlayOpen() {

@@ -56,12 +56,12 @@
     const view = seenView("sky");
     const facing = COMPASS[Space.compass(view.azimuth)];
     const turned = ["azimuth", "altitude", "fov"].some((key) => Math.abs(view[key] - Space.DEFAULTS.sky[key]) >= 0.5);
-    const moonText = moon.alt > 0 ? ` · Mond ${Math.round(moon.lit * 100)} % ${moon.waxing ? "zunehmend" : "abnehmend"}` : "";
-    document.getElementById("sky-note").textContent = `${sun.alt > 0 ? "☀" : "☾"} ${STAGE_LABELS[Ambience.stage(sun.alt)]}${moonText}${turned ? ` · Blick ${facing[0]}` : ""}`;
+    const moonText = moon.alt > 0 ? ` · Moon ${Math.round(moon.lit * 100)} % ${moon.waxing ? "waxing" : "waning"}` : "";
+    document.getElementById("sky-note").textContent = `${sun.alt > 0 ? "☀" : "☾"} ${STAGE_LABELS[Ambience.stage(sun.alt)]}${moonText}${turned ? ` · facing ${facing[0]}` : ""}`;
     if (space.look) {
-      const words = `Blick nach ${facing[1]} · ${((Math.round(view.azimuth) % 360) + 360) % 360}° · Höhe ${Math.round(view.altitude)}° · Sichtfeld ${Math.round(view.fov)}°`;
+      const words = `Facing ${facing[1]} · ${((Math.round(view.azimuth) % 360) + 360) % 360}° · altitude ${Math.round(view.altitude)}° · field of view ${Math.round(view.fov)}°`;
       space.compass.textContent = words;
-      sky.canvas.setAttribute("aria-label", `Himmel, ${words}. Pfeiltasten drehen den Blick, Plus und Minus zoomen, 0 setzt zurück, Esc beendet.`);
+      sky.canvas.setAttribute("aria-label", `Sky, ${words}. Arrow keys turn the view, plus and minus zoom, 0 resets, Esc ends.`);
     }
     const canvas = sky.canvas;
     const paint = canvas.getContext("2d");
@@ -177,7 +177,7 @@
       canvas.removeAttribute("aria-hidden");
       canvas.setAttribute("tabindex", "0");
       canvas.setAttribute("role", "application");
-      canvas.setAttribute("aria-roledescription", "Himmel");
+      canvas.setAttribute("aria-roledescription", "Sky");
       drawSky();
       canvas.focus();
       return;
@@ -194,13 +194,13 @@
     const step = (name, label, run) => iconBtn(name, label, "btn small", run);
     space.compass = h("span", {class: "compass", "aria-live": "polite"});
     panel.append(space.compass,
-      step("bi-caret-left-fill", "Blick nach links drehen (Pfeil links)", () => skyHooks.turnStep(-1, 0)),
-      step("bi-caret-right-fill", "Blick nach rechts drehen (Pfeil rechts)", () => skyHooks.turnStep(1, 0)),
-      step("bi-caret-up-fill", "Blick heben (Pfeil hoch)", () => skyHooks.turnStep(0, -1)),
-      step("bi-caret-down-fill", "Blick senken (Pfeil runter)", () => skyHooks.turnStep(0, 1)),
-      step("bi-zoom-out", "Sichtfeld weiten (Minus)", () => skyHooks.zoomStep(1 / ZOOM)),
-      step("bi-zoom-in", "Hineinzoomen (Plus)", () => skyHooks.zoomStep(ZOOM)),
-      step("bi-arrow-counterclockwise", "Blick zurücksetzen: Süden, Horizont, Sichtfeld 180° (Taste 0)", () => resetView("sky")),
-      step("bi-check-lg", "Himmel verlassen (Esc)", () => skyLook(false)));
+      step("bi-caret-left-fill", "Turn the view left (left arrow)", () => skyHooks.turnStep(-1, 0)),
+      step("bi-caret-right-fill", "Turn the view right (right arrow)", () => skyHooks.turnStep(1, 0)),
+      step("bi-caret-up-fill", "Raise the view (up arrow)", () => skyHooks.turnStep(0, -1)),
+      step("bi-caret-down-fill", "Lower the view (down arrow)", () => skyHooks.turnStep(0, 1)),
+      step("bi-zoom-out", "Widen the field of view (minus)", () => skyHooks.zoomStep(1 / ZOOM)),
+      step("bi-zoom-in", "Zoom in (plus)", () => skyHooks.zoomStep(ZOOM)),
+      step("bi-arrow-counterclockwise", "Reset the view: south, horizon, field of view 180° (key 0)", () => resetView("sky")),
+      step("bi-check-lg", "Leave the sky (Esc)", () => skyLook(false)));
     steer(sky.canvas, "sky", skyHooks);
   }

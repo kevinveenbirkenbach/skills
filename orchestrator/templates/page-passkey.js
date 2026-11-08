@@ -5,15 +5,15 @@
   const b64url = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const unb64url = (text) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(text.length / 4) * 4, "=")), (char) => char.charCodeAt(0));
   const localLink = () => h("a", {href: localUrl()}, localUrl());
-  const KEEPASSXC_LOCALHOST = "KeePassXC lehnt Passkeys auf http://localhost ab, bis in KeePassXC unter Werkzeuge → Einstellungen → Browser-Integration → Fortgeschritten „Nutzung von localhost mit Passkeys zulassen“ (Allow using localhost with passkeys) angehakt ist; die Datenbank muss entsperrt sein. Sonst meldet KeePassXC-Browser „Passkeys request canceled.“ und Chrome öffnet seinen eigenen Passkey-Dialog.";
+  const KEEPASSXC_LOCALHOST = "KeePassXC refuses passkeys on http://localhost until “Allow using localhost with passkeys” is checked in KeePassXC under Tools → Settings → Browser Integration → Advanced; the database must be unlocked. Otherwise KeePassXC-Browser reports “Passkeys request canceled.” and Chrome opens its own passkey dialog.";
 
   async function assertion(prepared, label) {
     if (!onLocalhost()) {
-      toast(`${label}: nicht signiert`, [`Der Passkey signiert nur unter ${localUrl()}`], false);
+      toast(`${label}: not signed`, [`The passkey signs only under ${localUrl()}`], false);
       return null;
     }
     if (!prepared.credentials.length) {
-      toast(`${label}: nicht signiert`, ["Kein Passkey gepinnt: Einstellungen → Passkey registrieren"], false);
+      toast(`${label}: not signed`, ["No passkey pinned: Settings → Register passkey"], false);
       return null;
     }
     try {
@@ -27,7 +27,7 @@
       const answer = credential.response;
       return {id: b64url(credential.rawId), clientDataJSON: b64url(answer.clientDataJSON), authenticatorData: b64url(answer.authenticatorData), signature: b64url(answer.signature)};
     } catch (error) {
-      toast(`${label}: nicht signiert`, [`${(error && error.name) || error}: KeePassXC gesperrt oder abgebrochen; nichts wurde gesendet.`], false);
+      toast(`${label}: not signed`, [`${(error && error.name) || error}: KeePassXC locked or canceled; nothing was sent.`], false);
       return null;
     }
   }
@@ -35,7 +35,7 @@
   async function signedProof(path, fields, label) {
     const result = await sendJson(path, fields);
     if (!result.ok || !result.data) {
-      toast(`${label}: nicht möglich`, fail(result), false);
+      toast(`${label}: not possible`, fail(result), false);
       return null;
     }
     if (result.data.payload === null) {
@@ -51,7 +51,7 @@
 
   async function registerPasskey(output) {
     if (!onLocalhost()) {
-      output.replaceChildren(h("p", {class: "muted"}, "nicht registriert: WebAuthn braucht die Domain ", localLink()));
+      output.replaceChildren(h("p", {class: "muted"}, "not registered: WebAuthn needs the domain ", localLink()));
       return;
     }
     try {
@@ -68,11 +68,11 @@
       const blob = b64url(new TextEncoder().encode(JSON.stringify({id: b64url(credential.rawId), attestationObject: b64url(answer.attestationObject), clientDataJSON: b64url(answer.clientDataJSON)})));
       const command = `python3 ~/.local/share/kvb-orchestrator/client/approval.py pin --port ${window.location.port} --approvers ~/.config/kvb-orchestrator/approvers.json --credential '${blob}'`;
       output.replaceChildren(
-        h("p", {class: "muted"}, "Diesen Befehl im Terminal des Hosts ausführen, außerhalb jeder Sandbox; erst dann gilt der Passkey. Der Hub pinnt nie selbst."),
+        h("p", {class: "muted"}, "Run this command in the host's terminal, outside any sandbox; only then does the passkey apply. The hub never pins by itself."),
         h("div", {class: "command"}, h("code", {}, command), copyButton(command)),
         h("label", {}, "Credential", h("textarea", {class: "field", readonly: true, rows: 3}, blob)));
     } catch (error) {
-      output.replaceChildren(h("p", {class: "muted"}, `nicht registriert: ${(error && error.name) || error}`), h("p", {class: "muted"}, KEEPASSXC_LOCALHOST));
+      output.replaceChildren(h("p", {class: "muted"}, `not registered: ${(error && error.name) || error}`), h("p", {class: "muted"}, KEEPASSXC_LOCALHOST));
     }
   }
 
@@ -80,12 +80,12 @@
     const output = h("div", {class: "mini", "aria-live": "polite"});
     const keys = state.approvers.length
       ? h("ul", {class: "mini"}, state.approvers.map((key) => h("li", {}, pill(key.alg, "ok"), " ", h("code", {title: key.id}, `${key.id.slice(0, 16)}…`))))
-      : h("p", {class: "muted"}, "Kein Passkey gepinnt: Runner, Hook und Commit-Skills verweigern jede Freigabe.");
+      : h("p", {class: "muted"}, "No passkey pinned: runner, hook and commit skills refuse every grant.");
     return h("section", {}, h("h3", {}, "Passkey"),
-      h("p", {class: "muted"}, "Freigaben von Asks, Reviews und Operator-Befehlen signiert ein Passkey in KeePassXC; Runner, Hook und Commit-Skills prüfen die Signatur selbst gegen die gepinnten Schlüssel."),
+      h("p", {class: "muted"}, "A passkey in KeePassXC signs grants of asks, reviews and operator commands; runner, hook and commit skills check the signature themselves against the pinned keys."),
       keys,
       h("p", {class: "muted"}, KEEPASSXC_LOCALHOST),
-      onLocalhost() ? null : h("p", {class: "muted"}, "WebAuthn braucht die Domain: ", localLink()),
-      h("div", {}, btn("Passkey registrieren", "btn small soft", () => registerPasskey(output))),
+      onLocalhost() ? null : h("p", {class: "muted"}, "WebAuthn needs the domain: ", localLink()),
+      h("div", {}, btn("Register passkey", "btn small soft", () => registerPasskey(output))),
       output);
   }

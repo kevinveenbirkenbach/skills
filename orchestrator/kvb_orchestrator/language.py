@@ -87,36 +87,36 @@ def nl_action(raw: object, items: dict[str, dict], agents: list[str]) -> dict:
             raise ToolError("that operator row holds no command to run")
         chosen = [nl_item(item, "approve" if name == "approve" else "reject", item["recommended"] if item["kind"] == "decision" else "") for item in picked]
         lines = [f"{item['kind']} {item['id']}: {item['command'] if item['kind'] == 'operator' else item['title']}" for item in picked]
-        verb = "Freigeben" if name == "approve" else "Ablehnen"
+        verb = "Grant" if name == "approve" else "Deny"
         return {"name": name, "summary": f"{verb}:\n" + "\n".join(lines), "args": {"items": chosen}}
     if name == "choose":
         item = items.get(arguments["id"]) if isinstance(arguments["id"], str) else None
         if item is None or item["kind"] != "decision" or arguments["label"] not in [option["label"] for option in item["options"]]:
             raise ToolError("choose takes a decision id and one of its option labels")
-        return {"name": name, "summary": f"Entscheiden: {item['title']} → {arguments['label']}", "args": {"items": [nl_item(item, "approve", arguments["label"])]}}
+        return {"name": name, "summary": f"Decide: {item['title']} → {arguments['label']}", "args": {"items": [nl_item(item, "approve", arguments["label"])]}}
     if name in ("snooze", "pin"):
         picked = nl_ids(arguments, items)
         hours = arguments.get("hours")
         if name == "snooze" and (isinstance(hours, bool) or not isinstance(hours, int | float) or not 1 <= hours <= 192):
             raise ToolError("hours must be between 1 and 192")
         keys = [{"kind": item["kind"], "id": item["id"]} for item in picked]
-        words = f"Zurückstellen ({hours} h)" if name == "snooze" else "Anheften"
+        words = f"Snooze ({hours} h)" if name == "snooze" else "Pin"
         return {"name": name, "summary": f"{words}: " + ", ".join(item["title"][:80] for item in picked), "args": {"keys": keys, "hours": hours}}
     if name == "view":
         if arguments["name"] not in VIEWS:
             raise ToolError("unknown view")
-        return {"name": name, "summary": f"Ansicht: {VIEWS[arguments['name']]['label']}", "args": {"name": arguments["name"]}}
+        return {"name": name, "summary": f"View: {VIEWS[arguments['name']]['label']}", "args": {"name": arguments["name"]}}
     if name == "open":
         if arguments["view"] not in SCREENS:
             raise ToolError("unknown screen")
-        return {"name": name, "summary": f"Öffnen: {arguments['view']}", "args": {"view": arguments["view"]}}
+        return {"name": name, "summary": f"Open: {arguments['view']}", "args": {"view": arguments["view"]}}
     if name == "message":
         text = message_text(arguments, "text")
         if arguments["to"] not in agents:
             raise ToolError("to must name a known agent")
-        return {"name": name, "summary": f"Funk an {arguments['to']}: {text}", "args": {"to": arguments["to"], "text": text}}
+        return {"name": name, "summary": f"Radio to {arguments['to']}: {text}", "args": {"to": arguments["to"], "text": text}}
     query = bounded(arguments, "q", 200)
-    return {"name": name, "summary": f"Suchen: {query}", "args": {"q": query}}
+    return {"name": name, "summary": f"Search: {query}", "args": {"q": query}}
 
 
 def nl_actions(reply: str, items: list[dict], agents: list[str]) -> dict:

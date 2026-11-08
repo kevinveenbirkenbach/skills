@@ -1,10 +1,10 @@
 const Nav = (() => {
   "use strict";
   const TABS = [["stream", "Stream"], ["agents", "Agents"], ["artifacts", "Artifacts"], ["tasks", "Tasks"]];
-  const SUBS = {stream: [["inbox", "Inbox"], ["rules", "Regeln"], ["radio", "Radio"]]};
+  const SUBS = {stream: [["inbox", "Inbox"], ["rules", "Firewall"], ["radio", "Radio"]]};
   const VIEWS = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]];
-  const TASK_VIEWS = [["list", "Liste"], ["board", "Board"], ["rasci", "RASCI"]];
-  const OWN = {agents: [["hierarchy", "Hierarchie"]]};
+  const TASK_VIEWS = [["list", "List"], ["board", "Board"], ["rasci", "RASCI"]];
+  const OWN = {agents: [["hierarchy", "Hierarchy"]]};
   const ICONS = {
     stream: "bi-activity", inbox: "bi-inbox", rules: "bi-card-checklist", radio: "bi-boombox", agents: "bi-people", artifacts: "bi-git", tasks: "bi-list-check",
     orbit: "bi-globe2", chord: "bi-bezier2", swimlane: "bi-bar-chart-steps", tree: "bi-diagram-3", "3d": "bi-badge-3d", hierarchy: "bi-diagram-2",

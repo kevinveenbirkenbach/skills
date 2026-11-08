@@ -1,6 +1,6 @@
   const hier = {chart: null, sig: "", closed: new Set(), ids: 0};
   const OFFICE_ICONS = {chair: "bi-award", line: "bi-person-badge", cluster: "bi-collection", work: "bi-briefcase", other: "bi-signpost-split"};
-  const OFFICE_GROUPS = [["cluster", "Organisatoren", "Organisator"], ["work", "Präsidenten", "Präsident"], ["other", "Weitere Ämter", "Amt"]];
+  const OFFICE_GROUPS = [["cluster", "Organizers", "Organizer"], ["work", "Presidents", "President"], ["other", "Other offices", "Office"]];
 
   function hierarchyScreen() {
     hier.chart = h("section", {class: "card org-chart", "aria-labelledby": "org-title"});
@@ -55,19 +55,19 @@
     const active = claim.beat !== null && claim.beat >= state.now - ACTIVE_BEAT;
     return h("div", {class: "org-row", "data-office": claim.office},
       h("span", {class: "org-office", title: `${title} ${claim.office}`}, icon(OFFICE_ICONS[claim.kind]), h("strong", {}, label)),
-      who ? h("button", {type: "button", class: "linkish org-holder", "data-focus": `agent:${claim.office}`, title: `${who} öffnen`, on: {click: () => openAgent(who)}}, face(who, false), who) : h("span", {class: "muted"}, "–"),
-      active ? chip("bi-play-circle", "aktiv", "ok") : chip("bi-pause-circle", "ohne Herzschlag", "neutral"),
+      who ? h("button", {type: "button", class: "linkish org-holder", "data-focus": `agent:${claim.office}`, title: `Open ${who}`, on: {click: () => openAgent(who)}}, face(who, false), who) : h("span", {class: "muted"}, "–"),
+      active ? chip("bi-play-circle", "active", "ok") : chip("bi-pause-circle", "no heartbeat", "neutral"),
       claim.work && claim.work !== "-" ? h("span", {class: "muted org-work", title: claim.work}, short(claim.work)) : null,
       h("span", {class: "org-actions"},
-        officeBtn("bi-arrow-left-right", "Übergeben", `Übergeben: ${claim.office} an eine andere Session, mit Passkey-Signatur`, () => officeSheet("takeover", claim), `takeover:${claim.office}`),
-        officeBtn("bi-person-x", "Abberufen", `Abberufen: ${claim.office} frei machen, mit Passkey-Signatur`, () => officeSheet("recall", claim), `recall:${claim.office}`)));
+        officeBtn("bi-arrow-left-right", "Hand over", `Hand over: ${claim.office} to another session, with a passkey signature`, () => officeSheet("takeover", claim), `takeover:${claim.office}`),
+        officeBtn("bi-person-x", "Recall", `Recall: free ${claim.office}, with a passkey signature`, () => officeSheet("recall", claim), `recall:${claim.office}`)));
   }
 
   function vacantRow(office, label) {
     return h("div", {class: "org-row vacant", "data-office": office},
       h("span", {class: "org-office"}, icon(OFFICE_ICONS.chair), h("strong", {}, label)),
-      pill("unbesetzt", "warn"),
-      h("span", {class: "org-actions"}, officeBtn("bi-person-plus", "Besetzen", `Besetzen: ${office} einer Session geben, mit Passkey-Signatur`, () => officeSheet("appoint", {office, session: "", work: ""}), `appoint:${office}`)));
+      pill("vacant", "warn"),
+      h("span", {class: "org-actions"}, officeBtn("bi-person-plus", "Appoint", `Appoint: give ${office} to a session, with a passkey signature`, () => officeSheet("appoint", {office, session: "", work: ""}), `appoint:${office}`)));
   }
 
   function groupRow(glyph, label, count, note) {
@@ -81,12 +81,12 @@
     const open = !hier.closed.has(id);
     hier.ids += 1;
     const list = h("ul", {class: "org-tree", id: `org-${hier.ids}`, hidden: !open}, children);
-    const toggle = h("button", {type: "button", class: "btn small ghost icon-only org-toggle", "aria-expanded": String(open), "aria-controls": list.id, "data-focus": `toggle:${id}`, ...named(`${open ? "Zuklappen" : "Aufklappen"}: ${label}`)}, icon(open ? "bi-chevron-down" : "bi-chevron-right"));
+    const toggle = h("button", {type: "button", class: "btn small ghost icon-only org-toggle", "aria-expanded": String(open), "aria-controls": list.id, "data-focus": `toggle:${id}`, ...named(`${open ? "Collapse" : "Expand"}: ${label}`)}, icon(open ? "bi-chevron-down" : "bi-chevron-right"));
     toggle.addEventListener("click", () => {
       const now = list.hidden;
       list.hidden = !now;
       toggle.setAttribute("aria-expanded", String(now));
-      relabel(toggle, now ? "bi-chevron-down" : "bi-chevron-right", `${now ? "Zuklappen" : "Aufklappen"}: ${label}`);
+      relabel(toggle, now ? "bi-chevron-down" : "bi-chevron-right", `${now ? "Collapse" : "Expand"}: ${label}`);
       if (now) {
         hier.closed.delete(id);
       } else {
@@ -103,14 +103,14 @@
       dimensions.set(claim.dimension, [...(dimensions.get(claim.dimension) || []), claim]);
     }
     const lines = [...dimensions].sort(([a], [b]) => a.localeCompare(b)).map(([dimension, held]) => orgNode(`dimension:${dimension}`, dimension,
-      groupRow("bi-diagram-2", dimension, held.length, held.length === 1 ? "Linie" : "Linien"),
-      held.map((claim) => orgNode(claim.office, claim.office, officeRow(claim, claim.line, "Repräsentant"), []))));
+      groupRow("bi-diagram-2", dimension, held.length, held.length === 1 ? "line" : "lines"),
+      held.map((claim) => orgNode(claim.office, claim.office, officeRow(claim, claim.line, "Representative"), []))));
     const groups = OFFICE_GROUPS.map(([kind, label, title]) => [kind, label, title, claims.filter((entry) => entry.kind === kind)]).filter(([, , , held]) => held.length)
       .map(([kind, label, title, held]) => orgNode(`group:${kind}`, label, groupRow(OFFICE_ICONS[kind], label, held.length, kind === "other" ? "" : `${kind}/…`),
         held.map((claim) => orgNode(claim.office, claim.office, officeRow(claim, kind === "other" ? claim.office : claim.office.slice(kind.length + 1), title), []))));
     const chair = claims.find((entry) => entry.kind === "chair");
-    const chairNode = orgNode("chair", "Chair", chair ? officeRow(chair, "Chair", "Amt") : vacantRow("chair", "Chair"), [...lines, ...groups]);
-    const root = h("div", {class: "org-row org-root"}, h("span", {class: "org-office"}, icon("bi-person-circle"), h("strong", {}, HUMAN)), h("span", {class: "muted"}, "vergibt jedes Amt mit Passkey-Signatur"));
+    const chairNode = orgNode("chair", "Chair", chair ? officeRow(chair, "Chair", "Office") : vacantRow("chair", "Chair"), [...lines, ...groups]);
+    const root = h("div", {class: "org-row org-root"}, h("span", {class: "org-office"}, icon("bi-person-circle"), h("strong", {}, HUMAN)), h("span", {class: "muted"}, "assigns every office with a passkey signature"));
     return h("ul", {class: "org-tree root"}, orgNode("operator", HUMAN, root, [chairNode]));
   }
 
@@ -119,10 +119,10 @@
     hier.ids = 0;
     const count = state.claims.length;
     hier.chart.replaceChildren(
-      h("div", {class: "inbox-head"}, h("h2", {class: "group-title", id: "org-title"}, "Hierarchie", counter(count)),
-        h("span", {class: "muted"}, "Formale Ämter aus dem Council: Operator → Chair → Dimensionen → Linien, dazu Organisatoren und Präsidenten"),
+      h("div", {class: "inbox-head"}, h("h2", {class: "group-title", id: "org-title"}, "Hierarchy", counter(count)),
+        h("span", {class: "muted"}, "Formal offices from the council: Operator → Chair → dimensions → lines, plus organizers and presidents"),
         h("span", {class: "spacer"}),
-        h("button", {type: "button", class: "btn small soft", "data-focus": "appoint:new", ...named("Neues Amt", "Neues Amt: ein freies Amt einer Session geben, mit Passkey-Signatur"), on: {click: () => officeSheet("appoint", null)}}, icon("bi-person-plus"), "Neues Amt")),
+        h("button", {type: "button", class: "btn small soft", "data-focus": "appoint:new", ...named("New office", "New office: give a free office to a session, with a passkey signature"), on: {click: () => officeSheet("appoint", null)}}, icon("bi-person-plus"), "New office")),
       chartTree());
     refocus(hier.chart, key);
   }

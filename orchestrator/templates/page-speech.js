@@ -5,7 +5,7 @@
   function speechFailed(lines) {
     if (Date.now() - speech.warned > SPEECH_QUIET) {
       speech.warned = Date.now();
-      toast("Funk vorlesen fehlgeschlagen", lines, false);
+      toast("Reading radio aloud failed", lines, false);
     }
   }
 
@@ -75,16 +75,16 @@
 
   function micGap() {
     return !window.isSecureContext || !navigator.mediaDevices
-      ? "Das Mikrofon braucht einen sicheren Kontext: öffne den Hub über 127.0.0.1 oder localhost"
-      : !window.MediaRecorder ? "Dieser Browser kann nicht aufnehmen" : !state.speech.stt ? `Spracheingabe ist aus: ${state.speech.stt_off}` : "";
+      ? "The microphone needs a secure context: open the hub via 127.0.0.1 or localhost"
+      : !window.MediaRecorder ? "This browser cannot record" : !state.speech.stt ? `Voice input is off: ${state.speech.stt_off}` : "";
   }
 
   function micButton(field) {
-    const button = h("button", {type: "button", class: "btn small ghost icon-only mic", "aria-pressed": "false", ...named("Spracheingabe", "Spracheingabe: gedrückt halten und sprechen; der Text landet im Feld und wird nicht gesendet")}, icon("bi-mic"));
+    const button = h("button", {type: "button", class: "btn small ghost icon-only mic", "aria-pressed": "false", ...named("Voice input", "Voice input: hold and speak; the text lands in the field and is not sent")}, icon("bi-mic"));
     const reason = micGap();
     if (reason) {
       button.disabled = true;
-      button.title = `Spracheingabe: ${reason}`;
+      button.title = `Voice input: ${reason}`;
       return button;
     }
     const press = (event) => {
@@ -119,7 +119,7 @@
       media = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}});
     } catch (error) {
       mic.held = false;
-      toast("Mikrofon nicht verfügbar", [String(error.message || error)], false);
+      toast("Microphone not available", [String(error.message || error)], false);
       return;
     }
     if (!mic.held) {
@@ -158,7 +158,7 @@
     const rate = state.speech.rate;
     const length = Voice.frames(decoded.duration, rate, state.speech.seconds);
     if (length < rate / 4) {
-      throw new Error("zu kurz: sprich mindestens eine Viertelsekunde");
+      throw new Error("too short: speak for at least a quarter second");
     }
     const offline = new OfflineAudioContext(1, length, rate);
     const source = offline.createBufferSource();
@@ -187,7 +187,7 @@
       }
       field.focus();
     } catch (error) {
-      toast("Spracheingabe fehlgeschlagen", [String(error.message || error)], false);
+      toast("Voice input failed", [String(error.message || error)], false);
     } finally {
       mic.busy = false;
       button.disabled = false;

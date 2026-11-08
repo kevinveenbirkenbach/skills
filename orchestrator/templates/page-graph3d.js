@@ -1,7 +1,7 @@
   const LAYOUTS = [
-    ["none", "Kraft", "bi-magnet", "Kräfte ordnen frei: Verbundenes zieht sich an, alles stößt sich ab"],
-    ["time", "Zeit", "bi-clock", "Tiefe = Zeit: Früheres liegt hinten, Jüngeres vorn"],
-    ["spawn", "Spawn-Tiefe", "bi-layers", "Tiefe = Spawn-Tiefe: jede Ebene eine Generation"],
+    ["none", "Force", "bi-magnet", "Forces arrange freely: linked nodes attract, everything repels"],
+    ["time", "Time", "bi-clock", "Depth = time: earlier lies behind, later in front"],
+    ["spawn", "Spawn depth", "bi-layers", "Depth = spawn depth: each level one generation"],
   ];
   const KIND_COLORS = {operator: "accent", chair: "accent", session: "info", subagent: "violet", twig: "violet", repo: "warn", branch: "info", worktree: "teal", agent: "accent", artefact: "violet", task: "muted"};
   const LINK_COLORS = {spawn: "violet", contains: "line-strong", merge: "grant", overlap: "alarm", direct: "direct", broadcast: "broadcast", alarm: "alarm", security: "security", grant: "grant"};
@@ -19,7 +19,7 @@
       tag.nonce = NONCE;
       tag.async = true;
       tag.addEventListener("load", resolve);
-      tag.addEventListener("error", () => reject(new Error(`${src} nicht geladen`)));
+      tag.addEventListener("error", () => reject(new Error(`${src} not loaded`)));
       document.head.append(tag);
     });
   }
@@ -39,12 +39,12 @@
   }
 
   function layoutTools(tab) {
-    const group = h("div", {class: "segmented", role: "group", "aria-label": "Anordnung"}, LAYOUTS.map(([id, label, name, hint]) => h("button", {
+    const group = h("div", {class: "segmented", role: "group", "aria-label": "Layout"}, LAYOUTS.map(([id, label, name, hint]) => h("button", {
       type: "button", class: "icon-only", "data-layout": id, ...named(label, `${label}: ${hint}`), "aria-pressed": String(layoutOf() === id), on: {click: () => chooseLayout(tab, id, group)},
     }, icon(name))));
     return h("div", {class: "space-tools"}, group,
-      iconBtn("bi-arrow-counterclockwise", "Ansicht zurücksetzen", "btn small ghost", () => g3.graph && g3.graph.zoomToFit(calm.matches ? 0 : 600, 40)),
-      h("span", {class: "muted"}, "Ziehen dreht · rechts ziehen verschiebt · Rad zoomt · Klick öffnet das Panel"));
+      iconBtn("bi-arrow-counterclockwise", "Reset view", "btn small ghost", () => g3.graph && g3.graph.zoomToFit(calm.matches ? 0 : 600, 40)),
+      h("span", {class: "muted"}, "Drag turns · right drag pans · wheel zooms · click opens the panel"));
   }
 
   function chooseLayout(tab, id, group) {
@@ -152,8 +152,8 @@
 
   function list3d(tab, data) {
     const pickable = data.nodes.filter((node) => node.kind !== "operator");
-    return h("details", {class: "space-list"}, h("summary", {}, `${pickable.length} Knoten als Liste`),
-      h("div", {class: "chips", role: "group", "aria-label": "Knoten"}, pickable.slice(0, 400).map((node) => h("button", {type: "button", class: "chip", title: node.label, "data-node": node.id, on: {click: () => pick3d(tab, node)}}, node.label))));
+    return h("details", {class: "space-list"}, h("summary", {}, `${pickable.length} nodes as a list`),
+      h("div", {class: "chips", role: "group", "aria-label": "Nodes"}, pickable.slice(0, 400).map((node) => h("button", {type: "button", class: "chip", title: node.label, "data-node": node.id, on: {click: () => pick3d(tab, node)}}, node.label))));
   }
 
   function signature3d(tab, data) {
@@ -176,7 +176,7 @@
       dispose3d();
       g3.host = host;
       g3.tab = tab;
-      host.replaceChildren(h("div", {class: "graph3d", role: "img", "aria-label": `3D-Graph ${tab === "agents" ? "der Agenten" : "der Artefakte"}; die Knoten stehen auch darunter als Liste`}), h("div", {class: "space-note"}, "Lade 3D …"));
+      host.replaceChildren(h("div", {class: "graph3d", role: "img", "aria-label": `3D graph of the ${tab === "agents" ? "agents" : "artifacts"}; the nodes are also listed below`}), h("div", {class: "space-note"}, "Loading 3D …"));
     }
     g3.sig = sig;
     const box = host.querySelector(".graph3d");
@@ -190,14 +190,14 @@
       return;
     }
     if (!Graph) {
-      host.replaceChildren(emptyState("3D nicht geladen", g3.failed || "3d-force-graph fehlt."));
+      host.replaceChildren(emptyState("3D not loaded", g3.failed || "3d-force-graph is missing."));
       return;
     }
     if (!g3.graph) {
       try {
         g3.graph = Graph({controlType: "orbit"})(box);
       } catch (error) {
-        host.replaceChildren(emptyState("3D nicht verfügbar", `Dieser Browser gibt kein WebGL: ${error.message || error}`));
+        host.replaceChildren(emptyState("3D unavailable", `This browser offers no WebGL: ${error.message || error}`));
         g3.host = null;
         return;
       }
@@ -218,7 +218,7 @@
     place(data.nodes, layout);
     g3.graph.width(box.clientWidth).height(box.clientHeight).graphData(data);
     drawPlanes(layout, data.nodes);
-    const words = `${data.nodes.length} Knoten · ${data.links.length} Kanten · ${LAYOUTS.find(([id]) => id === layout)[1]}${calm.matches ? " · ohne Bewegung (prefers-reduced-motion)" : ""}`;
+    const words = `${data.nodes.length} nodes · ${data.links.length} edges · ${LAYOUTS.find(([id]) => id === layout)[1]}${calm.matches ? " · without motion (prefers-reduced-motion)" : ""}`;
     host.replaceChildren(box, h("div", {class: "space-note"}, words), list3d(tab, data));
     window.requestAnimationFrame(() => g3.graph && g3.host === host && g3.graph.zoomToFit(0, 40));
   }

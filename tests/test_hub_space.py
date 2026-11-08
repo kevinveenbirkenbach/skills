@@ -57,7 +57,7 @@ const ctx = Object.fromEntries(["clearRect", "beginPath", "moveTo", "lineTo", "q
   calls.count += 1;
 }]));
 const colors = Object.fromEntries(["line", "accent", "muted", "violet", "direct", "broadcast", "alarm", "security", "grant", "panel", "text"].map((role) => [role, "#123456"]));
-const style = {colors, font: "12px sans", strong: "bold 12px sans", level: "Tiefe", cursor: "Stand", selected: "s3", format: String};
+const style = {colors, font: "12px sans", strong: "bold 12px sans", level: "Depth", cursor: "As of", selected: "s3", format: String};
 const builds = Array.from({length: 15}, () => clock(() => S.scene(input))[0]);
 let stats = null;
 const paints = Array.from({length: 30}, (_, frame) => {

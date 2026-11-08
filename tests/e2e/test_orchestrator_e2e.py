@@ -36,7 +36,7 @@ WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
 TASK_VIEWS = ("list", "board", "rasci")
 SCREENS = ["stream", "stream/inbox", "stream/rules", "stream/radio", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
-SUBS = ["Inbox", "Regeln", "Radio"]
+SUBS = ["Inbox", "Firewall", "Radio"]
 TABS = ["Stream", "Agents", "Artifacts", "Tasks"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,7 +56,7 @@ HELPERS = """
   const name = (node) => (node ? node.getAttribute("aria-label") || text(node) : null);
 """
 PROBE = """(async () => {@HELPERS@
-  await until(() => !document.querySelector("#main .space-note") || !text(document.querySelector("#main .space-note")).startsWith("Lade"), 8000);
+  await until(() => !document.querySelector("#main .space-note") || !text(document.querySelector("#main .space-note")).startsWith("Loading"), 8000);
   const badge = (button) => {
     const found = button.querySelector(".badge");
     return found && !found.hidden ? text(found) : null;
@@ -73,9 +73,9 @@ PROBE = """(async () => {@HELPERS@
     badges: Object.fromEntries(all("#tabs button").map((button) => [button.id, badge(button)])),
     banner: banner.hidden ? null : text(banner),
     rail: Boolean(document.getElementById("rail")),
-    views: all('#main [aria-label="Ansicht"] button').map(name),
-    layouts: all('#main [aria-label="Anordnung"] button').map(name),
-    chips: all('#main [aria-label="Kategorien"] button').map(name),
+    views: all('#main [aria-label="View"] button').map(name),
+    layouts: all('#main [aria-label="Layout"] button').map(name),
+    chips: all('#main [aria-label="Categories"] button').map(name),
     menus: all("#main details.menu > summary").map(name),
     time: text(document.querySelector("#time > summary")),
     replay: Boolean(document.querySelector("#time .replay input[type=range]")),
@@ -87,7 +87,7 @@ PROBE = """(async () => {@HELPERS@
     unlabelled: icons.map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160)),
     broken: all("svg.bi use").filter((use) => !document.getElementById(use.getAttribute("href").slice(1))).map((use) => use.getAttribute("href")),
     states: all("#main span.state").map(name),
-    deletes: all('#main button[aria-label="Löschen"], #main button[aria-label="Alle gemergten löschen"]').map((button) => [name(button), button.disabled, button.title]),
+    deletes: all('#main button[aria-label="Delete"], #main button[aria-label="Delete all merged"]').map((button) => [name(button), button.disabled, button.title]),
     spawn: all("#main .spawn-tree li").map((item) => [item.dataset.kind, item.dataset.running || null]),
     marks: all("#main svg.chart .node").length,
     note: text(document.querySelector("#main .space-note")),
@@ -95,7 +95,7 @@ PROBE = """(async () => {@HELPERS@
     org: all("#main .org-chart .org-row[data-office]").map((row) => [row.dataset.office, text(row.querySelector(".org-holder"))]),
     toggles: all("#main .org-toggle").map((button) => [name(button), button.getAttribute("aria-expanded")]),
     order: all("#main .agent-order li").map((item) => item.dataset.name),
-    taskFilters: all('#main [aria-label="Aufgabenfilter"] button').map((button) => [button.dataset.filter, button.getAttribute("aria-pressed"), text(button.querySelector(".count"))]),
+    taskFilters: all('#main [aria-label="Task filters"] button').map((button) => [button.dataset.filter, button.getAttribute("aria-pressed"), text(button.querySelector(".count"))]),
     taskRows: all("#main .task-row").map((row) => [row.dataset.task, row.classList.contains("open-work")]),
     columns: all("#main .task-column").map((column) => [column.dataset.column, all(".task-card", column).map((card) => card.dataset.task)]),
     matrix: [all("#main table.matrix thead th").length, all("#main table.matrix tbody tr").length, all("#main table.matrix td .letter").map(text).join("")],
@@ -111,7 +111,7 @@ ORG_OPEN = """(async () => {@HELPERS@
   if (!row) {
     return {error: text(document.getElementById("main"))};
   }
-  const toggle = all("#main .org-toggle").find((button) => name(button) === "Zuklappen: identity");
+  const toggle = all("#main .org-toggle").find((button) => name(button) === "Collapse: identity");
   toggle.focus();
   return {focused: document.activeElement.dataset.focus, offices: all("#main .org-row[data-office]").map((entry) => entry.dataset.office)};
 })()""".replace("@HELPERS@", HELPERS)
@@ -127,19 +127,19 @@ ORG_FOLDED = """(async () => {@HELPERS@
 ORDER_MOVED = """(async () => {@HELPERS@
   const after = all("#main .agent-order li").map((item) => item.dataset.name);
   const focused = document.activeElement.dataset.focus || null;
-  const save = all("#main .agent-order button").find((button) => text(button) === "Reihenfolge speichern");
+  const save = all("#main .agent-order button").find((button) => text(button) === "Save order");
   const disabled = save.disabled;
   save.click();
-  const toast = await until(() => all("#toasts .toast").find((box) => text(box).startsWith("Priorität")), 8000);
+  const toast = await until(() => all("#toasts .toast").find((box) => text(box).startsWith("Priority")), 8000);
   return {after, focused, disabled, toast: text(toast)};
 })()""".replace("@HELPERS@", HELPERS)
 OPEN_TAKEOVER = """(async () => {@HELPERS@
   document.querySelector('#main [data-focus="takeover:identity/oidc"]').click();
   await sleep(400);
-  return {title: text(document.querySelector(".sheet-head .panel-title")), options: all(".sheet-box select option").map((option) => option.value), work: document.querySelector('.sheet-box input[aria-label="Arbeit"]').value, focused: document.activeElement.tagName};
+  return {title: text(document.querySelector(".sheet-head .panel-title")), options: all(".sheet-box select option").map((option) => option.value), work: document.querySelector('.sheet-box input[aria-label="Work"]').value, focused: document.activeElement.tagName};
 })()""".replace("@HELPERS@", HELPERS)
 CONFIRM_TAKEOVER = """(async () => {@HELPERS@
-  all(".sheet-box button").find((button) => name(button) === "Übergeben").click();
+  all(".sheet-box button").find((button) => name(button) === "Hand over").click();
   const done = await until(() => document.querySelector(".sheet-box [data-result]"), 30000);
   return {result: done ? done.dataset.result : null, text: text(done), toasts: all("#toasts .toast").map(text)};
 })()""".replace("@HELPERS@", HELPERS)
@@ -152,11 +152,11 @@ AFTER_TAKEOVER = """(async () => {@HELPERS@
   return {holder: text(row)};
 })()""".replace("@HELPERS@", HELPERS)
 INBOX_CHIP = """(async () => {@HELPERS@
-  const chip = (id) => document.querySelector(`#main [aria-label="Aufgabenfilter"] button[data-filter="${id}"]`);
+  const chip = (id) => document.querySelector(`#main [aria-label="Task filters"] button[data-filter="${id}"]`);
   chip("operator").click();
   await until(() => location.hash === "#stream/inbox" && document.querySelector("#main .inbox-list"), 4000);
   const inbox = {hash: location.hash, items: all("#main .inbox-list > li").length, counted: Number(text(chip("operator").querySelector(".count"))), pressed: chip("operator").getAttribute("aria-pressed"), current: all("#tabs button[aria-current=page]").map(name)};
-  chip("freigabe").click();
+  chip("grant").click();
   await until(() => location.hash.startsWith("#tasks/"), 4000);
   await sleep(300);
   return {inbox, back: {hash: location.hash, rows: all("#main .task-row").map((row) => [row.dataset.task, text(row.querySelector(".pill"))])}};
@@ -166,13 +166,13 @@ PIN = """(async () => {@HELPERS@
   if (!row) {
     return {error: text(document.getElementById("main"))};
   }
-  row.querySelector('button[aria-label="Priorität"]').click();
+  row.querySelector('button[aria-label="Priority"]').click();
   await sleep(400);
-  const field = document.querySelector('.sheet-box input[aria-label="Priorität"]');
+  const field = document.querySelector('.sheet-box input[aria-label="Priority"]');
   field.value = "2";
   field.dispatchEvent(new Event("input", {bubbles: true}));
   const preview = all(".sheet-box .task-edit .command code").map(text);
-  all(".sheet-box button").find((button) => name(button) === "Anheften").click();
+  all(".sheet-box button").find((button) => name(button) === "Pin").click();
   const done = await until(() => document.querySelector(".sheet-box [data-jobs]"), 20000);
   return {title: text(document.querySelector(".sheet-head .panel-title")), preview, jobs: done ? done.dataset.jobs : null, toasts: all("#toasts .toast").map(text)};
 })()""".replace("@HELPERS@", HELPERS)
@@ -186,7 +186,7 @@ ACTIONS = """(async () => {@HELPERS@
   document.getElementById("settings-open").click();
   await sleep(300);
   found.ambience = all(".sheet-box form > section:first-child button").map((button) => button.id);
-  found.speech = all('.sheet-box [aria-label="Klassen"] input').map((input) => [input.parentElement.textContent.trim(), input.checked, input.disabled]);
+  found.speech = all('.sheet-box [aria-label="Classes"] input').map((input) => [input.parentElement.textContent.trim(), input.checked, input.disabled]);
   found.settingsUnlabelled = all(".sheet-box svg.bi").map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).length;
   document.querySelector(".sheet-head button").click();
   document.getElementById("palette-open").click();
@@ -194,9 +194,9 @@ ACTIONS = """(async () => {@HELPERS@
   found.palette = all(".palette-list li > span:first-child").map(text);
   document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
   await sleep(200);
-  document.querySelector('#main [aria-label="Kategorien"] button:nth-child(2)').click();
+  document.querySelector('#main [aria-label="Categories"] button:nth-child(2)').click();
   await sleep(900);
-  document.querySelector('#main button.linkish[title$="öffnen"]').click();
+  document.querySelector('#main button.linkish[title^="Open "]').click();
   await sleep(500);
   found.drawer = all("#drawer input[type=radio]").map((input) => [input.value, input.checked]);
   found.drawerUnlabelled = all("#drawer svg.bi").map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).length;
@@ -217,8 +217,8 @@ PICK_3D = """(async () => {@HELPERS@
   return {panel: text(document.querySelector("#main aside .panel-title")), label: chip.textContent};
 })()""".replace("@HELPERS@", HELPERS)
 CALL = """(async () => {@HELPERS@
-  document.querySelector('#main [aria-label="Kategorien"] button[aria-label="Funk"]').click();
-  const someone = await until(() => document.querySelector('#main button.linkish[title$="öffnen"]'), 8000);
+  document.querySelector('#main [aria-label="Categories"] button[aria-label="Radio"]').click();
+  const someone = await until(() => document.querySelector('#main button.linkish[title^="Open "]'), 8000);
   someone.click();
   await sleep(500);
   document.querySelector('#drawer input[type=radio][value="call"]').click();
@@ -226,7 +226,7 @@ CALL = """(async () => {@HELPERS@
   field.value = "E2E call ping";
   field.dispatchEvent(new Event("input", {bubbles: true}));
   document.querySelector('#drawer button[type="submit"]').click();
-  const entry = await until(() => all("#main .entry").find((row) => row.textContent.includes("Gelesen") && row.textContent.includes("E2E call ping")), 20000);
+  const entry = await until(() => all("#main .entry").find((row) => row.textContent.includes("Read") && row.textContent.includes("E2E call ping")), 20000);
   return {to: text(someone), receipt: entry ? text(entry) : null, sent: all("#main .entry").filter((row) => row.textContent.includes("E2E call ping")).length};
 })()""".replace("@HELPERS@", HELPERS)
 OPEN_DELETE = """(async () => {@HELPERS@
@@ -236,22 +236,22 @@ OPEN_DELETE = """(async () => {@HELPERS@
   }
   card.open = true;
   await sleep(300);
-  const every = document.querySelector('#main button[aria-label="Alle gemergten löschen"]');
-  const buttons = all('button[aria-label="Löschen"]', card);
+  const every = document.querySelector('#main button[aria-label="Delete all merged"]');
+  const buttons = all('button[aria-label="Delete"]', card);
   const states = all("span.state", card).map(name);
   buttons.find((button) => !button.disabled).click();
   await sleep(500);
-  return {states, every: [every.disabled, every.title], buttons: buttons.map((button) => [button.disabled, button.title]), title: text(document.querySelector(".sheet-head .panel-title")), dry: all('.sheet-box [aria-label="Trockenlauf"] pre').map(text)};
+  return {states, every: [every.disabled, every.title], buttons: buttons.map((button) => [button.disabled, button.title]), title: text(document.querySelector(".sheet-head .panel-title")), dry: all('.sheet-box [aria-label="Dry run"] pre').map(text)};
 })()""".replace("@HELPERS@", HELPERS)
 CONFIRM = """(async () => {@HELPERS@
-  all(".sheet-box button").find((button) => name(button) === "Löschen").click();
+  all(".sheet-box button").find((button) => name(button) === "Delete").click();
   const done = await until(() => document.querySelector(".sheet-box [data-result]"), 30000);
   const job = document.querySelector(".sheet-box [data-cleanup]");
   return {job: job ? job.dataset.cleanup : null, result: done ? done.dataset.result : null, text: text(done), toasts: all("#toasts .toast").map(text)};
 })()""".replace("@HELPERS@", HELPERS)
 AFTER = """(async () => {@HELPERS@
   document.querySelector(".sheet-head button").click();
-  const past = await until(() => all("#main details.repo").find((details) => details.textContent.includes("Zuletzt gelöscht")), 15000);
+  const past = await until(() => all("#main details.repo").find((details) => details.textContent.includes("Recently deleted")), 15000);
   return {past: past ? [past.querySelector("[data-result]").dataset.result, name(past.querySelector("span.state"))] : null, branches: all("#main details.repo").filter((details) => details !== past).flatMap((details) => all(".branch-name strong", details)).map(text)};
 })()""".replace("@HELPERS@", HELPERS)
 OVERLAP = """
@@ -291,12 +291,12 @@ RULES_OVERLAP = """(async () => {@HELPERS@@CLASHES@
 SETTINGS_OVERLAP = """(async () => {@HELPERS@@CLASHES@
   document.getElementById("settings-open").click();
   const settings = await until(() => document.querySelector(".sheet-box form.settings"), 8000);
-  all("button", settings).find((button) => text(button) === "+ Sender").click();
+  all("button", settings).find((button) => text(button) === "+ Station").click();
   const theme = all("select", settings).find((select) => [...select.options].some((option) => option.value === "custom"));
   theme.value = "custom";
   theme.dispatchEvent(new Event("change", {bubbles: true}));
   await sleep(250);
-  const place = all("section", settings).find((section) => text(section.querySelector("h3")) === "Ort");
+  const place = all("section", settings).find((section) => text(section.querySelector("h3")) === "Location");
   place.scrollIntoView({block: "start"});
   return clashes(settings);
 })()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP)
@@ -334,7 +334,7 @@ ADD_STATION = """(async () => {@HELPERS@
   const clock = (date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   document.getElementById("settings-open").click();
   const form = await until(() => document.querySelector(".sheet-box form.settings"), 8000);
-  all("button", form).find((button) => text(button) === "+ Sender").click();
+  all("button", form).find((button) => text(button) === "+ Station").click();
   await sleep(200);
   const row = all(".stream-row", form).pop();
   const [label, address, start, end] = all("input.field", row);
@@ -350,10 +350,10 @@ ADD_STATION = """(async () => {@HELPERS@
     box.checked = true;
   });
   all("button", form).find((button) => button.type === "submit").click();
-  await until(() => all("#toasts .toast").map(text).find((toast) => toast.startsWith("Neuer Sender")), 8000);
+  await until(() => all("#toasts .toast").map(text).find((toast) => toast.startsWith("New station")), 8000);
   return {toasts: all("#toasts .toast").map(text)};
 })()""".replace("@HELPERS@", HELPERS)
-STATION_NAME = "E2E Ton mit einem sehr langen Sendernamen, der in keine Zeile passt"
+STATION_NAME = "E2E tone with a very long station name that fits on no single line"
 DLF_PATH = "/dlf/01/high/aac/stream.aac?aggregator=web"
 DLF_NODE = "/ard/dlf/01/aac/192/stream.aac?aggregator=web"
 RADIO_STATE = """(async () => {@HELPERS@@MEDIA@
@@ -459,22 +459,22 @@ COMPOSE = """(async () => {@HELPERS@
 COMPOSE_SEND = """(async () => {@HELPERS@
   const form = document.querySelector("#main form.composer");
   const field = form.querySelector("textarea");
-  field.value = `${field.value} bitte`;
+  field.value = `${field.value} please`;
   field.dispatchEvent(new Event("input", {bubbles: true}));
   form.querySelector('.voice-note input[type="checkbox"]').checked = @ATTACH@;
   const before = all("#toasts .toast").length;
   form.querySelector('button[type="submit"]').click();
-  const sent = await until(() => all("#toasts .toast").slice(before).map(text).find((toast) => toast.startsWith("Call an")), 20000);
+  const sent = await until(() => all("#toasts .toast").slice(before).map(text).find((toast) => toast.startsWith("Call to")), 20000);
   return {sent, left: field.value, voice: Boolean(form.querySelector(".voice-note audio"))};
 })()""".replace("@HELPERS@", HELPERS)
 CLEAR_MAYDAY = """(async () => {@HELPERS@
   window.confirm = () => true;
-  const button = await until(() => all('#main [role="toolbar"] button').find((node) => name(node) === "Mayday aufheben" && !node.disabled), 8000);
+  const button = await until(() => all('#main [role="toolbar"] button').find((node) => name(node) === "Cancel mayday" && !node.disabled), 8000);
   if (!button) {
-    return {error: "no enabled Mayday aufheben button"};
+    return {error: "no enabled Cancel mayday button"};
   }
   button.click();
-  const done = await until(() => all("#toasts .toast").map(text).find((toast) => toast.startsWith("Mayday aufheben")), 15000);
+  const done = await until(() => all("#toasts .toast").map(text).find((toast) => toast.startsWith("Cancel mayday")), 15000);
   return {done, toasts: all("#toasts .toast").map(text)};
 })()""".replace("@HELPERS@", HELPERS)
 
@@ -514,20 +514,20 @@ LABELS = """
   const line = () => text(document.querySelector("#main .console .console-status"));
 """
 RUN_START = """(async () => {@HELPERS@@LABELS@
-  const row = await until(() => rowOf("Zeile"), 8000);
+  const row = await until(() => rowOf("Row"), 8000);
   if (!row) {
     return {error: text(document.getElementById("main"))};
   }
-  press(row, "Ausführen");
-  const toast = await until(() => all("#toasts .toast.wait").find((box) => box.textContent.includes("Ausführen")), 8000);
+  press(row, "Run");
+  const toast = await until(() => all("#toasts .toast.wait").find((box) => box.textContent.includes("Run")), 8000);
   const queued = await until(() => out() && line(), 15000);
-  await until(() => out().textContent.includes("Zeile 60"), 20000);
+  await until(() => out().textContent.includes("Row 60"), 20000);
   return {toast: text(toast), queued, running: line(), overflows: out().scrollHeight > out().clientHeight, followed: atEnd()};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 RUN_HELD = """(async () => {@HELPERS@@LABELS@
   out().scrollTop = 0;
   await sleep(300);
-  await until(() => out().textContent.includes("Zeile 80"), 20000);
+  await until(() => out().textContent.includes("Row 80"), 20000);
   await sleep(300);
   return {held: out().scrollTop, running: line()};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
@@ -539,8 +539,8 @@ RUN_DONE = """(async () => {@HELPERS@@LABELS@
   return {done: line(), last: lines[lines.length - 1], lines: lines.length, followed: atEnd(), actions: all(".item-actions button", out().closest("li")).map(name)};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 LAYOUT = """(async () => {@HELPERS@@LABELS@
-  await until(() => document.querySelector("#main .console") && rowOf("Regelwunsch"), 8000);
-  const rule = rowOf("Regelwunsch");
+  await until(() => document.querySelector("#main .console") && rowOf("Rule request"), 8000);
+  const rule = rowOf("Rule request");
   return {
     kinds: all("#main .inbox-list > li").map((li) => text(li.querySelector(".pill"))),
     splits: all("#main .deny-split").map((group) => all("button", group).map(name)),
@@ -549,14 +549,14 @@ LAYOUT = """(async () => {@HELPERS@@LABELS@
     fits: out().getBoundingClientRect().right <= window.innerWidth,
     dry: text(rule.querySelector(".dry-run-count")),
     fields: all(".rule-request dt", rule).map(text),
-    accept: all("button", rule).filter((button) => name(button) === "Annehmen").length,
+    accept: all("button", rule).filter((button) => name(button) === "Accept").length,
     unlabelled: unlabelled(document),
     wide: wide(),
   };
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 DENY_SHEET = """(async () => {@HELPERS@@LABELS@
   const row = await until(() => rowOf("git push"), 8000);
-  press(row, "Ablehnen über …");
+  press(row, "Deny via …");
   const box = await until(() => document.querySelector(".sheet-box"), 4000);
   return {
     title: text(box.querySelector(".panel-title")),
@@ -569,24 +569,24 @@ DENY_SHEET = """(async () => {@HELPERS@@LABELS@
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 DENY = """(async () => {@HELPERS@@LABELS@
   const row = await until(() => rowOf("Bash: make deploy"), 8000);
-  press(row, "Ablehnen über …");
+  press(row, "Deny via …");
   const box = await until(() => document.querySelector(".sheet-box"), 4000);
   box.querySelector('input[value="call"]').click();
-  box.querySelector("textarea").value = "erst das Gate grün machen";
-  press(box.querySelector(".actions"), "Ablehnen");
-  const undo = await until(() => all("#toasts .toast.wait").find((toast) => toast.textContent.includes("Ablehnung")), 8000);
+  box.querySelector("textarea").value = "make the gate green first";
+  press(box.querySelector(".actions"), "Deny");
+  const undo = await until(() => all("#toasts .toast.wait").find((toast) => toast.textContent.includes("Denial")), 8000);
   return {undo: text(undo), sheet: !document.getElementById("sheet").hidden};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 DENIED = """(async () => {@HELPERS@@LABELS@
   return {gone: Boolean(await until(() => !rowOf("Bash: make deploy"), 20000))};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 ACCEPT = """(async () => {@HELPERS@@LABELS@
-  press(rowOf("Regelwunsch"), "Annehmen");
-  const toast = await until(() => all("#toasts .toast").find((box) => box.textContent.includes("Angelegt: Regel")), 15000);
-  await until(() => !rowOf("Regelwunsch"), 8000);
-  return {toast: text(toast), left: Boolean(rowOf("Regelwunsch"))};
+  press(rowOf("Rule request"), "Accept");
+  const toast = await until(() => all("#toasts .toast").find((box) => box.textContent.includes("Created: Rule")), 15000);
+  await until(() => !rowOf("Rule request"), 8000);
+  return {toast: text(toast), left: Boolean(rowOf("Rule request"))};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
-SLOW = "seq -f 'Zeile %g' 1 60; sleep 4; seq -f 'Zeile %g' 61 80; sleep 4; echo fertig"
+SLOW = "seq -f 'Row %g' 1 60; sleep 4; seq -f 'Row %g' 61 80; sleep 4; echo finished"
 
 
 def labelled(probe: dict) -> dict:
@@ -609,12 +609,12 @@ class TestOrchestratorE2E(HubCase):
             "rasci.json": {
                 "work/stage": {"title": "Stage line", "status": "running", "worker": "Stage (this session)", "roles": {"Stage (this session)": "RA"}},
                 "work/feature": {
-                    "title": "Merge-Flow im Hub zeigen", "status": "running", "worker": "Skills session", "objective": "Der Operator sieht, wohin ein Branch fließt", "workdir": feature, "prio": 1,
-                    "roles": {"Skills session": "RA", "Operator": "C", "Docs": "I"}, "key_results": [{"text": "Flow im Tree", "met": True}, {"text": "Flow in Tasks", "met": False}],
+                    "title": "Show the merge flow in the hub", "status": "running", "worker": "Skills session", "objective": "The operator sees where a branch flows", "workdir": feature, "prio": 1,
+                    "roles": {"Skills session": "RA", "Operator": "C", "Docs": "I"}, "key_results": [{"text": "Flow in the tree", "met": True}, {"text": "Flow in Tasks", "met": False}],
                     "estimates": {"Skills": {"value": 8, "complexity": 3, "at": iso(now - 600)}},
                 },
-                "work/docs": {"title": "README nachziehen", "status": "blocked", "worker": "Docs", "branch": "main", "roles": {"Docs": "R", "Maintainer": "A", "Skills": "S"}, "estimates": {"Docs": {"value": 3, "complexity": 2}}},
-                "work/old": {"title": "Alte Linie", "status": "done", "worker": "Stage", "end": iso(now - 86400), "roles": {"Stage": "RA"}},
+                "work/docs": {"title": "Update the README", "status": "blocked", "worker": "Docs", "branch": "main", "roles": {"Docs": "R", "Maintainer": "A", "Skills": "S"}, "estimates": {"Docs": {"value": 3, "complexity": 2}}},
+                "work/old": {"title": "Old line", "status": "done", "worker": "Stage", "end": iso(now - 86400), "roles": {"Stage": "RA"}},
                 "operator/push": {"title": "git push", "workdir": "/repo", "status": "done", "roles": {"Operator": "R"}},
             },
             "queue.json": {"seq": 3, "entries": [{"id": "gate-3", "kind": "gate", "task": "work/feature", "workdir": feature, "session": "s1", "name": "Skills", "status": "waiting", "enqueued": now - 120, "cmd": "make test"}]},
@@ -679,7 +679,7 @@ class TestOrchestratorE2E(HubCase):
         def synthesize(body: bytes) -> bytes:
             word = json.loads(body)["text"]
             if word in cues:
-                row = {"ts": time.time(), "from": "Stage", "to": [], "text": f"Platte fast voll ({word})\nzweite Zeile", "class": "security", "v": 2}
+                row = {"ts": time.time(), "from": "Stage", "to": [], "text": f"Disk almost full ({word})\nsecond line", "class": "security", "v": 2}
                 with (self.council / "news.jsonl").open("a", encoding="utf-8") as handle:
                     handle.write(self.jsonl([row]))
             return spoken
@@ -731,7 +731,7 @@ class TestOrchestratorE2E(HubCase):
             steps.append({"width": width, "height": height, "url": None, "wait": 0, "probe": SETTINGS_OVERLAP, "shot": str(OUT / f"{browser}-{width}-settings-form.png")})
         data = self.drive(steps, None, driver, binary)
         (OUT / f"{browser}-overlap.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
-        hidden = {"decision": ("Werkzeug (Glob)", "Verzeichnis (Glob)"), "review": ("Werkzeug (Glob)",), "ask": ()}
+        hidden = {"decision": ("Tool (glob)", "Directory (glob)"), "review": ("Tool (glob)",), "ask": ()}
         for index, (width, _) in enumerate(WIDTHS):
             rules, settings = data["results"][2 * index : 2 * index + 2]
             with self.subTest(browser=browser, width=width):
@@ -740,7 +740,7 @@ class TestOrchestratorE2E(HubCase):
                 for kind, found in rules.items():
                     self.assertEqual((found["found"], found["outside"]), ([], []), kind)
                     self.assertEqual([label for label in hidden[kind] if label in found["labels"]], [], kind)
-                self.assertIn("Verzeichnis (Glob)", rules["review"]["labels"])
+                self.assertIn("Directory (glob)", rules["review"]["labels"])
                 self.assertEqual(settings, {"found": [], "outside": []})
 
     def check_radio(self, browser: str, driver: str, binary: str, redirected: bool = False) -> dict:
@@ -770,7 +770,7 @@ class TestOrchestratorE2E(HubCase):
         (OUT / f"{browser}-radio.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         saved, view, click = data["results"]
         if signs:
-            self.assertTrue(any(toast.startswith("Neuer Sender") for toast in saved["toasts"]), saved)
+            self.assertTrue(any(toast.startswith("New station") for toast in saved["toasts"]), saved)
         self.assertNotIn("error", view)
         self.assertEqual(view["title"], STATION_NAME)
         self.assertEqual(view["line"], ["nowrap", "ellipsis", True, True])
@@ -778,8 +778,8 @@ class TestOrchestratorE2E(HubCase):
         if not view["media"]["playing"]:
             self.assertTrue(blocked, view)
             self.assertEqual(view["state"], "blocked", view)
-            self.assertIn("Klick", view["note"])
-            self.assertTrue(any("blockiert" in toast for toast in view["toasts"]), view["toasts"])
+            self.assertIn("Click", view["note"])
+            self.assertTrue(any("blocked" in toast for toast in view["toasts"]), view["toasts"])
             self.assertTrue(click["clicked"], click)
         self.assertNotIn("error", click)
         self.assertTrue(click["media"]["playing"], click)
@@ -815,7 +815,7 @@ class TestOrchestratorE2E(HubCase):
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#artifacts/3d", "wait": 900, "probe": PICK_3D.replace("@PREFIX@", "branch:"), "shot": self.shot("1366-artifacts-3d-picked")})
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#agents/3d", "wait": 900, "probe": PICK_3D.replace("@PREFIX@", "s2"), "shot": self.shot("1366-agents-3d-picked")})
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#artifacts/3d", "wait": 900, "probe": PROBE, "shot": self.shot("1366-artifacts-3d-reduced-motion"), "media": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
-        steps.append({"width": 1366, "height": 768, "url": f"{self.base}#tasks/list", "wait": 900, "probe": INBOX_CHIP, "shot": self.shot("1366-tasks-freigabe")})
+        steps.append({"width": 1366, "height": 768, "url": f"{self.base}#tasks/list", "wait": 900, "probe": INBOX_CHIP, "shot": self.shot("1366-tasks-grant")})
         data = self.drive(steps, None)
         (OUT / "chromium-walk.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
@@ -836,43 +836,43 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual([probe["tall"] for probe in probes if probe["hash"] == "#agents/orbit"], [False] * len(WIDTHS))
         by_hash = {probe["hash"]: probe for probe in probes}
         stream = by_hash["#stream"]
-        self.assertEqual([probe["chips"] for probe in probes if probe["hash"] == "#stream"], [["Für dich", "Funk", "Arbeit", "Transkripte"]] * len(WIDTHS))
+        self.assertEqual([probe["chips"] for probe in probes if probe["hash"] == "#stream"], [["For you", "Radio", "Work", "Transcripts"]] * len(WIDTHS))
         self.assertEqual((stream["menus"], stream["custom"]), (["Filter"], True))
         self.assertEqual(by_hash["#stream/inbox"]["inbox"], 2)
-        for tab, own in (("agents", ["Hierarchie"]), ("artifacts", [])):
+        for tab, own in (("agents", ["Hierarchy"]), ("artifacts", [])):
             with self.subTest(tab=tab):
                 self.assertEqual(by_hash[f"#{tab}/orbit"]["views"], ["Orbit", "Chord", "Swimlane", "Tree", "3D", *own])
-                self.assertEqual(by_hash[f"#{tab}/3d"]["layouts"], ["Kraft", "Zeit", "Spawn-Tiefe"])
+                self.assertEqual(by_hash[f"#{tab}/3d"]["layouts"], ["Force", "Time", "Spawn depth"])
                 self.assertTrue(by_hash[f"#{tab}/3d"]["canvas"], by_hash[f"#{tab}/3d"]["note"])
-                self.assertRegex(by_hash[f"#{tab}/3d"]["note"], r"^\d+ Knoten · \d+ Kanten · Kraft$")
+                self.assertRegex(by_hash[f"#{tab}/3d"]["note"], r"^\d+ nodes · \d+ edges · Force$")
         agents = by_hash["#agents/orbit"]
-        self.assertEqual(agents["toolbar"], ["Funk an alle", "Mayday aufheben", "Priorität", "Tag/Nacht"])
+        self.assertEqual(agents["toolbar"], ["Radio to all", "Cancel mayday", "Priority", "Day/Night"])
         self.assertEqual(agents["toAll"], [["newsletter", True], ["broadcast", False], ["pan-pan", False], ["security", False], ["mayday", False]])
         hierarchy = by_hash["#agents/hierarchy"]
         self.assertEqual([office for office, _ in hierarchy["org"]], ["chair", "identity/oidc", "work/s1", "work/s2"])
-        self.assertEqual(hierarchy["toggles"], [["Zuklappen: Operator", "true"], ["Zuklappen: Chair", "true"], ["Zuklappen: identity", "true"], ["Zuklappen: Präsidenten", "true"]])
+        self.assertEqual(hierarchy["toggles"], [["Collapse: Operator", "true"], ["Collapse: Chair", "true"], ["Collapse: identity", "true"], ["Collapse: Presidents", "true"]])
         self.assertEqual(hierarchy["toolbar"], agents["toolbar"])
         self.assertGreaterEqual(len(hierarchy["order"]), 2)
         self.assertEqual(by_hash["#agents/tree"]["spawn"][0], ["operator", None])
         self.assertIn(["twig", "true"], by_hash["#agents/tree"]["spawn"])
         self.assertIn(["twig", "false"], by_hash["#agents/tree"]["spawn"])
         artifacts = by_hash["#artifacts/tree"]
-        self.assertEqual(artifacts["deletes"], [["Alle gemergten löschen", True, "Alle gemergten löschen gesperrt: Secret Service locked"], ["Löschen", True, "Löschen gesperrt: Secret Service locked"]])
-        for state in ("gemergt durch #12 in main", "Upstream weg", "geschützt", "1 Commits ungepusht", "sauber", "nicht committet: 0 gestaged, 0 geändert, 1 neu", "gc überspringt: ignored files beyond known caches: notes.txt"):
+        self.assertEqual(artifacts["deletes"], [["Delete all merged", True, "Delete all merged blocked: Secret Service locked"], ["Delete", True, "Delete blocked: Secret Service locked"]])
+        for state in ("merged by #12 into main", "upstream gone", "protected", "1 commits unpushed", "clean", "not committed: 0 staged, 0 changed, 1 new", "gc skips: ignored files beyond known caches: notes.txt"):
             with self.subTest(state=state):
                 self.assertIn(state, artifacts["states"])
         for view in ("orbit", "chord"):
             with self.subTest(view=view):
                 self.assertGreaterEqual(by_hash[f"#artifacts/{view}"]["marks"], 4)
         self.assertEqual((artifacts["flows"], artifacts["openWork"]), (["file", "invalid"], 5))
-        for state in ("offene Arbeit: nicht committet, Aufgabe offen", "offene Arbeit: ungepusht, Aufgabe offen", "offene Arbeit: nicht gemergt", "3 Worktrees mit offener Arbeit"):
+        for state in ("open work: not committed, task open", "open work: unpushed, task open", "open work: not merged", "3 worktrees with open work"):
             with self.subTest(state=state):
                 self.assertIn(state, artifacts["states"])
         self.assertEqual(by_hash["#artifacts/chord"]["flowEdges"], ["pull", "push"])
         order = ["work/feature", "work/docs", "work/stage", "queue/gate-3", "work/old", "operator/push"]
         listed = by_hash["#tasks/list"]
-        self.assertEqual(listed["views"], ["Liste", "Board", "RASCI"])
-        self.assertEqual(listed["taskFilters"], [["alle", "true", "6"], ["offen", "false", "4"], ["arbeit", "false", "4"], ["operator", "false", "2"], ["freigabe", "false", "1"], ["beendet", "false", "2"]])
+        self.assertEqual(listed["views"], ["List", "Board", "RASCI"])
+        self.assertEqual(listed["taskFilters"], [["all", "true", "6"], ["open", "false", "4"], ["work", "false", "4"], ["operator", "false", "2"], ["grant", "false", "1"], ["ended", "false", "2"]])
         self.assertEqual(listed["taskRows"], [[task, task not in ("work/old", "operator/push")] for task in order])
         self.assertEqual(listed["flows"], ["file", "file"])
         self.assertEqual(by_hash["#tasks/board"]["columns"], [["queued", ["queue/gate-3"]], ["running", ["work/feature", "work/stage"]], ["blocked", ["work/docs"]], ["done", ["work/old", "operator/push"]], ["stopped", []]])
@@ -885,19 +885,19 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/rasci", "#stream"])
         self.assertEqual(actions["ambience"], ["sky-look", "music-toggle", "leitstand", "notify"])
         self.assertEqual((actions["settingsUnlabelled"], actions["drawerUnlabelled"]), (0, 0))
-        self.assertEqual([name for name, _, _ in actions["speech"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "SECURITE"])
+        self.assertEqual([name for name, _, _ in actions["speech"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
         self.assertEqual([entry[1:] for entry in actions["speech"] if entry[0] == "MAYDAY"], [[True, True]])
-        for tool in ("Funk an alle …", "Mayday aufheben", "Priorität …", "Abend", "Regeln …", "Einstellungen …", "Himmel ansehen", "Leitstand umschalten", "Benachrichtigungen aktivieren"):
+        for tool in ("Radio to all …", "Cancel mayday", "Priority …", "Evening", "Firewall …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
             with self.subTest(tool=tool):
                 self.assertTrue(any(tool in entry for entry in actions["palette"]), actions["palette"])
         self.assertEqual(actions["drawer"], [["post", True], ["call", False]])
         artifact_pick, agent_pick, calm, chips = extra[4:]
         self.assertEqual(artifact_pick["panel"], artifact_pick["label"])
         self.assertEqual(agent_pick["panel"], agent_pick["label"])
-        self.assertRegex(calm["note"], r"Kraft · ohne Bewegung \(prefers-reduced-motion\)$")
+        self.assertRegex(calm["note"], r"Force · without motion \(prefers-reduced-motion\)$")
         self.assertEqual({key: value for key, value in chips["inbox"].items() if key != "counted"}, {"hash": "#stream/inbox", "items": chips["inbox"]["counted"], "pressed": "true", "current": ["Inbox"]})
         self.assertGreaterEqual(chips["inbox"]["items"], 1)
-        self.assertEqual(chips["back"], {"hash": "#tasks/list", "rows": [["queue/gate-3", "Queue-Job"]]})
+        self.assertEqual(chips["back"], {"hash": "#tasks/list", "rows": [["queue/gate-3", "Queue job"]]})
 
     def test_chromium_sends_a_call_from_the_agent_panel_and_shows_its_receipt(self):
         handled = []
@@ -918,7 +918,7 @@ class TestOrchestratorE2E(HubCase):
         result = data["results"][0]
         self.assertNotIn("error", result)
         self.assertIsNotNone(result["receipt"], result)
-        self.assertIn("Gelesen", result["receipt"])
+        self.assertIn("Read", result["receipt"])
 
     def test_chromium_shows_who_speaks_while_a_message_is_read(self):
         self.speaks(("e2e-cue-1", "e2e-cue-2"))
@@ -932,11 +932,11 @@ class TestOrchestratorE2E(HubCase):
         (OUT / "chromium-speaking.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
         speaking, graph, ended, calm = data["results"]
-        self.assertEqual((speaking["who"], speaking["line"], speaking["chip"], speaking["ring"]), ("Stage spricht", "Platte fast voll (e2e-cue-1)", "s2", "speaking"), speaking)
+        self.assertEqual((speaking["who"], speaking["line"], speaking["chip"], speaking["ring"]), ("Stage speaking", "Disk almost full (e2e-cue-1)", "s2", "speaking"), speaking)
         self.assertEqual((graph["node"] or "").split(",")[0], "Stage", graph)
         self.assertEqual(graph["ring"], "speaking-node")
         self.assertEqual(ended, {"ended": True, "caption": False, "chips": 0})
-        self.assertEqual((calm["who"], calm["line"], calm["ring"]), ("Stage spricht", "Platte fast voll (e2e-cue-2)", "none"), calm)
+        self.assertEqual((calm["who"], calm["line"], calm["ring"]), ("Stage speaking", "Disk almost full (e2e-cue-2)", "none"), calm)
 
     def test_chromium_records_transcribes_and_sends_a_signed_call_with_voice(self):
         local = f"http://localhost:{self.port}/"
@@ -956,18 +956,18 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(composed["recording"], "true")
         self.assertEqual(composed["text"], "hello from the mic second line", composed)
         self.assertRegex(composed["replay"] or "", r"^/api/voice/[0-9a-f]{16}\.wav$")
-        self.assertEqual(composed["attach"], ["Aufnahme anhängen", False])
+        self.assertEqual(composed["attach"], ["Attach recording", False])
         self.assertEqual(composed["clashes"], {"found": [], "outside": []})
-        self.assertEqual(again["attach"], ["Aufnahme anhängen", False])
+        self.assertEqual(again["attach"], ["Attach recording", False])
         note = again["replay"].removeprefix("/api/voice/").removesuffix(".wav")
         for result in (plain, sent):
             self.assertEqual((result["left"], result["voice"]), ("", False), result)
-            self.assertTrue(result["sent"].startswith("Call an Stage: gesendet"), result)
+            self.assertTrue(result["sent"].startswith("Call to Stage: sent"), result)
         calls = [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
         self.assertEqual(len(calls), 2, self.scripts.calls)
         self.assertEqual([call[:4] for call in calls], [["send", "call", "--to", "Stage"]] * 2)
-        self.assertTrue(calls[0][-1].endswith("] hello from the mic second line bitte"), calls[0])
-        self.assertTrue(calls[1][-1].endswith(f"] hello from the mic second line bitte voice: {HOST_STATE}/voice/{note}.wav"), calls[1])
+        self.assertTrue(calls[0][-1].endswith("] hello from the mic second line please"), calls[0])
+        self.assertTrue(calls[1][-1].endswith(f"] hello from the mic second line please voice: {HOST_STATE}/voice/{note}.wav"), calls[1])
         status, _, body = self.get(f"/api/voice/{note}.wav")
         self.assertEqual((status, body[:4]), (200, b"RIFF"))
 
@@ -977,7 +977,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(data["errors"], [])
         result = data["results"][0]
         self.assertNotIn("error", result)
-        self.assertTrue((result["done"] or "").startswith("Mayday aufheben: erledigt"), result)
+        self.assertTrue((result["done"] or "").startswith("Cancel mayday: done"), result)
         self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])])
 
     def test_chromium_deletes_a_merged_branch_after_dry_run_and_signature(self):
@@ -1011,15 +1011,15 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(data["errors"], [])
         opened, confirmed, after = data["results"]
         self.assertNotIn("error", opened)
-        self.assertEqual(opened["every"], [False, "Alle gemergten löschen: 1 Branches nach Trockenlauf und Signatur"])
-        self.assertEqual(opened["buttons"], [[False, "Löschen: feature/done lokal entfernen, nach Trockenlauf und Signatur"]])
-        self.assertEqual(opened["title"], "feature/done löschen")
+        self.assertEqual(opened["every"], [False, "Delete all merged: 1 branches after dry run and signature"])
+        self.assertEqual(opened["buttons"], [[False, "Delete: remove feature/done locally, after dry run and signature"]])
+        self.assertEqual(opened["title"], "Delete feature/done")
         self.assertEqual(len(opened["dry"]), 1)
-        self.assertTrue(opened["dry"][0].startswith("feature/done @ 5b1e6fd3a7c0: merged-clean, gemergt durch #12"), opened["dry"])
-        self.assertIn("bleibt: remote-branch (nur lokal)", opened["dry"][0])
-        self.assertEqual((confirmed["result"], confirmed["text"]), ("done", "feature/donegelöscht"), confirmed)
-        self.assertEqual(confirmed["toasts"], ["Löschen: erledigtfeature/done: gelöscht"])
-        self.assertEqual(after["past"], ["done", "gelöscht"])
+        self.assertTrue(opened["dry"][0].startswith("feature/done @ 5b1e6fd3a7c0: merged-clean, merged by #12"), opened["dry"])
+        self.assertIn("stays: remote-branch (local only)", opened["dry"][0])
+        self.assertEqual((confirmed["result"], confirmed["text"]), ("done", "feature/donedeleted"), confirmed)
+        self.assertEqual(confirmed["toasts"], ["Delete: donefeature/done: deleted"])
+        self.assertEqual(after["past"], ["done", "deleted"])
         self.assertNotIn("feature/done", after["branches"])
         written = [json.loads(path.read_text(encoding="utf-8")) for path in results.glob("*.json")]
         self.assertEqual([[(item["branch"], item["status"]) for item in result["items"]] for result in written], [[("feature/done", "done")]])
@@ -1053,16 +1053,16 @@ class TestOrchestratorE2E(HubCase):
         opened, folded, moved, sheet, confirmed, after = data["results"]
         self.assertNotIn("error", opened)
         self.assertEqual(opened["focused"], "toggle:dimension:identity")
-        self.assertEqual((folded["focused"], folded["expanded"], folded["label"], folded["hidden"], folded["again"]), ("toggle:dimension:identity", "false", "Aufklappen: identity", True, "true"))
+        self.assertEqual((folded["focused"], folded["expanded"], folded["label"], folded["hidden"], folded["again"]), ("toggle:dimension:identity", "false", "Expand: identity", True, "true"))
         self.assertNotIn("identity/oidc", folded["seen"])
         before = folded["before"]
         self.assertEqual(moved["after"], [before[1], before[0], *before[2:]])
         self.assertEqual((moved["focused"], moved["disabled"]), (f"down:{before[1]}", False))
-        self.assertTrue(moved["toast"].startswith("Priorität"), moved)
+        self.assertTrue(moved["toast"].startswith("Priority"), moved)
         self.assertIn(("rasci.py", ["agents", "order", ",".join(moved["after"])]), [(Path(script).name, args) for script, args in self.scripts.calls])
-        self.assertEqual((sheet["title"], sheet["options"], sheet["work"], sheet["focused"]), ("identity/oidc: Übergeben", ["s1"], "oidc line", "SELECT"))
-        self.assertEqual((confirmed["result"], confirmed["text"]), ("done", "identity/oidcerledigt"), confirmed)
-        self.assertIn("Übergeben: erledigtidentity/oidc: erledigt", confirmed["toasts"])
+        self.assertEqual((sheet["title"], sheet["options"], sheet["work"], sheet["focused"]), ("identity/oidc: Hand over", ["s1"], "oidc line", "SELECT"))
+        self.assertEqual((confirmed["result"], confirmed["text"]), ("done", "identity/oidcdone"), confirmed)
+        self.assertIn("Hand over: doneidentity/oidc: done", confirmed["toasts"])
         self.assertNotIn("error", after)
         claim = json.loads((self.council / "identity" / "oidc" / "claim.json").read_text(encoding="utf-8"))
         self.assertEqual((claim["session"], claim["work"]), ("s1", "oidc line"))
@@ -1071,7 +1071,7 @@ class TestOrchestratorE2E(HubCase):
 
     def inbox_work(self) -> None:
         stage = {"title": "Stage line", "status": "running", "worker": "Stage (this session)", "roles": {"Stage (this session)": "RA"}}
-        greet = {"title": SLOW, "workdir": str(self.outside), "description": "zählt", "check": "manual", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
+        greet = {"title": SLOW, "workdir": str(self.outside), "description": "counts", "check": "manual", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
         push = {"title": "git push", "workdir": "/repo", "description": "ship", "check": "manual", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
         self.write_council({"rasci.json": {"work/stage": stage, "operator/greet": greet, "operator/push": push}})
         arguments = {"kind": "ask", "tool": "Bash", "pattern": "make deploy", "scope": "/repo*", "expires": int(time.time()) + 7 * 86400, "agent": "Skills", "why": "deploy runs after every green gate"}
@@ -1079,11 +1079,11 @@ class TestOrchestratorE2E(HubCase):
 
     def layout(self, probe: dict) -> None:
         self.assertNotIn("error", probe)
-        self.assertEqual(sorted(probe["kinds"]), ["Ask", "Operator", "Operator", "Regelwunsch", "Review"])
-        self.assertIn(["Ablehnen", "Ablehnen über …"], probe["splits"])
+        self.assertEqual(sorted(probe["kinds"]), ["Ask", "Operator", "Operator", "Review", "Rule request"])
+        self.assertIn(["Deny", "Deny via …"], probe["splits"])
         self.assertEqual(len(probe["splits"]), 4)
-        self.assertEqual(probe["fields"], ["Art", "Werkzeug (Glob)", "Muster (Glob)", "Verzeichnis (Glob)", "Läuft ab am"])
-        self.assertEqual(probe["dry"], "Trockenlauf: Die Regel hätte 1 von 1 Asks der letzten 7 Tage freigegeben.")
+        self.assertEqual(probe["fields"], ["Kind", "Tool (glob)", "Pattern (glob)", "Directory (glob)", "Expires on"])
+        self.assertEqual(probe["dry"], "Dry run: the rule would have granted 1 of 1 asks from the last 7 days.")
         self.assertEqual(probe["accept"], 1)
         self.assertTrue(probe["fits"] and probe["followed"], probe)
         self.assertEqual((probe["unlabelled"], probe["wide"]), ([], False))
@@ -1120,32 +1120,32 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(data["errors"], [])
         started, held, done, *rest = data["results"]
         self.assertNotIn("error", started)
-        self.assertIn("wird in", started["toast"])
-        self.assertTrue(started["running"].startswith("läuft"), started)
+        self.assertIn("takes effect in", started["toast"])
+        self.assertTrue(started["running"].startswith("running"), started)
         self.assertTrue(started["overflows"] and started["followed"], started)
         self.assertLess(held["held"], 50, held)
-        self.assertEqual((done["last"], done["lines"], done["followed"]), ("fertig", 81, True))
-        self.assertRegex(done["done"], r"^erledigtExit-Code 0 nach \d+ s$")
-        self.assertIn("Schließen", done["actions"])
+        self.assertEqual((done["last"], done["lines"], done["followed"]), ("finished", 81, True))
+        self.assertRegex(done["done"], r"^doneExit code 0 after \d+ s$")
+        self.assertIn("Close", done["actions"])
         layouts, sheets = rest[0:6:2], rest[1:6:2]
         for probe, sheet, (width, _) in zip(layouts, sheets, WIDTHS, strict=True):
             with self.subTest(width=width):
                 self.layout(probe)
-                self.assertTrue(probe["console"].startswith("erledigtExit-Code 0"), probe)
-                self.assertEqual(sheet["title"], "Ablehnen")
+                self.assertTrue(probe["console"].startswith("doneExit code 0"), probe)
+                self.assertEqual(sheet["title"], "Deny")
                 self.assertEqual(sheet["channels"], [["post", True], ["call", False], ["newsletter", False], ["broadcast", False], ["pan-pan", False], ["security", False]])
-                self.assertEqual(sheet["hints"][:3], ["an Skills, sobald sein Zug endet", "an Skills, sofort, weckt ihn", "an alle, sobald ihr Zug endet"])
+                self.assertEqual(sheet["hints"][:3], ["to Skills, when its turn ends", "to Skills, at once, wakes it", "to all, when their turn ends"])
                 self.assertEqual((sheet["reason"], sheet["unlabelled"], sheet["wide"]), (True, [], False))
         denied, gone, accepted = rest[6:]
-        self.assertTrue(denied["undo"].startswith("Ablehnung (Call): Bash: make deploy"), denied)
+        self.assertTrue(denied["undo"].startswith("Denial (Call): Bash: make deploy"), denied)
         self.assertFalse(denied["sheet"])
         self.assertTrue(gone["gone"])
-        self.assertEqual((accepted["toast"], accepted["left"]), ("Angelegt: Regel: ask Bash make deploy in /repo*", False))
+        self.assertEqual((accepted["toast"], accepted["left"]), ("Created: Rule: ask Bash make deploy in /repo*", False))
         ask = self.httpd.hub.asks.listed()[0]
-        self.assertEqual((ask["status"], ask["reason"], ask["channel"]), ("denied", "erst das Gate grün machen", "call"))
+        self.assertEqual((ask["status"], ask["reason"], ask["channel"]), ("denied", "make the gate green first", "call"))
         calls = [args for script, args in self.scripts.calls if script.endswith("radio.py")]
         self.assertEqual(calls[-1][:4], ["send", "call", "--to", "Skills session"])
-        self.assertTrue(calls[-1][-1].endswith("Reason: erst das Gate grün machen"), calls[-1])
+        self.assertTrue(calls[-1][-1].endswith("Reason: make the gate green first"), calls[-1])
         self.assertEqual([(rule["kind"], rule["pattern"], rule["proof"] is not None) for rule in self.httpd.hub.rules.listed()], [("ask", "make deploy", True)])
         self.assertEqual([(job["status"], job["code"]) for job in self.httpd.hub.jobs.listed()], [("done", 0)])
 
@@ -1154,7 +1154,7 @@ class TestOrchestratorE2E(HubCase):
         self.inbox_work()
         now = time.time()
         fields = {"task": "operator/greet", "command": SLOW, "directory": str(self.outside), "sha256": "", "status": "done", "proof": None}
-        output = "".join(f"Zeile {number}\n" for number in range(1, 81)) + "fertig\n"
+        output = "".join(f"Row {number}\n" for number in range(1, 81)) + "finished\n"
         self.httpd.hub.jobs.add({**fields, "code": 0, "output": output, "created_ts": now - 20, "started": now - 19, "finished": now - 10, "dismissed": False})
         shots = [(width, height, OUT / f"firefox-{width}-inbox-console.png") for width, height in WIDTHS]
         steps = [{"width": width, "height": height, "url": f"{self.base}#stream/inbox", "wait": 1200, "probe": LAYOUT, "shot": str(shot)} for width, height, shot in shots]
@@ -1164,7 +1164,7 @@ class TestOrchestratorE2E(HubCase):
         for probe, (width, _, shot) in zip(data["results"], shots, strict=True):
             with self.subTest(width=width):
                 self.layout(probe)
-                self.assertEqual(probe["console"], "erledigtExit-Code 0 nach 9 s")
+                self.assertEqual(probe["console"], "doneExit code 0 after 9 s")
                 self.assertTrue(shot.is_file() and shot.stat().st_size > 1000, shot)
 
     def test_chromium_pins_a_task_priority_after_signature_and_the_runner_applies_it(self):
@@ -1178,7 +1178,7 @@ class TestOrchestratorE2E(HubCase):
         pinned = data["results"][0]
         self.assertNotIn("error", pinned)
         self.assertEqual((pinned["title"], pinned["preview"][0]), ("work/docs", "rasci.py set work/docs --prio 2"))
-        self.assertEqual(pinned["toasts"], ["Priorität work/docs: an den Runner übergebenrasci.py set work/docs --prio 2"])
+        self.assertEqual(pinned["toasts"], ["Priority work/docs: handed to the runnerrasci.py set work/docs --prio 2"])
         jobs = self.runner_jobs()
         self.assertEqual([(job["id"], job["kind"], job["argv"]) for job in jobs], [(pinned["jobs"], "task", ["set", "work/docs", "--prio", "2"])])
         self.run_runner()

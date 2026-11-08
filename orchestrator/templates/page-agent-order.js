@@ -47,8 +47,8 @@
   }
 
   function orderItem(name, index) {
-    const up = officeBtn("bi-arrow-up", `${name} nach oben`, `${name} nach oben: höhere Priorität`, () => moveAgent(name, -1), `up:${name}`);
-    const down = officeBtn("bi-arrow-down", `${name} nach unten`, `${name} nach unten: niedrigere Priorität`, () => moveAgent(name, 1), `down:${name}`);
+    const up = officeBtn("bi-arrow-up", `Move ${name} up`, `Move ${name} up: higher priority`, () => moveAgent(name, -1), `up:${name}`);
+    const down = officeBtn("bi-arrow-down", `Move ${name} down`, `Move ${name} down: lower priority`, () => moveAgent(name, 1), `down:${name}`);
     up.disabled = index === 0;
     down.disabled = index === ui.order.length - 1;
     const item = h("li", {draggable: "true", "data-name": name}, icon("bi-grip-vertical", "grip"), h("span", {class: "rank"}, `${index + 1}.`), face(name, false), person(name), h("span", {class: "spacer"}), up, down);
@@ -68,7 +68,7 @@
   }
 
   async function saveAgentOrder() {
-    if (await act("order", "Priorität", {agents: ui.order})) {
+    if (await act("order", "Priority", {agents: ui.order})) {
       ui.order = null;
       drawAgentOrder();
     }
@@ -85,14 +85,14 @@
     orderDom.focus = null;
     const changed = JSON.stringify(ui.order) !== JSON.stringify(state.agent_order);
     box.replaceChildren(
-      h("div", {class: "inbox-head"}, h("h2", {class: "group-title", id: "agent-order-title", tabindex: "-1", "data-focus": "order:title"}, "Priorität der Agenten", counter(ui.order.length))),
-      h("p", {class: "muted"}, "Ordnet die Freigaben des Chairs und entscheidet nur bei gleicher Aufgabenpriorität; die --prio-Pins der Aufgaben bleiben unverändert."),
-      ui.order.length ? h("ol", {class: "order-list", "aria-label": "Reihenfolge der Agenten"}, ui.order.map(orderItem)) : h("p", {class: "muted"}, "Kein Agent mit Amt oder offener Aufgabe."),
+      h("div", {class: "inbox-head"}, h("h2", {class: "group-title", id: "agent-order-title", tabindex: "-1", "data-focus": "order:title"}, "Agent priority", counter(ui.order.length))),
+      h("p", {class: "muted"}, "Orders the chair's grants and decides only between equal task priorities; the tasks' --prio pins stay unchanged."),
+      ui.order.length ? h("ol", {class: "order-list", "aria-label": "Agent order"}, ui.order.map(orderItem)) : h("p", {class: "muted"}, "No agent with an office or an open task."),
       h("div", {class: "actions"},
-        h("span", {class: "muted"}, "Ziehen oder Pfeile zum Umsortieren"),
+        h("span", {class: "muted"}, "Drag or use the arrows to reorder"),
         h("span", {class: "spacer"}),
-        h("button", {type: "button", class: "btn ghost", "data-focus": "order:reset", disabled: !changed, on: {click: () => placeAgent([...state.agent_order], "order:reset")}}, "Zurücksetzen"),
-        h("button", {type: "button", class: "btn primary", "data-focus": "order:save", disabled: !changed, on: {click: saveAgentOrder}}, "Reihenfolge speichern")));
+        h("button", {type: "button", class: "btn ghost", "data-focus": "order:reset", disabled: !changed, on: {click: () => placeAgent([...state.agent_order], "order:reset")}}, "Reset"),
+        h("button", {type: "button", class: "btn primary", "data-focus": "order:save", disabled: !changed, on: {click: saveAgentOrder}}, "Save order")));
     const target = key && [...box.querySelectorAll("[data-focus]")].find((element) => element.dataset.focus === key);
     if (target && target.disabled) {
       refocus(box, key.startsWith("up:") ? `down:${key.slice(3)}` : key.startsWith("down:") ? `up:${key.slice(5)}` : "order:title");

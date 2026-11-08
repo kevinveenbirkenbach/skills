@@ -47,27 +47,27 @@ from three views down to any agent, branch or artefact.
    (directory, module, container, systemd unit, MCP server, environment
    `KVB_ORCHESTRATOR_*`, make targets). Rejected: visible name only (two names
    for one thing).
-10. **Navigation**: Stream (sub-items Inbox and Regeln) · Agents (ex Graph) ·
+10. **Navigation**: Stream (sub-items Inbox and Firewall) · Agents (ex Graph) ·
     Artifacts (ex Tree). Agents and Artifacts each offer Orbit, Chord,
     Swimlane, Tree and 3D.
 11. **Header**: title · ⌘K · ⚙ only. The status pills become navigation
     badges (Inbox: waiting items, Agents: active agents, Artifacts: runner
-    jobs); Mayday shows only as a red banner with "aufheben" while active; the
+    jobs); Mayday shows only as a red banner with "cancel" while active; the
     background shows day and night. Rejected: one status dot with a popover
-    (an extra click), a status block in a side bar, a "Lage" screen (effort),
-    no header at all.
-12. **Tools**: Steuerung (Funk an alle, Mayday aufheben, Priorität, Tag/Nacht)
-    moves to the Agents toolbar, Regeln under Inbox, Himmel, Musik,
-    Leitstand and Benachrichtigungen to ⚙ "Ambiente"; ⌘K reaches every one.
+    (an extra click), a status block in a side bar, a "Situation" screen
+    (effort), no header at all.
+12. **Tools**: Controls (Radio to all, Cancel mayday, Priority, Day/Night)
+    moves to the Agents toolbar, Firewall under Inbox, Sky, Music,
+    Control room and Notifications to ⚙ "Ambience"; ⌘K reaches every one.
     Rejected: one ⋯ menu (hides instead of ordering).
-13. **Stream**: four category chips Für dich · Funk · Arbeit · Transkripte;
-    one search line with `agent:`, `art:`, `seit:`; sub-filters, saved views
+13. **Stream**: four category chips For you · Radio · Work · Transcripts;
+    one search line with `agent:`, `kind:`, `since:`; sub-filters, saved views
     and a custom range under "Filter ▾"; the time bar becomes "24 h ▾" with
     the replay inside; transcripts are off by default. Rejected: a
     self-grouping stream, a Kibana-like query language (effort), preset
     chips only.
 14. **3D**: `3d-force-graph` 1.80.1 on `three` 0.186.1, vendored as in
-    meta.infinito.nexus; the Canvas depth axes Zeit and Spawn-Tiefe become 3D
+    meta.infinito.nexus; the Canvas depth axes Time and Spawn depth become 3D
     options. Rejected: keeping the Orbit-only Canvas depth.
 15. **Artifacts scope**: git (repositories → branches → worktrees with their
     agents and reviews) plus the kvb-org-rasci register artefacts (images,
@@ -99,8 +99,7 @@ from three views down to any agent, branch or artefact.
     locked, stale, protected and the gc skip reason. The Artifacts Tree shows
     it as icons. Phase 3 builds the data, phase 4 the icons.
 21. **Delete from the tree**: merged, orphaned branches are deleted by click
-    in the Artifacts Tree (phase 4), per item and as "Alle gemergten
-    löschen":
+    in the Artifacts Tree (phase 4), per item and as "Delete all merged":
     - **Credentials**: only while the Secret Service hands pkgmgr the GitHub
       token, which proves the merge and the missing open pull request; no
       secret passes the orchestrator container. Rejected: the master password
@@ -115,7 +114,7 @@ from three views down to any agent, branch or artefact.
       `pkgmgr branch gc --apply` deletes today (remote branch and
       `compose down -v`).
     - **Confirmation**: the click shows the gc dry-run lines of the chosen
-      items, and "Löschen" needs the operator signature (`/api/sign`).
+      items, and "Delete" needs the operator signature (`/api/sign`).
       Rejected: a second click without signature, one click without preview.
     - **Execution**: the orchestrator writes a signed job into a host
       directory; a systemd user path unit runs `pkgmgr branch cleanup --apply
@@ -125,19 +124,19 @@ from three views down to any agent, branch or artefact.
     and client which skills changed and how to use them, as one
     `newsletter` per update; phase 1 announces the radio change through it.
 23. **Phase 5** (23 to 43 operator-confirmed 2026-11-07): the console
-    output shows under "Ausführen" (Run); a deny picks its channel (default
+    output shows under "Run"; a deny picks its channel (default
     `post`); agents request auto-approval rules through the
-    inbox; the rules form and the Ort fields never overlap; the radio plays
+    inbox; the rules form and the Location fields never overlap; the radio plays
     with one line per station and highlights the speaking agent; the
     operator composer sends text or voice, recorded, transcribed locally with
     whisper in the container and kept as audio, to a recipient by `post` or
-    `call`; a Hierarchie view shows the council offices with appoint and
+    `call`; a Hierarchy view shows the council offices with appoint and
     recall; the agent order (drag list) is separate from task priority (WSJF
     plus the operator's pin) and only breaks ties; one Tasks tab holds list,
     board and RASCI matrix, the inbox as its "waits on Operator" filter and
     the queue state; the merge flow, a pkgmgr-managed YAML per worktree with
     several pull sources and push targets, shows in Artifacts and Tasks.
-24. **Firewall**: the tab Regeln becomes Firewall and holds every form of
+24. **Firewall**: the rules tab becomes Firewall and holds every form of
     allow-listing: the hub's auto-approval rules (ask, review, decision),
     allow and deny command patterns, and the Claude settings permissions
     (`allow`, `ask`, `deny`) and sandbox entries. Rejected: a separate
@@ -168,7 +167,7 @@ from three views down to any agent, branch or artefact.
     `kvb-org-evening` → `kvb-org-drain`, `kvb-org-sunset` → `kvb-org-suspend`,
     `kvb-org-sunrise` → `kvb-org-resume`, `kvb-agent-relax` →
     `kvb-agent-drain`, `kvb-agent-sleep` → `kvb-agent-suspend`,
-    `kvb-agent-wakeup` → `kvb-agent-resume`; `night.py` and the Steuerung
+    `kvb-agent-wakeup` → `kvb-agent-resume`; `night.py` and the Controls
     menu follow, `kvb-skill-cleanup` removes the old names. Rejected:
     sleep / hibernate / wakeup, pause / park / resume.
 30. **Agent popup**: a click on an agent opens a fading popup with a simple,
@@ -196,7 +195,7 @@ from three views down to any agent, branch or artefact.
 36. **Tree cause**: the tree timer builds pkgmgr from the newest signed tag,
     and v2.3.0 has no `branch tree`, so no tree file exists. The Tree names
     that cause and the operator step (the pkgmgr release) instead of a bare
-    "Kein Tree"; with pkgmgr 2.4.0 released the timer writes the file.
+    "No tree"; with pkgmgr 2.4.0 released the timer writes the file.
 37. **Resources**: a tab Resources shows charts on the shared time axis:
     tokens per agent and accumulated (from the usage fields of the session
     transcripts), and CPU, RAM, disk and load of the host, sampled by a host
@@ -324,7 +323,7 @@ Phases 5 and 6 (decisions 23 to 42):
 
 ```mermaid
 flowchart TD
-    subgraph W["🧩 5 · Inbox, UI, Hierarchie, Tasks"]
+    subgraph W["🧩 5 · Inbox, UI, Hierarchy, Tasks"]
         W1["🛠️ W1 to W4 in own worktrees"] --> W2["🕵️ Skeptic round, fix round per worktree"]
         W2 --> W3{"🧪 Suite, e2e, MEDUSA, score green?"}
         W3 -- "🔴 no: fix" --> W2
@@ -422,7 +421,7 @@ flowchart TD
       `kvb-orchestrator` names. A second run changes nothing (scratch-HOME
       test).
 - [ ] The navigation has exactly three top-level entries Stream, Agents and
-      Artifacts; Stream has the sub-items Inbox and Regeln.
+      Artifacts; Stream has the sub-items Inbox and Firewall.
 - [ ] Every agent appears once under its current name: a register worker
       such as "Stage (this session)" or "infinito-nexus-core-c8 (Production)"
       maps to the agent named before the bracket.
@@ -438,18 +437,18 @@ flowchart TD
   - [ ] Agents shows the agents with a heartbeat in the last 900 s.
   - [ ] Artifacts shows the runner jobs that are queued or running.
   - [ ] A badge at 0 is hidden.
-- [ ] A red Mayday banner with "aufheben" exists if and only if a mayday is
-      active; "aufheben" runs `radio.py clear`.
+- [ ] A red Mayday banner with "cancel" exists if and only if a mayday is
+      active; "cancel" runs `radio.py clear`.
 - [ ] The Agents toolbar holds:
-  - [ ] Funk an alle, with the class choice Newsletter, Broadcast, Pan-Pan,
+  - [ ] Radio to all, with the class choice Newsletter, Broadcast, Pan-Pan,
         Security, Mayday and Newsletter preselected.
-  - [ ] Mayday aufheben, Priorität and Tag/Nacht.
+  - [ ] Cancel mayday, Priority and Day/Night.
 - [ ] The agent panel sends with the choice Post (preselected) or Call.
-- [ ] ⚙ "Ambiente" holds Himmel, Musik, Leitstand and Benachrichtigungen;
+- [ ] ⚙ "Ambience" holds Sky, Music, Control room and Notifications;
       ⌘K lists every former header tool.
-- [ ] The Stream shows exactly four category chips Für dich, Funk, Arbeit and
-      Transkripte, and one search line that filters by `agent:`, `art:` and
-      `seit:`.
+- [ ] The Stream shows exactly four category chips For you, Radio, Work and
+      Transcripts, and one search line that filters by `agent:`, `kind:` and
+      `since:`.
 - [ ] "Filter ▾" holds the kind sub-filters, the transcript parts, the saved
       views and the custom range.
 - [ ] The time control reads "24 h ▾" and holds the replay.
@@ -515,7 +514,7 @@ flowchart TD
 - [ ] 3D in both tabs runs on the vendored `3d-force-graph` 1.80.1 and
       `three` 0.186.1, with their MIT licence texts beside them and no CDN
       request (CSP unchanged).
-- [ ] 3D offers the layouts Kraft, Zeit and Spawn-Tiefe.
+- [ ] 3D offers the layouts Force, Time and Spawn depth.
 - [ ] A click on a 3D node opens the same panel as in 2D.
 - [ ] 3D respects `prefers-reduced-motion`.
 
@@ -525,10 +524,10 @@ flowchart TD
       merged (with what merged it), clean, uncommitted changes (with counts),
       unpushed commits, gone upstream, locked, stale and protected.
 - [ ] A `merged-clean` item without a gc skip reason shows a delete button,
-      and the Tree header shows "Alle gemergten löschen"; both are disabled,
+      and the Tree header shows "Delete all merged"; both are disabled,
       with the reason as tooltip, while `delete_ready` is false.
 - [ ] A click shows the gc dry-run lines of exactly the chosen items;
-      "Löschen" requires the operator signature through `/api/sign`.
+      "Delete" requires the operator signature through `/api/sign`.
 - [ ] The orchestrator writes the signed job (repository, branch, worktree
       and tip sha per item, no command) into a host-mounted job directory and
       holds no git, token or key.
@@ -555,7 +554,7 @@ flowchart TD
 - [ ] Every icon element has a `title` and an `aria-label` that carry the
       former text (DOM test over every page).
 
-### Phase 5: inbox, UI, Hierarchie, Tasks
+### Phase 5: inbox, UI, Hierarchy, Tasks
 
 - [ ] A deny is refused by the hub unless its passkey proof verifies; the
       PermissionRequest hook quotes a deny reason only when it verifies.
@@ -570,12 +569,12 @@ flowchart TD
 
 ### Phase 6: English and radio speech (S0)
 
-- [ ] The text handed to the speech engine for a `security` row starts with
+- [x] The text handed to the speech engine for a `security` row starts with
       "say-cure-ee-tay" three times; the page shows "Sécurité".
-- [ ] `8e180be` is spoken "eight echo one eight zero bravo echo" and
+- [x] `8e180be` is spoken "eight echo one eight zero bravo echo" and
       `42305` "four two tree zero fife" (unit test on the pronunciation step);
       the displayed line is unchanged.
-- [ ] A scan of the tree finds no German UI, message or document text
+- [x] A scan of the tree finds no German UI, message or document text
       outside quoted trigger phrases (test with an allowlist of those
       phrases).
 
@@ -615,7 +614,7 @@ flowchart TD
       `kvb-agent-drain`, `kvb-agent-suspend` and `kvb-agent-resume` exist;
       the old six names exist nowhere in the tree except in the migration
       and `kvb-skill-cleanup` history (grep test).
-- [ ] The Steuerung menu shows Drain, Suspend and Resume and each needs the
+- [ ] The Controls menu shows Drain, Suspend and Resume and each needs the
       passkey, like the board actions today.
 
 ### Phase 6: Tasks with asks and choices (S5)
@@ -716,7 +715,7 @@ flowchart TD
         them.
   - [ ] `make test` green on the commit of each phase.
 - **E2E**
-  - [ ] A headless Chromium and Firefox run opens Stream, Inbox, Regeln and
+  - [ ] A headless Chromium and Firefox run opens Stream, Inbox, Firewall and
         every view of Agents and Artifacts at 1920, 1366 and 390 px wide and
         saves the screenshots shown at each operator checkpoint.
   - [ ] It sends a Call from the agent panel and sees its receipt in the

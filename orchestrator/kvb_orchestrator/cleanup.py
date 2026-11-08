@@ -71,7 +71,7 @@ class Cleaning:
             raise ToolError(f"items must be a list of 1 to {ITEM_LIMIT} objects")
         scan = self.tree.get()
         if scan.get("delete_ready") is not True:
-            raise ToolError(f"löschen gesperrt: {scan.get('delete_reason') or scan.get('error') or 'delete_ready ist false'}")
+            raise ToolError(f"delete blocked: {scan.get('delete_reason') or scan.get('error') or 'delete_ready is false'}")
         known = offered(scan)
         chosen = []
         for entry in raw:
@@ -94,7 +94,7 @@ class Cleaning:
         job = {"v": JOB_VERSION, "id": job_id, "created": stamp(), "items": [{key: item[key] for key in JOB_KEYS} for item in items], "proof": proof}
         self.spool.put(job_id, job)
         names = ", ".join(item["branch"] for item in items)
-        self.log.add({"kind": "run", "title": f"Löschen signiert: {names}"[:200], "text": "\n".join(f"{item['repository']} {item['branch']} @ {item['tip'][:12]}" for item in items), "ref": {"cleanup": job_id, "status": "queued"}})
+        self.log.add({"kind": "run", "title": f"Delete signed: {names}"[:200], "text": "\n".join(f"{item['repository']} {item['branch']} @ {item['tip'][:12]}" for item in items), "ref": {"cleanup": job_id, "status": "queued"}})
         return {"id": job_id, "status": "queued", "items": job["items"]}
 
     def cleanup_state(self, job_id: str) -> dict:

@@ -77,14 +77,14 @@
   }
 
   function saveView() {
-    const name = (window.prompt("Name der Ansicht", filter.saved || "") || "").trim();
+    const name = (window.prompt("View name", filter.saved || "") || "").trim();
     if (!name) {
       return;
     }
     const entry = {name: name.slice(0, 60), kinds: [...activeKinds()], waiting: activeWaiting(), q: filter.q, agent: filter.agent};
     userViews = [...userViews.filter((view) => view.name !== entry.name), entry];
     if (!keep(STORE.views, userViews)) {
-      toast("Ansicht nur bis zum Neuladen gespeichert", ["Der Browser erlaubt kein localStorage."], false);
+      toast("View saved only until reload", ["The browser does not allow localStorage."], false);
     }
     useSaved(entry);
   }
@@ -113,11 +113,11 @@
           useSaved(view);
         }
       },
-    }}, view.name, h("button", {type: "button", class: "x", ...named(`${view.name} löschen`), on: {click: (event) => {
+    }}, view.name, h("button", {type: "button", class: "x", ...named(`Delete ${view.name}`), on: {click: (event) => {
       event.stopPropagation();
       dropView(view.name);
     }}}, icon("bi-x-lg"))));
-    stream.dom.saved.replaceChildren(...mine, iconBtn("bi-save", "Ansicht speichern", "btn small ghost", saveView));
+    stream.dom.saved.replaceChildren(...mine, iconBtn("bi-save", "Save view", "btn small ghost", saveView));
     const kindChips = KINDS.map(([id, label]) => h("button", {type: "button", class: "chip", "aria-pressed": String(kinds.has(id)), on: {click: () => {
       customize();
       if (filter.kinds.has(id) && filter.kinds.size > 1) {
@@ -131,7 +131,7 @@
       customize();
       filter.waiting = !filter.waiting;
       refilter();
-    }}}, "nur Wartendes");
+    }}}, "only waiting");
     stream.dom.kinds.replaceChildren(waiting, ...kindChips);
     const parts = kinds.has("transcript") ? PARTS.map(([id, label]) => h("button", {type: "button", class: "chip", "aria-pressed": String(filter.parts.has(id)), on: {click: () => {
       if (filter.parts.has(id) && filter.parts.size > 1) {
@@ -140,10 +140,10 @@
         filter.parts.add(id);
       }
       refilter();
-    }}}, label)) : [h("span", {class: "muted"}, "Erst mit der Art Transkripte.")];
+    }}}, label)) : [h("span", {class: "muted"}, "Only with the kind Transcripts.")];
     stream.dom.parts.replaceChildren(...parts);
     const focus = filter.sub || filter.session || filter.agent ? h("span", {class: "chip", "aria-pressed": "true"}, filter.sub ? `Subagent ${filter.sub.slice(0, 12)}` : filter.session ? `Session ${filter.session.slice(0, 8)}` : `Agent ${filter.agent}`,
-      h("button", {type: "button", class: "x", ...named("Filter entfernen"), on: {click: () => {
+      h("button", {type: "button", class: "x", ...named("Remove filter"), on: {click: () => {
         filter.sub = "";
         filter.session = "";
         filter.agent = "";

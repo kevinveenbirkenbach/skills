@@ -1,5 +1,5 @@
   const art = {repo: "", node: null};
-  const ART_KINDS = {repo: ["Repository", "bi-git"], branch: ["Branch", "bi-diagram-2"], worktree: ["Worktree", "bi-folder2-open"], agent: ["Agent", "bi-robot"], artefact: ["Artefakt", "bi-box-seam"], task: ["Aufgabe", "bi-card-checklist"]};
+  const ART_KINDS = {repo: ["Repository", "bi-git"], branch: ["Branch", "bi-diagram-2"], worktree: ["Worktree", "bi-folder2-open"], agent: ["Agent", "bi-robot"], artefact: ["Artifact", "bi-box-seam"], task: ["Task", "bi-card-checklist"]};
   const ARTEFACT_ICONS = {image: "bi-box-seam", volume: "bi-hdd", log: "bi-file-text", dir: "bi-folder"};
   const LANE_MARKS = {commit: ["Commit", "bi-record-circle"], review: ["Review", "bi-eye"], gate: ["Gate", "bi-shield-check"], push: ["Push", "bi-cloud-upload"]};
   const tail = (path, parts) => String(path).split("/").filter(Boolean).slice(-parts).join("/");
@@ -101,7 +101,7 @@
   const toneOf = (branch) => (branch.state === "merged-clean" ? "ok" : branch.state === "dirty" ? "warn" : branch.state === "protected" ? "violet" : branch.state === "stale" ? "warn" : branch.gone ? "bad" : "info");
 
   function artOrbit(repo, model) {
-    const svg = chartFrame(420, `Orbit: ${repo.name} als Sonne, Branches als Planeten (Größe = Commits voraus), Worktrees als Monde, Agenten als Satelliten`);
+    const svg = chartFrame(420, `Orbit: ${repo.name} as the sun, branches as planets (size = commits ahead), worktrees as moons, agents as satellites`);
     const rings = repo.branches.length > 16 ? [200, 310] : [250];
     svg.append(...rings.map((r) => s("circle", {class: "ring", r})));
     const layer = s("g", {});
@@ -132,14 +132,14 @@
       const angle = -Math.PI / 2 + (2 * Math.PI * index) / Math.max(branches.length, 1);
       return [branch.name, {x: radius * Math.cos(angle), y: radius * Math.sin(angle), angle}];
     }));
-    const svg = chartFrame(440, `Chord: Überlappung der Branches von ${repo.name}; Band = gemeinsam geänderte Dateien, gestrichelt = Merge`);
+    const svg = chartFrame(440, `Chord: branch overlap in ${repo.name}; band = files changed by both, dashed = merge`);
     const arcs = s("g", {});
     for (const overlap of repo.overlaps) {
       const from = spots.get(overlap.a);
       const to = spots.get(overlap.b);
       if (from && to) {
         arcs.append(s("path", {class: "edge t-alarm", d: `M${fixed(from.x)},${fixed(from.y)} Q0,0 ${fixed(to.x)},${fixed(to.y)}`, "stroke-width": fixed(width(overlap.count))},
-          s("title", {}, `${overlap.a} ↔ ${overlap.b}: ${overlap.count} gemeinsame Dateien (Konfliktrisiko)\n${overlap.files.join("\n")}`)));
+          s("title", {}, `${overlap.a} ↔ ${overlap.b}: ${overlap.count} shared files (conflict risk)\n${overlap.files.join("\n")}`)));
       }
     }
     for (const merge of repo.merges) {
@@ -148,7 +148,7 @@
       if (from && to && from !== to) {
         const control = {x: (from.x + to.x) * 0.3, y: (from.y + to.y) * 0.3};
         arcs.append(s("path", {class: "edge t-grant merge", d: `M${fixed(from.x)},${fixed(from.y)} Q${fixed(control.x)},${fixed(control.y)} ${fixed(to.x)},${fixed(to.y)}`, "stroke-width": 2, "marker-end": "url(#tip-grant)"},
-          s("title", {}, `${merge.from} → ${merge.into}: gemergt durch ${merge.by}`)));
+          s("title", {}, `${merge.from} → ${merge.into}: merged by ${merge.by}`)));
       }
     }
     for (const edge of flowEdges(repo)) {
@@ -156,7 +156,7 @@
       const to = spots.get(edge.into);
       const bend = edge.side === "pull" ? 0.55 : 0.15;
       arcs.append(s("path", {class: "edge t-direct flow", "data-side": edge.side, d: `M${fixed(from.x)},${fixed(from.y)} Q${fixed((from.x + to.x) * bend)},${fixed((from.y + to.y) * bend)} ${fixed(to.x)},${fixed(to.y)}`, "stroke-width": 2, "marker-end": "url(#tip-direct)"},
-        s("title", {}, `${edge.from} → ${edge.into}: Merge-Flow, ${edge.side === "pull" ? `${edge.into} zieht ${edge.ref} vor dem Gate` : `${edge.from} mergt fertig in ${edge.ref}`}`)));
+        s("title", {}, `${edge.from} → ${edge.into}: merge flow, ${edge.side === "pull" ? `${edge.into} pulls ${edge.ref} before the gate` : `${edge.from} merges into ${edge.ref} when done`}`)));
     }
     const marks = branches.map((branch) => artMark({id: `branch:${repo.path}\u0000${branch.name}`, kind: "branch", label: branch.name}, spots.get(branch.name), 8, `tone-${toneOf(branch)}`, null));
     const labels = branches.map((branch) => {
@@ -175,7 +175,7 @@
     const [left, right, top, lane, full] = [200, 24, 40, 34, 1120];
     const height = top + lanes.length * lane + 12;
     const x = (ts) => left + ((Math.min(Math.max(ts, begin), end) - begin) / (end - begin)) * (full - left - right);
-    const svg = s("svg", {viewBox: `0 0 ${full} ${height}`, class: "chart", role: "img", "aria-label": `Swimlane: Commits, Reviews, Gates und Pushes je Branch von ${repo.name}`}, defs());
+    const svg = s("svg", {viewBox: `0 0 ${full} ${height}`, class: "chart", role: "img", "aria-label": `Swimlane: commits, reviews, gates and pushes per branch of ${repo.name}`}, defs());
     lanes.forEach((branch, index) => {
       svg.append(s("rect", {class: index % 2 ? "lane odd" : "lane", x: 0, y: top + index * lane, width: full, height: lane}));
       svg.append(s("text", {class: "lane-label", x: 14, y: top + index * lane + lane / 2, dy: "0.35em", on: {click: () => artSelect(`branch:${repo.path}\u0000${branch.name}`)}}, short(branch.name).slice(0, 26)));
@@ -201,9 +201,9 @@
 
   function artLegend(view) {
     const words = {
-      orbit: "Sonne = Repository · Planet = Branch, Größe = Commits voraus · Mond = Worktree · Satellit = Agent oder Artefakt",
-      chord: "Band = Dateien, die beide Branches ändern (aus den Reviews im Hub, nur dort bekannt) · gestrichelt = Merge laut gc-Klassifikation · gepunktet = Merge-Flow des Worktrees",
-      swimlane: "Commit = freigegebenes Review · Gate = Review-Gate und Queue-Läufe · Push = Runner-Befehl mit push · Zeitraum = 24 h ▾",
+      orbit: "Sun = repository · planet = branch, size = commits ahead · moon = worktree · satellite = agent or artifact",
+      chord: "Band = files both branches change (from the reviews in the hub, known only there) · dashed = merge per gc classification · dotted = merge flow of the worktree",
+      swimlane: "Commit = approved review · Gate = review gate and queue runs · Push = runner command with push · Time range = 24 h ▾",
     };
     const marks = view === "swimlane" ? Object.values(LANE_MARKS).map(([label, name]) => h("span", {}, icon(name), label)) : [];
     return h("div", {class: "legend"}, marks, h("span", {class: "muted"}, words[view]));
@@ -212,33 +212,33 @@
   function artPanel(model) {
     const node = model.byId.get(art.node);
     if (!node) {
-      return [h("h2", {class: "panel-title"}, "Details"), h("p", {class: "muted"}, "Klicke auf ein Repository, einen Branch, einen Worktree, einen Agenten oder ein Artefakt.")];
+      return [h("h2", {class: "panel-title"}, "Details"), h("p", {class: "muted"}, "Click a repository, a branch, a worktree, an agent or an artifact.")];
     }
     const [kindName, kindIcon] = ART_KINDS[node.kind];
     const data = node.data;
     const body = [];
     if (node.kind === "repo") {
-      body.push(meta([["Pfad", data.path], ["Remote", data.remote], ["Default", data.default], ["Forge", data.forge], ["Stand", data.scanned_at]]),
+      body.push(meta([["Path", data.path], ["Remote", data.remote], ["Default", data.default], ["Forge", data.forge], ["As of", data.scanned_at]]),
         h("p", {class: "muted"}, `${data.branches.length} Branches · ${data.branches.reduce((sum, entry) => sum + entry.worktrees.length, 0) + data.detached.length} Worktrees`));
     } else if (node.kind === "branch") {
-      body.push(h("div", {class: "states"}, branchStates(data)), meta([["Upstream", data.upstream], ["Kopf", data.head.slice(0, 12), data.head], ["Gemergt in", data.merged_into], ["Grund", data.reason]]),
+      body.push(h("div", {class: "states"}, branchStates(data)), meta([["Upstream", data.upstream], ["Head", data.head.slice(0, 12), data.head], ["Merged into", data.merged_into], ["Reason", data.reason]]),
         data.worktrees.map((wt) => flowDetails(wt.flow, data.name)),
-        h("h3", {}, "Trockenlauf"), h("pre", {class: "notes"}, data.plan.join("\n")), h("div", {class: "actions"}, deleteButton(data)));
+        h("h3", {}, "Dry run"), h("pre", {class: "notes"}, data.plan.join("\n")), h("div", {class: "actions"}, deleteButton(data)));
     } else if (node.kind === "worktree") {
-      body.push(h("div", {class: "states"}, worktreeStates(data)), workChips(data.open_work), meta([["Pfad", data.path], ["Branch", data.branch], ["HEAD", data.head.slice(0, 12), data.head]]),
+      body.push(h("div", {class: "states"}, worktreeStates(data)), workChips(data.open_work), meta([["Path", data.path], ["Branch", data.branch], ["HEAD", data.head.slice(0, 12), data.head]]),
         flowDetails(data.flow, data.branch),
-        data.workers.length ? h("div", {class: "who"}, data.workers.map((name) => [face(name, false), person(name)])) : h("p", {class: "muted"}, "Kein Agent arbeitet hier."),
+        data.workers.length ? h("div", {class: "who"}, data.workers.map((name) => [face(name, false), person(name)])) : h("p", {class: "muted"}, "No agent works here."),
         data.review ? h("div", {class: "who"}, status(data.review.status), h("span", {}, data.review.title)) : null, h("div", {class: "actions"}, copyButton(data.path)));
     } else if (node.kind === "agent") {
-      body.push(h("div", {class: "actions"}, btn("Agent öffnen", "btn small soft", () => openAgent(data.name))));
+      body.push(h("div", {class: "actions"}, btn("Open agent", "btn small soft", () => openAgent(data.name))));
     } else if (node.kind === "artefact") {
-      body.push(meta([["Ref", data.ref], ["Art", data.kind], ["Aufgabe", data.task], ["Seit", data.added]]), data.ended ? pill("Aufgabe beendet: aufräumen", "warn") : null);
+      body.push(meta([["Ref", data.ref], ["Kind", data.kind], ["Task", data.task], ["Since", data.added]]), data.ended ? pill("Task ended: clean up", "warn") : null);
     } else {
-      body.push(meta([["Titel", data.title], ["Status", data.status]]));
+      body.push(meta([["Title", data.title], ["Status", data.status]]));
     }
     return [
       h("div", {class: "panel-head"}, h("div", {}, h("h2", {class: "panel-title"}, icon(kindIcon), " ", node.label), h("span", {class: "muted"}, kindName)),
-        iconBtn("bi-x-lg", "Schließen", "btn small ghost", () => artSelect(node.id))),
+        iconBtn("bi-x-lg", "Close", "btn small ghost", () => artSelect(node.id))),
       ...body,
     ];
   }
@@ -251,12 +251,12 @@
       drawArtifacts();
     }}});
     const count = h("span", {class: "muted"});
-    const reload = iconBtn("bi-arrow-clockwise", "Neu laden", "btn small soft", fetchTree, "Neu laden: den Tree-Stand von pkgmgr lesen");
+    const reload = iconBtn("bi-arrow-clockwise", "Reload", "btn small soft", fetchTree, "Reload: read the tree state from pkgmgr");
     const stageBox = h("div", {class: "stage"});
     const aside = h("aside", {class: "card panel", "aria-live": "polite"});
     const legendBox = h("div", {});
     const list = h("div", {class: "repos"});
-    const search = view === "tree" ? h("input", {type: "search", placeholder: "Repo, Branch, Pfad oder Agent filtern …", value: tree.q, "aria-label": "Tree filtern", on: {input: (event) => {
+    const search = view === "tree" ? h("input", {type: "search", placeholder: "Filter repo, branch, path or agent …", value: tree.q, "aria-label": "Filter tree", on: {input: (event) => {
       tree.q = event.target.value;
       drawArtifacts();
     }}}) : null;
@@ -283,11 +283,11 @@
         tree.data = await response.json();
         tree.model = artifactModel(tree.data);
       } else {
-        tree.data = {repos: [], scanned: null, error: `/api/tree antwortet ${response.status}`};
+        tree.data = {repos: [], scanned: null, error: `/api/tree answered ${response.status}`};
       }
     } catch {
       ui.offline = true;
-      tree.data = tree.data || {repos: [], scanned: null, error: "Hub nicht erreichbar"};
+      tree.data = tree.data || {repos: [], scanned: null, error: "Hub unreachable"};
     }
     tree.busy = false;
     drawArtifacts();
@@ -302,9 +302,9 @@
       return;
     }
     const empty = !tree.data || tree.data.error;
-    tree.dom.count.textContent = empty ? "" : `${tree.data.repos.length} Repositories · Stand ${clock.format(stampOf(tree.data.scanned))}`;
+    tree.dom.count.textContent = empty ? "" : `${tree.data.repos.length} repositories · as of ${clock.format(stampOf(tree.data.scanned))}`;
     if (empty) {
-      tree.dom.stage.replaceChildren(emptyState(tree.busy || !tree.data ? "Lese Repositories …" : "Kein Tree", tree.data ? tree.data.error : "pkgmgr schreibt den Tree jede Minute, solange diese Seite offen ist."));
+      tree.dom.stage.replaceChildren(emptyState(tree.busy || !tree.data ? "Reading repositories …" : "No tree", tree.data ? tree.data.error : "pkgmgr writes the tree every minute while this page is open."));
       tree.dom.aside.replaceChildren();
       return;
     }
@@ -320,5 +320,5 @@
     const repo = chosenRepo();
     tree.dom.picker.replaceChildren(...tree.data.repos.map((entry) => h("option", {value: entry.path, selected: entry.path === art.repo}, `${entry.name} (${entry.branches.length})`)));
     tree.dom.legend.replaceChildren(artLegend(tree.dom.view));
-    tree.dom.stage.replaceChildren(repo ? {orbit: artOrbit, chord: artChord, swimlane: artSwimlane}[tree.dom.view](repo, model) : emptyState("Kein Repository", "pkgmgr nennt kein Repository."));
+    tree.dom.stage.replaceChildren(repo ? {orbit: artOrbit, chord: artChord, swimlane: artSwimlane}[tree.dom.view](repo, model) : emptyState("No repository", "pkgmgr names no repository."));
   }

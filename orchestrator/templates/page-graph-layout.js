@@ -120,7 +120,7 @@
   function nodeMark(node, at, gap) {
     const r = RADIUS[node.kind];
     const classes = ["node", `k-${node.kind}`, ui.node === node.id ? "selected" : "", node.claims.length ? "claimed" : "", speech.current && speech.current.who === node.id ? "speaking" : ""].filter(Boolean).join(" ");
-    const tasks = node.tasks.length ? ` · ${node.tasks.length} Aufgaben` : "";
+    const tasks = node.tasks.length ? ` · ${node.tasks.length} tasks` : "";
     return s("g", {
       class: classes, transform: `translate(${fixed(at.x)} ${fixed(at.y)})`, tabindex: 0, role: "button", "aria-label": `${node.label}, ${NODE_KINDS[node.kind]}`,
       on: {
@@ -133,7 +133,7 @@
         },
       },
     },
-    s("title", {}, `${node.label} · ${NODE_KINDS[node.kind]}${node.parent ? ` von ${labelOf(node.parent)}` : ""}${tasks}`),
+    s("title", {}, `${node.label} · ${NODE_KINDS[node.kind]}${node.parent ? ` of ${labelOf(node.parent)}` : ""}${tasks}`),
     s("circle", {r}),
     node.kind === "subagent" ? null : s("text", {class: "initial", "text-anchor": "middle", dy: "0.35em"}, node.label.slice(0, 1).toUpperCase()),
     caption(node, at, r, gap));

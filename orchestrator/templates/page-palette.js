@@ -1,20 +1,20 @@
   function paletteItems() {
     return [
-      ...Nav.TABS.flatMap(([id, label], index) => [{label: `Ansicht: ${label}`, hint: String(index + 1), run: () => go(id, null)}, ...(Nav.SUBS[id] || []).map(([sub, name]) => ({label: `Ansicht: ${label} › ${name}`, hint: Nav.hashOf(sub, null), run: () => go(sub, null)}))]),
+      ...Nav.TABS.flatMap(([id, label], index) => [{label: `View: ${label}`, hint: String(index + 1), run: () => go(id, null)}, ...(Nav.SUBS[id] || []).map(([sub, name]) => ({label: `View: ${label} › ${name}`, hint: Nav.hashOf(sub, null), run: () => go(sub, null)}))]),
       ...["agents", "artifacts", "tasks"].flatMap((screen) => Nav.viewsOf(screen).map(([id, name]) => ({label: `${Nav.TABS.find(([tab]) => tab === screen)[1]}: ${name}`, hint: Nav.hashOf(screen, id), run: () => go(screen, id)}))),
-      ...Object.entries(state.views).map(([id, view]) => ({label: `Stream: ${view.label}`, hint: "Kategorie", run: () => useView(id)})),
-      ...userViews.map((view) => ({label: `Stream: ${view.name}`, hint: "eigene Ansicht", run: () => useSaved(view)})),
+      ...Object.entries(state.views).map(([id, view]) => ({label: `Stream: ${view.label}`, hint: "Category", run: () => useView(id)})),
+      ...userViews.map((view) => ({label: `Stream: ${view.name}`, hint: "saved view", run: () => useSaved(view)})),
       ...agentNames().map((name) => ({label: `${avatar(name)} ${name}`, hint: "Agent", run: () => openAgent(name)})),
-      {label: "Funk an alle …", hint: "Newsletter, Broadcast, Pan-Pan, Security, Mayday", run: openToAll},
-      ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Tag/Nacht", run: () => confirmAct(id)})),
-      {label: "Priorität …", hint: "Reihenfolge der Agenten in der Hierarchie", run: openAgentOrder},
-      {label: "Regeln …", hint: "automatische Freigaben", run: () => go("rules", null)},
-      {label: "Einstellungen …", hint: "Ambiente, Ort, Farben, Musik, Töne, Funk vorlesen, Radio", run: settingsSheet},
-      {label: settings.music.on ? "Musik aus" : "Musik an", hint: "Ambiente", run: toggleMusic},
-      {label: space.look ? "Himmel verlassen" : "Himmel ansehen", hint: "h", run: () => skyLook(!space.look)},
-      {label: "Leitstand umschalten", hint: "Ambiente", run: toggleLeitstand},
-      {label: "Benachrichtigungen aktivieren", hint: "Ambiente", run: askNotify},
-      {label: "Tastenkürzel", hint: "?", run: helpSheet},
+      {label: "Radio to all …", hint: "Newsletter, Broadcast, Pan-Pan, Security, Mayday", run: openToAll},
+      ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Day/Night", run: () => confirmAct(id)})),
+      {label: "Priority …", hint: "agent order in the hierarchy", run: openAgentOrder},
+      {label: "Firewall …", hint: "automatic grants", run: () => go("rules", null)},
+      {label: "Settings …", hint: "Ambience, location, colors, music, tones, read radio aloud, internet radio", run: settingsSheet},
+      {label: settings.music.on ? "Music off" : "Music on", hint: "Ambience", run: toggleMusic},
+      {label: space.look ? "Leave the sky" : "Look at the sky", hint: "h", run: () => skyLook(!space.look)},
+      {label: "Toggle control room", hint: "Ambience", run: toggleLeitstand},
+      {label: "Enable notifications", hint: "Ambience", run: askNotify},
+      {label: "Keyboard shortcuts", hint: "?", run: helpSheet},
     ];
   }
 
@@ -27,8 +27,8 @@
     const items = paletteItems().filter((item) => !q || item.label.toLowerCase().includes(q) || item.hint.toLowerCase().includes(q));
     if (raw) {
       items.push(state.llm
-        ? {label: `KI-Befehl: „${raw}“`, hint: "Tab", keep: true, run: () => askModel(raw)}
-        : {label: "KI-Befehl ist aus", hint: "KVB_ORCHESTRATOR_LLM_URL und KVB_ORCHESTRATOR_LLM_MODEL in orchestrator/.env setzen", keep: true, run: () => toast("KI-Befehl ist aus", ["Setze KVB_ORCHESTRATOR_LLM_URL, KVB_ORCHESTRATOR_LLM_MODEL und KVB_ORCHESTRATOR_LLM_KEY_FILE in orchestrator/.env und installiere neu."], false)});
+        ? {label: `AI command: “${raw}”`, hint: "Tab", keep: true, run: () => askModel(raw)}
+        : {label: "AI command is off", hint: "set KVB_ORCHESTRATOR_LLM_URL and KVB_ORCHESTRATOR_LLM_MODEL in orchestrator/.env", keep: true, run: () => toast("AI command is off", ["Set KVB_ORCHESTRATOR_LLM_URL, KVB_ORCHESTRATOR_LLM_MODEL and KVB_ORCHESTRATOR_LLM_KEY_FILE in orchestrator/.env and reinstall."], false)});
     }
     palette.items = items;
     palette.index = Math.min(palette.index, Math.max(items.length - 1, 0));
@@ -60,23 +60,23 @@
 
   async function askModel(text) {
     palette.plan = {actions: [], rejected: [], busy: true};
-    palette.list.replaceChildren(h("li", {}, h("span", {class: "muted"}, "Frage das Modell … (nur Befehl, Ids und Titel gehen hinaus)")));
+    palette.list.replaceChildren(h("li", {}, h("span", {class: "muted"}, "Asking the model … (only the command, ids and titles leave the hub)")));
     const result = await sendJson("/api/nl", {text});
     if (!palette.plan) {
       return;
     }
     if (!result.ok || !result.data) {
       palette.plan = null;
-      palette.list.replaceChildren(h("li", {}, h("span", {}, `KI-Befehl fehlgeschlagen: ${result.status} ${result.text}`.trim())));
+      palette.list.replaceChildren(h("li", {}, h("span", {}, `AI command failed: ${result.status} ${result.text}`.trim())));
       return;
     }
     palette.plan = result.data;
     const actions = result.data.actions.map((action) => h("pre", {}, action.summary));
-    const rejected = result.data.rejected.map((entry) => h("p", {class: "muted"}, `verworfen: ${entry.reason} · ${entry.action}`));
+    const rejected = result.data.rejected.map((entry) => h("p", {class: "muted"}, `discarded: ${entry.reason} · ${entry.action}`));
     palette.list.replaceChildren(h("li", {class: "palette-plan"},
-      actions.length ? actions : h("p", {class: "muted"}, "Das Modell schlug keine gültige Aktion vor."),
+      actions.length ? actions : h("p", {class: "muted"}, "The model proposed no valid action."),
       rejected,
-      h("p", {class: "muted"}, actions.length ? "Enter führt genau diese Aktionen aus · Esc bricht ab" : "Esc schließt")));
+      h("p", {class: "muted"}, actions.length ? "Enter runs exactly these actions · Esc cancels" : "Esc closes")));
   }
 
   async function executePlan(plan) {
@@ -111,7 +111,7 @@
 
   function openPalette() {
     const box = document.getElementById("palette");
-    palette.input = h("input", {type: "text", placeholder: "Ansicht, Agent, Aktion – oder ein Befehl in Worten …", "aria-label": "Befehl", role: "combobox", "aria-expanded": "true"});
+    palette.input = h("input", {type: "text", placeholder: "View, agent, action, or a command in words …", "aria-label": "Command", role: "combobox", "aria-expanded": "true"});
     palette.list = h("ul", {class: "palette-list", role: "listbox"});
     palette.index = 0;
     palette.plan = null;
@@ -142,7 +142,7 @@
         runPalette(palette.index);
       }
     });
-    box.replaceChildren(h("div", {class: "palette-box", role: "dialog", "aria-label": "Befehle"}, h("div", {class: "palette-row"}, palette.input, micButton(palette.input)), palette.list));
+    box.replaceChildren(h("div", {class: "palette-box", role: "dialog", "aria-label": "Commands"}, h("div", {class: "palette-row"}, palette.input, micButton(palette.input)), palette.list));
     box.hidden = false;
     drawPalette();
     palette.input.focus();

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -426,8 +426,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <header class="top">
   <div class="brand"><span class="logo" aria-hidden="true"></span><div class="brand-text"><h1>Agent Orchestrator</h1><span class="sky-note" id="sky-note"></span></div></div>
   <div class="tools">
-    <button type="button" class="btn small ghost icon-only" id="palette-open" title="Befehle (Strg+K)" aria-label="Befehle"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-command"></use></svg></button>
-    <button type="button" class="btn small ghost icon-only" id="settings-open" title="Einstellungen und Ambiente" aria-label="Einstellungen"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-gear"></use></svg></button>
+    <button type="button" class="btn small ghost icon-only" id="palette-open" title="Commands (Ctrl+K)" aria-label="Commands"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-command"></use></svg></button>
+    <button type="button" class="btn small ghost icon-only" id="settings-open" title="Settings and ambience" aria-label="Settings"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-gear"></use></svg></button>
   </div>
 </header>
 <div class="navbar">
@@ -445,7 +445,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <div class="sheet" id="sheet" hidden></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <div class="palette" id="palette" hidden></div>
-<div class="sky-panel" id="sky-panel" role="group" aria-label="Blick in den Himmel" hidden></div>
+<div class="sky-panel" id="sky-panel" role="group" aria-label="View of the sky" hidden></div>
 <script nonce="{{ nonce }}" id="state" type="application/json">{{ state | tojson }}</script>
 <script nonce="{{ nonce }}">
 {% include "ambience.js" %}

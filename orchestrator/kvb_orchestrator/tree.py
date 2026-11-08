@@ -73,19 +73,19 @@ def dry_run(item: dict) -> list[str]:
         always stays.
     """
     tip = (item["local_sha"] or item["head"] or "")[:12]
-    merged = f", gemergt durch {item['merged_by']}" if item["merged_by"] else ""
+    merged = f", merged by {item['merged_by']}" if item["merged_by"] else ""
     lines = [f"{item['branch']} @ {tip}: {item['state']}{merged}"]
     for action in item["actions"]:
         if action == "worktree":
-            lines.append(f"entfernt den Worktree {item['worktree']}")
+            lines.append(f"removes the worktree {item['worktree']}")
         elif action == "local-branch":
-            lines.append(f"löscht den lokalen Branch {item['branch']}")
+            lines.append(f"deletes the local branch {item['branch']}")
         elif action.startswith("remote"):
-            lines.append(f"bleibt: {action} (nur lokal)")
+            lines.append(f"stays: {action} (local only)")
         else:
             lines.append(action)
-    lines += [f"stoppt den Compose-Stack {name} ohne -v" for name in item["compose_projects"]]
-    lines += [f"entfernt das Image {name}" for name in item["images"]]
+    lines += [f"stops the Compose stack {name} without -v" for name in item["compose_projects"]]
+    lines += [f"removes the image {name}" for name in item["images"]]
     return lines
 
 

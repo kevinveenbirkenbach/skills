@@ -1,6 +1,6 @@
   const CLEANUP_POLL = 2000;
   const CLEANUP_PATIENCE = 900000;
-  const RESULT_LABELS = {done: ["gelöscht", "ok"], refused: ["verweigert", "bad"], failed: ["fehlgeschlagen", "bad"]};
+  const RESULT_LABELS = {done: ["deleted", "ok"], refused: ["refused", "bad"], failed: ["failed", "bad"]};
 
   function planOf(item) {
     const repo = (tree.data.repos || []).find((entry) => entry.path === item.repository);
@@ -19,37 +19,37 @@
         h("pre", {}, (entry ? entry.plan : [`${item.branch} @ ${item.tip.slice(0, 12)}`]).join("\n")));
     });
     const outcome = h("div", {class: "mini", "aria-live": "polite"});
-    const confirm = h("button", {type: "button", class: "btn danger", ...named("Löschen", "Löschen: mit deiner Passkey-Signatur an den Host übergeben")}, icon("bi-trash3"), "Löschen");
+    const confirm = h("button", {type: "button", class: "btn danger", ...named("Delete", "Delete: hand over to the host with your passkey signature")}, icon("bi-trash3"), "Delete");
     confirm.addEventListener("click", async () => {
       confirm.disabled = true;
       if (!await removeSigned(items, outcome)) {
         confirm.disabled = false;
       }
     });
-    openSheet(items.length > 1 ? `${items.length} gemergte Branches löschen` : `${items[0].branch} löschen`, [
-      h("p", {class: "muted"}, "Trockenlauf von pkgmgr branch cleanup --local für genau diese Einträge: Worktree, lokaler Branch, Compose-Stack ohne -v und seine Images. Kein Remote-Branch. Der Host prüft deine Signatur und verweigert jeden Eintrag, dessen Stand sich seither geändert hat."),
-      h("ul", {class: "mini", "aria-label": "Trockenlauf"}, rows),
+    openSheet(items.length > 1 ? `Delete ${items.length} merged branches` : `Delete ${items[0].branch}`, [
+      h("p", {class: "muted"}, "Dry run of pkgmgr branch cleanup --local for exactly these entries: worktree, local branch, Compose stack without -v and its images. No remote branch. The host checks your signature and refuses every entry whose state has changed since."),
+      h("ul", {class: "mini", "aria-label": "Dry run"}, rows),
       outcome,
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Abbrechen", "btn ghost", closeSheet), confirm),
+      h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm),
     ], false);
   }
 
   async function removeSigned(items, outcome) {
-    const signed = await proofFor(items, "Löschen");
+    const signed = await proofFor(items, "Delete");
     if (signed === null) {
-      outcome.replaceChildren(h("p", {class: "muted"}, "Nicht signiert: nichts wurde übergeben."));
+      outcome.replaceChildren(h("p", {class: "muted"}, "Not signed: nothing was handed over."));
       return false;
     }
     const result = await sendJson("/api/cleanup", {items, proof: signed.proof});
     if (!result.ok || !result.data) {
-      toast("Löschen: nicht möglich", fail(result), false);
+      toast("Delete: not possible", fail(result), false);
       outcome.replaceChildren(h("p", {class: "muted"}, `${result.status} ${result.text}`.trim()));
       return false;
     }
-    outcome.replaceChildren(h("p", {class: "muted", "data-cleanup": result.data.id}, `Signiert und an den Host übergeben (Job ${result.data.id}); die Path-Unit löscht jetzt.`));
+    outcome.replaceChildren(h("p", {class: "muted", "data-cleanup": result.data.id}, `Signed and handed to the host (job ${result.data.id}); the path unit deletes now.`));
     followJob(`/api/cleanup/${encodeURIComponent(result.data.id)}`, outcome, Date.now(), (data) => {
       const {good, lines} = showJob(data, outcome, "branch", RESULT_LABELS);
-      toast(`Löschen: ${good ? "erledigt" : "nicht alles gelöscht"}`, lines, good);
+      toast(`Delete: ${good ? "done" : "not everything deleted"}`, lines, good);
       fetchTree();
     });
     return true;
@@ -74,7 +74,7 @@
 
   function showJob(data, outcome, key, labels) {
     const lines = data.error ? [data.error] : data.items.map((item) => `${item[key]}: ${(labels[item.status] || [item.status])[0]}${item.reason ? ` (${item.reason})` : ""}`);
-    outcome.replaceChildren(h("ul", {class: "mini", "aria-label": "Ergebnis"}, data.error ? h("li", {}, data.error) : data.items.map((item) => {
+    outcome.replaceChildren(h("ul", {class: "mini", "aria-label": "Result"}, data.error ? h("li", {}, data.error) : data.items.map((item) => {
       const [label, tone] = labels[item.status] || [item.status, "neutral"];
       return h("li", {"data-result": item.status}, h("div", {class: "row"}, h("code", {}, item[key]), pill(label, tone)), item.reason ? h("span", {class: "muted"}, item.reason) : null);
     })));

@@ -9,7 +9,7 @@ from .records import epoch, read_json, shown
 
 CRON_ACTIVE = 900
 TIMER_KEYS = ("OnCalendar", "OnActiveSec", "OnBootSec", "OnStartupSec", "OnUnitActiveSec", "OnUnitInactiveSec")
-CRON_LABELS = {"cron": "Cron", "wakeup": "Wakeup", "background": "Hintergrund", "timer": "Timer", "queue": "Queue"}
+CRON_LABELS = {"cron": "Cron", "wakeup": "Wakeup", "background": "Background", "timer": "Timer", "queue": "Queue"}
 
 
 def cron_state(cron: dict, beats: dict[str, float], now: float) -> dict:
@@ -59,7 +59,7 @@ def queue_entries(council: Path) -> list[tuple[dict, float]]:
 def queue_rows(council: Path) -> list[dict]:
     rows = []
     for entry, created in queue_entries(council):
-        running = "läuft" if entry.get("status") == "active" else "wartet"
+        running = "running" if entry.get("status") == "active" else "waiting"
         rows.append({
             "key": f"queue:{shown(entry.get('id'))}", "type": "queue", "session": shown(entry.get("session")), "sub": "", "created": created,
             "deleted": None, "until": None, "job": shown(entry.get("id")), "expression": f"{shown(entry.get('kind'))} · {running}",

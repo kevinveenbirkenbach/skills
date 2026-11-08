@@ -124,16 +124,16 @@ class TestHubBoard(HubCase):
         for action, other in (("clear-mayday", "sunrise"), ("evening", "sunset"), ("sunset", "evening"), ("sunrise", "clear-mayday")):
             with self.subTest(action=action):
                 self.assertEqual(self.post_json(f"/api/board/{action}", {}, good)[0], 400)
-                self.assertEqual(self.post_json(f"/api/board/{action}", {"proof": None}, good)[:3:2], (400, b"nicht signiert: no signature\n"))
+                self.assertEqual(self.post_json(f"/api/board/{action}", {"proof": None}, good)[:3:2], (400, b"not signed: no signature\n"))
                 stranger = key(-7, "stranger").proof(self.board_proof(action, signer)["payload"], self.origin)
-                self.assertEqual(self.post_json(f"/api/board/{action}", {"proof": stranger}, good)[:3:2], (400, b"nicht signiert: the signing key is not pinned\n"))
+                self.assertEqual(self.post_json(f"/api/board/{action}", {"proof": stranger}, good)[:3:2], (400, b"not signed: the signing key is not pinned\n"))
                 proof = self.board_proof(action, signer)
-                self.assertEqual(self.post_json(f"/api/board/{other}", {"proof": proof}, good)[:3:2], (400, b"nicht signiert: the signature does not list this item\n"))
+                self.assertEqual(self.post_json(f"/api/board/{other}", {"proof": proof}, good)[:3:2], (400, b"not signed: the signature does not list this item\n"))
         self.assertEqual(self.scripts.calls, [])
         proof = self.board_proof("clear-mayday", signer)
         self.assertEqual(self.post_json("/api/board/clear-mayday", {"proof": proof}, good)[0], 200)
         self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])])
-        self.assertEqual(self.post_json("/api/board/clear-mayday", {"proof": proof}, good)[:3:2], (400, b"nicht signiert: this signature was already used for this item\n"))
+        self.assertEqual(self.post_json("/api/board/clear-mayday", {"proof": proof}, good)[:3:2], (400, b"not signed: this signature was already used for this item\n"))
         for payload in ({"action": "order"}, {"action": "broadcast"}, {"action": "reboot"}, {"action": 1}, {}, {"action": "evening", "extra": 1}):
             with self.subTest(payload=payload):
                 self.assertEqual(self.post_json("/api/board/sign", payload, good)[0], 400)
@@ -189,7 +189,7 @@ class TestHubBoard(HubCase):
             {"name": "snooze", "arguments": {"ids": [ask_id], "hours": 500}},
             {"name": "view", "arguments": {"name": "funk", "extra": 1}},
         ]}))
-        status, _, body = self.post_json("/api/nl", {"text": "gib alles Grüne frei"}, self.guard(self.host))
+        status, _, body = self.post_json("/api/nl", {"text": "approve everything green"}, self.guard(self.host))
         self.assertEqual(status, 200, body)
         result = json.loads(body)
         self.assertEqual([action["name"] for action in result["actions"]], ["approve", "choose", "message", "view", "snooze"])

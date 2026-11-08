@@ -34,16 +34,16 @@ class TestNavModule(unittest.TestCase):
         cls.data = json.loads(done.stdout)
 
     def test_the_navigation_has_four_entries_and_stream_has_inbox_rules_and_radio(self):
-        stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Regeln"], ["radio", "Radio"]]]
+        stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Firewall"], ["radio", "Radio"]]]
         self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []]])
 
     def test_agents_and_artifacts_offer_five_views_in_order_and_tasks_three(self):
         shared = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]]
         self.assertEqual((self.data["views"], self.data["artifacts"]), (shared, shared))
-        self.assertEqual((self.data["taskViews"], self.data["tasks"]), ([["list", "Liste"], ["board", "Board"], ["rasci", "RASCI"]],) * 2)
+        self.assertEqual((self.data["taskViews"], self.data["tasks"]), ([["list", "List"], ["board", "Board"], ["rasci", "RASCI"]],) * 2)
 
     def test_only_agents_add_the_hierarchy_after_3d(self):
-        self.assertEqual(self.data["agents"][-2:], [["3d", "3D"], ["hierarchy", "Hierarchie"]])
+        self.assertEqual(self.data["agents"][-2:], [["3d", "3D"], ["hierarchy", "Hierarchy"]])
         self.assertEqual(self.data["icon"], "bi-diagram-2")
 
     def test_hashes_route_and_the_old_ones_redirect(self):

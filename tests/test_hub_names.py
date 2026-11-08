@@ -20,11 +20,11 @@ class TestRenameOnce(unittest.TestCase):
             self.assertEqual(counts, [0, 0])
             for build in (3000.0, 4000.0):
                 book.observe([*claims, ("s1", "Skills", 300.0, "title")], build)
-            self.assertEqual([row["title"] for row in names.Directory(book.listed()).renames(0, 5000)], ["i18n 2.0 heißt jetzt Skills"])
+            self.assertEqual([row["title"] for row in names.Directory(book.listed()).renames(0, 5000)], ["i18n 2.0 is now called Skills"])
 
     def test_a_name_pair_shows_once_per_session(self):
         entries = [{"session": "s1", "name": name, "first_seen": ts, "source": "claim"} for name, ts in (("A", 1), ("B", 2), ("A", 3), ("B", 4))]
-        self.assertEqual([row["title"] for row in names.Directory(entries).renames(0, 10)], ["A heißt jetzt B", "B heißt jetzt A"])
+        self.assertEqual([row["title"] for row in names.Directory(entries).renames(0, 10)], ["A is now called B", "B is now called A"])
 
 
 if __name__ == "__main__":

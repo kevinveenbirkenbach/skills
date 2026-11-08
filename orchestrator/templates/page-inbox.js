@@ -9,7 +9,7 @@
     const result = await sendJson("/api/inbox/approve", {items: entries, proof: signed.proof});
     ui.busy = false;
     if (!result.ok || !result.data) {
-      toast(`${label}: nicht möglich`, fail(result), false);
+      toast(`${label}: not possible`, fail(result), false);
       await load();
       return false;
     }
@@ -22,7 +22,7 @@
 
   function undoToast(batch, label) {
     const left = h("span", {class: "muted"});
-    const button = h("button", {type: "button", class: "btn small", ...named("Rückgängig")}, icon("bi-arrow-counterclockwise"), "Rückgängig");
+    const button = h("button", {type: "button", class: "btn small", ...named("Undo")}, icon("bi-arrow-counterclockwise"), "Undo");
     const box = h("div", {class: "toast wait", role: "status"}, h("strong", {}, label), h("div", {class: "undo-row"}, left, h("span", {class: "spacer"}), button));
     let timer = 0;
     const count = () => {
@@ -33,7 +33,7 @@
         load();
         return;
       }
-      left.textContent = `wird in ${rest} s wirksam`;
+      left.textContent = `takes effect in ${rest} s`;
     };
     timer = window.setInterval(count, 250);
     button.addEventListener("click", async () => {
@@ -41,7 +41,7 @@
       button.disabled = true;
       const result = await send(`/api/inbox/undo/${encodeURIComponent(batch.id)}`, "", "application/json");
       box.remove();
-      toast(result.ok ? `Rückgängig: ${label}` : "Zu spät: schon wirksam", result.ok ? [] : [`${result.status} ${result.text}`.trim()], result.ok);
+      toast(result.ok ? `Undone: ${label}` : "Too late: already in effect", result.ok ? [] : [`${result.status} ${result.text}`.trim()], result.ok);
       await load();
     });
     document.getElementById("toasts").append(box);
@@ -57,18 +57,18 @@
         openItem(item);
         return null;
       }
-      return submit([entryOf(item, "approve", item.recommended)], `Entscheidung: ${item.recommended}`);
+      return submit([entryOf(item, "approve", item.recommended)], `Decision: ${item.recommended}`);
     }
-    return submit([entryOf(item, "approve", "")], `${item.kind === "operator" ? "Ausführen" : "Freigabe"}: ${short(item.title)}`);
+    return submit([entryOf(item, "approve", "")], `${item.kind === "operator" ? "Run" : "Grant"}: ${short(item.title)}`);
   }
 
-  const rejectOne = (item) => submit([entryOf(item, "reject", "")], `Ablehnung: ${short(item.title)}`);
-  const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Entscheidung: ${label}`);
+  const rejectOne = (item) => submit([entryOf(item, "reject", "")], `Denial: ${short(item.title)}`);
+  const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Decision: ${label}`);
 
   function bulk(items, label) {
     const usable = items.filter(selectable);
     if (!usable.length) {
-      toast(`${label}: nichts freizugeben`, [], false);
+      toast(`${label}: nothing to grant`, [], false);
       return;
     }
     const rows = usable.map((item) => h("li", {},
@@ -77,19 +77,19 @@
       item.kind === "operator" ? h("div", {class: "command"}, h("code", {}, item.command)) : null,
       item.kind === "operator" ? h("span", {class: "muted"}, `in ${item.directory}`) : null,
       item.kind === "ask" ? h("div", {class: "command"}, h("code", {}, item.command)) : null));
-    const confirm = h("button", {type: "button", class: "btn primary"}, `${usable.length} freigeben`);
+    const confirm = h("button", {type: "button", class: "btn primary"}, `Grant ${usable.length}`);
     confirm.addEventListener("click", () => {
       closeSheet();
-      submit(usable.map((item) => entryOf(item, "approve", item.kind === "decision" ? item.recommended : "")), `${label}: ${usable.length} Einträge`);
+      submit(usable.map((item) => entryOf(item, "approve", item.kind === "decision" ? item.recommended : "")), `${label}: ${usable.length} entries`);
     });
-    openSheet(label, [h("p", {class: "muted"}, "Jeder Eintrag und jeder volle Befehl, der freigegeben wird. Nach dem Klick signiert der Passkey die ganze Auswahl einmal; danach bleiben 3 s zum Rückgängigmachen."), h("ul", {class: "mini"}, rows), h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Abbrechen", "btn ghost", closeSheet), confirm)], false);
+    openSheet(label, [h("p", {class: "muted"}, "Every entry and every full command that gets granted. After the click the passkey signs the whole selection once; then 3 s remain to undo."), h("ul", {class: "mini"}, rows), h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
     confirm.focus();
   }
 
   async function mark(item, until, pinned) {
     const result = await sendJson("/api/inbox/mark", {kind: item.kind, id: item.id, until, pinned});
     if (!result.ok) {
-      toast("Merken fehlgeschlagen", [`${result.status} ${result.text}`.trim()], false);
+      toast("Marking failed", [`${result.status} ${result.text}`.trim()], false);
     }
     await load();
   }
@@ -116,25 +116,25 @@
 
   function actionsFor(item) {
     if (item.held) {
-      return [h("span", {class: "muted"}, "wird wirksam …")];
+      return [h("span", {class: "muted"}, "takes effect …")];
     }
     const buttons = [];
     if (item.kind === "review") {
-      buttons.push(iconBtn("bi-check-lg", "Freigeben", "btn small primary", () => approveOne(item)), iconBtn("bi-x-lg", "Ablehnen", "btn small danger", () => rejectOne(item)));
+      buttons.push(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)), iconBtn("bi-x-lg", "Deny", "btn small danger", () => rejectOne(item)));
     } else if (item.kind === "ask") {
-      buttons.push(iconBtn("bi-check-lg", "Freigeben", "btn small primary", () => approveOne(item)));
+      buttons.push(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "decision" && item.recommended) {
-      buttons.push(h("button", {type: "button", class: "btn small primary", ...named(`Empfehlung: ${item.recommended}`), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), item.recommended));
+      buttons.push(h("button", {type: "button", class: "btn small primary", ...named(`Recommendation: ${item.recommended}`), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), item.recommended));
     } else if (item.kind === "operator" && item.runnable) {
-      buttons.push(iconBtn("bi-play-fill", "Ausführen", "btn small primary", () => approveOne(item)));
+      buttons.push(iconBtn("bi-play-fill", "Run", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "rule") {
-      buttons.push(h("button", {type: "button", class: "btn small primary", ...named("Annehmen", "Annehmen: der Passkey signiert genau diese Regel, dann gilt sie"), on: {click: () => approveOne(item)}}, icon("bi-shield-check"), "Annehmen"));
+      buttons.push(h("button", {type: "button", class: "btn small primary", ...named("Accept", "Accept: the passkey signs exactly this rule, then it applies"), on: {click: () => approveOne(item)}}, icon("bi-shield-check"), "Accept"));
     }
     if (item.deniable) {
       buttons.push(denySplit(item));
     }
     if (item.job && !jobOpen(item.job)) {
-      buttons.push(iconBtn("bi-x-circle", "Schließen", "btn small ghost", () => dismissJob(item.job), "Schließen: Konsole ausblenden, eine erledigte Zeile verschwindet mit ihr"));
+      buttons.push(iconBtn("bi-x-circle", "Close", "btn small ghost", () => dismissJob(item.job), "Close: hide the console; a done row disappears with it"));
     }
     return buttons;
   }
@@ -142,19 +142,19 @@
   function inboxItem(item, index) {
     const red = item.kind === "review" && item.gate !== "pass";
     const classes = ["item", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
-    const box = h("input", {type: "checkbox", "aria-label": `${item.title} auswählen`, checked: ui.selected.has(keyOf(item)), disabled: !selectable(item), on: {change: () => toggle(item)}});
+    const box = h("input", {type: "checkbox", "aria-label": `Select ${item.title}`, checked: ui.selected.has(keyOf(item)), disabled: !selectable(item), on: {change: () => toggle(item)}});
     return h("li", {class: classes, "data-index": index},
       box,
       h("div", {},
         h("div", {class: "head-row"},
           pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
-          item.kind === "review" ? pill(item.gate === "pass" ? "Gate grün" : "Gate rot", item.gate === "pass" ? "ok" : "bad") : null,
+          item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
           item.warnings.map((warning) => pill(warning, "bad")),
-          item.pinned ? pill("angeheftet", "violet") : null,
-          item.until ? pill(`bis ${absolute.format(stampOf(item.until))}`, "neutral") : null,
+          item.pinned ? pill("pinned", "violet") : null,
+          item.until ? pill(`until ${absolute.format(stampOf(item.until))}`, "neutral") : null,
           h("span", {class: "spacer"}), when(item.ts)),
-        h("button", {type: "button", class: "linkish", title: "Öffnen", on: {click: () => openItem(item)}}, item.title),
-        item.agent ? h("div", {class: "muted"}, "von ", person(item.agent)) : null,
+        h("button", {type: "button", class: "linkish", title: "Open", on: {click: () => openItem(item)}}, item.title),
+        item.agent ? h("div", {class: "muted"}, "from ", person(item.agent)) : null,
         item.kind === "review" ? h("div", {class: "muted"}, item.detail, item.score ? ` · ${item.score}` : "") : null,
         item.kind === "operator" && item.title !== item.command ? h("div", {class: "command"}, h("code", {}, item.command)) : null,
         item.kind === "operator" ? h("div", {class: "muted"}, `in ${dash(item.directory)}`, item.detail && item.detail !== "-" ? ` · ${item.detail}` : "") : null,
@@ -168,10 +168,10 @@
         actionsFor(item),
         item.kind === "operator" ? copyButton(item.command) : null,
         h("span", {class: "spacer"}),
-        iconBtn("bi-hourglass-split", "1 h", "btn small ghost", () => mark(item, nowSeconds() + 3600, item.pinned), "1 h: eine Stunde zurückstellen"),
-        iconBtn("bi-sunrise", "morgen", "btn small ghost", () => mark(item, tomorrow(), item.pinned), "morgen: bis morgen 8 Uhr zurückstellen"),
-        item.until ? iconBtn("bi-alarm", "wecken", "btn small ghost", () => mark(item, 0, item.pinned), "wecken: wieder zeigen") : null,
-        iconBtn(item.pinned ? "bi-pin-angle-fill" : "bi-pin-angle", item.pinned ? "lösen" : "anheften", "btn small ghost", () => mark(item, item.until, !item.pinned))));
+        iconBtn("bi-hourglass-split", "1 h", "btn small ghost", () => mark(item, nowSeconds() + 3600, item.pinned), "1 h: snooze for one hour"),
+        iconBtn("bi-sunrise", "tomorrow", "btn small ghost", () => mark(item, tomorrow(), item.pinned), "tomorrow: snooze until 8 am tomorrow"),
+        item.until ? iconBtn("bi-alarm", "wake", "btn small ghost", () => mark(item, 0, item.pinned), "wake: show again") : null,
+        iconBtn(item.pinned ? "bi-pin-angle-fill" : "bi-pin-angle", item.pinned ? "unpin" : "pin", "btn small ghost", () => mark(item, item.until, !item.pinned))));
   }
 
   function inboxScreen() {
@@ -204,14 +204,14 @@
       ui.snoozed = event.target.checked;
       drawInbox();
     }}});
-    const choose = h("button", {type: "button", class: "btn small soft", ...named(`Auswahl freigeben (${chosen.length})`), disabled: !chosen.length || ui.busy, on: {click: () => bulk(chosen, "Auswahl freigeben")}}, icon("bi-check2-square"), String(chosen.length));
-    const all = h("button", {type: "button", class: "btn small primary", ...named(`Alle grünen freigeben (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Alle grünen freigeben")}}, icon("bi-check2-all"), String(green.length));
+    const choose = h("button", {type: "button", class: "btn small soft", ...named(`Grant selection (${chosen.length})`), disabled: !chosen.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection")}}, icon("bi-check2-square"), String(chosen.length));
+    const all = h("button", {type: "button", class: "btn small primary", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green")}}, icon("bi-check2-all"), String(green.length));
     inboxDom.replaceChildren(
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Inbox", counter(waitingCount())), h("span", {class: "spacer"}),
-        hidden ? h("label", {class: "check"}, snoozed, `${hidden} zurückgestellt`) : null),
+        hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null),
       h("div", {class: "inbox-actions"}, choose, all),
-      onLocalhost() ? "" : h("p", {class: "muted"}, "Freigaben signiert der Passkey nur unter ", localLink()),
-      items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("Alles erledigt", "Gerade wartet nichts auf dich."));
+      onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
+      items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now."));
     settleConsoles(items);
     const current = inboxDom.querySelector(`.item[data-index="${ui.cursor}"]`);
     if (current && document.activeElement === document.body) {
@@ -232,7 +232,7 @@
       h("p", {class: "text"}, item.title),
       item.command ? h("div", {class: "command"}, h("code", {}, item.command), copyButton(item.command)) : null,
       item.kind === "rule" ? ruleRequestBody(item) : null,
-      meta([["Verzeichnis", item.directory], ["Warnungen", item.warnings.join(", ")], ["Id", item.id]]),
+      meta([["Directory", item.directory], ["Warnings", item.warnings.join(", ")], ["Id", item.id]]),
       item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
         type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, disabled: item.held, on: {click: () => {
           closeSheet();

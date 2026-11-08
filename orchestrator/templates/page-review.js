@@ -33,20 +33,20 @@
     const review = reviewOf(ui.review);
     if (!review) {
       closeSheet();
-      toast("Review nicht mehr im Zeitraum", [], false);
+      toast("Review no longer in the time range", [], false);
       return;
     }
     const item = state.inbox.find((entry) => entry.kind === "review" && entry.id === review.id);
     const list = fileList(review.id);
-    const treeNav = h("nav", {class: "card tree", "aria-label": "Geänderte Dateien"}, treePane(list));
+    const treeNav = h("nav", {class: "card tree", "aria-label": "Changed files"}, treePane(list));
     const diff = h("section", {class: "card diff-pane", "aria-label": "Diff"}, diffPane(list));
     const id = ui.review;
     const head = h("article", {class: "card"},
-      h("div", {class: "card-head"}, h("div", {}, h("p", {class: "muted"}, "eingereicht ", when(review.created_ts))), h("div", {class: "who"}, status(review.status || "pending"), review.gate ? pill(review.gate === "pass" ? "Gate grün" : "Gate rot", review.gate === "pass" ? "ok" : "bad") : null)),
+      h("div", {class: "card-head"}, h("div", {}, h("p", {class: "muted"}, "submitted ", when(review.created_ts))), h("div", {class: "who"}, status(review.status || "pending"), review.gate ? pill(review.gate === "pass" ? "Gate green" : "Gate red", review.gate === "pass" ? "ok" : "bad") : null)),
       meta([["Repo", review.worktree], ["Branch", review.branch], ["Tree", (review.tree || "").slice(0, 12), review.tree], ["Score", review.score]]),
       review.notes ? h("pre", {class: "notes"}, review.notes) : null,
       h("div", {class: "actions"},
-        h("a", {class: "btn ghost icon-only", href: `/reviews/${encodeURIComponent(review.id)}/page`, target: "_blank", rel: "noopener noreferrer", ...named("Vollständige Seite öffnen", "Vollständige Seite öffnen (neuer Tab)")}, icon("bi-box-arrow-up-right")),
+        h("a", {class: "btn ghost icon-only", href: `/reviews/${encodeURIComponent(review.id)}/page`, target: "_blank", rel: "noopener noreferrer", ...named("Open full page", "Open full page (new tab)")}, icon("bi-box-arrow-up-right")),
         h("span", {class: "spacer"}),
         item ? actionsFor(item).map((node) => {
           node.addEventListener("click", closeSheet);
@@ -113,14 +113,14 @@
 
   function treePane(list) {
     if (list === "loading") {
-      return h("p", {class: "muted pad"}, "Lade Dateiliste …");
+      return h("p", {class: "muted pad"}, "Loading file list …");
     }
     if (!Array.isArray(list) || !list.length) {
-      return h("p", {class: "muted pad"}, "Keine Dateiliste. Die vollständige Seite zeigt alle Änderungen.");
+      return h("p", {class: "muted pad"}, "No file list. The full page shows all changes.");
     }
     const sections = [...new Set(list.map((file) => file.section))];
     return h("div", {}, sections.map((section) => h("div", {class: "tree-section"},
-      sections.length > 1 ? h("h3", {class: "tree-title"}, SECTIONS[section] || section || "Dateien") : null,
+      sections.length > 1 ? h("h3", {class: "tree-title"}, SECTIONS[section] || section || "Files") : null,
       branch(nest(list.map((file, index) => [file, index]).filter(([file]) => file.section === section)), list))));
   }
 
@@ -133,7 +133,7 @@
 
   function diffPane(list) {
     if (!Array.isArray(list) || !list.length) {
-      return h("p", {class: "muted pad"}, list === "loading" ? "Lade Änderungen …" : "Kein Diff verfügbar.");
+      return h("p", {class: "muted pad"}, list === "loading" ? "Loading changes …" : "No diff available.");
     }
     const file = list[Math.min(ui.file, list.length - 1)];
     const [letter, tone] = FILE_STATUS[file.status] || ["?", "neutral"];

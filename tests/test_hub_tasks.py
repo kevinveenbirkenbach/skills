@@ -179,10 +179,10 @@ class TestHubTasks(HubCase):
         forged = {**self.signed([change(PRIO)], self.pin()), "assertion": {}}
         status, _, body = self.post_json("/api/tasks", {"items": [change(PRIO)], "proof": forged}, self.guard(self.host))
         self.assertEqual(status, 400, body)
-        self.assertIn("nicht signiert", body.decode() if isinstance(body, bytes) else body)
+        self.assertIn("not signed", body.decode() if isinstance(body, bytes) else body)
         snapshot = self.snapshot()
         self.assertEqual([job for job in snapshot["jobs"] if job["kind"] == "task"], [])
-        self.assertNotIn("Aufgabe signiert geändert", json.dumps(snapshot, ensure_ascii=False))
+        self.assertNotIn("Task change signed", json.dumps(snapshot, ensure_ascii=False))
 
     def test_a_task_the_hub_cannot_sign_whole_is_not_editable(self):
         long_slug = "work/" + "x" * 600

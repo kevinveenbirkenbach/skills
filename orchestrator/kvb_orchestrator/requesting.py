@@ -49,7 +49,7 @@ class Requesting:
                 raise ToolError(f"{name} already has {AGENT_CAP} pending rule requests; wait for their answer with rule_request_wait")
 
         record = self.rule_requests.add_checked({**fields, "agent": name, "why": why, "status": "pending", "rule": None, "reason": "", "channel": "", "proof": None, "decided": None, "created_ts": now}, capped)
-        self.log.add({"kind": "rule", "title": f"Regelwunsch von {name}: {request_words(record)}", "text": why, "ref": {"request": record["id"]}})
+        self.log.add({"kind": "rule", "title": f"Rule request from {name}: {request_words(record)}", "text": why, "ref": {"request": record["id"]}})
         return {"id": record["id"], "status": record["status"], "url": self.url()}
 
     def rule_request_wait(self, arguments: dict) -> dict:
@@ -78,7 +78,7 @@ class Requesting:
         items = []
         for record in self.open_requests(now):
             rule = {key: record[key] for key in RULE_FIELDS}
-            fields = {"title": f"Regel: {request_words(record)}", "agent": record["agent"], "to": requester_of(claims, record["agent"])[0], "detail": record["why"], "rule": rule, "dry_run": self.dry_run(record, now), "deniable": True}
+            fields = {"title": f"Rule: {request_words(record)}", "agent": record["agent"], "to": requester_of(claims, record["agent"])[0], "detail": record["why"], "rule": rule, "dry_run": self.dry_run(record, now), "deniable": True}
             items.append({**base, "kind": "rule", "id": record["id"], "ts": record["created_ts"], **fields})
         return items
 
@@ -113,5 +113,5 @@ class Requesting:
         if not changed:
             raise Conflict(request_state(decided, now))
         self.store_rule(rule, fields, proof, True, now)
-        self.log.add({"kind": "rule", "title": f"Regelwunsch angenommen: {request_words(record)}", "text": f"von {record['agent']}", "ref": {"request": request_id, "rule": rule["id"]}})
+        self.log.add({"kind": "rule", "title": f"Rule request accepted: {request_words(record)}", "text": f"from {record['agent']}", "ref": {"request": request_id, "rule": rule["id"]}})
         return request_state(decided, now)

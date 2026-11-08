@@ -13,14 +13,14 @@
   };
 
   function customRange() {
-    const from = h("input", {type: "datetime-local", "aria-label": "Von", value: localInput(ui.from === null ? state.since : ui.from)});
-    const to = h("input", {type: "datetime-local", "aria-label": "Bis", value: localInput(ui.to === null ? state.until : ui.to)});
-    return h("span", {class: "custom"}, from, h("span", {class: "muted"}, "bis"), to,
+    const from = h("input", {type: "datetime-local", "aria-label": "From", value: localInput(ui.from === null ? state.since : ui.from)});
+    const to = h("input", {type: "datetime-local", "aria-label": "To", value: localInput(ui.to === null ? state.until : ui.to)});
+    return h("span", {class: "custom"}, from, h("span", {class: "muted"}, "to"), to,
       h("button", {type: "button", class: "btn small soft", on: {click: () => {
         const begin = Date.parse(from.value) / 1000;
         const end = Date.parse(to.value) / 1000;
         if (!Number.isFinite(begin) || !Number.isFinite(end) || begin >= end) {
-          toast("Zeitraum ungültig", ["„Von“ muss vor „Bis“ liegen."], false);
+          toast("Time range invalid", ["“From” must come before “To”."], false);
           return;
         }
         stopReplay();
@@ -28,15 +28,15 @@
         ui.from = begin;
         ui.to = end;
         reload();
-      }}}, "Anwenden"));
+      }}}, "Apply"));
   }
 
   function timeBar() {
     const bar = document.getElementById("time");
-    const presets = h("div", {class: "segmented", role: "group", "aria-label": "Zeitraum"});
-    const summary = h("summary", {title: "Zeitraum und Wiedergabe"});
-    const slider = h("input", {type: "range", min: 0, max: 1000, step: 1, value: 1000, "aria-label": "Stand der Wiedergabe"});
-    const play = iconBtn("bi-play-fill", "Wiedergabe", "btn small soft", null);
+    const presets = h("div", {class: "segmented", role: "group", "aria-label": "Time range"});
+    const summary = h("summary", {title: "Time range and replay"});
+    const slider = h("input", {type: "range", min: 0, max: 1000, step: 1, value: 1000, "aria-label": "Replay position"});
+    const play = iconBtn("bi-play-fill", "Replay", "btn small soft", null);
     const liveButton = h("button", {type: "button", class: "btn small ghost"}, "Live");
     const label = h("span", {class: "window-label"});
     for (const [seconds, name] of PRESETS.filter(([seconds]) => seconds !== -1)) {
@@ -57,8 +57,8 @@
       }
       reload();
     });
-    bar.append(summary, h("div", {class: "menu-box end"}, h("h3", {}, "Zeitraum"), presets, h("h3", {}, "Wiedergabe"), h("div", {class: "replay"}, play, slider, liveButton), label,
-      h("p", {class: "muted"}, "Einen eigenen Zeitraum setzt Filter ▾ im Stream.")));
+    bar.append(summary, h("div", {class: "menu-box end"}, h("h3", {}, "Time range"), presets, h("h3", {}, "Replay"), h("div", {class: "replay"}, play, slider, liveButton), label,
+      h("p", {class: "muted"}, "Filter ▾ in the stream sets a custom time range.")));
     timeDom = {summary, presets, slider, play, live: liveButton, label};
   }
 
@@ -82,7 +82,7 @@
     for (const button of timeDom.presets.children) {
       button.setAttribute("aria-pressed", String(Number(button.dataset.preset) === ui.preset));
     }
-    timeDom.summary.textContent = `${(PRESETS.find(([seconds]) => seconds === ui.preset) || [0, "eigener"])[1]}${ui.asOf === null ? "" : " · Wiedergabe"} ▾`;
+    timeDom.summary.textContent = `${(PRESETS.find(([seconds]) => seconds === ui.preset) || [0, "custom"])[1]}${ui.asOf === null ? "" : " · replay"} ▾`;
     timeDom.slider.disabled = ui.preset === -1;
     timeDom.play.disabled = ui.preset === -1;
     timeDom.live.disabled = live();
@@ -127,6 +127,6 @@
     ui.playing = false;
     window.clearTimeout(replay);
     if (timeDom) {
-      relabel(timeDom.play, "bi-play-fill", "Wiedergabe");
+      relabel(timeDom.play, "bi-play-fill", "Replay");
     }
   }

@@ -81,7 +81,7 @@ class TestHubGraph(HubCase):
             ("rename", "s1", "IAM", "IAM"),
             ("radio", "s1", "IAM", "IAM"),
         ])
-        self.assertEqual(rows[1]["title"], "Skills heißt jetzt IAM")
+        self.assertEqual(rows[1]["title"], "Skills is now called IAM")
         self.assertAlmostEqual(rows[1]["ts"], now - 50, places=3)
         for name in ("Skills", "IAM"):
             with self.subTest(name=name):

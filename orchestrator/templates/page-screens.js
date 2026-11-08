@@ -8,7 +8,7 @@
   }
 
   document.getElementById("tabs").append(...Nav.TABS.map(([id, label], index) => h("div", {class: "tab-group"},
-    tabButton(id, label, `Taste ${index + 1}`),
+    tabButton(id, label, `key ${index + 1}`),
     Nav.SUBS[id] ? h("div", {class: "subtabs"}, Nav.SUBS[id].map(([sub, name]) => tabButton(sub, name, ""))) : null)));
 
   function measure() {
@@ -99,7 +99,7 @@
     const banner = document.getElementById("mayday");
     const silence = state.silence;
     banner.hidden = !silence;
-    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "aufheben", "btn small", () => confirmAct("clear-mayday"), "aufheben: Mayday beenden (radio.py clear)")] : []));
+    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "cancel", "btn small", () => confirmAct("clear-mayday"), "cancel: end the mayday (radio.py clear)")] : []));
     document.title = `${state.badges.inbox ? `(${state.badges.inbox}) ` : ""}Agent Orchestrator`;
     window.setTimeout(measure, 0);
   }

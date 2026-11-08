@@ -3,27 +3,27 @@
   const ACTIVE_BEAT = 900;
   const DAY = 86400;
   const HUMAN = "Operator";
-  const PRESETS = [[3600, "1 h"], [21600, "6 h"], [DAY, "24 h"], [7 * DAY, "7 d"], [0, "alle"], [-1, "eigener"]];
+  const PRESETS = [[3600, "1 h"], [21600, "6 h"], [DAY, "24 h"], [7 * DAY, "7 d"], [0, "all"], [-1, "custom"]];
   const EMOJI = ["🦊", "🐙", "🦉", "🐝", "🐢", "🦄", "🐳", "🦋", "🐧", "🦁", "🐼", "🐨", "🦜", "🐬", "🦀", "🐸", "🦔", "🦩", "🐞", "🌵", "🍀", "🌻", "🍄", "🌙", "⭐", "🔥", "🌊", "⚡", "🎈", "🎲", "🧭", "🚀", "🪐", "🔭", "🧩", "🎯", "🪁", "🧪", "🔮", "🗿", "🌋", "🍉", "🍋", "🥨", "🐋", "🦚", "🐌", "🌈"];
-  const PARTS = [["user", "Nutzer"], ["assistant", "Assistent"], ["tool_call", "Werkzeugaufruf"], ["tool_result", "Werkzeugergebnis"], ["system", "System"]];
+  const PARTS = [["user", "User"], ["assistant", "Assistant"], ["tool_call", "Tool call"], ["tool_result", "Tool result"], ["system", "System"]];
   const PART_TONES = {user: "info", assistant: "ok", tool_call: "violet", tool_result: "teal", system: "neutral"};
   const KIND_TONES = {radio: "teal", review: "info", ask: "warn", decision: "violet", operator: "bad", register: "neutral", rename: "info", cron: "teal", rule: "ok", approval: "ok", run: "info", transcript: "neutral"};
   const VIEW_ICONS = {"fuer-dich": "bi-person-check", funk: "bi-broadcast", arbeit: "bi-briefcase", transkripte: "bi-chat-left-text"};
-  const ITEM_LABELS = {review: "Review", ask: "Ask", decision: "Entscheidung", operator: "Operator", rule: "Regelwunsch"};
-  const NIGHT = {day: ["Tag", "ok"], evening: ["Abend", "warn"], sunset: ["Nacht", "violet"]};
-  const ACTIONS = [["clear-mayday", "Mayday aufheben", "Die Funkstille des aktiven Maydays aufheben?"], ["evening", "Abend", "Alle Agenten in den Abend schicken (kvb-agent-relax)?"], ["sunset", "Sonnenuntergang", "Alle Agenten schlafen legen (kvb-agent-sleep)?"], ["sunrise", "Sonnenaufgang", "Alle Agenten wecken (kvb-agent-wakeup)?"]];
+  const ITEM_LABELS = {review: "Review", ask: "Ask", decision: "Decision", operator: "Operator", rule: "Rule request"};
+  const NIGHT = {day: ["Day", "ok"], evening: ["Evening", "warn"], sunset: ["Night", "violet"]};
+  const ACTIONS = [["clear-mayday", "Cancel mayday", "Lift the radio silence of the active mayday?"], ["evening", "Evening", "Send all agents into the evening (kvb-agent-relax)?"], ["sunset", "Sunset", "Put all agents to sleep (kvb-agent-sleep)?"], ["sunrise", "Sunrise", "Wake all agents (kvb-agent-wakeup)?"]];
   const UPLOAD_LIMIT = 50 * 1024 * 1024;
   const STREAM_KEEP = 5000;
-  const CLASSES = {post: "Post", call: "Call", newsletter: "Newsletter", broadcast: "Broadcast", mayday: "Mayday", "pan-pan": "Pan-Pan", security: "Security", receipt: "Gelesen", grant: "Freigabe"};
+  const CLASSES = {post: "Post", call: "Call", newsletter: "Newsletter", broadcast: "Broadcast", mayday: "Mayday", "pan-pan": "Pan-Pan", security: "Sécurité", receipt: "Read", grant: "Grant"};
   const PILLS = {post: "info", call: "info", newsletter: "teal", broadcast: "teal", mayday: "bad", "pan-pan": "warn", security: "violet", receipt: "neutral", grant: "ok"};
-  const LEGEND = [["direct", "Post / Call"], ["broadcast", "Newsletter / Broadcast"], ["alarm", "Mayday / Pan-Pan"], ["security", "Security"], ["grant", "Queue-Freigabe"]];
-  const TO_ALL = [["newsletter", "Newsletter"], ["broadcast", "Broadcast"], ["pan-pan", "Pan-Pan"], ["security", "Security"], ["mayday", "Mayday"]];
+  const LEGEND = [["direct", "Post / Call"], ["broadcast", "Newsletter / Broadcast"], ["alarm", "Mayday / Pan-Pan"], ["security", "Sécurité"], ["grant", "Queue grant"]];
+  const TO_ALL = [["newsletter", "Newsletter"], ["broadcast", "Broadcast"], ["pan-pan", "Pan-Pan"], ["security", "Sécurité"], ["mayday", "Mayday"]];
   const TO_ONE = [["post", "Post"], ["call", "Call"]];
   const STATUS = {
-    running: ["läuft", "ok"], queued: ["wartet", "info"], blocked: ["blockiert", "bad"], stale: ["veraltet", "warn"], pending: ["offen", "warn"], done: ["erledigt", "neutral"], stopped: ["gestoppt", "neutral"],
-    approved: ["freigegeben", "ok"], rejected: ["abgelehnt", "bad"], allowed: ["erlaubt", "ok"], denied: ["abgelehnt", "bad"], expired: ["abgelaufen", "neutral"], decided: ["entschieden", "ok"], failed: ["fehlgeschlagen", "bad"], refused: ["verweigert", "bad"],
+    running: ["running", "ok"], queued: ["waiting", "info"], blocked: ["blocked", "bad"], stale: ["stale", "warn"], pending: ["open", "warn"], done: ["done", "neutral"], stopped: ["stopped", "neutral"],
+    approved: ["approved", "ok"], rejected: ["denied", "bad"], allowed: ["allowed", "ok"], denied: ["denied", "bad"], expired: ["expired", "neutral"], decided: ["decided", "ok"], failed: ["failed", "bad"], refused: ["refused", "bad"],
   };
-  const SECTIONS = {staged: "Gestaged", unstaged: "Nicht gestaged", untracked: "Unversioniert"};
+  const SECTIONS = {staged: "Staged", unstaged: "Not staged", untracked: "Untracked"};
   const FILE_STATUS = {added: ["A", "ok"], deleted: ["D", "bad"], modified: ["M", "info"], renamed: ["R", "violet"], copied: ["C", "violet"], untracked: ["U", "warn"]};
   const SIGNS = {add: "+", del: "-", ctx: " ", meta: " "};
   const NODE_KINDS = {operator: "Operator", chair: "Chair", session: "Session", subagent: "Subagent"};
@@ -34,16 +34,16 @@
   const RELAYOUT = 60000;
   const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
   const STORE = {views: "kvb-orchestrator.views"};
-  const SOUND_KINDS = [["mayday", "MAYDAY / PAN-PAN"], ["review", "Reviews, Asks, Entscheidungen"], ["direct", "Post und Calls an dich"], ["radio", "Aller Funk"]];
-  const SPEECH_CLASSES = [["post", "Post"], ["call", "Call"], ["newsletter", "Newsletter"], ["broadcast", "Broadcast"], ["mayday", "MAYDAY"], ["pan-pan", "PAN-PAN"], ["security", "SECURITE"]];
+  const SOUND_KINDS = [["mayday", "MAYDAY / PAN-PAN"], ["review", "Reviews, asks, decisions"], ["direct", "Post and calls to you"], ["radio", "All radio"]];
+  const SPEECH_CLASSES = [["post", "Post"], ["call", "Call"], ["newsletter", "Newsletter"], ["broadcast", "Broadcast"], ["mayday", "MAYDAY"], ["pan-pan", "PAN-PAN"], ["security", "Sécurité"]];
   const SPEECH_QUEUE = 20;
   const SPEECH_QUIET = 60000;
   const SPEECH_FRESH = 300;
-  const THEME_CHOICES = [["sky", "Himmel (folgt dem Licht draußen)"], ["light", "Immer hell"], ["dark", "Immer dunkel"], ["custom", "Eigene Farben"]];
-  const COLOR_FIELDS = [["top", "Himmel oben"], ["bottom", "Himmel am Horizont"], ["accent", "Akzent"]];
-  const STAGE_LABELS = {night: "Nacht", astronomical: "Astronomische Dämmerung", nautical: "Nautische Dämmerung", civil: "Bürgerliche Dämmerung", golden: "Goldene Stunde", day: "Tag"};
-  const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-  const COMPASS = [["N", "Norden"], ["NO", "Nordosten"], ["O", "Osten"], ["SO", "Südosten"], ["S", "Süden"], ["SW", "Südwesten"], ["W", "Westen"], ["NW", "Nordwesten"]];
+  const THEME_CHOICES = [["sky", "Sky (follows the light outside)"], ["light", "Always light"], ["dark", "Always dark"], ["custom", "Custom colors"]];
+  const COLOR_FIELDS = [["top", "Sky at the top"], ["bottom", "Sky at the horizon"], ["accent", "Accent"]];
+  const STAGE_LABELS = {night: "Night", astronomical: "Astronomical twilight", nautical: "Nautical twilight", civil: "Civil twilight", golden: "Golden hour", day: "Day"};
+  const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+  const COMPASS = [["N", "North"], ["NE", "Northeast"], ["E", "East"], ["SE", "Southeast"], ["S", "South"], ["SW", "Southwest"], ["W", "West"], ["NW", "Northwest"]];
   const SUBS_TTL = 60000;
   const TURN = 10;
   const ZOOM = 1.2;
@@ -60,8 +60,8 @@
     direct: [[740, 0, 0.2]],
     radio: [[520, 0, 0.07]],
   };
-  const KEYS = [["Strg+K", "Befehle, Ansichten, Agenten und KI-Befehl"], ["1 · 2 · 3 · 4", "Stream · Agents · Artifacts · Tasks"], ["j / k", "Inbox: nächster / vorheriger Eintrag"], ["x", "Inbox: Eintrag auswählen"], ["a", "Inbox: Eintrag freigeben (3 s rückgängig)"], ["Enter", "Inbox: Eintrag öffnen"], ["/", "Stream durchsuchen"], ["h", "Himmel ansehen: ziehen dreht den Blick, Rad oder zwei Finger zoomen, Esc beendet"], ["Pfeile · + / − · 0", "Himmel (fokussiert): drehen · zoomen · zurücksetzen"], ["Ziehen · Rad", "3D: drehen, rechts ziehen verschiebt, Rad zoomt"],["🎙 halten", "Spracheingabe ins Agentenfeld oder die Befehlszeile, nie automatisch gesendet"], ["?", "Diese Hilfe"], ["Esc", "Schließen"]];
+  const KEYS = [["Ctrl+K", "Commands, views, agents and AI command"], ["1 · 2 · 3 · 4", "Stream · Agents · Artifacts · Tasks"], ["j / k", "Inbox: next / previous entry"], ["x", "Inbox: select entry"], ["a", "Inbox: grant entry (3 s to undo)"], ["Enter", "Inbox: open entry"], ["/", "Search the stream"], ["h", "Look at the sky: drag turns the view, wheel or two fingers zoom, Esc ends"], ["Arrows · + / − · 0", "Sky (focused): turn · zoom · reset"], ["Drag · wheel", "3D: turn, right drag pans, wheel zooms"],["🎙 hold", "Voice input into the agent field or the command line, never sent automatically"], ["?", "This help"], ["Esc", "Close"]];
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const relative = new Intl.RelativeTimeFormat("de", {numeric: "auto"});
-  const absolute = new Intl.DateTimeFormat("de-DE", {dateStyle: "medium", timeStyle: "short"});
-  const clock = new Intl.DateTimeFormat("de-DE", {hour: "2-digit", minute: "2-digit"});
+  const relative = new Intl.RelativeTimeFormat("en", {numeric: "auto"});
+  const absolute = new Intl.DateTimeFormat("en-GB", {dateStyle: "medium", timeStyle: "short"});
+  const clock = new Intl.DateTimeFormat("en-GB", {hour: "2-digit", minute: "2-digit"});

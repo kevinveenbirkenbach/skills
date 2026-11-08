@@ -25,19 +25,19 @@
 
   function consoleWords(job) {
     if (job.status === "queued") {
-      return `wartet auf den Runner seit ${lasting(nowSeconds() - job.created_ts)}`;
+      return `waiting for the runner for ${lasting(nowSeconds() - job.created_ts)}`;
     }
     if (job.status === "running") {
-      return `läuft seit ${lasting(nowSeconds() - job.started)}`;
+      return `running for ${lasting(nowSeconds() - job.started)}`;
     }
     if (job.status === "refused") {
-      return "der Runner hat die Signatur nicht angenommen";
+      return "the runner did not accept the signature";
     }
-    return `Exit-Code ${job.code} nach ${lasting(job.finished - job.started)}`;
+    return `Exit code ${job.code} after ${lasting(job.finished - job.started)}`;
   }
 
   function paintConsole(view, job) {
-    const text = job.output || (jobOpen(job) ? "Noch keine Ausgabe." : "Keine Ausgabe.");
+    const text = job.output || (jobOpen(job) ? "No output yet." : "No output.");
     if (view.out.textContent !== text) {
       view.out.textContent = text;
     }
@@ -48,7 +48,7 @@
   function consoleOf(job) {
     let view = consoles.get(job.id);
     if (!view) {
-      const out = h("pre", {class: "console-out", tabindex: "0", "aria-label": "Ausgabe des Befehls", "data-job": job.id});
+      const out = h("pre", {class: "console-out", tabindex: "0", "aria-label": "Command output", "data-job": job.id});
       const line = h("div", {class: "console-status"});
       view = {box: h("div", {class: "console", "data-job": job.id}, line, out), out, line, follow: true, top: 0};
       out.addEventListener("scroll", () => {
@@ -87,7 +87,7 @@
   async function dismissJob(job) {
     const result = await sendJson("/api/inbox/dismiss", {id: job.id});
     if (!result.ok) {
-      toast("Schließen nicht möglich", fail(result), false);
+      toast("Cannot close", fail(result), false);
     }
     await load();
   }

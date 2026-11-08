@@ -88,10 +88,10 @@
   }
 
   function spawnItem(entry) {
-    const running = entry.running === null ? null : entry.running ? chip("bi-play-circle", "läuft", "ok") : chip("bi-check-circle", "fertig", "neutral");
+    const running = entry.running === null ? null : entry.running ? chip("bi-play-circle", "running", "ok") : chip("bi-check-circle", "finished", "neutral");
     const open = entry.kind === "twig" ? () => focusSub(entry.session, entry.row.id) : entry.kind === "operator" ? null : () => select(entry.id);
-    const name = open ? h("button", {type: "button", class: "linkish", title: entry.kind === "twig" ? "Transkript im Stream zeigen" : `${entry.label} öffnen`, on: {click: open}}, entry.label) : h("strong", {}, entry.label);
-    const meta = entry.kind === "twig" ? h("span", {class: "muted"}, `Tiefe ${entry.row.depth} · `, when(entry.row.started)) : h("span", {class: "muted"}, NODE_KINDS[entry.kind]);
+    const name = open ? h("button", {type: "button", class: "linkish", title: entry.kind === "twig" ? "Show transcript in the stream" : `Open ${entry.label}`, on: {click: open}}, entry.label) : h("strong", {}, entry.label);
+    const meta = entry.kind === "twig" ? h("span", {class: "muted"}, `Depth ${entry.row.depth} · `, when(entry.row.started)) : h("span", {class: "muted"}, NODE_KINDS[entry.kind]);
     return h("li", {"data-kind": entry.kind, "data-running": entry.running === null ? null : String(entry.running)},
       h("div", {class: "spawn-row"}, h("span", {class: "state", role: "img", ...named(NODE_KINDS[entry.kind] || "Subagent")}, icon(SPAWN_KINDS[entry.kind])), name, running, meta),
       entry.children.length ? h("ul", {class: "spawn-tree"}, entry.children.map(spawnItem)) : null);
@@ -116,6 +116,6 @@
     const all = spawnFlat(root).map(({entry}) => entry).filter((entry) => entry.running !== null);
     const running = all.filter((entry) => entry.running).length;
     spawn.dom.list.replaceChildren(
-      h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Spawn-Baum", counter(all.length)), h("span", {class: "muted"}, `${running} laufen · ${all.length - running} fertig · Operator → Chair → Sessions → Subagenten`)),
+      h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Spawn tree", counter(all.length)), h("span", {class: "muted"}, `${running} running · ${all.length - running} finished · Operator → Chair → Sessions → Subagents`)),
       h("ul", {class: "spawn-tree root"}, spawnItem(root)));
   }

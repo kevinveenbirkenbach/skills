@@ -65,8 +65,8 @@ proceed and never carries over. Findings and notes never stop a commit.
 
 ## Output
 
-One line with the target, the project licence, and "Keine Rechtsberatung" (in
-the operator's language). Then one table, blockers first:
+One line with the target, the project licence, and "not legal advice" in the
+operator's language. Then one table, blockers first:
 
 | Severity | Check | Location | What is wrong | Licence or law | Fix | Evidence |
 

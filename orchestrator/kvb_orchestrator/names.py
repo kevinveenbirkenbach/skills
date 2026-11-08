@@ -75,8 +75,8 @@ class Directory:
                 if begin <= after["first_seen"] <= end:
                     found.append(event({
                         "id": f"rename:{session}:{after['first_seen']}", "ts": after["first_seen"], "kind": "rename", "agent": after["name"],
-                        "now": self.now(session), "session": session, "title": f"{before['name']} heißt jetzt {after['name']}",
-                        "text": f"Quelle: {after['source']}", "ref": {"before": before["name"], "after": after["name"], "source": after["source"]},
+                        "now": self.now(session), "session": session, "title": f"{before['name']} is now called {after['name']}",
+                        "text": f"Source: {after['source']}", "ref": {"before": before["name"], "after": after["name"], "source": after["source"]},
                     }))
         return found
 

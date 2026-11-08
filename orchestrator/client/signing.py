@@ -30,13 +30,13 @@ COMMANDS = "operator/"
 APPROVAL_KEYS = {"v", "kind", "items", "nonce", "expires"}
 RULE_KEYS = {"v", "kind", "id", "kinds", "tool", "pattern", "scope", "expires"}
 WARNINGS = (
-    ("löscht rekursiv", re.compile(r"\brm\s+(?:-\S+\s+)*-\S*[rR]")),
-    ("erzwingt", re.compile(r"--force\b|\bpush\b.*\s-f\b")),
-    ("pusht", re.compile(r"\bgit\b.*\bpush\b")),
+    ("deletes recursively", re.compile(r"\brm\s+(?:-\S+\s+)*-\S*[rR]")),
+    ("forces", re.compile(r"--force\b|\bpush\b.*\s-f\b")),
+    ("pushes", re.compile(r"\bgit\b.*\bpush\b")),
     ("root", re.compile(r"\bsudo\b|\bdoas\b")),
-    ("Pipe in eine Shell", re.compile(r"\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b")),
-    ("verwirft Änderungen", re.compile(r"\bgit\b.*\b(?:reset\s+--hard|clean\s+-\S*f)")),
-    ("Docker löscht", re.compile(r"\bdocker\s+(?:system\s+prune|volume\s+(?:rm|prune)|rmi?\b)")),
+    ("pipes into a shell", re.compile(r"\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b")),
+    ("discards changes", re.compile(r"\bgit\b.*\b(?:reset\s+--hard|clean\s+-\S*f)")),
+    ("Docker deletes", re.compile(r"\bdocker\s+(?:system\s+prune|volume\s+(?:rm|prune)|rmi?\b)")),
 )
 
 

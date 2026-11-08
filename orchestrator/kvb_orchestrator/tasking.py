@@ -66,5 +66,5 @@ class Tasking:
             fields = {"kind": TASK_JOB, "task": item["id"], "argv": item["argv"], "command": shown_command(item["argv"]), "directory": "", "sha256": "", "status": "queued", "proof": proof}
             ids.append(self.jobs.add({**fields, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None})["id"])
         commands = [shown_command(item["argv"]) for item in items]
-        self.log.add({"kind": "run", "title": f"Aufgabe signiert geändert: {', '.join(item['id'] for item in items)}"[:200], "text": "\n".join(commands), "ref": {"jobs": ids, "status": "queued"}})
+        self.log.add({"kind": "run", "title": f"Task change signed: {', '.join(item['id'] for item in items)}"[:200], "text": "\n".join(commands), "ref": {"jobs": ids, "status": "queued"}})
         return {"jobs": ids, "status": "queued"}

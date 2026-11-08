@@ -1,18 +1,18 @@
-  const TASK_STATUS = {queued: ["wartet", "info"], running: ["läuft", "ok"], blocked: ["blockiert", "bad"], done: ["erledigt", "neutral"], stopped: ["gestoppt", "neutral"], awaiting: ["wartet auf Freigabe", "warn"]};
-  const TASK_COLUMNS = [["queued", "Wartet"], ["running", "Läuft"], ["blocked", "Blockiert"], ["done", "Erledigt"], ["stopped", "Gestoppt"]];
-  const TASK_KINDS = {command: ["Befehl", "bad"], hotfix: ["Hotfix", "warn"], queue: ["Queue-Job", "teal"]};
+  const TASK_STATUS = {queued: ["waiting", "info"], running: ["running", "ok"], blocked: ["blocked", "bad"], done: ["done", "neutral"], stopped: ["stopped", "neutral"], awaiting: ["waiting for a grant", "warn"]};
+  const TASK_COLUMNS = [["queued", "Waiting"], ["running", "Running"], ["blocked", "Blocked"], ["done", "Done"], ["stopped", "Stopped"]];
+  const TASK_KINDS = {command: ["Command", "bad"], hotfix: ["Hotfix", "warn"], queue: ["Queue job", "teal"]};
   const TASK_FILTERS = [
-    ["alle", "Alle", "bi-list-check", () => true],
-    ["offen", "Offen", "bi-play-circle", (row) => !row.ended],
-    ["arbeit", "Offene Arbeit", "bi-pencil-square", (row) => row.open_work.length > 0],
-    ["operator", "Wartet auf Operator", "bi-person-raised-hand", null],
-    ["freigabe", "Wartet auf Freigabe", "bi-hourglass-split", (row) => row.kind === "queue" && row.status === "awaiting"],
-    ["beendet", "Beendet", "bi-check2-circle", (row) => row.ended],
+    ["all", "All", "bi-list-check", () => true],
+    ["open", "Open", "bi-play-circle", (row) => !row.ended],
+    ["work", "Open work", "bi-pencil-square", (row) => row.open_work.length > 0],
+    ["operator", "Waiting for operator", "bi-person-raised-hand", null],
+    ["grant", "Waiting for a grant", "bi-hourglass-split", (row) => row.kind === "queue" && row.status === "awaiting"],
+    ["ended", "Ended", "bi-check2-circle", (row) => row.ended],
   ];
   const ROLE_TONES = {R: "ok", A: "violet", S: "info", C: "warn", I: "neutral"};
   const ROLE_WORDS = {R: "Responsible", A: "Accountable", S: "Supportive", C: "Consulted", I: "Informed"};
   const MATRIX_PARTIES = 40;
-  const taskView = {filter: "alle", q: "", dom: null, sig: ""};
+  const taskView = {filter: "all", q: "", dom: null, sig: ""};
 
   const columnOf = (row) => (TASK_COLUMNS.some(([id]) => id === row.status) ? row.status : "queued");
   const branchOf = (row) => row.worktree_branch || (row.branch !== "-" ? row.branch : "");
@@ -31,9 +31,9 @@
       kindName ? pill(kindName, kindTone) : null,
       withStatus ? taskStatus(row) : null,
       row.total ? pill(`KR ${row.met}/${row.total}`, row.met === row.total ? "ok" : "info") : null,
-      row.prio !== null ? h("span", {class: "pill", "data-tone": "violet", title: "angeheftete Priorität"}, `Prio ${row.prio}`) : null,
-      score ? h("span", {class: "pill", "data-tone": "teal", title: `WSJF: Geschäftswert ${score.value} / Komplexität ${score.complexity}`}, `WSJF ${score.score}`) : null,
-      openJobs(row.task).length ? pill("Änderung beim Runner", "warn") : null,
+      row.prio !== null ? h("span", {class: "pill", "data-tone": "violet", title: "pinned priority"}, `Prio ${row.prio}`) : null,
+      score ? h("span", {class: "pill", "data-tone": "teal", title: `WSJF: business value ${score.value} / complexity ${score.complexity}`}, `WSJF ${score.score}`) : null,
+      openJobs(row.task).length ? pill("Change at the runner", "warn") : null,
     ];
   }
 
@@ -44,23 +44,23 @@
 
   function taskPlace(row) {
     if (row.kind === "queue") {
-      return h("span", {}, `${row.queue.kind} für ${row.queue.parent} · eingereiht `, when(row.queue.enqueued));
+      return h("span", {}, `${row.queue.kind} for ${row.queue.parent} · queued `, when(row.queue.enqueued));
     }
     const place = row.worktree || (row.workdir !== "-" ? row.workdir : "");
     return place ? h("code", {title: row.repo || place}, place) : null;
   }
 
   function opener(row) {
-    return h("button", {type: "button", class: "linkish", title: `${row.task} öffnen`, on: {click: () => taskSheet(row.task)}}, row.kind === "command" ? h("code", {}, titleOf(row)) : titleOf(row));
+    return h("button", {type: "button", class: "linkish", title: `Open ${row.task}`, on: {click: () => taskSheet(row.task)}}, row.kind === "command" ? h("code", {}, titleOf(row)) : titleOf(row));
   }
 
   function taskItem(row) {
     const classes = ["task-row", row.open_work.length ? "open-work" : "", row.ended ? "ended" : ""].filter(Boolean).join(" ");
     return h("li", {class: classes, "data-task": row.task, "data-kind": row.kind, "data-status": row.status},
       h("div", {class: "head-row"}, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}),
-        row.editable ? iconBtn("bi-sort-numeric-down", "Priorität", "btn small soft", () => taskSheet(row.task), `Priorität und WSJF von ${row.task}: anheften oder schätzen, mit Passkey signiert`) : null),
+        row.editable ? iconBtn("bi-sort-numeric-down", "Priority", "btn small soft", () => taskSheet(row.task), `Priority and WSJF of ${row.task}: pin or estimate, signed with the passkey`) : null),
       opener(row),
-      row.objective !== "-" ? h("div", {class: "muted"}, `Ziel: ${row.objective}`) : null,
+      row.objective !== "-" ? h("div", {class: "muted"}, `Objective: ${row.objective}`) : null,
       h("div", {class: "task-meta"}, row.worker !== "-" ? h("span", {class: "who"}, face(row.worker, false), person(row.worker)) : null, roleSummary(row), taskPlace(row)),
       flowLine(row.flow, branchOf(row)),
       workChips(row.open_work));
@@ -82,7 +82,7 @@
       const cards = rows.filter((row) => columnOf(row) === id);
       return h("section", {class: "card task-column", "data-column": id, "aria-label": label},
         h("h3", {class: "group-title"}, label, counter(cards.length)),
-        cards.length ? h("ol", {class: "task-cards"}, cards.map(taskCard)) : h("p", {class: "muted"}, "leer"));
+        cards.length ? h("ol", {class: "task-cards"}, cards.map(taskCard)) : h("p", {class: "muted"}, "empty"));
     }));
   }
 
@@ -91,21 +91,21 @@
   }
 
   function taskMatrix(rows) {
-    const parties = [...new Set(rows.flatMap((row) => Object.keys(row.roles)))].sort((a, b) => Number(a !== HUMAN) - Number(b !== HUMAN) || a.localeCompare(b, "de"));
+    const parties = [...new Set(rows.flatMap((row) => Object.keys(row.roles)))].sort((a, b) => Number(a !== HUMAN) - Number(b !== HUMAN) || a.localeCompare(b, "en"));
     if (!parties.length) {
-      return emptyState("Keine Rollen", "Keine der gezeigten Aufgaben nennt R, A, S, C oder I.");
+      return emptyState("No roles", "None of the shown tasks names R, A, S, C or I.");
     }
     const columns = parties.slice(0, MATRIX_PARTIES);
     const legend = h("div", {class: "legend"}, Object.entries(ROLE_WORDS).map(([letter, word]) => h("span", {}, roleLetters(letter), word)),
-      parties.length > columns.length ? h("span", {class: "muted"}, `${parties.length - columns.length} weitere Parteien nicht gezeigt`) : null);
-    const head = h("thead", {}, h("tr", {}, h("th", {scope: "col"}, "Aufgabe"), columns.map((party) => h("th", {scope: "col", title: party}, h("span", {class: "party"}, party)))));
+      parties.length > columns.length ? h("span", {class: "muted"}, `${parties.length - columns.length} more parties not shown`) : null);
+    const head = h("thead", {}, h("tr", {}, h("th", {scope: "col"}, "Task"), columns.map((party) => h("th", {scope: "col", title: party}, h("span", {class: "party"}, party)))));
     const line = (row) => h("tr", {"data-task": row.task, class: row.open_work.length ? "open-work" : null},
       h("th", {scope: "row"}, h("div", {class: "matrix-task"}, h("code", {class: "task-id"}, row.task), opener(row))),
       columns.map((party) => {
         const letters = Object.hasOwn(row.roles, party) ? row.roles[party] : "";
         return h("td", {title: letters ? `${party}: ${letters}` : null}, roleLetters(letters));
       }));
-    const table = h("table", {class: "matrix", "aria-label": "RASCI-Matrix: Aufgaben mal Parteien"}, head, h("tbody", {}, rows.map(line)));
+    const table = h("table", {class: "matrix", "aria-label": "RASCI matrix: tasks by parties"}, head, h("tbody", {}, rows.map(line)));
     return h("div", {class: "matrix-box"}, h("div", {class: "matrix-scroll"}, table), legend);
   }
 
@@ -131,7 +131,7 @@
   }
 
   function taskViewSwitch(inbox) {
-    return h("div", {class: "segmented", role: "group", "aria-label": "Ansicht"}, Nav.TASK_VIEWS.map(([id, name]) => h("button", {
+    return h("div", {class: "segmented", role: "group", "aria-label": "View"}, Nav.TASK_VIEWS.map(([id, name]) => h("button", {
       type: "button", class: "icon-only", ...named(name), "aria-pressed": String(!inbox && ui.views.tasks === id), on: {click: () => go("tasks", id)},
     }, icon(Nav.ICONS[id]))));
   }
@@ -139,9 +139,9 @@
   function tasksScreen() {
     const inbox = ui.screen === "inbox";
     const view = ui.views.tasks;
-    const chips = h("div", {class: "chips", role: "group", "aria-label": "Aufgabenfilter"});
+    const chips = h("div", {class: "chips", role: "group", "aria-label": "Task filters"});
     const count = h("span", {class: "muted"});
-    const search = inbox ? null : h("input", {type: "search", class: "field", placeholder: "Aufgabe, Titel, Worker, Branch filtern …", value: taskView.q, "aria-label": "Aufgaben filtern", on: {input: (event) => {
+    const search = inbox ? null : h("input", {type: "search", class: "field", placeholder: "Filter by task, title, worker, branch …", value: taskView.q, "aria-label": "Filter tasks", on: {input: (event) => {
       taskView.q = event.target.value;
       drawTasks();
     }}});
@@ -165,13 +165,13 @@
     const rows = state.tasks;
     dom.chips.replaceChildren(...taskChips(rows, dom.inbox));
     if (dom.inbox) {
-      dom.count.textContent = `${rows.length} Aufgaben im Register`;
+      dom.count.textContent = `${rows.length} tasks in the register`;
       return;
     }
     const [, , , test] = TASK_FILTERS.find(([id]) => id === taskView.filter);
     const hit = (row) => !q || [row.task, row.title, row.worker, row.branch, row.workdir, row.objective].some((text) => String(text).toLowerCase().includes(q));
     const shown = rows.filter(test).filter(hit);
-    dom.count.textContent = `${shown.length} von ${rows.length} Aufgaben`;
+    dom.count.textContent = `${shown.length} of ${rows.length} tasks`;
     const views = {list: (found) => h("ol", {class: "task-list"}, found.map(taskItem)), board: taskBoard, rasci: taskMatrix};
-    dom.body.replaceChildren(shown.length ? views[dom.view](shown) : emptyState("Keine Aufgabe", "Kein Eintrag passt zu diesem Filter."));
+    dom.body.replaceChildren(shown.length ? views[dom.view](shown) : emptyState("No task", "No entry matches this filter."));
   }

@@ -80,9 +80,9 @@ class TestHubDeny(HubCase):
         denial = self.httpd.hub.messages.get(message_id)["denial"]
         self.httpd.hub.messages.change(message_id, {"denial": {**denial, "reason": "push anyway"}})
         self.assertTrue(self.tool("operator_message", {"id": message_id, "text": told, "to": "Skills session"})["isError"])
-        logged = [row for row in self.events("kinds=approval")["events"] if row["title"].startswith("Ablehnung ask")]
+        logged = [row for row in self.events("kinds=approval")["events"] if row["title"].startswith("Denial ask")]
         self.assertEqual(len(logged), 1)
-        self.assertIn("call an Skills session", logged[0]["text"])
+        self.assertIn("call to Skills session", logged[0]["text"])
         self.assertNotIn(ask_id, [item["id"] for item in self.snapshot()["inbox"]])
 
     def test_every_class_but_mayday_reaches_the_agent_or_all(self):
@@ -121,7 +121,7 @@ class TestHubDeny(HubCase):
         self.assertTrue(self.radio()[0][-1].endswith("Denied by the operator: operator command git push in /repo (from Skills). Reason: push after the review"), self.radio()[0])
         self.assertEqual(len(self.radio()), 1)
         texts = [row["text"] for row in self.events("kinds=approval")["events"]]
-        self.assertTrue(any("kein Empfänger" in text for text in texts), texts)
+        self.assertTrue(any("no recipient" in text for text in texts), texts)
 
     def test_a_forged_denial_is_refused_before_anything_is_stored_or_sent(self):
         self.claim("s1", "Skills session")
@@ -134,7 +134,7 @@ class TestHubDeny(HubCase):
             with self.subTest(name=name), mock.patch.object(batches, "UNDO", 0.05):
                 status, _, body = self.approve(entries, proof)
                 self.assertEqual(status, 400, body)
-                self.assertIn("nicht signiert", body.decode())
+                self.assertIn("not signed", body.decode())
                 self.assertFalse(self.httpd.hub.batches.holds("ask", ask_id))
         time.sleep(0.2)
         self.assertEqual((self.ask_status(ask_id, "0"), self.radio()), ("pending", []))
@@ -182,7 +182,7 @@ class TestHubDeny(HubCase):
         self.assertEqual(self.prepare([entry])["payload"]["items"], [signing.item_hash(signing.denial_item(subject, "call", "not now", ""))])
         with mock.patch.object(batches, "UNDO", 0.05):
             self.assertEqual(self.approve([entry], self.signed([entry], self.pin()))[0], 202)
-            self.settle(lambda: any("kein Empfänger" in row["text"] for row in self.events("kinds=approval")["events"]))
+            self.settle(lambda: any("no recipient" in row["text"] for row in self.events("kinds=approval")["events"]))
         self.assertEqual((self.ask_status(ask_id, "0"), self.radio()), ("denied", []))
 
     def answer(self, signer: Key, item: dict, channel: str, reason: str) -> dict:
