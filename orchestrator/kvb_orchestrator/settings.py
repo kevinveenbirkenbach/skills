@@ -21,6 +21,8 @@ MIDNIGHT = "24:00"
 STREAMS_LIMIT = 20
 STREAM_URL = re.compile(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&()*+,;=%-]{1,2040}")
 HOSTNAME = re.compile(r"(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*")
+VIA = re.compile(r"https://(?P<wild>\*\.)?(?P<host>[a-z0-9.-]{1,253})(?::(?P<port>[1-9][0-9]{0,4}))?")
+VIA_LIMIT = 8
 DEFAULT_PORTS = {"http": 80, "https": 443}
 SETTINGS = {
     "latitude": 0.0,
@@ -93,6 +95,21 @@ def stream_origin(url: object) -> str:
     return f"{parts.scheme}://{host}" if port in (None, DEFAULT_PORTS[parts.scheme]) else f"{parts.scheme}://{host}:{port}"
 
 
+def via_origin(value: object, name: str) -> str:
+    found = VIA.fullmatch(value) if isinstance(value, str) else None
+    host = found is not None and HOSTNAME.fullmatch(found["host"]) is not None and (found["wild"] is None or "." in found["host"])
+    port = found is not None and (found["port"] is None or (found["port"] != "443" and int(found["port"]) <= 65535))
+    if not (host and port):
+        raise ToolError(f"{name} must hold https origins like https://cdn.example or https://*.cdn.example, without the default port")
+    return value
+
+
+def via_list(value: object, name: str) -> list[str]:
+    if not isinstance(value, list) or len(value) > VIA_LIMIT or len(set(map(str, value))) != len(value):
+        raise ToolError(f"{name} must list at most {VIA_LIMIT} distinct origins")
+    return [via_origin(origin, name) for origin in value]
+
+
 def clock_minutes(value: object, name: str, end: bool) -> int:
     if end and value == MIDNIGHT:
         return 24 * 60
@@ -102,9 +119,18 @@ def clock_minutes(value: object, name: str, end: bool) -> int:
     return int(hours) * 60 + int(minutes)
 
 
+def stream_fields(raw: object, name: str) -> dict:
+    """Returns:
+        The stream's fields with their names checked and its via valid; a
+        missing via and None both mean not resolved yet.
+    """
+    entry = section({"via": None, **raw} if isinstance(raw, dict) else raw, name, ("name", "url", "from", "to", "days", "on", "via"))
+    return {**entry, "via": None if entry["via"] is None else via_list(entry["via"], f"{name}.via")}
+
+
 def stream_entry(raw: object, index: int) -> dict:
     name = f"streams[{index}]"
-    entry = section(raw, name, ("name", "url", "from", "to", "days", "on"))
+    entry = stream_fields(raw, name)
     label, days = entry["name"], entry["days"]
     if not isinstance(label, str) or not FIELDS["label"][0].fullmatch(label):
         raise ToolError(f"{name}.name must be one line of 1 to {NAME_LIMIT} characters")
@@ -113,7 +139,10 @@ def stream_entry(raw: object, index: int) -> dict:
         raise ToolError(f"{name} must end at another time than it starts")
     if not isinstance(days, list) or not days or len(set(map(str, days))) != len(days) or any(isinstance(day, bool) or not isinstance(day, int) or not 0 <= day <= 6 for day in days):
         raise ToolError(f"{name}.days must list distinct weekdays from 0 (Monday) to 6 (Sunday)")
-    return {"name": label, "url": entry["url"], "from": entry["from"], "to": entry["to"], "days": sorted(days), "on": flag(entry["on"], f"{name}.on")}
+    return {
+        "name": label, "url": entry["url"], "from": entry["from"], "to": entry["to"], "days": sorted(days), "on": flag(entry["on"], f"{name}.on"),
+        "via": entry["via"],
+    }
 
 
 def tone_setting(raw: object, kind_name: str) -> dict:
@@ -173,7 +202,7 @@ def valid_settings(raw: object) -> dict:
     }
 
 
-def migrated(stored: object) -> object:
+def speech_renamed(stored: object) -> object:
     speech = stored.get("speech") if isinstance(stored, dict) else None
     classes = speech.get("classes") if isinstance(speech, dict) else None
     if not isinstance(classes, list) or not any(name in LEGACY_CLASSES for name in classes):
@@ -182,8 +211,26 @@ def migrated(stored: object) -> object:
     return {**stored, "speech": {**speech, "classes": list(dict.fromkeys(renamed))}}
 
 
-def media_origins(settings: dict) -> list[str]:
+def migrated(stored: object) -> object:
+    """Returns:
+        The stored settings in the current shape: legacy speech classes
+        renamed, and a stream saved before redirect resolution with via []:
+        it may have been saved without the passkey, so the hub never dials
+        it unsigned; re-adding it with the passkey resolves its redirects.
+    """
+    stored = speech_renamed(stored)
+    streams = stored.get("streams") if isinstance(stored, dict) else None
+    if not isinstance(streams, list):
+        return stored
+    return {**stored, "streams": [{**stream, "via": []} if isinstance(stream, dict) and "via" not in stream else stream for stream in streams]}
+
+
+def station_origins(settings: dict) -> list[str]:
     return sorted({stream_origin(stream["url"]) for stream in settings["streams"]})
+
+
+def media_origins(settings: dict) -> list[str]:
+    return sorted({*station_origins(settings), *(origin for stream in settings["streams"] for origin in stream["via"] or ())})
 
 
 class Settings:
@@ -200,9 +247,16 @@ class Settings:
         with self.lock:
             return copy.deepcopy(self.current)
 
-    def put(self, raw: object) -> dict:
+    def put(self, raw: object, expected: dict) -> dict:
+        """Args:
+            raw: the settings to save.
+            expected: the settings the save was judged against; another save
+                that landed meanwhile refuses this one.
+        """
         settings = valid_settings(raw)
         with self.lock:
+            if self.current != expected:
+                raise ToolError("the settings changed while this save was checked; save again")
             write_atomic(self.file, json.dumps(settings, indent=1, sort_keys=True).encode("utf-8"))
             self.current = settings
             return copy.deepcopy(settings)

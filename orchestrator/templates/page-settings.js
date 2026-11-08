@@ -1,3 +1,5 @@
+  let redirectsTold = "";
+
   function adoptSettings(next) {
     settings = next;
     settingsSig = JSON.stringify(next);
@@ -23,10 +25,16 @@
       toast("Einstellungen nicht gespeichert", [`${result.status} ${result.text}`.trim()], false);
       return false;
     }
-    const fresh = result.data.streams.map((stream) => new URL(stream.url).origin).filter((origin) => !pageMedia.has(origin));
-    adoptSettings(result.data);
+    const {settings: saved, problems} = result.data;
+    const unresolved = problems.join("\n");
+    if (unresolved && unresolved !== redirectsTold) {
+      toast("Weiterleitung nicht aufgelöst", [...problems, "Diese Sender laden vorerst nur von ihrer eigenen Adresse; ein Speichern nach zehn Minuten versucht es erneut."], false);
+    }
+    redirectsTold = unresolved;
+    const fresh = [...new Set(saved.streams.flatMap((stream) => Ambience.stationOrigins(stream)))].filter((origin) => !pageMedia.has(origin));
+    adoptSettings(saved);
     if (fresh.length) {
-      toast("Neuer Sender", ["Die Seite lädt neu, damit der Browser ihn abspielen darf. Blockiert der Browser danach das Abspielen, startet ein Klick den Sender."], true);
+      toast("Neuer Sender", ["Die Seite lädt neu, damit der Browser ihn abspielen darf. Blockiert der Browser danach das Abspielen, startet ein Klick den Sender.", `Neu für diese Seite: ${fresh.join(", ")}`], true);
       window.setTimeout(() => window.location.reload(), 1500);
     }
     return true;
@@ -47,6 +55,7 @@
       to: to.value === "00:00" && stream.to === "24:00" ? "24:00" : to.value,
       days: days.flatMap((box, index) => (box.checked ? [index] : [])),
       on: on.checked,
+      via: stream.via,
     })};
     entry.row = h("div", {class: "stream-row"},
       h("div", {class: "grid"}, h("label", {}, "Name", name), h("label", {}, "Stream-URL", url), h("label", {}, "von", from), h("label", {}, "bis", to)),
@@ -129,8 +138,8 @@
         h("div", {class: "days"}, h("label", {class: "check"}, speechOn, "Funk vorlesen"), sample),
         h("div", {class: "days", role: "group", "aria-label": "Klassen"}, spoken.map((entry) => h("label", {class: "check"}, entry.box, entry.label))),
         stations.length ? h("div", {class: "days", role: "group", "aria-label": "Stationen"}, stations.map((entry) => h("label", {class: "check"}, entry.box, entry.label))) : null),
-      h("section", {}, h("h3", {}, "Radio"), h("p", {class: "muted"}, "Internetradio zu festen Zeiten mit 3 s Ein- und Ausblenden; die Musik pausiert solange. Ein neuer Sender läuft rund um die Uhr, bis du seine Zeiten änderst; unter Stream → Radio startest und stoppst du ihn von Hand. Die Seite darf nur von diesen Adressen Ton laden; eine neue Adresse signiert dein Passkey."),
-        list, h("div", {}, btn("+ Sender", "btn small soft", () => streamRow({name: "", url: "", from: "00:00", to: "24:00", days: [0, 1, 2, 3, 4, 5, 6], on: true}, rows, list)))),
+      h("section", {}, h("h3", {}, "Radio"), h("p", {class: "muted"}, "Internetradio zu festen Zeiten mit 3 s Ein- und Ausblenden; die Musik pausiert solange. Ein neuer Sender läuft rund um die Uhr, bis du seine Zeiten änderst; unter Stream → Radio startest und stoppst du ihn von Hand. Die Seite darf nur von diesen Adressen Ton laden; eine neue Adresse signiert dein Passkey. Leitet ein signierter Sender um, löst der Server die Weiterleitung beim Speichern eines neuen Senders oder einer geänderten Adresse auf und gibt ihr Ziel frei; der Hinweis nach dem Speichern nennt es."),
+        list, h("div", {}, btn("+ Sender", "btn small soft", () => streamRow({name: "", url: "", from: "00:00", to: "24:00", days: [0, 1, 2, 3, 4, 5, 6], on: true, via: []}, rows, list)))),
       passkeySection(),
       h("div", {class: "sheet-foot"}, h("span", {class: "spacer"}), btn("Abbrechen", "btn ghost", closeSheet), h("button", {type: "submit", class: "btn primary"}, "Speichern")));
     form.addEventListener("submit", async (event) => {

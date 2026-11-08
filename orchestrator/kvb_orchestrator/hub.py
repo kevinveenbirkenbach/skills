@@ -24,6 +24,7 @@ from .mcp import Mcp
 from .messaging import Messaging
 from .names import Names
 from .offices import Offices
+from .redirects import Redirects
 from .requesting import Requesting
 from .reviewing import Reviewing
 from .rules import Rules
@@ -86,6 +87,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Denying, Requesting, Cle
     model: Model
     timers: Path
     settings: Settings
+    redirects: Redirects
     speech: Speech
     approvers: Path
     vendor: Path
@@ -103,7 +105,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Denying, Requesting, Cle
         return f"{signing.origin_of(self.public_port)}/"
 
 
-def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_state: Path, transcripts: Path, scripts: Runner, templates: Path, places: Places, model: Model, engines: Engines, approvers: Path) -> Hub:
+def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_state: Path, transcripts: Path, scripts: Runner, templates: Path, places: Places, model: Model, engines: Engines, approvers: Path, redirects: Redirects) -> Hub:
     uploads = state / "uploads"
     uploads.mkdir(exist_ok=True)
     reviews = Reviews(state)
@@ -126,6 +128,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         batches=Pending(),
         names=Names(state / "names.json"),
         settings=Settings(state / "settings.json"),
+        redirects=redirects,
         watch=Watch(),
         tree=Tree(file=places.tree_file, heartbeat=state / TREE_HEARTBEAT, lock=threading.Lock(), cached=None, stamp=None),
         model=model,

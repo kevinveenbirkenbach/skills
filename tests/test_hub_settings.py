@@ -32,7 +32,7 @@ class TestHubSettings(HubCase):
         proof = None if request is None else signer.proof(request, self.origin)
         return self.post_json("/api/settings", {**payload, "proof": proof}, self.guard(self.host))
 
-    def test_a_new_stream_origin_needs_the_passkey(self):
+    def test_a_new_stream_url_needs_the_passkey(self):
         good = self.guard(self.host)
         payload = self.settings_payload(STREAMS)
         self.assertEqual(self.post_json("/api/settings", payload, good)[:3:2], (400, b"nicht signiert: no signature\n"))
@@ -47,11 +47,13 @@ class TestHubSettings(HubCase):
         self.assertEqual(status, 200, body)
         self.assertEqual(self.media_src(), "media-src 'self' http://10.0.0.5:8000 https://other.example:8443 https://radio.example")
         moved = self.settings_payload([{**STREAMS[0], "url": "https://radio.example/abend"}, STREAMS[1]])
-        self.assertIsNone(self.prepared(moved)["payload"])
-        status, _, body = self.post_json("/api/settings", moved, good)
+        self.assertEqual(self.post_json("/api/settings", moved, good)[:3:2], (400, b"nicht signiert: no signature\n"))
+        status, _, body = self.save(moved, signer)
         self.assertEqual(status, 200, body)
         self.assertEqual(self.media_src(), "media-src 'self' http://10.0.0.5:8000 https://radio.example")
+        self.assertEqual(self.post_json("/api/settings", self.settings_payload([]), good)[0], 200)
         self.assertEqual(self.post_json("/api/settings", {**payload, "proof": proof}, good)[:3:2], (400, b"nicht signiert: this signature was already used for this item\n"))
+        self.assertEqual(self.save(moved, signer)[0], 200)
         evil = self.settings_payload([*moved["streams"], {**STREAMS[0], "url": "https://evil.example/listen"}])
         self.assertEqual(self.post_json("/api/settings", {**evil, "proof": signer.proof(self.prepared(payload)["payload"], self.origin)}, good)[:3:2], (400, b"nicht signiert: the signature does not list this item\n"))
         self.assertEqual(self.post_json("/api/settings", evil, good)[0], 400)
@@ -137,15 +139,16 @@ class TestHubSettings(HubCase):
                 self.assertEqual(self.post_json("/api/settings", broken, good)[0], 400)
         status, _, body = self.save(payload, self.pin())
         self.assertEqual(status, 200, body)
-        self.assertEqual(json.loads(body), payload)
-        self.assertEqual(json.loads((self.state / "settings.json").read_text(encoding="utf-8")), payload)
-        self.assertEqual(self.snapshot()["settings"], payload)
-        self.assertEqual(settings.Settings(self.state / "settings.json").get(), payload)
+        unresolved = {**payload, "streams": [{**stream, "via": None if stream["url"].startswith("https:") else []} for stream in payload["streams"]]}
+        self.assertEqual(json.loads(body)["settings"], unresolved)
+        self.assertEqual(json.loads((self.state / "settings.json").read_text(encoding="utf-8")), unresolved)
+        self.assertEqual(self.snapshot()["settings"], unresolved)
+        self.assertEqual(settings.Settings(self.state / "settings.json").get(), unresolved)
         self.assertEqual(self.get("/api/settings")[0], 405)
         shuffled = {**payload, "speech": {"on": False, "classes": ["mayday", "broadcast", "security"], "muted": ["s1", "Operator", "name:Docs"]}}
         status, _, body = self.post_json("/api/settings", shuffled, good)
         self.assertEqual(status, 200, body)
-        self.assertEqual(json.loads(body)["speech"], {"on": False, "classes": ["broadcast", "mayday", "security"], "muted": ["Operator", "name:Docs", "s1"]})
+        self.assertEqual(json.loads(body)["settings"]["speech"], {"on": False, "classes": ["broadcast", "mayday", "security"], "muted": ["Operator", "name:Docs", "s1"]})
 
     def test_settings_written_before_the_radio_filter_keep_their_values(self):
         older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "speech"}

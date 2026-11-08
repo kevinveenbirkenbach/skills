@@ -9,6 +9,8 @@ import importlib.util
 import json
 import os
 import secrets
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -33,6 +35,7 @@ import hub_api  # noqa: F401
 import passkey
 import signing
 import verifier
+from kvb_orchestrator.redirects import Redirects
 
 SCORE = "🎯 95 💥 3"
 GIT_ENV = {
@@ -56,10 +59,20 @@ HOOK = {
 OPTIONS = [{"label": "Merge now", "description": "Gate is green"}, {"label": "Wait", "description": ""}]
 AMBIENCE = HUB / "templates" / "ambience.js"
 STREAMS = [
-    {"name": "Morgen", "url": "https://radio.example/morgen", "from": "07:00", "to": "09:00", "days": [0, 1, 2, 3, 4], "on": True},
-    {"name": "Nacht", "url": "http://10.0.0.5:8000/nacht", "from": "22:00", "to": "02:00", "days": [5], "on": True},
-    {"name": "Aus", "url": "https://other.example:8443/", "from": "00:00", "to": "24:00", "days": [0, 1, 2, 3, 4, 5, 6], "on": False},
+    {"name": "Morgen", "url": "https://radio.example/morgen", "from": "07:00", "to": "09:00", "days": [0, 1, 2, 3, 4], "on": True, "via": []},
+    {"name": "Nacht", "url": "http://10.0.0.5:8000/nacht", "from": "22:00", "to": "02:00", "days": [5], "on": True, "via": []},
+    {"name": "Aus", "url": "https://other.example:8443/", "from": "00:00", "to": "24:00", "days": [0, 1, 2, 3, 4, 5, 6], "on": False, "via": []},
 ]
+
+
+def offline(host: str, port: int, timeout: float, public: bool) -> socket.socket:
+    raise ConnectionRefusedError(f"no network in tests: {host}:{port}")
+
+
+def offline_redirects() -> Redirects:
+    return Redirects(tls=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT), dial=offline, timeout=1.0)
+
+
 VOICE = HUB / "templates" / "voice.js"
 SPACE = HUB / "templates" / "space.js"
 NAV = HUB / "templates" / "nav.js"

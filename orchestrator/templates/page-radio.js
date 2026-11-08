@@ -3,6 +3,7 @@
     NotSupportedError: ["error", "nicht abspielbar", "Nicht abspielbar: der Browser versteht Format oder Adresse nicht, oder der Sender leitet auf eine Adresse um, von der die Seite keinen Ton laden darf."],
   };
   const MEDIA_ERRORS = {1: "Laden abgebrochen", 2: "Netzwerkfehler", 3: "Ton nicht dekodierbar", 4: "Format oder Adresse nicht abspielbar"};
+  const RESOLVE_STEP = "Radio → Sender bearbeiten: ändere die Adresse des Senders, oder entferne ihn, speichere, lege ihn neu an und speichere wieder; dann löst der Server die Weiterleitung neu auf und gibt ihr Ziel frei.";
 
   function radioVolume() {
     if (radio.element) {
@@ -34,14 +35,34 @@
     drawStations();
   }
 
-  function radioTrouble(kind, label, note) {
-    radioStatus(kind, label, note);
-    const key = `${radio.url}|${kind}|${label}`;
-    if (radio.told !== key) {
-      radio.told = key;
-      const stream = settings.streams[radio.index];
-      toast(`Radio ${kind === "blocked" ? "blockiert" : "stumm"}: ${stream ? stream.name : radio.url}`, [note], false);
+  function radioTrouble(kind, label, note, cause) {
+    const told = radio.told;
+    const fresh = Ambience.retold(told, radio.url, kind, cause);
+    if (!fresh) {
+      radioStatus(...told.status);
+      return;
     }
+    radioStatus(kind, label, note);
+    if (told) {
+      told.box.remove();
+    }
+    const stream = settings.streams[radio.index];
+    const box = toast(`Radio ${kind === "blocked" ? "blockiert" : "stumm"}: ${stream ? stream.name : radio.url}`, [note], false);
+    radio.told = {...fresh, status: [kind, label, note], box};
+  }
+
+  function redirectNote(stream) {
+    if (stream && stream.via === null) {
+      return "Der Server hat die Weiterleitung dieses Senders noch nicht aufgelöst; ein Speichern nach zehn Minuten versucht es erneut.";
+    }
+    const released = stream ? stream.via : [];
+    const unloaded = released.filter((origin) => !pageMedia.has(origin));
+    if (unloaded.length) {
+      return `Der Sender leitet auf ${unloaded.join(", ")} um; die geladene Seite darf von dort noch keinen Ton laden: Seite neu laden.`;
+    }
+    return released.length
+      ? `Der Sender leitet auf eine Adresse außerhalb der freigegebenen ${released.join(", ")} um. ${RESOLVE_STEP}`
+      : `Der Sender leitet auf eine Adresse um, die noch nicht freigegeben ist; der Browser nennt das Ziel einer Weiterleitung nicht. ${RESOLVE_STEP}`;
   }
 
   function stopStream() {
@@ -70,16 +91,17 @@
 
   function syncRadio() {
     const index = dueStation();
-    const url = index < 0 ? "" : settings.streams[index].url;
+    const stream = index < 0 ? null : settings.streams[index];
+    const url = stream ? stream.url : "";
     if (url === radio.url && !radio.waiting) {
       drawStations();
       return;
     }
-    const origin = url ? new URL(url).origin : "";
+    const missing = stream ? Ambience.stationOrigins(stream).filter((origin) => !pageMedia.has(origin)) : [];
     radio.index = index;
-    if (origin && !pageMedia.has(origin)) {
-      radioStatus("reload", "lädt neu", "Neue Adresse: die Seite lädt neu, damit der Browser von dort Ton laden darf.");
-      if (state.media.includes(origin)) {
+    if (missing.length) {
+      radioStatus("reload", "lädt neu", `Neue Adresse ${missing.join(", ")}: die Seite lädt neu, damit der Browser von dort Ton laden darf.`);
+      if (missing.every((origin) => state.media.includes(origin))) {
         window.location.reload();
       }
       return;
@@ -98,7 +120,7 @@
       radio.element.src = url;
       radio.element.play().then(() => {
         radio.playing = true;
-        radio.told = "";
+        radio.told = null;
         radioStatus("playing", "spielt", `spielt seit ${clock.format(new Date())}`);
         tuneMusic(FADE / 1000);
         fadeRadio(1, () => null);
@@ -108,10 +130,7 @@
         }
         radio.waiting = true;
         const [kind, label, note] = PLAY_REFUSED[error.name] || ["error", "Fehler", `${error.name}: ${error.message}`];
-        // Trip-wire: the media error event fires before this rejection and already named the cause; a second toast would hide it.
-        if (!(kind === "error" && radio.state === "error")) {
-          radioTrouble(kind, label, note);
-        }
+        radioTrouble(kind, label, note, "refused");
       });
     });
   }
@@ -141,11 +160,12 @@
       radio.waiting = true;
       tuneMusic(FADE / 1000);
       const reason = failure ? MEDIA_ERRORS[failure.code] || `Fehler ${failure.code}` : "unbekannter Fehler";
-      radioTrouble("error", "Fehler", `Der Sender spielt nicht: ${reason}${failure && failure.message ? ` (${failure.message})` : ""}.`);
+      radioTrouble("error", "Fehler", `Der Sender spielt nicht: ${reason}${failure && failure.message ? ` (${failure.message})` : ""}.`, "media");
     });
     document.addEventListener("securitypolicyviolation", (event) => {
+      // Trip-wire: for a redirected load, blockedURI is the station's own URL, never the redirect target.
       if (event.effectiveDirective === "media-src" && radio.url && !event.blockedURI.startsWith(window.location.origin)) {
-        radioTrouble("error", "gesperrt", `Der Sender leitet auf ${event.blockedURI} um; die Seite spielt nur von den Adressen, die du mit deinem Passkey gespeichert hast.`);
+        radioTrouble("error", "gesperrt", redirectNote(settings.streams[radio.index]), "csp");
       }
     });
     return element;

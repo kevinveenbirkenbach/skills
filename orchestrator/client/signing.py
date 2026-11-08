@@ -139,8 +139,8 @@ def board_item(action: str) -> dict:
     return {"kind": "board", "action": action}
 
 
-def stream_item(origins: list[str]) -> dict:
-    return {"kind": "streams", "origins": origins}
+def stream_item(origins: list[str], urls: list[str]) -> dict:
+    return {"kind": "streams", "origins": origins, "urls": urls}
 
 
 def task_item(task: str, argv: list[str]) -> dict:

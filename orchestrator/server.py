@@ -59,6 +59,7 @@
 from __future__ import annotations
 
 import argparse
+import ssl
 from pathlib import Path
 
 from kvb_orchestrator import NAME
@@ -68,6 +69,7 @@ from kvb_orchestrator.exchange import HubServer
 from kvb_orchestrator.handler import Handler
 from kvb_orchestrator.hub import Places, open_hub
 from kvb_orchestrator.language import Model, read_key
+from kvb_orchestrator.redirects import TIMEOUT, Redirects, dial
 from kvb_orchestrator.skill_scripts import Scripts
 
 
@@ -96,6 +98,7 @@ def main() -> int:
             model=Model(url=args.llm_url.strip(), model=args.llm_model.strip(), key=read_key(args.llm_key_file)),
             engines=Engines(piper=args.piper, voices=args.voices, operator_voice=args.operator_voice, whisper=args.whisper, whisper_model=args.whisper_model, scratch=args.scratch),
             approvers=args.approvers,
+            redirects=Redirects(tls=ssl.create_default_context(), dial=dial, timeout=TIMEOUT),
         )
     except ToolError as error:
         parser.error(str(error))

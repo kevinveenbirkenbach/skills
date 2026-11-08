@@ -8,6 +8,8 @@ const Ambience = (() => {
   const GLASS = 0.8;
   const CARD = 0.92;
   const LIGHT_FROM = 4;
+  // Trip-wire: one blocked redirect also fails the media element and rejects play(), in no fixed order; the highest rank is the cause, the rest are its symptoms.
+  const TROUBLE_RANKS = {refused: 0, media: 1, csp: 2};
   const SKY = [
     [-90, "#03050b", "#070a14"],
     [-18, "#04060e", "#0a0f1f"],
@@ -209,7 +211,17 @@ const Ambience = (() => {
     return streams.find((stream) => stream.on && covers(stream, slot)) || null;
   }
 
-  return {GLASS, CARD, SKY, THEMES, julian, sidereal, horizontal, sun, moon, hex, mix, css, luminance, contrast, skyAt, stage, starlight, modeAt, modeOf, stars, slotOf, activeStream};
+  function stationOrigins(stream) {
+    return [new URL(stream.url).origin, ...(stream.via || [])];
+  }
+
+  function retold(told, url, kind, cause) {
+    const key = `${url}|${kind}`;
+    const rank = TROUBLE_RANKS[cause];
+    return !told || told.key !== key || rank > told.rank ? {key, rank} : null;
+  }
+
+  return {GLASS, CARD, SKY, THEMES, julian, sidereal, horizontal, sun, moon, hex, mix, css, luminance, contrast, skyAt, stage, starlight, modeAt, modeOf, stars, slotOf, activeStream, stationOrigins, retold};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Ambience;

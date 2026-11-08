@@ -27,7 +27,9 @@ from hub_support import (
     TREE,
     FakeScripts,
     Key,
+    Redirects,
     key,
+    offline_redirects,
     server,
     signing,
 )
@@ -72,6 +74,7 @@ class HubCase(unittest.TestCase):
             model=server.Model(url="", model="", key=""),
             engines=self.engines,
             approvers=self.approvers,
+            redirects=self.redirects(),
         )
         self.httpd = httpd
         self.origin = signing.origin_of(self.port)
@@ -81,6 +84,9 @@ class HubCase(unittest.TestCase):
         self.addCleanup(thread.join, 10)
         self.addCleanup(httpd.shutdown)
         self.host = f"127.0.0.1:{self.port}"
+
+    def redirects(self) -> Redirects:
+        return offline_redirects()
 
     def call(self, method: str, path: str, body: bytes | None, headers: dict[str, str]) -> tuple[int, dict, bytes]:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)

@@ -33,7 +33,7 @@ from .register import (
     stored_order,
 )
 from .reviewing import review_row
-from .settings import media_origins, valid_settings
+from .settings import media_origins, station_origins, valid_settings
 from .signed import signing
 from .skill_scripts import OUTPUT_LIMIT
 from .tasks import task_rows
@@ -138,25 +138,64 @@ class View:
             "graph": drawn,
         }
 
-    def stream_change(self, raw: dict) -> dict | None:
-        """Returns:
-            The item the operator's passkey signs when the settings let the
-            page load audio from an origin the saved ones do not, else None.
+    def stream_change(self, settings: dict, saved: dict) -> dict | None:
+        """Args:
+            settings: valid settings the page wants to save.
+            saved: the settings saved now.
+
+        Returns:
+            The item the operator's passkey signs when the settings name a
+            stream url the saved ones do not, else None: the station origins
+            and those urls. The hub dials no url before it is signed, and
+            resolves its redirect targets only after the signature.
         """
-        origins = media_origins(valid_settings(raw))
-        return signing.stream_item(origins) if set(origins) - set(media_origins(self.settings.get())) else None
+        urls = sorted({stream["url"] for stream in settings["streams"]} - {stream["url"] for stream in saved["streams"]})
+        return signing.stream_item(station_origins(settings), urls) if urls else None
+
+    def resolved(self, settings: dict, saved: dict) -> tuple[dict, list[str]]:
+        """Args:
+            settings: valid settings whose new stream urls the operator
+                signed in this request.
+            saved: the settings saved now.
+
+        Returns:
+            The settings with the via of each new url taken from its redirect
+            chain, and of each saved url whose via is still None (unresolved)
+            once Redirects.due allows a retry; every other stream keeps its
+            saved via without a dial, and the page's via is never used. Also
+            one line per stream whose chain did not resolve; its via stays
+            None.
+        """
+        known = {stream["url"]: stream["via"] for stream in saved["streams"]}
+        urls = {stream["url"] for stream in settings["streams"]}
+        outcomes = self.redirects.resolve(sorted(url for url in urls if url not in known or (known[url] is None and self.redirects.due(url))))
+        streams, problems = [], []
+        for stream in settings["streams"]:
+            via, problem = outcomes.get(stream["url"], (known.get(stream["url"]), ""))
+            if problem:
+                problems.append(f"{stream['name']}: {problem}")
+            streams.append({**stream, "via": via})
+        return {**settings, "streams": streams}, problems
 
     def sign_settings(self, body: bytes) -> dict:
-        change = self.stream_change(decode(body))
+        change = self.stream_change(valid_settings(decode(body)), self.settings.get())
         return self.challenge_for([] if change is None else [change])
 
     def save_settings(self, body: bytes) -> dict:
+        """Returns:
+            {"settings", "problems"}: the saved settings, their via resolved
+            once the proof holds, and why a chain did not resolve. A save
+            that lands while this one resolves makes this one fail.
+        """
         payload = decode(body)
         proof = payload.pop("proof", None)
-        change = self.stream_change(payload)
+        settings = valid_settings(payload)
+        saved = self.settings.get()
+        change = self.stream_change(settings, saved)
         if change is not None:
             self.operator_proven(proof, change)
-        return self.settings.put(payload)
+        resolved, problems = self.resolved(settings, saved)
+        return {"settings": self.settings.put(resolved, saved), "problems": problems}
 
     def render(self, nonce: str) -> tuple[str, str]:
         now = time.time()

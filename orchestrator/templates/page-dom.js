@@ -89,6 +89,7 @@
     box.addEventListener("click", () => box.remove());
     document.getElementById("toasts").append(box);
     window.setTimeout(() => box.remove(), good ? 9000 : 20000);
+    return box;
   }
 
   function runLines(data) {

@@ -662,7 +662,7 @@ class TestOrchestratorE2E(HubCase):
 
     def speaks(self, cues: tuple[str, ...]) -> None:
         hub = self.httpd.hub
-        hub.settings.put({**hub.settings.get(), "speech": {"on": True, "classes": ["mayday", "pan-pan", "security"], "muted": []}})
+        hub.settings.put({**hub.settings.get(), "speech": {"on": True, "classes": ["mayday", "pan-pan", "security"], "muted": []}}, hub.settings.get())
         spoken = tone(6, 8000)
 
         def synthesize(body: bytes) -> bytes:
@@ -719,7 +719,7 @@ class TestOrchestratorE2E(HubCase):
             first = {"width": 1366, "height": 768, "url": f"http://localhost:{self.port}/#stream", "wait": 900, "probe": ADD_STATION.replace("@STATION@", station).replace("@NAME@", STATION_NAME), "shot": None, "gesture": True}
         else:
             hub = self.httpd.hub
-            hub.settings.put({**hub.settings.get(), "streams": [{"name": STATION_NAME, "url": station, "from": "00:00", "to": "24:00", "days": list(range(7)), "on": True}]})
+            hub.settings.put({**hub.settings.get(), "streams": [{"name": STATION_NAME, "url": station, "from": "00:00", "to": "24:00", "days": list(range(7)), "on": True, "via": []}]}, hub.settings.get())
             first = {"width": 1366, "height": 768, "url": f"{self.base}#stream", "wait": 900, "probe": None, "shot": None}
         steps = [
             first,
