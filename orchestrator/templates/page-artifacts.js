@@ -1,4 +1,4 @@
-  const art = {repo: "", node: null};
+  const art = {repo: ""};
   const ART_KINDS = {repo: ["Repository", "bi-git"], branch: ["Branch", "bi-diagram-2"], worktree: ["Worktree", "bi-folder2-open"], agent: ["Agent", "bi-robot"], artefact: ["Artifact", "bi-box-seam"], task: ["Task", "bi-card-checklist"]};
   const ARTEFACT_ICONS = {image: "bi-box-seam", volume: "bi-hdd", log: "bi-file-text", dir: "bi-folder"};
   const LANE_MARKS = {commit: ["Commit", "bi-record-circle"], review: ["Review", "bi-eye"], gate: ["Gate", "bi-shield-check"], push: ["Push", "bi-cloud-upload"]};
@@ -71,16 +71,23 @@
     return found;
   }
 
-  function artSelect(id) {
-    art.node = art.node === id ? null : id;
-    drawArtifacts();
+  function artSelect(id, anchor, closed) {
+    const node = tree.model && tree.model.byId.get(id);
+    if (!node) {
+      return;
+    }
+    if (node.kind === "agent") {
+      openAgent(node.data.name, anchor || pickOf(id), closed);
+    } else {
+      openPopup(node.label, artPopup(node), anchor || pickOf(id), closed);
+    }
   }
 
   function artMark(node, at, radius, extra, caption) {
     const [kindName] = ART_KINDS[node.kind];
-    const classes = ["node", `a-${node.kind}`, extra, art.node === node.id ? "selected" : ""].filter(Boolean).join(" ");
+    const classes = ["node", `a-${node.kind}`, extra].filter(Boolean).join(" ");
     return s("g", {
-      class: classes, transform: `translate(${fixed(at.x)} ${fixed(at.y)})`, tabindex: 0, role: "button", "aria-label": `${node.label}, ${kindName}`,
+      class: classes, transform: `translate(${fixed(at.x)} ${fixed(at.y)})`, tabindex: 0, role: "button", "aria-label": `${node.label}, ${kindName}`, "data-pick": node.id,
       on: {
         click: () => artSelect(node.id),
         keydown: (event) => {
@@ -178,7 +185,7 @@
     const svg = s("svg", {viewBox: `0 0 ${full} ${height}`, class: "chart", role: "img", "aria-label": `Swimlane: commits, reviews, gates and pushes per branch of ${repo.name}`}, defs());
     lanes.forEach((branch, index) => {
       svg.append(s("rect", {class: index % 2 ? "lane odd" : "lane", x: 0, y: top + index * lane, width: full, height: lane}));
-      svg.append(s("text", {class: "lane-label", x: 14, y: top + index * lane + lane / 2, dy: "0.35em", on: {click: () => artSelect(`branch:${repo.path}\u0000${branch.name}`)}}, short(branch.name).slice(0, 26)));
+      svg.append(s("text", {class: "lane-label", x: 14, y: top + index * lane + lane / 2, dy: "0.35em", "data-pick": `branch:${repo.path}\u0000${branch.name}`, on: {click: () => artSelect(`branch:${repo.path}\u0000${branch.name}`)}}, short(branch.name).slice(0, 26)));
     });
     for (let index = 0; index <= 6; index += 1) {
       const ts = begin + ((end - begin) * index) / 6;
@@ -209,11 +216,7 @@
     return h("div", {class: "legend"}, marks, h("span", {class: "muted"}, words[view]));
   }
 
-  function artPanel(model) {
-    const node = model.byId.get(art.node);
-    if (!node) {
-      return [h("h2", {class: "panel-title"}, "Details"), h("p", {class: "muted"}, "Click a repository, a branch, a worktree, an agent or an artifact.")];
-    }
+  function artPopup(node) {
     const [kindName, kindIcon] = ART_KINDS[node.kind];
     const data = node.data;
     const body = [];
@@ -229,31 +232,23 @@
         flowDetails(data.flow, data.branch),
         data.workers.length ? h("div", {class: "who"}, data.workers.map((name) => [face(name, false), person(name)])) : h("p", {class: "muted"}, "No agent works here."),
         data.review ? h("div", {class: "who"}, status(data.review.status), h("span", {}, data.review.title)) : null, h("div", {class: "actions"}, copyButton(data.path)));
-    } else if (node.kind === "agent") {
-      body.push(h("div", {class: "actions"}, btn("Open agent", "btn small soft", () => openAgent(data.name))));
     } else if (node.kind === "artefact") {
       body.push(meta([["Ref", data.ref], ["Kind", data.kind], ["Task", data.task], ["Since", data.added]]), data.ended ? pill("Task ended: clean up", "warn") : null);
     } else {
       body.push(meta([["Title", data.title], ["Status", data.status]]));
     }
-    return [
-      h("div", {class: "panel-head"}, h("div", {}, h("h2", {class: "panel-title"}, icon(kindIcon), " ", node.label), h("span", {class: "muted"}, kindName)),
-        iconBtn("bi-x-lg", "Close", "btn small ghost", () => artSelect(node.id))),
-      ...body,
-    ];
+    return [popupHead(icon(kindIcon), node.label, h("span", {class: "muted"}, kindName)), h("div", {class: "popup-body"}, body)];
   }
 
   function artifactsScreen() {
     const view = ui.views.artifacts;
     const picker = h("select", {class: "field", "aria-label": "Repository", title: "Repository", on: {change: (event) => {
       art.repo = event.target.value;
-      art.node = null;
       drawArtifacts();
     }}});
     const count = h("span", {class: "muted"});
     const reload = iconBtn("bi-arrow-clockwise", "Reload", "btn small soft", fetchTree, "Reload: read the tree state from pkgmgr");
     const stageBox = h("div", {class: "stage"});
-    const aside = h("aside", {class: "card panel", "aria-live": "polite"});
     const legendBox = h("div", {});
     const list = h("div", {class: "repos"});
     const search = view === "tree" ? h("input", {type: "search", placeholder: "Filter repo, branch, path or agent …", value: tree.q, "aria-label": "Filter tree", on: {input: (event) => {
@@ -261,14 +256,14 @@
       drawArtifacts();
     }}}) : null;
     const removeAll = view === "tree" ? h("span", {class: "delete-all"}) : null;
-    tree.dom = {view, picker, count, stage: stageBox, aside, legend: legendBox, list, removeAll};
+    tree.dom = {view, picker, count, stage: stageBox, legend: legendBox, list, removeAll};
     window.setTimeout(() => {
       drawArtifacts();
       fetchTree();
     }, 0);
     const controls = h("div", {class: "card controls"}, viewSwitch("artifacts"), view === "3d" ? layoutTools("artifacts") : view === "tree" ? null : picker,
       h("div", {class: "toolbar", role: "toolbar", "aria-label": "Artifacts"}, search, reload, removeAll), count);
-    const body = view === "tree" ? list : h("div", {class: "graph-body"}, h("div", {class: "card stage-card"}, stageBox, legendBox), aside);
+    const body = view === "tree" ? list : h("div", {class: "card stage-card"}, stageBox, legendBox);
     return h("div", {class: "graph"}, controls, body);
   }
 
@@ -305,14 +300,9 @@
     tree.dom.count.textContent = empty ? "" : `${tree.data.repos.length} repositories · as of ${clock.format(stampOf(tree.data.scanned))}`;
     if (empty) {
       tree.dom.stage.replaceChildren(emptyState(tree.busy || !tree.data ? "Reading repositories …" : "No tree", tree.data ? tree.data.error : "pkgmgr writes the tree every minute while this page is open."));
-      tree.dom.aside.replaceChildren();
       return;
     }
     const model = tree.model;
-    if (art.node !== null && !model.byId.has(art.node)) {
-      art.node = null;
-    }
-    tree.dom.aside.replaceChildren(...artPanel(model));
     if (tree.dom.view === "3d") {
       stage3d("artifacts", tree.dom.stage);
       return;
@@ -321,4 +311,5 @@
     tree.dom.picker.replaceChildren(...tree.data.repos.map((entry) => h("option", {value: entry.path, selected: entry.path === art.repo}, `${entry.name} (${entry.branches.length})`)));
     tree.dom.legend.replaceChildren(artLegend(tree.dom.view));
     tree.dom.stage.replaceChildren(repo ? {orbit: artOrbit, chord: artChord, swimlane: artSwimlane}[tree.dom.view](repo, model) : emptyState("No repository", "pkgmgr names no repository."));
+    placePopup();
   }

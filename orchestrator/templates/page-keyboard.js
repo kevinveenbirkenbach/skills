@@ -38,8 +38,8 @@
         closeSheet();
       } else if (space.look) {
         skyLook(false);
-      } else if (ui.agent !== null) {
-        closeAgent();
+      } else if (popupDialog().open) {
+        closePopup();
       } else {
         closeMenus();
       }

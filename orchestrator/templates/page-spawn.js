@@ -90,7 +90,7 @@
   function spawnItem(entry) {
     const running = entry.running === null ? null : entry.running ? chip("bi-play-circle", "running", "ok") : chip("bi-check-circle", "finished", "neutral");
     const open = entry.kind === "twig" ? () => focusSub(entry.session, entry.row.id) : entry.kind === "operator" ? null : () => select(entry.id);
-    const name = open ? h("button", {type: "button", class: "linkish", title: entry.kind === "twig" ? "Show transcript in the stream" : `Open ${entry.label}`, on: {click: open}}, entry.label) : h("strong", {}, entry.label);
+    const name = open ? h("button", {type: "button", class: "linkish", title: entry.kind === "twig" ? "Show transcript in the stream" : `Open ${entry.label}`, "data-pick": entry.kind === "twig" ? null : entry.id, on: {click: open}}, entry.label) : h("strong", {}, entry.label);
     const meta = entry.kind === "twig" ? h("span", {class: "muted"}, `Depth ${entry.row.depth} · `, when(entry.row.started)) : h("span", {class: "muted"}, NODE_KINDS[entry.kind]);
     return h("li", {"data-kind": entry.kind, "data-running": entry.running === null ? null : String(entry.running)},
       h("div", {class: "spawn-row"}, h("span", {class: "state", role: "img", ...named(NODE_KINDS[entry.kind] || "Subagent")}, icon(SPAWN_KINDS[entry.kind])), name, running, meta),

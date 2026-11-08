@@ -594,11 +594,11 @@ flowchart TD
 
 ### Phase 6: popups and search (S2)
 
-- [ ] A click on an agent opens the popup with a fade; Escape and a click
+- [x] A click on an agent opens the popup with a fade; Escape and a click
       outside close it; the Details side panel no longer exists.
-- [ ] A click on a node enlarges it, marks it red and draws a leader line to
+- [x] A click on a node enlarges it, marks it red and draws a leader line to
       a translucent popup; a second click elsewhere restores the node.
-- [ ] A search field with suggestions replaces the node chip list; no view
+- [x] A search field with suggestions replaces the node chip list; no view
       renders more than one chip per search hit.
 
 ### Phase 6: faces (S3)

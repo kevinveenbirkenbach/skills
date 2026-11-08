@@ -6,11 +6,12 @@ import re
 import subprocess
 import time
 import unittest
+from collections import Counter
 from pathlib import Path
 from unittest import mock
 
 from hub_case import HubCase
-from hub_support import AMBIENCE, NAV, SPACE, VOICE
+from hub_support import AMBIENCE, NAV, POPUP, SPACE, VOICE
 from kvb_orchestrator import exchange
 
 
@@ -62,9 +63,9 @@ class TestHubPage(HubCase):
         self.assertEqual((state["reviews"][0]["title"], state["reviews"][0]["notes"]), ("<script>alert(1)</script>", "</pre><script>alert(2)</script>"))
         self.assertEqual((state["register"][0]["title"], state["radio"][0]["from"]), ("<script>alert(3)</script>", "<img src=x>"))
 
-    def test_the_index_scripts_parse_and_embed_the_ambience_voice_nav_and_space_modules(self):
+    def test_the_index_scripts_parse_and_embed_the_ambience_voice_nav_popup_and_space_modules(self):
         html = self.index()
-        for module in (AMBIENCE, VOICE, NAV, SPACE):
+        for module in (AMBIENCE, VOICE, NAV, POPUP, SPACE):
             with self.subTest(module=module.name):
                 self.assertIn(module.read_text(encoding="utf-8").strip(), html)
         scripts = re.findall(r'<script nonce="[^"]+">(.*?)</script>', html, re.DOTALL)
@@ -73,10 +74,16 @@ class TestHubPage(HubCase):
         page.write_text("\n;\n".join(scripts), encoding="utf-8")
         done = subprocess.run(["node", "--check", str(page)], capture_output=True, text=True, timeout=60, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
-        for module in (AMBIENCE, VOICE, NAV, SPACE):
+        for module in (AMBIENCE, VOICE, NAV, POPUP, SPACE):
             with self.subTest(module=module.name):
                 done = subprocess.run(["node", "--check", str(module)], capture_output=True, text=True, timeout=60, check=False)
                 self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_no_two_page_modules_declare_the_same_function(self):
+        page = re.findall(r'<script nonce="[^"]+">(.*?)</script>', self.index(), re.DOTALL)[-1]
+        names = Counter(re.findall(r"^  (?:async )?function (\w+)\(", page, re.MULTILINE))
+        self.assertGreater(len(names), 100)
+        self.assertEqual([name for name, count in names.items() if count > 1], [])
 
 
 if __name__ == "__main__":

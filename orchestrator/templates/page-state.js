@@ -27,7 +27,7 @@
 
   let state = JSON.parse(document.getElementById("state").textContent);
   const KINDS = Object.entries(state.kinds);
-  const ui = {screen: "stream", views: {agents: "orbit", artifacts: "tree", tasks: "list"}, preset: DAY, from: null, to: null, asOf: null, playing: false, busy: false, offline: false, agent: null, order: null, draft: "", node: null, cursor: 0, selected: new Set(), snoozed: false, review: null, file: 0};
+  const ui = {screen: "stream", views: {agents: "orbit", artifacts: "tree", tasks: "list"}, preset: DAY, from: null, to: null, asOf: null, playing: false, busy: false, offline: false, agent: null, order: null, draft: "", cursor: 0, selected: new Set(), snoozed: false, review: null, file: 0};
   const filter = {view: "fuer-dich", saved: "", kinds: new Set(state.views["fuer-dich"].kinds), waiting: true, q: "", agent: "", session: "", sub: "", parts: new Set(PARTS.map(([id]) => id))};
   const stream = {key: null, events: [], entries: [], last: 0, sessions: {}, busy: false, again: false, dom: null, error: ""};
   const tree = {data: null, model: null, busy: false, q: "", open: new Set(), dom: null};
@@ -48,7 +48,7 @@
   let userViews = validViews(stored(STORE.views, stored("kvb-hub.views", [])));
   let settings = state.settings;
   let settingsSig = JSON.stringify(settings);
-  let drawerDom = null;
+  let agentDom = null;
   let timeDom = null;
   let graphDom = null;
   let reviewDom = null;

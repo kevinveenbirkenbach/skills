@@ -102,6 +102,8 @@ PROBE = """(async () => {@HELPERS@
     flows: all("#main .flow").map((flow) => flow.dataset.flow),
     flowEdges: all("#main svg.chart path.flow").map((path) => path.dataset.side),
     openWork: all("#main .open-work").length,
+    panel: all("#drawer, .drawer, #main aside, #main .panel, #main .graph-body").length,
+    nodeChips: all("#main .space-list, #main .chip[data-node]").length,
     wide: document.documentElement.scrollWidth > window.innerWidth + 1,
     tall: document.documentElement.scrollHeight > window.innerHeight,
   };
@@ -198,34 +200,123 @@ ACTIONS = """(async () => {@HELPERS@
   await sleep(900);
   document.querySelector('#main button.linkish[title^="Open "]').click();
   await sleep(500);
-  found.drawer = all("#drawer input[type=radio]").map((input) => [input.value, input.checked]);
-  found.drawerUnlabelled = all("#drawer svg.bi").map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).length;
+  found.popup = all("#popup input[type=radio]").map((input) => [input.value, input.checked]);
+  found.popupUnlabelled = all("#popup svg.bi").map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).length;
+  found.centred = [document.getElementById("popup").open, document.querySelector("#popup .leader line").getAttribute("display")];
   return found;
 })()""".replace("@HELPERS@", HELPERS)
+POPUPS = """
+  const dialog = document.getElementById("popup");
+  const box = dialog.querySelector(".popup-box");
+  const line = dialog.querySelector(".leader line");
+  const click = (target) => target.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true}));
+  const tint = document.createElement("i");
+  tint.style.color = "var(--alarm)";
+  document.body.append(tint);
+  const red = getComputedStyle(tint).color;
+  tint.remove();
+  const tall = () => document.documentElement.scrollHeight > innerHeight;
+  const look = (node) => ({picked: node.classList.contains("picked"), size: Math.round(node.querySelector("circle").getBoundingClientRect().width), red: getComputedStyle(node.querySelector("circle")).fill === red});
+  const opened = () => {
+    const rect = box.getBoundingClientRect();
+    const ends = line.getAttribute("display") === "none" ? null : ["x1", "y1", "x2", "y2"].map((key) => Number(line.getAttribute(key)));
+    return {
+      open: dialog.open, fade: [dialog.classList.contains("fade"), getComputedStyle(dialog).animationName], title: text(box.querySelector(".panel-title")), opacity: Number(getComputedStyle(box).opacity), line: ends,
+      onBox: Boolean(ends) && (Math.abs(ends[2] - rect.left) < 1 || Math.abs(ends[2] - rect.right) < 1 || Math.abs(ends[3] - rect.top) < 1 || Math.abs(ends[3] - rect.bottom) < 1),
+      inside: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
+      tall: tall(), wide: document.documentElement.scrollWidth > innerWidth + 1, panel: all("#drawer, .drawer, #main aside, #main .panel, #main .graph-body").length,
+    };
+  };
+  const away = async (pick) => {
+    const outside = document.elementFromPoint(2, innerHeight - 2);
+    click(outside);
+    await sleep(250);
+    return {...look(pick()), open: dialog.open, outside: outside === dialog};
+  };
+"""
+POPUP_ORBIT = """(async () => {@HELPERS@@POPUPS@
+  const pick = () => document.querySelector('#main svg .node[data-pick="s2"]');
+  if (!(await until(pick, 8000))) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const before = look(pick());
+  const flat = !tall();
+  click(pick());
+  await sleep(400);
+  const shown = {...opened(), ...look(pick()), sections: all("h3", box).map((head) => head.firstChild.textContent), composer: Boolean(box.querySelector("form textarea")), offices: text(box.querySelector(".popup-body p"))};
+  const gone = await away(pick);
+  click(pick());
+  await sleep(300);
+  const again = dialog.open;
+  (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+  await sleep(250);
+  const escaped = {...look(pick()), open: dialog.open, again};
+  click(pick());
+  await sleep(500);
+  return {before, flat, shown, gone, escaped, last: dialog.open};
+})()""".replace("@HELPERS@", HELPERS).replace("@POPUPS@", POPUPS)
+POPUP_ARTIFACT = """(async () => {@HELPERS@@POPUPS@
+  const first = await until(() => document.querySelector('#main svg .node[data-pick^="branch:"]'), 8000);
+  if (!first) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const id = first.dataset.pick;
+  const pick = () => all("#main svg .node[data-pick]").find((node) => node.dataset.pick === id);
+  const before = look(pick());
+  const flat = !tall();
+  click(pick());
+  await sleep(400);
+  const shown = {...opened(), ...look(pick()), label: first.getAttribute("aria-label").split(",")[0]};
+  const gone = await away(pick);
+  click(pick());
+  await sleep(400);
+  return {before, flat, shown, gone, last: dialog.open};
+})()""".replace("@HELPERS@", HELPERS).replace("@POPUPS@", POPUPS)
 PICK_3D = """(async () => {@HELPERS@
-  const list = await until(() => document.querySelector("#main .space-list"), 8000);
-  if (!list) {
+  const field = await until(() => document.querySelector('#main input[aria-label="Find a node"]'), 8000);
+  const ready = await until(() => document.querySelector("#main .graph3d canvas") && !text(document.querySelector("#main .space-note")).startsWith("Loading"), 8000);
+  if (!field || !ready) {
     return {error: text(document.querySelector("#main .graph"))};
   }
-  list.open = true;
-  const chip = all("#main .space-list [data-node]").find((node) => node.dataset.node.startsWith("@PREFIX@"));
+  const type = async (value) => {
+    field.value = value;
+    field.dispatchEvent(new Event("input", {bubbles: true}));
+    await sleep(150);
+    return all("#main .hits .chip").map((chip) => [chip.dataset.hit, text(chip)]);
+  };
+  const tree = await (await fetch("/api/tree", {cache: "no-store"})).json();
+  const found = {empty: await type(""), twins: tree.repos.flatMap((repo) => repo.branches).filter((branch) => branch.name === "main").length, twin: await type("main"), hits: await type("@QUERY@")};
+  found.flat = document.documentElement.scrollHeight <= innerHeight;
+  const chip = all("#main .hits .chip").find((node) => node.dataset.hit.startsWith("@PREFIX@"));
   if (!chip) {
-    return {error: all("#main .space-list [data-node]").map((node) => node.dataset.node)};
+    return {error: found};
   }
   chip.click();
   await sleep(600);
-  return {panel: text(document.querySelector("#main aside .panel-title")), label: chip.textContent};
+  const dialog = document.getElementById("popup");
+  const line = dialog.querySelector(".leader line");
+  const host = () => document.querySelector("#main .graph3d");
+  found.opened = {
+    open: dialog.open, title: text(dialog.querySelector(".popup-box .panel-title")), label: text(chip), hit: chip.dataset.hit, picked: host().dataset.picked || null,
+    line: line.getAttribute("display") !== "none", lists: all("#main .space-list, #main .chip[data-node]").length, flat: document.documentElement.scrollHeight <= innerHeight,
+  };
+  dialog.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+  await sleep(300);
+  found.closed = {open: dialog.open, picked: host().dataset.picked || null};
+  chip.click();
+  await sleep(600);
+  return found;
 })()""".replace("@HELPERS@", HELPERS)
 CALL = """(async () => {@HELPERS@
   document.querySelector('#main [aria-label="Categories"] button[aria-label="Radio"]').click();
   const someone = await until(() => document.querySelector('#main button.linkish[title^="Open "]'), 8000);
   someone.click();
   await sleep(500);
-  document.querySelector('#drawer input[type=radio][value="call"]').click();
-  const field = document.querySelector("#drawer textarea");
+  document.querySelector('#popup input[type=radio][value="call"]').click();
+  const field = document.querySelector("#popup textarea");
   field.value = "E2E call ping";
   field.dispatchEvent(new Event("input", {bubbles: true}));
-  document.querySelector('#drawer button[type="submit"]').click();
+  document.querySelector('#popup button[type="submit"]').click();
   const entry = await until(() => all("#main .entry").find((row) => row.textContent.includes("Read") && row.textContent.includes("E2E call ping")), 20000);
   return {to: text(someone), receipt: entry ? text(entry) : null, sent: all("#main .entry").filter((row) => row.textContent.includes("E2E call ping")).length};
 })()""".replace("@HELPERS@", HELPERS)
@@ -787,6 +878,64 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual([entry for entry in click["log"] if entry.get("csp") == "media-src"], [])
         return data
 
+    def popped(self, result: dict, title: str) -> None:
+        before, shown, gone = result["before"], result["shown"], result["gone"]
+        self.assertEqual((before["picked"], before["red"]), (False, False))
+        self.assertEqual((shown["open"], shown["picked"], shown["red"], shown["fade"], shown["title"]), (True, True, True, [True, "fade"], title), shown)
+        self.assertGreater(shown["size"], before["size"] * 1.4)
+        self.assertLess(shown["opacity"], 1)
+        self.assertIsNotNone(shown["line"], shown)
+        self.assertTrue(shown["onBox"] and shown["inside"], shown)
+        self.assertEqual((not shown["tall"], shown["wide"], shown["panel"]), (result["flat"], False, 0))
+        self.assertEqual(gone, {"picked": False, "size": before["size"], "red": False, "open": False, "outside": True})
+        self.assertTrue(result["last"])
+
+    def check_popups(self, browser: str, driver: str, binary: str) -> None:
+        steps = []
+        for width, height in WIDTHS:
+            steps.append({"width": width, "height": height, "url": f"{self.base}#agents/orbit", "wait": 1200, "probe": POPUP_ORBIT, "shot": str(OUT / f"{browser}-{width}-agents-orbit-popup.png")})
+            steps.append({"width": width, "height": height, "url": f"{self.base}#artifacts/orbit", "wait": 1200, "probe": POPUP_ARTIFACT, "shot": str(OUT / f"{browser}-{width}-artifacts-orbit-popup.png")})
+        for tab, query, prefix in (("artifacts", "feature", "branch:"), ("agents", "sta", "s2")):
+            steps.append({"width": 1366, "height": 768, "url": f"{self.base}#{tab}/3d", "wait": 900, "probe": PICK_3D.replace("@QUERY@", query).replace("@PREFIX@", prefix), "shot": str(OUT / f"{browser}-1366-{tab}-3d-picked.png")})
+        data = self.drive(steps, None, driver, binary)
+        (OUT / f"{browser}-popups.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        results = data["results"]
+        for index, (width, _) in enumerate(WIDTHS):
+            agent, artifact = results[2 * index : 2 * index + 2]
+            with self.subTest(browser=browser, width=width):
+                self.assertNotIn("error", agent)
+                self.assertNotIn("error", artifact)
+                self.assertTrue(agent["flat"], "#agents/orbit scrolls")
+                self.popped(agent, "Stage")
+                self.assertEqual(agent["shown"]["sections"], ["Tasks", "Claims", "Subagents", "History"])
+                self.assertTrue(agent["shown"]["composer"])
+                self.assertRegex(agent["shown"]["offices"], r"^Offices: .*identity/oidc")
+                escaped = agent["escaped"]
+                self.assertEqual((escaped["again"], escaped["open"], escaped["picked"], escaped["red"], escaped["size"]), (True, False, False, False, agent["before"]["size"]))
+                self.popped(artifact, artifact["shown"]["label"])
+        for found, tab in zip(results[-2:], ("artifacts", "agents"), strict=True):
+            with self.subTest(browser=browser, tab=tab):
+                self.assertNotIn("error", found)
+                self.assertEqual(found["empty"], [])
+                labels = [label for _, label in found["hits"]]
+                self.assertEqual(len(labels), len(set(labels)), labels)
+                self.assertLessEqual(len(labels), 8)
+                opened = found["opened"]
+                self.assertEqual((opened["open"], opened["title"], opened["picked"], opened["line"], opened["lists"], opened["flat"]), (True, opened["label"], opened["hit"], True, 0, found["flat"]), opened)
+                self.assertEqual(found["closed"], {"open": False, "picked": None})
+        artifacts, agents = results[-2:]
+        self.assertEqual((artifacts["twins"], [label for _, label in artifacts["twin"]]), (2, ["main"]))
+        self.assertTrue(artifacts["opened"]["hit"].startswith("branch:"), artifacts["opened"])
+        self.assertEqual((agents["hits"], agents["opened"]["title"]), ([["s2", "Stage"]], "Stage"))
+
+    def test_chromium_opens_agent_and_node_popups_and_finds_nodes_at_three_widths(self):
+        self.check_popups("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"))
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_opens_agent_and_node_popups_and_finds_nodes_at_three_widths(self):
+        self.check_popups("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
+
     def test_chromium_form_controls_never_overlap(self):
         self.check_overlaps("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"))
 
@@ -812,8 +961,6 @@ class TestOrchestratorE2E(HubCase):
         steps = [{"width": width, "height": height, "url": f"{self.base}#{screen}", "wait": 900, "probe": PROBE, "shot": self.shot(f"{width}-{screen.replace('/', '-')}")} for width, height in WIDTHS for screen in SCREENS]
         steps += [{"width": 1366, "height": 768, "url": f"{self.base}#{old}", "wait": 600, "probe": PROBE, "shot": None} for old in ("graph", "graph/chord", "tree")]
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#stream", "wait": 900, "probe": ACTIONS, "shot": None})
-        steps.append({"width": 1366, "height": 768, "url": f"{self.base}#artifacts/3d", "wait": 900, "probe": PICK_3D.replace("@PREFIX@", "branch:"), "shot": self.shot("1366-artifacts-3d-picked")})
-        steps.append({"width": 1366, "height": 768, "url": f"{self.base}#agents/3d", "wait": 900, "probe": PICK_3D.replace("@PREFIX@", "s2"), "shot": self.shot("1366-agents-3d-picked")})
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#artifacts/3d", "wait": 900, "probe": PROBE, "shot": self.shot("1366-artifacts-3d-reduced-motion"), "media": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
         steps.append({"width": 1366, "height": 768, "url": f"{self.base}#tasks/list", "wait": 900, "probe": INBOX_CHIP, "shot": self.shot("1366-tasks-grant")})
         data = self.drive(steps, None)
@@ -833,6 +980,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertGreater(probe["icons"], 8)
                 self.assertEqual(labelled(probe), {"unlabelled": [], "broken": []})
                 self.assertFalse(probe["wide"], "the page scrolls sideways")
+                self.assertEqual((probe["panel"], probe["nodeChips"]), (0, 0))
         self.assertEqual([probe["tall"] for probe in probes if probe["hash"] == "#agents/orbit"], [False] * len(WIDTHS))
         by_hash = {probe["hash"]: probe for probe in probes}
         stream = by_hash["#stream"]
@@ -884,16 +1032,15 @@ class TestOrchestratorE2E(HubCase):
         self.assertNotIn("error", actions)
         self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/rasci", "#stream"])
         self.assertEqual(actions["ambience"], ["sky-look", "music-toggle", "leitstand", "notify"])
-        self.assertEqual((actions["settingsUnlabelled"], actions["drawerUnlabelled"]), (0, 0))
+        self.assertEqual((actions["settingsUnlabelled"], actions["popupUnlabelled"]), (0, 0))
         self.assertEqual([name for name, _, _ in actions["speech"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
         self.assertEqual([entry[1:] for entry in actions["speech"] if entry[0] == "MAYDAY"], [[True, True]])
         for tool in ("Radio to all …", "Cancel mayday", "Priority …", "Evening", "Firewall …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
             with self.subTest(tool=tool):
                 self.assertTrue(any(tool in entry for entry in actions["palette"]), actions["palette"])
-        self.assertEqual(actions["drawer"], [["post", True], ["call", False]])
-        artifact_pick, agent_pick, calm, chips = extra[4:]
-        self.assertEqual(artifact_pick["panel"], artifact_pick["label"])
-        self.assertEqual(agent_pick["panel"], agent_pick["label"])
+        self.assertEqual(actions["popup"], [["post", True], ["call", False]])
+        self.assertEqual(actions["centred"], [True, "none"])
+        calm, chips = extra[4:]
         self.assertRegex(calm["note"], r"Force · without motion \(prefers-reduced-motion\)$")
         self.assertEqual({key: value for key, value in chips["inbox"].items() if key != "counted"}, {"hash": "#stream/inbox", "items": chips["inbox"]["counted"], "pressed": "true", "current": ["Inbox"]})
         self.assertGreaterEqual(chips["inbox"]["items"], 1)
@@ -1205,6 +1352,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
                 self.assertEqual(labelled(probe), {"unlabelled": [], "broken": []})
                 self.assertFalse(probe["wide"], "the page scrolls sideways")
+                self.assertEqual((probe["panel"], probe["nodeChips"]), (0, 0))
                 self.assertTrue(shot.is_file() and shot.stat().st_size > 1000, shot)
                 if screen.endswith("/3d"):
                     self.assertTrue(probe["canvas"], probe["note"])

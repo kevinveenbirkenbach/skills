@@ -16,7 +16,7 @@
       announce();
       render(false);
       drawTime();
-      drawDrawer();
+      drawAgent();
       drawStream();
       if (motion.current.size === 0 || ui.asOf !== motion.asOf) {
         const first = motion.current.size === 0;

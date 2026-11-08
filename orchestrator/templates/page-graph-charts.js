@@ -113,7 +113,7 @@
     const svg = s("svg", {viewBox: `0 0 ${full} ${height}`, class: "chart", role: "img", "aria-label": "Swimlane: messages over time"}, defs());
     lanes.forEach((node, index) => {
       svg.append(s("rect", {class: index % 2 ? "lane odd" : "lane", x: 0, y: top + index * lane, width: full, height: lane}));
-      svg.append(s("text", {class: "lane-label", x: 14, y: top + index * lane + lane / 2, dy: "0.35em", "text-anchor": "start", on: {click: () => select(node.id)}}, node.label));
+      svg.append(s("text", {class: "lane-label", x: 14, y: top + index * lane + lane / 2, dy: "0.35em", "text-anchor": "start", "data-pick": node.id, on: {click: () => select(node.id)}}, node.label));
     });
     for (let index = 0; index <= 6; index += 1) {
       const ts = begin + ((end - begin) * index) / 6;
@@ -161,21 +161,15 @@
       h("span", {class: "muted"}, "Line width = count · closeness = recent collaboration"));
   }
 
-  function side() {
-    const node = state.graph.nodes.find((entry) => entry.id === ui.node);
-    if (!node) {
-      return [h("h2", {class: "panel-title"}, "Details"), h("p", {class: "muted"}, "Click a node: its panel shows tasks, claims, subagents and history.")];
-    }
+  function nodePopup(node) {
     const messages = state.radio.filter((row) => row.source === node.id || row.targets.includes(node.id)).slice(-10).reverse();
     return [
-      h("div", {class: "panel-head"},
-        h("div", {}, h("h2", {class: "panel-title"}, node.label), h("span", {class: "muted"}, `${NODE_KINDS[node.kind]}${node.parent ? ` of ${labelOf(node.parent)}` : ""}`)),
-        iconBtn("bi-x-lg", "Close", "btn small ghost", () => select(node.id))),
-      h("h3", {}, "Latest messages", counter(messages.length)),
-      messages.length ? h("ul", {class: "mini"}, messages.map((row) => h("li", {},
-        h("div", {class: "row"}, klass(row.class), when(row.ts)),
-        h("span", {class: "muted"}, `${dash(row.from)} → ${targetsOf(row)}`),
-        h("span", {}, row.text)))) : h("p", {class: "muted"}, "No messages in the chosen time range."),
+      popupHead(null, node.label, h("span", {class: "muted"}, NODE_KINDS[node.kind])),
+      h("div", {class: "popup-body"}, h("h3", {}, "Latest messages", counter(messages.length)),
+        messages.length ? h("ul", {class: "mini"}, messages.map((row) => h("li", {},
+          h("div", {class: "row"}, klass(row.class), when(row.ts)),
+          h("span", {class: "muted"}, `${dash(row.from)} → ${targetsOf(row)}`),
+          h("span", {}, row.text)))) : h("p", {class: "muted"}, "No messages in the chosen time range.")),
     ];
   }
 
@@ -188,9 +182,8 @@
   function agentsScreen() {
     const view = ui.views.agents;
     const stageBox = h("div", {class: "stage"});
-    const aside = h("aside", {class: "card panel", "aria-live": "polite"});
     const toolbar = agentsToolbar();
-    graphDom = {stage: stageBox, aside, pulses: null, toolbar};
-    const body = view === "tree" ? spawnScreen() : view === "hierarchy" ? hierarchyScreen() : h("div", {class: "graph-body"}, h("div", {class: "card stage-card"}, stageBox, view === "3d" ? null : legend()), aside);
+    graphDom = {stage: stageBox, pulses: null, toolbar};
+    const body = view === "tree" ? spawnScreen() : view === "hierarchy" ? hierarchyScreen() : h("div", {class: "card stage-card"}, stageBox, view === "3d" ? null : legend());
     return h("div", {class: "graph"}, toolbar.bar, h("div", {class: "card controls"}, viewSwitch("agents"), view === "3d" ? layoutTools("agents") : null), body);
   }

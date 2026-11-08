@@ -7,14 +7,15 @@
     return [...relayed, ...sent].sort((a, b) => a.ts - b.ts).slice(-80);
   }
 
-  function drawDrawer() {
-    if (!drawerDom) {
+  function drawAgent() {
+    if (!agentDom) {
       return;
     }
     const node = state.graph.nodes.find((entry) => entry.id === ui.agent);
     const tasks = node ? node.tasks : [];
     const claims = node ? node.claims : [];
-    drawerDom.info.replaceChildren(
+    agentDom.info.replaceChildren(
+      h("p", {class: "muted"}, claims.length ? `Offices: ${claims.map((claim) => claim.office).join(", ")}` : "No office"),
       h("h3", {}, "Tasks", counter(tasks.length)),
       tasks.length ? h("ul", {class: "mini"}, tasks.map((task) => h("li", {},
         h("div", {class: "row"}, h("code", {}, task.task), status(task.status)),
@@ -26,9 +27,10 @@
         h("span", {}, dash(claim.work)),
         h("span", {class: "muted"}, `${dash(claim.runtime)} · since ${dash(claim.since)}`)))) : h("p", {class: "muted"}, "No claims."));
     const rows = history(ui.agent);
-    drawerDom.history.replaceChildren(rows.length
+    agentDom.history.replaceChildren(rows.length
       ? h("div", {}, rows.map((row) => h("div", {class: `bubble ${row.mine ? "mine" : "theirs"}`}, h("span", {class: "muted"}, `${row.who} · `, when(row.ts)), row.text, voiceReplay(row.voice))))
       : h("p", {class: "muted"}, "No history in the chosen time range."));
+    placePopup();
   }
 
   async function loadSubagents(key, holder, life) {
@@ -56,9 +58,10 @@
       item.style.marginLeft = `${(row.depth - 1) * 18}px`;
       return item;
     })) : h("p", {class: "muted"}, "No subagents."));
+    placePopup();
   }
 
-  async function deliver(text, file, cls) {
+  async function deliver(key, text, file, cls) {
     let upload = "";
     if (file) {
       if (file.size > UPLOAD_LIMIT) {
@@ -72,23 +75,21 @@
       }
       upload = stored.data.id;
     }
-    return message(nameOf(ui.agent), text, upload, cls);
+    return message(nameOf(key), text, upload, cls);
   }
 
   function message(to, text, upload, cls) {
     return radioSend({to, text, upload, cls, voice: ""});
   }
 
-  function openAgent(who) {
-    const drawer = document.getElementById("drawer");
+  function openAgent(who, anchor, closed) {
     const key = agentKey(who);
     const name = nameOf(key);
-    ui.agent = key;
     const text = h("textarea", {"aria-label": `Message to ${name}`, placeholder: `Message to ${name} …`});
     const file = h("input", {type: "file", class: "field", "aria-label": "Attach file"});
     const button = h("button", {type: "submit", class: "btn primary icon-only", ...named("Send")}, icon("bi-send"));
     const classes = choice("to-one", TO_ONE, "post");
-    const form = h("form", {class: "drawer-form"}, text, file, classes,
+    const form = h("form", {class: "popup-form"}, text, file, classes,
       h("p", {class: "muted"}, "Post arrives at the end of the turn, Call at once with a read receipt; your passkey signs, verifiable with operator_message."),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), micButton(text), button));
     form.addEventListener("submit", async (event) => {
@@ -97,7 +98,7 @@
         return;
       }
       button.disabled = true;
-      if (await deliver(text.value, file.files[0] || null, picked(classes))) {
+      if (await deliver(key, text.value, file.files[0] || null, picked(classes))) {
         text.value = "";
         file.value = "";
       }
@@ -108,22 +109,22 @@
     const log = h("div", {"aria-live": "polite"});
     const life = h("span", {class: "muted"});
     const former = (people()[key] || {names: []}).names.filter((entry) => entry !== name);
-    drawer.replaceChildren(
-      h("div", {class: "drawer-head"}, face(name, true), life, h("div", {}, h("h2", {class: "panel-title"}, name), h("span", {class: "muted"}, former.length ? `Agent · formerly ${former.join(", ")}` : "Agent")), h("span", {class: "spacer"}),
-        iconBtn("bi-x-lg", "Close", "btn small ghost", closeAgent)),
-      h("div", {class: "drawer-body"}, info, h("h3", {}, "Subagents"), subs, h("h3", {}, "History"), log),
-      form);
-    drawer.hidden = false;
-    drawerDom = {info, history: log};
-    drawDrawer();
+    openPopup(name, [
+      popupHead(face(name, true), name, h("span", {class: "muted"}, former.length ? `Agent · formerly ${former.join(", ")}` : "Agent"), " ", life),
+      h("div", {class: "popup-body"}, info, h("h3", {}, "Subagents"), subs, h("h3", {}, "History"), log),
+      form,
+    ], anchor, () => {
+      agentDom = null;
+      ui.agent = null;
+      if (closed) {
+        closed();
+      }
+    });
+    ui.agent = key;
+    agentDom = {info, history: log};
+    drawAgent();
     loadSubagents(key, subs, life);
     text.focus();
-  }
-
-  function closeAgent() {
-    document.getElementById("drawer").hidden = true;
-    drawerDom = null;
-    ui.agent = null;
   }
 
   function agentNames() {

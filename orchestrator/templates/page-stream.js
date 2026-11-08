@@ -58,7 +58,7 @@
     filter.waiting = false;
     filter.session = session;
     filter.sub = sub;
-    closeAgent();
+    closePopup();
     if (ui.screen === "stream" && stream.dom) {
       refilter();
     } else {

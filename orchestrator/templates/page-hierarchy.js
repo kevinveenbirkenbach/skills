@@ -55,7 +55,7 @@
     const active = claim.beat !== null && claim.beat >= state.now - ACTIVE_BEAT;
     return h("div", {class: "org-row", "data-office": claim.office},
       h("span", {class: "org-office", title: `${title} ${claim.office}`}, icon(OFFICE_ICONS[claim.kind]), h("strong", {}, label)),
-      who ? h("button", {type: "button", class: "linkish org-holder", "data-focus": `agent:${claim.office}`, title: `Open ${who}`, on: {click: () => openAgent(who)}}, face(who, false), who) : h("span", {class: "muted"}, "–"),
+      who ? h("button", {type: "button", class: "linkish org-holder", "data-focus": `agent:${claim.office}`, title: `Open ${who}`, on: {click: () => openAgent(who, near(`#main [data-focus="agent:${CSS.escape(claim.office)}"]`))}}, face(who, false), who) : h("span", {class: "muted"}, "–"),
       active ? chip("bi-play-circle", "active", "ok") : chip("bi-pause-circle", "no heartbeat", "neutral"),
       claim.work && claim.work !== "-" ? h("span", {class: "muted org-work", title: claim.work}, short(claim.work)) : null,
       h("span", {class: "org-actions"},

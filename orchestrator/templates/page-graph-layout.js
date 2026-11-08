@@ -107,22 +107,24 @@
     return s("text", {class: "label", x: fixed(cos * gap), y: fixed(sin * (gap + 3)), dy: "0.35em", "text-anchor": anchor}, node.label);
   }
 
-  function select(id) {
-    ui.node = ui.node === id ? null : id;
-    stage();
-    drawSide();
+  function select(id, anchor, closed) {
     const node = state.graph.nodes.find((entry) => entry.id === id);
-    if (ui.node !== null && node && node.kind !== "operator") {
-      openAgent(node.kind === "subagent" ? node.parent : id);
+    if (!node) {
+      return;
+    }
+    if (node.kind === "operator") {
+      openPopup(node.label, nodePopup(node), anchor || pickOf(id), closed);
+    } else {
+      openAgent(node.kind === "subagent" ? node.parent : id, anchor || pickOf(id), closed);
     }
   }
 
   function nodeMark(node, at, gap) {
     const r = RADIUS[node.kind];
-    const classes = ["node", `k-${node.kind}`, ui.node === node.id ? "selected" : "", node.claims.length ? "claimed" : "", speech.current && speech.current.who === node.id ? "speaking" : ""].filter(Boolean).join(" ");
+    const classes = ["node", `k-${node.kind}`, node.claims.length ? "claimed" : "", speech.current && speech.current.who === node.id ? "speaking" : ""].filter(Boolean).join(" ");
     const tasks = node.tasks.length ? ` · ${node.tasks.length} tasks` : "";
     return s("g", {
-      class: classes, transform: `translate(${fixed(at.x)} ${fixed(at.y)})`, tabindex: 0, role: "button", "aria-label": `${node.label}, ${NODE_KINDS[node.kind]}`,
+      class: classes, transform: `translate(${fixed(at.x)} ${fixed(at.y)})`, tabindex: 0, role: "button", "aria-label": `${node.label}, ${NODE_KINDS[node.kind]}`, "data-pick": node.id,
       on: {
         click: () => select(node.id),
         keydown: (event) => {

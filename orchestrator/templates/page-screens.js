@@ -52,9 +52,6 @@
   }
 
   function render(force) {
-    if (ui.node !== null && !state.graph.nodes.some((node) => node.id === ui.node)) {
-      ui.node = null;
-    }
     for (const [id, {button}] of navButtons) {
       button.setAttribute("aria-current", ui.screen === id ? "page" : "false");
     }
@@ -78,7 +75,6 @@
       }
     }
     stage();
-    drawSide();
     drawSpawn();
     drawHierarchy(force);
     drawToolbar();
@@ -87,6 +83,7 @@
     drawTasks();
     drawStatus();
     tick();
+    placePopup();
   }
 
   function drawStatus() {
