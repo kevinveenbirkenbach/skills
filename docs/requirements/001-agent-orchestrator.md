@@ -453,8 +453,9 @@ flowchart TD
       `core.fsmonitor`).
 - [ ] `pkgmgr branch open|close|drop|gc` rewrite the file when it exists.
 - [ ] The orchestrator install enables a systemd user timer that writes it
-      every 60 s while the page polled within the last 5 min, with pkgmgr
-      built from the newest signed tag.
+      60 s after its previous run ended while the page polled within the
+      last 5 min, on at most half a core, with pkgmgr built from the newest
+      signed tag.
 - [ ] The orchestrator mounts the file read-only and reads only it.
 - [ ] `orchestrator/kvb_orchestrator/tree.py`'s git scan is gone and no
       module of the orchestrator starts `git`.

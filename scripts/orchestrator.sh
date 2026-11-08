@@ -225,7 +225,8 @@ tree_timer() {
 	cp -f "${HUB}/systemd/${TREE_UNIT}.service" "${HUB}/systemd/${TREE_UNIT}.timer" "${HUB}/systemd/${CLEANUP_UNIT}.service" "${HUB}/systemd/${CLEANUP_UNIT}.path" "${UNITS}/"
 	systemctl --user daemon-reload
 	systemctl --user enable --now "${TREE_UNIT}.timer" "${CLEANUP_UNIT}.path"
-	log "skills: ${TREE_UNIT}.timer writes ${TREE_DIR}/branch-tree.json every 60 s while the Agent Orchestrator page polls"
+	systemctl --user restart "${TREE_UNIT}.timer"
+	log "skills: ${TREE_UNIT}.timer writes ${TREE_DIR}/branch-tree.json a minute after each run while the Agent Orchestrator page polls"
 	log "skills: ${CLEANUP_UNIT}.path deletes the merged branches the operator signs in the Artifacts Tree, locally only"
 }
 

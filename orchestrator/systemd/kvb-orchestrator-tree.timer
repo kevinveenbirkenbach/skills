@@ -1,8 +1,9 @@
 [Unit]
-Description=Agent Orchestrator tree every 60 s
+Description=Agent Orchestrator tree a minute after its last run
 
 [Timer]
-OnCalendar=minutely
+OnActiveSec=30s
+OnUnitInactiveSec=60s
 AccuracySec=1s
 
 [Install]

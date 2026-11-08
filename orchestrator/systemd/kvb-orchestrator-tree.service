@@ -8,4 +8,5 @@ ExecCondition=/bin/sh -c 'test -n "$(find %h/.local/state/kvb-orchestrator/tree-
 ExecStart=%h/.local/share/kvb-orchestrator/pkgmgr/bin/pkgmgr branch tree --format json --output %h/.local/state/pkgmgr/tree/branch-tree.json
 Nice=10
 IOSchedulingClass=idle
-TimeoutStartSec=55
+CPUQuota=50%
+TimeoutStartSec=600
