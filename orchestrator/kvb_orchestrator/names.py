@@ -65,9 +65,14 @@ class Directory:
 
     def renames(self, begin: float, end: float) -> list[dict]:
         found = []
+        shown = set()
         for session, own in self.by_session.items():
             for before, after in itertools.pairwise(own):
-                if before["name"] != after["name"] and begin <= after["first_seen"] <= end:
+                pair = (session, before["name"], after["name"])
+                if before["name"] == after["name"] or pair in shown:
+                    continue
+                shown.add(pair)
+                if begin <= after["first_seen"] <= end:
                     found.append(event({
                         "id": f"rename:{session}:{after['first_seen']}", "ts": after["first_seen"], "kind": "rename", "agent": after["name"],
                         "now": self.now(session), "session": session, "title": f"{before['name']} heißt jetzt {after['name']}",
@@ -89,9 +94,20 @@ class Names:
         self.observed: dict[str, str] = observed if isinstance(observed, dict) else {}
 
     def observe(self, sightings: list[tuple[str, str, float | None, str]], now: float) -> None:
+        """Args:
+            sightings: (session, name, seen, source); of several sightings of
+                one session from one source only the newest counts, so two
+                claims under different names cannot flip the name back and
+                forth on every state build.
+        """
+        newest: dict[tuple[str, str], tuple[str, str, float | None, str]] = {}
+        for sighting in sightings:
+            key = (sighting[0], sighting[3])
+            if key not in newest or (sighting[2] or -math.inf) >= (newest[key][2] or -math.inf):
+                newest[key] = sighting
         with self.lock:
             changed = False
-            for session, name, seen, source in sightings:
+            for session, name, seen, source in newest.values():
                 key = f"{session}\x00{source}"
                 if not session or not name or self.observed.get(key) == name:
                     continue

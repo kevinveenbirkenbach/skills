@@ -581,16 +581,16 @@ flowchart TD
 
 ### Phase 6: fixes (S1)
 
-- [ ] `#agents/orbit` at 1920, 1366 and 390 px has
+- [x] `#agents/orbit` at 1920, 1366 and 390 px has
       `document.documentElement.scrollHeight <= innerHeight` (e2e probe).
-- [ ] Two state builds with the same claims add no second rename event to
+- [x] Two state builds with the same claims add no second rename event to
       the Stream (unit test on the timeline).
-- [ ] The Deutschlandfunk AAC stream plays in Chromium and Firefox through
+- [x] The Deutschlandfunk AAC stream plays in Chromium and Firefox through
       the radio (e2e with a recorded fixture of its redirect chain) and the
       root cause is named in the commit message.
-- [ ] With squelch at 0 no beep plays, music on or off (unit test on the
+- [x] With squelch at 0 no beep plays, music on or off (unit test on the
       audio scheduler).
-- [ ] Without a tree file the Tree names the missing `pkgmgr branch tree`
+- [x] Without a tree file the Tree names the missing `pkgmgr branch tree`
       and the release step.
 
 ### Phase 6: popups and search (S2)

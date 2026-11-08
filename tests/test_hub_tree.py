@@ -52,7 +52,9 @@ class TestHubTree(HubCase):
         status, _, body = self.get("/api/tree")
         self.assertEqual(status, 200, body)
         self.assertEqual((json.loads(body)["repos"], json.loads(body)["scanned"]), ([], None))
-        self.assertIn("no pkgmgr tree file", json.loads(body)["error"])
+        for words in ("no pkgmgr tree file", "`pkgmgr branch tree`", "release pkgmgr"):
+            with self.subTest(words=words):
+                self.assertIn(words, json.loads(body)["error"])
         self.tree_file.write_text('{"repos": [{"path": "/x"}]}', encoding="utf-8")
         self.assertIn("unreadable", json.loads(self.get("/api/tree")[2])["error"])
 

@@ -47,7 +47,7 @@
       const newRadio = state.radio.filter((row) => !known.radio.has(`${row.ts}|${row.from}|${row.text.slice(0, 40)}`));
       const direct = newRadio.filter((row) => row.to.includes(HUMAN));
       const present = {mayday: newAlarms.length > 0, review: fresh.some((item) => item.kind !== "operator"), direct: direct.length > 0, radio: newRadio.length > 0};
-      const kind = SOUND_KINDS.map(([id]) => id).find((id) => present[id] && settings.sounds[id].on);
+      const kind = Voice.beep(present, settings, SOUND_KINDS.map(([id]) => id));
       if (kind) {
         play(kind, loudness(kind));
       }

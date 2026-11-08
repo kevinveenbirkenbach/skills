@@ -13,7 +13,8 @@ const plan = JSON.parse(readFileSync(planFile, "utf8"));
 const profile = mkdtempSync(join(tmpdir(), "cdp-"));
 // --no-sandbox: the agent sandbox already forbids the user namespaces Chromium's own sandbox needs.
 // --enable-unsafe-swiftshader: without a GPU, headless Chromium gives WebGL only through SwiftShader, which it no longer enables by itself.
-const flags = ["--headless", "--no-sandbox", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"];
+// --ignore-certificate-errors: the https station fixtures use a throwaway self-signed certificate.
+const flags = ["--headless", "--no-sandbox", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-certificate-errors", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"];
 const browser = spawn(binary, flags, {stdio: ["ignore", "ignore", "pipe"]});
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const KEYS = {Enter: [13, "\r"], Tab: [9, ""]};

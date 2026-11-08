@@ -66,7 +66,7 @@ function send(method, params) {
 
 const results = [];
 try {
-  await send("session.new", {capabilities: {}});
+  await send("session.new", {capabilities: {alwaysMatch: {acceptInsecureCerts: true}}});
   await send("session.subscribe", {events: ["log.entryAdded"]});
   if (plan.init) {
     await send("script.addPreloadScript", {functionDeclaration: plan.init});

@@ -70,6 +70,7 @@
       const main = document.getElementById("main");
       main.setAttribute("aria-labelledby", `tab-${ui.screen}`);
       main.replaceChildren(screenOf());
+      document.body.classList.toggle("fit", ["agents", "artifacts"].includes(ui.screen) && !["tree", "hierarchy"].includes(ui.views[ui.screen]));
       drawn.screen = ui.screen;
       drawn.sig = sig;
       if (g3.host && !g3.host.isConnected) {

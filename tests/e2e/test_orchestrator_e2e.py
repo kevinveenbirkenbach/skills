@@ -8,6 +8,7 @@ import json
 import math
 import os
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ import unittest
 from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
+from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -101,6 +103,7 @@ PROBE = """(async () => {@HELPERS@
     flowEdges: all("#main svg.chart path.flow").map((path) => path.dataset.side),
     openWork: all("#main .open-work").length,
     wide: document.documentElement.scrollWidth > window.innerWidth + 1,
+    tall: document.documentElement.scrollHeight > window.innerHeight,
   };
 })()""".replace("@HELPERS@", HELPERS)
 ORG_OPEN = """(async () => {@HELPERS@
@@ -351,6 +354,8 @@ ADD_STATION = """(async () => {@HELPERS@
   return {toasts: all("#toasts .toast").map(text)};
 })()""".replace("@HELPERS@", HELPERS)
 STATION_NAME = "E2E Ton mit einem sehr langen Sendernamen, der in keine Zeile passt"
+DLF_PATH = "/dlf/01/high/aac/stream.aac?aggregator=web"
+DLF_NODE = "/ard/dlf/01/aac/192/stream.aac?aggregator=web"
 RADIO_STATE = """(async () => {@HELPERS@@MEDIA@
   await until(() => log().some((entry) => entry.play), 8000);
   return {log: log(), media: await advancing(), toasts: all("#toasts .toast").map(text)};
@@ -481,6 +486,12 @@ def tone(seconds: int, rate: int) -> bytes:
 
 class Station(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
+        if self.server.moved:
+            self.send_response(302)
+            self.send_header("Location", self.server.moved)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         body = self.server.body
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")
@@ -677,15 +688,41 @@ class TestOrchestratorE2E(HubCase):
         patch.start()
         self.addCleanup(patch.stop)
 
-    def station(self) -> str:
+    def station(self, tls: ssl.SSLContext | None = None, moved: str | None = None) -> str:
+        """Args:
+            tls: serves https with this context instead of plain http.
+            moved: answers every request with a 302 to this URL instead of
+                the tone.
+        """
         httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Station)
-        httpd.body = tone(30, 22050)
+        httpd.body, httpd.moved = tone(30, 22050), moved
+        if tls:
+            httpd.socket = tls.wrap_socket(httpd.socket, server_side=True)
         thread = threading.Thread(target=httpd.serve_forever, args=(0.05,), daemon=True)
         thread.start()
         self.addCleanup(httpd.server_close)
         self.addCleanup(thread.join, 10)
         self.addCleanup(httpd.shutdown)
-        return f"http://127.0.0.1:{httpd.server_address[1]}/tone.wav"
+        return f"{'https' if tls else 'http'}://127.0.0.1:{httpd.server_address[1]}{DLF_PATH if moved else '/tone.wav'}"
+
+    def redirected(self) -> tuple[str, list[str]]:
+        """Returns:
+            A station that replays the recorded Deutschlandfunk chain, a 302
+            from st01.sslstream.dlf.de to an f111.rndfnk.com node, as a 302 to
+            a second https origin, and that origin as its released via.
+        """
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        key, cert = folder / "key.pem", folder / "cert.pem"
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-subj", "/CN=127.0.0.1",
+            "-addext", "subjectAltName=IP:127.0.0.1", "-days", "1", "-keyout", str(key), "-out", str(cert),
+        ], capture_output=True, timeout=60, check=True)
+        tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls.load_cert_chain(cert, key)
+        node = urlsplit(self.station(tls))
+        origin = f"https://{node.netloc}"
+        return self.station(tls, f"{origin}{DLF_NODE}"), [origin]
 
     def check_overlaps(self, browser: str, driver: str, binary: str) -> None:
         steps = []
@@ -706,20 +743,23 @@ class TestOrchestratorE2E(HubCase):
                 self.assertIn("Verzeichnis (Glob)", rules["review"]["labels"])
                 self.assertEqual(settings, {"found": [], "outside": []})
 
-    def check_radio(self, browser: str, driver: str, binary: str) -> dict:
+    def check_radio(self, browser: str, driver: str, binary: str, redirected: bool = False) -> dict:
         """Args:
             driver: cdp.mjs saves the station through the settings form and
                 signs its new origin with a virtual passkey; bidi.mjs has no
                 virtual authenticator, so the station is saved before the page
                 loads.
+            redirected: plays the recorded Deutschlandfunk redirect chain,
+                saved before the page loads with its resolved via.
         """
-        station = self.station()
-        signs = driver == "cdp.mjs"
+        station, via = self.redirected() if redirected else (self.station(), [])
+        browser = f"{browser}-dlf" if redirected else browser
+        signs = driver == "cdp.mjs" and not redirected
         if signs:
             first = {"width": 1366, "height": 768, "url": f"http://localhost:{self.port}/#stream", "wait": 900, "probe": ADD_STATION.replace("@STATION@", station).replace("@NAME@", STATION_NAME), "shot": None, "gesture": True}
         else:
             hub = self.httpd.hub
-            hub.settings.put({**hub.settings.get(), "streams": [{"name": STATION_NAME, "url": station, "from": "00:00", "to": "24:00", "days": list(range(7)), "on": True, "via": []}]}, hub.settings.get())
+            hub.settings.put({**hub.settings.get(), "streams": [{"name": STATION_NAME, "url": station, "from": "00:00", "to": "24:00", "days": list(range(7)), "on": True, "via": via}]}, hub.settings.get())
             first = {"width": 1366, "height": 768, "url": f"{self.base}#stream", "wait": 900, "probe": None, "shot": None}
         steps = [
             first,
@@ -761,6 +801,13 @@ class TestOrchestratorE2E(HubCase):
     def test_firefox_plays_a_saved_station(self):
         self.check_radio("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
 
+    def test_chromium_plays_deutschlandfunk_through_its_redirect(self):
+        self.check_radio("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"), redirected=True)
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_plays_deutschlandfunk_through_its_redirect(self):
+        self.check_radio("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"), redirected=True)
+
     def test_chromium_walks_every_screen_at_three_widths(self):
         steps = [{"width": width, "height": height, "url": f"{self.base}#{screen}", "wait": 900, "probe": PROBE, "shot": self.shot(f"{width}-{screen.replace('/', '-')}")} for width, height in WIDTHS for screen in SCREENS]
         steps += [{"width": 1366, "height": 768, "url": f"{self.base}#{old}", "wait": 600, "probe": PROBE, "shot": None} for old in ("graph", "graph/chord", "tree")]
@@ -786,6 +833,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertGreater(probe["icons"], 8)
                 self.assertEqual(labelled(probe), {"unlabelled": [], "broken": []})
                 self.assertFalse(probe["wide"], "the page scrolls sideways")
+        self.assertEqual([probe["tall"] for probe in probes if probe["hash"] == "#agents/orbit"], [False] * len(WIDTHS))
         by_hash = {probe["hash"]: probe for probe in probes}
         stream = by_hash["#stream"]
         self.assertEqual([probe["chips"] for probe in probes if probe["hash"] == "#stream"], [["Für dich", "Funk", "Arbeit", "Transkripte"]] * len(WIDTHS))

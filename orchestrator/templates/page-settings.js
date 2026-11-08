@@ -111,6 +111,7 @@
       const loudest = () => Math.max(...tones.map((tone) => Number(tone.level.value)), Number(volume.value));
       return {id, on, level, row: h("div", {class: "sound-row"}, h("strong", {}, label), h("label", {class: "check"}, on, "an"), level, btn("Test", "btn small ghost", () => play(id, id === "mayday" ? loudest() : Number(level.value))))};
     });
+    const squelch = h("input", {type: "range", min: 0, max: 1, step: 0.05, value: settings.squelch, "aria-label": "Squelch"});
     const notify = h("input", {type: "checkbox", checked: settings.notify});
     const speechOn = h("input", {type: "checkbox", checked: settings.speech.on, disabled: !state.speech.tts});
     const spoken = SPEECH_CLASSES.map(([id, label]) => ({id, label, box: h("input", {type: "checkbox", checked: id === "mayday" || settings.speech.classes.includes(id), disabled: id === "mayday", title: id === "mayday" ? "MAYDAY wird immer vorgelesen" : null})}));
@@ -130,7 +131,7 @@
       h("section", {}, h("h3", {}, "Musik"), h("p", {class: "muted"}, "Generative Ambient-Musik, offline erzeugt: ruhig bei leerer Inbox, etwas gespannter, wenn etwas wartet, leiser unter Meldungen."),
         h("div", {class: "grid"}, h("label", {class: "check"}, musicOn, "Musik an"), h("label", {}, "Gesamtlautstärke (Musik und Radio)", volume))),
       h("section", {}, h("h3", {}, "Töne und Benachrichtigungen"), h("p", {class: "muted"}, "MAYDAY und PAN-PAN sind immer am lautesten. Bei mehreren neuen Ereignissen spielt nur das dringendste."),
-        tones.map((tone) => tone.row), h("label", {class: "check"}, notify, "Desktop-Benachrichtigungen zeigen, wenn der Browser sie erlaubt")),
+        tones.map((tone) => tone.row), h("label", {}, "Squelch: scales every tone, 0 plays none", squelch), h("label", {class: "check"}, notify, "Desktop-Benachrichtigungen zeigen, wenn der Browser sie erlaubt")),
       h("section", {}, h("h3", {}, "Funk vorlesen"),
         h("p", {class: "muted"}, state.speech.tts
           ? "Neuer Funk wird in Seefunk-Sprechweise (SMCP) vorgelesen, eine Meldung nach der anderen, jede Station mit eigener Stimme; Musik und Radio werden solange leiser. Die Lautstärke folgt den Tönen oben, MAYDAY wird immer und am lautesten gesprochen."
@@ -152,6 +153,7 @@
         colors: Object.fromEntries(COLOR_FIELDS.map(([id]) => [id, colors[id].value])),
         music: {on: musicOn.checked, volume: Number(volume.value)},
         sounds: Object.fromEntries(tones.map((tone) => [tone.id, {on: tone.on.checked, volume: Number(tone.level.value)}])),
+        squelch: Number(squelch.value),
         notify: notify.checked,
         streams: rows.map((entry) => entry.read()),
         speech: {

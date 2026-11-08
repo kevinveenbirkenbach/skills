@@ -209,6 +209,14 @@ table.diff tr.more td { padding: 8px 16px; color: var(--muted); font-style: ital
 .graph-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
 .stage-card { padding: 8px; }
 .stage svg { display: block; width: 100%; height: auto; max-height: calc(100vh - var(--head) - 120px); }
+@media (min-width: 861px) {
+  body.fit { display: flex; flex-direction: column; height: 100vh; }
+  body.fit .shell, body.fit main, body.fit .graph, body.fit .stage-card, body.fit .stage { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+  body.fit main { padding-bottom: var(--sp-5); }
+  body.fit .graph-body { flex: 1; align-items: stretch; min-height: 0; }
+  body.fit .stage svg, body.fit .stage canvas.space, body.fit .graph3d { flex: 1; height: auto; min-height: 0; max-height: none; }
+  body.fit .panel { position: static; max-height: none; min-height: 0; overflow: auto; }
+}
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 6px 10px 4px; color: var(--muted); font-size: var(--fs-sm); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .swatch { display: inline-block; width: 18px; height: 4px; border-radius: 2px; background: var(--c); }

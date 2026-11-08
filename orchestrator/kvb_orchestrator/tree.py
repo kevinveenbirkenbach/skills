@@ -191,7 +191,10 @@ class Tree:
             try:
                 info = self.file.stat()
             except OSError as error:
-                return {"repos": [], "scanned": None, "error": f"no pkgmgr tree file at {self.file}: {error.strerror}"}
+                return {"repos": [], "scanned": None, "error": (
+                    f"no pkgmgr tree file at {self.file}: {error.strerror}. The tree timer runs `pkgmgr branch tree`, which the installed pkgmgr "
+                    "lacks until a release ships it: release pkgmgr and install it, then the timer writes the file within a minute."
+                )}
             stamp = (info.st_mtime_ns, info.st_size)
             if self.cached is None or stamp != self.stamp:
                 self.cached, self.stamp = read_tree(self.file), stamp
