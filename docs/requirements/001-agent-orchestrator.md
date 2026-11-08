@@ -230,6 +230,47 @@ from three views down to any agent, branch or artefact.
     core role `svc-ai-speech` when its URL is configured, else the
     in-container whisper and piper. `make orchestrator-install` without any
     core stack stays the standalone path. Subtree S8, after S7.
+44. **Gantt** (operator 2026-11-08, decisions 44 to 51): the Tasks tab gets
+    a Gantt view next to List, Board and Matrix, one bar per task from its
+    start to its end, a running task to now. Arrows come from three sources:
+    an explicit `rasci.py set <task> --after <task>` (repeatable), the
+    branch base (a task whose base branch is another task's branch follows
+    it) and the queue order (each waiting `queue.py` job follows the one
+    ahead of it). Rejected: branches only (tasks without a branch hang
+    loose), the explicit field only, the queue position as a mere badge.
+45. **Forecast**: a selector sets how the Gantt draws tasks not yet
+    started: `always` (default; with no estimate the median duration of done
+    tasks, with story points the points times the median hours per point of
+    done tasks), `points only` (a dot behind the predecessors without
+    estimate) or `real only` (no forecast). Forecast bars are hatched.
+46. **Estimation modes**: a toggle in the Tasks toolbar, stored in the hub
+    settings: `No estimate` (default, every task counts 1) and `Story
+    points` (the Fibonacci complexity of `rasci.py estimate`, the median over
+    its estimators).
+47. **Burndown and burnup**: one view in the Tasks tab with both curves.
+    A selector sets the scope: the whole register over the whole time
+    (default), the active list filter within the header time window, or one
+    agent or line. With no estimate it counts tasks, with story points it
+    sums complexity and draws unestimated tasks as a line of their own.
+48. **Estimate request**: only in story points mode, and only on a click on
+    "Request estimates" or on `/kvb-org-queue-estimate`, never by itself, to
+    save tokens. It sends one `newsletter` to all agents listing every
+    unestimated task with its parties; every agent holding any RASCI role in
+    a task (R, A, S, C or I) records business value and complexity
+    (Fibonacci) for it with `rasci.py estimate`. Rejected: every agent
+    estimates every task, the Accountable alone.
+49. **Operator business value**: the operator overrides the agents'
+    business value, and WSJF uses that value instead of the median. It is set
+    in the hub per task or as one bulk change over a selection in the list;
+    one passkey assertion over the exact task ids and values covers the
+    whole batch. Rejected: the origin guard alone (a forged request could
+    reorder the queue), one signature per task.
+50. **Sort modes**: the task list sorts by prio (default), WSJF, business
+    value, complexity, status, start, end, agent and title, each ascending
+    or descending.
+51. **Subtree**: decisions 44 to 50 join subtree S5, Tasks with asks and
+    choices, in its one worktree. Rejected: a subtree of their own after S8
+    or right after S1.
 
 ## Approach
 
@@ -299,7 +340,7 @@ flowchart TD
         S1 --> S2["🪟 S2 agent and node popups, search"]
         S2 --> S3["🙂 S3 animated faces"]
         S3 --> S4["🌙 S4 drain, suspend, resume"]
-        S4 --> S5["🗳️ S5 Tasks with asks and choices"]
+        S4 --> S5["🗳️ S5 Tasks: asks, choices, Gantt, estimates, burn charts"]
         S5 --> S6["🧱 S6 Firewall and settings writes"]
         S6 --> S7["📈 S7 Resources charts"]
         S7 --> S8["🗄️ S8 artefact base URL, optional core speech"]
@@ -614,6 +655,34 @@ flowchart TD
 - [ ] `make orchestrator-install` succeeds in a scratch HOME without any core
       stack.
 
+### Phase 6: Gantt, estimates, burndown and burnup (S5)
+
+- [ ] `rasci.py set <task> --after <other>` stores the dependency and
+      `--drop-after <other>` removes it; an unknown task and a cycle are
+      refused.
+- [ ] The Gantt view draws one bar per task from start to end, a running
+      task to now, and one arrow per explicit, branch-base and queue-order
+      edge of a fixture register and queue.
+- [ ] The forecast selector offers `always` (default), `points only` and
+      `real only`; a hatched bar is as long as the median duration of done
+      tasks (no estimate) or points times median hours per point (story
+      points).
+- [ ] The estimation toggle defaults to `No estimate`, is stored in the hub
+      settings and survives a reload.
+- [ ] Burndown and burnup offer the scopes whole register (default), list
+      filter within the time window, and one agent or line; with no estimate
+      they count tasks, with story points they sum complexity and draw the
+      unestimated tasks as a line of their own.
+- [ ] "Request estimates" shows only in story points mode; a click or
+      `/kvb-org-queue-estimate` sends exactly one newsletter to all agents
+      that lists every unestimated task with every party holding a RASCI
+      role in it; a state build or a mode switch sends none.
+- [ ] A per-task or bulk business value change is stored only with a
+      verified passkey assertion over the exact task ids and values; a
+      forged, replayed or altered batch changes nothing, and WSJF uses the
+      operator value instead of the median.
+- [ ] The task list sorts by each mode of decision 50 in both directions.
+
 ### Tests
 
 - **Unit**
@@ -632,6 +701,9 @@ flowchart TD
         rename-once timeline, squelch scheduler, face generator, settings
         writer (forged, replayed, unlisted file), token sums, German text
         scan.
+  - [ ] S5 Gantt and estimates: dependency edges and cycle refusal, forecast lengths, burn
+        sums per mode and scope, newsletter body and its single send, bulk
+        business value signature (forged, replayed, altered), sort orders.
 - **Integration**
   - [ ] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's
@@ -654,3 +726,6 @@ flowchart TD
   - [ ] Phase 6: no page scrollbar on any view, agent and node popups,
         choice request and signed answer, Firewall settings diff and
         signature, Resources charts, each at 1920, 1366 and 390 px.
+  - [ ] S5: Gantt with arrows, burndown and burnup, the estimation toggle,
+        "Request estimates" and a signed bulk business value change, each at
+        1920, 1366 and 390 px.
