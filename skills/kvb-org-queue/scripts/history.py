@@ -26,6 +26,7 @@ MIN_SHARE_PERCENT = 1
 SEED_LIMIT = 1
 INTERPRETERS = re.compile(r"python[\d.]*|bash|sh|zsh|node|perl|ruby")
 MAKE_VALUE_OPTIONS = frozenset({"-C", "-f", "-I", "-o", "-W"})
+RESOURCES = ("ram", "cpu")
 SIGNATURE_HEADER = ("Signature", "Kind", "Runs", "Median min", "p90 disk GB", "p90 RAM %", "Need GB")
 KIND_HEADER = ("Kind", "Runs", "p90 RAM share %", "p90 CPU share %", "Slot limit", "Source")
 
@@ -149,13 +150,14 @@ def grouped(rows: list[dict], key: str) -> dict[str, list[dict]]:
 def command_stats(rows: list[dict]) -> dict:
     stats = {
         "kinds": sorted({r["kind"] for r in rows}), "runs": len(rows),
-        "minutes": None, "disk_gb": None, "ram_share": None, "need_gb": None,
+        "minutes": None, "disk_gb": None, "ram_share": None, "cpu_share": None, "need_gb": None,
     }
     if len(rows) >= MIN_RUNS:
         disk = p90([r["disk_gb"] for r in rows])
         stats.update(
             minutes=statistics.median(r["minutes"] for r in rows), disk_gb=disk,
-            ram_share=p90(shares(rows, "mem")), need_gb=math.ceil(disk + DISK_MARGIN_GB),
+            ram_share=p90(shares(rows, "mem")), cpu_share=p90(shares(rows, "cpu")),
+            need_gb=math.ceil(disk + DISK_MARGIN_GB),
         )
     return stats
 
@@ -186,7 +188,7 @@ def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[str, dict], dic
 
     Returns:
       (signatures, kinds). signatures: {signature: {kinds, runs, minutes,
-      disk_gb, ram_share, need_gb}}; kinds: {kind: {runs, ram_share,
+      disk_gb, ram_share, cpu_share, need_gb}}; kinds: {kind: {runs, ram_share,
       cpu_share, limit}}. With fewer than MIN_RUNS rows every value but kinds
       and runs is None. minutes is the median, disk_gb, ram_share and
       cpu_share the p90 of the disk taken and of max minus before in
@@ -198,6 +200,41 @@ def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[str, dict], dic
     signatures = {name: command_stats(group) for name, group in grouped(recent, "signature").items()}
     kinds = {name: kind_stats(group, cfg["load_limits"]) for name, group in grouped(recent, "kind").items()}
     return signatures, kinds
+
+
+def footprint(kind: str, name: str, signatures: dict[str, dict], kinds: dict[str, dict]) -> dict[str, float] | None:
+    """Predict the RAM and CPU share a job takes, in percentage points.
+
+    Args:
+      kind: the job's kind.
+      name: its command signature.
+      signatures: the signature map of learn().
+      kinds: the kind map of learn().
+
+    Returns:
+      {ram, cpu}: the larger of the kind's p90 share and the signature's, at
+      least MIN_SHARE_PERCENT; a signature not learned yet takes the largest
+      learned share of its kind. None while the kind is not learned yet.
+    """
+    if kind not in kinds or kinds[kind]["ram_share"] is None:
+        return None
+    own_kind = kinds[kind]
+    if name in signatures and signatures[name]["ram_share"] is not None:
+        peers = [signatures[name]]
+    else:
+        peers = [s for s in signatures.values() if kind in s["kinds"] and s["ram_share"] is not None]
+    return {
+        resource: max([MIN_SHARE_PERCENT, own_kind[f"{resource}_share"], *(peer[f"{resource}_share"] for peer in peers)])
+        for resource in RESOURCES
+    }
+
+
+def seed_ram(kinds: dict[str, dict]) -> float:
+    """Returns:
+        The RAM share assumed for a kind not learned yet: the largest of the
+        learned kinds' p90 RAM shares, 0 while none is learned.
+    """
+    return max((stats["ram_share"] for stats in kinds.values() if stats["ram_share"] is not None), default=0.0)
 
 
 def need_gb(signatures: dict[str, dict], name: str) -> int | None:

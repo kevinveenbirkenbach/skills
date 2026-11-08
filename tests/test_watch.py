@@ -17,6 +17,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WATCH = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "watch.py"
 LIMITS = {"warn": 40, "stop": 15, "critical": 12}
+OPEN_MEMORY = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_swap_gb": 1e9}
+SHUT_MEMORY = {"available": 101, "swap_free": 101, "psi_full": 0, "container_swap_gb": 0}
+MEMINFO = "MemTotal: 1000 kB\nMemAvailable: 120 kB\nSwapTotal: 2000 kB\nSwapFree: 300 kB\n"
+PSI = "some avg10=30.00 avg60=1.00 avg300=0.50 total=1\nfull avg10=12.50 avg60=0.80 avg300=0.10 total=1\n"
 
 
 def _load():
@@ -40,6 +44,66 @@ class TestStage(unittest.TestCase):
         self.assertEqual(self.watch.cpu_busy_percent((100, 40), (200, 60)), 80.0)
         meminfo = "MemTotal:       1000 kB\nMemFree:  100 kB\nMemAvailable:    250 kB\n"
         self.assertEqual(self.watch.mem_used_percent(meminfo), 75.0)
+
+    def test_memory_sample_reads_available_swap_and_psi_and_tolerates_their_absence(self):
+        self.assertEqual(
+            self.watch.memory_sample(MEMINFO, PSI, 2.5),
+            {"available": 12.0, "swap_free": 15.0, "psi_full": 12.5, "container_swap_gb": 2.5},
+        )
+        bare = "MemTotal: 1000 kB\nMemAvailable: 500 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n"
+        self.assertEqual(
+            self.watch.memory_sample(bare, None, 0.0),
+            {"available": 50.0, "swap_free": None, "psi_full": None, "container_swap_gb": 0.0},
+        )
+
+    def test_memory_takes_the_swap_of_the_container_holding_the_most_nested_groups_included(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            for name, swap in ((f"docker-{'a' * 64}.scope", 3_000_000_000), (f"docker-{'b' * 64}.scope", 18_000_000_000),
+                               ("other.scope", 90_000_000_000)):
+                (base / name).mkdir()
+                (base / name / "memory.swap.current").write_text(str(swap), encoding="utf-8")
+            self.watch.CGROUPS = base
+            self.assertEqual(self.watch.memory()["container_swap_gb"], 18.0)
+            self.watch.CGROUPS = base / "absent"
+            self.assertEqual(self.watch.memory()["container_swap_gb"], 0.0)
+
+    def test_memory_stage_takes_the_first_bound_crossed_stop_before_warn(self):
+        cfg = {"memory_limits": {
+            "warn": {"available": 15, "swap_free": 25, "psi_full": 5, "container_swap_gb": 4},
+            "stop": {"available": 8, "swap_free": 10, "psi_full": 10, "container_swap_gb": 16},
+        }}
+        stage = self.watch.memory_stage
+        healthy = {"available": 40.0, "swap_free": 80.0, "psi_full": 0.0, "container_swap_gb": 3.9}
+        self.assertEqual(stage(healthy, cfg), "ok")
+        for change, expected in (
+            ({"available": 14.0}, "warn"), ({"swap_free": 24.0}, "warn"), ({"psi_full": 5.0}, "warn"),
+            ({"container_swap_gb": 4.0}, "warn"),
+            ({"available": 7.0}, "stop"), ({"swap_free": 9.0}, "stop"), ({"psi_full": 10.0}, "stop"),
+            ({"container_swap_gb": 16.0}, "stop"),
+            ({"swap_free": None, "psi_full": None}, "ok"),
+        ):
+            with self.subTest(change=change):
+                self.assertEqual(stage(healthy | change, cfg), expected)
+
+    def test_swap_holders_follow_the_nested_group_holding_most_of_the_swap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            outer = "a" * 64
+
+            def group(path: Path, swap: int) -> None:
+                path.mkdir(parents=True)
+                (path / "memory.swap.current").write_text(str(swap), encoding="utf-8")
+
+            group(base / f"docker-{outer}.scope", 18_000_000_000)
+            group(base / f"docker-{outer}.scope" / "c977e579", 17_500_000_000)
+            group(base / f"docker-{outer}.scope" / "c977e579" / f"docker-{'b' * 64}.scope", 17_200_000_000)
+            group(base / f"docker-{outer}.scope" / "c977e579" / "small", 100)
+            group(base / f"docker-{'c' * 64}.scope", 1_000_000_000)
+            group(base / f"docker-{'d' * 64}.scope", 0)
+            (base / "other.scope").mkdir()
+            holders = self.watch.swap_holders(base, {outer: "iam"})
+        self.assertEqual(holders, [f"iam > c977e579 > {'b' * 12} 18.0 GB", f"{'c' * 12} 1.0 GB"])
 
     def test_fast_fall_escalates_one_stage(self):
         now = time.time()
@@ -73,7 +137,8 @@ class TestWatchCommands(unittest.TestCase):
             "cache_budget_percent": 3,
             "slot_need_gb": {"swarm": 30, "test": 0.001},
             "notify": ["true"],
-            "load_limits": {"cpu_percent": 101, "mem_percent": 101, "sample_seconds": 0.1, "kinds": ["test"]},
+            "load_limits": {"cpu_percent": 101, "mem_percent": 101, "sample_seconds": 0.1},
+            "memory_limits": {stage: dict(OPEN_MEMORY) for stage in ("warn", "stop")},
         }
         self._write_config()
 
@@ -126,17 +191,21 @@ class TestWatchCommands(unittest.TestCase):
         self.cfg["heavy_commands"] = [r"\bmake\s+(-C\s+\S+\s+)?(compose-deploy|test|swarm-\S+)(\s|$)"]
         self._write_config()
         self._stage("stop")
-        message = "$(cat <<'EOF'\nfix: run \"make test\" and make swarm-zombie\nEOF\n)"
+        message = "$(cat <<'EOF'\nfix: run \"make test\" and make swarm-zombie, `make test` too\nEOF\n)"
         for command in (
             'git commit --no-verify -m "fix: passes the vars to make swarm-zombie app=x"',
             "grep -n 'make test' Makefile",
             f'git commit --no-verify -m "{message}"',
+            "gh pr create --body-file - <<'EOF'\nruns `make test`\nEOF",
+            "echo 'not run: $(make test)'",
         ):
             self.assertEqual(self._run("block", stdin=self._bash(command)).returncode, 0, command)
         for command in (
             "make -C x swarm-zombie app=y",
             "env FOO=1 make swarm-zombie",
             'make compose-deploy apps="web-app-x"',
+            'OUT="$(make test 2>&1)"',
+            "cat <<EOF\n$(make test)\nEOF",
         ):
             self.assertEqual(self._run("block", stdin=self._bash(command)).returncode, 2, command)
 
@@ -146,16 +215,85 @@ class TestWatchCommands(unittest.TestCase):
         self.assertEqual(self._run("admit", "--need-gb", "0.001").returncode, 0)
         self.assertEqual(self._run("admit", "--need-gb", "1e9").returncode, 3)
 
-    def test_admit_for_a_load_kind_also_needs_cpu_and_ram_below_the_limits(self):
+    def test_every_admit_also_needs_cpu_and_ram_below_the_limits_and_memory_short_of_stop(self):
         self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
         self._write_config()
-        self.assertEqual(self._run("admit", "--kind", "test").returncode, 0)
+        granted = self._run("admit", "--kind", "test")
+        self.assertEqual(granted.returncode, 0)
+        self.assertIn("memory stage ok", granted.stdout)
         self.cfg["load_limits"]["cpu_percent"] = 0
         self._write_config()
-        denied = self._run("admit", "--kind", "test")
-        self.assertEqual(denied.returncode, 3)
-        self.assertIn("cpu", denied.stdout)
-        self.assertEqual(self._run("admit", "--need-gb", "0.001").returncode, 0)
+        for args in (("--kind", "test"), ("--kind", "swarm"), ("--need-gb", "0.001")):
+            with self.subTest(args=args):
+                denied = self._run("admit", *args)
+                self.assertEqual(denied.returncode, 3)
+                self.assertIn("cpu", denied.stdout)
+        self.cfg["load_limits"]["cpu_percent"] = 101
+        self.cfg["memory_limits"]["stop"] = dict(SHUT_MEMORY)
+        self._write_config()
+        short = self._run("admit", "--need-gb", "0.001")
+        self.assertEqual(short.returncode, 3)
+        self.assertIn("memory stage stop", short.stdout)
+
+    def test_block_refuses_heavy_jobs_at_memory_stop_only(self):
+        self._stage("ok")
+        self.cfg["memory_limits"]["warn"] = dict(SHUT_MEMORY)
+        self._write_config()
+        self.assertEqual(self._run("block", stdin=self._bash("make compose-deploy")).returncode, 0)
+        self.cfg["memory_limits"]["stop"] = dict(SHUT_MEMORY)
+        self._write_config()
+        blocked = self._run("block", stdin=self._bash("make compose-deploy"))
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("memory stage is stop", blocked.stderr)
+        self.assertEqual(self._run("block", stdin=self._bash("docker compose up -d --build")).returncode, 2)
+        self.assertEqual(self._run("block", stdin=self._bash("make swarm-down")).returncode, 0)
+        self.assertEqual(self._run("block", stdin=self._bash("ls")).returncode, 0)
+
+    def test_memory_warn_alert_names_the_stage_once_per_session(self):
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self.cfg["memory_limits"]["warn"] = dict(SHUT_MEMORY)
+        self._write_config()
+        payload = json.dumps({"session_id": "s1", "hook_event_name": "UserPromptSubmit"})
+        first = self._run("watch", stdin=payload).stdout
+        self.assertIn("RESOURCE MEMORY WARN", first)
+        self.assertIn("Top swap holders", first)
+        self.assertEqual(self._run("watch", stdin=payload).stdout, "")
+
+    def test_a_config_without_memory_limits_blocks_heavy_jobs_keeps_the_disk_watch_and_stops_commands(self):
+        del self.cfg["memory_limits"]
+        self.cfg["thresholds_gb"] = {"warn": 1e9, "stop": -1, "critical": -2}
+        self._write_config()
+        blocked = self._run("block", stdin=self._bash("make compose-deploy"))
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("lacks memory_limits", blocked.stderr)
+        self.assertEqual(self._run("block", stdin=self._bash("ls")).returncode, 0)
+        payload = json.dumps({"session_id": "s1", "hook_event_name": "UserPromptSubmit"})
+        watched = self._run("watch", stdin=payload)
+        self.assertEqual(watched.returncode, 0)
+        self.assertIn("RESOURCE WARN", watched.stdout)
+        self.assertIn("lacks memory_limits", watched.stdout)
+        command = self._run("admit", "--need-gb", "0")
+        self.assertEqual(command.returncode, 2)
+        self.assertIn("lacks memory_limits", command.stderr)
+
+    def test_a_memory_limit_missing_one_bound_names_it_and_blocks_heavy_jobs(self):
+        del self.cfg["memory_limits"]["stop"]["psi_full"]
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self._write_config()
+        blocked = self._run("block", stdin=self._bash("make compose-deploy"))
+        self.assertEqual(blocked.returncode, 2)
+        self.assertIn("lacks memory_limits.stop.psi_full;", blocked.stderr)
+        self.assertEqual(self._run("block", stdin=self._bash("ls")).returncode, 0)
+        payload = json.dumps({"session_id": "s1", "hook_event_name": "UserPromptSubmit"})
+        watched = self._run("watch", stdin=payload)
+        self.assertEqual(watched.returncode, 0, watched.stderr)
+        self.assertIn("lacks memory_limits.stop.psi_full", watched.stdout)
+
+    def test_segments_split_at_newlines_and_drop_a_redirection_with_its_target(self):
+        self.assertEqual(
+            _load().segments("pytest a.py 2>&1 | tee log\ncd x; make 'a b' # pytest\n>/tmp/o make 2>/dev/null install &>x\ndiff <(pytest t) y"),
+            [["pytest", "a.py"], ["tee", "log"], ["cd", "x"], ["make", "a b"], ["make", "install"], ["diff"], ["pytest", "t"], ["y"]],
+        )
 
     def test_warn_alert_reaches_each_session_once(self):
         self.cfg["thresholds_gb"] = {"warn": 1e9, "stop": -1, "critical": -2}

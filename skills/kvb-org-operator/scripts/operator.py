@@ -32,8 +32,19 @@ Args:
         visible), reason and check, then a preview of what the command
         changes, and asks [y]es / [s]kip / [d]iff / [q]uit; d shows the full
         diff. y runs the command in its directory, then sets the row done
-        when its check passes (manual: when the command exits 0). End of
-        input quits. There is no flag that answers for the operator.
+        when its check passes (manual: when the command exits 0). A command
+        the kvb-org-organize watch config calls heavy also shows the memory
+        stage and `queue.py list`; once the config holds the queue keys and
+        slot_need_gb.operator, and the command runs no sudo, [h]old runs
+        `granted` through `queue.py hold --kind operator --task <row>
+        --session Operator`. End of input quits. There is no flag that
+        answers for the operator.
+    granted <task> --dir <dir> --check <check> -- $SHELL -ic <cmd>: what
+        [h]old queues. On the grant it shows the row and its preview again
+        and asks [y]es / [s]kip / [d]iff / [q]uit, then runs the command in
+        the row's directory; a row no longer open with exactly that
+        directory, check and command runs nothing, nor does a question left
+        unanswered for GRANT_SECONDS.
     done <slug>: mark a row done, whatever its check.
 
 Output:
@@ -45,7 +56,8 @@ Output:
         prints the same rows as a JSON list.
 
 Exit codes:
-    0 done, 2 usage error.
+    0 done, 2 usage error. granted: the command's exit code, or 75
+    (EX_TEMPFAIL, which queue.py hold does not learn from) when nothing ran.
 """
 
 from __future__ import annotations
@@ -62,13 +74,25 @@ import hashlib
 import importlib.util
 import json
 import re
+import select
 import shlex
 import shutil
 import subprocess
+import termios
+import time
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
-RASCI = Path(__file__).resolve().parents[2] / "kvb-org-rasci" / "scripts" / "rasci.py"
+SKILLS = Path(__file__).resolve().parents[2]
+RASCI = SKILLS / "kvb-org-rasci" / "scripts" / "rasci.py"
+WATCH = SKILLS / "kvb-org-organize" / "scripts" / "watch.py"
+QUEUE = SKILLS / "kvb-org-queue" / "scripts" / "queue.py"
+HOLD_KIND = "operator"
+HOLD_SESSION = "Operator"
+NOT_RUN = 75
+GRANT_SECONDS = 600
+SUDO = re.compile(r"\bsudo\b")
 PREFIX = "operator/"
 KINDS = ("pushed", "installed", "binary", "absent", "manual", "decision")
 OPEN = ("queued", "blocked")
@@ -264,8 +288,8 @@ def runnable(row: dict) -> bool:
     return bool(row["directory"] and row["command"]) and row["check"] != "decision"
 
 
-def visible(text: str) -> str:
-    return "".join(c if c.isprintable() else c.encode("unicode_escape").decode() for c in text)
+def visible(text: str, keep: str) -> str:
+    return "".join(c if c.isprintable() or c in keep else c.encode("unicode_escape").decode() for c in text)
 
 
 def git_tree(directory: str) -> bool:
@@ -312,14 +336,113 @@ def show(commands: list[tuple[list[str], str]]) -> None:
             print(f"  {error}", flush=True)
 
 
-def ask() -> str:
+def ask(holdable: bool, read: Callable[[str], str | None]) -> str:
+    choices = ("y", "h", "s", "d", "q") if holdable else ("y", "s", "d", "q")
+    prompt = "Run it? [y]es / [h]old in the queue / [s]kip / [d]iff / [q]uit: " if holdable else "Run it? [y]es / [s]kip / [d]iff / [q]uit: "
     while True:
-        try:
-            answer = input("Run it? [y]es / [s]kip / [d]iff / [q]uit: ").strip().lower()
-        except EOFError:
+        answer = read(prompt)
+        if answer is None:
             return "q"
-        if answer in ("y", "s", "d", "q"):
-            return answer
+        if answer.strip().lower() in choices:
+            return answer.strip().lower()
+
+
+def typed(prompt: str) -> str | None:
+    try:
+        return input(prompt)
+    except EOFError:
+        return None
+
+
+def timed(prompt: str) -> str | None:
+    """Returns:
+        One line read unbuffered from stdin, None at its end or when no line
+        came within GRANT_SECONDS, so an unanswered grant frees its slot;
+        what was typed while the job waited is dropped first.
+    """
+    if sys.stdin.isatty():
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    print(prompt, end="", flush=True)
+    deadline = time.monotonic() + GRANT_SECONDS
+    line = b""
+    while not line.endswith(b"\n"):
+        ready, _, _ = select.select([sys.stdin.fileno()], [], [], max(0.0, deadline - time.monotonic()))
+        byte = os.read(sys.stdin.fileno(), 1) if ready else b""
+        if not byte:
+            print(flush=True)
+            return None
+        line += byte
+    return line.decode(errors="replace")
+
+
+def needs_terminal(command: str) -> bool:
+    return SUDO.search(command) is not None
+
+
+def heavy_row(watch: ModuleType, cfg: dict | None, row: dict) -> bool:
+    """Returns:
+        Whether [h]old can queue the row's command: a heavy job by the
+        kvb-org-organize watch config, which holds every queue key and the
+        kind operator, and no sudo, whose prompt needs the terminal a queued
+        command lacks; prints the memory stage and `queue.py list` for a
+        heavy one, its output control characters made visible.
+    """
+    if cfg is None or not watch.heavy(row["command"], cfg, tuple(cfg["never_block"])):
+        return False
+    problem = watch.missing(cfg, (*watch.MEMORY_KEYS, "budget_percent.ram", "budget_percent.cpu", f"slot_need_gb.{HOLD_KIND}"))
+    if problem is None and needs_terminal(row["command"]):
+        problem = "sudo asks on the terminal, which a queued command lacks"
+    if problem is None:
+        sample = watch.memory()
+        print(f"  heavy:     memory stage {watch.memory_stage(sample, cfg)} ({watch.memory_text(sample)}); the queue:", flush=True)
+    else:
+        print(f"  heavy:     {problem}; no [h]old until it does. The queue:", flush=True)
+    listing = subprocess.run([sys.executable, str(QUEUE), "list"], cwd=row["directory"], capture_output=True, text=True, check=False)
+    print(visible(listing.stdout + listing.stderr, "\t\n"), end="", flush=True)
+    return problem is None
+
+
+def held(row: dict, shell: str) -> list[str]:
+    return [
+        sys.executable, str(QUEUE), "hold", "--kind", HOLD_KIND, "--task", row["task"], "--session", HOLD_SESSION,
+        "--", sys.executable, str(Path(__file__).resolve()), "granted", row["task"], "--dir", row["directory"],
+        "--check", row["check"], "--", shell, "-ic", row["command"],
+    ]
+
+
+def review(row: dict, holdable: bool, read: Callable[[str], str | None]) -> str:
+    check = "manual" if problem(row["check"]) else row["check"]
+    show(evidence(check, row["directory"], full=False))
+    answer = ask(holdable, read)
+    while answer == "d":
+        show(evidence(check, row["directory"], full=True))
+        answer = ask(holdable, read)
+    return answer
+
+
+def cmd_granted(rasci: ModuleType, args: argparse.Namespace) -> int:
+    shell = os.environ.get("SHELL")
+    approved = [
+        row for row in open_rows(rasci)
+        if runnable(row) and (row["task"], row["directory"], row["check"]) == (args.task, args.dir, args.check)
+        and args.argv == [shell, "-ic", row["command"]]
+    ]
+    if not shell or not approved:
+        print(f"operator: {args.task} is no longer open with the approved directory, check and command; nothing ran",
+              file=sys.stderr)
+        return NOT_RUN
+    row = approved[0]
+    print(f"\ngranted {row['task']}: the queue lets it run now; its tree may have changed while it waited")
+    print(f"  directory: {visible(row['directory'], '')}")
+    print(f"  command:   {visible(row['command'], '')}", flush=True)
+    try:
+        answer = review(row, False, timed)
+    except KeyboardInterrupt:
+        answer = "q"
+    if answer != "y":
+        print(f"not run {row['task']}")
+        return NOT_RUN
+    return subprocess.run(args.argv, cwd=row["directory"], check=False).returncode
 
 
 def close(rasci: ModuleType, task: str) -> None:
@@ -337,26 +460,26 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
     if not steps:
         print("operator: nothing to run")
         return 0
+    watch = module("kvb_operator_watch", WATCH)
+    cfg = watch.load_config()
     for number, row in enumerate(steps, 1):
         check = "manual" if problem(row["check"]) else row["check"]
         print(f"\n[{number}/{len(steps)}] {row['task']}")
-        print(f"  directory: {visible(row['directory'])}")
-        print(f"  command:   {visible(row['command'])}")
-        print(f"  why:       {visible(row['why'] or '-')}")
+        print(f"  directory: {visible(row['directory'], '')}")
+        print(f"  command:   {visible(row['command'], '')}")
+        print(f"  why:       {visible(row['why'] or '-', '')}")
         print(f"  check:     {check}", flush=True)
-        show(evidence(check, row["directory"], full=False))
-        answer = ask()
-        while answer == "d":
-            show(evidence(check, row["directory"], full=True))
-            answer = ask()
+        holdable = heavy_row(watch, cfg, row)
+        answer = review(row, holdable, typed)
         if answer == "q":
             print("operator: stopped")
             return 0
         if answer == "s":
             print(f"skipped {row['task']}")
             continue
+        argv = held(row, shell) if answer == "h" else [shell, "-ic", row["command"]]
         try:
-            code = subprocess.run([shell, "-ic", row["command"]], cwd=row["directory"], check=False).returncode
+            code = subprocess.run(argv, cwd=row["directory"], check=False).returncode
         except OSError as error:
             print(f"failed {row['task']}: {error}")
             continue
@@ -394,6 +517,12 @@ def main() -> int:
     p.set_defaults(func=cmd_list)
     p = sub.add_parser("run")
     p.set_defaults(func=cmd_run)
+    p = sub.add_parser("granted")
+    p.add_argument("task")
+    p.add_argument("--dir", required=True)
+    p.add_argument("--check", required=True)
+    p.add_argument("argv", nargs="+")
+    p.set_defaults(func=cmd_granted)
     p = sub.add_parser("done")
     p.add_argument("slug")
     p.set_defaults(func=cmd_done)

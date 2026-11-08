@@ -249,6 +249,90 @@ class TestOperator(unittest.TestCase):
         self.assertNotIn("decide", result.stdout)
         self.assertEqual(self._open(), ["operator/ask"])
 
+    def _queue_config(self, slot_need_gb: dict) -> None:
+        config = self.base / "config.json"
+        open_memory = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_swap_gb": 1e9}
+        config.write_text(json.dumps({
+            "disk": str(self.base), "thresholds_gb": {"warn": 0, "stop": 0, "critical": 0}, "projection_minutes": 30,
+            "slot_need_gb": slot_need_gb, "heavy_commands": [r"\btouch heavy\b"], "never_block": [],
+            "load_limits": {"cpu_percent": 101, "mem_percent": 101, "sample_seconds": 0.1},
+            "budget_percent": {"ram": 75, "cpu": 100}, "memory_limits": {"warn": open_memory, "stop": open_memory},
+        }), encoding="utf-8")
+        self.env["AGENTS_COUNCIL_CONFIG"] = str(config)
+
+    def test_run_offers_the_queue_for_a_heavy_command_and_asks_again_on_the_grant(self):
+        self._queue_config({"operator": 0})
+        work = self.base / "work"
+        work.mkdir()
+        self._add("light", work, "touch light", "plain", "manual")
+        self._add("heavy", work, "touch heavy\x1b[2K", "build", "manual")
+        result = self._feed("y\nh\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        light, heavy = result.stdout.split("[2/2]")
+        self.assertIn("[s]kip", light)
+        self.assertNotIn("heavy:", light)
+        self.assertIn("heavy:     memory stage ok", heavy)
+        self.assertIn("position\tid\tstatus", heavy)
+        self.assertIn("[h]old in the queue", heavy)
+        self.assertNotIn("\x1b", heavy)
+        self.assertIn("granted operator/heavy: the queue lets it run now", heavy)
+        self.assertIn("not run operator/heavy", heavy)
+        self.assertIn("failed operator/heavy: exit 75; the row stays open", heavy)
+        self.assertTrue((work / "light").exists())
+        self.assertFalse((work / "heavy\x1b[2K").exists())
+        self.assertEqual(self._open(), ["operator/heavy"])
+        self.assertFalse((self.root / "queue-history.jsonl").exists())
+
+    def test_run_offers_no_hold_while_the_config_lacks_the_operator_kind(self):
+        self._queue_config({"test": 0})
+        work = self.base / "work"
+        work.mkdir()
+        self._add("heavy", work, "touch heavy", "build", "manual")
+        result = self._feed("h\ns\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("lacks slot_need_gb.operator;", result.stdout)
+        self.assertIn("no [h]old until it does", result.stdout)
+        self.assertNotIn("[h]old in the queue", result.stdout)
+        self.assertIn("skipped operator/heavy", result.stdout)
+
+    def test_run_offers_no_hold_for_sudo_whose_prompt_needs_the_terminal(self):
+        self._queue_config({"operator": 0})
+        work = self.base / "work"
+        work.mkdir()
+        self._add("heavy", work, "bash -c 'sudo -n touch heavy'", "build", "manual")
+        result = self._feed("h\ns\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("sudo asks on the terminal, which a queued command lacks", result.stdout)
+        self.assertNotIn("[h]old in the queue", result.stdout)
+
+    def test_granted_runs_only_the_approved_row_in_its_directory_after_a_new_yes(self):
+        work = self.base / "work"
+        work.mkdir()
+        self._add("heavy", work, "touch heavy", "build", "manual")
+        env = {**self.env, "SHELL": "/bin/sh"}
+
+        def granted(answers: str, directory: Path, *argv: str) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [sys.executable, str(OPERATOR), "granted", "operator/heavy", "--dir", str(directory), "--check",
+                 "manual", "--", *argv],
+                input=answers, capture_output=True, text=True, env=env, cwd=self.base, check=False,
+            )
+
+        changed = granted("y\n", work, "/bin/sh", "-ic", "touch other")
+        self.assertEqual(changed.returncode, 75)
+        self.assertIn("no longer open with the approved directory, check and command", changed.stderr)
+        moved = granted("y\n", self.base, "/bin/sh", "-ic", "touch heavy")
+        self.assertEqual((moved.returncode, (self.base / "heavy").exists()), (75, False))
+        declined = granted("s\n", work, "/bin/sh", "-ic", "touch heavy")
+        self.assertEqual((declined.returncode, (work / "heavy").exists()), (75, False))
+        silent = granted("", work, "/bin/sh", "-ic", "touch heavy")
+        self.assertEqual((silent.returncode, (work / "heavy").exists()), (75, False))
+        ran = granted("d\ny\n", work, "/bin/sh", "-ic", "touch heavy")
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("granted operator/heavy", ran.stdout)
+        self.assertTrue((work / "heavy").exists())
+        self.assertFalse((self.base / "heavy").exists() or (work / "other").exists())
+
     def test_run_needs_shell(self):
         self._add("x", self.base, "true", "r", "manual")
         result = subprocess.run(

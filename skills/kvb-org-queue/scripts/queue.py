@@ -57,19 +57,27 @@ Args:
         Bash deny rule of the settings is refused, one meeting an ask rule
         asks the operator, with or without queue_enforce; a hold that cannot
         be parsed or checked is refused. With queue_enforce true in the config,
-        refuse a command matching heavy_commands or `gate.py run|hold`
-        unless it matches never_block or runs `queue.py hold`.
+        refuse a command that watch.heavy() calls heavy or that runs
+        `gate.py run|hold`, unless it matches never_block or runs `queue.py
+        hold`.
 
-Config keys: slot_limits {kind: N}, optional, caps the learned slot limit of a
-kind from above (history.slot_limits); queue_enforce (bool), optional, read by
-block only. The watch.py keys disk, thresholds_gb (stop is the floor every
-grant leaves free), slot_need_gb (the disk seed per kind), load_limits (kinds
-in its kinds also need CPU and RAM below the limits; mem_percent and
-cpu_percent bound the learned slot limits), heavy_commands and never_block are
-used as watch.py documents them.
+Config keys: budget_percent {ram, cpu}, required: the active and granted jobs'
+learned footprints (history.footprint, the whole budget for a kind not learned
+yet) may sum to at most these percentage points, a job alone always fits;
+slot_limits {kind: N}, optional, caps the learned slot limit of a kind from
+above (history.slot_limits); queue_enforce (bool), optional, read by block
+only. The watch.py keys disk, thresholds_gb (stop is the floor every grant
+leaves free), slot_need_gb (the disk seed per kind), load_limits (every grant
+also needs CPU busy below cpu_percent and RAM used plus the job's learned RAM
+share below mem_percent; both bound the learned slot limits), memory_limits (no
+grant at memory stage stop), heavy_commands and never_block are used as
+watch.py documents them. A signature is `<repository>: <command signature>`
+(qualified()).
 
 Exit codes:
     hold: the command's exit code unchanged, 128+N when signal N ended it;
+        a command exiting 75 (EX_TEMPFAIL: it did no work, such as a declined
+        `operator.py granted`) leaves no history row;
         before the command started 2 on a usage or config error or when it
         cannot start, 3 when cancel removed the entry, 128+N when signal N
         reached hold.
@@ -115,14 +123,16 @@ POLL_SECONDS = 20
 TICK_SECONDS = 0.2
 HOUR = 3600
 CANCELLED = 3
-FORWARDED = (signal.SIGINT, signal.SIGTERM)
+NOT_RUN = 75
+RAMP_SECONDS = 900
+SETUP =frozenset({"cd", "pushd", "set", "source", ".", "export", "umask", "shopt", "trap"})
+FORWARDED =(signal.SIGINT, signal.SIGTERM)
 GATE = re.compile(r"\bgate\.py\s+(run|hold)\b")
 THROUGH_QUEUE = re.compile(r"\bqueue\.py\s+hold\b")
 BASH_RULE = re.compile(r"Bash(?:\((.*)\))?", re.DOTALL)
 RULE_PART = re.compile(r"( \*|\*)")
-SEPARATOR = re.compile(r"[();<>|&]+")
-WORD_BREAK = " \t\n;&|()<>"
 MANAGED = Path("/etc/claude-code")
+BUDGET_KEYS = ("budget_percent.ram", "budget_percent.cpu")
 HOTFIX = "hotfix/"
 
 
@@ -154,6 +164,9 @@ def config() -> dict:
     cfg = watch.load_config()
     if cfg is None:
         fail(f"no config at {watch.CONFIG}; the queue reads the kvb-org-organize watch config")
+    problem = watch.missing(cfg, (*BUDGET_KEYS, *watch.MEMORY_KEYS))
+    if problem is not None:
+        fail(problem)
     return cfg
 
 
@@ -169,8 +182,59 @@ def limits(cfg: dict, kinds: dict[str, dict], entries: list[dict]) -> dict[str, 
     return history.slot_limits(kinds, caps(cfg), {*cfg["slot_need_gb"], *(e["kind"] for e in entries)})
 
 
+@functools.cache
+def repository(path: str) -> str:
+    try:
+        common = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=path, capture_output=True, text=True, check=False,
+        )
+    except OSError:
+        return os.path.basename(path)
+    if common.returncode != 0:
+        return os.path.basename(path)
+    return os.path.basename(os.path.dirname(common.stdout.strip()))
+
+
+def command_words(argv: list[str]) -> list[str]:
+    """Returns:
+        The command a wrapper runs: watch.program() unwrapped, the first simple
+        command of `sh -c` code that is no setup such as cd, set or source,
+        the tail after `--` of a Python script such as gate.py hold or
+        operator.py granted.
+    """
+    run = watch.program(argv) or argv
+    code = watch.inline_code(run)
+    inner = first_command(code) if code is not None else script_tail(run)
+    return run if inner is None else command_words(inner)
+
+
+def first_command(code: str) -> list[str] | None:
+    try:
+        parts = [part for part in map(watch.program, watch.segments(code)) if part and os.path.basename(part[0]) not in SETUP]
+    except ValueError:
+        return None
+    return parts[0] if parts else None
+
+
+def script_tail(run: list[str]) -> list[str] | None:
+    if len(run) > 2 and watch.PYTHON.fullmatch(os.path.basename(run[0])) and run[1].endswith(".py") and "--" in run[2:-1]:
+        return run[run.index("--", 2) + 1 :]
+    return None
+
+
+def qualified(workdir: str, argv: list[str]) -> str:
+    """Returns:
+        `<repository>: <history.signature of command_words>`: the directory
+        holding the main checkout's .git, so every worktree of one repository
+        shares it, else the workdir's name; one make test of two repositories
+        stays apart.
+    """
+    return f"{repository(workdir)}: {history.signature(command_words(argv))}"
+
+
 def signature_of(entry: dict) -> str:
-    return history.signature(shlex.split(entry["cmd"]))
+    return qualified(entry["workdir"], shlex.split(entry["cmd"]))
 
 
 def identity(pid: int) -> str | None:
@@ -270,18 +334,33 @@ def ordered(waiting: list[dict], ranks: dict[str, int], agents: dict[str, int], 
     return sorted(waiting, key=key)
 
 
-def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, silenced: bool,
-             slot_limits: dict[str, int], ranks: dict[str, int], agents: dict[str, int],
-             now: float) -> dict[str, str | None]:
+def over_budget(used: dict[str, float], share: dict[str, float], budget: dict[str, float]) -> str | None:
+    over = [resource for resource in budget if used[resource] + share[resource] > budget[resource]]
+    if not over:
+        return None
+    return ", ".join(
+        f"{resource.upper()} {used[resource]:.0f} % in use or reserved + {share[resource]:.0f} % > budget {budget[resource]:g} %"
+        for resource in over
+    ) + "; reserved"
+
+
+def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memory: str, silenced: bool,
+             slot_limits: dict[str, int], footprints: dict[str, dict[str, float]], budget: dict[str, float],
+             ranks: dict[str, int], agents: dict[str, int], now: float) -> dict[str, str | None]:
     """Decide every waiting entry in grant order, without disk or processes.
 
     Args:
       entries: the queue's entries, active and waiting.
       free_gb: free disk in GB.
       floor: GB every grant must leave free (thresholds_gb.stop).
-      stage: the watch stage: ok, warn, stop or critical.
+      stage: the watch disk stage: ok, warn, stop or critical.
+      memory: the watch memory stage: ok, warn or stop.
       silenced: whether a radio-silence mayday holds.
-      slot_limits: {kind: max concurrent jobs}.
+      slot_limits: {kind: max concurrent jobs}, an upper cap beside the budget.
+      footprints: {entry id: {ram, cpu}}, the learned share of every entry
+        (history.footprint), in percentage points.
+      budget: {ram, cpu}: the sum of the footprints of active and granted
+        entries may not pass it; a job alone always fits.
       ranks: {task: index in the register's ranking}; a task missing there
         ranks after all of them.
       agents: {agent name: index in the operator's agent order}; it breaks
@@ -292,37 +371,67 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, sile
     Returns:
       {entry id: None when granted, else the blocking reason}, in grant order.
       An unblocked entry counts as granted for the entries after it, whoever
-      holds it, so a lower entry never takes a higher entry's slot.
+      holds it, so a lower entry never takes a higher entry's slot; one
+      blocked by disk or budget reserves its need against the entries after it.
     """
     active = [e for e in entries if e["status"] == "active"]
     available = free_gb - sum(e["need_gb"] for e in active)
+    used = {resource: sum(footprints[e["id"]][resource] for e in active) for resource in budget}
+    taken = len(active)
     counts = Counter(e["kind"] for e in active)
     busy = {e["workdir"] for e in active}
     verdicts: dict[str, str | None] = {}
     for entry in ordered([e for e in entries if e["status"] == "waiting"], ranks, agents, now):
-        kind, need, workdir = entry["kind"], entry["need_gb"], entry["workdir"]
-        reason = None
-        if stage in ("stop", "critical"):
-            reason = f"disk stage {stage}"
-        elif stage == "warn" and need > 0:
-            reason = "disk stage warn admits only jobs that need no disk"
-        elif silenced:
-            reason = "radio silence"
-        elif kind not in slot_limits:
-            reason = f"slot_limits has no {kind}"
-        elif counts[kind] >= slot_limits[kind]:
-            reason = f"all {slot_limits[kind]} {kind} slots taken"
-        elif workdir in busy:
-            reason = f"{workdir} runs another job"
-        elif available - need < floor:
-            reason = f"{need:g} GB would cut into the {floor:g} GB floor; reserved"
-            available -= need
-        else:
-            counts[kind] += 1
-            busy.add(workdir)
-            available -= need
+        kind, need, workdir, share = entry["kind"], entry["need_gb"], entry["workdir"], footprints[entry["id"]]
+        reason = host_reason(stage, memory, silenced, need) or slot_reason(kind, workdir, slot_limits, counts, busy)
+        if reason is None:
+            reason, used, available = resources(need, share, used, available, floor, budget, taken)
+            if reason is None:
+                taken += 1
+                counts[kind] += 1
+                busy.add(workdir)
         verdicts[entry["id"]] = reason
     return verdicts
+
+
+def plus(used: dict[str, float], share: dict[str, float]) -> dict[str, float]:
+    return {resource: used[resource] + share[resource] for resource in used}
+
+
+def resources(need: float, share: dict[str, float], used: dict[str, float], available: float, floor: float,
+              budget: dict[str, float], taken: int) -> tuple[str | None, dict[str, float], float]:
+    """Returns:
+        (reason or None, RAM and CPU used or reserved, disk available) after
+        the job: one passing the budget beside other jobs reserves its share,
+        one cutting into the floor its disk, a granted one takes both.
+    """
+    if taken and (reason := over_budget(used, share, budget)) is not None:
+        return reason, plus(used, share), available
+    if available - need < floor:
+        return f"{need:g} GB would cut into the {floor:g} GB floor; reserved", used, available - need
+    return None, plus(used, share), available - need
+
+
+def host_reason(stage: str, memory: str, silenced: bool, need: float) -> str | None:
+    if stage in ("stop", "critical"):
+        return f"disk stage {stage}"
+    if stage == "warn" and need > 0:
+        return "disk stage warn admits only jobs that need no disk"
+    if memory == "stop":
+        return "memory stage stop"
+    if silenced:
+        return "radio silence"
+    return None
+
+
+def slot_reason(kind: str, workdir: str, slot_limits: dict[str, int], counts: Counter, busy: set[str]) -> str | None:
+    if kind not in slot_limits:
+        return f"slot_limits has no {kind}"
+    if counts[kind] >= slot_limits[kind]:
+        return f"all {slot_limits[kind]} {kind} slots taken"
+    if workdir in busy:
+        return f"{workdir} runs another job"
+    return None
 
 
 def register_ranks() -> dict[str, int]:
@@ -344,22 +453,62 @@ def silenced(now: float) -> bool:
     return "until" in state and state["until"] > now
 
 
-def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, kinds: dict[str, dict]) -> dict[str, str | None]:
+def footprint(entry: dict, signatures: dict[str, dict], kinds: dict[str, dict]) -> dict[str, float] | None:
+    return history.footprint(entry["kind"], signature_of(entry), signatures, kinds)
+
+
+def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, signatures: dict[str, dict],
+           kinds: dict[str, dict]) -> dict[str, str | None]:
     slots = {kind: limit for kind, (limit, _) in limits(cfg, kinds, entries).items()}
+    budget = cfg["budget_percent"]
+    footprints = {}
+    for entry in entries:
+        share = footprint(entry, signatures, kinds)
+        footprints[entry["id"]] = dict(budget) if share is None else share
     return evaluate(
-        entries, free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now), silenced(now),
-        slots, register_ranks(), agent_ranks(), now,
+        entries, free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now),
+        watch.memory_stage(watch.memory(), cfg), silenced(now), slots, footprints, budget,
+        register_ranks(), agent_ranks(), now,
     )
 
 
-def load_reason(cfg: dict, kind: str) -> str | None:
-    limits = cfg["load_limits"]
-    if kind not in limits["kinds"]:
-        return None
-    cpu, mem = watch.load(cfg)
-    if cpu < limits["cpu_percent"] and mem < limits["mem_percent"]:
-        return None
-    return f"cpu or ram at the limit ({limits['cpu_percent']} %, {limits['mem_percent']} %)"
+def load_reason(limits: dict, cpu: float, mem: float, ram_share: float) -> str | None:
+    """Args:
+        limits: load_limits of the config.
+        cpu: CPU busy now, in percent.
+        mem: RAM used now, in percent; stacks and jobs outside the queue
+            included.
+        ram_share: what the job and the active ones may still take, in
+            percentage points (pending_ram()).
+
+    Returns:
+        None when CPU stays below cpu_percent and RAM used plus the share
+        below mem_percent, else why not.
+    """
+    if cpu >= limits["cpu_percent"]:
+        return f"CPU {cpu:.0f} % busy reaches the limit {limits['cpu_percent']} %"
+    if mem + ram_share >= limits["mem_percent"]:
+        return f"RAM {mem:.0f} % used + {ram_share:.0f} % still to come reach the limit {limits['mem_percent']} %"
+    return None
+
+
+def ram_share(entry: dict, signatures: dict[str, dict], kinds: dict[str, dict]) -> float:
+    share = footprint(entry, signatures, kinds)
+    return history.seed_ram(kinds) if share is None else share["ram"]
+
+
+def pending_ram(entries: list[dict], entry_id: str, now: float, signatures: dict[str, dict],
+                kinds: dict[str, dict]) -> float:
+    """Returns:
+        The RAM share of entry_id plus the whole share of every active job
+        granted less than RAMP_SECONDS ago (or without a grant time): what
+        may still come once they ramp up. An older job counts as ramped, its
+        RAM inside the RAM used; one that peaks later is bounded by the
+        memory stage only.
+    """
+    mine = [e for e in entries if e["id"] == entry_id]
+    young = [e for e in entries if e["status"] == "active" and now - e.get("granted", now) < RAMP_SECONDS]
+    return ram_share(mine[0], signatures, kinds) + sum(ram_share(e, signatures, kinds) for e in young)
 
 
 def workdir() -> str:
@@ -399,13 +548,12 @@ def pause(caught: list[int]) -> None:
         time.sleep(TICK_SECONDS)
 
 
-def wait(cfg: dict, entry_id: str, kind: str, caught: list[int]) -> tuple[int | None, int]:
+def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
     """Poll until the grant.
 
     Args:
       cfg: the config.
       entry_id: this hold's entry.
-      kind: its kind, for the load sample.
       caught: signals the caller caught; the first ends the wait.
 
     Returns:
@@ -414,18 +562,19 @@ def wait(cfg: dict, entry_id: str, kind: str, caught: list[int]) -> tuple[int | 
     """
     shown = None
     while not caught:
-        busy_load = load_reason(cfg, kind)
+        cpu, mem = watch.load(cfg)
         free, _ = watch.disk(cfg)
         now = time.time()
-        _, kinds = learned(cfg, now)
+        signatures, kinds = learned(cfg, now)
         with store() as data:
             data["entries"] = prune(data["entries"])
             mine = [e for e in data["entries"] if e["id"] == entry_id]
             if not mine:
                 print(f"queue: {entry_id} was cancelled", file=sys.stderr)
                 return CANCELLED, 0
-            verdicts = decide(cfg, data["entries"], free, now, kinds)
-            reason = verdicts[entry_id] or busy_load
+            verdicts = decide(cfg, data["entries"], free, now, signatures, kinds)
+            pending = pending_ram(data["entries"], entry_id, now, signatures, kinds)
+            reason = verdicts[entry_id] or load_reason(cfg["load_limits"], cpu, mem, pending)
             if reason is None:
                 concurrent = sum(e["status"] == "active" for e in data["entries"])
                 mine[0].update(status="active", granted=now)
@@ -477,6 +626,11 @@ def keep(row: dict) -> None:
         print(f"queue: no history row for {row['id']}: {error.strerror}", file=sys.stderr)
 
 
+def record(job: dict, start: float, code: int, samples: list[dict[str, float]], concurrent: int) -> None:
+    if code != NOT_RUN:
+        keep(history.row(job, start, time.time(), code, samples, concurrent))
+
+
 def cmd_hold(args: argparse.Namespace) -> int:
     cfg = config()
     if args.kind not in cfg["slot_need_gb"]:
@@ -486,7 +640,8 @@ def cmd_hold(args: argparse.Namespace) -> int:
         fail(f"{args.task} is no open task of the kvb-org-rasci register")
     if args.hotfix is not None and HOTFIX + args.hotfix not in rasci.load():
         fail(f"the register has no row {HOTFIX}{args.hotfix}")
-    signature = history.signature(args.command)
+    here = workdir()
+    signature = qualified(here, args.command)
     signatures, _ = learned(cfg, time.time())
     need = args.need_gb
     if need is None:
@@ -511,13 +666,13 @@ def cmd_hold(args: argparse.Namespace) -> int:
     with holding() as (tag, lock_fd):
         entry = enqueue({
             "kind": args.kind, "task": args.task, "need_gb": need, "hotfix": args.hotfix,
-            "workdir": workdir(), "session": session, "name": council.live_sessions().get(session) or session,
+            "workdir": here, "session": session, "name": council.live_sessions().get(session) or session,
             "lock": tag, "pid": os.getpid(), "pid_start": identity(os.getpid()), "child": None,
             "child_start": None, "status": "waiting", "enqueued": time.time(), "granted": None,
             "cmd": shlex.join(args.command),
         })
         try:
-            code, concurrent = wait(cfg, entry["id"], args.kind, caught)
+            code, concurrent = wait(cfg, entry["id"], caught)
             if code is not None:
                 return code
             if caught:
@@ -536,7 +691,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
             code = code if code >= 0 else 128 - code
             job = {"id": f"{entry['id']}-{time.time_ns()}", "kind": args.kind, "signature": signature,
                    "workdir": entry["workdir"]}
-            keep(history.row(job, start, time.time(), code, samples, concurrent))
+            record(job, start, code, samples, concurrent)
             return code
         finally:
             leave(entry["id"])
@@ -550,7 +705,7 @@ def cmd_list(_: argparse.Namespace) -> int:
     with store() as data:
         data["entries"] = prune(data["entries"])
         entries = list(data["entries"])
-        verdicts = decide(cfg, entries, free, now, kinds)
+        verdicts = decide(cfg, entries, free, now, signatures, kinds)
     by_id = {e["id"]: e for e in entries}
     running = [(signature_of(e), e["granted"]) for e in entries if e["status"] == "active"]
     rows = [
@@ -565,11 +720,15 @@ def cmd_list(_: argparse.Namespace) -> int:
     print("position\tid\tstatus\tkind\ttask\tneed_gb\twaited_min\teta_min\tworkdir\treason")
     for position, e, eta, reason in rows:
         waited = ((e["granted"] or now) - e["enqueued"]) / 60
-        print("\t".join(
+        print(tab_line(
             [position, e["id"], e["status"], e["kind"], e["task"], f"{e['need_gb']:g}", f"{waited:.0f}",
              "-" if eta is None else f"{eta:.0f}", e["workdir"], reason]
         ))
     return 0
+
+
+def tab_line(fields: list[object]) -> str:
+    return "\t".join("".join(c if c.isprintable() else c.encode("unicode_escape").decode() for c in str(f)) for f in fields)
 
 
 def cmd_history(_: argparse.Namespace) -> int:
@@ -633,50 +792,10 @@ def permission(commands: list[str], project: Path) -> str | None:
     return None
 
 
-def uncommented(command: str) -> str:
-    kept: list[str] = []
-    quote = ""
-    escaped = skipping = False
-    word_start = True
-    for char in command:
-        if skipping and char != "\n":
-            continue
-        skipping = False
-        if escaped:
-            escaped = False
-        elif quote == "'":
-            quote = "" if char == "'" else quote
-        elif char == "\\":
-            escaped = True
-        elif quote == '"':
-            quote = "" if char == '"' else quote
-        elif char in "'\"":
-            quote = char
-        elif char == "#" and word_start:
-            skipping = True
-            continue
-        kept.append(char)
-        word_start = not quote and not escaped and char in WORD_BREAK
-    return "".join(kept)
-
-
-def segments(command: str) -> list[list[str]]:
-    lexer = shlex.shlex(uncommented(command.replace("\\\n", "")), posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    parts: list[list[str]] = [[]]
-    for token in lexer:
-        if SEPARATOR.fullmatch(token):
-            parts.append([])
-        else:
-            parts[-1].append(token)
-    return parts
-
-
 def held_commands(command: str) -> list[list[str]]:
     return [
         cli().parse_args(part[at + 1 :]).command
-        for part in segments(command)
+        for part in watch.segments(command)
         for at, token in enumerate(part)
         if token.endswith("queue.py") and part[at + 1 : at + 2] == ["hold"]
     ]
@@ -715,10 +834,8 @@ def cmd_block() -> int:
     cfg = watch.load_config()
     if cfg is None or cfg.get("queue_enforce") is not True:
         return 0
-    command = watch.executable_text((payload.get("tool_input") or {}).get("command") or "")
-    if THROUGH_QUEUE.search(command) or any(re.search(p, command) for p in cfg["never_block"]):
-        return 0
-    if GATE.search(command) or any(re.search(p, command) for p in cfg["heavy_commands"]):
+    gated = {**cfg, "heavy_commands": [*cfg["heavy_commands"], GATE.pattern]}
+    if watch.heavy(raw, gated, (THROUGH_QUEUE.pattern, *cfg["never_block"])):
         print(
             f"kvb-org-queue: heavy jobs run through the queue: start `python3 {Path(__file__).resolve()} hold "
             "--kind <kind> --task <register task> -- <command>` in the background; it runs the command on its grant.",

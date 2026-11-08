@@ -20,12 +20,15 @@ QUEUE = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
 HISTORY = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "history.py"
 NOW = 1_800_000_000.0
 HOUR = 3600
+OPEN_MEMORY = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_swap_gb": 1e9}
 BASE = {
     "free_gb": 100.0,
     "floor": 10.0,
     "stage": "ok",
+    "memory": "ok",
     "silenced": False,
     "slot_limits": {"test": 5, "deploy": 1},
+    "budget": {"ram": 75, "cpu": 100},
     "ranks": {"work/a": 0, "work/b": 1, "work/c": 2},
     "agents": {},
     "now": NOW,
@@ -83,7 +86,97 @@ class TestEvaluate(unittest.TestCase):
         cls.queue = _load(QUEUE)
 
     def decide(self, entries: list[dict], **overrides: object) -> dict:
-        return self.queue.evaluate(entries, **{**BASE, **overrides})
+        footprints = {e["id"]: {"ram": 0, "cpu": 0} for e in entries} | overrides.pop("footprints", {})
+        return self.queue.evaluate(entries, **{**BASE, "footprints": footprints, **overrides})
+
+    def test_the_budget_refuses_a_job_whose_share_would_pass_it_and_reserves_it(self):
+        running = job(1, kind="test", status="active")
+        candidate = job(2, kind="gui-dind", workdir="/x")
+        small = job(3, task="work/b", workdir="/y")
+        shares = {"j1": {"ram": 60, "cpu": 40}, "j2": {"ram": 30, "cpu": 20}, "j3": {"ram": 10, "cpu": 5}}
+        verdicts = self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=shares)
+        self.assertEqual(verdicts["j2"], "RAM 60 % in use or reserved + 30 % > budget 75 %; reserved")
+        self.assertEqual(verdicts["j3"], "RAM 90 % in use or reserved + 10 % > budget 75 %; reserved")
+        unbounded = {"ram": 1000, "cpu": 1000}
+        self.assertEqual(
+            self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=shares, budget=unbounded),
+            {"j2": None, "j3": None},
+        )
+
+    def test_a_job_alone_always_fits_and_cpu_counts_like_ram(self):
+        alone = self.decide([job(1)], footprints={"j1": {"ram": 90, "cpu": 150}})
+        self.assertEqual(alone, {"j1": None})
+        busy = self.decide([job(1, status="active"), job(2)], footprints={"j1": {"ram": 1, "cpu": 70}, "j2": {"ram": 1, "cpu": 40}})
+        self.assertEqual(busy, {"j2": "CPU 70 % in use or reserved + 40 % > budget 100 %; reserved"})
+
+    def test_a_share_beyond_the_budget_runs_only_alone_even_beside_a_job_of_no_share(self):
+        whole = {"ram": 80, "cpu": 1}
+        beside = self.decide([job(1, status="active"), job(2)], footprints={"j1": {"ram": 0, "cpu": 0}, "j2": whole})
+        self.assertEqual(beside, {"j2": "RAM 0 % in use or reserved + 80 % > budget 75 %; reserved"})
+        self.assertEqual(self.decide([job(2)], footprints={"j2": whole}), {"j2": None})
+
+    def test_load_counts_the_ram_in_use_plus_what_is_still_to_come(self):
+        limits = {"cpu_percent": 90, "mem_percent": 90}
+        reason = self.queue.load_reason
+        self.assertIsNone(reason(limits, 50, 60, 29))
+        self.assertEqual(reason(limits, 50, 60, 30), "RAM 60 % used + 30 % still to come reach the limit 90 %")
+        self.assertIsNone(reason(limits, 50, 89, 0))
+        self.assertEqual(reason(limits, 90, 10, 0), "CPU 90 % busy reaches the limit 90 %")
+
+    def test_pending_ram_adds_what_active_jobs_have_not_taken_yet_and_seeds_an_unlearned_kind(self):
+        history = _load(HISTORY)
+        rows = [history_row(n, kind=kind, signature=f"w: {kind}", mem_before=20, mem_max=20 + share)
+                for n, (kind, share) in enumerate([("a", 30)] * 5 + [("b", 25)] * 5 + [("c", 10)] * 5)]
+        signatures, kinds = history.learn(rows, NOW, {"load_limits": {"mem_percent": 90, "cpu_percent": 90}})
+        self.assertEqual(history.seed_ram(kinds), 30)
+        self.assertEqual(history.seed_ram({}), 0)
+        cmd = {"workdir": "/w"}
+        fresh = {**job(2, kind="b"), **cmd, "cmd": "b"}
+        young = {**job(1, kind="a", status="active", granted=NOW - 60), **cmd, "cmd": "a"}
+        overshooting = {**job(5, kind="c", status="active", granted=NOW - 120), **cmd, "cmd": "c"}
+        old = {**job(4, kind="c", status="active", granted=NOW - self.queue.RAMP_SECONDS), **cmd, "cmd": "c"}
+        self.assertEqual(self.queue.pending_ram([young, overshooting, old, fresh], "j2", NOW, signatures, kinds), 30 + 10 + 25)
+        undated = {k: v for k, v in old.items() if k != "granted"}
+        self.assertEqual(self.queue.pending_ram([undated, fresh], "j2", NOW, signatures, kinds), 10 + 25)
+        unknown = {**job(3, kind="new"), **cmd, "cmd": "new"}
+        self.assertEqual(self.queue.pending_ram([unknown], "j3", NOW, signatures, kinds), 30)
+
+    def test_a_signature_names_the_repository_every_worktree_shares(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            main = base / "skills"
+            main.mkdir()
+            identity = {**os.environ, "GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@x", "GIT_COMMITTER_NAME": "T",
+                        "GIT_COMMITTER_EMAIL": "t@x", "GIT_CONFIG_NOSYSTEM": "1"}
+            for args in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "x"], ["worktree", "add", "-q", str(base / "wt")]):
+                subprocess.run(["git", *args], cwd=main, env=identity, check=True, capture_output=True)
+            self.assertEqual(self.queue.qualified(str(main), ["make", "test"]), "skills: make test")
+            self.assertEqual(self.queue.qualified(str(base / "wt"), ["make", "test"]), "skills: make test")
+            plain = base / "plain"
+            plain.mkdir()
+            self.assertEqual(self.queue.qualified(str(plain), ["true"]), "plain: true")
+            self.assertEqual(self.queue.qualified(str(base / "gone"), ["true"]), "gone: true")
+            for argv, expected in {
+                ("env", "TMPDIR=/t", "-i", "make", "test"): "make test",
+                ("nice", "-n", "10", "make", "compose-deploy"): "make compose-deploy",
+                ("timeout", "3600", "make", "lint"): "make lint",
+                ("python3", "/s/gate.py", "hold", "--repo", ".", "--", "make", "verify-test"): "make verify-test",
+                ("python3", "/s/operator.py", "granted", "operator/x", "--dir", "/a", "--check", "manual", "--",
+                 "zsh", "-ic", "make -C /a/core compose-deploy"): "make compose-deploy",
+                ("bash", "-c", "cd core && make test 2>&1 | tee /tmp/log"): "make test",
+                ("python3", "/s/x.py", "--"): "x.py",
+                ("bash", "-c", "set -e; make verify-test"): "make verify-test",
+                ("bash", "-c", "source .venv/bin/activate && make test"): "make test",
+            }.items():
+                with self.subTest(argv=argv):
+                    self.assertEqual(self.queue.qualified(str(plain), list(argv)), f"plain: {expected}")
+            module = ["python3", "-m", "pytest", "--", "tests/"]
+            self.assertEqual(self.queue.command_words(module), module)
+
+    def test_memory_stage_stop_blocks_every_job_and_warn_none(self):
+        entries = [job(1, need_gb=0), job(2, task="work/b")]
+        self.assertEqual(set(self.decide(entries, memory="stop").values()), {"memory stage stop"})
+        self.assertEqual(self.decide(entries, memory="warn"), {"j1": None, "j2": None})
 
     def test_hotfix_goes_first_then_rank_then_arrival_and_unknown_tasks_last(self):
         entries = [
@@ -199,6 +292,23 @@ class TestHistory(unittest.TestCase):
         crowded = [history_row(n, mem_before=90, mem_max=95) for n in range(5)]
         self.assertEqual(self.learn(crowded)[1]["test"]["limit"], 1)
 
+    def test_footprint_takes_the_larger_of_kind_and_signature_at_least_the_minimum_and_none_for_a_new_kind(self):
+        small = [history_row(n, signature="make test", mem_max=25, cpu_max=20) for n in range(5)]
+        big = [
+            history_row(n + 5, kind="quality-high", signature="make verify-test", mem_max=80, cpu_max=90)
+            for n in range(5)
+        ]
+        idle = [history_row(n + 10, kind="idle", signature="true", mem_max=20, cpu_max=5) for n in range(5)]
+        signatures, kinds = self.learn([*small, *big, *idle])
+        footprint = self.history.footprint
+        self.assertEqual(footprint("test", "make test", signatures, kinds), {"ram": 5, "cpu": 10})
+        self.assertEqual(footprint("test", "make verify-test", signatures, kinds), {"ram": 60, "cpu": 80})
+        self.assertEqual(footprint("test", "make unseen", signatures, kinds), {"ram": 5, "cpu": 10})
+        self.assertEqual(footprint("idle", "true", signatures, kinds), {"ram": 1, "cpu": 1})
+        self.assertIsNone(footprint("gui-dind", "make test-up", signatures, kinds))
+        signatures, kinds = self.learn(small[:4])
+        self.assertIsNone(footprint("test", "make test", signatures, kinds))
+
     def test_slot_limits_take_the_learned_limit_else_the_seed_and_a_smaller_cap(self):
         kinds = {"deploy": {"limit": 3}, "build": {"limit": None}}
         self.assertEqual(self.history.slot_limits(kinds, {"deploy": 2, "swarm": 0, "test": 9}, ["test", "gate"]), {
@@ -256,7 +366,9 @@ class TestQueueCommands(unittest.TestCase):
             "projection_minutes": 30,
             "slot_need_gb": {"test": 0.001, "deploy": 0},
             "slot_limits": {"test": 1, "deploy": 1},
-            "load_limits": {"cpu_percent": 101, "mem_percent": 101, "sample_seconds": 0.1, "kinds": ["test"]},
+            "load_limits": {"cpu_percent": 101, "mem_percent": 101, "sample_seconds": 0.1},
+            "budget_percent": {"ram": 75, "cpu": 100},
+            "memory_limits": {stage: OPEN_MEMORY for stage in ("warn", "stop")},
             "heavy_commands": ["^make compose-deploy"],
             "never_block": ["^make compose-down"],
         }
@@ -338,12 +450,22 @@ class TestQueueCommands(unittest.TestCase):
         [row] = [json.loads(line) for line in self.history_file.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(
             [row[k] for k in ("kind", "signature", "workdir", "exit", "concurrent")],
-            ["test", f"{Path(sys.executable).name} -c", str(self.base), 7, 0],
+            ["test", f"{self.base.name}: {Path(sys.executable).name} -c", str(self.base), 7, 0],
         )
         self.assertTrue(row["id"].startswith("test-1-"))
         self.assertLessEqual(row["start"], row["end"])
         self.assertEqual(row["disk_gb"], round(max(0.0, row["free_before_gb"] - row["min_free_gb"]), 2))
         self.assertLessEqual(row["mem_before"], row["mem_max"])
+
+    def test_a_command_that_did_no_work_leaves_no_history_row(self):
+        result = self.run_queue(
+            "hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", sys.executable, "-c",
+            "import sys; sys.exit(75)",
+        )
+        self.assertEqual(result.returncode, 75)
+        self.assertFalse(self.history_file.exists())
+        self.assertEqual(self.run_queue("hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", "false").returncode, 1)
+        self.assertEqual(len(self.history_file.read_text(encoding="utf-8").splitlines()), 1)
 
     def test_hold_runs_without_slot_limits_on_the_seed_limit(self):
         del self.cfg["slot_limits"]
@@ -464,7 +586,8 @@ class TestQueueCommands(unittest.TestCase):
         self.write_config()
         now = time.time()
         rows = [
-            history_row(n, kind="deploy", signature="true", end=now, disk_gb=gb) for n, gb in enumerate((4, 1, 10, 3, 2))
+            history_row(n, kind="deploy", signature=f"{self.base.name}: true", end=now, disk_gb=gb)
+            for n, gb in enumerate((4, 1, 10, 3, 2))
         ]
         self.write_history(self.history_file, rows[:3])
         self.write_history(self.kept, [{**rows[0], "disk_gb": 100}, *rows[3:]])
@@ -480,9 +603,9 @@ class TestQueueCommands(unittest.TestCase):
         me, mine = os.getpid(), queue.identity(os.getpid())
         now = time.time()
         self.write_history(
-            self.history_file, [history_row(n, signature="make compose-deploy", end=now) for n in range(5)]
+            self.history_file, [history_row(n, signature="w: make compose-deploy", end=now) for n in range(5)]
         )
-        deploy = {"cmd": "make compose-deploy apps=x"}
+        deploy = {"cmd": "make compose-deploy apps=x", "workdir": "/w"}
         self.write_store([
             {**stored(1, "active", me, mine, me, mine), **deploy, "granted": now - 240},
             {**stored(2, "waiting", me, mine, None, None), **deploy},
@@ -545,6 +668,9 @@ class TestQueueCommands(unittest.TestCase):
         self.assertEqual(refused.returncode, 2)
         self.assertIn("queue.py hold --kind <kind> --task <register task> -- <command>", refused.stderr)
         self.assertEqual(self.bash("python3 skills/kvb-check-gate/scripts/gate.py run --repo . --target test"), 2)
+        for command in ("make -j4 compose-deploy apps=x", "make 'compose-deploy'", "cd x && make compose-deploy"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command), 2)
         for command in (
             "python3 /x/queue.py hold --kind deploy --task work/a -- make compose-deploy",
             "make compose-down",
@@ -556,6 +682,168 @@ class TestQueueCommands(unittest.TestCase):
         self.assertEqual(self.hook("not json").returncode, 0)
         self.config.unlink()
         self.assertEqual(self.bash("make compose-deploy"), 0)
+
+    def test_block_with_queue_enforce_refuses_builds_installs_and_full_suites_by_itself(self):
+        self.cfg["queue_enforce"] = True
+        self.cfg["heavy_commands"] = []
+        self.write_config()
+        for command in (
+            "docker compose up -d --build",
+            "docker compose -f x.yml build web",
+            "docker-compose up --build",
+            "make install",
+            "make -C core verify-test",
+            "pytest tests/",
+            "python3 -m pytest -q",
+            ".venv/bin/pytest tests/lint tests/unit",
+            "pytest tests/a.py tests/b.py",
+            "python3 -m unittest discover -s tests",
+            "python3 -m unittest discover -s tests -p 'test_*.py'",
+            "pytest tests/x.py tests/lint",
+            "pytest tests/lint --ignore=tests/lint/y.py",
+            "python3 -m unittest",
+            "make -j4 install",
+            "make VAR=x install",
+            "cd core && env A=1 timeout 600 python3 -m pytest -q 2>&1 | tee /tmp/log",
+            "bash -c 'pytest tests/'",
+            "pytest tests/  # queue.py hold",
+            "python3 /x/queue.py hold --kind test --task work/a -- true & pytest tests/",
+            "make compose-down; make install",
+            "uv run pytest tests/",
+            "coverage run -m pytest",
+            "python3 -mpytest tests/",
+            "python3 -X dev -m pytest",
+            "timeout -s KILL 900 pytest tests/",
+            "sudo -u nobody pytest tests/",
+            "env -u FOO pytest",
+            "{ pytest tests/; }",
+            "! pytest tests/",
+            "if pytest tests/; then echo ok; fi",
+            "echo `pytest tests/`",
+            "bash -c -- 'pytest tests/'",
+            "bash <<'EOF'\npytest tests/\nEOF",
+            'OUT="$(pytest tests/ 2>&1)"',
+            'echo "r: $(make install)"',
+            "cat <<EOF\n`make install`\nEOF",
+            "uv run --extra dev pytest tests/",
+            "uv run --with pytest-xdist pytest -n 8 tests/",
+            "coverage run --source pkg -m pytest tests/",
+            "poetry -C core run pytest tests/",
+            "python3 -m coverage run -m pytest tests/",
+            "uvx pytest tests/",
+            "uv tool run pytest tests/",
+            "time -p pytest tests/",
+            "/usr/bin/time -v pytest tests/",
+            "/usr/bin/time -f %M make install",
+            "make 2>&1 install",
+            ">/tmp/log pytest tests/",
+            "2>/dev/null make install",
+            "pytest tests/test_watch.py 2>/dev/null tests/",
+            "make compose-down install",
+            "make -C core compose-down verify-test",
+            "make --directory core install",
+            "command pytest tests/",
+            "command -p pytest tests/",
+            "command make install",
+            "env -S 'pytest tests/'",
+            "bash -Ec 'pytest tests/'",
+            "exec -a x pytest tests/",
+            "sudo --user root pytest tests/",
+            "env $(printenv | grep -o -E '^INFINITO_[A-Z0-9_]+' | sed 's/^/-u /') -C /x python3 -m pytest tests/",
+            "env $(cat .env) -u X make install",
+            "sudo -u $(id -un) -- pytest tests/",
+            "timeout --signal=$(echo KILL) 900 pytest tests/",
+            "sudo --chdir /x pytest tests/",
+            "sudo bash <<'EOF'\npytest tests/\nEOF",
+            "bash -s <<'END-MSG'\nmake install\nEND-MSG",
+            "out=$(bash <<'EOF'\nmake install\nEOF\n)",
+            "bash -c 'bash <<EOF\nmake install\nEOF\n'",
+            "bash <<'A'\nbash <<'B'\nmake install\nB\nA",
+            "bash -euo pipefail <<'EOF'\nmake test\nmake install\nEOF",
+            "bash -o pipefail <<'EOF'\npytest tests/\nEOF",
+            "bash -s -- one <<'EOF'\nmake install\nEOF",
+            "bash --rcfile x <<'EOF'\nmake install\nEOF",
+            "make -Cinfinito install",
+            "make -Oline install",
+            "bash <<'EOF'\nmake install \ud800\nEOF",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command), 2)
+        for command in (
+            "docker compose up -d",
+            "docker compose ps",
+            "make install-skills",
+            "pytest tests/unit/test_x.py",
+            "python3 -m pytest tests/unit/test_x.py::TestA -q",
+            "pip install pytest",
+            "python3 -m unittest discover -s tests -p test_queue.py",
+            "python3 -m unittest tests.test_queue",
+            "python3 /x/queue.py hold --kind test --task work/a -- pytest tests/",
+            'pytest "tests/unit/test_x.py"',
+            "python3 -m unittest discover -s tests -p 'test_queue.py'",
+            "grep -rn pytest tests/",
+            "which pytest",
+            "pytest --version",
+            "pytest tests/unit/test_x.py -p no:cacheprovider 2>&1 | tee /tmp/log",
+            "command -v pytest",
+            "make -n install",
+            "cat <<'EOF'\npytest tests/\nEOF",
+            "pytest >/tmp/out.log tests/test_watch.py",
+            "git commit -m \"$(cat <<'EOF'\nfix: run `make install` once\nEOF\n)\"",
+            "gh pr create --body-file - <<'EOF'\nruns `make verify-test`\nEOF",
+            "echo '$(make install)'",
+            "uv pip install pytest",
+            "command -V pytest",
+            "time pytest tests/unit/test_x.py",
+            "docker compose -f compose.yml -f build/compose/runner-mirror.override.yml config --services",
+            "docker compose --project-directory build up -d",
+            'echo "see \\`make install\\` and \\$(make install) docs"',
+            "pytest -n auto --dist loadscope tests/x.py",
+            "pytest --cov src --timeout 30 tests/x.py",
+            "cat > /tmp/run.sh <<'EOF'\npytest tests/\nEOF",
+            "gh pr create --title \"fix(bash): quoting\" --body \"$(cat <<'EOF'\nruns `make install`\nEOF\n)\"",
+            "ls # it's $(make install)",
+            "make -nC core install",
+            "make -kn install",
+            "python3 /x/queue.py hold --kind test --task work/a -- bash <<'EOF'\nmake install\nEOF",
+            "python3 /x/queue.py hold --kind test --task work/a -- bash -c \"$(cat <<'EOF'\nmake install\nEOF\n)\"",
+            "cat <<'END-MSG'\nmake install\nEND-MSG",
+            "cat <<\\EOF\n$(make install)\nEOF",
+            "pytest --numprocesses 4 tests/x.py",
+            "pytest tests/lint --collect-only",
+            "bash script.sh <<'EOF'\nmake install\nEOF",
+            "out=$(cat <<'EOF'\nmake install\nEOF\n)",
+            "echo kvbheredoc1 kvbheredoczz",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command), 0)
+
+    def test_block_matches_a_config_regex_on_the_wrapped_program_too(self):
+        self.cfg["queue_enforce"] = True
+        self.cfg["heavy_commands"] = [r"^docker compose up"]
+        self.write_config()
+        for command in ("timeout 900 docker compose up -d", "sudo docker compose up -d", "docker compose up -d"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command), 2)
+        self.assertEqual(self.bash("docker compose ps"), 0)
+
+    def test_hold_refuses_a_config_without_the_budget_or_the_memory_limits(self):
+        for key, cfg in (
+            ("budget_percent", {k: v for k, v in self.cfg.items() if k != "budget_percent"}),
+            ("memory_limits", {k: v for k, v in self.cfg.items() if k != "memory_limits"}),
+            ("budget_percent.cpu", {**self.cfg, "budget_percent": {"ram": 75}}),
+            ("budget_percent.ram", {**self.cfg, "budget_percent": {"ram": "75", "cpu": 100}}),
+            ("budget_percent.cpu", {**self.cfg, "budget_percent": {"ram": 75, "cpu": float("nan")}}),
+            ("memory_limits.warn.container_swap_gb", {**self.cfg, "memory_limits": {
+                "warn": {k: v for k, v in OPEN_MEMORY.items() if k != "container_swap_gb"}, "stop": OPEN_MEMORY,
+            }}),
+        ):
+            with self.subTest(key=key):
+                self.config.write_text(json.dumps(cfg), encoding="utf-8")
+                result = self.run_queue("hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", "true")
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(f"lacks {key};", result.stderr)
+                self.assertFalse((self.root / "queue.json").exists())
 
     def test_block_holds_a_held_command_to_the_bash_rules_of_the_settings(self):
         project = self.base / "project"
