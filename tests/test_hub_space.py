@@ -92,6 +92,11 @@ console.log(JSON.stringify({
     spawn: [0, 1, 2, 4, 9].map((level) => S.depthOf("spawn", {ts: now, level}, [low, now])),
     none: [S.depthOf("none", {ts: low, level: 3}, [low, now]), S.depthOf("none", {ts: now, level: 0}, [low, now])],
   },
+  parents: S.notBeforeParent([
+    {id: "c", kind: "chair", ts: 200}, {id: "s", kind: "session", parent: "c", ts: 100}, {id: "w", kind: "twig", parent: "v", ts: 120},
+    {id: "t", kind: "twig", parent: "s", ts: 50}, {id: "u", kind: "twig", parent: "t"}, {id: "v", kind: "twig", parent: "s", ts: 150},
+    {id: "x", kind: "subagent", parent: "gone", ts: 30}, {id: "y", kind: "twig", parent: "z", ts: 5}, {id: "z", kind: "twig", parent: "y", ts: 7},
+  ], new Set(["twig", "subagent"])).map((node) => [node.id, node.ts]),
   same: [S.scene(input), S.scene(JSON.parse(JSON.stringify(input)))].every((other) => JSON.stringify(other) === JSON.stringify(built)),
   lines: Object.fromEntries(built.lines.map((entry) => [entry.sub || entry.node, {kind: entry.kind, level: entry.level, alive: entry.alive, stamps: entry.points.map((point) => point.ts), first: entry.points[0], name: entry.timeline[0].name}])),
   labels: built.labels.filter((label) => built.lines[label.line].node === "s5").map((label) => [label.at.ts, label.text]),
@@ -173,6 +178,9 @@ class TestSpaceModule(unittest.TestCase):
         self.assertEqual(axis["still"], -300)
         self.assertEqual(axis["spawn"], [-300, -150, 0, 300, 300])
         self.assertEqual(axis["none"], [0, 0])
+
+    def test_a_subagent_never_lies_before_the_agent_that_spawned_it(self):
+        self.assertEqual(self.data["parents"], [["c", 200], ["s", 100], ["w", 150], ["t", 100], ["u", 100], ["v", 150], ["x", 30], ["y", 7], ["z", 7]])
 
     def test_world_lines_are_deterministic_and_follow_the_layout_of_their_time(self):
         self.assertTrue(self.data["same"])

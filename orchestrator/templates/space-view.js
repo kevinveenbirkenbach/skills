@@ -74,6 +74,27 @@ const SpaceView = (() => {
     return 0;
   }
 
+  /**
+   * @param nodes - {id, kind, parent, ts} records.
+   * @param spawned - the kinds spawned by their parent, such as subagents.
+   * @returns copies of the nodes in which a spawned node without a time or
+   * with one before its parent's takes its parent's time.
+   */
+  function notBeforeParent(nodes, spawned) {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const settled = new Map();
+    const at = (node) => {
+      if (!settled.has(node.id)) {
+        settled.set(node.id, node.ts);
+        const parent = spawned.has(node.kind) ? byId.get(node.parent) : undefined;
+        const floor = parent ? at(parent) : NaN;
+        settled.set(node.id, Number.isFinite(floor) && !(node.ts >= floor) ? floor : node.ts);
+      }
+      return settled.get(node.id);
+    };
+    return nodes.map((node) => ({...node, ts: at(node)}));
+  }
+
   function clampView(kind, view) {
     const limits = LIMITS[kind];
     const wrapped = kind === "graph" ? {...view, yaw: signed(view.yaw)} : {...view, azimuth: around(view.azimuth)};
@@ -119,7 +140,7 @@ const SpaceView = (() => {
 
   return {
     DEFAULTS, LIMITS, AXES, DEPTH, LEVELS, REACH,
-    clamp, ease, turn, rotation, apply, camera, project, depthSort, depthOf, clampView, tidy, tween, lens, place, horizon, compass,
+    clamp, ease, turn, rotation, apply, camera, project, depthSort, depthOf, notBeforeParent, clampView, tidy, tween, lens, place, horizon, compass,
   };
 })();
 if (typeof module === "object" && module.exports) {

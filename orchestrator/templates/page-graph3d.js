@@ -5,6 +5,7 @@
   ];
   const KIND_COLORS = {operator: "accent", chair: "accent", session: "info", subagent: "violet", twig: "violet", repo: "warn", branch: "info", worktree: "teal", agent: "accent", artefact: "violet", task: "muted"};
   const LINK_COLORS = {spawn: "violet", contains: "line-strong", merge: "grant", overlap: "alarm", direct: "direct", broadcast: "broadcast", alarm: "alarm", security: "security", grant: "grant"};
+  const SPAWNED = new Set(["twig", "subagent"]);
   const DEPTH_GAP = 90;
   const TIME_DEPTH = 640;
   const g3 = {lib: null, three: null, graph: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: ""};
@@ -61,13 +62,14 @@
 
   function agentModel() {
     const depthOf = {operator: 0, chair: 1, session: 2, subagent: 3};
+    const born = (node) => ((spawn.subs.get(node.id) || {}).data || {}).since;
     const nodes = state.graph.nodes.map((node) => ({
-      id: node.id, kind: node.kind, label: node.label, depth: depthOf[node.kind], ts: (node.timeline[0] || {}).since || state.since,
+      id: node.id, kind: node.kind, label: node.label, depth: depthOf[node.kind], ts: born(node) || (node.timeline[0] || {}).since || state.since,
       parent: node.kind === "operator" ? null : node.kind === "chair" ? HUMAN : node.kind === "session" ? chairKey() : node.parent || chairKey(),
     }));
     for (const node of state.graph.nodes.filter((entry) => entry.kind === "session" || entry.kind === "chair")) {
       const walk = (twig, parent, depth) => {
-        nodes.push({id: twig.id, kind: "twig", label: twig.label, depth, ts: twig.row.started, parent, session: twig.session, sub: twig.row.id});
+        nodes.push({id: twig.id, kind: "twig", label: twig.label, depth, ts: twig.row.since || twig.row.started, parent, session: twig.session, sub: twig.row.id});
         twig.children.forEach((child) => walk(child, twig.id, depth + 1));
       };
       twigs(node.id).forEach((twig) => walk(twig, node.id, depthOf[node.kind] + 1));
@@ -77,7 +79,7 @@
     for (const link of aggregate().filter((entry) => entry.target !== "*" && ids.has(entry.source) && ids.has(entry.target) && entry.source !== entry.target)) {
       links.push({source: link.source, target: link.target, kind: tone(link.cls), count: link.count});
     }
-    return {nodes, links};
+    return {nodes: SpaceView.notBeforeParent(nodes, SPAWNED), links};
   }
 
   function model3d(tab) {
@@ -155,7 +157,7 @@
   }
 
   function signature3d(tab, data) {
-    return JSON.stringify([tab, layoutOf(), data.nodes.map((node) => [node.id, node.kind, node.depth]), data.links.map((link) => [link.source, link.target, link.kind])]);
+    return JSON.stringify([tab, layoutOf(), data.nodes.map((node) => [node.id, node.kind, node.depth, node.ts]), data.links.map((link) => [link.source, link.target, link.kind])]);
   }
 
   async function stage3d(tab, host) {
