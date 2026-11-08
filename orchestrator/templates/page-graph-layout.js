@@ -137,7 +137,7 @@
     },
     s("title", {}, `${node.label} · ${NODE_KINDS[node.kind]}${node.parent ? ` of ${labelOf(node.parent)}` : ""}${tasks}`),
     s("circle", {r}),
-    node.kind === "subagent" ? null : s("text", {class: "initial", "text-anchor": "middle", dy: "0.35em"}, node.label.slice(0, 1).toUpperCase()),
+    node.kind === "subagent" ? null : s("g", {class: "face-art", transform: `translate(${-r} ${-r}) scale(${(2 * r) / Faces.SIZE})`}, faceParts(node.id)),
     caption(node, at, r, gap));
   }
 

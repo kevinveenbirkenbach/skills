@@ -68,14 +68,13 @@
     updated.textContent = `${ui.offline ? "No connection · " : ""}${live() ? "Live" : "As of"} ${absolute.format(stampOf(live() ? state.now : state.until))}`;
   }
 
-  function avatar(name) {
-    let hash = 2166136261;
-    for (const char of String(name)) {
-      hash = Math.imul(hash ^ char.codePointAt(0), 16777619) >>> 0;
-    }
-    return EMOJI[hash % EMOJI.length];
-  }
-  const face = (name, big) => h("span", {class: big ? "avatar big" : "avatar", "aria-hidden": "true"}, avatar(name));
+  const faceParts = (key) => Faces.of(key).parts.map(([tag, attrs]) => s(tag, attrs));
+  const talking = (key) => Boolean(speech.current && speech.current.who === key);
+  const face = (who, big) => {
+    const key = agentKey(who);
+    return h("span", {class: `avatar${big ? " big" : ""}${talking(key) ? " speaking" : ""}`, "data-face": key, "aria-hidden": "true"},
+      s("svg", {class: "face-art", viewBox: `0 0 ${Faces.SIZE} ${Faces.SIZE}`, focusable: "false"}, faceParts(key)));
+  };
   const person = (name) => (name && name !== "-" && name !== "all" && name !== HUMAN ? h("button", {type: "button", class: "linkish", title: `Open ${name}`, on: {click: () => openAgent(name)}}, name) : dash(name));
   const people = () => state.people || {};
   const labelOf = (key) => (people()[key] || {name: String(key).replace(/^name:/, "")}).name;

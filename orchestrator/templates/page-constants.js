@@ -4,7 +4,6 @@
   const DAY = 86400;
   const HUMAN = "Operator";
   const PRESETS = [[3600, "1 h"], [21600, "6 h"], [DAY, "24 h"], [7 * DAY, "7 d"], [0, "all"], [-1, "custom"]];
-  const EMOJI = ["🦊", "🐙", "🦉", "🐝", "🐢", "🦄", "🐳", "🦋", "🐧", "🦁", "🐼", "🐨", "🦜", "🐬", "🦀", "🐸", "🦔", "🦩", "🐞", "🌵", "🍀", "🌻", "🍄", "🌙", "⭐", "🔥", "🌊", "⚡", "🎈", "🎲", "🧭", "🚀", "🪐", "🔭", "🧩", "🎯", "🪁", "🧪", "🔮", "🗿", "🌋", "🍉", "🍋", "🥨", "🐋", "🦚", "🐌", "🌈"];
   const PARTS = [["user", "User"], ["assistant", "Assistant"], ["tool_call", "Tool call"], ["tool_result", "Tool result"], ["system", "System"]];
   const PART_TONES = {user: "info", assistant: "ok", tool_call: "violet", tool_result: "teal", system: "neutral"};
   const KIND_TONES = {radio: "teal", review: "info", ask: "warn", decision: "violet", operator: "bad", register: "neutral", rename: "info", cron: "teal", rule: "ok", approval: "ok", run: "info", transcript: "neutral"};

@@ -77,6 +77,7 @@ VOICE = HUB / "templates" / "voice.js"
 SPACE = HUB / "templates" / "space.js"
 NAV = HUB / "templates" / "nav.js"
 POPUP = HUB / "templates" / "popup.js"
+FACES = HUB / "templates" / "faces.js"
 
 
 class FakeScripts:

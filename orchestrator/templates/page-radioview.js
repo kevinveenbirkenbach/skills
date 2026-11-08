@@ -57,18 +57,21 @@
 
   function speakerChips() {
     return Object.entries(people()).sort(([, a], [, b]) => a.now.localeCompare(b.now)).map(([key, entry]) => h("li", {class: "speaker", "data-key": key, title: entry.now},
-      h("span", {class: "speaker-face"}, face(entry.now, false)), h("span", {class: "speaker-name"}, entry.now)));
+      h("span", {class: "speaker-face"}, face(key, false)), h("span", {class: "speaker-name"}, entry.now)));
   }
 
   function drawSpeaker() {
     const now = speech.current && speech.current.who ? speech.current : null;
+    for (const art of document.querySelectorAll(".avatar[data-face]")) {
+      art.classList.toggle("speaking", Boolean(now && art.dataset.face === now.who));
+    }
     if (radioDom) {
       for (const chip of radioDom.speakers.querySelectorAll(".speaker")) {
         chip.classList.toggle("speaking", Boolean(now && chip.dataset.key === now.who));
       }
       radioDom.caption.hidden = !now;
       radioDom.caption.replaceChildren(...(now ? [
-        h("span", {class: "speaker-face"}, face(nameOf(now.who), false)),
+        h("span", {class: "speaker-face"}, face(now.who, false)),
         h("strong", {}, `${nameOf(now.who)} speaking`),
         h("span", {class: "caption-line", title: now.line}, now.line),
         iconBtn("bi-stop-fill", "Stop speaking", "btn small ghost", cancelSpeech),

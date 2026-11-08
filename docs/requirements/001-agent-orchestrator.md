@@ -603,9 +603,9 @@ flowchart TD
 
 ### Phase 6: faces (S3)
 
-- [ ] The face generator yields at least 1000 distinct attribute
+- [x] The face generator yields at least 1000 distinct attribute
       combinations and the same face for the same agent id (unit test).
-- [ ] A speaking agent's face animates its mouth; a silent one does not
+- [x] A speaking agent's face animates its mouth; a silent one does not
       (DOM test on the class while the radio plays).
 
 ### Phase 6: night commands (S4)

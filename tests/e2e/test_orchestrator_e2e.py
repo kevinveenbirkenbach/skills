@@ -243,7 +243,9 @@ POPUP_ORBIT = """(async () => {@HELPERS@@POPUPS@
   const flat = !tall();
   click(pick());
   await sleep(400);
-  const shown = {...opened(), ...look(pick()), sections: all("h3", box).map((head) => head.firstChild.textContent), composer: Boolean(box.querySelector("form textarea")), offices: text(box.querySelector(".popup-body p"))};
+  const art = box.querySelector(".popup-head .avatar.big");
+  const face = art ? {key: art.dataset.face, svg: Boolean(art.querySelector("svg.face-art .mouth")), text: art.textContent} : null;
+  const shown = {...opened(), ...look(pick()), sections: all("h3", box).map((head) => head.firstChild.textContent), composer: Boolean(box.querySelector("form textarea")), offices: text(box.querySelector(".popup-body p")), face};
   const gone = await away(pick);
   click(pick());
   await sleep(300);
@@ -491,12 +493,18 @@ SPEAKING = """
     return node && !node.hidden ? node : null;
   };
   const ring = (chip) => (chip ? getComputedStyle(chip.querySelector(".speaker-face"), "::after").animationName : null);
+  const mouth = (art) => (art ? [art.classList.contains("speaking"), getComputedStyle(art.querySelector(".mouth")).animationName] : null);
+  const faces = () => ({
+    speaking: mouth(document.querySelector('#main .speakers .avatar[data-face="s2"]')),
+    silent: mouth(document.querySelector('#main .speakers .avatar[data-face="s1"]')),
+    keys: [...new Set(all("#main .avatar.speaking").map((art) => art.dataset.face))],
+  });
   const cue = async (word) => {
     await until(() => document.querySelector("#main .speakers .speaker"), 8000);
     await fetch("/api/tts", {method: "POST", headers: {"X-Kvb-Orchestrator": "1", "Content-Type": "application/json"}, body: JSON.stringify({text: word, voice: ""}), cache: "no-store"});
     const found = await until(caption, 25000);
     const chip = document.querySelector("#main .speaker.speaking");
-    return found ? {who: text(found.querySelector("strong")), line: text(found.querySelector(".caption-line")), chip: chip ? chip.dataset.key : null, ring: ring(chip)} : {error: "no caption", toasts: all("#toasts .toast").map(text)};
+    return found ? {who: text(found.querySelector("strong")), line: text(found.querySelector(".caption-line")), chip: chip ? chip.dataset.key : null, ring: ring(chip), faces: faces()} : {error: "no caption", toasts: all("#toasts .toast").map(text)};
   };
 """
 SPEAK = """(async () => {@HELPERS@@SPEAKING@
@@ -505,14 +513,18 @@ SPEAK = """(async () => {@HELPERS@@SPEAKING@
 SPEAK_GRAPH = """(async () => {@HELPERS@@SPEAKING@
   location.hash = "#agents/orbit";
   const node = await until(() => document.querySelector("#main svg .node.speaking"), 6000);
-  return {node: node ? node.getAttribute("aria-label") : null, ring: node ? getComputedStyle(node.querySelector("circle")).animationName : null};
+  const silent = document.querySelector('#main svg .node[data-pick="s1"] .mouth');
+  return {
+    node: node ? node.getAttribute("aria-label") : null, ring: node ? getComputedStyle(node.querySelector("circle")).animationName : null,
+    mouth: node ? getComputedStyle(node.querySelector(".mouth")).animationName : null, silent: silent ? getComputedStyle(silent).animationName : null,
+  };
 })()""".replace("@HELPERS@", HELPERS).replace("@SPEAKING@", SPEAKING)
 SPEAK_END = """(async () => {@HELPERS@@SPEAKING@
   const ended = Boolean(await until(() => !document.querySelector("#main svg .node") || !document.querySelector("#main svg .node.speaking"), 20000));
   location.hash = "#stream/radio";
   await until(() => document.querySelector("#main .radio-caption"), 6000);
   await sleep(300);
-  return {ended, caption: Boolean(caption()), chips: all("#main .speaker.speaking").length};
+  return {ended, caption: Boolean(caption()), chips: all("#main .speaker.speaking").length, faces: all("#main .avatar.speaking").length};
 })()""".replace("@HELPERS@", HELPERS).replace("@SPEAKING@", SPEAKING)
 COMPOSE = """(async () => {@HELPERS@
   const form = await until(() => document.querySelector("#main form.composer"), 8000);
@@ -908,6 +920,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertNotIn("error", artifact)
                 self.assertTrue(agent["flat"], "#agents/orbit scrolls")
                 self.popped(agent, "Stage")
+                self.assertEqual(agent["shown"]["face"], {"key": "s2", "svg": True, "text": ""})
                 self.assertEqual(agent["shown"]["sections"], ["Tasks", "Claims", "Subagents", "History"])
                 self.assertTrue(agent["shown"]["composer"])
                 self.assertRegex(agent["shown"]["offices"], r"^Offices: .*identity/oidc")
@@ -1079,11 +1092,32 @@ class TestOrchestratorE2E(HubCase):
         (OUT / "chromium-speaking.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
         speaking, graph, ended, calm = data["results"]
-        self.assertEqual((speaking["who"], speaking["line"], speaking["chip"], speaking["ring"]), ("Stage speaking", "Disk almost full (e2e-cue-1)", "s2", "speaking"), speaking)
-        self.assertEqual((graph["node"] or "").split(",")[0], "Stage", graph)
-        self.assertEqual(graph["ring"], "speaking-node")
-        self.assertEqual(ended, {"ended": True, "caption": False, "chips": 0})
+        self.talks(speaking, graph)
+        self.assertEqual(ended, {"ended": True, "caption": False, "chips": 0, "faces": 0})
         self.assertEqual((calm["who"], calm["line"], calm["ring"]), ("Stage speaking", "Disk almost full (e2e-cue-2)", "none"), calm)
+        self.assertEqual(calm["faces"]["speaking"], [True, "none"], calm)
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_shows_who_speaks_and_moves_only_the_speakers_mouth(self):
+        self.speaks(("e2e-cue-1",))
+        steps = [
+            {"width": 1366, "height": 768, "url": f"{self.base}#stream/radio", "wait": 900, "probe": SPEAK.replace("@CUE@", "e2e-cue-1"), "shot": str(OUT / "firefox-1366-radio-speaking.png"), "gesture": True},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": SPEAK_GRAPH, "shot": str(OUT / "firefox-1366-agents-speaking.png")},
+        ]
+        data = self.drive(steps, None, "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
+        (OUT / "firefox-speaking.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])
+        self.talks(*data["results"])
+
+    def talks(self, speaking: dict, graph: dict) -> None:
+        """Args:
+            speaking: the SPEAK probe while Stage (s2) is read aloud.
+            graph: the SPEAK_GRAPH probe on #agents/orbit right after it.
+        """
+        self.assertEqual((speaking["who"], speaking["line"], speaking["chip"], speaking["ring"]), ("Stage speaking", "Disk almost full (e2e-cue-1)", "s2", "speaking"), speaking)
+        self.assertEqual(speaking["faces"], {"speaking": [True, "talk"], "silent": [False, "none"], "keys": ["s2"]}, speaking)
+        self.assertEqual((graph["node"] or "").split(",")[0], "Stage", graph)
+        self.assertEqual((graph["ring"], graph["mouth"], graph["silent"]), ("speaking-node", "talk", "none"), graph)
 
     def test_chromium_records_transcribes_and_sends_a_signed_call_with_voice(self):
         local = f"http://localhost:{self.port}/"

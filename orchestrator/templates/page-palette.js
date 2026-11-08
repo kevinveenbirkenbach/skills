@@ -4,7 +4,7 @@
       ...["agents", "artifacts", "tasks"].flatMap((screen) => Nav.viewsOf(screen).map(([id, name]) => ({label: `${Nav.TABS.find(([tab]) => tab === screen)[1]}: ${name}`, hint: Nav.hashOf(screen, id), run: () => go(screen, id)}))),
       ...Object.entries(state.views).map(([id, view]) => ({label: `Stream: ${view.label}`, hint: "Category", run: () => useView(id)})),
       ...userViews.map((view) => ({label: `Stream: ${view.name}`, hint: "saved view", run: () => useSaved(view)})),
-      ...agentNames().map((name) => ({label: `${avatar(name)} ${name}`, hint: "Agent", run: () => openAgent(name)})),
+      ...agentNames().map((name) => ({label: name, hint: "Agent", face: name, run: () => openAgent(name)})),
       {label: "Radio to all …", hint: "Newsletter, Broadcast, Pan-Pan, Security, Mayday", run: openToAll},
       ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Day/Night", run: () => confirmAct(id)})),
       {label: "Priority …", hint: "agent order in the hierarchy", run: openAgentOrder},
@@ -40,7 +40,7 @@
           drawPalette();
         }
       },
-    }}, h("span", {}, item.label), h("span", {class: "muted"}, item.hint))));
+    }}, h("span", {class: item.face ? "who" : null}, item.face ? face(item.face, false) : null, item.label), h("span", {class: "muted"}, item.hint))));
     const current = palette.list.children[palette.index];
     if (current) {
       current.scrollIntoView({block: "nearest"});
