@@ -610,11 +610,11 @@ flowchart TD
 
 ### Phase 6: night commands (S4)
 
-- [ ] `kvb-org-drain`, `kvb-org-suspend`, `kvb-org-resume`,
+- [x] `kvb-org-drain`, `kvb-org-suspend`, `kvb-org-resume`,
       `kvb-agent-drain`, `kvb-agent-suspend` and `kvb-agent-resume` exist;
       the old six names exist nowhere in the tree except in the migration
       and `kvb-skill-cleanup` history (grep test).
-- [ ] The Controls menu shows Drain, Suspend and Resume and each needs the
+- [x] The Controls menu shows Drain, Suspend and Resume and each needs the
       passkey, like the board actions today.
 
 ### Phase 6: Tasks with asks and choices (S5)

@@ -18,9 +18,9 @@ Operate as an autonomous robot: given a goal, reach it without hand-holding.
   blocker is something to solve or route around, not a reason to quit; if one
   step is genuinely, externally impossible, surface exactly why and keep working
   on everything else until nothing solvable remains. The one exception is the
-  operator's night: when `kvb-org-evening` or `kvb-org-sunset` reaches this
-  session, the run stops at its next safe point through `kvb-agent-relax` or
-  `kvb-agent-sleep`, and `kvb-agent-wakeup` resumes it from the handover.
+  operator's night: when `kvb-org-drain` or `kvb-org-suspend` reaches this
+  session, the run stops at its next safe point through `kvb-agent-drain` or
+  `kvb-agent-suspend`, and `kvb-agent-resume` resumes it from the handover.
 - **Stay inside your clearance.** Use ONLY commands you are pre-authorized to
   run. Never invoke anything the agent or tool settings mark as denied or as
   requiring per-invocation approval (ask): no commit, push, deploy, or other

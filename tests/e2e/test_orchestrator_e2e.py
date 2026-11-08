@@ -580,6 +580,44 @@ CLEAR_MAYDAY = """(async () => {@HELPERS@
   const done = await until(() => all("#toasts .toast").map(text).find((toast) => toast.startsWith("Cancel mayday")), 15000);
   return {done, toasts: all("#toasts .toast").map(text)};
 })()""".replace("@HELPERS@", HELPERS)
+NIGHT_MENU = """(async () => {@HELPERS@
+  const questions = [];
+  window.confirm = (question) => {
+    questions.push(question);
+    return true;
+  };
+  let asked = 0;
+  const get = navigator.credentials.get.bind(navigator.credentials);
+  navigator.credentials.get = (options) => {
+    asked += 1;
+    return @SIGNS@ ? get(options) : Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
+  };
+  const posted = [];
+  const send = window.fetch.bind(window);
+  window.fetch = (path, init) => {
+    if (String(path).startsWith("/api/board/")) {
+      const body = JSON.parse(init.body);
+      posted.push([String(path), Object.keys(body), body.action || null]);
+    }
+    return send(path, init);
+  };
+  const menu = await until(() => all('#main [role="toolbar"] details.menu').find((node) => name(node.querySelector("summary")) === "Day/Night"), 8000);
+  if (!menu) {
+    return {error: text(document.getElementById("main"))};
+  }
+  menu.open = true;
+  const buttons = all(".actions button", menu);
+  const runs = [];
+  for (const button of buttons) {
+    const label = name(button);
+    const [before, prompts, sent] = [asked, questions.length, posted.length];
+    const shown = new Set(all("#toasts .toast"));
+    button.click();
+    const toast = await until(() => all("#toasts .toast").filter((box) => !shown.has(box)).map(text).find((entry) => entry.startsWith(`${label}:`)), 15000);
+    runs.push({label, question: questions.slice(prompts), asked: asked - before, posted: posted.slice(sent), toast});
+  }
+  return {labels: buttons.map(name), runs};
+})()""".replace("@HELPERS@", HELPERS)
 
 
 def tone(seconds: int, rate: int) -> bytes:
@@ -1048,7 +1086,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual((actions["settingsUnlabelled"], actions["popupUnlabelled"]), (0, 0))
         self.assertEqual([name for name, _, _ in actions["speech"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
         self.assertEqual([entry[1:] for entry in actions["speech"] if entry[0] == "MAYDAY"], [[True, True]])
-        for tool in ("Radio to all …", "Cancel mayday", "Priority …", "Evening", "Firewall …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
+        for tool in ("Radio to all …", "Cancel mayday", "Priority …", "Drain", "Suspend", "Resume", "Firewall …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
             with self.subTest(tool=tool):
                 self.assertTrue(any(tool in entry for entry in actions["palette"]), actions["palette"])
         self.assertEqual(actions["popup"], [["post", True], ["call", False]])
@@ -1160,6 +1198,45 @@ class TestOrchestratorE2E(HubCase):
         self.assertNotIn("error", result)
         self.assertTrue((result["done"] or "").startswith("Cancel mayday: done"), result)
         self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])])
+
+    def check_night_menu(self, browser: str, driver: str, binary: str, signs: bool) -> None:
+        """Args:
+            signs: cdp.mjs signs every prompt with its virtual passkey; bidi.mjs
+                has no virtual authenticator, so the probe answers each prompt
+                the way a canceled passkey dialog does.
+        """
+        authenticator = self.authenticator()
+        probe = NIGHT_MENU.replace("@SIGNS@", "true" if signs else "false")
+        step = {"width": 1366, "height": 768, "url": f"http://localhost:{self.port}/#agents/orbit", "wait": 1200, "probe": probe, "shot": str(OUT / f"{browser}-1366-night-menu.png")}
+        data = self.drive([step], authenticator if signs else None, driver, binary)
+        (OUT / f"{browser}-night-menu.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        found = data["results"][0]
+        self.assertNotIn("error", found)
+        self.assertEqual(found["labels"], ["Drain", "Suspend", "Resume"])
+        for run, action in zip(found["runs"], ("drain", "suspend", "resume"), strict=True):
+            with self.subTest(browser=browser, action=action):
+                self.assertEqual(run["asked"], 1, run)
+                self.assertEqual(len(run["question"]), 1, run)
+                self.assertIn(f"kvb-agent-{action}", run["question"][0])
+                signed = [["/api/board/sign", ["action"], action]]
+                if signs:
+                    self.assertEqual(run["posted"], [*signed, [f"/api/board/{action}", ["proof"], None]])
+                    self.assertTrue((run["toast"] or "").startswith(f"{run['label']}: done"), run)
+                else:
+                    self.assertEqual(run["posted"], signed)
+                    self.assertTrue((run["toast"] or "").startswith(f"{run['label']}: not signed"), run)
+        nights = [args for script, args in self.scripts.calls if script == skill_scripts.NIGHT]
+        self.assertEqual(nights, [[action, "--session", "Operator"] for action in ("drain", "suspend", "resume")] if signs else [])
+        if not signs:
+            self.assertEqual(self.scripts.calls, [])
+
+    def test_chromium_runs_drain_suspend_and_resume_only_after_the_passkey_signs(self):
+        self.check_night_menu("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"), signs=True)
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_asks_the_passkey_for_drain_suspend_and_resume_and_runs_nothing_unsigned(self):
+        self.check_night_menu("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"), signs=False)
 
     def test_chromium_deletes_a_merged_branch_after_dry_run_and_signature(self):
         tree = json.loads(self.tree_file.read_text(encoding="utf-8"))

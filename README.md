@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `agent`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `check` analyses and reports findings, `org` coordinates agents, `agent` acts on one agent itself: its repository setup (code index, agent instructions) and its state (relax, sleep, wake up), `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `agent`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `check` analyses and reports findings, `org` coordinates agents, `agent` acts on one agent itself: its repository setup (code index, agent instructions) and its state (drain, suspend, resume), `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -81,17 +81,17 @@ flowchart LR
   org --> org_robot[kvb-org-robot]
   org --> org_operator[kvb-org-operator]
   org --> org_priority[kvb-org-priority]
-  org --> org_evening[kvb-org-evening]
-  org --> org_sunset[kvb-org-sunset]
-  org --> org_sunrise[kvb-org-sunrise]
+  org --> org_drain[kvb-org-drain]
+  org --> org_suspend[kvb-org-suspend]
+  org --> org_resume[kvb-org-resume]
   think --> think_choice[kvb-think-choice]
   org --> org_radio[kvb-org-radio]
   org --> org_queue[kvb-org-queue]
   org --> org_update[kvb-org-update]
   agent --> agent_optimize[kvb-agent-optimize]
-  agent --> agent_relax[kvb-agent-relax]
-  agent --> agent_sleep[kvb-agent-sleep]
-  agent --> agent_wakeup[kvb-agent-wakeup]
+  agent --> agent_drain[kvb-agent-drain]
+  agent --> agent_suspend[kvb-agent-suspend]
+  agent --> agent_resume[kvb-agent-resume]
   skill --> skill_tune[kvb-skill-tune]
   skill --> skill_auto[kvb-skill-auto]
   skill --> skill_essence[kvb-skill-essence]
@@ -189,18 +189,18 @@ flowchart LR
     robot[kvb-org-robot]
     operator[kvb-org-operator]
     priority[kvb-org-priority]
-    evening[kvb-org-evening]
-    sunset[kvb-org-sunset]
-    sunrise[kvb-org-sunrise]
+    org_drain[kvb-org-drain]
+    org_suspend[kvb-org-suspend]
+    org_resume[kvb-org-resume]
     radio[kvb-org-radio]
     queue[kvb-org-queue]
     org_update[kvb-org-update]
   end
   subgraph cat_agent [agent]
     agent_optimize[kvb-agent-optimize]
-    relax[kvb-agent-relax]
-    sleep[kvb-agent-sleep]
-    wakeup[kvb-agent-wakeup]
+    agent_drain[kvb-agent-drain]
+    agent_suspend[kvb-agent-suspend]
+    agent_resume[kvb-agent-resume]
   end
   subgraph cat_skill [skill]
     autotune[kvb-skill-tune]
@@ -345,13 +345,13 @@ flowchart LR
   optimize --> gaps
   agent_optimize -. install .-> operator
   agent_optimize -. domain graphs .-> rasci
-  evening -. message .-> relax
-  sunset -. message .-> sleep
-  sunrise -. message .-> wakeup
-  relax --> sleep
-  sunset -. hold and accept .-> operator
-  sunrise -. hold and accept .-> operator
-  sleep -. stops .-> robot
+  org_drain -. message .-> agent_drain
+  org_suspend -. message .-> agent_suspend
+  org_resume -. message .-> agent_resume
+  agent_drain --> agent_suspend
+  org_suspend -. hold and accept .-> operator
+  org_resume -. hold and accept .-> operator
+  agent_suspend -. stops .-> robot
   coach --> active_listening
   coach --> operator
   coach --> rasci

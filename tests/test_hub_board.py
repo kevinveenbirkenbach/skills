@@ -3,14 +3,16 @@ from __future__ import annotations
 import dataclasses
 import http.server
 import json
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 from urllib.parse import quote
 
 from hub_case import HubCase
-from hub_support import ASK, HOST_STATE, iso, key, server
+from hub_support import ASK, HOST_STATE, REPO_ROOT, iso, key, server
 from kvb_orchestrator import handler, messaging, skill_scripts, transcripts
 
 
@@ -67,11 +69,15 @@ class TestHubBoard(HubCase):
         now = time.time()
         self.write_council({
             "radio-silence.json": {"since": now, "until": now + 60, "by": "Docs", "text": "disk full"},
-            "night.json": {"mode": "evening", "active": "Operator", "awake": []},
+            "night.json": {"mode": "drain", "active": "Operator", "resumed": []},
             "rasci.json": {"work/a": {"worker": "A", "status": "running", "prio": 2}, "work/b": {"worker": "B session", "status": "queued", "prio": 1}, "work/c": {"worker": "C", "status": "done"}},
         })
         state = self.snapshot()
-        self.assertEqual((state["silence"]["by"], state["night"]), ("Docs", "evening"))
+        self.assertEqual((state["silence"]["by"], state["night"]), ("Docs", "drain"))
+        for old, new in (("evening", "drain"), ("sunset", "suspend"), (["sunset"], "day"), ("noon", "day")):
+            with self.subTest(old=old):
+                self.write_council({"night.json": {"mode": old, "active": "Operator", "awake": []}})
+                self.assertEqual(self.snapshot()["night"], new)
         self.assertEqual(state["agent_order"], ["B session", "A", "Gatekeeper", "Skills session"])
         self.write_council({"agent-order.json": {"agents": ["Gatekeeper", "Nobody", "A", "A"], "set": "2026-11-07T10:00:00+00:00"}})
         self.assertEqual(self.snapshot()["agent_order"], ["Gatekeeper", "A", "B session", "Skills session"])
@@ -101,27 +107,33 @@ class TestHubBoard(HubCase):
         self.assertEqual(len(self.scripts.calls), calls)
         self.assertEqual((self.council / "rasci.json").read_text(encoding="utf-8"), register)
         calls = len(self.scripts.calls)
-        self.assertEqual(board("evening", signed("evening"))[0], 200)
+        self.assertEqual(board("drain", signed("drain"))[0], 200)
         self.assertEqual(self.scripts.calls[calls:], [
-            (skill_scripts.NIGHT, ["set", "evening", "--session", "Operator"]),
-            (skill_scripts.RADIO, ["send", "call", "--to", "Gatekeeper", "--to", "Skills session", "--session", "Operator", messaging.NIGHTS["evening"][1]]),
+            (skill_scripts.NIGHT, ["drain", "--session", "Operator"]),
+            (skill_scripts.RADIO, ["send", "call", "--to", "Gatekeeper", "--to", "Skills session", "--session", "Operator", messaging.NIGHTS["drain"][1]]),
         ])
-        self.assertEqual(board("sunrise", signed("sunrise"))[0], 200)
-        self.assertEqual(self.scripts.calls[-2][1], ["clear", "--session", "Operator"])
+        self.assertIn("run kvb-agent-drain;", messaging.NIGHTS["drain"][1])
+        self.assertEqual(board("resume", signed("resume"))[0], 200)
+        self.assertEqual(self.scripts.calls[-2][1], ["resume", "--session", "Operator"])
+        self.assertIn("run kvb-agent-resume;", self.scripts.calls[-1][1][-1])
         self.scripts.code = 1
         calls = len(self.scripts.calls)
-        status, result = board("sunset", signed("sunset"))
-        self.assertEqual((status, result["ok"], self.scripts.calls[calls:]), (200, False, [(skill_scripts.NIGHT, ["set", "sunset", "--session", "Operator"])]))
+        status, result = board("suspend", signed("suspend"))
+        self.assertEqual((status, result["ok"], self.scripts.calls[calls:]), (200, False, [(skill_scripts.NIGHT, ["suspend", "--session", "Operator"])]))
         self.assertEqual(board("reboot", {})[0], 404)
+        for old in ("evening", "sunset", "sunrise"):
+            with self.subTest(old=old):
+                self.assertEqual(board(old, {})[0], 404)
         self.assertEqual(board("broadcast", {"text": " ", "class": "newsletter", "voice": "", "proof": None})[0], 400)
-        self.assertEqual(self.post_json("/api/board/sunset", {}, {"Host": self.host, "Origin": f"http://{self.host}"})[0], 403)
-        self.assertEqual(self.get("/api/board/sunset")[0], 405)
+        self.assertEqual(self.post_json("/api/board/suspend", {}, {"Host": self.host, "Origin": f"http://{self.host}"})[0], 403)
+        self.assertEqual(self.get("/api/board/suspend")[0], 405)
 
     def test_board_actions_that_speak_for_the_operator_need_the_passkey(self):
         self.claim("s1", "Skills session")
         signer = self.pin()
         good = self.guard(self.host)
-        for action, other in (("clear-mayday", "sunrise"), ("evening", "sunset"), ("sunset", "evening"), ("sunrise", "clear-mayday")):
+        self.assertEqual(messaging.SIGNED_BOARD, ("clear-mayday", "drain", "suspend", "resume"))
+        for action, other in (("clear-mayday", "resume"), ("drain", "suspend"), ("suspend", "drain"), ("resume", "clear-mayday")):
             with self.subTest(action=action):
                 self.assertEqual(self.post_json(f"/api/board/{action}", {}, good)[0], 400)
                 self.assertEqual(self.post_json(f"/api/board/{action}", {"proof": None}, good)[:3:2], (400, b"not signed: no signature\n"))
@@ -134,12 +146,22 @@ class TestHubBoard(HubCase):
         self.assertEqual(self.post_json("/api/board/clear-mayday", {"proof": proof}, good)[0], 200)
         self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])])
         self.assertEqual(self.post_json("/api/board/clear-mayday", {"proof": proof}, good)[:3:2], (400, b"not signed: this signature was already used for this item\n"))
-        for payload in ({"action": "order"}, {"action": "broadcast"}, {"action": "reboot"}, {"action": 1}, {}, {"action": "evening", "extra": 1}):
+        for payload in ({"action": "order"}, {"action": "broadcast"}, {"action": "reboot"}, {"action": "sunset"}, {"action": 1}, {}, {"action": "drain", "extra": 1}):
             with self.subTest(payload=payload):
                 self.assertEqual(self.post_json("/api/board/sign", payload, good)[0], 400)
-        self.assertEqual(self.post_json("/api/board/sign", {"action": "evening"}, self.client())[0], 403)
+        self.assertEqual(self.post_json("/api/board/sign", {"action": "drain"}, self.client())[0], 403)
         self.assertEqual(self.get("/api/board/sign")[0], 405)
         self.assertEqual(len(self.scripts.calls), 1)
+
+    def test_every_night_action_is_a_command_the_shipped_night_script_takes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scripts = skill_scripts.Scripts(skills=REPO_ROOT / "skills", council=Path(tmp) / "council", home=Path(tmp))
+            for action, (command, _) in messaging.NIGHTS.items():
+                with self.subTest(action=action):
+                    run = scripts.run(skill_scripts.NIGHT, [*command, "--session", "Operator"])
+                    self.assertEqual(run["code"], 0, run["stderr"])
+                    status = scripts.run(skill_scripts.NIGHT, ["status", "--session", "Operator"])["stdout"].splitlines()
+                    self.assertEqual(status[0], "mode: day" if action == "resume" else f"mode: {action}")
 
     def test_nl_actions_are_validated_against_a_faked_endpoint(self):
         status, _, body = self.post_json("/api/nl", {"text": "approve all"}, self.guard(self.host))

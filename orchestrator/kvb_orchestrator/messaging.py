@@ -13,9 +13,9 @@ from .signed import message_signed, signing
 from .skill_scripts import NIGHT, RADIO, RASCI
 
 NIGHTS = {
-    "evening": (["set", "evening"], "Operator ran kvb-org-evening in the Agent Orchestrator: run kvb-agent-relax; verify with night.py status."),
-    "sunset": (["set", "sunset"], "Operator ran kvb-org-sunset in the Agent Orchestrator: run kvb-agent-sleep; verify with night.py status."),
-    "sunrise": (["clear"], "Operator ran kvb-org-sunrise: run kvb-agent-wakeup; verify with night.py status."),
+    "drain": (["drain"], "Operator ran kvb-org-drain in the Agent Orchestrator: run kvb-agent-drain; verify with night.py status."),
+    "suspend": (["suspend"], "Operator ran kvb-org-suspend in the Agent Orchestrator: run kvb-agent-suspend; verify with night.py status."),
+    "resume": (["resume"], "Operator ran kvb-org-resume: run kvb-agent-resume; verify with night.py status."),
 }
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 DIRECT = {"post": ["post"], "call": ["send", "call"]}

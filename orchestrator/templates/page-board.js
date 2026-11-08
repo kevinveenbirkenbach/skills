@@ -65,7 +65,7 @@
     const clear = iconBtn("bi-life-preserver", "Cancel mayday", "btn small danger", () => confirmAct("clear-mayday"));
     const mode = h("span", {});
     const night = h("details", {class: "menu"}, h("summary", named("Day/Night"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box"}, mode,
-      h("p", {class: "muted"}, "Evening: agents finish their task. Sunset: they sleep. Sunrise: all wake up."),
+      h("p", {class: "muted"}, "Drain: agents finish their task and take nothing new. Suspend: they park their work and idle. Resume: all continue from the handover. Your passkey signs each."),
       h("div", {class: "actions"}, ACTIONS.slice(1).map(([id, label]) => btn(label, "btn small", () => confirmAct(id))))));
     return {bar: h("div", {class: "toolbar", role: "toolbar", "aria-label": "Controls"}, toAll(), clear, iconBtn("bi-sort-down", "Priority", "btn small", openAgentOrder, "Priority: agent order in the hierarchy"), night), clear, mode};
   }

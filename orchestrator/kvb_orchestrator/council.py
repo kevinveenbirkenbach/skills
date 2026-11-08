@@ -14,7 +14,8 @@ CLASSES = ("post", "call", "newsletter", "broadcast", "mayday", "pan-pan", "secu
 RECEIPT = "receipt"
 ALARMS = ("mayday", "pan-pan", "security")
 VERSION = 2
-MODES = ("evening", "sunset")
+MODES = ("drain", "suspend")
+RENAMED_MODES = {"evening": "drain", "sunset": "suspend"}
 RADIO_LIMIT = 5000
 GRANT_LIMIT = 50
 MAYDAY_ACTIVE = 7200
@@ -154,8 +155,17 @@ def grants(rows: list[dict], window: tuple[float, float], claims: list[dict], ta
 
 
 def night_mode(council: Path) -> str:
+    """Args:
+        council: the council directory; night.json in it may still hold a
+            mode from before the rename, read as its successor.
+
+    Returns:
+        One of MODES, or day.
+    """
     data = read_json(council / "night.json")
     mode = data.get("mode") if isinstance(data, dict) else None
+    if isinstance(mode, str):
+        mode = RENAMED_MODES.get(mode, mode)
     return mode if mode in MODES else "day"
 
 
