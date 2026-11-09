@@ -13,6 +13,10 @@
   const ROLE_WORDS = {R: "Responsible", A: "Accountable", S: "Supportive", C: "Consulted", I: "Informed"};
   const MATRIX_PARTIES = 40;
   const taskView = {filter: "all", q: "", dom: null, sig: "", sort: "prio", descending: false, forecast: "always", scope: "all", picked: new Set(), plan: null, bulk: null};
+  const ETA_HINTS = {
+    true: "ETA: its start, or for a task not yet started now or the latest ETA of its predecessors, plus the forecast length of the estimation mode",
+    false: "ETA: the end of the ended task",
+  };
 
   const columnOf = (row) => (TASK_COLUMNS.some(([id]) => id === row.status) ? row.status : "queued");
   const branchOf = (row) => row.worktree_branch || (row.branch !== "-" ? row.branch : "");
@@ -54,11 +58,20 @@
     return h("button", {type: "button", class: "linkish", title: `Open ${row.task}`, on: {click: () => taskSheet(row.task)}}, row.kind === "command" ? h("code", {}, titleOf(row)) : titleOf(row));
   }
 
-  function taskItem(row) {
+  const etaOf = () => Plan.etas(state.tasks, state.task_edges, {now: state.now, estimation: settings.estimation});
+
+  function etaMark(found) {
+    const known = Boolean(found) && found.eta !== null;
+    const forecast = Boolean(found) && found.forecast;
+    return h("span", {class: "task-eta", "data-eta": known ? String(found.eta) : "", "data-start": found && found.start !== null ? String(found.start) : "", "data-forecast": String(forecast), title: ETA_HINTS[forecast]},
+      icon("bi-flag"), "ETA ", known ? absolute.format(stampOf(found.eta)) : "–");
+  }
+
+  function taskItem(row, eta) {
     const classes = ["task-row", row.open_work.length ? "open-work" : "", row.ended ? "ended" : ""].filter(Boolean).join(" ");
     const pick = row.editable ? h("input", {type: "checkbox", class: "task-pick", "aria-label": `Select ${row.task}`, title: `Select ${row.task} for a bulk business value`, checked: taskView.picked.has(row.task), on: {change: (event) => pickTask(row.task, event.target.checked)}}) : null;
     return h("li", {class: classes, "data-task": row.task, "data-kind": row.kind, "data-status": row.status},
-      h("div", {class: "head-row"}, pick, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}),
+      h("div", {class: "head-row"}, pick, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}), etaMark(eta),
         row.editable ? iconBtn("bi-sort-numeric-down", "Priority", "btn small soft", () => taskSheet(row.task), `Priority and WSJF of ${row.task}: pin or estimate, signed with the passkey`) : null),
       opener(row),
       row.objective !== "-" ? h("div", {class: "muted"}, `Objective: ${row.objective}`) : null,
@@ -110,6 +123,32 @@
     return h("div", {class: "matrix-box"}, h("div", {class: "matrix-scroll"}, table), legend);
   }
 
+  function taskModel3d() {
+    const rows = shownTasks();
+    const ids = new Set(rows.map((row) => row.task));
+    const starts = new Map(Plan.bars(rows, state.task_edges, {now: state.now, estimation: settings.estimation, forecast: "always"}).map((bar) => [bar.task, bar.start]));
+    const toneOf = (row) => TONE_ROLES[Object.hasOwn(TASK_STATUS, row.status) ? TASK_STATUS[row.status][1] : "neutral"];
+    return {
+      nodes: rows.map((row) => ({id: row.task, kind: "task", label: `${row.task} · ${titleOf(row)}`, tone: toneOf(row), depth: 0, ts: starts.get(row.task), parent: null})),
+      links: state.task_edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to) && edge.from !== edge.to).map((edge) => ({source: edge.from, target: edge.to, kind: edge.kind})),
+    };
+  }
+
+  function taskSelect(id, anchor, closed) {
+    const row = state.tasks.find((entry) => entry.task === id);
+    if (!row) {
+      return;
+    }
+    const at = (ts) => (ts === null ? "" : absolute.format(stampOf(ts)));
+    const open = h("button", {type: "button", class: "btn small soft", ...named("Open task", `Open ${row.task}: priority, WSJF, RASCI and signed changes`), on: {click: () => {
+      closePopup();
+      taskSheet(row.task);
+    }}}, icon("bi-box-arrow-up-right"), "Open");
+    openPopup(row.task, [popupHead(icon(Nav.ICONS.tasks), titleOf(row), h("code", {class: "task-id"}, row.task)), h("div", {class: "popup-body"},
+      h("div", {class: "states"}, taskBadges(row, true)), meta([["Worker", row.worker], ["Branch", branchOf(row)], ["Start", at(row.start)], ["End", at(row.end)]]),
+      etaMark(etaOf().get(row.task)), h("div", {class: "actions"}, open))], anchor, closed);
+  }
+
   function chooseTaskFilter(id) {
     if (id === "operator") {
       go("inbox", null);
@@ -146,12 +185,21 @@
       taskView.q = event.target.value;
       drawTasks();
     }}});
-    const body = inbox ? inboxScreen() : h("div", {class: "tasks-body"});
-    taskView.dom = {chips, count, body, inbox, view};
+    const stage = !inbox && view === "3d" ? h("div", {class: "stage"}) : null;
+    const body = inbox ? inboxScreen() : stage ? h("div", {class: "card stage-card tasks-body"}, layoutTools("tasks"), stage) : h("div", {class: "tasks-body"});
+    taskView.dom = {chips, count, body, inbox, view, stage};
     taskView.sig = "";
     taskView.plan = null;
     taskView.bulk = null;
-    return h("div", {class: "graph tasks"}, h("div", {class: "card controls"}, taskViewSwitch(inbox), search, count), inbox ? null : planBar(view), choiceBar(), chips, body);
+    const bar = h("div", {class: "card controls task-toolbar", role: "toolbar", "aria-label": "Tasks"}, taskViewSwitch(inbox), search, count, inbox ? null : planTools(view), choiceMenu());
+    return h("div", {class: "graph tasks"}, bar, chips, body);
+  }
+
+  function shownTasks() {
+    const q = taskView.q.trim().toLowerCase();
+    const [, , , test] = TASK_FILTERS.find(([id]) => id === taskView.filter);
+    const hit = (row) => !q || [row.task, row.title, row.worker, row.branch, row.workdir, row.objective].some((text) => String(text).toLowerCase().includes(q));
+    return state.tasks.filter(test).filter(hit);
   }
 
   function drawTasks() {
@@ -159,8 +207,11 @@
     if (!dom) {
       return;
     }
+    if (dom.stage) {
+      stage3d("tasks", dom.stage);
+    }
     const q = taskView.q.trim().toLowerCase();
-    const sig = JSON.stringify([state.tasks, state.jobs, state.task_edges, settings.estimation, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
+    const sig = JSON.stringify([state.tasks, state.jobs, state.task_edges, settings.estimation, settings.trend, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
     if (sig === taskView.sig) {
       return;
     }
@@ -178,12 +229,16 @@
       dom.count.textContent = `${rows.length} tasks in the register`;
       return;
     }
-    const [, , , test] = TASK_FILTERS.find(([id]) => id === taskView.filter);
-    const hit = (row) => !q || [row.task, row.title, row.worker, row.branch, row.workdir, row.objective].some((text) => String(text).toLowerCase().includes(q));
-    const shown = rows.filter(test).filter(hit);
+    const shown = shownTasks();
     dom.count.textContent = `${shown.length} of ${rows.length} tasks`;
+    if (dom.stage) {
+      return;
+    }
     const views = {
-      list: (found) => h("ol", {class: "task-list"}, Plan.sortRows(found, taskView.sort, taskView.descending).map(taskItem)),
+      list: (found) => {
+        const etas = etaOf();
+        return h("ol", {class: "task-list"}, Plan.sortRows(found, taskView.sort, taskView.descending).map((row) => taskItem(row, etas.get(row.task))));
+      },
       board: taskBoard,
       rasci: taskMatrix,
       gantt: ganttChart,

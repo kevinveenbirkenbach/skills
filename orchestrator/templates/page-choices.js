@@ -21,18 +21,19 @@
     await load();
   }
 
-  function choiceBar() {
+  function choiceMenu() {
     const picks = h("div", {class: "choice-agents", role: "group", "aria-label": "Post or call to"});
     const count = counter(0);
-    const menu = h("details", {class: "menu"}, h("summary", named("Agents", "Agents: who gets a post or a call"), icon("bi-people"), count, caret()),
-      h("div", {class: "menu-box"}, h("h3", {}, "Post or call to"), picks));
     const button = ([id, label]) => h("button", {type: "button", class: "btn small", "data-channel": id, ...named(label, `${label}: ask for every open decision as a choice, signed with your passkey. ${CHANNEL_HINTS[id]}`), on: {click: () => requestChoices(id)}},
       icon(CHOICE_ICONS[id]), label);
     const direct = TO_ONE.map(button);
     choiceAsk.dom = {picks, count, direct};
     choiceAsk.names = "";
-    return h("div", {class: "card controls choice-request", role: "group", "aria-label": "Request choices"},
-      h("span", {class: "group-title"}, "Request choices"), menu, direct, TO_ALL.map(button));
+    return h("details", {class: "menu choice-request", id: "choice-request"},
+      h("summary", named("Request choices", "Request choices: every open decision comes back as a choice, signed with your passkey"), icon("bi-ui-checks"), "Request choices", caret()),
+      h("div", {class: "menu-box end", role: "group", "aria-label": "Choice requests"},
+        h("h3", {}, "Post or call to", count), picks, h("div", {class: "choice-buttons"}, direct),
+        h("h3", {}, "To all"), h("div", {class: "choice-buttons"}, TO_ALL.map(button))));
   }
 
   function syncChoices() {

@@ -37,6 +37,13 @@ svg .node.speaking circle { stroke: var(--ok); stroke-width: 4; animation: speak
   .station { grid-template-columns: minmax(0, 1fr) auto auto; }
   .station-when { display: none; }
 }
+.spot-toggle[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
+.radio-spot { display: grid; gap: var(--sp-3); max-height: 46vh; overflow: auto; }
+.radio-spot[hidden], .radio-gear[hidden] { display: none; }
+body.fit .radio-spot { flex: 0 1 auto; min-height: 0; }
+.spot-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.spot-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: var(--sp-4); align-items: start; }
+.radio-gear { min-width: 0; }
 .composer { display: grid; gap: var(--sp-2); }
 .composer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--sp-2) var(--sp-3); }
 .composer-grid label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }

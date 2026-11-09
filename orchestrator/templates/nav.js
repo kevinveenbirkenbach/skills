@@ -3,7 +3,7 @@ const Nav = (() => {
   const TABS = [["stream", "Stream"], ["agents", "Agents"], ["artifacts", "Artifacts"], ["tasks", "Tasks"]];
   const SUBS = {stream: [["inbox", "Inbox"], ["rules", "Firewall"], ["radio", "Radio"]]};
   const VIEWS = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]];
-  const TASK_VIEWS = [["list", "List"], ["board", "Board"], ["rasci", "RASCI"], ["gantt", "Gantt"], ["burn", "Burndown and burnup"]];
+  const TASK_VIEWS = [["list", "List"], ["board", "Board"], ["rasci", "RASCI"], ["gantt", "Gantt"], ["burn", "Burndown and burnup"], ["3d", "3D"]];
   const OWN = {agents: [["hierarchy", "Hierarchy"]]};
   const ICONS = {
     stream: "bi-activity", inbox: "bi-inbox", rules: "bi-card-checklist", radio: "bi-boombox", agents: "bi-people", artifacts: "bi-git", tasks: "bi-list-check",

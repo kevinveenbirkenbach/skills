@@ -46,8 +46,33 @@ const scope = (choice) => {
   return {tasks: found.rows.map((entry) => entry.task), from: found.from / H, to: found.to / H};
 };
 const series = (estimation) => P.burn(P.scoped(rows, "all", context).rows, {estimation, from: 70 * H, to: now}).points.map((point) => [point.t / H, point.scope, point.done, point.remaining, point.unestimated]);
+const kept = P.scoped(rows, "all", context).rows;
+const stepsOf = (from, to) => P.steps(kept, P.burn(kept, {estimation: "none", from, to}).points, from);
+const eta = (estimation) => Object.fromEntries([...P.etas(rows, edges, {now, estimation}).entries()].map(([task, found]) => [task, [found.start === null ? null : found.start / H, found.eta === null ? null : found.eta / H, found.forecast]]));
+const D = 86400;
+const burnt = [
+  row("t/a", {status: "done", ended: true, start: 0, end: 2 * D}),
+  row("t/b", {status: "done", ended: true, start: 0, end: 4 * D}),
+  row("t/c", {status: "done", ended: true, start: 0, end: 6 * D}),
+  row("t/d", {status: "running", start: 9 * D}),
+  row("t/e", {}),
+];
+const burnPoints = P.burn(burnt, {estimation: "none", from: 0, to: 10 * D}).points;
+const rising = P.burn([row("t/x", {}), row("t/y", {status: "running", start: 5 * D})], {estimation: "none", from: 0, to: 10 * D}).points;
+const trendOf = (points, mode, days) => {
+  const found = P.trend(points, {mode, days});
+  return found && {start: found.start / D, forecast: found.forecast === null ? null : found.forecast / D, meets: found.forecast === null ? null : P.lineAt(found.lines.done, found.forecast) - P.lineAt(found.lines.scope, found.forecast), slope: found.lines.remaining.slope * D};
+};
 console.log(JSON.stringify({
-  options: [P.FORECASTS, P.ESTIMATIONS, P.SORTS.map(([id]) => id), P.SERIES],
+  options: [P.FORECASTS, P.ESTIMATIONS, P.TRENDS, P.SORTS.map(([id]) => id), P.SERIES, P.TRENDED],
+  burnt: burnPoints.map((point) => [point.t / D, point.remaining]),
+  trends: {
+    off: trendOf(burnPoints, "off", 7), regression: trendOf(burnPoints, "regression", 7), velocity7: trendOf(burnPoints, "velocity", 7), velocity30: trendOf(burnPoints, "velocity", 30),
+    velocity3: trendOf(burnPoints, "velocity", 3), rising: trendOf(rising, "regression", 7), risingVelocity: trendOf(rising, "velocity", 7), single: trendOf(burnPoints.slice(-1), "regression", 7),
+    beyondDates: P.trend([{t: 0, scope: 1, done: 0, remaining: 1}, {t: 1, scope: 1, done: 1e-13, remaining: 1 - 1e-13}], {mode: "regression", days: 7}).forecast,
+  },
+  steps: {whole: stepsOf(70 * H, now), window: stepsOf(90 * H, 99 * H), burnt: P.steps(burnt, burnPoints, 0)},
+  etas: {none: eta("none"), points: eta("points"), loop: [...P.etas(loop, looped, {now, estimation: "none"}).keys()].sort()},
   medians: P.medians(rows),
   median: [P.median([]), P.median([3, 1, 2]), P.median([4, 1, 3, 2])],
   bars: {noneAlways: lay("none", "always"), pointsAlways: lay("points", "always"), pointsOnly: lay("points", "points"), noneOnly: lay("none", "points"), real: lay("points", "real")},
@@ -67,12 +92,66 @@ class TestPlanModule(unittest.TestCase):
         done = subprocess.run(["node", "-e", PLAN_PROBE, str(PLAN)], capture_output=True, text=True, timeout=60, check=True)
         cls.data = json.loads(done.stdout)
 
-    def test_the_selectors_offer_the_forecasts_estimations_sort_modes_and_series(self):
-        forecasts, estimations, sorts, series = self.data["options"]
+    def test_the_selectors_offer_the_forecasts_estimations_trends_sort_modes_and_series(self):
+        forecasts, estimations, trends, sorts, series, trended = self.data["options"]
         self.assertEqual(forecasts, [["always", "always"], ["points", "points only"], ["real", "real only"]])
         self.assertEqual(estimations, [["none", "No estimate"], ["points", "Story points"]])
+        self.assertEqual(trends, [["off", "off"], ["regression", "linear regression"], ["velocity", "velocity"]])
         self.assertEqual(sorts, ["prio", "wsjf", "value", "complexity", "status", "start", "end", "agent", "title"])
-        self.assertEqual(series, ["scope", "done", "remaining", "unestimated"])
+        self.assertEqual((series, trended), (["scope", "done", "remaining", "unestimated"], ["scope", "done", "remaining"]))
+
+    def test_the_regression_forecast_is_where_the_least_squares_line_of_remaining_reaches_zero_and_done_meets_scope(self):
+        self.assertEqual(self.data["burnt"], [[0, 4], [2, 3], [4, 2], [6, 1], [9, 2], [10, 2]])
+        found = self.data["trends"]["regression"]
+        self.assertEqual(found["start"], 0)
+        self.assertAlmostEqual(found["slope"], -86 / 461, places=9)
+        self.assertAlmostEqual(found["forecast"], 760 / 43, places=9)
+        self.assertAlmostEqual(found["meets"], 0, places=9)
+
+    def test_the_velocity_forecast_runs_the_mean_rate_of_the_last_n_days_from_the_last_point(self):
+        trends = self.data["trends"]
+        self.assertEqual({key: trends[key]["start"] for key in ("velocity7", "velocity30")}, {"velocity7": 3, "velocity30": 0})
+        self.assertAlmostEqual(trends["velocity7"]["forecast"], 24, places=9)
+        self.assertAlmostEqual(trends["velocity30"]["forecast"], 20, places=9)
+        self.assertAlmostEqual(trends["velocity7"]["slope"], -1 / 7, places=9)
+        self.assertAlmostEqual(trends["velocity7"]["meets"], 0, places=9)
+
+    def test_a_trend_that_never_falls_has_no_forecast_and_off_or_a_single_point_no_trend(self):
+        trends = self.data["trends"]
+        self.assertEqual((trends["velocity3"]["start"], trends["velocity3"]["forecast"]), (7, None))
+        self.assertGreater(trends["velocity3"]["slope"], 0)
+        self.assertEqual((trends["rising"]["forecast"], trends["risingVelocity"]["forecast"]), (None, None))
+        self.assertEqual((trends["off"], trends["single"]), (None, None))
+
+    def test_a_falling_trend_that_reaches_zero_only_after_the_last_date_has_no_forecast(self):
+        self.assertIsNone(self.data["trends"]["beyondDates"])
+
+    def test_each_point_lists_the_tasks_that_started_ended_or_joined_the_scope_at_its_step(self):
+        steps = self.data["steps"]
+        empty = {"started": [], "ended": [], "joined": []}
+        self.assertEqual(steps["burnt"], [
+            {"started": ["t/a", "t/b", "t/c"], "ended": [], "joined": ["t/e"]},
+            {**empty, "ended": ["t/a"]}, {**empty, "ended": ["t/b"]}, {**empty, "ended": ["t/c"]}, {**empty, "started": ["t/d"]}, empty,
+        ])
+        self.assertEqual(steps["whole"], [
+            {**empty, "joined": ["work/next", "work/tail"]}, {**empty, "started": ["work/a"]}, {**empty, "ended": ["work/a"]}, {**empty, "started": ["work/b"]},
+            {**empty, "started": ["work/stop"]}, {**empty, "ended": ["work/stop"]}, {**empty, "ended": ["work/b"]}, {**empty, "started": ["work/c"]},
+            {**empty, "ended": ["work/c"]}, {**empty, "started": ["work/run"]}, empty,
+        ])
+        self.assertEqual(steps["window"], [
+            {"started": ["work/a", "work/b", "work/c", "work/stop"], "ended": ["work/a", "work/b", "work/stop"], "joined": ["work/next", "work/tail"]},
+            {**empty, "ended": ["work/c"]}, {**empty, "started": ["work/run"]}, empty,
+        ])
+
+    def test_the_eta_is_the_end_when_ended_else_start_or_now_behind_the_predecessors_plus_the_forecast_length(self):
+        ended = {"work/a": [80, 82, False], "work/b": [84, 88, False], "work/c": [90, 91, False], "work/stop": [85, 86, False], "operator/push": [None, 70, False]}
+        self.assertEqual(self.data["etas"]["none"], {
+            **ended, "work/run": [95, 97, True], "work/next": [100, 102, True], "work/tail": [102, 104, True], "queue/x": [100, 102, True],
+        })
+        self.assertEqual(self.data["etas"]["points"], {
+            **ended, "work/run": [95, 102.5, True], "work/next": [102.5, 107, True], "work/tail": [107, 109, True], "queue/x": [102.5, 104.5, True],
+        })
+        self.assertEqual(self.data["etas"]["loop"], ["loop/a", "loop/b"])
 
     def test_medians_take_done_tasks_only_and_the_points_of_those_with_points(self):
         self.assertEqual(self.data["medians"], {"duration": 2 * HOUR, "perPoint": 1.5 * HOUR})

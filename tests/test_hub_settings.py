@@ -150,6 +150,23 @@ class TestHubSettings(HubCase):
         self.assertEqual(status, 200, body)
         self.assertEqual(json.loads(body)["settings"]["speech"], {"on": False, "classes": ["broadcast", "mayday", "security"], "muted": ["Operator", "name:Docs", "s1"]})
 
+    def test_the_radio_gear_stores_tones_squelch_and_read_aloud_without_a_passkey_and_keeps_every_other_setting(self):
+        current = self.snapshot()["settings"]
+        gear = {
+            **current, "sounds": {**current["sounds"], "radio": {"on": False, "volume": 0.4}}, "squelch": 0.35,
+            "speech": {"on": True, "classes": ["post", "mayday"], "muted": ["s1"]},
+        }
+        self.assertIsNone(self.prepared(gear)["payload"])
+        status, _, body = self.post_json("/api/settings", {**gear, "proof": None}, self.guard(self.host))
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["settings"], gear)
+        self.assertEqual(settings.Settings(self.state / "settings.json").get(), gear)
+        self.assertEqual(self.snapshot()["settings"], gear)
+        for broken in ({**gear, "squelch": 1.5}, {**gear, "sounds": {**gear["sounds"], "radio": {"on": "no", "volume": 0.4}}}, {**gear, "speech": {**gear["speech"], "classes": ["post"]}}):
+            with self.subTest(broken=broken):
+                self.assertEqual(self.post_json("/api/settings", broken, self.guard(self.host))[0], 400)
+        self.assertEqual(self.snapshot()["settings"], gear)
+
     def test_the_estimation_mode_defaults_to_no_estimate_is_stored_and_survives_a_reload(self):
         self.assertEqual((settings.SETTINGS["estimation"], self.snapshot()["settings"]["estimation"]), ("none", "none"))
         good = self.guard(self.host)
@@ -165,6 +182,29 @@ class TestHubSettings(HubCase):
         older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "estimation"}
         (self.state / "settings.json").write_text(json.dumps(older), encoding="utf-8")
         self.assertEqual(settings.Settings(self.state / "settings.json").get()["estimation"], "none")
+
+    def test_the_trend_defaults_to_off_over_seven_days_is_validated_stored_and_survives_a_reload(self):
+        self.assertEqual((settings.SETTINGS["trend"], self.snapshot()["settings"]["trend"]), ({"mode": "off", "days": 7}, {"mode": "off", "days": 7}))
+        good = self.guard(self.host)
+        wrongs = [{"mode": mode, "days": 7} for mode in ("linear", "Regression", "", None, 1)]
+        wrongs += [{"mode": "velocity", "days": days} for days in (0, 366, 1.5, True, "7", None, -3)]
+        wrongs += [{"mode": "velocity"}, {"days": 7}, {"mode": "velocity", "days": 7, "extra": 1}, "velocity", ["velocity", 7]]
+        for wrong in wrongs:
+            with self.subTest(wrong=wrong):
+                self.assertEqual(self.post_json("/api/settings", {**settings.SETTINGS, "trend": wrong}, good)[0], 400)
+        self.assertEqual(self.post_json("/api/settings", {key: value for key, value in settings.SETTINGS.items() if key != "trend"}, good)[0], 400)
+        self.assertEqual(self.snapshot()["settings"]["trend"], {"mode": "off", "days": 7})
+        for chosen in ({"mode": "regression", "days": 7}, {"mode": "velocity", "days": 1}, {"mode": "velocity", "days": 365}, {"mode": "velocity", "days": 14}):
+            with self.subTest(chosen=chosen):
+                self.assertIsNone(self.prepared({**self.snapshot()["settings"], "trend": chosen})["payload"])
+                status, _, body = self.post_json("/api/settings", {**self.snapshot()["settings"], "trend": chosen, "proof": None}, good)
+                self.assertEqual((status, json.loads(body)["settings"]["trend"]), (200, chosen))
+        self.assertEqual(json.loads((self.state / "settings.json").read_text(encoding="utf-8"))["trend"], {"mode": "velocity", "days": 14})
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["trend"], {"mode": "velocity", "days": 14})
+        self.assertEqual(self.snapshot()["settings"]["trend"], {"mode": "velocity", "days": 14})
+        older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "trend"}
+        (self.state / "settings.json").write_text(json.dumps(older), encoding="utf-8")
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["trend"], {"mode": "off", "days": 7})
 
     def test_settings_written_before_the_radio_filter_keep_their_values(self):
         older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "speech"}

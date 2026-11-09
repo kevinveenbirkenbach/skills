@@ -185,5 +185,5 @@
     const toolbar = agentsToolbar();
     graphDom = {stage: stageBox, pulses: null, toolbar};
     const body = view === "tree" ? spawnScreen() : view === "hierarchy" ? hierarchyScreen() : h("div", {class: "card stage-card"}, stageBox, view === "3d" ? null : legend());
-    return h("div", {class: "graph"}, toolbar.bar, h("div", {class: "card controls"}, viewSwitch("agents"), view === "3d" ? layoutTools("agents") : null), body);
+    return h("div", {class: "graph"}, toolbar.bar, toolbar.spot, h("div", {class: "card controls"}, viewSwitch("agents"), view === "3d" ? layoutTools("agents") : null), body);
   }

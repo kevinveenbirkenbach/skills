@@ -270,6 +270,39 @@ from three views down to any agent, branch or artefact.
 51. **Subtree**: decisions 44 to 50 join subtree S5, Tasks with asks and
     choices, in its one worktree. Rejected: a subtree of their own after S8
     or right after S1.
+52. **Radio spot** (operator 2026-11-09, decisions 52 to 58): the radio
+    button of the Agents toolbar is the one place to send. It expands inline
+    and shows the full composer below the toolbar (every channel, the
+    recipients for post and call, Record, Send), a gear button with every
+    radio setting (tones per class, squelch, read aloud with its classes and
+    speakers, moved out of the general settings) and Cancel mayday, which
+    leaves the toolbar. The Radio tab keeps the stations and the message log
+    without a composer. Rejected: the Radio tab as the spot, removing the
+    Radio tab.
+53. **Day/Night menu**: only the status badge and the Drain, Suspend and
+    Resume buttons; each button's explanation is its hover tooltip.
+54. **Tasks toolbar**: views, filter, estimation toggle, sort and business
+    value in one row that wraps on narrow screens; the request choices
+    become one "Request choices" dropdown in that row; the status chips stay
+    the second and last row. Rejected: moving the request choices into the
+    radio spot.
+55. **Trend and forecast**: burndown and burnup get a trend selector, `off`
+    (default), `linear regression` (least squares over the points in the
+    shown window) and `velocity` (the mean burn rate of the last N days, N
+    set freely, default 7), stored in the hub settings. The trend is drawn
+    until remaining reaches 0 (burndown) or done meets scope (burnup); that
+    date is the forecast, shown on the chart. Hovering a point lists the
+    work packages that started, ended or joined the scope at that step.
+56. **ETA**: every work package in the list carries an ETA: its end when
+    done, else its start (or now) plus the forecast length of decision 45
+    for the active estimation mode, behind the latest ETA of its
+    predecessors.
+57. **Tasks 3D**: a sixth Tasks view on the 3D engine of the Agents tab:
+    tasks as nodes, the dependency edges of decision 44 in the Gantt colors,
+    layouts Force and Time, the same tooltips and popups. Rejected: a fixed
+    time-agent-depth layout.
+58. **Steady 3D camera**: the 3D view fits the graph once per build; state
+    refreshes keep the operator's camera.
 
 ## Approach
 
@@ -682,6 +715,32 @@ flowchart TD
       operator value instead of the median.
 - [x] The task list sorts by each mode of decision 50 in both directions.
 
+### Phase 6: radio spot, compact menus, trend, ETA, Tasks 3D (S5.1)
+
+- [x] The toolbar radio button expands inline and sends a post, a call to
+      chosen agents and each to-all class, Record included; the Radio tab
+      shows no composer.
+- [x] The radio gear holds the tones, squelch and read-aloud settings, the
+      general settings no longer do, and a changed value survives a reload.
+- [x] Cancel mayday sits in the expanded radio spot and no longer in the
+      toolbar; it still needs its confirmation.
+- [x] The Day/Night menu shows only the badge and three buttons; hovering
+      each shows its explanation.
+- [x] The Tasks toolbar is one row at 1920 and 1366 px; "Request choices" is
+      a dropdown sending the same signed choice requests as before.
+- [x] The trend selector offers off (default), linear regression and
+      velocity over N days; the line and the forecast date match the
+      fixture's computed values, and the choice survives a reload.
+- [x] Hovering a burn chart point lists exactly the fixture work packages of
+      that step.
+- [x] Every list row shows an ETA, which equals the end for done tasks and
+      start or now plus the forecast length otherwise, in both estimation
+      modes.
+- [x] The Tasks 3D view draws one node per task and one edge per dependency
+      of the fixture, in Force and Time layouts.
+- [x] Two state refreshes after a manual camera move leave the 3D camera
+      where the operator put it.
+
 ### Tests
 
 - **Unit**
@@ -703,6 +762,8 @@ flowchart TD
   - [x] S5 Gantt and estimates: dependency edges and cycle refusal, forecast lengths, burn
         sums per mode and scope, newsletter body and its single send, bulk
         business value signature (forged, replayed, altered), sort orders.
+  - [x] S5.1: regression and velocity trend with their forecast dates, point
+        tooltips, ETA in both modes, radio settings stored from the gear.
 - **Integration**
   - [ ] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's
@@ -728,3 +789,6 @@ flowchart TD
   - [x] S5: Gantt with arrows, burndown and burnup, the estimation toggle,
         "Request estimates" and a signed bulk business value change, each at
         1920, 1366 and 390 px.
+  - [x] S5.1: radio spot (send, gear, cancel mayday), Day/Night tooltips,
+        one-row Tasks toolbar, trend and point tooltips, ETA column, Tasks
+        3D and a steady 3D camera, each at 1920, 1366 and 390 px.

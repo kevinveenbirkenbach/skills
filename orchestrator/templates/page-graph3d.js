@@ -4,13 +4,29 @@
     ["spawn", "Spawn depth", "bi-layers", "Depth = spawn depth: each level one generation"],
   ];
   const KIND_COLORS = {operator: "accent", chair: "accent", session: "info", subagent: "violet", twig: "violet", repo: "warn", branch: "info", worktree: "teal", agent: "accent", artefact: "violet", task: "muted"};
-  const LINK_COLORS = {spawn: "violet", contains: "line-strong", merge: "grant", overlap: "alarm", direct: "direct", broadcast: "broadcast", alarm: "alarm", security: "security", grant: "grant"};
+  const LINK_COLORS = {spawn: "violet", contains: "line-strong", merge: "grant", overlap: "alarm", direct: "direct", broadcast: "broadcast", alarm: "alarm", security: "security", grant: "grant", after: "violet", base: "info", queue: "warn"};
+  const TONE_ROLES = {ok: "ok", bad: "bad", info: "info", warn: "warn", neutral: "muted"};
+  const DEPENDENCIES = new Set(["after", "base", "queue"]);
   const SPAWNED = new Set(["twig", "subagent"]);
   const DEPTH_GAP = 90;
   const TIME_DEPTH = 640;
-  const g3 = {lib: null, three: null, graph: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: "", picked: null};
+  const g3 = {lib: null, three: null, graph: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: "", picked: null, fit: false};
 
-  const layoutOf = () => space.views.graph.axis;
+  const layoutsOf = (tab) => (tab === "tasks" ? LAYOUTS.filter(([id]) => id !== "spawn") : LAYOUTS);
+  const layoutOf = (tab) => (layoutsOf(tab).some(([id]) => id === space.views.graph.axis) ? space.views.graph.axis : "none");
+
+  function fit3d(ms) {
+    if (g3.graph) {
+      g3.graph.zoomToFit(ms, 40);
+    }
+  }
+
+  function builtFit() {
+    if (g3.fit) {
+      g3.fit = false;
+      fit3d(calm.matches ? 0 : 400);
+    }
+  }
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -39,11 +55,11 @@
   }
 
   function layoutTools(tab) {
-    const group = h("div", {class: "segmented", role: "group", "aria-label": "Layout"}, LAYOUTS.map(([id, label, name, hint]) => h("button", {
-      type: "button", class: "icon-only", "data-layout": id, ...named(label, `${label}: ${hint}`), "aria-pressed": String(layoutOf() === id), on: {click: () => chooseLayout(tab, id, group)},
+    const group = h("div", {class: "segmented", role: "group", "aria-label": "Layout"}, layoutsOf(tab).map(([id, label, name, hint]) => h("button", {
+      type: "button", class: "icon-only", "data-layout": id, ...named(label, `${label}: ${tab === "tasks" && id === "time" ? "depth = start: earlier lies behind, later in front, forecasts behind their predecessors" : hint}`), "aria-pressed": String(layoutOf(tab) === id), on: {click: () => chooseLayout(tab, id, group)},
     }, icon(name))));
     return h("div", {class: "space-tools"}, group,
-      iconBtn("bi-arrow-counterclockwise", "Reset view", "btn small ghost", () => g3.graph && g3.graph.zoomToFit(calm.matches ? 0 : 600, 40)),
+      iconBtn("bi-arrow-counterclockwise", "Reset view", "btn small ghost", () => fit3d(calm.matches ? 0 : 600)),
       h("span", {class: "muted"}, "Drag turns · right drag pans · wheel zooms · click opens the popup"),
       nodeSearch(() => model3d(tab).nodes, (node) => pick3d(tab, node)));
   }
@@ -52,9 +68,10 @@
     for (const button of group.querySelectorAll("button")) {
       button.setAttribute("aria-pressed", String(button.dataset.layout === id));
     }
-    if (id !== layoutOf()) {
+    if (id !== layoutOf(tab)) {
       setView("graph", {...space.views.graph, axis: id}, false);
       g3.sig = "";
+      g3.fit = true;
       if (ui.screen === tab) {
         stage3d(tab, g3.host);
       }
@@ -87,6 +104,9 @@
     if (tab === "agents") {
       return agentModel();
     }
+    if (tab === "tasks") {
+      return taskModel3d();
+    }
     const built = tree.model || {nodes: [], links: []};
     return {nodes: built.nodes.map((node) => ({id: node.id, kind: node.kind, label: node.label, depth: node.depth, ts: node.ts, parent: node.parent})), links: built.links.map((link) => ({...link}))};
   }
@@ -109,7 +129,7 @@
   function colors3d() {
     const css = window.getComputedStyle(document.documentElement);
     const value = (name) => css.getPropertyValue(`--${name}`).trim() || "#888";
-    const roles = new Set([...Object.values(KIND_COLORS), ...Object.values(LINK_COLORS), "text", "alarm"]);
+    const roles = new Set([...Object.values(KIND_COLORS), ...Object.values(LINK_COLORS), ...Object.values(TONE_ROLES), "text", "alarm"]);
     g3.colors = Object.fromEntries([...roles].map((role) => [role, value(role)]));
     return g3.colors;
   }
@@ -146,7 +166,7 @@
       focusSub(node.session, node.sub);
       return;
     }
-    (tab === "artifacts" ? artSelect : select)(node.id, anchor3d(node.id), () => mark3d(null));
+    ({artifacts: artSelect, tasks: taskSelect}[tab] || select)(node.id, anchor3d(node.id), () => mark3d(null));
     mark3d(node.id);
   }
 
@@ -176,7 +196,7 @@
   }
 
   function signature3d(tab, data) {
-    return JSON.stringify([tab, layoutOf(), data.nodes.map((node) => [node.id, node.kind, node.depth, node.ts]), data.links.map((link) => [link.source, link.target, link.kind])]);
+    return JSON.stringify([tab, layoutOf(tab), data.nodes.map((node) => [node.id, node.kind, node.depth, node.ts, node.tone]), data.links.map((link) => [link.source, link.target, link.kind])]);
   }
 
   async function stage3d(tab, host) {
@@ -195,7 +215,7 @@
       dispose3d();
       g3.host = host;
       g3.tab = tab;
-      host.replaceChildren(h("div", {class: "graph3d", role: "img", "aria-label": `3D graph of the ${tab === "agents" ? "agents" : "artifacts"}; the search above finds every node`}), h("div", {class: "space-note"}, "Loading 3D …"));
+      host.replaceChildren(h("div", {class: "graph3d", role: "img", "aria-label": `3D graph of the ${tab}; the search above finds every node`}), h("div", {class: "space-note"}, "Loading 3D …"));
     }
     g3.sig = sig;
     const box = host.querySelector(".graph3d");
@@ -223,9 +243,11 @@
       const colors = colors3d();
       g3.graph.backgroundColor("rgba(0,0,0,0)").showNavInfo(false).nodeRelSize(5).nodeOpacity(0.92).linkOpacity(0.45)
         .nodeLabel((node) => h("span", {}, node.label)).nodeVal((node) => ({operator: 6, chair: 4, repo: 6, branch: 3, session: 2.5}[node.kind] || 1) * (node.id === g3.picked ? 4 : 1))
-        .nodeColor((node) => (node.id === g3.picked ? g3.colors.alarm : g3.colors[KIND_COLORS[node.kind]] || colors.text)).linkColor((link) => g3.colors[LINK_COLORS[link.kind]] || colors.text)
+        .nodeColor((node) => (node.id === g3.picked ? g3.colors.alarm : g3.colors[node.tone || KIND_COLORS[node.kind]] || colors.text)).linkColor((link) => g3.colors[LINK_COLORS[link.kind]] || colors.text)
         .linkWidth((link) => (link.kind === "contains" || link.kind === "spawn" ? 0.6 : Math.min(0.8 + Math.log2(1 + (link.count || 1)), 4)))
-        .onNodeClick((node) => pick3d(g3.tab, node)).onEngineStop(() => g3.graph && g3.graph.zoomToFit(calm.matches ? 0 : 400, 40));
+        .linkDirectionalArrowLength((link) => (DEPENDENCIES.has(link.kind) ? 5 : 0)).linkDirectionalArrowRelPos(1)
+        .onNodeClick((node) => pick3d(g3.tab, node)).onEngineStop(builtFit);
+      g3.fit = true;
       g3.graph.warmupTicks(calm.matches ? 160 : 80);
       if (calm.matches) {
         g3.graph.cooldownTicks(0);
@@ -233,13 +255,13 @@
         g3.graph.cooldownTime(4000);
       }
     }
-    const layout = layoutOf();
+    const layout = layoutOf(tab);
     place(data.nodes, layout);
     g3.graph.width(box.clientWidth).height(box.clientHeight).graphData(data);
     drawPlanes(layout, data.nodes);
     const words = `${data.nodes.length} nodes · ${data.links.length} edges · ${LAYOUTS.find(([id]) => id === layout)[1]}${calm.matches ? " · without motion (prefers-reduced-motion)" : ""}`;
     host.replaceChildren(box, h("div", {class: "space-note"}, words));
-    window.requestAnimationFrame(() => g3.graph && g3.host === host && g3.graph.zoomToFit(0, 40));
+    window.requestAnimationFrame(() => g3.host === host && g3.fit && fit3d(0));
   }
 
   function dispose3d() {

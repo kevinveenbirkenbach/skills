@@ -34,7 +34,7 @@ from test_hub_offices import host as office_host
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
-TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn")
+TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn", "3d")
 SCREENS = ["stream", "stream/inbox", "stream/rules", "stream/radio", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
 SUBS = ["Inbox", "Firewall", "Radio"]
 TABS = ["Stream", "Agents", "Artifacts", "Tasks"]
@@ -54,6 +54,21 @@ HELPERS = """
   const all = (selector, root) => [...(root || document).querySelectorAll(selector)];
   const text = (node) => (node ? node.textContent.trim() : null);
   const name = (node) => (node ? node.getAttribute("aria-label") || text(node) : null);
+  const toolbarRows = () => {
+    const bar = document.querySelector('#main [role="toolbar"][aria-label="Tasks"]');
+    const boxes = bar ? [...bar.children].filter((node) => node.getClientRects().length).map((node) => node.getBoundingClientRect()).sort((a, b) => a.top - b.top) : [];
+    let [rows, bottom] = [0, -Infinity];
+    for (const box of boxes) {
+      if (box.top >= bottom - 1) {
+        rows += 1;
+        bottom = box.bottom;
+      } else {
+        bottom = Math.max(bottom, box.bottom);
+      }
+    }
+    return rows;
+  };
+  const taskLayout = () => all("#main .graph.tasks > *").map((node) => (node.matches('[role="toolbar"]') ? "toolbar" : node.matches('[aria-label="Task filters"]') ? "chips" : "body"));
 """
 PROBE = """(async () => {@HELPERS@
   await until(() => !document.querySelector("#main .space-note") || !text(document.querySelector("#main .space-note")).startsWith("Loading"), 8000);
@@ -81,7 +96,11 @@ PROBE = """(async () => {@HELPERS@
     replay: Boolean(document.querySelector("#time .replay input[type=range]")),
     custom: Boolean(document.querySelector('#main details.menu input[type="datetime-local"]')),
     toolbar: all('#main [role="toolbar"] > *').map((node) => name(node.tagName === "DETAILS" ? node.querySelector("summary") : node.querySelector("button") || node)),
-    toAll: all("#to-all input[type=radio]").map((input) => [input.value, input.checked]),
+    spot: (() => {
+      const box = document.getElementById("radio-spot");
+      return box ? {hidden: box.hidden, channels: [...box.querySelector("form.composer select").options].map((option) => option.value)} : null;
+    })(),
+    composers: all("#main form.composer").map((form) => (form.closest("#radio-spot") ? "spot" : "other")),
     inbox: all("#main .inbox-list > li").length,
     icons: icons.length,
     unlabelled: icons.map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160)),
@@ -188,7 +207,8 @@ ACTIONS = """(async () => {@HELPERS@
   document.getElementById("settings-open").click();
   await sleep(300);
   found.ambience = all(".sheet-box form > section:first-child button").map((button) => button.id);
-  found.speech = all('.sheet-box [aria-label="Classes"] input').map((input) => [input.parentElement.textContent.trim(), input.checked, input.disabled]);
+  found.sections = all(".sheet-box form.settings > section > h3").map(text);
+  found.radioFields = all('.sheet-box [aria-label="Squelch"], .sheet-box [aria-label="Classes"], .sheet-box [aria-label="Speakers"], .sheet-box .sound-row').length;
   found.settingsUnlabelled = all(".sheet-box svg.bi").map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).length;
   document.querySelector(".sheet-head button").click();
   document.getElementById("palette-open").click();
@@ -526,8 +546,16 @@ SPEAK_END = """(async () => {@HELPERS@@SPEAKING@
   await sleep(300);
   return {ended, caption: Boolean(caption()), chips: all("#main .speaker.speaking").length, faces: all("#main .avatar.speaking").length};
 })()""".replace("@HELPERS@", HELPERS).replace("@SPEAKING@", SPEAKING)
-COMPOSE = """(async () => {@HELPERS@
-  const form = await until(() => document.querySelector("#main form.composer"), 8000);
+SPOT_OPEN = """
+  const spotToggle = await until(() => all('#main [role="toolbar"] button').find((node) => name(node) === "Radio"), 8000);
+  if (spotToggle && spotToggle.getAttribute("aria-expanded") !== "true") {
+    spotToggle.click();
+    await sleep(300);
+  }
+  const spot = document.getElementById("radio-spot");
+"""
+COMPOSE = """(async () => {@HELPERS@@SPOT_OPEN@
+  const form = spot ? spot.querySelector("form.composer") : null;
   if (!form) {
     return {error: "no composer"};
   }
@@ -558,7 +586,7 @@ COMPOSE = """(async () => {@HELPERS@
       return clashes(form);
     })(),
   };
-})()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP)
+})()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN).replace("@CLASHES@", OVERLAP)
 COMPOSE_SEND = """(async () => {@HELPERS@
   const form = document.querySelector("#main form.composer");
   const field = form.querySelector("textarea");
@@ -571,15 +599,36 @@ COMPOSE_SEND = """(async () => {@HELPERS@
   return {sent, left: field.value, voice: Boolean(form.querySelector(".voice-note audio"))};
 })()""".replace("@HELPERS@", HELPERS)
 CLEAR_MAYDAY = """(async () => {@HELPERS@
-  window.confirm = () => true;
-  const button = await until(() => all('#main [role="toolbar"] button').find((node) => name(node) === "Cancel mayday" && !node.disabled), 8000);
+  const questions = [];
+  let accept = false;
+  window.confirm = (question) => {
+    questions.push(question);
+    return accept;
+  };
+  const posted = [];
+  const send = window.fetch.bind(window);
+  window.fetch = (path, init) => {
+    if (String(path).startsWith("/api/board/")) {
+      posted.push(String(path));
+    }
+    return send(path, init);
+  };
+  await until(() => document.querySelector('#main [role="toolbar"]'), 8000);
+  const toolbar = all('#main [role="toolbar"] button, #main [role="toolbar"] summary').map(name);@SPOT_OPEN@
+  const button = await until(() => spot && all(".spot-head button", spot).find((node) => name(node) === "Cancel mayday" && !node.disabled), 8000);
   if (!button) {
-    return {error: "no enabled Cancel mayday button"};
+    return {error: "no enabled Cancel mayday button in the radio spot", toolbar};
   }
+  const shown = new Set(all("#toasts .toast"));
+  const fresh = () => all("#toasts .toast").filter((node) => !shown.has(node)).map(text);
   button.click();
-  const done = await until(() => all("#toasts .toast").map(text).find((toast) => toast.startsWith("Cancel mayday")), 15000);
-  return {done, toasts: all("#toasts .toast").map(text)};
-})()""".replace("@HELPERS@", HELPERS)
+  await sleep(800);
+  const declined = {question: questions.slice(), posted: posted.slice(), toasts: fresh()};
+  accept = true;
+  button.click();
+  const done = await until(() => fresh().find((toast) => toast.startsWith("Cancel mayday")), 15000);
+  return {toolbar, title: button.title, declined, accepted: {question: questions.slice(declined.question.length), posted: posted.slice(declined.posted.length)}, done};
+})()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN)
 NIGHT_MENU = """(async () => {@HELPERS@
   const questions = [];
   window.confirm = (question) => {
@@ -617,6 +666,187 @@ NIGHT_MENU = """(async () => {@HELPERS@
     runs.push({label, question: questions.slice(prompts), asked: asked - before, posted: posted.slice(sent), toast});
   }
   return {labels: buttons.map(name), runs};
+})()""".replace("@HELPERS@", HELPERS)
+NIGHT_LOOK = """(async () => {@HELPERS@
+  const menu = await until(() => all('#main [role="toolbar"] details.menu').find((node) => name(node.querySelector("summary")) === "Day/Night"), 8000);
+  if (!menu) {
+    return {error: text(document.getElementById("main"))};
+  }
+  menu.open = true;
+  await sleep(200);
+  const box = menu.querySelector(".menu-box");
+  return {
+    children: [...box.children].map((node) => [node.tagName.toLowerCase(), node.className]),
+    badge: all(".pill", box).map(text),
+    buttons: all("button", box).map((button) => [name(button), button.title]),
+    paragraphs: all("p", box).length,
+    wide: document.documentElement.scrollWidth > window.innerWidth + 1,
+  };
+})()""".replace("@HELPERS@", HELPERS)
+FITS = "tall: document.documentElement.scrollHeight > window.innerHeight, wide: document.documentElement.scrollWidth > window.innerWidth + 1"
+SPOT_SEND = """(async () => {@HELPERS@
+  const questions = [];
+  window.confirm = (question) => {
+    questions.push(question);
+    return true;
+  };
+  const toggle = await until(() => all('#main [role="toolbar"] button').find((node) => name(node) === "Radio"), 8000);
+  if (!toggle) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const bar = document.querySelector('#main [role="toolbar"]');
+  const spot = document.getElementById("radio-spot");
+  const closed = [spot.hidden, toggle.getAttribute("aria-expanded")];
+  toggle.click();
+  await sleep(400);
+  const form = spot.querySelector("form.composer");
+  const [channel, recipient] = all("select", form);
+  const field = form.querySelector("textarea");
+  const found = {
+    closed,
+    open: [spot.hidden, toggle.getAttribute("aria-expanded"), document.activeElement === field],
+    inline: [getComputedStyle(spot).position, spot.getBoundingClientRect().top >= bar.getBoundingClientRect().bottom, spot.previousElementSibling === bar],
+    toolbar: all('#main [role="toolbar"] > *').map((node) => name(node.tagName === "DETAILS" ? node.querySelector("summary") : node)),
+    channels: all("option", channel).map((option) => option.value),
+    record: all("button", form).filter((button) => button.hasAttribute("aria-pressed")).map(text),
+    heads: all(".spot-head button", spot).map((button) => [name(button), button.title]),
+    @FITS@,
+  };
+  await until(() => [...recipient.options].some((option) => option.value === "Stage"), 8000);
+  found.runs = [];
+  for (const cls of found.channels) {
+    channel.value = cls;
+    channel.dispatchEvent(new Event("change", {bubbles: true}));
+    const direct = !recipient.closest("label").hidden;
+    if (direct) {
+      recipient.value = "Stage";
+    }
+    field.value = `@TEXT@ ${cls}`;
+    field.dispatchEvent(new Event("input", {bubbles: true}));
+    const shown = new Set(all("#toasts .toast"));
+    const prompts = questions.length;
+    form.querySelector('button[type="submit"]').click();
+    const toast = await until(() => all("#toasts .toast").filter((node) => !shown.has(node)).map(text).find((entry) => entry.includes(" to ")), 20000);
+    found.runs.push({cls, direct, toast, question: questions.slice(prompts), left: field.value});
+  }
+  document.getElementById("toasts").replaceChildren();
+  return found;
+})()""".replace("@HELPERS@", HELPERS).replace("@FITS@", FITS)
+RADIO_JUMP = """(async () => {@HELPERS@
+  const jump = await until(() => all("#main .radio-view button").find((button) => name(button) === "Send …"), 8000);
+  if (!jump) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const composers = all("#main form.composer").length;
+  jump.click();
+  const spot = await until(() => location.hash.startsWith("#agents/") && document.querySelector("#radio-spot:not([hidden])"), 4000);
+  await sleep(200);
+  return {composers, hash: location.hash, open: Boolean(spot), focused: Boolean(spot) && document.activeElement === spot.querySelector("textarea")};
+})()""".replace("@HELPERS@", HELPERS)
+GEAR_SAVE = """(async () => {@HELPERS@@CLASHES@
+  const spot = document.getElementById("radio-spot");
+  const gear = all(".spot-head button", spot).find((button) => name(button) === "Radio settings");
+  gear.click();
+  const form = await until(() => spot.querySelector("form.radio-settings"), 4000);
+  if (!form) {
+    return {error: "no radio settings behind the gear"};
+  }
+  const classes = () => all('[aria-label="Classes"] input', form);
+  const found = {
+    expanded: gear.getAttribute("aria-expanded"),
+    sections: all("section > h3", form).map(text),
+    tones: all(".sound-row strong", form).map(text),
+    classes: classes().map((input) => [input.parentElement.textContent.trim(), input.checked, input.disabled]),
+    clashes: clashes(form),
+    @FITS@,
+  };
+  const squelch = form.querySelector('input[aria-label="Squelch"]');
+  squelch.value = "@SQUELCH@";
+  squelch.dispatchEvent(new Event("input", {bubbles: true}));
+  form.querySelector('input[aria-label="All radio on"]').checked = @TONE@;
+  classes().find((input) => input.parentElement.textContent.trim() === "Post").checked = @POST@;
+  const before = new Set(all("#toasts .toast"));
+  all("button", form).find((button) => button.type === "submit").click();
+  found.toast = await until(() => all("#toasts .toast").filter((node) => !before.has(node)).map(text).find((entry) => entry.includes("ettings")), 15000);
+  await sleep(300);
+  found.after = [gear.getAttribute("aria-expanded"), Boolean(spot.querySelector("form.radio-settings"))];
+  document.getElementById("settings-open").click();
+  const sheet = await until(() => document.querySelector(".sheet-box form.settings"), 4000);
+  found.general = {sections: all("section > h3", sheet).map(text), radio: all('[aria-label="Squelch"], [aria-label="Classes"], [aria-label="Speakers"], .sound-row', sheet).length};
+  document.querySelector(".sheet-head button").click();
+  return found;
+})()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP).replace("@FITS@", FITS)
+GEAR_READ = """(async () => {@HELPERS@@SPOT_OPEN@
+  const gear = spot ? all(".spot-head button", spot).find((button) => name(button) === "Radio settings") : null;
+  if (!gear) {
+    return {error: text(document.getElementById("main"))};
+  }
+  gear.click();
+  const form = await until(() => spot.querySelector("form.radio-settings"), 4000);
+  return {
+    squelch: Number(form.querySelector('input[aria-label="Squelch"]').value),
+    tone: form.querySelector('input[aria-label="All radio on"]').checked,
+    post: all('[aria-label="Classes"] input', form).find((input) => input.parentElement.textContent.trim() === "Post").checked,
+    @FITS@,
+  };
+})()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN).replace("@FITS@", FITS)
+GRAPH_HOOK = """() => {
+  let made = null;
+  Object.defineProperty(window, "ForceGraph3D", {
+    configurable: true,
+    get: () => made && ((options) => {
+      const graph = made(options);
+      window.e2eGraphs = [...(window.e2eGraphs || []), graph];
+      return graph;
+    }),
+    set: (value) => {
+      made = value;
+    },
+  });
+}"""
+CAMERA = """(async () => {@HELPERS@
+  const ready = await until(() => window.e2eGraphs && document.querySelector("#main .graph3d canvas") && !text(document.querySelector("#main .space-note")).startsWith("Loading"), 15000);
+  if (!ready) {
+    return {error: text(document.querySelector("#main .graph"))};
+  }
+  const graph = window.e2eGraphs[window.e2eGraphs.length - 1];
+  const position = () => {
+    const at = graph.cameraPosition();
+    return [at.x, at.y, at.z];
+  };
+  await sleep(5500);
+  let [fed, stops] = [0, 0];
+  const stopped = graph.onEngineStop();
+  graph.onEngineStop(() => {
+    stops += 1;
+    stopped();
+  });
+  const feed = graph.graphData;
+  graph.graphData = function (...args) {
+    fed += args.length;
+    return feed.apply(graph, args);
+  };
+  const built = position();
+  const canvas = document.querySelector("#main .graph3d canvas");
+  const rect = canvas.getBoundingClientRect();
+  for (let turn = 0; turn < 4; turn += 1) {
+    canvas.dispatchEvent(new WheelEvent("wheel", {deltaY: -120, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, bubbles: true, cancelable: true}));
+    await sleep(60);
+  }
+  await sleep(900);
+  const moved = position();
+  const refreshes = [];
+  for (let round = 0; round < 2; round += 1) {
+    const [feeds, ends] = [fed, stops];
+    document.dispatchEvent(new Event("visibilitychange"));
+    const rebuilt = Boolean(await until(() => fed > feeds, 8000));
+    const settled = Boolean(await until(() => stops > ends, 10000));
+    await sleep(900);
+    refreshes.push({rebuilt, settled, camera: position()});
+  }
+  all("#main button").find((button) => name(button) === "Reset view").click();
+  await sleep(1500);
+  return {hooked: typeof stopped === "function", built, moved, refreshes, reset: position()};
 })()""".replace("@HELPERS@", HELPERS)
 
 
@@ -748,25 +978,26 @@ WATCH = """
     }
     return send(path, init);
   };
-  const bar = () => document.querySelector('#main [aria-label="Request choices"]');
+  const bar = () => document.getElementById("choice-request");
   const fresh = async (shown, prefix) => until(() => all("#toasts .toast").filter((box) => !shown.has(box)).map(text).find((entry) => entry.startsWith(prefix)), 20000);
   const fits = () => ({tall: document.documentElement.scrollHeight > window.innerHeight, wide: document.documentElement.scrollWidth > window.innerWidth + 1});
 """
 CHOICE_VIEW = """(async () => {@HELPERS@@LABELS@
-  const found = await until(() => document.querySelector('#main [aria-label="Request choices"]') && all("#main .inbox-list > li .options").length === @CARDS@ && document.querySelector('#main [aria-label="Request choices"] details.menu input[type="checkbox"]'), 8000);
+  const found = await until(() => document.getElementById("choice-request") && all("#main .inbox-list > li .options").length === @CARDS@ && document.querySelector('#choice-request input[type="checkbox"]'), 8000);
   if (!found) {
     return {error: text(document.getElementById("main"))};
   }
-  const box = document.querySelector('#main [aria-label="Request choices"]');
-  const menu = box.querySelector("details.menu");
+  const box = document.getElementById("choice-request");
   const chip = document.querySelector('#main [aria-label="Task filters"] button[data-filter="operator"]');
+  const closed = all("button[data-channel]", box).filter((button) => button.checkVisibility()).length;
   return {
     kinds: [...new Set(all("#main .inbox-list > li").map((li) => text(li.querySelector(".pill"))))].sort(),
     filter: [text(chip).replace(/[0-9]+$/, ""), chip.getAttribute("aria-pressed")],
     channels: all("button[data-channel]", box).map((button) => [button.dataset.channel, name(button), button.disabled]),
     fields: all("textarea, input:not([type=checkbox])", box).length,
-    agents: all('input[type="checkbox"]', menu).map((input) => input.value),
-    multi: [name(menu.querySelector("summary")), text(menu.querySelector("summary .count")), all('input[type="checkbox"]', menu).filter((input) => input.checked).length],
+    agents: all('input[type="checkbox"]', box).map((input) => input.value),
+    multi: [name(box.querySelector("summary")), box.open, closed, text(box.querySelector(".menu-box h3 .count")), all('input[type="checkbox"]', box).filter((input) => input.checked).length],
+    bar: [box.parentElement.getAttribute("aria-label"), toolbarRows(), taskLayout()],
     cards: all("#main .inbox-list > li").filter((li) => li.querySelector(".options")).map((li) => [text(li.querySelector(".pill")), all(".option strong", li).map(text)]),
     choices: all("#main [data-column], #main .group-title, #main h2, #main h3").filter((node) => node.dataset.column === "choices" || text(node) === "Choices").length,
     unlabelled: unlabelled(document),
@@ -775,13 +1006,13 @@ CHOICE_VIEW = """(async () => {@HELPERS@@LABELS@
   };
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 CHOICE_SEND = """(async () => {@HELPERS@@WATCH@
-  const menu = bar().querySelector("details.menu");
-  menu.open = true;
+  const menu = bar();
+  menu.querySelector("summary").click();
   await sleep(200);
   const boxes = all('input[type="checkbox"]', menu).slice(0, 2);
   boxes.forEach((box) => box.click());
-  const counted = text(menu.querySelector("summary .count"));
-  menu.open = false;
+  const counted = text(menu.querySelector(".menu-box h3 .count"));
+  const opened = [menu.open, all("button[data-channel]", menu).filter((button) => button.checkVisibility()).length];
   const picked = boxes.map((box) => box.value).sort((a, b) => a.localeCompare(b));
   const runs = [];
   for (const button of all("button[data-channel]", bar())) {
@@ -792,9 +1023,12 @@ CHOICE_SEND = """(async () => {@HELPERS@@WATCH@
     const toast = await fresh(shown, "Choice request");
     runs.push({channel: button.dataset.channel, disabled, asked: asked - before, question: questions.slice(prompts), posted: posted.slice(sent), toast});
   }
-  return {picked, counted, runs, fields: all("textarea, input:not([type=checkbox])", bar()).length, ...fits()};
+  return {picked, counted, opened, runs, fields: all("textarea, input:not([type=checkbox])", bar()).length, ...fits()};
 })()""".replace("@HELPERS@", HELPERS).replace("@WATCH@", WATCH)
 CHOICE_ANSWER = """(async () => {@HELPERS@@WATCH@
+  bar().querySelector("summary").click();
+  await sleep(200);
+  const closed = [bar().open, all("button[data-channel]", bar()).filter((button) => button.checkVisibility()).length];
   const card = await until(() => all("#main .inbox-list > li").find((li) => li.textContent.includes("@QUESTION@")), 8000);
   if (!card) {
     return {error: text(document.getElementById("main"))};
@@ -805,15 +1039,17 @@ CHOICE_ANSWER = """(async () => {@HELPERS@@WATCH@
   option.click();
   const toast = await fresh(shown, "Choice: Wait");
   const gone = @SIGNS@ ? Boolean(await until(() => !all("#main .inbox-list > li").some((li) => li.textContent.includes("@QUESTION@")), 20000)) : null;
-  return {title, asked, posted, toast, gone, ...fits()};
+  return {title, asked, posted, toast, gone, closed, ...fits()};
 })()""".replace("@HELPERS@", HELPERS).replace("@WATCH@", WATCH)
 TASKS_FIT = """(async () => {@HELPERS@
-  await until(() => document.querySelector('#main [aria-label="Request choices"]') && document.querySelector("#main .tasks-body > *"), 8000);
+  await until(() => document.getElementById("choice-request") && document.querySelector("#main .tasks-body > *"), 8000);
   document.getElementById("toasts").replaceChildren();
   await sleep(300);
   return {
     hash: location.hash,
-    bar: all('#main [aria-label="Request choices"] button[data-channel]').map((button) => button.dataset.channel),
+    bar: all("#choice-request button[data-channel]").map((button) => button.dataset.channel),
+    rows: toolbarRows(),
+    layout: taskLayout(),
     columns: all("#main .task-column").map((column) => column.dataset.column),
     choices: all("#main [data-column], #main .group-title, #main h2, #main h3").filter((node) => node.dataset.column === "choices" || text(node) === "Choices").length,
     tall: document.documentElement.scrollHeight > window.innerHeight,
@@ -821,7 +1057,7 @@ TASKS_FIT = """(async () => {@HELPERS@
   };
 })()""".replace("@HELPERS@", HELPERS)
 PLAN_HELPERS = """
-  const fits = () => ({tall: document.documentElement.scrollHeight > window.innerHeight, wide: document.documentElement.scrollWidth > window.innerWidth + 1});
+  const fits = () => ({tall: document.documentElement.scrollHeight > window.innerHeight, wide: document.documentElement.scrollWidth > window.innerWidth + 1, rows: toolbarRows(), layout: taskLayout()});
   const modes = () => all('#main [aria-label="Estimation"] button').map((button) => [button.dataset.estimation, button.getAttribute("aria-pressed")]);
   const requestShown = () => {
     const button = document.getElementById("request-estimates");
@@ -939,10 +1175,146 @@ BULK = """(async () => {@HELPERS@@PLAN_HELPERS@
   found.reset = Boolean(await until(() => requestShown() === false, 8000));
   return found;
 })()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
+ETA_LIST = """(async () => {@HELPERS@@PLAN_HELPERS@
+  const list = await until(() => all("#main .task-row .task-eta").length >= 8, 8000);
+  if (!list) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const number = (value) => (value === "" ? null : Number(value));
+  const read = () => Object.fromEntries(all("#main .task-row").map((row) => {
+    const eta = row.querySelector(".task-eta");
+    return [row.dataset.task, [number(eta.dataset.start), number(eta.dataset.eta), eta.dataset.forecast === "true", text(eta), eta.title]];
+  }));
+  const toggle = async (mode) => {
+    const before = JSON.stringify(read());
+    all('#main [aria-label="Estimation"] button').find((button) => button.dataset.estimation === mode).click();
+    await until(() => JSON.stringify(read()) !== before, 8000);
+    await sleep(300);
+    return read();
+  };
+  const found = {none: read(), modes: modes(), ...fits()};
+  found.points = await toggle("points");
+  found.back = await toggle("none");
+  return found;
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
+TREND_READ = """
+  const trendOf = () => {
+    const select = document.querySelector('#main select[aria-label="Trend"]');
+    const days = document.querySelector('#main input[aria-label="Velocity days"]');
+    const note = document.querySelector("#main .burn-forecast");
+    const marker = document.querySelector("#main svg.burn .forecast-line");
+    return {
+      value: select.value, options: all("option", select).map((option) => [option.value, text(option)]), days: [Number(days.value), days.getClientRects().length > 0],
+      note: note ? [note.dataset.forecast === "" ? null : Number(note.dataset.forecast), text(note)] : null, marker: marker ? Number(marker.dataset.forecast) : null,
+      lines: all("#main svg.burn path.burn-trend").map((path) => [path.dataset.series, Number(path.dataset.from), Number(path.dataset.to)]),
+      points: all('#main svg.burn circle.burn-point[data-series="remaining"]').map((circle) => [Number(circle.dataset.t), Number(circle.dataset.value)]),
+    };
+  };
+  const chart = async () => until(() => document.querySelector("#main svg.burn") && document.querySelector('#main select[aria-label="Trend"]'), 8000);
+"""
+TREND_SET = """(async () => {@HELPERS@@PLAN_HELPERS@@TREND_READ@
+  if (!(await chart())) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const before = trendOf();
+  const shown = new Set(all("#toasts .toast"));
+  await choose(document.querySelector('#main select[aria-label="Trend"]'), "@MODE@");
+  const toasts = [await fresh(shown, "Trend: ")];
+  if ("@MODE@" === "velocity") {
+    const days = document.querySelector('#main input[aria-label="Velocity days"]');
+    const again = new Set(all("#toasts .toast"));
+    days.value = "@DAYS@";
+    days.dispatchEvent(new Event("change", {bubbles: true}));
+    toasts.push(await fresh(again, "Trend: velocity over @DAYS@ days"));
+  }
+  await sleep(400);
+  return {before, after: trendOf(), toasts, ...fits()};
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS).replace("@TREND_READ@", TREND_READ)
+TREND_RELOADED = """(async () => {@HELPERS@@PLAN_HELPERS@@TREND_READ@
+  if (!(await chart())) {
+    return {error: text(document.getElementById("main"))};
+  }
+  await sleep(300);
+  return {...trendOf(), ...fits()};
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS).replace("@TREND_READ@", TREND_READ)
+STEP_TIPS = """(async () => {@HELPERS@@PLAN_HELPERS@@TREND_READ@
+  if (!(await chart())) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const steps = all('#main svg.burn circle.burn-point[data-series="remaining"]').map((circle) => ({
+    t: Number(circle.dataset.t), started: circle.dataset.started, ended: circle.dataset.ended, joined: circle.dataset.joined, tip: text(circle.querySelector("title")),
+    series: all(`#main svg.burn circle.burn-point[data-step="${circle.dataset.step}"]`).map((mark) => mark.dataset.series),
+  }));
+  const shown = new Set(all("#toasts .toast"));
+  await choose(document.querySelector('#main select[aria-label="Trend"]'), "off");
+  const reset = await fresh(shown, "Trend: off");
+  await sleep(300);
+  return {steps, reset, note: Boolean(document.querySelector("#main .burn-forecast")), lines: all("#main svg.burn path.burn-trend").length, ...fits()};
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS).replace("@TREND_READ@", TREND_READ)
+TASKS_3D = """(async () => {@HELPERS@@PLAN_HELPERS@
+  const note = () => text(document.querySelector("#main .space-note")) || "";
+  const ready = await until(() => window.e2eGraphs && document.querySelector("#main .graph3d canvas") && !note().startsWith("Loading"), 15000);
+  if (!ready) {
+    return {error: text(document.querySelector("#main .graph"))};
+  }
+  const graph = () => window.e2eGraphs[window.e2eGraphs.length - 1];
+  const id = (end) => (typeof end === "object" ? end.id : end);
+  const look = () => {
+    const data = graph().graphData();
+    const color = graph().linkColor();
+    return {
+      note: note(), layouts: all('#main [aria-label="Layout"] button').map((button) => [button.dataset.layout, button.getAttribute("aria-pressed")]),
+      nodes: data.nodes.map((node) => [node.id, Number.isFinite(node.fz) ? node.fz : null, Number.isFinite(node.ts) ? node.ts : null]),
+      links: data.links.map((link) => [id(link.source), id(link.target), link.kind, color(link)]),
+      label: (() => {
+        const shown = graph().nodeLabel()(data.nodes.find((node) => node.id === "work/t5"));
+        return shown instanceof Element ? shown.textContent : String(shown);
+      })(),
+    };
+  };
+  const layout = async (mode, word) => {
+    all('#main [aria-label="Layout"] button').find((button) => button.dataset.layout === mode).click();
+    await until(() => note().endsWith(word), 8000);
+    await sleep(400);
+    return look();
+  };
+  const css = getComputedStyle(document.documentElement);
+  const palette = Object.fromEntries(["violet", "info", "warn"].map((role) => [role, css.getPropertyValue(`--${role}`).trim()]));
+  const force = look();
+  const time = await layout("time", "Time");
+  const field = document.querySelector('#main input[aria-label="Find a node"]');
+  field.value = "work/t5";
+  field.dispatchEvent(new Event("input", {bubbles: true}));
+  await sleep(200);
+  const chip = all("#main .hits .chip").find((node) => node.dataset.hit === "work/t5");
+  if (!chip) {
+    return {error: "no search hit", force, time};
+  }
+  chip.click();
+  await sleep(600);
+  const dialog = document.getElementById("popup");
+  const eta = dialog.querySelector(".task-eta");
+  const popup = {
+    open: dialog.open, title: text(dialog.querySelector(".popup-box .panel-title")), id: text(dialog.querySelector(".popup-head .task-id")), picked: document.querySelector("#main .graph3d").dataset.picked || null,
+    eta: eta ? eta.dataset.eta : null, open_button: name(dialog.querySelector(".popup-body .actions button")), line: dialog.querySelector(".leader line").getAttribute("display") !== "none",
+  };
+  (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+  await sleep(300);
+  popup.closed = [dialog.open, document.querySelector("#main .graph3d").dataset.picked || null];
+  const back = await layout("none", "Force");
+  await sleep(1200);
+  return {palette, force, time, popup, back: back.note, ...fits()};
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
 PLAN_VALUES = {1920: "13", 1366: "21", 390: "34"}
+TREND_DAYS = {1920: 7, 1366: 3, 390: 14}
 STATUS_ORDER = ["queued", "awaiting", "claimed", "running", "blocked", "stale", "done", "stopped"]
 CHOICE_REQUEST = "send me your open decisions as choices"
 CHOICE_CHANNELS = ["post", "call", "newsletter", "broadcast", "pan-pan", "security", "mayday"]
+NIGHT_HINTS = [
+    ("Drain", "Drain: the agents finish their task and take nothing new; your passkey signs it"),
+    ("Suspend", "Suspend: the agents park their work, write the handover and idle; your passkey signs it"),
+    ("Resume", "Resume: all agents continue from their handover; your passkey signs it"),
+]
 SLOW ="seq -f 'Row %g' 1 60; sleep 4; seq -f 'Row %g' 61 80; sleep 4; echo finished"
 
 
@@ -1248,6 +1620,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual(labelled(probe), {"unlabelled": [], "broken": []})
                 self.assertFalse(probe["wide"], "the page scrolls sideways")
                 self.assertEqual((probe["panel"], probe["nodeChips"]), (0, 0))
+                self.assertEqual(probe["composers"], ["spot"] if probe["hash"].startswith("#agents/") else [])
         self.assertEqual([probe["tall"] for probe in probes if probe["hash"] == "#agents/orbit"], [False] * len(WIDTHS))
         by_hash = {probe["hash"]: probe for probe in probes}
         stream = by_hash["#stream"]
@@ -1261,8 +1634,8 @@ class TestOrchestratorE2E(HubCase):
                 self.assertTrue(by_hash[f"#{tab}/3d"]["canvas"], by_hash[f"#{tab}/3d"]["note"])
                 self.assertRegex(by_hash[f"#{tab}/3d"]["note"], r"^\d+ nodes · \d+ edges · Force$")
         agents = by_hash["#agents/orbit"]
-        self.assertEqual(agents["toolbar"], ["Radio to all", "Cancel mayday", "Priority", "Day/Night"])
-        self.assertEqual(agents["toAll"], [["newsletter", True], ["broadcast", False], ["pan-pan", False], ["security", False], ["mayday", False]])
+        self.assertEqual(agents["toolbar"], ["Radio", "Priority", "Day/Night"])
+        self.assertEqual(agents["spot"], {"hidden": True, "channels": CHOICE_CHANNELS})
         hierarchy = by_hash["#agents/hierarchy"]
         self.assertEqual([office for office, _ in hierarchy["org"]], ["chair", "identity/oidc", "work/s1", "work/s2"])
         self.assertEqual(hierarchy["toggles"], [["Collapse: Operator", "true"], ["Collapse: Chair", "true"], ["Collapse: identity", "true"], ["Collapse: Presidents", "true"]])
@@ -1286,7 +1659,10 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(by_hash["#artifacts/chord"]["flowEdges"], ["pull", "push"])
         order = ["work/feature", "work/docs", "work/stage", "queue/gate-3", "work/old", "operator/push"]
         listed = by_hash["#tasks/list"]
-        self.assertEqual(listed["views"], ["List", "Board", "RASCI", "Gantt", "Burndown and burnup"])
+        self.assertEqual(listed["views"], ["List", "Board", "RASCI", "Gantt", "Burndown and burnup", "3D"])
+        self.assertEqual(by_hash["#tasks/3d"]["layouts"], ["Force", "Time"])
+        self.assertTrue(by_hash["#tasks/3d"]["canvas"], by_hash["#tasks/3d"]["note"])
+        self.assertRegex(by_hash["#tasks/3d"]["note"], r"^6 nodes · \d+ edges · Force$")
         self.assertEqual(listed["taskFilters"], [["all", "true", "6"], ["open", "false", "4"], ["work", "false", "4"], ["operator", "false", "2"], ["grant", "false", "1"], ["ended", "false", "2"]])
         self.assertEqual(listed["taskRows"], [[task, task not in ("work/old", "operator/push")] for task in order])
         self.assertEqual(listed["flows"], ["file", "file"])
@@ -1297,12 +1673,11 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual([probe["hash"] for probe in extra[:3]], ["#agents/orbit", "#agents/chord", "#artifacts/tree"])
         actions = extra[3]
         self.assertNotIn("error", actions)
-        self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/burn", "#stream"])
+        self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/3d", "#stream"])
         self.assertEqual(actions["ambience"], ["sky-look", "music-toggle", "leitstand", "notify"])
         self.assertEqual((actions["settingsUnlabelled"], actions["popupUnlabelled"]), (0, 0))
-        self.assertEqual([name for name, _, _ in actions["speech"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
-        self.assertEqual([entry[1:] for entry in actions["speech"] if entry[0] == "MAYDAY"], [[True, True]])
-        for tool in ("Radio to all …", "Cancel mayday", "Priority …", "Drain", "Suspend", "Resume", "Firewall …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
+        self.assertEqual((actions["sections"], actions["radioFields"]), (["Ambience", "Location", "Appearance", "Music", "Notifications", "Internet radio", "Passkey"], 0))
+        for tool in ("Radio …", "Cancel mayday", "Priority …", "Drain", "Suspend", "Resume", "Firewall …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
             with self.subTest(tool=tool):
                 self.assertTrue(any(tool in entry for entry in actions["palette"]), actions["palette"])
         self.assertEqual(actions["popup"], [["post", True], ["call", False]])
@@ -1376,10 +1751,10 @@ class TestOrchestratorE2E(HubCase):
     def test_chromium_records_transcribes_and_sends_a_signed_call_with_voice(self):
         local = f"http://localhost:{self.port}/"
         steps = [
-            {"width": 1366, "height": 768, "url": f"{local}#stream/radio", "wait": 1200, "probe": COMPOSE.replace("@TO@", "Stage"), "shot": self.shot("1366-radio-composer"), "gesture": True},
+            {"width": 1366, "height": 768, "url": f"{local}#agents/orbit", "wait": 1200, "probe": COMPOSE.replace("@TO@", "Stage"), "shot": self.shot("1366-radio-spot-composer"), "gesture": True},
             {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": COMPOSE_SEND.replace("@ATTACH@", "false"), "shot": None},
             {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": COMPOSE.replace("@TO@", "Stage"), "shot": None, "gesture": True},
-            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": COMPOSE_SEND.replace("@ATTACH@", "true"), "shot": self.shot("1366-radio-composer-sent")},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": COMPOSE_SEND.replace("@ATTACH@", "true"), "shot": self.shot("1366-radio-spot-composer-sent")},
         ]
         data = self.drive(steps, self.authenticator())
         (OUT / "chromium-composer.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
@@ -1406,14 +1781,90 @@ class TestOrchestratorE2E(HubCase):
         status, _, body = self.get(f"/api/voice/{note}.wav")
         self.assertEqual((status, body[:4]), (200, b"RIFF"))
 
-    def test_chromium_clears_the_mayday_only_after_the_passkey_signs(self):
+    def test_chromium_clears_the_mayday_from_the_radio_spot_only_after_confirmation_and_passkey_at_three_widths(self):
         local = f"http://localhost:{self.port}/"
-        data = self.drive([{"width": 1366, "height": 768, "url": f"{local}#agents/orbit", "wait": 1200, "probe": CLEAR_MAYDAY, "shot": self.shot("1366-mayday-cleared")}], self.authenticator())
+        steps = [{"width": width, "height": height, "url": f"{local}?{width}#agents/orbit", "wait": 1200, "probe": CLEAR_MAYDAY, "shot": self.shot(f"{width}-radio-spot-mayday-cleared")} for width, height in WIDTHS]
+        data = self.drive(steps, self.authenticator())
+        (OUT / "chromium-mayday.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
-        result = data["results"][0]
-        self.assertNotIn("error", result)
-        self.assertTrue((result["done"] or "").startswith("Cancel mayday: done"), result)
-        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])])
+        question = "Lift the radio silence of the active mayday?"
+        for result, (width, _) in zip(data["results"], WIDTHS, strict=True):
+            with self.subTest(width=width):
+                self.assertNotIn("error", result)
+                self.assertEqual(result["toolbar"], ["Radio", "Priority", "Day/Night", "Drain", "Suspend", "Resume"])
+                self.assertEqual(result["title"], "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it")
+                self.assertEqual(result["declined"], {"question": [question], "posted": [], "toasts": []})
+                self.assertEqual(result["accepted"], {"question": [question], "posted": ["/api/board/sign", "/api/board/clear-mayday"]})
+                self.assertTrue((result["done"] or "").startswith("Cancel mayday: done"), result)
+        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])] * len(WIDTHS))
+
+    def test_chromium_sends_every_class_from_the_radio_spot_and_keeps_its_gear_settings_through_a_reload_at_three_widths(self):
+        local = f"http://localhost:{self.port}/"
+        values = {1920: ("0.35", "false", "true"), 1366: ("0.45", "true", "false"), 390: ("0.55", "false", "true")}
+        steps = [{"width": 1366, "height": 768, "url": f"{local}#stream/radio", "wait": 1200, "probe": RADIO_JUMP, "shot": self.shot("1366-radio-tab-jump-to-spot")}]
+        for width, height in WIDTHS:
+            squelch, tone, post = values[width]
+            gear = GEAR_SAVE.replace("@SQUELCH@", squelch).replace("@TONE@", tone).replace("@POST@", post)
+            steps += [
+                {"width": width, "height": height, "url": f"{local}?{width}#agents/orbit", "wait": 1200, "probe": SPOT_SEND.replace("@TEXT@", f"spot {width}"), "shot": self.shot(f"{width}-radio-spot-sent")},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": gear, "shot": None},
+                {"width": width, "height": height, "url": f"{local}?{width}-reloaded#agents/orbit", "wait": 1200, "probe": GEAR_READ, "shot": self.shot(f"{width}-radio-spot-gear")},
+            ]
+        data = self.drive(steps, self.authenticator())
+        (OUT / "chromium-radio-spot.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        labels = dict(zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True))
+        mayday = "Send a mayday to all? All agents pause writing steps until you cancel it."
+        jump, *walked = data["results"]
+        self.assertEqual(jump, {"composers": 0, "hash": "#agents/orbit", "open": True, "focused": True})
+        for index, (width, _) in enumerate(WIDTHS):
+            sent, saved, read = walked[3 * index : 3 * (index + 1)]
+            squelch, tone, post = values[width]
+            with self.subTest(width=width):
+                for probe in (sent, saved, read):
+                    self.assertNotIn("error", probe)
+                self.assertEqual((sent["closed"], sent["open"]), ([True, "false"], [False, "true", True]))
+                self.assertEqual(sent["inline"], ["static", True, True])
+                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Radio", "Priority", "Day/Night"], CHOICE_CHANNELS, ["Record"]))
+                self.assertEqual(sent["heads"], [["Radio settings", "Radio settings: tones, squelch and read aloud"], ["Cancel mayday", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"]])
+                self.assertEqual((sent["tall"], sent["wide"]), (False, False))
+                self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
+                for run in sent["runs"]:
+                    direct = run["cls"] in ("post", "call")
+                    self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [mayday] if run["cls"] == "mayday" else [], ""), run)
+                    self.assertTrue((run["toast"] or "").startswith(f"{labels[run['cls']]} to {'Stage' if direct else 'all'}: sent"), run)
+                self.assertEqual((saved["expanded"], saved["sections"], saved["clashes"]), ("true", ["Tones", "Read radio aloud"], {"found": [], "outside": []}))
+                self.assertEqual(saved["tones"], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio"])
+                self.assertEqual([entry[0] for entry in saved["classes"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
+                self.assertEqual([entry[1:] for entry in saved["classes"] if entry[0] == "MAYDAY"], [[True, True]])
+                self.assertEqual((saved["toast"], saved["after"]), ("Radio settings saved", ["false", False]))
+                self.assertEqual(saved["general"], {"sections": ["Ambience", "Location", "Appearance", "Music", "Notifications", "Internet radio", "Passkey"], "radio": 0})
+                self.assertEqual((saved["tall"], saved["wide"]), (False, False))
+                self.assertEqual(read, {"squelch": float(squelch), "tone": tone == "true", "post": post == "true", "tall": False, "wide": False})
+        heads = {"post": ["post", "--to", "Stage"], "call": ["send", "call", "--to", "Stage"], "newsletter": ["post"]}
+        radio = [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
+        sends = [(width, cls) for width, _ in WIDTHS for cls in CHOICE_CHANNELS]
+        self.assertEqual([args[:-1] for args in radio], [[*heads.get(cls, ["send", cls]), "--session", "Operator"] for _, cls in sends])
+        for args, (width, cls) in zip(radio, sends, strict=True):
+            with self.subTest(width=width, cls=cls):
+                self.assertTrue(args[-1].endswith(f"] spot {width} {cls}"), args)
+        stored = self.httpd.hub.settings.get()
+        self.assertEqual((stored["squelch"], stored["sounds"]["radio"]["on"], "post" in stored["speech"]["classes"]), (0.55, False, True))
+
+    def test_chromium_keeps_the_3d_camera_through_two_state_refreshes_at_three_widths(self):
+        steps = [{"width": width, "height": height, "url": f"{self.base}?{width}#agents/3d", "wait": 900, "probe": CAMERA, "shot": self.shot(f"{width}-agents-3d-steady-camera")} for width, height in WIDTHS]
+        data = self.drive(steps, None, init=GRAPH_HOOK)
+        (OUT / "chromium-camera.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        for result, (width, _) in zip(data["results"], WIDTHS, strict=True):
+            with self.subTest(width=width):
+                self.assertNotIn("error", result)
+                self.assertTrue(result["hooked"], result)
+                self.assertGreater(math.dist(result["built"], result["moved"]), 1, result)
+                for refresh in result["refreshes"]:
+                    self.assertEqual((refresh["rebuilt"], refresh["settled"]), (True, True), result)
+                    self.assertLess(math.dist(refresh["camera"], result["moved"]), 0.01, result)
+                self.assertGreater(math.dist(result["reset"], result["moved"]), 1, result)
 
     def check_night_menu(self, browser: str, driver: str, binary: str, signs: bool) -> None:
         """Args:
@@ -1423,11 +1874,18 @@ class TestOrchestratorE2E(HubCase):
         """
         authenticator = self.authenticator()
         probe = NIGHT_MENU.replace("@SIGNS@", "true" if signs else "false")
+        looks = [{"width": width, "height": height, "url": f"http://localhost:{self.port}/?{width}#agents/orbit", "wait": 1200, "probe": NIGHT_LOOK, "shot": str(OUT / f"{browser}-{width}-night-menu-tooltips.png")} for width, height in WIDTHS]
         step = {"width": 1366, "height": 768, "url": f"http://localhost:{self.port}/#agents/orbit", "wait": 1200, "probe": probe, "shot": str(OUT / f"{browser}-1366-night-menu.png")}
-        data = self.drive([step], authenticator if signs else None, driver, binary)
+        data = self.drive([*looks, step], authenticator if signs else None, driver, binary)
         (OUT / f"{browser}-night-menu.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
-        found = data["results"][0]
+        *seen, found = data["results"]
+        for look, (width, _) in zip(seen, WIDTHS, strict=True):
+            with self.subTest(browser=browser, width=width):
+                self.assertNotIn("error", look)
+                self.assertEqual(look["children"], [["span", ""], ["div", "actions"]])
+                self.assertEqual((look["badge"], look["paragraphs"], look["wide"]), (["Day"], 0, False))
+                self.assertEqual(look["buttons"], [list(entry) for entry in NIGHT_HINTS])
         self.assertNotIn("error", found)
         self.assertEqual(found["labels"], ["Drain", "Suspend", "Resume"])
         for run, action in zip(found["runs"], ("drain", "suspend", "resume"), strict=True):
@@ -1663,6 +2121,7 @@ class TestOrchestratorE2E(HubCase):
         labels = dict(zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True))
         self.assertEqual(len(sent["picked"]), 2, sent)
         self.assertEqual((sent["counted"], sent["fields"], sent["tall"], sent["wide"]), ("2", 0, False, False))
+        self.assertEqual(sent["opened"], [True, len(CHOICE_CHANNELS)])
         self.assertEqual([run["channel"] for run in sent["runs"]], CHOICE_CHANNELS)
         for run in sent["runs"]:
             with self.subTest(channel=run["channel"]):
@@ -1675,7 +2134,7 @@ class TestOrchestratorE2E(HubCase):
 
     def answered(self, result: dict, signs: bool) -> None:
         self.assertNotIn("error", result)
-        self.assertEqual((result["title"], result["asked"], result["tall"], result["wide"]), ("Wait: your passkey signs this answer, a post to Stage", 1, False, False))
+        self.assertEqual((result["title"], result["asked"], result["closed"], result["tall"], result["wide"]), ("Wait: your passkey signs this answer, a post to Stage", 1, [False, 0], False, False))
         signed = [["/api/sign", ["items"], None, None]]
         self.assertEqual(result["posted"], [*signed, ["/api/inbox/approve", ["items", "proof"], None, None]] if signs else signed)
         self.assertTrue((result["toast"] or "").startswith("Choice: Wait" + ("" if signs else ": not signed")), result)
@@ -1703,13 +2162,16 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual(view["kinds"], ["Ask", "Choice", "Operator", "Review", "Rule request"])
                 self.assertEqual(view["filter"], ["Waits on Operator", "true"])
                 self.assertEqual(view["channels"], [[channel, label, channel in ("post", "call")] for channel, label in zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True)])
-                self.assertEqual((view["fields"], view["choices"], view["multi"], view["unlabelled"], view["tall"], view["wide"]), (0, 0, ["Agents", "0", 0], [], False, False))
+                self.assertEqual((view["fields"], view["choices"], view["multi"], view["unlabelled"], view["tall"], view["wide"]), (0, 0, ["Request choices", False, 0, "0", 0], [], False, False))
+                self.assertEqual(view["bar"], ["Tasks", view["bar"][1], ["toolbar", "chips", "body"]])
+                self.assertEqual(view["bar"][1] == 1, width != 390, view["bar"])
                 self.assertGreaterEqual(len(view["agents"]), 2, view)
                 self.assertIn(["Choice", ["Merge now", "Wait"]], view["cards"])
                 self.requested(sent, signs)
                 self.answered(answer, signs)
                 for fit, name in zip(fitted, TASK_VIEWS, strict=True):
                     self.assertEqual((fit["hash"], fit["bar"], fit["choices"], fit["tall"], fit["wide"]), (f"#tasks/{name}", CHOICE_CHANNELS, 0, False, False), fit)
+                    self.assertEqual((fit["rows"] == 1, fit["layout"]), (width != 390, ["toolbar", "chips", "body"]), fit)
                     if name == "board":
                         self.assertEqual(fit["columns"], ["queued", "running", "blocked", "done", "stopped"])
         hub = self.httpd.hub
@@ -1818,7 +2280,8 @@ class TestOrchestratorE2E(HubCase):
             with self.subTest(browser=browser, width=width):
                 for probe in (gantt, burn, points_on, request, gantt_points, bulk):
                     self.assertNotIn("error", probe)
-                    self.assertEqual((probe["tall"], probe["wide"]), (False, False), probe)
+                    self.assertEqual((probe["tall"], probe["wide"], probe["layout"]), (False, False, ["toolbar", "chips", "body"]), probe)
+                    self.assertEqual(probe["rows"] == 1, width != 390, probe)
                 self.planned(gantt, points=False)
                 self.planned(gantt_points, points=True)
                 self.assertEqual((burn["modes"], burn["request"]), ([["none", "true"], ["points", "false"]], False))
@@ -1861,6 +2324,179 @@ class TestOrchestratorE2E(HubCase):
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
     def test_firefox_draws_the_gantt_and_burn_and_asks_the_passkey_for_a_bulk_business_value_storing_nothing_unsigned(self):
         self.check_plan("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"), signs=False)
+
+    def trend_work(self, now: float) -> None:
+        day = 86400
+        register = {
+            "work/t1": {"title": "First", "status": "done", "worker": "Stage", "start": iso(now - 10 * day), "end": iso(now - 8 * day), "roles": {"Stage": "RA"}, "estimates": {"Stage": {"value": 5, "complexity": 1}}},
+            "work/t2": {"title": "Second", "status": "done", "worker": "Docs", "start": iso(now - 10 * day), "end": iso(now - 6 * day), "roles": {"Docs": "RA"}, "estimates": {"Docs": {"value": 3, "complexity": 2}}},
+            "work/t3": {"title": "Third", "status": "done", "worker": "Docs", "branch": "feature/t3", "start": iso(now - 10 * day), "end": iso(now - 4 * day), "roles": {"Docs": "RA"}, "estimates": {"Docs": {"value": 3, "complexity": 3}}},
+            "work/t4": {"title": "Fourth", "status": "running", "worker": "Stage", "start": iso(now - day), "roles": {"Stage": "RA"}, "estimates": {"Stage": {"value": 8, "complexity": 5}}},
+            "work/t5": {"title": "Fifth", "status": "queued", "after": ["work/t4"], "roles": {"Skills": "R"}, "estimates": {"Skills": {"value": 8, "complexity": 3}}},
+            "work/t6": {"title": "Sixth", "status": "queued", "base": "feature/t3", "roles": {"Docs": "RA"}},
+        }
+        queue = {"seq": 2, "entries": [
+            {"id": "deploy-1", "seq": 1, "kind": "deploy", "task": "work/t4", "workdir": "/repo", "session": "s2", "name": "Stage", "hotfix": None, "status": "active", "enqueued": now - 400, "granted": now - 300, "cmd": "make deploy"},
+            {"id": "test-2", "seq": 2, "kind": "test", "task": "work/t5", "workdir": "/repo", "session": "s2", "name": "Docs", "hotfix": None, "status": "waiting", "enqueued": now - 60, "granted": None, "cmd": "make test"},
+        ]}
+        self.write_council({"rasci.json": register, "queue.json": queue})
+
+    def trend_steps(self, browser: str) -> list[dict]:
+        local = f"http://localhost:{self.port}/"
+        steps = []
+        for width, height in WIDTHS:
+            days = str(TREND_DAYS[width])
+            steps += [
+                {"width": width, "height": height, "url": f"{local}?{width}#tasks/list", "wait": 1200, "probe": ETA_LIST, "shot": str(OUT / f"{browser}-{width}-tasks-eta.png")},
+                {"width": width, "height": height, "url": f"{local}?{width}#tasks/burn", "wait": 900, "probe": TREND_SET.replace("@MODE@", "regression").replace("@DAYS@", days), "shot": str(OUT / f"{browser}-{width}-tasks-burn-regression.png")},
+                {"width": width, "height": height, "url": f"{local}?{width}-regression#tasks/burn", "wait": 1200, "probe": TREND_RELOADED, "shot": None},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": TREND_SET.replace("@MODE@", "velocity").replace("@DAYS@", days), "shot": str(OUT / f"{browser}-{width}-tasks-burn-velocity.png")},
+                {"width": width, "height": height, "url": f"{local}?{width}-velocity#tasks/burn", "wait": 1200, "probe": TREND_RELOADED, "shot": None},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": STEP_TIPS, "shot": str(OUT / f"{browser}-{width}-tasks-burn-steps.png")},
+                {"width": width, "height": height, "url": f"{local}?{width}-3d#tasks/3d", "wait": 1200, "probe": TASKS_3D, "shot": str(OUT / f"{browser}-{width}-tasks-3d.png")},
+                {"width": width, "height": height, "url": f"{local}?{width}-camera#tasks/3d", "wait": 900, "probe": CAMERA, "shot": str(OUT / f"{browser}-{width}-tasks-3d-steady-camera.png")},
+            ]
+        return steps
+
+    def eta_checked(self, probe: dict, mode: str, rows: dict, edges: list[dict], window: tuple[float, float]) -> None:
+        """Args:
+            probe: task -> [start, eta, forecast, text, title] as the list shows it.
+            mode: the estimation mode the list was drawn in.
+            rows: the snapshot's task rows by task.
+            edges: the snapshot's task edges.
+            window: the earliest and latest time the page can have taken as now.
+        """
+        day = 86400
+        points = {"none": {}, "points": {"work/t4": 10 * day, "work/t5": 6 * day}}[mode]
+        self.assertEqual(sorted(probe), sorted(rows))
+        for task, (start, eta, forecast, words, title) in probe.items():
+            with self.subTest(mode=mode, task=task):
+                row = rows[task]
+                self.assertTrue(words.startswith("ETA ") and words != "ETA –", words)
+                if row["ended"]:
+                    self.assertEqual((eta, forecast, title), (row["end"], False, "ETA: the end of the ended task"))
+                    continue
+                self.assertTrue(forecast)
+                self.assertAlmostEqual(eta - start, points.get(task, 4 * day), delta=0.01)
+                ahead = [probe[edge["from"]][1] for edge in edges if edge["to"] == task and edge["from"] in probe and edge["from"] != task]
+                if row["start"] is not None:
+                    self.assertEqual(start, row["start"])
+                elif ahead and max(ahead) > window[1]:
+                    self.assertAlmostEqual(start, max(ahead), delta=0.01)
+                else:
+                    self.assertTrue(window[0] <= start <= window[1], (start, window))
+
+    def trend_forecast(self, points: list[list[float]], mode: str, days: int) -> tuple[float, float | None]:
+        """Args:
+            points: [t, remaining] of the drawn burndown points.
+
+        Returns:
+            The trend's start and the time its remaining line reaches 0
+            (None when it never falls), computed here independently of plan.js.
+        """
+        last_t, last_y = points[-1]
+        if mode == "regression":
+            mean_t = sum(t for t, _ in points) / len(points)
+            mean_y = sum(y for _, y in points) / len(points)
+            slope = sum((t - mean_t) * (y - mean_y) for t, y in points) / sum((t - mean_t) ** 2 for t, _ in points)
+            return points[0][0], (mean_t - mean_y / slope if slope < 0 else None)
+        start = max(points[0][0], last_t - days * 86400)
+        before = [y for t, y in points if t <= start][-1]
+        slope = (last_y - before) / (last_t - start)
+        return start, (last_t - last_y / slope if slope < 0 else None)
+
+    def trended(self, probe: dict, mode: str, days: int) -> None:
+        start, forecast = self.trend_forecast(probe["points"], mode, days)
+        self.assertEqual(probe["value"], mode)
+        self.assertEqual(probe["days"], [days, mode == "velocity"])
+        self.assertEqual(sorted(series for series, *_ in probe["lines"]), ["done", "remaining", "scope"])
+        for _, begin, end in probe["lines"]:
+            self.assertAlmostEqual(begin, start, delta=0.01)
+            self.assertAlmostEqual(end, forecast if forecast is not None else probe["points"][-1][0], delta=0.01)
+        if forecast is None:
+            self.assertEqual((probe["note"], probe["marker"]), ([None, "No forecast: the trend never reaches 0 remaining, so done never meets scope"], None))
+            return
+        self.assertAlmostEqual(probe["note"][0], forecast, delta=0.01)
+        self.assertAlmostEqual(probe["marker"], forecast, delta=0.01)
+        self.assertTrue(probe["note"][1].startswith("Forecast: "), probe["note"])
+
+    def check_trend_eta_3d(self, browser: str, driver: str, binary: str) -> None:
+        self.trend_work(time.time())
+        begun = time.time()
+        data = self.drive(self.trend_steps(browser), None, driver, binary, init=GRAPH_HOOK)
+        ended = time.time()
+        (OUT / f"{browser}-trend-eta-3d.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        snapshot = self.snapshot()
+        rows = {row["task"]: row for row in snapshot["tasks"]}
+        edges = snapshot["task_edges"]
+        self.assertEqual(sorted([edge["kind"], edge["from"], edge["to"]] for edge in edges), [["after", "work/t4", "work/t5"], ["base", "work/t3", "work/t6"], ["queue", "queue/deploy-1", "queue/test-2"]])
+        trends = [["off", "off"], ["regression", "linear regression"], ["velocity", "velocity"]]
+        per = 8
+        for index, (width, _) in enumerate(WIDTHS):
+            eta, regression, reloaded, velocity, again, tips, shown, camera = data["results"][per * index : per * (index + 1)]
+            days = TREND_DAYS[width]
+            kept = TREND_DAYS[WIDTHS[index - 1][0]] if index else 7
+            with self.subTest(browser=browser, width=width):
+                for probe in (eta, regression, reloaded, velocity, again, tips, shown):
+                    self.assertNotIn("error", probe)
+                    self.assertEqual((probe["tall"], probe["wide"], probe["layout"]), (False, False, ["toolbar", "chips", "body"]), probe)
+                    self.assertEqual(probe["rows"] == 1, width != 390, probe["rows"])
+                for mode in ("none", "points", "back"):
+                    self.eta_checked(eta[mode], "points" if mode == "points" else "none", rows, edges, (begun - 1, ended + 1))
+                self.assertEqual(eta["modes"], [["none", "true"], ["points", "false"]])
+                self.assertEqual((regression["before"]["value"], regression["before"]["options"], regression["before"]["note"], regression["before"]["lines"]), ("off", trends, None, []))
+                self.assertEqual(regression["before"]["days"], [kept, False])
+                self.assertEqual(regression["toasts"], ["Trend: linear regression"])
+                self.trended(regression["after"], "regression", kept)
+                self.trended(reloaded, "regression", kept)
+                self.assertEqual(velocity["toasts"], [f"Trend: velocity over {kept} days", f"Trend: velocity over {days} days"])
+                self.trended(velocity["after"], "velocity", days)
+                self.trended(again, "velocity", days)
+                self.assertEqual([step["t"] for step in tips["steps"]], [t for t, _ in again["points"]])
+                listed = [[sorted(filter(None, step[key].split(" "))) for key in ("started", "ended", "joined")] for step in tips["steps"]]
+                self.assertEqual(listed, [[["work/t1", "work/t2", "work/t3"], [], ["work/t5", "work/t6"]], [[], ["work/t1"], []], [[], ["work/t2"], []], [[], ["work/t3"], []], [["work/t4"], [], []], [[], [], []]])
+                self.assertEqual([step["series"] for step in tips["steps"]], [["scope", "done", "remaining"]] * len(tips["steps"]))
+                self.assertIn("Ended: work/t1", tips["steps"][1]["tip"])
+                self.assertIn("No work package started, ended or joined the scope here", tips["steps"][-1]["tip"])
+                self.assertEqual((tips["reset"], tips["note"], tips["lines"]), ("Trend: off", False, 0))
+                self.tasks_3d(shown, snapshot)
+                self.assertTrue(camera["hooked"], camera)
+                self.assertGreater(math.dist(camera["built"], camera["moved"]), 1, camera)
+                for refresh in camera["refreshes"]:
+                    self.assertEqual((refresh["rebuilt"], refresh["settled"]), (True, True), camera)
+                    self.assertLess(math.dist(refresh["camera"], camera["moved"]), 0.01, camera)
+        self.assertEqual(self.httpd.hub.settings.get()["trend"], {"mode": "off", "days": TREND_DAYS[WIDTHS[-1][0]]})
+
+    def tasks_3d(self, shown: dict, snapshot: dict) -> None:
+        tasks = sorted(row["task"] for row in snapshot["tasks"])
+        colors = {"after": shown["palette"]["violet"], "base": shown["palette"]["info"], "queue": shown["palette"]["warn"]}
+        edges = sorted([edge["from"], edge["to"], edge["kind"], colors[edge["kind"]]] for edge in snapshot["task_edges"])
+        self.assertEqual(len(set(colors.values())), 3, colors)
+        for layout, word in (("force", "Force"), ("time", "Time")):
+            drawn = shown[layout]
+            with self.subTest(layout=layout):
+                self.assertEqual(drawn["note"], f"{len(tasks)} nodes · {len(edges)} edges · {word}")
+                self.assertEqual(drawn["layouts"], [["none", str(layout == "force").lower()], ["time", str(layout == "time").lower()]])
+                self.assertEqual(sorted(node for node, *_ in drawn["nodes"]), tasks)
+                self.assertEqual(sorted(drawn["links"]), edges)
+                self.assertEqual(drawn["label"], "work/t5 · Fifth")
+        self.assertEqual([fz for _, fz, _ in shown["force"]["nodes"]], [None] * len(tasks))
+        timed = sorted(shown["time"]["nodes"], key=lambda node: node[2])
+        self.assertTrue(all(fz is not None for _, fz, _ in timed), timed)
+        self.assertEqual([fz for _, fz, _ in timed], sorted(fz for _, fz, _ in timed))
+        self.assertLess(timed[0][1], timed[-1][1])
+        popup = shown["popup"]
+        self.assertEqual((popup["open"], popup["title"], popup["id"], popup["picked"], popup["open_button"], popup["line"]), (True, "Fifth", "work/t5", "work/t5", "Open task", True), popup)
+        self.assertTrue(popup["eta"], popup)
+        self.assertEqual((popup["closed"], shown["back"]), ([False, None], f"{len(tasks)} nodes · {len(edges)} edges · Force"))
+
+    def test_chromium_draws_the_trend_forecast_point_tips_eta_and_tasks_3d_at_three_widths(self):
+        self.check_trend_eta_3d("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"))
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_draws_the_trend_forecast_point_tips_eta_and_tasks_3d_at_three_widths(self):
+        self.check_trend_eta_3d("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
 
     def test_chromium_pins_a_task_priority_after_signature_and_the_runner_applies_it(self):
         signer = self.pin()

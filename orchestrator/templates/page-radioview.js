@@ -101,12 +101,6 @@
       radioDom.speakers.replaceChildren(...speakerChips());
       drawSpeaker();
     }
-    const names = agentNames();
-    if (JSON.stringify(names) !== radioDom.names) {
-      radioDom.names = JSON.stringify(names);
-      const chosen = radioDom.recipient.value;
-      radioDom.recipient.replaceChildren(...names.map((name) => h("option", {value: name, selected: name === chosen}, name)));
-    }
     const sent = JSON.stringify(state.messages.slice(-5));
     if (sent !== radioDom.sent) {
       radioDom.sent = sent;
@@ -120,12 +114,12 @@
     const caption = h("div", {class: "radio-caption", role: "status", "aria-live": "polite", hidden: true});
     const stations = h("ul", {class: "stations", "aria-label": "Stations"});
     const outbox = h("div", {});
-    const {form, recipient} = composerForm();
-    radioDom = {speakers, caption, stations, outbox, recipient, crew: "", names: "", sent: "", stationsSig: ""};
+    const send = h("button", {type: "button", class: "btn small soft", ...named("Send …", "Send: the radio spot under the Agents toolbar"), on: {click: openRadio}}, icon("bi-broadcast-pin"), "Send …");
+    radioDom = {speakers, caption, stations, outbox, crew: "", sent: "", stationsSig: ""};
     return h("div", {class: "stack radio-view"},
       h("h2", {class: "title"}, "Radio"),
       h("div", {class: "radio-grid"},
-        h("section", {class: "card radio-talk", "aria-label": "Radio"}, h("h3", {class: "group-title"}, "Radio"), caption, speakers, form),
+        h("section", {class: "card radio-talk", "aria-label": "Radio"}, h("div", {class: "card-head"}, h("h3", {class: "group-title"}, "Radio"), send), caption, speakers),
         h("div", {class: "stack"},
           h("section", {class: "card", "aria-label": "Internet radio"},
             h("div", {class: "card-head"}, h("h3", {class: "group-title"}, "Internet radio"), btn("Edit stations", "btn small ghost", settingsSheet)),

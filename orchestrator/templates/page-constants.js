@@ -10,7 +10,12 @@
   const VIEW_ICONS = {"fuer-dich": "bi-person-check", funk: "bi-broadcast", arbeit: "bi-briefcase", transkripte: "bi-chat-left-text"};
   const ITEM_LABELS = {review: "Review", ask: "Ask", decision: "Choice", operator: "Operator", rule: "Rule request"};
   const NIGHT = {day: ["Day", "ok"], drain: ["Draining", "warn"], suspend: ["Suspended", "violet"]};
-  const ACTIONS = [["clear-mayday", "Cancel mayday", "Lift the radio silence of the active mayday?"], ["drain", "Drain", "Drain all agents: finish the current task, accept nothing new (kvb-agent-drain)?"], ["suspend", "Suspend", "Suspend all agents: park work, write the handover, idle (kvb-agent-suspend)?"], ["resume", "Resume", "Resume all agents from their handover (kvb-agent-resume)?"]];
+  const ACTIONS = [
+    ["clear-mayday", "Cancel mayday", "Lift the radio silence of the active mayday?", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"],
+    ["drain", "Drain", "Drain all agents: finish the current task, accept nothing new (kvb-agent-drain)?", "Drain: the agents finish their task and take nothing new; your passkey signs it"],
+    ["suspend", "Suspend", "Suspend all agents: park work, write the handover, idle (kvb-agent-suspend)?", "Suspend: the agents park their work, write the handover and idle; your passkey signs it"],
+    ["resume", "Resume", "Resume all agents from their handover (kvb-agent-resume)?", "Resume: all agents continue from their handover; your passkey signs it"],
+  ];
   const UPLOAD_LIMIT = 50 * 1024 * 1024;
   const STREAM_KEEP = 5000;
   const CLASSES = {post: "Post", call: "Call", newsletter: "Newsletter", broadcast: "Broadcast", mayday: "Mayday", "pan-pan": "Pan-Pan", security: "Sécurité", receipt: "Read", grant: "Grant"};

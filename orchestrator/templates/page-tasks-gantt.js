@@ -2,6 +2,10 @@
   const BURN = {width: 900, height: 340, left: 52, right: 24, top: 20, bottom: 40};
   const EDGE_WORDS = {after: "Follows (rasci.py set --after)", base: "Branches from (base branch)", queue: "Waits behind (queue order)"};
   const SERIES_WORDS = {scope: "Scope (burnup)", done: "Done (burnup)", remaining: "Remaining (burndown)", unestimated: "Unestimated tasks"};
+  const STEP_WORDS = [["started", "Started"], ["ended", "Ended"], ["joined", "Joined the scope"]];
+  const ESTIMATION_ICONS = {none: "bi-1-circle", points: "bi-suit-diamond"};
+  const TREND_DAYS = [1, 365];
+  const TREND_REACH = 3;
   const LINE_OFFICE = /^(?!work\/|cluster\/)[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
   const estimation = () => settings.estimation;
   const cut = (text, size) => (text.length > size ? `${text.slice(0, size - 1)}…` : text);
@@ -88,20 +92,75 @@
     return {x, y};
   }
 
+  function burnPoints(series, changes, names, x, y) {
+    const marks = s("g", {class: "burn-points"});
+    series.forEach((point, index) => {
+      const change = changes[index];
+      const listed = STEP_WORDS.filter(([key]) => change[key].length).map(([key, label]) => `${label}: ${change[key].join(", ")}`);
+      const words = listed.length ? listed.join("\n") : "No work package started, ended or joined the scope here";
+      for (const name of names) {
+        marks.append(s("circle", {
+          class: `burn-point k-${name}`, cx: fixed(x(point.t)), cy: fixed(y(point[name])), r: 3.5, "data-step": index, "data-series": name, "data-t": point.t, "data-value": point[name],
+          ...Object.fromEntries(STEP_WORDS.map(([key]) => [`data-${key}`, change[key].join(" ")])),
+        }, s("title", {}, `${absolute.format(stampOf(point.t))} · ${SERIES_WORDS[name]}: ${point[name]}\n${words}`)));
+      }
+    });
+    return marks;
+  }
+
+  function trendNote(trend) {
+    const forecast = trend ? trend.forecast : null;
+    const words = forecast !== null ? `Forecast: ${absolute.format(stampOf(forecast))}` : trend ? "No forecast: the trend never reaches 0 remaining, so done never meets scope" : "No forecast: too few points for a trend";
+    return h("span", {class: "burn-forecast", "data-forecast": forecast === null ? "" : String(forecast)}, icon("bi-graph-up-arrow"), words);
+  }
+
+  function burnTrend(svg, trend, end, x, y) {
+    for (const name of Plan.TRENDED) {
+      const line = trend.lines[name];
+      svg.append(s("path", {class: `burn-trend k-${name}`, "data-series": name, "data-from": trend.start, "data-to": end, d: `M${fixed(x(trend.start))},${fixed(y(Plan.lineAt(line, trend.start)))} L${fixed(x(end))},${fixed(y(Plan.lineAt(line, end)))}`},
+        s("title", {}, `${SERIES_WORDS[name]} trend`)));
+    }
+    if (trend.forecast !== null) {
+      const at = fixed(x(end));
+      svg.append(s("line", {class: "forecast-line", x1: at, x2: at, y1: BURN.top, y2: BURN.height - BURN.bottom, "data-forecast": trend.forecast}));
+      svg.append(s("text", {class: "forecast-label", x: at, y: BURN.top + 10, dx: -4, "text-anchor": "end"}, `Forecast ${absolute.format(stampOf(trend.forecast))}${end < trend.forecast ? " (beyond the chart)" : ""}`));
+    }
+  }
+
+  function burnSpan(picked, trend) {
+    const forecast = trend ? trend.forecast : null;
+    if (forecast === null) {
+      return {reach: picked.to, end: picked.to};
+    }
+    const reach = Math.min(Math.max(forecast, picked.to), picked.to + TREND_REACH * Math.max(picked.to - picked.from, 1));
+    return {reach, end: Math.min(forecast, reach)};
+  }
+
   function burnChart(rows, shown) {
     const picked = Plan.scoped(rows, taskView.scope, {filtered: shown, since: state.since, until: state.until, now: state.now, holders: lineHolders()});
     const series = Plan.burn(picked.rows, {estimation: estimation(), from: picked.from, to: picked.to}).points;
+    const trend = Plan.trend(series, settings.trend);
+    const {reach, end} = burnSpan(picked, trend);
     const names = estimation() === "points" ? Plan.SERIES : Plan.SERIES.filter((name) => name !== "unestimated");
-    const top = Math.max(1, ...series.flatMap((point) => names.map((name) => point[name])));
+    const ends = trend ? Plan.TRENDED.flatMap((name) => [trend.start, end].map((t) => Plan.lineAt(trend.lines[name], t))) : [];
+    const top = Math.max(1, ...series.flatMap((point) => names.map((name) => point[name])), ...ends);
     const unit = estimation() === "points" ? "story points; unestimated tasks as a line of their own" : "tasks";
-    const svg = s("svg", {class: "chart burn", viewBox: `0 0 ${BURN.width} ${BURN.height}`, role: "img", "aria-label": `Burndown and burnup in ${unit}`});
-    const {x, y} = burnAxis(svg, picked.from, picked.to, top);
+    const svg = s("svg", {class: "chart burn", viewBox: `0 0 ${BURN.width} ${BURN.height}`, role: "img", "aria-label": `Burndown and burnup in ${unit}; hover a point for the work packages of its step`});
+    const {x, y} = burnAxis(svg, picked.from, reach, top);
     const last = series[series.length - 1];
+    if (reach > picked.to) {
+      svg.append(s("line", {class: "now", x1: fixed(x(picked.to)), x2: fixed(x(picked.to)), y1: BURN.top, y2: BURN.height - BURN.bottom}));
+    }
     for (const name of names) {
       const d = series.map((point, index) => (index ? `H${fixed(x(point.t))} V${fixed(y(point[name]))}` : `M${fixed(x(point.t))},${fixed(y(point[name]))}`)).join(" ");
       svg.append(s("path", {class: `burn-line k-${name}`, "data-series": name, "data-last": String(last[name]), d}, s("title", {}, `${SERIES_WORDS[name]}: ${last[name]}`)));
     }
-    const legend = h("div", {class: "legend"}, names.map((name) => h("span", {class: `burn-key k-${name}`, "data-series": name}, `${SERIES_WORDS[name]}: ${last[name]}`)));
+    if (trend) {
+      burnTrend(svg, trend, end, x, y);
+    }
+    svg.append(burnPoints(series, Plan.steps(picked.rows, series, picked.from), names, x, y));
+    const legend = h("div", {class: "legend"}, names.map((name) => h("span", {class: `burn-key k-${name}`, "data-series": name}, `${SERIES_WORDS[name]}: ${last[name]}`)),
+      settings.trend.mode === "off" ? null : trendNote(trend));
     return h("div", {class: "burn-box"}, svg, legend, h("p", {class: "muted"}, `${picked.rows.length} tasks in scope, counted in ${unit}`));
   }
 
@@ -113,6 +172,31 @@
       toast(`Estimation: ${Plan.ESTIMATIONS.find(([name]) => name === id)[1]}`, [], true);
     }
     drawTasks();
+  }
+
+  async function chooseTrend(next) {
+    if (await saveSettings({...settings, trend: next})) {
+      toast(`Trend: ${Plan.TRENDS.find(([id]) => id === next.mode)[1]}${next.mode === "velocity" ? ` over ${next.days} days` : ""}`, [], true);
+    }
+    syncPlan();
+    drawTasks();
+  }
+
+  function trendControls() {
+    const mode = h("select", {class: "field", ...named("Trend", "Trend: off, linear regression (least squares over the shown window) or velocity (the mean burn rate of the last N days); the forecast is where it reaches 0 remaining"), on: {change: (event) => chooseTrend({...settings.trend, mode: event.target.value})}},
+      Plan.TRENDS.map(([id, label]) => h("option", {value: id, selected: id === settings.trend.mode}, label)));
+    const [low, high] = TREND_DAYS;
+    const days = h("input", {type: "number", class: "field", min: low, max: high, step: 1, value: settings.trend.days, ...named("Velocity days", `Velocity days: the mean burn rate over the last N days, ${low} to ${high}`), on: {change: (event) => {
+      const value = Number(event.target.value);
+      if (Number.isInteger(value) && value >= low && value <= high) {
+        chooseTrend({...settings.trend, days: value});
+      } else {
+        event.target.value = String(settings.trend.days);
+      }
+    }}});
+    const box = h("label", {class: "plan-group", hidden: settings.trend.mode !== "velocity"}, days, "days");
+    taskView.plan.trend = {mode, days, box};
+    return h("div", {class: "plan-group", role: "group", "aria-label": "Trend and forecast"}, mode, box);
   }
 
   async function requestEstimates() {
@@ -140,8 +224,8 @@
   function bulkControls() {
     const value = fibonacciPicker("Business value of the selection", 8);
     const count = counter(0);
-    const button = h("button", {type: "button", class: "btn small primary", id: "bulk-value", disabled: true, ...named("Set business value", "Set the business value of every selected task as Operator, signed once with the passkey"), on: {click: () => bulkValue(Number(value.value))}},
-      icon("bi-gem"), "Set business value", count);
+    const button = h("button", {type: "button", class: "btn small primary", id: "bulk-value", disabled: true, ...named("Set business value", "Set business value: of every selected task as Operator, signed once with the passkey"), on: {click: () => bulkValue(Number(value.value))}},
+      icon("bi-gem"), count);
     taskView.bulk = {button, count};
     return h("div", {class: "plan-group", role: "group", "aria-label": "Business value of the selection"}, value, button);
   }
@@ -163,18 +247,20 @@
     if (!choices.some(([id]) => id === taskView.scope)) {
       taskView.scope = "all";
     }
-    return h("label", {class: "plan-group"}, "Scope", h("select", {class: "field", "aria-label": "Scope", on: {change: (event) => {
+    return h("select", {class: "field", ...named("Scope", "Scope: the whole register, the list filter in the time window, or one agent or line"), on: {change: (event) => {
       taskView.scope = event.target.value;
       drawTasks();
-    }}}, choices.map(([id, label]) => h("option", {value: id, selected: id === taskView.scope}, label))));
+    }}}, choices.map(([id, label]) => h("option", {value: id, selected: id === taskView.scope}, label)));
   }
 
-  function planBar(view) {
-    const modes = h("div", {class: "segmented", role: "group", "aria-label": "Estimation"}, Plan.ESTIMATIONS.map(([id, label]) => h("button", {type: "button", "data-estimation": id, "aria-pressed": String(estimation() === id), title: `${label}: ${id === "points" ? "the Fibonacci complexity of rasci.py estimate" : "every task counts 1"}`, on: {click: () => chooseEstimation(id)}}, label)));
-    const request = h("button", {type: "button", class: "btn small", id: "request-estimates", hidden: estimation() !== "points", ...named("Request estimates", "Request estimates: one newsletter asks every agent with a RASCI role in an unestimated task for business value and complexity"), on: {click: requestEstimates}}, icon("bi-send-check"), "Request estimates");
-    const own = {list: () => [sortControls(), bulkControls()], gantt: forecastControl, burn: scopeControl}[view];
-    taskView.plan = {modes, request};
-    return h("div", {class: "card controls plan-bar", role: "toolbar", "aria-label": "Plan"}, modes, request, own ? own() : null);
+  function planTools(view) {
+    const modes = h("div", {class: "segmented", role: "group", "aria-label": "Estimation"}, Plan.ESTIMATIONS.map(([id, label]) => h("button", {
+      type: "button", class: "icon-only", "data-estimation": id, "aria-pressed": String(estimation() === id), ...named(label, `${label}: ${id === "points" ? "the Fibonacci complexity of rasci.py estimate" : "every task counts 1"}`), on: {click: () => chooseEstimation(id)},
+    }, icon(ESTIMATION_ICONS[id]))));
+    const request = h("button", {type: "button", class: "btn small icon-only", id: "request-estimates", hidden: estimation() !== "points", ...named("Request estimates", "Request estimates: one newsletter asks every agent with a RASCI role in an unestimated task for business value and complexity"), on: {click: requestEstimates}}, icon("bi-send-check"));
+    taskView.plan = {modes, request, trend: null};
+    const own = {list: () => [sortControls(), bulkControls()], gantt: forecastControl, burn: () => [scopeControl(), trendControls()]}[view];
+    return [modes, request, own ? own() : null];
   }
 
   function syncPlan() {
@@ -186,6 +272,13 @@
       button.setAttribute("aria-pressed", String(button.dataset.estimation === estimation()));
     }
     plan.request.hidden = estimation() !== "points";
+    if (plan.trend) {
+      plan.trend.mode.value = settings.trend.mode;
+      plan.trend.box.hidden = settings.trend.mode !== "velocity";
+      if (document.activeElement !== plan.trend.days) {
+        plan.trend.days.value = String(settings.trend.days);
+      }
+    }
     if (taskView.bulk) {
       const picked = state.tasks.filter((row) => row.editable && taskView.picked.has(row.task)).length;
       taskView.bulk.count.textContent = String(picked);

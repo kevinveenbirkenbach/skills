@@ -17,7 +17,8 @@ const port = await new Promise((resolve) => {
     probe.close(() => resolve(free));
   });
 });
-const browser = spawn(binary, ["--headless", "--no-remote", "--profile", profile, "--remote-debugging-port", String(port), "about:blank"], {stdio: ["ignore", "ignore", "pipe"]});
+// Trip-wire: Firefox still starts "crashreporter --ping-cleanup", which ignores MOZ_CRASHREPORTER_DISABLE and can dump core.<pid> into its cwd; the throwaway profile takes it.
+const browser = spawn(binary, ["--headless", "--no-remote", "--profile", profile, "--remote-debugging-port", String(port), "about:blank"], {cwd: profile, stdio: ["ignore", "ignore", "pipe"], env: {...process.env, MOZ_CRASHREPORTER_DISABLE: "1"}});
 
 const address = await new Promise((resolve, reject) => {
   let text = "";

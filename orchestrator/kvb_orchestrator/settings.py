@@ -15,6 +15,8 @@ from .records import read_json, write_atomic
 
 THEMES = ("sky", "light", "dark", "custom")
 ESTIMATIONS = ("none", "points")
+TRENDS = ("off", "regression", "velocity")
+TREND_DAYS = (1, 365)
 TONES = ("mayday", "review", "direct", "radio")
 COLOR = re.compile(r"#[0-9a-f]{6}")
 CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
@@ -46,6 +48,7 @@ SETTINGS = {
         "sky": {"azimuth": 180.0, "altitude": 0.0, "fov": 180.0},
     },
     "estimation": "none",
+    "trend": {"mode": "off", "days": 7},
 }
 SPACE_AXES = ("none", "time", "spawn")
 SPACE_LIMITS = {
@@ -182,6 +185,16 @@ def space_setting(raw: object) -> dict:
     return {"graph": {"axis": graph["axis"], **numbers["graph"]}, "sky": numbers["sky"]}
 
 
+def trend_setting(raw: object) -> dict:
+    entry = section(raw, "trend", tuple(SETTINGS["trend"]))
+    low, high = TREND_DAYS
+    if not isinstance(entry["mode"], str) or entry["mode"] not in TRENDS:
+        raise ToolError(f"trend.mode must be one of {', '.join(TRENDS)}")
+    if isinstance(entry["days"], bool) or not isinstance(entry["days"], int) or not low <= entry["days"] <= high:
+        raise ToolError(f"trend.days must be a whole number from {low} to {high}")
+    return {"mode": entry["mode"], "days": entry["days"]}
+
+
 def valid_settings(raw: object) -> dict:
     data = section(raw, "settings", tuple(SETTINGS))
     colors = section(data["colors"], "colors", tuple(SETTINGS["colors"]))
@@ -206,6 +219,7 @@ def valid_settings(raw: object) -> dict:
         "speech": speech_setting(data["speech"]),
         "space": space_setting(data["space"]),
         "estimation": data["estimation"],
+        "trend": trend_setting(data["trend"]),
     }
 
 

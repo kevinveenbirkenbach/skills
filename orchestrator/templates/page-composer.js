@@ -136,7 +136,10 @@
     const channel = h("select", {class: "field"}, CHANNELS.map(([id, label]) => h("option", {value: id}, label)));
     const recipient = h("select", {class: "field"});
     const toField = h("label", {}, "To", recipient);
-    const text = h("textarea", {"aria-label": "Message", placeholder: "Message to the agents …", maxlength: 20000});
+    const text = h("textarea", {"aria-label": "Message", placeholder: "Message to the agents …", maxlength: 20000, on: {input: (event) => {
+      ui.draft = event.target.value;
+    }}});
+    text.value = ui.draft;
     const replay = h("div", {class: "voice-note", hidden: true});
     const hint = h("p", {class: "muted"});
     const status = h("span", {class: "muted composer-status", "aria-live": "polite"});
@@ -173,11 +176,12 @@
       submit.disabled = true;
       if (await radioSend({to: direct ? recipient.value : "*", text: text.value, upload: "", cls: channel.value, voice: attach.checked ? composer.voice : ""})) {
         text.value = "";
+        ui.draft = "";
         status.textContent = "";
         attachVoice(parts, "");
       }
       submit.disabled = false;
     });
     attachVoice(parts, composer.voice);
-    return {form, recipient};
+    return {form, recipient, text};
   }
