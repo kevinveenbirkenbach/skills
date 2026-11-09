@@ -5,12 +5,12 @@ import secrets
 import time
 
 from .council import HUMAN, agent, ordered, read_claims
-from .errors import Missing, ToolError
+from .errors import Conflict, Missing, ToolError
 from .fields import NAME_LIMIT, ORDER_NAME, decode, expect, field, message_text, single
 from .records import write_atomic
 from .register import REGISTER, agent_order, read_register
 from .signed import message_signed, signing
-from .skill_scripts import NIGHT, RADIO, RASCI
+from .skill_scripts import ESTIMATE, NIGHT, RADIO, RASCI
 
 NIGHTS = {
     "drain": (["drain"], "Operator ran kvb-org-drain in the Agent Orchestrator: run kvb-agent-drain; verify with night.py status."),
@@ -23,7 +23,7 @@ TO_ALL = {"newsletter": ["post"], **{cls: ["send", cls] for cls in ("broadcast",
 EVERYONE = "*"
 DENIED = "Denied by the operator."
 MESSAGE_KEYS = ("to", "text", "upload", "class", "voice")
-SIGNED_BOARD = ("clear-mayday", *NIGHTS)
+SIGNED_BOARD = ("clear-mayday", *NIGHTS, "estimates")
 
 
 def chosen(payload: dict, choices: dict[str, list[str]]) -> list[str]:
@@ -142,17 +142,31 @@ class Messaging:
         item, _, _ = self.composed(payload, {**DIRECT, **TO_ALL})
         return self.challenge_for([item])
 
+    def stored_message(self, item: dict, proof: dict, upload: dict | None) -> dict:
+        """Args:
+            item: the message item a pinned key signed.
+            proof: that signature, kept so operator_message can prove it.
+            upload: the attached upload or None.
+
+        Returns:
+            The stored record, addressed to the radio address the claims
+            give the recipient.
+        """
+        target = item["to"]
+        claims = read_claims(self.council)
+        address = next((claim["address"] for claim in claims if claim["agent"] == target and claim["address"]), target)
+        fields = {"to": target, "address": address, "text": item["text"], "upload": upload, "voice": item["voice"] or None, "voice_sha256": item["voice_sha256"], "class": item["class"]}
+        return self.messages.add({**fields, "proof": proof, "created_ts": time.time()})
+
+    def radioed(self, record: dict, command: list[str]) -> dict:
+        targets = [] if record["to"] == EVERYONE else ["--to", record["address"]]
+        return self.scripts.run(RADIO, [*command, *targets, "--session", HUMAN, f"[kvb-orchestrator msg {record['id']}] {self.relayed(record)}"])
+
     def relay(self, payload: dict, choices: dict[str, list[str]]) -> dict:
         with self.voice_notes.held(payload["voice"]):
             item, command, upload = self.composed(payload, choices)
-            proof = self.operator_proven(payload["proof"], item)
-            target = item["to"]
-            claims = read_claims(self.council)
-            address = next((claim["address"] for claim in claims if claim["agent"] == target and claim["address"]), target)
-            fields = {"to": target, "address": address, "text": item["text"], "upload": upload, "voice": item["voice"] or None, "voice_sha256": item["voice_sha256"], "class": item["class"]}
-            record = self.messages.add({**fields, "proof": proof, "created_ts": time.time()})
-        targets = [] if target == EVERYONE else ["--to", address]
-        run = self.scripts.run(RADIO, [*command, *targets, "--session", HUMAN, f"[kvb-orchestrator msg {record['id']}] {self.relayed(record)}"])
+            record = self.stored_message(item, self.operator_proven(payload["proof"], item), upload)
+        run = self.radioed(record, command)
         return {"id": record["id"], "ok": run["code"] == 0, "runs": [run]}
 
     def message(self, body: bytes) -> dict:
@@ -191,6 +205,11 @@ class Messaging:
             if unknown:
                 raise ToolError(f"unknown agents: {', '.join(unknown)[:300]}; the register and the council know {', '.join(known)[:600] or 'none'}")
             runs = [self.scripts.run(RASCI, ["agents", "order", ",".join(names)])]
+        elif action == "estimates":
+            estimation = self.settings.get()["estimation"]
+            if estimation != "points":
+                raise Conflict({"estimation": estimation, "reason": "estimates are requested only in story points mode"})
+            runs = [self.scripts.run(ESTIMATE, ["request", "--session", HUMAN])]
         elif action in NIGHTS:
             command, text = NIGHTS[action]
             runs = [self.scripts.run(NIGHT, [*command, "--session", HUMAN])]

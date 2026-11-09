@@ -107,6 +107,6 @@ try {
 } finally {
   socket.close();
   browser.kill();
-  rmSync(profile, {recursive: true, force: true});
+  rmSync(profile, {recursive: true, force: true, maxRetries: 10, retryDelay: 200});
 }
 console.log(JSON.stringify({results, errors}));

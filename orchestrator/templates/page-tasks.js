@@ -5,14 +5,14 @@
     ["all", "All", "bi-list-check", () => true],
     ["open", "Open", "bi-play-circle", (row) => !row.ended],
     ["work", "Open work", "bi-pencil-square", (row) => row.open_work.length > 0],
-    ["operator", "Waiting for operator", "bi-person-raised-hand", null],
+    ["operator", "Waits on Operator", "bi-person-raised-hand", null],
     ["grant", "Waiting for a grant", "bi-hourglass-split", (row) => row.kind === "queue" && row.status === "awaiting"],
     ["ended", "Ended", "bi-check2-circle", (row) => row.ended],
   ];
   const ROLE_TONES = {R: "ok", A: "violet", S: "info", C: "warn", I: "neutral"};
   const ROLE_WORDS = {R: "Responsible", A: "Accountable", S: "Supportive", C: "Consulted", I: "Informed"};
   const MATRIX_PARTIES = 40;
-  const taskView = {filter: "all", q: "", dom: null, sig: ""};
+  const taskView = {filter: "all", q: "", dom: null, sig: "", sort: "prio", descending: false, forecast: "always", scope: "all", picked: new Set(), plan: null, bulk: null};
 
   const columnOf = (row) => (TASK_COLUMNS.some(([id]) => id === row.status) ? row.status : "queued");
   const branchOf = (row) => row.worktree_branch || (row.branch !== "-" ? row.branch : "");
@@ -56,8 +56,9 @@
 
   function taskItem(row) {
     const classes = ["task-row", row.open_work.length ? "open-work" : "", row.ended ? "ended" : ""].filter(Boolean).join(" ");
+    const pick = row.editable ? h("input", {type: "checkbox", class: "task-pick", "aria-label": `Select ${row.task}`, title: `Select ${row.task} for a bulk business value`, checked: taskView.picked.has(row.task), on: {change: (event) => pickTask(row.task, event.target.checked)}}) : null;
     return h("li", {class: classes, "data-task": row.task, "data-kind": row.kind, "data-status": row.status},
-      h("div", {class: "head-row"}, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}),
+      h("div", {class: "head-row"}, pick, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}),
         row.editable ? iconBtn("bi-sort-numeric-down", "Priority", "btn small soft", () => taskSheet(row.task), `Priority and WSJF of ${row.task}: pin or estimate, signed with the passkey`) : null),
       opener(row),
       row.objective !== "-" ? h("div", {class: "muted"}, `Objective: ${row.objective}`) : null,
@@ -148,7 +149,9 @@
     const body = inbox ? inboxScreen() : h("div", {class: "tasks-body"});
     taskView.dom = {chips, count, body, inbox, view};
     taskView.sig = "";
-    return h("div", {class: "graph tasks"}, h("div", {class: "card controls"}, taskViewSwitch(inbox), search, count), chips, body);
+    taskView.plan = null;
+    taskView.bulk = null;
+    return h("div", {class: "graph tasks"}, h("div", {class: "card controls"}, taskViewSwitch(inbox), search, count), inbox ? null : planBar(view), choiceBar(), chips, body);
   }
 
   function drawTasks() {
@@ -157,12 +160,19 @@
       return;
     }
     const q = taskView.q.trim().toLowerCase();
-    const sig = JSON.stringify([state.tasks, state.jobs, taskView.filter, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
+    const sig = JSON.stringify([state.tasks, state.jobs, state.task_edges, settings.estimation, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
     if (sig === taskView.sig) {
       return;
     }
     taskView.sig = sig;
     const rows = state.tasks;
+    const editable = new Set(rows.filter((row) => row.editable).map((row) => row.task));
+    for (const task of [...taskView.picked]) {
+      if (!editable.has(task)) {
+        taskView.picked.delete(task);
+      }
+    }
+    syncPlan();
     dom.chips.replaceChildren(...taskChips(rows, dom.inbox));
     if (dom.inbox) {
       dom.count.textContent = `${rows.length} tasks in the register`;
@@ -172,6 +182,12 @@
     const hit = (row) => !q || [row.task, row.title, row.worker, row.branch, row.workdir, row.objective].some((text) => String(text).toLowerCase().includes(q));
     const shown = rows.filter(test).filter(hit);
     dom.count.textContent = `${shown.length} of ${rows.length} tasks`;
-    const views = {list: (found) => h("ol", {class: "task-list"}, found.map(taskItem)), board: taskBoard, rasci: taskMatrix};
-    dom.body.replaceChildren(shown.length ? views[dom.view](shown) : emptyState("No task", "No entry matches this filter."));
+    const views = {
+      list: (found) => h("ol", {class: "task-list"}, Plan.sortRows(found, taskView.sort, taskView.descending).map(taskItem)),
+      board: taskBoard,
+      rasci: taskMatrix,
+      gantt: ganttChart,
+      burn: (found) => burnChart(rows, found),
+    };
+    dom.body.replaceChildren(shown.length || dom.view === "burn" ? views[dom.view](shown) : emptyState("No task", "No entry matches this filter."));
   }

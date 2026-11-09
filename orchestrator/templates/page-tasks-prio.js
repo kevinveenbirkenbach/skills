@@ -8,23 +8,29 @@
     return h("select", {class: "field", "aria-label": label}, FIBONACCI.map((value) => h("option", {value, selected: value === picked}, String(value))));
   }
 
-  async function changeTask(row, argv, label, outcome) {
-    const items = [{kind: "task", id: row.task, argv}];
-    outcome.replaceChildren(h("p", {class: "muted"}, "Signing with the passkey …"));
+  async function changeTasks(changes, label, outcome) {
+    const items = changes.map(({task, argv}) => ({kind: "task", id: task, argv}));
+    const tell = (attrs, text) => (outcome ? outcome.replaceChildren(h("p", {class: "muted", ...attrs}, text)) : null);
+    tell({}, "Signing with the passkey …");
     const signed = await proofFor(items, label);
     if (signed === null) {
-      outcome.replaceChildren(h("p", {class: "muted"}, "Not signed: nothing was handed over."));
-      return;
+      tell({}, "Not signed: nothing was handed over.");
+      return false;
     }
     const result = await sendJson("/api/tasks", {items, proof: signed.proof});
     if (!result.ok || !result.data) {
       toast(`${label}: not possible`, fail(result), false);
-      outcome.replaceChildren(h("p", {class: "muted"}, `${result.status} ${result.text}`.trim()));
-      return;
+      tell({}, `${result.status} ${result.text}`.trim());
+      return false;
     }
-    outcome.replaceChildren(h("p", {class: "muted", "data-jobs": result.data.jobs.join(" ")}, `Signed and handed to the runner (job ${result.data.jobs.join(", ")}); it calls rasci.py on the host.`));
-    toast(`${label}: handed to the runner`, [shownArgv(argv)], true);
+    tell({"data-jobs": result.data.jobs.join(" ")}, `Signed and handed to the runner (job ${result.data.jobs.join(", ")}); it calls rasci.py on the host.`);
+    toast(`${label}: handed to the runner`, changes.map(({argv}) => shownArgv(argv)), true);
     await load();
+    return true;
+  }
+
+  function changeTask(row, argv, label, outcome) {
+    return changeTasks([{task: row.task, argv}], label, outcome);
   }
 
   function priorityForm(row) {
@@ -32,23 +38,29 @@
     const own = row.estimates[ESTIMATOR] || null;
     const prio = h("input", {type: "number", class: "field", min: 1, max: PRIO_MAX, step: 1, value: row.prio === null ? "" : row.prio, "aria-label": "Priority", placeholder: "1"});
     const value = fibonacciPicker("Business value", own ? own.value : 5);
-    const complexity = fibonacciPicker("Complexity", own ? own.complexity : 3);
+    const complexity = fibonacciPicker("Complexity", own && own.complexity ? own.complexity : 3);
+    const alone = fibonacciPicker("Business value as Operator", own ? own.value : 8);
     const pinCode = h("code", {});
     const estimateCode = h("code", {});
+    const valueCode = h("code", {});
     const prioArgv = () => ["set", row.task, "--prio", prioText(prio.value)];
     const estimateArgv = () => ["estimate", row.task, ESTIMATOR, "--value", value.value, "--complexity", complexity.value];
+    const valueArgv = () => ["estimate", row.task, ESTIMATOR, "--value", alone.value];
     const pin = h("button", {type: "button", class: "btn small primary", ...named("Pin", "Pin: sign the priority with the passkey")}, icon("bi-pin-angle-fill"), "Pin");
     const estimate = h("button", {type: "button", class: "btn small primary", ...named("Save estimate", "Hand the estimate to the runner, signed")}, icon("bi-calculator"), "Save estimate");
+    const setValue = h("button", {type: "button", class: "btn small primary", ...named("Set business value", "Set the business value as Operator, signed with the passkey; WSJF uses it instead of the median")}, icon("bi-gem"), "Set business value");
     const sync = () => {
       pin.disabled = !prioText(prio.value);
       pinCode.textContent = pin.disabled ? `Enter a priority from 1 to ${PRIO_MAX}` : shownArgv(prioArgv());
       estimateCode.textContent = shownArgv(estimateArgv());
+      valueCode.textContent = shownArgv(valueArgv());
     };
-    for (const field of [prio, value, complexity]) {
+    for (const field of [prio, value, complexity, alone]) {
       field.addEventListener("input", sync);
     }
     pin.addEventListener("click", () => changeTask(row, prioArgv(), `Priority ${row.task}`, outcome));
     estimate.addEventListener("click", () => changeTask(row, estimateArgv(), `WSJF ${row.task}`, outcome));
+    setValue.addEventListener("click", () => changeTask(row, valueArgv(), `Business value ${row.task}`, outcome));
     const drop = own ? h("button", {type: "button", class: "btn small danger", ...named("Discard estimate", "Discard estimate: delete your estimate, signed with the passkey"), on: {click: () => changeTask(row, ["estimate", row.task, ESTIMATOR, "--drop"], `WSJF ${row.task}`, outcome)}}, icon("bi-x-circle"), "Discard estimate") : null;
     sync();
     return h("section", {class: "task-edit", "aria-label": "Priority and WSJF"},
@@ -58,6 +70,10 @@
       h("h3", {}, `Estimate WSJF as ${ESTIMATOR}`),
       h("div", {class: "task-form"}, h("label", {}, "Business value", value), h("label", {}, "Complexity", complexity), estimate, drop),
       h("div", {class: "command"}, estimateCode),
+      h("h3", {}, `Business value as ${ESTIMATOR}`),
+      h("div", {class: "task-form"}, h("label", {}, "Business value", alone), setValue),
+      h("div", {class: "command"}, valueCode),
+      h("p", {class: "muted"}, "WSJF uses your business value instead of the median of the agents' values."),
       h("p", {class: "muted"}, "Your passkey signs exactly this call; the runner on the host checks the signature and the shape of the arguments and starts rasci.py without a shell. The agent priority stays untouched."),
       onLocalhost() ? null : h("p", {class: "muted"}, "Signing works only under ", localLink()),
       outcome);
@@ -73,8 +89,8 @@
     const entries = Object.entries(row.estimates);
     const score = row.wsjf;
     return [h("h3", {}, "WSJF estimates", counter(entries.length)),
-      entries.length ? h("ul", {class: "mini"}, entries.map(([party, entry]) => h("li", {}, h("div", {class: "row"}, h("strong", {}, party), h("span", {class: "muted"}, `Business value ${entry.value} · complexity ${entry.complexity}`))))) : h("p", {class: "muted"}, "No estimate yet: the task ranks after the estimated ones."),
-      score ? h("p", {class: "muted"}, `Median ${score.value} / ${score.complexity} = WSJF ${score.score}`) : null];
+      entries.length ? h("ul", {class: "mini"}, entries.map(([party, entry]) => h("li", {}, h("div", {class: "row"}, h("strong", {}, party), h("span", {class: "muted"}, `Business value ${entry.value} · complexity ${dash(entry.complexity)}`))))) : h("p", {class: "muted"}, "No estimate yet: the task ranks after the estimated ones."),
+      score ? h("p", {class: "muted"}, `${Object.hasOwn(row.estimates, ESTIMATOR) ? `${ESTIMATOR}'s business value` : "Median business value"} ${score.value} / median complexity ${score.complexity} = WSJF ${score.score}`) : null];
   }
 
   function taskJobs(row) {

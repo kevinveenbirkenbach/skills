@@ -5,6 +5,7 @@ from http import HTTPStatus
 
 from . import NAME
 from .asking import OPTION_LIMIT
+from .choosing import CHOICE_REQUEST
 from .errors import RpcError, ToolError
 from .fields import WAIT_CAP
 from .requesting import AGENT_CAP
@@ -64,19 +65,22 @@ class Mcp:
             tool("review_list", "List the pending reviews.", {}),
             tool(
                 "decision_request",
-                "Ask the operator to pick one of several options in the Agent Orchestrator; each option becomes a button. "
-                "Returns the decision id and the hub URL.",
+                "Ask the operator to pick one of several options in the Agent Orchestrator; the question shows as a choice card "
+                "under Waits on Operator in the Tasks tab and each option becomes a button. When an operator message asks "
+                f'"{CHOICE_REQUEST}", send each open decision of kvb-think-choice through this tool. Returns the decision id and the hub URL.',
                 {
                     "question": text_property("The question, plain text."),
                     "options": {"type": "array", "minItems": 1, "maxItems": OPTION_LIMIT, "items": option, "description": "The choices, at least one."},
-                    "agent": text_property("Your agent name, shown with the question."),
+                    "agent": text_property("Your agent name, shown with the question; the operator's signed answer is a post to it."),
                     "recommended": text_property("The label of the option you recommend, or an empty string."),
                 },
             ),
             tool(
                 "decision_wait",
-                f"Wait until the operator picks an option or the timeout passes, then return the status "
-                f"(pending, decided) and the chosen label. Waits at most {WAIT_CAP} seconds.",
+                "Wait until the operator picks an option or the timeout passes, then return the status "
+                "(pending, decided), the chosen label and, for a click, message and answer: the id and text of the operator's "
+                "passkey-signed answer, a post to the asking agent; check it with operator_message(message, answer, your name) "
+                f"before acting on the choice. Waits at most {WAIT_CAP} seconds.",
                 {"id": text_property("Decision id that decision_request returned."), "timeout_seconds": wait},
             ),
             tool(

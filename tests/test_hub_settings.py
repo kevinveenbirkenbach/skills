@@ -150,6 +150,22 @@ class TestHubSettings(HubCase):
         self.assertEqual(status, 200, body)
         self.assertEqual(json.loads(body)["settings"]["speech"], {"on": False, "classes": ["broadcast", "mayday", "security"], "muted": ["Operator", "name:Docs", "s1"]})
 
+    def test_the_estimation_mode_defaults_to_no_estimate_is_stored_and_survives_a_reload(self):
+        self.assertEqual((settings.SETTINGS["estimation"], self.snapshot()["settings"]["estimation"]), ("none", "none"))
+        good = self.guard(self.host)
+        for wrong in ("Story points", "", None, 1, ["points"]):
+            with self.subTest(wrong=wrong):
+                self.assertEqual(self.post_json("/api/settings", {**settings.SETTINGS, "estimation": wrong}, good)[0], 400)
+        self.assertEqual(self.post_json("/api/settings", {key: value for key, value in settings.SETTINGS.items() if key != "estimation"}, good)[0], 400)
+        status, _, body = self.save({**self.snapshot()["settings"], "estimation": "points"}, self.pin())
+        self.assertEqual((status, json.loads(body)["settings"]["estimation"]), (200, "points"))
+        self.assertEqual(json.loads((self.state / "settings.json").read_text(encoding="utf-8"))["estimation"], "points")
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["estimation"], "points")
+        self.assertEqual(self.snapshot()["settings"]["estimation"], "points")
+        older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "estimation"}
+        (self.state / "settings.json").write_text(json.dumps(older), encoding="utf-8")
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["estimation"], "none")
+
     def test_settings_written_before_the_radio_filter_keep_their_values(self):
         older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "speech"}
         (self.state / "settings.json").write_text(json.dumps(older), encoding="utf-8")

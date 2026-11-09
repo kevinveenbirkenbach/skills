@@ -11,6 +11,7 @@ from .approving import Approving
 from .artifacts import Touched
 from .asking import Asking
 from .batches import Pending
+from .choosing import Choosing
 from .cleanup import Cleaning, Spool
 from .denying import Denying
 from .engines import Engines, Speech
@@ -62,7 +63,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int

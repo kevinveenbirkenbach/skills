@@ -4,6 +4,7 @@ import secrets
 import time
 
 from .asking import ask_state
+from .choosing import answer_signed
 from .cleanup import cleanup_request
 from .denying import DENIABLE, DENY_KEYS, denial_note, request_status, request_words
 from .errors import Conflict, Missing, ToolError
@@ -35,7 +36,8 @@ def inbox_item(raw: dict, label: str, title: str, gate: str, subject: dict | Non
         label: the chosen option of a decision, else empty.
         title: what the stream logs for the item.
         gate: the review gate, else empty.
-        subject: what an approval signs; None for a decision.
+        subject: what an approval signs; for a decision the answer post to
+            the asking agent.
         requester: the requesting agent's name for a denial, else empty.
 
     Returns:
@@ -105,14 +107,15 @@ class Approving:
         Returns:
             The proof to relay, None when nothing needs a signature. The hub
             verifies the signature of a denial itself, since it acts on it;
-            of an approval it checks the shape, and the executors verify.
+            of an approval it checks the shape, and the executors verify,
+            the hub itself for a choice answer when it sends it.
         """
         if not signed:
             if proof is not None:
                 raise ToolError("proof must be null when no item needs a signature")
             return None
         if not isinstance(proof, dict):
-            raise ToolError("not signed: an approval of an ask, review or operator command needs the passkey signature")
+            raise ToolError("not signed: an approval of an ask, review, choice or operator command needs the passkey signature")
         expect(proof, ("payload", "assertion"))
         try:
             payload = signing.checked_approval(proof["payload"], now)
@@ -162,6 +165,8 @@ class Approving:
             record, changed = self.asks.decide(item["id"], {"status": "allowed" if approve else "denied", "proof": proof})
         elif item["kind"] == "review":
             record, changed = self.reviews.decide(item["id"], {"status": "approved" if approve else "rejected", "proof": proof})
+        elif item["signed"] is not None:
+            return self.answer_choice(item, proof)
         else:
             record, changed = self.decisions.decide(item["id"], {"status": "decided", "choice": item["label"]})
         if record is None:
@@ -218,7 +223,7 @@ class Approving:
         if kind_name == "rule":
             return inbox_item(raw, "", f"Rule {request_words(record)}", "", request_signed(record), self.requester(raw, record["agent"]))
         title = {"review": record.get("title"), "ask": f"{record.get('tool')} {record.get('command')}", "decision": record.get("question")}[kind_name]
-        subject = {"review": review_signed, "ask": ask_signed}[kind_name](record) if kind_name != "decision" else None
+        subject = {"review": review_signed, "ask": ask_signed}[kind_name](record) if kind_name != "decision" else answer_signed(record, label)
         return inbox_item(raw, label, title, record.get("gate", ""), subject, self.requester(raw, record["session"] if kind_name == "ask" else ""))
 
     def checked(self, raw: object) -> list[dict]:

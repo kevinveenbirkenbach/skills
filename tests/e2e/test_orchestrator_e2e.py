@@ -25,7 +25,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from hub_case import HubCase
 from hub_engines import wav_bytes
-from hub_support import ASK, HOST_STATE, RUNNER, iso, verifier
+from hub_support import ASK, HOST_STATE, OPTIONS, RUNNER, iso, verifier
 from kvb_orchestrator import skill_scripts
 from test_hub_cleanup import DONE_TIP, FAKE_PKGMGR, host
 from test_hub_offices import COUNCIL_SCRIPT
@@ -34,7 +34,7 @@ from test_hub_offices import host as office_host
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
-TASK_VIEWS = ("list", "board", "rasci")
+TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn")
 SCREENS = ["stream", "stream/inbox", "stream/rules", "stream/radio", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
 SUBS = ["Inbox", "Firewall", "Radio"]
 TABS = ["Stream", "Agents", "Artifacts", "Tasks"]
@@ -727,7 +727,223 @@ ACCEPT = """(async () => {@HELPERS@@LABELS@
   await until(() => !rowOf("Rule request"), 8000);
   return {toast: text(toast), left: Boolean(rowOf("Rule request"))};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
-SLOW = "seq -f 'Row %g' 1 60; sleep 4; seq -f 'Row %g' 61 80; sleep 4; echo finished"
+WATCH = """
+  const questions = [];
+  window.confirm = (question) => {
+    questions.push(question);
+    return true;
+  };
+  let asked = 0;
+  const get = navigator.credentials.get.bind(navigator.credentials);
+  navigator.credentials.get = (options) => {
+    asked += 1;
+    return @SIGNS@ ? get(options) : Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
+  };
+  const posted = [];
+  const send = window.fetch.bind(window);
+  window.fetch = (path, init) => {
+    if (["/api/choices/sign", "/api/choices", "/api/sign", "/api/inbox/approve"].includes(String(path))) {
+      const body = JSON.parse(init.body);
+      posted.push([String(path), Object.keys(body).sort(), body.class || null, body.to || null]);
+    }
+    return send(path, init);
+  };
+  const bar = () => document.querySelector('#main [aria-label="Request choices"]');
+  const fresh = async (shown, prefix) => until(() => all("#toasts .toast").filter((box) => !shown.has(box)).map(text).find((entry) => entry.startsWith(prefix)), 20000);
+  const fits = () => ({tall: document.documentElement.scrollHeight > window.innerHeight, wide: document.documentElement.scrollWidth > window.innerWidth + 1});
+"""
+CHOICE_VIEW = """(async () => {@HELPERS@@LABELS@
+  const found = await until(() => document.querySelector('#main [aria-label="Request choices"]') && all("#main .inbox-list > li .options").length === @CARDS@ && document.querySelector('#main [aria-label="Request choices"] details.menu input[type="checkbox"]'), 8000);
+  if (!found) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const box = document.querySelector('#main [aria-label="Request choices"]');
+  const menu = box.querySelector("details.menu");
+  const chip = document.querySelector('#main [aria-label="Task filters"] button[data-filter="operator"]');
+  return {
+    kinds: [...new Set(all("#main .inbox-list > li").map((li) => text(li.querySelector(".pill"))))].sort(),
+    filter: [text(chip).replace(/[0-9]+$/, ""), chip.getAttribute("aria-pressed")],
+    channels: all("button[data-channel]", box).map((button) => [button.dataset.channel, name(button), button.disabled]),
+    fields: all("textarea, input:not([type=checkbox])", box).length,
+    agents: all('input[type="checkbox"]', menu).map((input) => input.value),
+    multi: [name(menu.querySelector("summary")), text(menu.querySelector("summary .count")), all('input[type="checkbox"]', menu).filter((input) => input.checked).length],
+    cards: all("#main .inbox-list > li").filter((li) => li.querySelector(".options")).map((li) => [text(li.querySelector(".pill")), all(".option strong", li).map(text)]),
+    choices: all("#main [data-column], #main .group-title, #main h2, #main h3").filter((node) => node.dataset.column === "choices" || text(node) === "Choices").length,
+    unlabelled: unlabelled(document),
+    tall: document.documentElement.scrollHeight > window.innerHeight,
+    wide: wide(),
+  };
+})()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+CHOICE_SEND = """(async () => {@HELPERS@@WATCH@
+  const menu = bar().querySelector("details.menu");
+  menu.open = true;
+  await sleep(200);
+  const boxes = all('input[type="checkbox"]', menu).slice(0, 2);
+  boxes.forEach((box) => box.click());
+  const counted = text(menu.querySelector("summary .count"));
+  menu.open = false;
+  const picked = boxes.map((box) => box.value).sort((a, b) => a.localeCompare(b));
+  const runs = [];
+  for (const button of all("button[data-channel]", bar())) {
+    const [before, prompts, sent] = [asked, questions.length, posted.length];
+    const shown = new Set(all("#toasts .toast"));
+    const disabled = button.disabled;
+    button.click();
+    const toast = await fresh(shown, "Choice request");
+    runs.push({channel: button.dataset.channel, disabled, asked: asked - before, question: questions.slice(prompts), posted: posted.slice(sent), toast});
+  }
+  return {picked, counted, runs, fields: all("textarea, input:not([type=checkbox])", bar()).length, ...fits()};
+})()""".replace("@HELPERS@", HELPERS).replace("@WATCH@", WATCH)
+CHOICE_ANSWER = """(async () => {@HELPERS@@WATCH@
+  const card = await until(() => all("#main .inbox-list > li").find((li) => li.textContent.includes("@QUESTION@")), 8000);
+  if (!card) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const option = all(".option", card).find((button) => text(button.querySelector("strong")) === "Wait");
+  const title = option.title;
+  const shown = new Set(all("#toasts .toast"));
+  option.click();
+  const toast = await fresh(shown, "Choice: Wait");
+  const gone = @SIGNS@ ? Boolean(await until(() => !all("#main .inbox-list > li").some((li) => li.textContent.includes("@QUESTION@")), 20000)) : null;
+  return {title, asked, posted, toast, gone, ...fits()};
+})()""".replace("@HELPERS@", HELPERS).replace("@WATCH@", WATCH)
+TASKS_FIT = """(async () => {@HELPERS@
+  await until(() => document.querySelector('#main [aria-label="Request choices"]') && document.querySelector("#main .tasks-body > *"), 8000);
+  document.getElementById("toasts").replaceChildren();
+  await sleep(300);
+  return {
+    hash: location.hash,
+    bar: all('#main [aria-label="Request choices"] button[data-channel]').map((button) => button.dataset.channel),
+    columns: all("#main .task-column").map((column) => column.dataset.column),
+    choices: all("#main [data-column], #main .group-title, #main h2, #main h3").filter((node) => node.dataset.column === "choices" || text(node) === "Choices").length,
+    tall: document.documentElement.scrollHeight > window.innerHeight,
+    wide: document.documentElement.scrollWidth > window.innerWidth + 1,
+  };
+})()""".replace("@HELPERS@", HELPERS)
+PLAN_HELPERS = """
+  const fits = () => ({tall: document.documentElement.scrollHeight > window.innerHeight, wide: document.documentElement.scrollWidth > window.innerWidth + 1});
+  const modes = () => all('#main [aria-label="Estimation"] button').map((button) => [button.dataset.estimation, button.getAttribute("aria-pressed")]);
+  const requestShown = () => {
+    const button = document.getElementById("request-estimates");
+    return button ? !button.hidden && button.getClientRects().length > 0 : null;
+  };
+  const choose = async (select, value) => {
+    select.value = value;
+    select.dispatchEvent(new Event("change", {bubbles: true}));
+    await sleep(300);
+  };
+  const fresh = async (shown, prefix) => until(() => all("#toasts .toast").filter((box) => !shown.has(box)).map(text).find((entry) => entry.startsWith(prefix)), 20000);
+"""
+GANTT = """(async () => {@HELPERS@@PLAN_HELPERS@
+  const svg = await until(() => document.querySelector("#main svg.gantt"), 8000);
+  if (!svg) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const forecast = document.querySelector('#main select[aria-label="Forecast"]');
+  const scroll = document.querySelector("#main .gantt-scroll");
+  const marks = () => all("#main svg.gantt [data-forecast]").map((mark) => [mark.dataset.task, mark.dataset.forecast === "true", Number(mark.dataset.start), Number(mark.dataset.end), mark.tagName.toLowerCase()]);
+  const found = {
+    hash: location.hash,
+    forecast: [forecast.value, all("option", forecast).map((option) => [option.value, text(option)])],
+    modes: modes(),
+    request: requestShown(),
+    bars: marks(),
+    edges: all("#main svg.gantt path.gantt-edge").map((path) => [path.dataset.kind, path.dataset.from, path.dataset.to, path.getAttribute("marker-end")]),
+    hatched: all("#main svg.gantt .gantt-bar.forecast").map((bar) => getComputedStyle(bar).fill.includes("gantt-hatch")),
+    inner: Boolean(scroll && scroll.closest(".tasks-body")),
+    ...fits(),
+  };
+  await choose(forecast, "real");
+  found.real = marks().filter(([, hatched]) => hatched).length;
+  await choose(forecast, "points");
+  found.pointsOnly = marks().filter(([, hatched]) => hatched).map(([task, , start, end, tag]) => [task, end - start, tag]);
+  await choose(forecast, "always");
+  return found;
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
+BURN = """(async () => {@HELPERS@@PLAN_HELPERS@
+  const svg = await until(() => document.querySelector("#main svg.burn"), 8000);
+  if (!svg) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const scope = document.querySelector('#main select[aria-label="Scope"]');
+  const series = () => all("#main svg.burn path.burn-line").map((path) => [path.dataset.series, Number(path.dataset.last)]);
+  const found = {hash: location.hash, modes: modes(), request: requestShown(), scope: [scope.value, all("option", scope).map((option) => option.value)], series: series(), ...fits()};
+  await choose(scope, "agent:Docs");
+  found.agent = series();
+  await choose(scope, "all");
+  return found;
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
+POINTS_ON = """(async () => {@HELPERS@@PLAN_HELPERS@
+  const before = {modes: modes(), request: requestShown()};
+  all('#main [aria-label="Estimation"] button').find((button) => button.dataset.estimation === "points").click();
+  const shown = await until(() => requestShown(), 8000);
+  return {before, modes: modes(), request: Boolean(shown), ...fits()};
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
+REQUEST = """(async () => {@HELPERS@@PLAN_HELPERS@
+  const svg = await until(() => document.querySelector("#main svg.burn") && requestShown(), 8000);
+  if (!svg) {
+    return {error: text(document.getElementById("main")), modes: modes()};
+  }
+  const series = all("#main svg.burn path.burn-line").map((path) => [path.dataset.series, Number(path.dataset.last)]);
+  const shown = new Set(all("#toasts .toast"));
+  document.getElementById("request-estimates").click();
+  const toast = await fresh(shown, "Request estimates");
+  return {modes: modes(), series, toast, ...fits()};
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
+BULK = """(async () => {@HELPERS@@PLAN_HELPERS@
+  const list = await until(() => all("#main .task-row").length && document.getElementById("bulk-value"), 8000);
+  if (!list) {
+    return {error: text(document.getElementById("main"))};
+  }
+  let asked = 0;
+  const get = navigator.credentials.get.bind(navigator.credentials);
+  navigator.credentials.get = (options) => {
+    asked += 1;
+    return @SIGNS@ ? get(options) : Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
+  };
+  const posted = [];
+  const send = window.fetch.bind(window);
+  window.fetch = (path, init) => {
+    if (["/api/sign", "/api/tasks"].includes(String(path))) {
+      const body = JSON.parse(init.body);
+      posted.push([String(path), Object.keys(body).sort(), body.items.map((item) => [item.id, item.argv.join(" ")])]);
+    }
+    return send(path, init);
+  };
+  const rows = () => all("#main .task-row").map((row) => row.dataset.task);
+  const sort = document.querySelector('#main select[aria-label="Sort"]');
+  const direction = document.querySelector("#main button[data-direction]");
+  const found = {sorts: all("option", sort).map((option) => option.value), prio: rows()};
+  await choose(sort, "status");
+  found.status = rows();
+  direction.click();
+  await sleep(300);
+  found.statusDown = [rows(), name(direction)];
+  direction.click();
+  await choose(sort, "prio");
+  found.picks = all("#main .task-row input.task-pick").map((box) => box.closest(".task-row").dataset.task);
+  for (const task of ["work/next", "work/child"]) {
+    all("#main .task-row").find((row) => row.dataset.task === task).querySelector("input.task-pick").click();
+  }
+  const button = document.getElementById("bulk-value");
+  found.armed = [button.disabled, text(button.querySelector(".count"))];
+  await choose(document.querySelector('#main select[aria-label="Business value of the selection"]'), "@VALUE@");
+  const shown = new Set(all("#toasts .toast"));
+  button.click();
+  found.toast = await fresh(shown, "Business value @VALUE@ for 2 tasks");
+  found.asked = asked;
+  found.posted = posted;
+  found.after = [button.disabled, all("#main .task-row input.task-pick:checked").length];
+  Object.assign(found, fits());
+  all('#main [aria-label="Estimation"] button').find((entry) => entry.dataset.estimation === "none").click();
+  found.reset = Boolean(await until(() => requestShown() === false, 8000));
+  return found;
+})()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
+PLAN_VALUES = {1920: "13", 1366: "21", 390: "34"}
+STATUS_ORDER = ["queued", "awaiting", "claimed", "running", "blocked", "stale", "done", "stopped"]
+CHOICE_REQUEST = "send me your open decisions as choices"
+CHOICE_CHANNELS = ["post", "call", "newsletter", "broadcast", "pan-pan", "security", "mayday"]
+SLOW ="seq -f 'Row %g' 1 60; sleep 4; seq -f 'Row %g' 61 80; sleep 4; echo finished"
 
 
 def labelled(probe: dict) -> dict:
@@ -770,7 +986,7 @@ class TestOrchestratorE2E(HubCase):
         })
         self.subagents(now)
         self.request("feat: orchestrator", "")
-        self.create_ask(ASK)
+        self.create_ask({**ASK, "timeout": 3600})
         self.base = f"http://{self.host}/"
 
     def subagents(self, now: float) -> None:
@@ -1070,7 +1286,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(by_hash["#artifacts/chord"]["flowEdges"], ["pull", "push"])
         order = ["work/feature", "work/docs", "work/stage", "queue/gate-3", "work/old", "operator/push"]
         listed = by_hash["#tasks/list"]
-        self.assertEqual(listed["views"], ["List", "Board", "RASCI"])
+        self.assertEqual(listed["views"], ["List", "Board", "RASCI", "Gantt", "Burndown and burnup"])
         self.assertEqual(listed["taskFilters"], [["all", "true", "6"], ["open", "false", "4"], ["work", "false", "4"], ["operator", "false", "2"], ["grant", "false", "1"], ["ended", "false", "2"]])
         self.assertEqual(listed["taskRows"], [[task, task not in ("work/old", "operator/push")] for task in order])
         self.assertEqual(listed["flows"], ["file", "file"])
@@ -1081,7 +1297,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual([probe["hash"] for probe in extra[:3]], ["#agents/orbit", "#agents/chord", "#artifacts/tree"])
         actions = extra[3]
         self.assertNotIn("error", actions)
-        self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/rasci", "#stream"])
+        self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/burn", "#stream"])
         self.assertEqual(actions["ambience"], ["sky-look", "music-toggle", "leitstand", "notify"])
         self.assertEqual((actions["settingsUnlabelled"], actions["popupUnlabelled"]), (0, 0))
         self.assertEqual([name for name, _, _ in actions["speech"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
@@ -1424,6 +1640,227 @@ class TestOrchestratorE2E(HubCase):
                 self.layout(probe)
                 self.assertEqual(probe["console"], "doneExit code 0 after 9 s")
                 self.assertTrue(shot.is_file() and shot.stat().st_size > 1000, shot)
+
+    def choice_steps(self, browser: str, signs: bool, questions: dict[int, str]) -> list[dict]:
+        flag = "true" if signs else "false"
+        local = f"http://localhost:{self.port}/"
+        steps = []
+        for index, (width, height) in enumerate(WIDTHS):
+            cards = len(WIDTHS) - index if signs else len(WIDTHS)
+            steps += [
+                {"width": width, "height": height, "url": f"{local}?{width}#stream/inbox", "wait": 1200, "probe": CHOICE_VIEW.replace("@CARDS@", str(cards)), "shot": str(OUT / f"{browser}-{width}-tasks-choices.png")},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": CHOICE_SEND.replace("@SIGNS@", flag), "shot": str(OUT / f"{browser}-{width}-choice-request.png")},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": CHOICE_ANSWER.replace("@SIGNS@", flag).replace("@QUESTION@", questions[width]), "shot": str(OUT / f"{browser}-{width}-choice-answer.png")},
+                *({"width": width, "height": height, "url": f"{local}?{width}#tasks/{view}", "wait": 900, "probe": TASKS_FIT, "shot": str(OUT / f"{browser}-{width}-tasks-{view}-fit.png")} for view in TASK_VIEWS),
+            ]
+        return steps
+
+    def requested(self, sent: dict, signs: bool) -> None:
+        """Args:
+            sent: the CHOICE_SEND probe: two agents ticked, then every channel
+                button pressed once.
+        """
+        labels = dict(zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True))
+        self.assertEqual(len(sent["picked"]), 2, sent)
+        self.assertEqual((sent["counted"], sent["fields"], sent["tall"], sent["wide"]), ("2", 0, False, False))
+        self.assertEqual([run["channel"] for run in sent["runs"]], CHOICE_CHANNELS)
+        for run in sent["runs"]:
+            with self.subTest(channel=run["channel"]):
+                to = sent["picked"] if run["channel"] in ("post", "call") else ["*"]
+                signed = [["/api/choices/sign", ["class", "to"], run["channel"], to]]
+                self.assertEqual((run["disabled"], run["asked"], len(run["question"])), (False, 1, int(run["channel"] == "mayday")), run)
+                title = f"Choice request ({labels[run['channel']]}) to {', '.join(to) if to != ['*'] else 'all'}"
+                self.assertEqual(run["posted"], [*signed, ["/api/choices", ["class", "proof", "to"], run["channel"], to]] if signs else signed)
+                self.assertTrue((run["toast"] or "").startswith(f"{title}: {'sent' if signs else 'not signed'}"), run)
+
+    def answered(self, result: dict, signs: bool) -> None:
+        self.assertNotIn("error", result)
+        self.assertEqual((result["title"], result["asked"], result["tall"], result["wide"]), ("Wait: your passkey signs this answer, a post to Stage", 1, False, False))
+        signed = [["/api/sign", ["items"], None, None]]
+        self.assertEqual(result["posted"], [*signed, ["/api/inbox/approve", ["items", "proof"], None, None]] if signs else signed)
+        self.assertTrue((result["toast"] or "").startswith("Choice: Wait" + ("" if signs else ": not signed")), result)
+        self.assertEqual(result["gone"], True if signs else None)
+
+    def check_choices(self, browser: str, driver: str, binary: str, signs: bool) -> None:
+        """Args:
+            signs: cdp.mjs signs every prompt with its virtual passkey; bidi.mjs
+                has no virtual authenticator, so the probes answer each prompt
+                the way a canceled passkey dialog does.
+        """
+        self.inbox_work()
+        self.create_ask({**ASK, "command": "make choices", "timeout": 3600})
+        authenticator = self.authenticator()
+        questions = {width: f"Pick a name at {width} px?" for width, _ in WIDTHS}
+        decisions = {width: self.tool("decision_request", {"question": question, "options": OPTIONS, "agent": "Stage", "recommended": ""})["structuredContent"]["id"] for width, question in questions.items()}
+        data = self.drive(self.choice_steps(browser, signs, questions), authenticator if signs else None, driver, binary)
+        (OUT / f"{browser}-choices.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        per = 3 + len(TASK_VIEWS)
+        for index, (width, _) in enumerate(WIDTHS):
+            view, sent, answer, *fitted = data["results"][per * index : per * (index + 1)]
+            with self.subTest(browser=browser, width=width):
+                self.assertNotIn("error", view)
+                self.assertEqual(view["kinds"], ["Ask", "Choice", "Operator", "Review", "Rule request"])
+                self.assertEqual(view["filter"], ["Waits on Operator", "true"])
+                self.assertEqual(view["channels"], [[channel, label, channel in ("post", "call")] for channel, label in zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True)])
+                self.assertEqual((view["fields"], view["choices"], view["multi"], view["unlabelled"], view["tall"], view["wide"]), (0, 0, ["Agents", "0", 0], [], False, False))
+                self.assertGreaterEqual(len(view["agents"]), 2, view)
+                self.assertIn(["Choice", ["Merge now", "Wait"]], view["cards"])
+                self.requested(sent, signs)
+                self.answered(answer, signs)
+                for fit, name in zip(fitted, TASK_VIEWS, strict=True):
+                    self.assertEqual((fit["hash"], fit["bar"], fit["choices"], fit["tall"], fit["wide"]), (f"#tasks/{name}", CHOICE_CHANNELS, 0, False, False), fit)
+                    if name == "board":
+                        self.assertEqual(fit["columns"], ["queued", "running", "blocked", "done", "stopped"])
+        hub = self.httpd.hub
+        if not signs:
+            self.assertEqual((self.scripts.calls, hub.messages.listed()), ([], []))
+            self.assertEqual([hub.decisions.get(decision)["status"] for decision in decisions.values()], ["pending"] * len(WIDTHS))
+            return
+        requests = [record for record in hub.messages.listed() if record["text"] == CHOICE_REQUEST]
+        self.assertEqual((len(requests), sorted({record["class"] for record in requests})), (len(WIDTHS) * 9, sorted(CHOICE_CHANNELS)))
+        for record in requests:
+            self.assertTrue(self.tool("operator_message", {"id": record["id"], "text": CHOICE_REQUEST, "to": record["to"]})["structuredContent"]["match"], record["id"])
+        radio = [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
+        self.assertEqual(len(radio), len(requests) + len(WIDTHS))
+        for width, decision in decisions.items():
+            with self.subTest(width=width):
+                state = self.tool("decision_wait", {"id": decision, "timeout_seconds": 0})["structuredContent"]
+                self.assertEqual((state["status"], state["choice"], state["answer"]), ("decided", "Wait", f"Choice for decision {decision} ({questions[width]}): Wait"))
+                found = self.tool("operator_message", {"id": state["message"], "text": state["answer"], "to": "Stage"})["structuredContent"]
+                self.assertEqual((found["match"], found["class"], found["to"]), (True, "post", "Stage"))
+                self.assertIn(["post", "--to", "Stage", "--session", "Operator", f"[kvb-orchestrator msg {state['message']}] {state['answer']}"], radio)
+
+    def test_chromium_requests_choices_on_every_channel_and_signs_a_choice_at_three_widths(self):
+        self.check_choices("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"), signs=True)
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_asks_the_passkey_for_every_choice_request_and_answer_and_sends_nothing_unsigned(self):
+        self.check_choices("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"), signs=False)
+
+    def plan_work(self, now: float) -> None:
+        register = json.loads((self.council / "rasci.json").read_text(encoding="utf-8"))
+        register["work/feature"]["start"] = iso(now - 1800)
+        register["work/stage"]["start"] = iso(now - 900)
+        register.update({
+            "work/done-a": {"title": "Done A", "status": "done", "worker": "Stage", "branch": "feature/base", "start": iso(now - 36000), "end": iso(now - 28800), "roles": {"Stage": "RA"}, "estimates": {"Stage": {"value": 5, "complexity": 2}}},
+            "work/done-b": {"title": "Done B", "status": "done", "worker": "Docs", "start": iso(now - 25200), "end": iso(now - 10800), "roles": {"Docs": "RA"}, "estimates": {"Docs": {"value": 3, "complexity": 2}}},
+            "work/done-c": {"title": "Done C", "status": "done", "worker": "Docs", "start": iso(now - 14400), "end": iso(now - 10800), "roles": {"Docs": "RA"}},
+            "work/next": {"title": "Next step", "status": "queued", "after": ["work/feature"], "roles": {"Skills": "R", "Maintainer": "A"}, "estimates": {"Skills": {"value": 8, "complexity": 3}}},
+            "work/child": {"title": "Child of the base", "status": "queued", "base": "feature/base", "roles": {"Docs": "RA"}},
+        })
+        queue = json.loads((self.council / "queue.json").read_text(encoding="utf-8"))
+        queue["entries"] += [
+            {"id": "deploy-4", "seq": 4, "kind": "deploy", "task": "work/stage", "workdir": "/repo", "session": "s2", "name": "Stage", "hotfix": None, "status": "active", "enqueued": now - 400, "granted": now - 300, "cmd": "make deploy"},
+            {"id": "test-5", "seq": 5, "kind": "test", "task": "work/docs", "workdir": "/repo", "session": "s2", "name": "Docs", "hotfix": None, "status": "waiting", "enqueued": now - 60, "granted": None, "cmd": "make test"},
+        ]
+        self.write_council({"rasci.json": register, "queue.json": queue})
+
+    def plan_steps(self, browser: str, signs: bool) -> list[dict]:
+        local = f"http://localhost:{self.port}/"
+        flag = "true" if signs else "false"
+        steps = []
+        for width, height in WIDTHS:
+            bulk = BULK.replace("@SIGNS@", flag).replace("@VALUE@", PLAN_VALUES[width])
+            steps += [
+                {"width": width, "height": height, "url": f"{local}?{width}#tasks/gantt", "wait": 1200, "probe": GANTT, "shot": str(OUT / f"{browser}-{width}-tasks-gantt.png")},
+                {"width": width, "height": height, "url": f"{local}?{width}#tasks/burn", "wait": 900, "probe": BURN, "shot": str(OUT / f"{browser}-{width}-tasks-burn.png")},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": POINTS_ON, "shot": None},
+                {"width": width, "height": height, "url": f"{local}?{width}-reloaded#tasks/burn", "wait": 1200, "probe": REQUEST, "shot": str(OUT / f"{browser}-{width}-tasks-burn-points.png")},
+                {"width": width, "height": height, "url": f"{local}?{width}-points#tasks/gantt", "wait": 1200, "probe": GANTT, "shot": str(OUT / f"{browser}-{width}-tasks-gantt-points.png")},
+                {"width": width, "height": height, "url": f"{local}?{width}-list#tasks/list", "wait": 1200, "probe": bulk, "shot": str(OUT / f"{browser}-{width}-tasks-business-value.png")},
+            ]
+        return steps
+
+    def planned(self, probe: dict, points: bool) -> None:
+        hour = 3600
+        edges = [["after", "work/feature", "work/next"], ["base", "work/done-a", "work/child"], ["queue", "queue/deploy-4", "queue/gate-3"], ["queue", "queue/gate-3", "queue/test-5"]]
+        self.assertEqual(probe["forecast"], ["always", [["always", "always"], ["points", "points only"], ["real", "real only"]]])
+        self.assertEqual(probe["modes"], [["none", str(not points).lower()], ["points", str(points).lower()]])
+        self.assertEqual((probe["request"], probe["inner"]), (points, True))
+        self.assertEqual(sorted([kind, start, end] for kind, start, end, _ in probe["edges"]), sorted(edges))
+        self.assertEqual({tip for *_, tip in probe["edges"]}, {"url(#gantt-tip)"})
+        bars = {task: (forecast, start, end, tag) for task, forecast, start, end, tag in probe["bars"]}
+        self.assertNotIn("operator/push", bars)
+        self.assertEqual((bars["work/old"][0], bars["work/old"][3]), (False, "circle"))
+        self.assertEqual([bars[task][0] for task in ("work/feature", "work/stage", "queue/deploy-4", "work/done-a")], [False] * 4)
+        self.assertGreaterEqual(bars["work/feature"][2] - bars["work/feature"][1], 1800)
+        forecasts = ("work/next", "work/docs", "work/child", "queue/gate-3", "queue/test-5")
+        lengths = {task: round(bars[task][2] - bars[task][1], 3) for task in forecasts}
+        self.assertEqual(lengths, {"work/next": (4.5 if points else 2) * hour, "work/docs": (3 if points else 2) * hour, "work/child": 2 * hour, "queue/gate-3": 2 * hour, "queue/test-5": 2 * hour})
+        self.assertTrue(all(bars[task][0] for task in forecasts))
+        self.assertEqual((bars["work/next"][1], bars["queue/test-5"][1]), (bars["work/feature"][2], bars["queue/gate-3"][2]))
+        self.assertTrue(probe["hatched"] and all(probe["hatched"]), probe["hatched"])
+        self.assertEqual(probe["real"], 0)
+        only = {task: (round(length, 3), tag) for task, length, tag in probe["pointsOnly"]}
+        dot = (0, "circle")
+        self.assertEqual(only, {"work/next": (4.5 * hour, "rect") if points else dot, "work/docs": (3 * hour, "rect") if points else dot, "work/child": dot, "queue/gate-3": dot, "queue/test-5": dot})
+
+    def check_plan(self, browser: str, driver: str, binary: str, signs: bool) -> None:
+        """Args:
+            signs: cdp.mjs signs the bulk business value with its virtual
+                passkey; bidi.mjs has no virtual authenticator, so the probe
+                answers the prompt the way a canceled passkey dialog does.
+        """
+        self.plan_work(time.time())
+        authenticator = self.authenticator()
+        data = self.drive(self.plan_steps(browser, signs), authenticator if signs else None, driver, binary)
+        (OUT / f"{browser}-plan.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        rows = self.snapshot()["tasks"]
+        ranked = list(enumerate(rows))
+        status_up = [row["task"] for _, row in sorted(ranked, key=lambda pair: (STATUS_ORDER.index(pair[1]["status"]), pair[0]))]
+        status_down = [row["task"] for _, row in sorted(ranked, key=lambda pair: (-STATUS_ORDER.index(pair[1]["status"]), pair[0]))]
+        for index, (width, _) in enumerate(WIDTHS):
+            gantt, burn, points_on, request, gantt_points, bulk = data["results"][6 * index : 6 * (index + 1)]
+            value = PLAN_VALUES[width]
+            items = [["work/next", f"estimate work/next Operator --value {value}"], ["work/child", f"estimate work/child Operator --value {value}"]]
+            with self.subTest(browser=browser, width=width):
+                for probe in (gantt, burn, points_on, request, gantt_points, bulk):
+                    self.assertNotIn("error", probe)
+                    self.assertEqual((probe["tall"], probe["wide"]), (False, False), probe)
+                self.planned(gantt, points=False)
+                self.planned(gantt_points, points=True)
+                self.assertEqual((burn["modes"], burn["request"]), ([["none", "true"], ["points", "false"]], False))
+                self.assertEqual(burn["scope"][0], "all")
+                self.assertEqual(burn["scope"][1][:2], ["all", "filter"])
+                self.assertIn("agent:Docs", burn["scope"][1])
+                self.assertIn("line:identity/oidc", burn["scope"][1])
+                self.assertEqual(burn["series"], [["scope", 9], ["done", 4], ["remaining", 5]])
+                self.assertEqual(burn["agent"], [["scope", 5], ["done", 2], ["remaining", 3]])
+                self.assertEqual(points_on["before"], {"modes": [["none", "true"], ["points", "false"]], "request": False})
+                self.assertEqual((points_on["modes"], points_on["request"]), ([["none", "false"], ["points", "true"]], True))
+                self.assertEqual(request["modes"], [["none", "false"], ["points", "true"]])
+                self.assertEqual(request["series"], [["scope", 12], ["done", 4], ["remaining", 8], ["unestimated", 2]])
+                self.assertTrue(request["toast"].startswith(f"Request estimates: {'done' if signs else 'not signed'}"), request["toast"])
+                self.assertEqual(bulk["sorts"], ["prio", "wsjf", "value", "complexity", "status", "start", "end", "agent", "title"])
+                self.assertEqual((bulk["prio"], bulk["status"], bulk["statusDown"]), ([row["task"] for row in rows], status_up, [status_down, "Descending"]))
+                self.assertEqual((bulk["picks"], bulk["armed"]), (["work/feature", "work/next", "work/docs", "work/child", "work/stage"], [False, "2"]))
+                self.assertTrue(bulk["toast"].startswith(f"Business value {value} for 2 tasks: {'handed to the runner' if signs else 'not signed'}"), bulk["toast"])
+                signed = [["/api/sign", ["items"], items]]
+                self.assertEqual((bulk["asked"], bulk["posted"]), (1, [*signed, ["/api/tasks", ["items", "proof"], items]] if signs else signed))
+                self.assertEqual((bulk["after"], bulk["reset"]), ([True, 0] if signs else [False, 2], True))
+        self.assertEqual([args for script, args in self.scripts.calls if script == skill_scripts.ESTIMATE], [["request", "--session", "Operator"]] * (len(WIDTHS) if signs else 0))
+        self.assertEqual(self.httpd.hub.settings.get()["estimation"], "none")
+        jobs = self.runner_jobs()
+        if not signs:
+            self.assertEqual(jobs, [])
+            register = json.loads((self.council / "rasci.json").read_text(encoding="utf-8"))
+            self.assertEqual([task for task, row in register.items() if "Operator" in row.get("estimates", {})], [])
+            return
+        self.assertEqual([job["argv"][-1] for job in jobs], [PLAN_VALUES[width] for width, _ in WIDTHS for _ in range(2)])
+        self.run_runner()
+        register = json.loads((self.council / "rasci.json").read_text(encoding="utf-8"))
+        self.assertEqual({task: register[task]["estimates"]["Operator"] for task in ("work/next", "work/child")}, {"work/next": {"value": 34, "at": register["work/next"]["estimates"]["Operator"]["at"]}, "work/child": {"value": 34, "at": register["work/child"]["estimates"]["Operator"]["at"]}})
+        rows = {row["task"]: row for row in self.snapshot()["tasks"]}
+        self.assertEqual((rows["work/next"]["wsjf"], rows["work/child"]["wsjf"], rows["work/child"]["value"]), ({"value": 34, "complexity": 3, "score": 11.33}, None, 34))
+
+    def test_chromium_draws_the_gantt_and_burn_switches_the_estimation_requests_estimates_and_signs_a_bulk_business_value_at_three_widths(self):
+        self.check_plan("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"), signs=True)
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_draws_the_gantt_and_burn_and_asks_the_passkey_for_a_bulk_business_value_storing_nothing_unsigned(self):
+        self.check_plan("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"), signs=False)
 
     def test_chromium_pins_a_task_priority_after_signature_and_the_runner_applies_it(self):
         signer = self.pin()

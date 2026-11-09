@@ -14,6 +14,7 @@ from .fields import FIELDS, NAME_LIMIT, expect
 from .records import read_json, write_atomic
 
 THEMES = ("sky", "light", "dark", "custom")
+ESTIMATIONS = ("none", "points")
 TONES = ("mayday", "review", "direct", "radio")
 COLOR = re.compile(r"#[0-9a-f]{6}")
 CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
@@ -44,6 +45,7 @@ SETTINGS = {
         "graph": {"axis": "none", "yaw": 30.0, "pitch": 20.0, "zoom": 1.0, "pan_x": 0.0, "pan_y": 0.0},
         "sky": {"azimuth": 180.0, "altitude": 0.0, "fov": 180.0},
     },
+    "estimation": "none",
 }
 SPACE_AXES = ("none", "time", "spawn")
 SPACE_LIMITS = {
@@ -189,6 +191,8 @@ def valid_settings(raw: object) -> dict:
         raise ToolError(f"theme must be one of {', '.join(THEMES)}")
     if not isinstance(data["streams"], list) or len(data["streams"]) > STREAMS_LIMIT:
         raise ToolError(f"streams must be a list of at most {STREAMS_LIMIT} entries")
+    if not isinstance(data["estimation"], str) or data["estimation"] not in ESTIMATIONS:
+        raise ToolError(f"estimation must be one of {', '.join(ESTIMATIONS)}")
     return {
         "latitude": number_in(data["latitude"], "latitude", -90.0, 90.0),
         "longitude": number_in(data["longitude"], "longitude", -180.0, 180.0),
@@ -201,6 +205,7 @@ def valid_settings(raw: object) -> dict:
         "streams": [stream_entry(entry, index) for index, entry in enumerate(data["streams"])],
         "speech": speech_setting(data["speech"]),
         "space": space_setting(data["space"]),
+        "estimation": data["estimation"],
     }
 
 

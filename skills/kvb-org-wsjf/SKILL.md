@@ -32,7 +32,7 @@ rasci.py wsjf [--all]
 2. **Record each estimate** under the party that gave it; a new estimate
    replaces the old one. An agent may record its own unasked.
 3. **Rank**: WSJF = median business value / median complexity, highest
-   first. An operator's pin (`rasci.py set <task> --prio <n>`) outranks every
+   first; the Operator's business value replaces the median. An operator's pin (`rasci.py set <task> --prio <n>`) outranks every
    score; unestimated tasks come last and are named under `unestimated:`.
 4. **Grant in rank order**: the chair hands out capacity by this rank, except
    that a hotfix gate (a branch from the default branch that fixes it) takes

@@ -152,8 +152,9 @@ def task_argv(task: object, argv: object) -> list[str]:
         task: the register task the change is for, a rasci.py slug outside
             operator/.
         argv: the rasci.py arguments, one of `set <task> --prio <1-999>`,
-            `estimate <task> Operator --value <fib> --complexity <fib>` or
-            `estimate <task> Operator --drop`.
+            `estimate <task> Operator --value <fib> --complexity <fib>`,
+            `estimate <task> Operator --value <fib>` (the operator's business
+            value alone) or `estimate <task> Operator --drop`.
 
     Returns:
         argv, the hub and the runner check it the same way.
@@ -167,7 +168,8 @@ def task_argv(task: object, argv: object) -> list[str]:
         raise Refused("the argv is no list of texts")
     rest = argv[3:]
     pinned = argv[:3] == ["set", task, "--prio"] and len(argv) == 4 and bool(PRIO.fullmatch(argv[3]))
-    estimated = len(rest) == 4 and rest[0] == "--value" and rest[1] in FIBONACCI and rest[2] == "--complexity" and rest[3] in FIBONACCI
+    valued = len(rest) in (2, 4) and rest[0] == "--value" and rest[1] in FIBONACCI
+    estimated = valued and (len(rest) == 2 or (rest[2] == "--complexity" and rest[3] in FIBONACCI))
     if pinned or (argv[:3] == ["estimate", task, ESTIMATOR] and (estimated or rest == ["--drop"])):
         return argv
     raise Refused("the argv is no task priority or WSJF estimate change of this task")

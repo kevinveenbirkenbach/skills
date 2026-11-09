@@ -619,11 +619,11 @@ flowchart TD
 
 ### Phase 6: Tasks with asks and choices (S5)
 
-- [ ] Every pending ask, rule request, operator row and choice card shows in
+- [x] Every pending ask, rule request, operator row and choice card shows in
       the Tasks tab under "waits on Operator"; no Choices column exists.
-- [ ] Each channel button sends the fixed choice request with no text field;
+- [x] Each channel button sends the fixed choice request with no text field;
       `post` and `call` take a multi-select of agents.
-- [ ] A click on a choice option sends a passkey-signed answer the agent can
+- [x] A click on a choice option sends a passkey-signed answer the agent can
       check with `operator_message`.
 
 ### Phase 6: Firewall (S6)
@@ -656,31 +656,31 @@ flowchart TD
 
 ### Phase 6: Gantt, estimates, burndown and burnup (S5)
 
-- [ ] `rasci.py set <task> --after <other>` stores the dependency and
+- [x] `rasci.py set <task> --after <other>` stores the dependency and
       `--drop-after <other>` removes it; an unknown task and a cycle are
       refused.
-- [ ] The Gantt view draws one bar per task from start to end, a running
+- [x] The Gantt view draws one bar per task from start to end, a running
       task to now, and one arrow per explicit, branch-base and queue-order
       edge of a fixture register and queue.
-- [ ] The forecast selector offers `always` (default), `points only` and
+- [x] The forecast selector offers `always` (default), `points only` and
       `real only`; a hatched bar is as long as the median duration of done
       tasks (no estimate) or points times median hours per point (story
       points).
-- [ ] The estimation toggle defaults to `No estimate`, is stored in the hub
+- [x] The estimation toggle defaults to `No estimate`, is stored in the hub
       settings and survives a reload.
-- [ ] Burndown and burnup offer the scopes whole register (default), list
+- [x] Burndown and burnup offer the scopes whole register (default), list
       filter within the time window, and one agent or line; with no estimate
       they count tasks, with story points they sum complexity and draw the
       unestimated tasks as a line of their own.
-- [ ] "Request estimates" shows only in story points mode; a click or
+- [x] "Request estimates" shows only in story points mode; a click or
       `/kvb-org-queue-estimate` sends exactly one newsletter to all agents
       that lists every unestimated task with every party holding a RASCI
       role in it; a state build or a mode switch sends none.
-- [ ] A per-task or bulk business value change is stored only with a
+- [x] A per-task or bulk business value change is stored only with a
       verified passkey assertion over the exact task ids and values; a
       forged, replayed or altered batch changes nothing, and WSJF uses the
       operator value instead of the median.
-- [ ] The task list sorts by each mode of decision 50 in both directions.
+- [x] The task list sorts by each mode of decision 50 in both directions.
 
 ### Tests
 
@@ -700,7 +700,7 @@ flowchart TD
         rename-once timeline, squelch scheduler, face generator, settings
         writer (forged, replayed, unlisted file), token sums, German text
         scan.
-  - [ ] S5 Gantt and estimates: dependency edges and cycle refusal, forecast lengths, burn
+  - [x] S5 Gantt and estimates: dependency edges and cycle refusal, forecast lengths, burn
         sums per mode and scope, newsletter body and its single send, bulk
         business value signature (forged, replayed, altered), sort orders.
 - **Integration**
@@ -725,6 +725,6 @@ flowchart TD
   - [ ] Phase 6: no page scrollbar on any view, agent and node popups,
         choice request and signed answer, Firewall settings diff and
         signature, Resources charts, each at 1920, 1366 and 390 px.
-  - [ ] S5: Gantt with arrows, burndown and burnup, the estimation toggle,
+  - [x] S5: Gantt with arrows, burndown and burnup, the estimation toggle,
         "Request estimates" and a signed bulk business value change, each at
         1920, 1366 and 390 px.

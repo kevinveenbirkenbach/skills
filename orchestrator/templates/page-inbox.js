@@ -57,13 +57,13 @@
         openItem(item);
         return null;
       }
-      return submit([entryOf(item, "approve", item.recommended)], `Decision: ${item.recommended}`);
+      return submit([entryOf(item, "approve", item.recommended)], `Choice: ${item.recommended}`);
     }
     return submit([entryOf(item, "approve", "")], `${item.kind === "operator" ? "Run" : "Grant"}: ${short(item.title)}`);
   }
 
   const rejectOne = (item) => submit([entryOf(item, "reject", "")], `Denial: ${short(item.title)}`);
-  const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Decision: ${label}`);
+  const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Choice: ${label}`);
 
   function bulk(items, label) {
     const usable = items.filter(selectable);
@@ -162,7 +162,7 @@
         item.kind === "rule" ? ruleRequestBody(item) : null,
         item.kind === "ask" ? h("div", {class: "muted"}, `in ${dash(item.directory)}`) : null,
         item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
-          type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, disabled: item.held, on: {click: () => chooseOne(item, option.label)},
+          type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, title: `${option.label}: your passkey signs this answer, a post to ${item.agent}`, disabled: item.held, on: {click: () => chooseOne(item, option.label)},
         }, h("strong", {}, option.label), option.description ? h("span", {}, option.description) : null))) : null),
       h("div", {class: "item-actions"},
         actionsFor(item),

@@ -8,7 +8,7 @@
   const PART_TONES = {user: "info", assistant: "ok", tool_call: "violet", tool_result: "teal", system: "neutral"};
   const KIND_TONES = {radio: "teal", review: "info", ask: "warn", decision: "violet", operator: "bad", register: "neutral", rename: "info", cron: "teal", rule: "ok", approval: "ok", run: "info", transcript: "neutral"};
   const VIEW_ICONS = {"fuer-dich": "bi-person-check", funk: "bi-broadcast", arbeit: "bi-briefcase", transkripte: "bi-chat-left-text"};
-  const ITEM_LABELS = {review: "Review", ask: "Ask", decision: "Decision", operator: "Operator", rule: "Rule request"};
+  const ITEM_LABELS = {review: "Review", ask: "Ask", decision: "Choice", operator: "Operator", rule: "Rule request"};
   const NIGHT = {day: ["Day", "ok"], drain: ["Draining", "warn"], suspend: ["Suspended", "violet"]};
   const ACTIONS = [["clear-mayday", "Cancel mayday", "Lift the radio silence of the active mayday?"], ["drain", "Drain", "Drain all agents: finish the current task, accept nothing new (kvb-agent-drain)?"], ["suspend", "Suspend", "Suspend all agents: park work, write the handover, idle (kvb-agent-suspend)?"], ["resume", "Resume", "Resume all agents from their handover (kvb-agent-resume)?"]];
   const UPLOAD_LIMIT = 50 * 1024 * 1024;

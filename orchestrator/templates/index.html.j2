@@ -453,6 +453,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "popup.js" %}
 
 {% include "faces.js" %}
+
+{% include "plan.js" %}
 </script>
 <script nonce="{{ nonce }}">
 {# Jinja drops each file's last newline and trim_blocks the one after the tag: the blank lines keep consecutive modules on separate lines #}
@@ -524,6 +526,10 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-tasks.js" %}
 
 {% include "page-tasks-prio.js" %}
+
+{% include "page-tasks-gantt.js" %}
+
+{% include "page-choices.js" %}
 
 {% include "page-time.js" %}
 

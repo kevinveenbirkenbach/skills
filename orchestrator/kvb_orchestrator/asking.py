@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+from .choosing import EVERYONE, answer_text
 from .errors import Conflict, Missing, ToolError
 from .fields import (
     COMMAND_LIMIT,
@@ -35,7 +36,13 @@ def ask_row(ask: dict, names: dict[str, str]) -> dict:
 
 
 def decision_state(decision: dict) -> dict:
-    return {key: decision[key] for key in ("id", "status", "choice", "decided")}
+    """Returns:
+        The status and choice, with the id and text of the operator's
+        passkey-signed answer when a click chose it, else None for both.
+    """
+    message = decision.get("message")
+    answer = None if message is None else answer_text(decision, decision["choice"])
+    return {**{key: decision[key] for key in ("id", "status", "choice", "decided")}, "message": message, "answer": answer}
 
 
 def decision_row(decision: dict) -> dict:
@@ -87,20 +94,7 @@ class Asking:
             if not changed:
                 raise Conflict(ask_state(decided, time.time()))
             return ask_state(decided, time.time())
-        if kind_name != "decisions" or verb != "choose":
-            raise Missing(verb)
-        payload = decode(body)
-        expect(payload, ("label",))
-        label = field(payload, "label")
-        record = self.decisions.get(item_id)
-        if record is None:
-            raise Missing(item_id)
-        if label not in [option["label"] for option in record["options"]]:
-            raise ToolError(f"label must be one of the options of decision {item_id}")
-        decided, changed = self.decisions.decide(item_id, {"status": "decided", "choice": label})
-        if not changed:
-            raise Conflict(decision_state(decided))
-        return decision_state(decided)
+        raise Missing(verb)
 
     def decision_request(self, arguments: dict) -> dict:
         expect(arguments, ("question", "options", "agent", "recommended"))
@@ -114,7 +108,10 @@ class Asking:
         recommended = arguments["recommended"]
         if not isinstance(recommended, str) or recommended.strip() not in ["", *(option["label"] for option in parsed)]:
             raise ToolError("recommended must be one of the option labels or an empty string")
-        fields = {"question": question, "options": parsed, "agent": field(arguments, "agent").strip(), "recommended": recommended.strip()}
+        asker = field(arguments, "agent").strip()
+        if EVERYONE in asker:
+            raise ToolError(f"agent names the asking agent, never a name with {EVERYONE}")
+        fields = {"question": question, "options": parsed, "agent": asker, "recommended": recommended.strip()}
         record = self.decisions.add({**fields, "status": "pending", "choice": None, "decided": None, "created_ts": time.time()})
         self.automate("decision", record)
         return {"id": record["id"], "status": record["status"], "url": self.url()}

@@ -78,6 +78,8 @@ SPACE = HUB / "templates" / "space.js"
 NAV = HUB / "templates" / "nav.js"
 POPUP = HUB / "templates" / "popup.js"
 FACES = HUB / "templates" / "faces.js"
+PLAN = HUB / "templates" / "plan.js"
+ESTIMATE = REPO_ROOT / "skills" / "kvb-org-queue-estimate" / "scripts" / "estimate.py"
 
 
 class FakeScripts:

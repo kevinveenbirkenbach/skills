@@ -132,7 +132,7 @@ class TestHubBoard(HubCase):
         self.claim("s1", "Skills session")
         signer = self.pin()
         good = self.guard(self.host)
-        self.assertEqual(messaging.SIGNED_BOARD, ("clear-mayday", "drain", "suspend", "resume"))
+        self.assertEqual(messaging.SIGNED_BOARD, ("clear-mayday", "drain", "suspend", "resume", "estimates"))
         for action, other in (("clear-mayday", "resume"), ("drain", "suspend"), ("suspend", "drain"), ("resume", "clear-mayday")):
             with self.subTest(action=action):
                 self.assertEqual(self.post_json(f"/api/board/{action}", {}, good)[0], 400)

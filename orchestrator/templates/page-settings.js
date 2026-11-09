@@ -162,6 +162,7 @@
           muted: [...absent, ...stations.filter((entry) => !entry.box.checked).map((entry) => entry.key)],
         },
         space: savedSpace(),
+        estimation: settings.estimation,
       };
       if (await saveSettings(next)) {
         closeSheet();
