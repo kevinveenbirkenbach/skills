@@ -26,7 +26,7 @@
       return;
     }
     const permission = "Notification" in window ? Notification.permission : "unsupported";
-    const labels = {granted: "Benachrichtigungen an", denied: "Benachrichtigungen blockiert", default: "Benachrichtigungen aktivieren", unsupported: "Benachrichtigungen fehlen im Browser"};
+    const labels = {granted: "Notifications on", denied: "Notifications blocked", default: "Enable notifications", unsupported: "Browser has no notifications"};
     relabel(button, "bi-bell", labels[permission] || labels.default);
     button.disabled = permission !== "default";
   }
@@ -47,7 +47,7 @@
       const newRadio = state.radio.filter((row) => !known.radio.has(`${row.ts}|${row.from}|${row.text.slice(0, 40)}`));
       const direct = newRadio.filter((row) => row.to.includes(HUMAN));
       const present = {mayday: newAlarms.length > 0, review: fresh.some((item) => item.kind !== "operator"), direct: direct.length > 0, radio: newRadio.length > 0};
-      const kind = SOUND_KINDS.map(([id]) => id).find((id) => present[id] && settings.sounds[id].on);
+      const kind = Voice.beep(present, settings, SOUND_KINDS.map(([id]) => id));
       if (kind) {
         play(kind, loudness(kind));
       }
@@ -55,13 +55,13 @@
       window.setTimeout(() => speakRows(newRadio), lead * 1000);
       if (settings.notify && "Notification" in window && Notification.permission === "granted") {
         for (const row of newAlarms) {
-          new Notification(`${row.class === "mayday" ? "Mayday" : "Pan-Pan"} von ${dash(row.from)}`, {body: row.text.slice(0, 200), tag: `alarm-${row.ts}`, requireInteraction: row.class === "mayday"});
+          new Notification(`${row.class === "mayday" ? "Mayday" : "Pan-Pan"} from ${dash(row.from)}`, {body: row.text.slice(0, 200), tag: `alarm-${row.ts}`, requireInteraction: row.class === "mayday"});
         }
         for (const item of fresh) {
-          new Notification(`${ITEM_LABELS[item.kind]} wartet`, {body: item.title.slice(0, 200), tag: `item-${keyOf(item)}`, requireInteraction: item.kind === "ask"});
+          new Notification(`${ITEM_LABELS[item.kind]} waiting`, {body: item.title.slice(0, 200), tag: `item-${keyOf(item)}`, requireInteraction: item.kind === "ask"});
         }
         for (const row of direct) {
-          new Notification(`Funk von ${dash(row.from)}`, {body: row.text.slice(0, 200), tag: `direct-${row.ts}`});
+          new Notification(`Radio from ${dash(row.from)}`, {body: row.text.slice(0, 200), tag: `direct-${row.ts}`});
         }
       }
     }
@@ -71,7 +71,7 @@
     for (const batch of state.pending) {
       if (!known.batches.has(batch.id)) {
         known.batches.add(batch.id);
-        const source = batch.source.startsWith("rule:") ? "Regel" : "Freigabe";
+        const source = batch.source.startsWith("rule:") ? "Rule" : "Grant";
         undoToast(batch, `${source}: ${batch.items.map((item) => short(item.title)).join(", ")}`);
       }
     }

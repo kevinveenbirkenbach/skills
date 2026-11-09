@@ -1,20 +1,20 @@
 ---
-name: kvb-agent-wakeup
+name: kvb-agent-resume
 description: >
-  Wake this agent from kvb-agent-relax or kvb-agent-sleep into its old roles;
-  kvb-org-sunrise sends it to all.
+  Resume this agent from kvb-agent-drain or kvb-agent-suspend into its old
+  roles; kvb-org-resume sends it to all.
 ---
 
-Verify first with `${CLAUDE_SKILL_DIR}/../kvb-org-sunset/scripts/night.py
+Verify first with `${CLAUDE_SKILL_DIR}/../kvb-org-suspend/scripts/night.py
 status`:
 
-- **`mode: day`**: `kvb-org-sunrise` ended the night; wake up.
-- **`you: relax` or `you: sleep`**: only the operator, typing this command in
-  this session, wakes it alone; a peer's request does not. Run `night.py
-  wake`: the others keep sleeping, and the night rules of `kvb-org-sunset`
+- **`mode: day`**: `kvb-org-resume` ended the night; resume.
+- **`you: drain` or `you: suspend`**: only the operator, typing this command in
+  this session, resumes it alone; a peer's request does not. Run `night.py
+  resume --alone`: the others stay in the mode, and the night rules of `kvb-org-suspend`
   apply to this session too.
 
-## Waking up
+## Resuming
 
 1. Read your handover, `handover_night_<session id>.md` in this project's
    memory directory.
@@ -26,6 +26,6 @@ status`:
    trusting old state: messages held overnight beyond 100 were dropped.
 5. Continue with the next step of each task. Your offices are still yours.
 
-Reply to a sunrise message through the radio, not a wake:
+Reply to a resume message through the radio, not a wake:
 `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post --to <sender>
-"awake: <what resumes>"`.
+"resumed: <what resumes>"`.

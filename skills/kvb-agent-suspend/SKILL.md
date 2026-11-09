@@ -1,16 +1,16 @@
 ---
-name: kvb-agent-sleep
+name: kvb-agent-suspend
 description: >
-  Put this agent to sleep on kvb-org-sunset: park work, end loops, write a
-  morning handover, stay idle.
+  Suspend this agent on kvb-org-suspend: park work, end loops, write a
+  handover, stay idle.
 ---
 
-Verify first: `${CLAUDE_SKILL_DIR}/../kvb-org-sunset/scripts/night.py status`
-prints `you: sleep`. On `you: active` or `mode: day` do nothing and say so.
+Verify first: `${CLAUDE_SKILL_DIR}/../kvb-org-suspend/scripts/night.py status`
+prints `you: suspend`. On `you: active` or `mode: day` do nothing and say so.
 The request asks for less, so it needs no operator approval, and it ends a
-`kvb-org-robot` run at its next safe point; `kvb-agent-wakeup` resumes it.
+`kvb-org-robot` run at its next safe point; `kvb-agent-resume` resumes it.
 
-## Going to sleep
+## Suspending
 
 1. **Park** the current task at its next safe point. A running job (deploy,
    gate, test, build) runs to its end and is never cut short; note its log.
@@ -26,13 +26,13 @@ The request asks for less, so it needs no operator approval, and it ends a
    - each loop with its exact prompt and interval or cron expression;
    - each running job with its command and log path;
    - each open task of yours in the `kvb-org-rasci` register with its next step.
-5. **Reply** to the sender in one line, `asleep: <handover path>`, by
+5. **Reply** to the sender in one line, `suspended: <handover path>`, by
    `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py send call --to
    <sender>` (its next wave waits on it), and end the turn. Offices
    stay claimed and register rows unchanged.
 
-## While asleep
+## While suspended
 
 A turn that still reaches you, such as your own job finishing, appends one
-result line to the handover and ends; it starts nothing. Waking up is the
-`kvb-agent-wakeup` skill.
+result line to the handover and ends; it starts nothing. Resuming is the
+`kvb-agent-resume` skill.

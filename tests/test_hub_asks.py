@@ -177,23 +177,13 @@ class TestHubAsks(HubCase):
         listed = self.snapshot()["decisions"]
         self.assertEqual([(row["id"], row["question"], row["agent"], [o["label"] for o in row["options"]]) for row in listed], [(decision_id, "Merge the hub?", "Skills", ["Merge now", "Wait"])])
         self.assertEqual(self.tool("decision_wait", {"id": decision_id, "timeout_seconds": 0})["structuredContent"]["status"], "pending")
-        results = []
-        waiter = threading.Thread(target=lambda: results.append(self.tool("decision_wait", {"id": decision_id, "timeout_seconds": 30})))
-        waiter.start()
-        time.sleep(0.3)
-        path = f"/api/decisions/{decision_id}/choose"
-        self.assertEqual(self.post_json(path, {"label": "Merge now"}, {"Host": self.host, "X-Kvb-Orchestrator": "1"})[0], 403)
-        self.assertEqual(self.post_json(path, {"label": "Later"}, self.guard(self.host))[0], 400)
-        self.assertEqual(self.post_json(path, {"label": "Merge now", "x": 1}, self.guard(self.host))[0], 400)
-        self.assertEqual(self.post_json(path, {"label": "Merge now"}, self.guard(self.host))[0], 200)
-        waiter.join(10)
-        decided = results[0]["structuredContent"]
-        self.assertEqual((decided["status"], decided["choice"]), ("decided", "Merge now"))
-        self.assertIsNotNone(decided["decided"])
-        self.assertEqual(self.post_json(path, {"label": "Wait"}, self.guard(self.host))[0], 409)
-        self.assertEqual(self.snapshot()["decisions"], [])
+        self.assertEqual(self.post_json(f"/api/decisions/{decision_id}/choose", {"label": "Merge now"}, self.guard(self.host))[0], 404)
+        self.assertEqual(self.tool("decision_wait", {"id": decision_id, "timeout_seconds": 0})["structuredContent"]["status"], "pending")
         self.assertTrue(self.tool("decision_wait", {"id": "0123456789abcdef", "timeout_seconds": 0})["isError"])
-        self.assertEqual(self.post_json("/api/decisions/0123456789abcdef/choose", {"label": "x"}, self.guard(self.host))[0], 404)
+        for name in ("*", "* session", "* (x)", "* (x) session", "a*b"):
+            with self.subTest(name=name):
+                everyone = {"question": "Tell all?", "options": OPTIONS, "agent": name, "recommended": ""}
+                self.assertTrue(self.tool("decision_request", everyone)["isError"])
 
 
 if __name__ == "__main__":

@@ -216,7 +216,7 @@ class TestPhraseology(unittest.TestCase):
             (("mayday", "Docs", [], "MAYDAY disk full"), "MAYDAY MAYDAY MAYDAY, this is Docs Docs Docs, disk full, over"),
             (("mayday", "Docs", ["Skills"], "mayday, mayday: disk full"), "MAYDAY MAYDAY MAYDAY, this is Docs Docs Docs, disk full, over"),
             (("pan-pan", "Docs", ["Skills"], "PAN-PAN: slow"), "PAN-PAN PAN-PAN PAN-PAN, all stations, this is Docs, slow, over"),
-            (("security", "Maintainer", ["Skills", "Docs"], "SECURITE rotate"), "SECURITE SECURITE SECURITE, all stations, this is Maintainer, rotate, over"),
+            (("security", "Maintainer", ["Skills", "Docs"], "SECURITE rotate"), "say-cure-ee-tay say-cure-ee-tay say-cure-ee-tay, all stations, this is Maintainer, rotate, over"),
             (("call", "Skills", ["Maintainer"], "ready"), "Maintainer, Maintainer, this is Skills, ready, over"),
             (("post", "Skills", ["Alpha", "Beta"], "ready"), "Alpha and Beta, Alpha and Beta, this is Skills, ready, over"),
             (("call", "Docs", ["Ops"], "MAYDAY is only a word here"), "Ops, Ops, this is Docs, MAYDAY is only a word here, over"),
@@ -229,6 +229,18 @@ class TestPhraseology(unittest.TestCase):
         for arguments, expected in cases:
             with self.subTest(arguments=arguments):
                 self.assertEqual(phrasing.phrase(*arguments), expected)
+
+    def test_hashes_spell_in_nato_and_digits_in_icao_only_when_spoken(self):
+        cases = (
+            ("8e180be", "eight echo one eight zero bravo echo"),
+            ("42305", "four two tree zero fife"),
+            ("fix 8E180BE, PR #1326", "fix eight echo one eight zero bravo echo, PR #one tree two six"),
+            ("8e180b decade deadbeef", "eight e one eight zero b decade deadbeef"),
+        )
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(phrasing.phrase("broadcast", "Docs", [], text), f"all stations, this is Docs, {expected}, out")
+        self.assertEqual(phrasing.pronounced(phrasing.pronounced("8e180be 42305")), phrasing.pronounced("8e180be 42305"))
 
     def test_a_phrase_fits_the_speech_limit_on_one_line(self):
         for cls in council.CLASSES:

@@ -239,7 +239,7 @@ skills_current() {
 
 offices_unit() {
 	if ! has_systemd; then
-		warn "skills: no systemd user session; the office changes signed in the Hierarchie view wait."
+		warn "skills: no systemd user session; the office changes signed in the Hierarchy view wait."
 		return 0
 	fi
 	if ! skills_current; then
@@ -250,7 +250,7 @@ offices_unit() {
 	cp -f "${HUB}/systemd/${OFFICES_UNIT}.service" "${HUB}/systemd/${OFFICES_UNIT}.path" "${UNITS}/"
 	systemctl --user daemon-reload
 	systemctl --user enable --now "${OFFICES_UNIT}.path"
-	log "skills: ${OFFICES_UNIT}.path runs council.py for the office changes the operator signs in the Hierarchie view"
+	log "skills: ${OFFICES_UNIT}.path runs council.py for the office changes the operator signs in the Hierarchy view"
 }
 
 install_all() {
@@ -338,7 +338,7 @@ check() {
 	if [[ "$(systemctl --user is-active "${OFFICES_UNIT}.path" 2>/dev/null || true)" == "active" ]]; then
 		ok "${OFFICES_UNIT}.path active"
 	else
-		todo "${OFFICES_UNIT}.path off: office changes from the Hierarchie view wait for make orchestrator-install"
+		todo "${OFFICES_UNIT}.path off: office changes from the Hierarchy view wait for make orchestrator-install"
 	fi
 	free="$(df --output=avail -BG / | tail -1 | tr -dc '0-9')"
 	if ((free >= FLOOR_GB)); then ok "/ has ${free} GB free"; else fail "/ has ${free} GB free, floor ${FLOOR_GB} GB"; fi

@@ -111,7 +111,7 @@ class TestHubRuleRequests(HubCase):
             with self.subTest(name=name):
                 status, _, body = self.post_json(f"/api/rule-requests/{request_id}/accept", {"rule": rule, "assertion": assertion}, self.guard(self.host))
                 self.assertEqual(status, 400, body)
-                self.assertIn("nicht signiert", body.decode())
+                self.assertIn("not signed", body.decode())
         self.assertEqual((self.waited(request_id)["status"], self.httpd.hub.rules.listed()), ("pending", []))
         self.assertIsNotNone(self.item(request_id))
         now = int(time.time())

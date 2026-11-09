@@ -54,12 +54,12 @@ class Jobs:
     def queue_job(self, item: dict, proof: dict | None) -> str:
         row = next((row for row in operator_rows(read_register(self.council / REGISTER)) if row["task"] == item["id"]), None)
         if row is None or not runnable(row) or operator_signed(row) != item["signed"]:
-            return "verweigert: die Zeile hat sich seit der Freigabe geändert"
+            return "refused: the row changed since the grant"
         if item["id"] in self.open_jobs():
-            return "läuft schon"
+            return "already running"
         job = {"task": row["task"], "command": row["command"], "directory": row["directory"], "sha256": item["sha256"], "status": "queued", "proof": proof}
         self.jobs.add({**job, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None, "dismissed": False})
-        return "an den Runner übergeben"
+        return "handed to the runner"
 
     def runner_jobs(self) -> dict:
         return {"jobs": [runner_job(job) for job in self.jobs.listed() if job["status"] == "queued"]}

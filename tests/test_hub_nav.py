@@ -11,7 +11,7 @@ const N = require(process.argv[1]);
 const hashes = ["", "#stream", "#stream/inbox", "#stream/rules", "#stream/nope", "#agents/chord", "#agents/3d", "#agents", "#agents/nope",
   "#artifacts/tree", "#artifacts/orbit", "#graph", "#graph/swimlane", "#graph/orbit", "#tree", "#bogus", "#agents%2Fswimlane",
   "#agents/hierarchy", "#artifacts/hierarchy", "#graph/hierarchy", "#tree/hierarchy", "#stream/radio", "#radio",
-  "#tasks", "#tasks/board", "#tasks/rasci", "#tasks/orbit", "#agents/board", "#tasks/hierarchy"];
+  "#tasks", "#tasks/board", "#tasks/rasci", "#tasks/orbit", "#agents/board", "#tasks/hierarchy", "#tasks/gantt", "#tasks/burn", "#agents/gantt"];
 console.log(JSON.stringify({
   tabs: N.TABS.map(([id, label]) => [id, label, (N.SUBS[id] || []).map(([sub, name]) => [sub, name])]),
   views: N.VIEWS.map(([id, label]) => [id, label]),
@@ -34,16 +34,17 @@ class TestNavModule(unittest.TestCase):
         cls.data = json.loads(done.stdout)
 
     def test_the_navigation_has_four_entries_and_stream_has_inbox_rules_and_radio(self):
-        stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Regeln"], ["radio", "Radio"]]]
+        stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Firewall"], ["radio", "Radio"]]]
         self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []]])
 
-    def test_agents_and_artifacts_offer_five_views_in_order_and_tasks_three(self):
+    def test_agents_and_artifacts_offer_five_views_in_order_and_tasks_five(self):
         shared = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]]
         self.assertEqual((self.data["views"], self.data["artifacts"]), (shared, shared))
-        self.assertEqual((self.data["taskViews"], self.data["tasks"]), ([["list", "Liste"], ["board", "Board"], ["rasci", "RASCI"]],) * 2)
+        task_views = [["list", "List"], ["board", "Board"], ["rasci", "RASCI"], ["gantt", "Gantt"], ["burn", "Burndown and burnup"]]
+        self.assertEqual((self.data["taskViews"], self.data["tasks"]), (task_views,) * 2)
 
     def test_only_agents_add_the_hierarchy_after_3d(self):
-        self.assertEqual(self.data["agents"][-2:], [["3d", "3D"], ["hierarchy", "Hierarchie"]])
+        self.assertEqual(self.data["agents"][-2:], [["3d", "3D"], ["hierarchy", "Hierarchy"]])
         self.assertEqual(self.data["icon"], "bi-diagram-2")
 
     def test_hashes_route_and_the_old_ones_redirect(self):
@@ -78,6 +79,9 @@ class TestNavModule(unittest.TestCase):
             {"screen": "tasks", "view": None, "redirect": None},
             {"screen": "agents", "view": None, "redirect": None},
             {"screen": "tasks", "view": None, "redirect": None},
+            {"screen": "tasks", "view": "gantt", "redirect": None},
+            {"screen": "tasks", "view": "burn", "redirect": None},
+            {"screen": "agents", "view": None, "redirect": None},
         ])
 
     def test_every_screen_has_its_own_hash_and_tab(self):

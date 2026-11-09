@@ -3,8 +3,8 @@ from __future__ import annotations
 import itertools
 import statistics
 
-from .council import agent
-from .records import iso_epoch, shown
+from .council import HUMAN, agent
+from .records import epoch, iso_epoch, shown
 from .register import ENDED, OPERATOR, parties, register_row, status_of
 from .signed import signing
 from .tree import inside
@@ -13,11 +13,13 @@ ENDED_SHOWN = 100
 OPEN_SHOWN = 300
 QUEUE_SHOWN = 100
 PARTIES_SHOWN = 40
+AFTER_SHOWN = 40
 TEXT_SHOWN = 500
 FIBONACCI = (1, 2, 3, 5, 8, 13, 21, 34, 55, 89)
 LETTERS = "RASCI"
 HOTFIX = "hotfix/"
 QUEUE = "queue/"
+HOUR = 3600
 
 
 def kind_of(task: str) -> str:
@@ -36,23 +38,42 @@ def fibonacci(value: object) -> bool:
 
 
 def estimates_of(row: dict) -> dict[str, dict]:
+    """Returns:
+        Each party's Fibonacci business value and complexity; the
+        Operator's complexity is None where it recorded a business value
+        alone.
+    """
     raw = row.get("estimates")
     found = {}
     for party, entry in itertools.islice(raw.items(), PARTIES_SHOWN) if isinstance(raw, dict) else ():
-        if isinstance(entry, dict) and fibonacci(entry.get("value")) and fibonacci(entry.get("complexity")):
-            found[str(party)[:TEXT_SHOWN]] = {"value": entry["value"], "complexity": entry["complexity"]}
+        alone = party == HUMAN and isinstance(entry, dict) and "complexity" not in entry
+        if isinstance(entry, dict) and fibonacci(entry.get("value")) and (alone or fibonacci(entry.get("complexity"))):
+            found[str(party)[:TEXT_SHOWN]] = {"value": entry["value"], "complexity": entry.get("complexity")}
     return found
+
+
+def business_value(estimates: dict[str, dict]) -> float | None:
+    if HUMAN in estimates:
+        return estimates[HUMAN]["value"]
+    return statistics.median(entry["value"] for entry in estimates.values()) if estimates else None
+
+
+def points(estimates: dict[str, dict]) -> float | None:
+    sized = [entry["complexity"] for entry in estimates.values() if entry["complexity"] is not None]
+    return statistics.median(sized) if sized else None
 
 
 def wsjf(estimates: dict[str, dict]) -> dict | None:
     """Returns:
-        Median business value, median complexity and their quotient, the
-        same reading as rasci.py's wsjf(); None without an estimate.
+        Business value, median complexity and their quotient, the same
+        reading as rasci.py's wsjf(): the Operator's business value where
+        it gave one, else the median; None while no estimate carries a
+        complexity.
     """
-    if not estimates:
+    complexity = points(estimates)
+    if complexity is None:
         return None
-    value = statistics.median(entry["value"] for entry in estimates.values())
-    complexity = statistics.median(entry["complexity"] for entry in estimates.values())
+    value = business_value(estimates)
     return {"value": value, "complexity": complexity, "score": round(value / complexity, 2)}
 
 
@@ -96,6 +117,11 @@ def located(row: dict, trees: list[dict], open_task: bool) -> dict:
     return {"worktree": tree["path"], "worktree_branch": tree["branch"], "repo": tree["repo"], "flow": tree["flow"], "open_work": [*own, *tree["open_work"]]}
 
 
+def after_of(row: dict) -> list[str]:
+    raw = row.get("after")
+    return [other for other in raw[:AFTER_SHOWN] if isinstance(other, str) and len(other) <= TEXT_SHOWN] if isinstance(raw, list) else []
+
+
 def task_row(task: str, row: dict, trees: list[dict]) -> dict:
     estimates = estimates_of(row)
     ended = status_of(row) in ENDED
@@ -108,6 +134,12 @@ def task_row(task: str, row: dict, trees: list[dict]) -> dict:
         "prio": prio_of(row),
         "estimates": estimates,
         "wsjf": wsjf(estimates),
+        "value": business_value(estimates),
+        "points": points(estimates),
+        "start": iso_epoch(row.get("start")),
+        "end": iso_epoch(row.get("end")) if ended else None,
+        "after": after_of(row),
+        "base": shown(row.get("base"))[:TEXT_SHOWN],
         "roles": roles_of(row),
         "queue": None,
         **located(row, trees, not ended),
@@ -134,6 +166,12 @@ def queue_row(entry: dict, created: float, trees: list[dict]) -> dict:
         "prio": None,
         "estimates": {},
         "wsjf": None,
+        "value": None,
+        "points": None,
+        "start": (epoch(entry.get("granted")) or created) if entry.get("status") == "active" else None,
+        "end": None,
+        "after": [],
+        "base": "-",
         "roles": {},
         "queue": {"kind": text["kind"], "parent": text["task"], "enqueued": created},
         **located(entry, trees, False),
@@ -165,3 +203,75 @@ def task_rows(tasks: dict[str, dict], queue: list[tuple[dict, float]], scan: dic
         *(queue_row(entry, created, trees) for entry, created in jobs),
         *(task_row(task, tasks[task], trees) for task in ended[:ENDED_SHOWN]),
     ]
+
+
+def register_ranks(tasks: dict[str, dict], agents: list[str]) -> dict[str, int]:
+    """Returns:
+        Each open task's index in rasci.py's ranked(): pin, WSJF, the
+        worker's place in the operator's agent order, then the name.
+    """
+    order = {name: index for index, name in enumerate(agents)}
+
+    def key(task: str) -> tuple:
+        worker = tasks[task].get("worker")
+        return (*rank(task, tasks[task])[:4], order.get(worker, len(order)) if isinstance(worker, str) else len(order), task)
+
+    current = sorted((task for task, row in tasks.items() if status_of(row) not in ENDED), key=key)
+    return {task: index for index, task in enumerate(current)}
+
+
+def queue_chain(queue: list[tuple[dict, float]], tasks: dict[str, dict], agents: list[str], now: float) -> list[tuple[str, bool]]:
+    """Args:
+        queue: the kvb-org-queue entries with their enqueue time.
+        tasks: the register rows by task.
+        agents: the operator's agent order.
+        now: epoch seconds.
+
+    Returns:
+        The entry ids in grant order, each with whether it waits: the
+        active ones by grant time, then the waiting ones as queue.py's
+        ordered() sorts them (hotfix first, then the register rank less one
+        per whole hour waited, then the holder's agent order, then the
+        enqueue sequence).
+    """
+    ranks = register_ranks(tasks, agents)
+    order = {name: index for index, name in enumerate(agents)}
+
+    def waiting_key(pair: tuple[dict, float]) -> tuple:
+        entry, created = pair
+        task, name, seq = entry.get("task"), entry.get("name"), entry.get("seq")
+        hours = int((now - created) // HOUR)
+        place = ranks[task] if isinstance(task, str) and task in ranks else len(ranks)
+        holder = order[name] if isinstance(name, str) and name in order else len(order)
+        return (not entry.get("hotfix"), place - hours, holder, seq if isinstance(seq, int) and not isinstance(seq, bool) else 0)
+
+    active = sorted((pair for pair in queue if pair[0].get("status") == "active"), key=lambda pair: epoch(pair[0].get("granted")) or pair[1])
+    waiting = sorted((pair for pair in queue if pair[0].get("status") == "waiting"), key=waiting_key)
+    return [(shown(entry.get("id"))[:TEXT_SHOWN], entry.get("status") == "waiting") for entry, _ in [*active, *waiting]]
+
+
+def branch_of(row: dict) -> str:
+    return row["branch"] if row["branch"] != "-" else row["worktree_branch"]
+
+
+def task_edges(rows: list[dict], chain: list[tuple[str, bool]]) -> list[dict]:
+    """Args:
+        rows: the shown task rows of task_rows().
+        chain: queue_chain().
+
+    Returns:
+        One {"from", "to", "kind"} edge per predecessor among the shown
+        rows: kind after for an explicit `rasci.py set --after`, base for a
+        task whose base branch is another task's branch, queue for each
+        waiting queue job and the job ahead of it.
+    """
+    shown_tasks = {row["task"] for row in rows}
+    edges = [{"from": other, "to": row["task"], "kind": "after"} for row in rows for other in row["after"] if other in shown_tasks and other != row["task"]]
+    branches: dict[str, list[str]] = {}
+    for row in rows:
+        if row["kind"] != "queue" and branch_of(row):
+            branches.setdefault(branch_of(row), []).append(row["task"])
+    edges += [{"from": other, "to": row["task"], "kind": "base"} for row in rows if row["kind"] != "queue" for other in branches.get(row["base"], []) if other != row["task"]]
+    jobs = [(f"{QUEUE}{job}", waits) for job, waits in chain]
+    edges += [{"from": ahead, "to": job, "kind": "queue"} for (ahead, _), (job, waits) in itertools.pairwise(jobs) if waits and {ahead, job} <= shown_tasks]
+    return edges

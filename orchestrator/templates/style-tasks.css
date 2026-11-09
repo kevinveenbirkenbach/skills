@@ -2,6 +2,9 @@
 .tasks-body { min-width: 0; }
 .tasks .controls input[type="search"] { flex: 1; min-width: min(240px, 100%); }
 .tasks > .chips { margin-bottom: 0; }
+body.fit .graph.tasks > .tasks-body, body.fit .graph.tasks > .inbox { flex: 1; min-height: 0; overflow: auto; }
+.choice-request { gap: var(--sp-2) var(--sp-3); }
+.choice-agents { display: grid; gap: 6px; max-height: 40vh; overflow: auto; }
 .chip .count { margin-left: 2px; }
 .task-list, .task-cards { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .task-row { display: grid; gap: 6px; min-width: 0; padding: var(--sp-3); border: 1px solid var(--line); border-radius: 12px; background: var(--glass-card); }
@@ -40,5 +43,37 @@ table.matrix th[scope="row"] { z-index: 1; min-width: min(240px, 52vw); max-widt
 .task-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
 .task-form label { display: grid; gap: 4px; color: var(--muted); font-size: var(--fs-sm); }
 .task-form input[type="number"] { width: 120px; }
+.plan-bar { gap: var(--sp-2) var(--sp-3); }
+.plan-bar [hidden] { display: none; }
+.plan-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: var(--fs-sm); }
+.plan-group select.field { width: auto; min-width: 0; max-width: min(260px, 100%); }
+.task-pick { margin: 0; accent-color: var(--accent); }
+.gantt-box, .burn-box { display: grid; gap: 8px; min-width: 0; }
+.gantt-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--glass-card); }
+.gantt-scroll svg.gantt { display: block; max-width: none; }
+svg .gantt-bar, svg .gantt-dot { fill: color-mix(in srgb, var(--c, var(--accent)) 70%, var(--panel)); stroke: var(--c, var(--accent)); stroke-width: 1; }
+svg .gantt-bar.forecast, svg .gantt-dot.forecast { fill: url(#gantt-hatch); stroke-dasharray: 3 2; }
+svg .tone-ok { --c: var(--ok); }
+svg .tone-bad { --c: var(--bad); }
+svg .tone-info { --c: var(--info); }
+svg .tone-warn { --c: var(--warn); }
+svg .tone-neutral { --c: var(--muted); }
+svg .hatch-ground { fill: var(--accent-soft); }
+svg .hatch-line { stroke: var(--accent); stroke-width: 3; }
+svg .gantt-edge { fill: none; stroke: var(--c); stroke-width: 1.6; opacity: .8; }
+svg .gantt-edge.k-after, .gantt-key.k-after { --c: var(--violet); }
+svg .gantt-edge.k-base, .gantt-key.k-base { --c: var(--info); }
+svg .gantt-edge.k-queue, .gantt-key.k-queue { --c: var(--warn); }
+svg .gantt-tip { fill: var(--muted); }
+.gantt-key, .burn-key { display: inline-flex; align-items: center; gap: 6px; }
+.gantt-key::before, .burn-key::before { content: ""; width: 18px; height: 4px; border-radius: 2px; background: var(--c, var(--accent)); }
+.gantt-key.forecast::before { height: 10px; background: repeating-linear-gradient(45deg, var(--accent) 0 3px, var(--accent-soft) 3px 6px); }
+svg.burn { width: 100%; height: auto; max-height: 60vh; }
+svg .burn-line { fill: none; stroke: var(--c); stroke-width: 2.4; }
+svg .burn-line.k-scope, .burn-key.k-scope { --c: var(--info); }
+svg .burn-line.k-done, .burn-key.k-done { --c: var(--ok); }
+svg .burn-line.k-remaining, .burn-key.k-remaining { --c: var(--accent); }
+svg .burn-line.k-unestimated, .burn-key.k-unestimated { --c: var(--warn); }
+svg .burn-line.k-unestimated { stroke-dasharray: 6 4; }
 svg .node.a-worktree.open circle { stroke: var(--warn); stroke-width: 2.6; stroke-dasharray: 3 2; }
 svg .edge.flow { stroke-dasharray: 2 5; }

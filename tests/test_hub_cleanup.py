@@ -62,12 +62,12 @@ class TestHubCleanup(HubCase):
         done = branches["feature/done"]
         self.assertEqual(done["cleanup"], item)
         self.assertEqual(done["plan"], [
-            "feature/done @ 5b1e6fd3a7c0: merged-clean, gemergt durch #12",
-            f"entfernt den Worktree {item['worktree']}",
-            "löscht den lokalen Branch feature/done",
-            "bleibt: remote-branch (nur lokal)",
-            "stoppt den Compose-Stack demo-feature-done ohne -v",
-            "entfernt das Image demo:feature-done",
+            "feature/done @ 5b1e6fd3a7c0: merged-clean, merged by #12",
+            f"removes the worktree {item['worktree']}",
+            "deletes the local branch feature/done",
+            "stays: remote-branch (local only)",
+            "stops the Compose stack demo-feature-done without -v",
+            "removes the image demo:feature-done",
         ])
         self.assertEqual((done["merged_by"], done["merged_into"], done["gone"]), ("#12", "main", True))
         self.assertEqual({name: entry["cleanup"] for name, entry in branches.items() if name != "feature/done"}, {"feature": None, "feature/kept": None, "main": None})
@@ -76,7 +76,7 @@ class TestHubCleanup(HubCase):
     def test_signing_a_delete_needs_delete_ready_and_exactly_an_offered_item(self):
         item = self.ready(False)
         status, body = self.sign([item])
-        self.assertEqual((status, body.decode()), (400, "löschen gesperrt: Secret Service locked\n"))
+        self.assertEqual((status, body.decode()), (400, "delete blocked: Secret Service locked\n"))
         item = self.ready(True)
         kept = {**item, "branch": "feature/kept", "worktree": "", "tip": "0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d"}
         for name, items in (("changed tip", [{**item, "tip": OTHER_TIP}]), ("skip reason", [kept]), ("pattern", [{**item, "branch": "feature/*"}]), ("twice", [item, item]), ("extra key", [{**item, "command": "rm -rf /"}])):

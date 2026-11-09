@@ -2,7 +2,9 @@
 """Classify installed skills as current, project, legacy, removed or unknown.
 
 Args:
-    --skills-repo: checkout of the skills repository, read with its git history.
+    --skills-repo: checkout of the skills repository, read with its git history;
+        a SKILL.md that keeps SIMILARITY of its text across a move counts as
+        renamed, since a renamed skill rewrites its own name throughout.
     --root: a skills directory to classify, repeatable.
     --json: print the rows as JSON instead of tab-separated lines.
 
@@ -17,6 +19,8 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+
+SIMILARITY = "40%"
 
 
 def fail(message: str) -> None:
@@ -40,7 +44,7 @@ def current_names(skills_repo: Path) -> set[str]:
 def moves(skills_repo: Path) -> dict[str, str | None]:
     out = git(
         skills_repo,
-        "log", "-M", "--diff-filter=RD", "--name-status", "--format=", "--", "skills/*/SKILL.md",
+        "log", f"-M{SIMILARITY}", "--diff-filter=RD", "--name-status", "--format=", "--", "skills/*/SKILL.md",
     )
     if out is None:
         fail(f"{skills_repo} is not a git repository")

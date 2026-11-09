@@ -34,28 +34,28 @@ class TestCoach(unittest.TestCase):
         return {row["area"]: row for row in json.loads(result.stdout)}
 
     def test_a_dislike_replaces_a_like_and_forget_drops_it(self):
-        self._run("like", "body", "Laufen")
-        self._run("like", "body", "Laufen")
+        self._run("like", "body", "Running")
+        self._run("like", "body", "Running")
         self._run("like", "body", "Yoga")
-        self._run("dislike", "body", "Laufen")
+        self._run("dislike", "body", "Running")
         body = self._show("2026-11-03T18:00:00+00:00")["body"]
         self.assertEqual(body["likes"], ["Yoga"])
-        self.assertEqual(body["dislikes"], ["Laufen"])
-        self._run("forget", "body", "Laufen")
+        self.assertEqual(body["dislikes"], ["Running"])
+        self._run("forget", "body", "Running")
         self.assertEqual(self._show("2026-11-03T18:00:00+00:00")["body"]["dislikes"], [])
 
     def test_the_latest_done_per_area_gives_the_hours_since(self):
-        self._run("done", "food", "Frühstück", "--at", "2026-11-03T08:00:00+00:00")
-        self._run("done", "food", "Mittagessen", "--at", "2026-11-03T12:30:00+00:00")
-        self._run("done", "sleep", "Nacht", "--at", "2026-11-02T23:00:00+00:00")
+        self._run("done", "food", "Breakfast", "--at", "2026-11-03T08:00:00+00:00")
+        self._run("done", "food", "Lunch", "--at", "2026-11-03T12:30:00+00:00")
+        self._run("done", "sleep", "Night", "--at", "2026-11-02T23:00:00+00:00")
         rows = self._show("2026-11-03T18:00:00+00:00")
-        self.assertEqual((rows["food"]["last"], rows["food"]["hours_ago"]), ("Mittagessen", 5.5))
+        self.assertEqual((rows["food"]["last"], rows["food"]["hours_ago"]), ("Lunch", 5.5))
         self.assertEqual(rows["sleep"]["hours_ago"], 19.0)
         self.assertIsNone(rows["psyche"]["last"])
 
     def test_invalid_input_exits_2_and_keeps_the_profile(self):
         self.assertEqual(self._run("like", "work", "x").returncode, 2)
-        self.assertEqual(self._run("done", "body", "x", "--at", "gestern").returncode, 2)
+        self.assertEqual(self._run("done", "body", "x", "--at", "yesterday").returncode, 2)
         self.assertFalse(self.profile.exists())
         self.profile.parent.mkdir(parents=True)
         self.profile.write_text("{broken", encoding="utf-8")

@@ -38,6 +38,7 @@ console.log(JSON.stringify({
   spoken: filters.map((filter) => rows.map((row) => V.speakable(row, filter))),
   queue: pending.map((item) => item.cls),
   loud: settings.map((one) => Object.fromEntries(["mayday", "review", "direct", "radio"].map((tone) => [tone, V.loudness(tone, one)]))),
+  beeps: settings.map((one) => V.beep({mayday: true, review: true, direct: true, radio: true}, one, ["mayday", "review", "direct", "radio"])),
   frames: [V.frames(1.5, 16000, 120), V.frames(130, 16000, 120), V.frames(0, 16000, 120)],
   wav: Buffer.from(V.wav(Float32Array.from([0, 0.5, -0.5, 1, -1, 2, -2]), 16000)).toString("base64"),
 }));
@@ -52,6 +53,7 @@ class TestVoiceModule(unittest.TestCase):
             settings.SETTINGS,
             {**settings.SETTINGS, "music": {"on": True, "volume": 1.0}, "sounds": quiet},
             {**settings.SETTINGS, "sounds": {**settings.SETTINGS["sounds"], "mayday": {"on": True, "volume": 0.0}, "radio": {"on": True, "volume": 0.8}}},
+            *({**settings.SETTINGS, "squelch": 0.0, "music": {"on": music, "volume": 1.0}, "sounds": {name: {"on": True, "volume": 1.0} for name in settings.TONES}} for music in (True, False)),
         ]
         command = ["node", "-e", VOICE_PROBE, str(VOICE), json.dumps(cls.settings)]
         done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=True)
@@ -63,7 +65,11 @@ class TestVoiceModule(unittest.TestCase):
         for loud in self.data["loud"]:
             with self.subTest(loud=loud):
                 self.assertEqual(loud["mayday"], max(loud.values()))
-        self.assertEqual([loud["mayday"] for loud in self.data["loud"]], [0.9, 1.0, 0.8])
+        self.assertEqual([loud["mayday"] for loud in self.data["loud"]], [0.9, 1.0, 0.8, 0.0, 0.0])
+
+    def test_squelch_at_zero_plays_no_tone_with_music_on_or_off(self):
+        self.assertEqual(self.data["beeps"], ["mayday", None, "mayday", None, None])
+        self.assertEqual([set(loud.values()) for loud in self.data["loud"][3:]], [{0.0}, {0.0}])
 
     def test_the_radio_filter_picks_classes_and_stations(self):
         self.assertEqual(self.data["spoken"], [

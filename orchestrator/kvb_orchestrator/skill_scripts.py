@@ -11,8 +11,9 @@ OUTPUT_LIMIT = 4000
 SAFE_PATH = "/usr/local/bin:/usr/bin:/bin"
 RADIO = "kvb-org-radio/scripts/radio.py"
 RASCI = "kvb-org-rasci/scripts/rasci.py"
-NIGHT = "kvb-org-sunset/scripts/night.py"
+NIGHT = "kvb-org-suspend/scripts/night.py"
 OPERATOR_SCRIPT = "kvb-org-operator/scripts/operator.py"
+ESTIMATE = "kvb-org-queue-estimate/scripts/estimate.py"
 
 
 class Runner(Protocol):

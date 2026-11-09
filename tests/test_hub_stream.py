@@ -149,10 +149,10 @@ class TestHubStream(HubCase):
             "Cron: 7 * * * *": (True, "Skills", "iterate"),
             "Wakeup: in 60 s": (False, "Skills", "/loop\nfirst"),
             "Wakeup: in 1200 s": (True, "Skills", "/loop\nfallback"),
-            "Hintergrund: gate": (True, "Skills", "make test"),
+            "Background: gate": (True, "Skills", "make test"),
             "Timer: *-*-* 08:00:00": (True, "", "Daily dream\nkvb-dream-notify.timer"),
             "Timer: 1h": (False, "", "old.timer"),
-            "Queue: gate · läuft": (True, "Skills", "make test\nwork/hub"),
+            "Queue: gate · running": (True, "Skills", "make test\nwork/hub"),
         })
         self.write_council({"work/s1/claim.json": {"office": "work/s1", "session": "s1", "runtime": "claude", "name": "Skills session", "since": "2026-11-05T08:00:00+00:00", "beat": now - 3600, "work": "x"}})
         self.assertEqual(crons()["Cron: 7 * * * *"][0], False)

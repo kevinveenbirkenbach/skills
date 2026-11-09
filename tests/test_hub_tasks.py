@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import signal
@@ -10,17 +11,29 @@ from pathlib import Path
 from unittest import mock
 
 from hub_case import HubCase
-from hub_support import runner, signing, verifier
-from kvb_orchestrator import skill_scripts, tasks, tree
+from hub_support import REPO_ROOT, iso, key, runner, signing, verifier
+from kvb_orchestrator import settings, skill_scripts, tasks, tree
 
 BROKEN = {"pull": [], "push": [], "source": "invalid"}
 FLOW = {"pull": ["origin/main", "store-i18n"], "push": ["main", "production"], "source": "file"}
 PRIO = ["set", "work/feature", "--prio", "3"]
 ESTIMATE = ["estimate", "work/feature", "Operator", "--value", "8", "--complexity", "3"]
+QUEUE_SCRIPT = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
 
 
 def change(argv: list, task: str = "work/feature") -> dict:
     return {"kind": "task", "id": task, "argv": argv}
+
+
+def valued(task: str, value: str) -> dict:
+    return change(["estimate", task, "Operator", "--value", value], task)
+
+
+def load_queue():
+    spec = importlib.util.spec_from_file_location("queue_for_the_hub_chain", QUEUE_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestHubTasks(HubCase):
@@ -179,10 +192,10 @@ class TestHubTasks(HubCase):
         forged = {**self.signed([change(PRIO)], self.pin()), "assertion": {}}
         status, _, body = self.post_json("/api/tasks", {"items": [change(PRIO)], "proof": forged}, self.guard(self.host))
         self.assertEqual(status, 400, body)
-        self.assertIn("nicht signiert", body.decode() if isinstance(body, bytes) else body)
+        self.assertIn("not signed", body.decode() if isinstance(body, bytes) else body)
         snapshot = self.snapshot()
         self.assertEqual([job for job in snapshot["jobs"] if job["kind"] == "task"], [])
-        self.assertNotIn("Aufgabe signiert geändert", json.dumps(snapshot, ensure_ascii=False))
+        self.assertNotIn("Task change signed", json.dumps(snapshot, ensure_ascii=False))
 
     def test_a_task_the_hub_cannot_sign_whole_is_not_editable(self):
         long_slug = "work/" + "x" * 600
@@ -306,6 +319,138 @@ class TestHubTasks(HubCase):
         self.assertEqual([row["task"] for row in rows], ["work/t0", "work/t1", "work/t2", "work/t3", "queue/gate-0", "queue/gate-1", "queue/gate-2"])
         self.assertEqual((len(rows[0]["estimates"]), len(rows[0]["roles"])), (2, 2))
         self.assertEqual(max(len(row["task"]) for row in self.snapshot()["tasks"]), tasks.TEXT_SHOWN)
+
+    def plan_register(self, now: float) -> tuple[dict, dict]:
+        register = {
+            "work/base": {"status": "done", "branch": "feature/base", "start": iso(now - 7200), "end": iso(now - 3600)},
+            "work/child": {"status": "queued", "base": "feature/base"},
+            "work/next": {"status": "queued", "after": ["work/child", "work/gone", "work/next", 7]},
+            "work/side": {"status": "running", "branch": "side", "base": "feature/base", "start": iso(now - 600)},
+            "work/pinned": {"status": "queued", "prio": 1},
+        }
+        entries = [
+            {"id": "deploy-1", "seq": 1, "kind": "deploy", "task": "work/side", "name": "Stage", "hotfix": None, "status": "active", "enqueued": now - 200, "granted": now - 100, "cmd": "make deploy"},
+            {"id": "gate-2", "seq": 2, "kind": "gate", "task": "work/next", "name": "Docs", "hotfix": None, "status": "waiting", "enqueued": now - 50, "granted": None, "cmd": "make test"},
+            {"id": "gate-3", "seq": 3, "kind": "gate", "task": "work/pinned", "name": "Docs", "hotfix": None, "status": "waiting", "enqueued": now - 40, "granted": None, "cmd": "make test"},
+            {"id": "hot-4", "seq": 4, "kind": "gate", "task": "work/next", "name": "Docs", "hotfix": "db", "status": "waiting", "enqueued": now - 30, "granted": None, "cmd": "make test"},
+            {"id": "old-5", "seq": 5, "kind": "gate", "task": "work/next", "name": "Stage", "hotfix": None, "status": "waiting", "enqueued": now - 7210, "granted": None, "cmd": "make test"},
+        ]
+        return register, {"seq": 5, "entries": entries}
+
+    def test_edges_come_from_explicit_dependencies_branch_bases_and_the_queue_order(self):
+        now = time.time()
+        register, queue = self.plan_register(now)
+        self.write_council({"rasci.json": register, "queue.json": queue})
+        state = self.snapshot()
+        self.assertEqual(state["task_edges"], [
+            {"from": "work/child", "to": "work/next", "kind": "after"},
+            {"from": "work/base", "to": "work/child", "kind": "base"},
+            {"from": "work/base", "to": "work/side", "kind": "base"},
+            {"from": "queue/deploy-1", "to": "queue/hot-4", "kind": "queue"},
+            {"from": "queue/hot-4", "to": "queue/gate-3", "kind": "queue"},
+            {"from": "queue/gate-3", "to": "queue/old-5", "kind": "queue"},
+            {"from": "queue/old-5", "to": "queue/gate-2", "kind": "queue"},
+        ])
+        rows = {row["task"]: row for row in state["tasks"]}
+        self.assertEqual((rows["work/next"]["after"], rows["work/child"]["base"], rows["work/pinned"]["base"]), (["work/child", "work/gone", "work/next"], "feature/base", "-"))
+        self.assertAlmostEqual(rows["work/base"]["start"], now - 7200, places=3)
+        self.assertAlmostEqual(rows["work/base"]["end"], now - 3600, places=3)
+        self.assertIsNone(rows["work/side"]["end"])
+        self.assertEqual((rows["queue/deploy-1"]["start"], rows["queue/gate-2"]["start"]), (now - 100, None))
+
+    def test_the_queue_chain_follows_the_grant_order_of_queue_py(self):
+        now = time.time()
+        register, queue = self.plan_register(now)
+        entries = [(entry, entry["enqueued"]) for entry in queue["entries"]]
+        chain = tasks.queue_chain(entries, register, [], now)
+        self.assertEqual(chain, [("deploy-1", False), ("hot-4", True), ("gate-3", True), ("old-5", True), ("gate-2", True)])
+        self.assertEqual(tasks.register_ranks(register, []), {"work/pinned": 0, "work/child": 1, "work/next": 2, "work/side": 3})
+        waiting = [entry for entry in queue["entries"] if entry["status"] == "waiting"]
+        queue_py = load_queue()
+        for agents, first in (([], "gate-3"), (["Stage", "Docs"], "old-5")):
+            with self.subTest(agents=agents):
+                ranks = tasks.register_ranks(register, agents)
+                expected = [entry["id"] for entry in queue_py.ordered(waiting, ranks, {name: index for index, name in enumerate(agents)}, now)]
+                found = [job for job, waits in tasks.queue_chain(entries, register, agents, now) if waits]
+                self.assertEqual(found, expected)
+                self.assertEqual(found[:2], ["hot-4", first])
+
+    def test_a_bulk_business_value_is_stored_only_with_one_verified_assertion_over_the_exact_ids_and_values(self):
+        register = {
+            "work/a": {"status": "running", "estimates": {"Skills": {"value": 3, "complexity": 2}, "Docs": {"value": 5, "complexity": 2}}},
+            "work/b": {"status": "queued", "estimates": {"Docs": {"value": 2, "complexity": 1}}},
+        }
+        self.write_council({"rasci.json": register})
+        before = (self.council / "rasci.json").read_bytes()
+        signer = self.pin()
+        batch = [valued("work/a", "21"), valued("work/b", "21")]
+        proof = self.signed(batch, signer)
+        good = self.guard(self.host)
+        for items, relayed, reason in (
+            ([batch[0], valued("work/b", "34")], proof, "list every approved item"),
+            ([valued("work/b", "21"), valued("work/a", "34")], proof, "list every approved item"),
+            ([*batch, valued("work/c", "21")], proof, "not found"),
+            (batch, key(-7, "stranger").proof(proof["payload"], self.origin), "not signed"),
+            (batch, {**proof, "assertion": {**proof["assertion"], "signature": proof["assertion"]["signature"][::-1]}}, "not signed"),
+            (batch, None, "not signed"),
+        ):
+            with self.subTest(items=items, reason=reason):
+                status, _, body = self.post_json("/api/tasks", {"items": items, "proof": relayed}, good)
+                self.assertIn(status, (400, 404), body)
+                self.assertIn(reason, body.decode())
+        self.assertEqual([job for job in self.snapshot()["jobs"] if job["kind"] == "task"], [])
+        status, _, body = self.post_json("/api/tasks", {"items": batch, "proof": proof}, good)
+        self.assertEqual(status, 202, body)
+        self.assertEqual(len(json.loads(body)["jobs"]), 2)
+        for items in (batch, batch[:1], batch[::-1]):
+            with self.subTest(replayed=items):
+                status, _, body = self.post_json("/api/tasks", {"items": items, "proof": proof}, good)
+                self.assertEqual(status, 400, body)
+                self.assertIn("already used", body.decode())
+        self.assertEqual((self.council / "rasci.json").read_bytes(), before)
+        self.run_runner()
+        stored = json.loads((self.council / "rasci.json").read_text(encoding="utf-8"))
+        self.assertEqual({task: row["estimates"]["Operator"]["value"] for task, row in stored.items()}, {"work/a": 21, "work/b": 21})
+        self.assertFalse(any("complexity" in row["estimates"]["Operator"] for row in stored.values()))
+        rows = {row["task"]: row for row in self.snapshot()["tasks"]}
+        self.assertEqual(rows["work/a"]["wsjf"], {"value": 21, "complexity": 2, "score": 10.5})
+        self.assertEqual(rows["work/b"]["wsjf"], {"value": 21, "complexity": 1, "score": 21.0})
+        self.assertEqual((rows["work/a"]["value"], rows["work/a"]["points"], rows["work/a"]["estimates"]["Operator"]), (21, 2, {"value": 21, "complexity": None}))
+        self.assertEqual(self.runner_jobs(), [])
+        tampered_fields = {"kind": "task", "task": "work/a", "argv": ["estimate", "work/a", "Operator", "--value", "34"], "command": "x", "directory": "", "sha256": "", "status": "queued", "proof": proof}
+        tampered = self.httpd.hub.jobs.add({**tampered_fields, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None})
+        replayed = self.httpd.hub.jobs.add({**tampered_fields, "argv": batch[0]["argv"], "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None})
+        self.run_runner()
+        self.assertIn("does not list this item", self.httpd.hub.jobs.get(tampered["id"])["output"])
+        self.assertIn("already used", self.httpd.hub.jobs.get(replayed["id"])["output"])
+        self.assertEqual(json.loads((self.council / "rasci.json").read_text(encoding="utf-8")), stored)
+
+    def test_estimates_go_out_only_on_an_explicit_request_in_story_points_mode_once_per_request(self):
+        self.write_council({"rasci.json": {"work/a": {"status": "queued", "roles": {"Skills": "RA"}}}})
+        good = self.guard(self.host)
+        signer = self.pin()
+        self.snapshot()
+        self.index()
+        status, _, body = self.post_json("/api/board/estimates", {"proof": self.board_proof("estimates", signer)}, good)
+        self.assertEqual(status, 409, body)
+        self.assertEqual(self.post_json("/api/board/estimates", {}, self.client())[0], 403)
+        status, _, body = self.post_json("/api/settings", {**self.snapshot()["settings"], "estimation": "points", "proof": None}, good)
+        self.assertEqual((status, json.loads(body)["settings"]["estimation"]), (200, "points"))
+        self.snapshot()
+        self.index()
+        self.assertEqual(self.post_json("/api/board/estimates", {}, good)[0], 400)
+        self.assertEqual(self.post_json("/api/board/estimates", {"proof": None}, good)[0], 400)
+        self.assertEqual(self.scripts.calls, [])
+        proof = self.board_proof("estimates", signer)
+        status, _, body = self.post_json("/api/board/estimates", {"proof": proof}, good)
+        self.assertEqual(status, 200, body)
+        self.assertTrue(json.loads(body)["ok"])
+        self.assertEqual(self.post_json("/api/board/estimates", {"proof": proof}, good)[0], 400)
+        self.assertEqual(self.scripts.calls, [(skill_scripts.ESTIMATE, ["request", "--session", "Operator"])])
+        self.snapshot()
+        self.assertEqual(self.post_json("/api/settings", {**self.snapshot()["settings"], "estimation": "none", "proof": None}, good)[0], 200)
+        self.assertEqual(len(self.scripts.calls), 1)
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["estimation"], "none")
 
 
 if __name__ == "__main__":

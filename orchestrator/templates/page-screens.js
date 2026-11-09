@@ -8,7 +8,7 @@
   }
 
   document.getElementById("tabs").append(...Nav.TABS.map(([id, label], index) => h("div", {class: "tab-group"},
-    tabButton(id, label, `Taste ${index + 1}`),
+    tabButton(id, label, `key ${index + 1}`),
     Nav.SUBS[id] ? h("div", {class: "subtabs"}, Nav.SUBS[id].map(([sub, name]) => tabButton(sub, name, ""))) : null)));
 
   function measure() {
@@ -52,9 +52,6 @@
   }
 
   function render(force) {
-    if (ui.node !== null && !state.graph.nodes.some((node) => node.id === ui.node)) {
-      ui.node = null;
-    }
     for (const [id, {button}] of navButtons) {
       button.setAttribute("aria-current", ui.screen === id ? "page" : "false");
     }
@@ -70,6 +67,7 @@
       const main = document.getElementById("main");
       main.setAttribute("aria-labelledby", `tab-${ui.screen}`);
       main.replaceChildren(screenOf());
+      document.body.classList.toggle("fit", ["tasks", "inbox"].includes(ui.screen) || (["agents", "artifacts"].includes(ui.screen) && !["tree", "hierarchy"].includes(ui.views[ui.screen])));
       drawn.screen = ui.screen;
       drawn.sig = sig;
       if (g3.host && !g3.host.isConnected) {
@@ -77,15 +75,16 @@
       }
     }
     stage();
-    drawSide();
     drawSpawn();
     drawHierarchy(force);
     drawToolbar();
     drawInbox();
     drawRadio();
     drawTasks();
+    drawChoices();
     drawStatus();
     tick();
+    placePopup();
   }
 
   function drawStatus() {
@@ -98,7 +97,7 @@
     const banner = document.getElementById("mayday");
     const silence = state.silence;
     banner.hidden = !silence;
-    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "aufheben", "btn small", () => confirmAct("clear-mayday"), "aufheben: Mayday beenden (radio.py clear)")] : []));
+    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "cancel", "btn small", () => confirmAct("clear-mayday"), "cancel: end the mayday (radio.py clear)")] : []));
     document.title = `${state.badges.inbox ? `(${state.badges.inbox}) ` : ""}Agent Orchestrator`;
     window.setTimeout(measure, 0);
   }

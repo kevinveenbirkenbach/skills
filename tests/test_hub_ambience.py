@@ -6,7 +6,7 @@ import unittest
 
 from hub_support import AMBIENCE, STREAMS
 
-SLOTS = [(0, 420, "Morgen"), (0, 539, "Morgen"), (0, 540, None), (1, 419, None), (5, 480, None), (5, 1380, "Nacht"), (6, 90, "Nacht"), (6, 120, None), (4, 1380, None), (6, 1380, None)]
+SLOTS = [(0, 420, "Morning"), (0, 539, "Morning"), (0, 540, None), (1, 419, None), (5, 480, None), (5, 1380, "Night"), (6, 90, "Night"), (6, 120, None), (4, 1380, None), (6, 1380, None)]
 PROBE = """
 const A = require(process.argv[1]);
 const at = (text) => Date.parse(text);

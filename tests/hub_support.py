@@ -59,9 +59,9 @@ HOOK = {
 OPTIONS = [{"label": "Merge now", "description": "Gate is green"}, {"label": "Wait", "description": ""}]
 AMBIENCE = HUB / "templates" / "ambience.js"
 STREAMS = [
-    {"name": "Morgen", "url": "https://radio.example/morgen", "from": "07:00", "to": "09:00", "days": [0, 1, 2, 3, 4], "on": True, "via": []},
-    {"name": "Nacht", "url": "http://10.0.0.5:8000/nacht", "from": "22:00", "to": "02:00", "days": [5], "on": True, "via": []},
-    {"name": "Aus", "url": "https://other.example:8443/", "from": "00:00", "to": "24:00", "days": [0, 1, 2, 3, 4, 5, 6], "on": False, "via": []},
+    {"name": "Morning", "url": "https://radio.example/morning", "from": "07:00", "to": "09:00", "days": [0, 1, 2, 3, 4], "on": True, "via": []},
+    {"name": "Night", "url": "http://10.0.0.5:8000/night", "from": "22:00", "to": "02:00", "days": [5], "on": True, "via": []},
+    {"name": "Off", "url": "https://other.example:8443/", "from": "00:00", "to": "24:00", "days": [0, 1, 2, 3, 4, 5, 6], "on": False, "via": []},
 ]
 
 
@@ -76,6 +76,10 @@ def offline_redirects() -> Redirects:
 VOICE = HUB / "templates" / "voice.js"
 SPACE = HUB / "templates" / "space.js"
 NAV = HUB / "templates" / "nav.js"
+POPUP = HUB / "templates" / "popup.js"
+FACES = HUB / "templates" / "faces.js"
+PLAN = HUB / "templates" / "plan.js"
+ESTIMATE = REPO_ROOT / "skills" / "kvb-org-queue-estimate" / "scripts" / "estimate.py"
 
 
 class FakeScripts:

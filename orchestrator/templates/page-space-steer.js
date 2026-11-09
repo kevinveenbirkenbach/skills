@@ -8,12 +8,7 @@
       return;
     }
     graphDom.stage.replaceChildren({orbit, chord, swimlane}[ui.views.agents]());
-  }
-
-  function drawSide() {
-    if (graphDom && ui.screen === "agents" && ui.views.agents !== "tree" && ui.views.agents !== "hierarchy") {
-      graphDom.aside.replaceChildren(...side());
-    }
+    placePopup();
   }
 
   function seenView(kind) {

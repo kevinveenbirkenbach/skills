@@ -47,7 +47,7 @@
       holder.textContent = data.text;
       button.remove();
     } else {
-      button.textContent = "Nicht mehr verfügbar";
+      button.textContent = "No longer available";
     }
   }
 
@@ -58,7 +58,7 @@
     filter.waiting = false;
     filter.session = session;
     filter.sub = sub;
-    closeAgent();
+    closePopup();
     if (ui.screen === "stream" && stream.dom) {
       refilter();
     } else {
@@ -84,7 +84,7 @@
   function extras(entry) {
     const ref = entry.ref;
     if (entry.kind === "review") {
-      return [status(ref.status), ref.gate ? pill(ref.gate === "pass" ? "Gate grün" : "Gate rot", ref.gate === "pass" ? "ok" : "bad") : null];
+      return [status(ref.status), ref.gate ? pill(ref.gate === "pass" ? "Gate green" : "Gate red", ref.gate === "pass" ? "ok" : "bad") : null];
     }
     if (entry.kind === "ask") {
       return [status(ref.status), ...ref.warnings.map((warning) => pill(warning, "bad"))];
@@ -93,7 +93,7 @@
       return [status(ref.status), ref.choice ? pill(ref.choice, "ok") : null];
     }
     if (entry.kind === "cron") {
-      return [pill(ref.active ? "aktiv" : "inaktiv", ref.active ? "ok" : "neutral")];
+      return [pill(ref.active ? "active" : "inactive", ref.active ? "ok" : "neutral")];
     }
     if (entry.kind === "run" || entry.kind === "operator" || entry.kind === "register") {
       return [ref.status ? status(ref.status) : null];
@@ -104,7 +104,7 @@
   function body(entry) {
     if (entry.kind === "transcript") {
       const text = h("pre", {}, entry.text);
-      const more = entry.ref.truncated ? h("button", {type: "button", class: "btn small ghost"}, "Ganzen Text zeigen") : null;
+      const more = entry.ref.truncated ? h("button", {type: "button", class: "btn small ghost"}, "Show full text") : null;
       if (more) {
         more.addEventListener("click", () => expand(entry, text, more));
       }
@@ -115,12 +115,12 @@
       return [h("div", {class: "command"}, h("code", {}, entry.kind === "ask" ? entry.text : entry.title), copyButton(entry.kind === "ask" ? entry.text : entry.title)), h("span", {class: "muted"}, `in ${dash(where)}`), entry.kind === "operator" && entry.text !== "-" ? h("p", {class: "text"}, entry.text) : null];
     }
     if (entry.kind === "review") {
-      return [entry.text ? h("pre", {class: "notes"}, entry.text) : null, h("div", {class: "line-actions"}, iconBtn("bi-eye", "Diff ansehen", "btn small soft", () => reviewSheet(entry.ref.id)))];
+      return [entry.text ? h("pre", {class: "notes"}, entry.text) : null, h("div", {class: "line-actions"}, iconBtn("bi-eye", "View diff", "btn small soft", () => reviewSheet(entry.ref.id)))];
     }
     if (entry.kind === "cron") {
       const ref = entry.ref;
-      const ended = ref.deleted ? [" · beendet ", when(ref.deleted)] : [];
-      return [entry.text ? h("pre", {}, entry.text) : null, h("span", {class: "muted"}, "angelegt ", when(ref.created), ended)];
+      const ended = ref.deleted ? [" · ended ", when(ref.deleted)] : [];
+      return [entry.text ? h("pre", {}, entry.text) : null, h("span", {class: "muted"}, "created ", when(ref.created), ended)];
     }
     if (entry.kind === "run") {
       return [entry.text ? h("pre", {}, entry.text) : null];
@@ -131,7 +131,7 @@
   function eventRow(entry) {
     const item = entry.waiting ? inboxOf(entry) : null;
     const alarm = entry.kind === "radio" && (entry.part === "mayday" || entry.part === "pan-pan");
-    const renamed = entry.now && entry.now !== entry.agent ? h("span", {title: `jetzt: ${entry.now}`}, person(entry.agent)) : person(entry.agent);
+    const renamed = entry.now && entry.now !== entry.agent ? h("span", {title: `now: ${entry.now}`}, person(entry.agent)) : person(entry.agent);
     const who = entry.agent ? [face(entry.agent, false), renamed] : entry.session ? h("strong", {title: entry.session}, entry.session.slice(0, 8)) : null;
     const headline = entry.kind === "transcript" || entry.kind === "ask" || entry.kind === "operator" ? null : h("span", {class: "headline"}, entry.title);
     return h("li", {class: `entry k-${entry.kind}${entry.waiting ? " waiting" : ""}${alarm ? " alarm" : ""}`},
@@ -149,33 +149,33 @@
     const floor = live() && ui.preset > 0 ? nowSeconds() - ui.preset : -Infinity;
     const rows = [...stream.events, ...stream.entries.filter((entry) => entry.ts >= floor)].sort((a, b) => b.ts - a.ts || (a.id < b.id ? 1 : -1));
     const shown = rows.slice(0, FEED_LIMIT);
-    stream.dom.count.textContent = `${rows.length} Einträge${live() ? " · folgt live" : ""}`;
+    stream.dom.count.textContent = `${rows.length} entries${live() ? " · following live" : ""}`;
     if (stream.error) {
-      stream.dom.list.replaceChildren(emptyState("Stream nicht lesbar", stream.error));
+      stream.dom.list.replaceChildren(emptyState("Stream not readable", stream.error));
       return;
     }
     stream.dom.list.replaceChildren(rows.length
       ? h("div", {class: "card flush"}, h("ol", {class: "feed"}, shown.map(eventRow)),
-        rows.length > shown.length ? h("p", {class: "footnote"}, `${rows.length - shown.length} ältere Einträge ausgeblendet; grenze mit Filter oder Zeitraum ein.`) : null)
-      : emptyState(stream.busy ? "Lade …" : "Keine Einträge", activeWaiting() ? "Gerade wartet nichts auf dich." : "Im gewählten Zeitraum und Filter gibt es nichts."));
+        rows.length > shown.length ? h("p", {class: "footnote"}, `${rows.length - shown.length} older entries hidden; narrow down with a filter or the time range.`) : null)
+      : emptyState(stream.busy ? "Loading …" : "No entries", activeWaiting() ? "Nothing is waiting for you right now." : "Nothing in the chosen time range and filter."));
   }
 
   function streamScreen() {
-    const search = h("input", {type: "search", placeholder: "Suchen … agent:Name art:funk seit:2h (/)", value: filter.q, "aria-label": "Stream durchsuchen: Wörter, agent:, art: und seit:", on: {input: (event) => {
+    const search = h("input", {type: "search", placeholder: "Search … agent:Name kind:radio since:2h (/)", value: filter.q, "aria-label": "Search the stream: words, agent:, kind: and since:", on: {input: (event) => {
       filter.q = event.target.value;
       filter.saved = "";
       window.clearTimeout(searchTimer);
       searchTimer = window.setTimeout(fetchEvents, 300);
     }}});
     const count = h("span", {class: "muted"});
-    const categories = h("div", {class: "chips", role: "group", "aria-label": "Kategorien"});
-    const kinds = h("div", {class: "chips", role: "group", "aria-label": "Arten"});
-    const parts = h("div", {class: "chips", role: "group", "aria-label": "Transkript-Teile"});
-    const saved = h("div", {class: "chips", role: "group", "aria-label": "Gespeicherte Ansichten"});
+    const categories = h("div", {class: "chips", role: "group", "aria-label": "Categories"});
+    const kinds = h("div", {class: "chips", role: "group", "aria-label": "Kinds"});
+    const parts = h("div", {class: "chips", role: "group", "aria-label": "Transcript parts"});
+    const saved = h("div", {class: "chips", role: "group", "aria-label": "Saved views"});
     const focus = h("div", {class: "chips"});
     const list = h("div", {});
-    const more = h("details", {class: "menu"}, h("summary", named("Filter", "Filter: Arten, Transkript-Teile, gespeicherte Ansichten, eigener Zeitraum"), icon("bi-funnel"), caret()), h("div", {class: "menu-box end"},
-      h("h3", {}, "Arten"), kinds, h("h3", {}, "Transkript-Teile"), parts, h("h3", {}, "Gespeicherte Ansichten"), saved, h("h3", {}, "Eigener Zeitraum"), customRange()));
+    const more = h("details", {class: "menu"}, h("summary", named("Filter", "Filter: kinds, transcript parts, saved views, custom time range"), icon("bi-funnel"), caret()), h("div", {class: "menu-box end"},
+      h("h3", {}, "Kinds"), kinds, h("h3", {}, "Transcript parts"), parts, h("h3", {}, "Saved views"), saved, h("h3", {}, "Custom time range"), customRange()));
     stream.dom = {search, count, categories, kinds, parts, saved, focus, list};
     window.setTimeout(() => {
       drawFilters();

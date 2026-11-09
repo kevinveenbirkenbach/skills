@@ -66,7 +66,7 @@ function send(method, params) {
 
 const results = [];
 try {
-  await send("session.new", {capabilities: {}});
+  await send("session.new", {capabilities: {alwaysMatch: {acceptInsecureCerts: true}}});
   await send("session.subscribe", {events: ["log.entryAdded"]});
   if (plan.init) {
     await send("script.addPreloadScript", {functionDeclaration: plan.init});
@@ -95,6 +95,6 @@ try {
   socket.close();
   browser.kill();
   await sleep(300);
-  rmSync(profile, {recursive: true, force: true});
+  rmSync(profile, {recursive: true, force: true, maxRetries: 10, retryDelay: 200});
 }
 console.log(JSON.stringify({results, errors}));

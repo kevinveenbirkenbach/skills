@@ -36,7 +36,7 @@ from .reviewing import review_row
 from .settings import media_origins, station_origins, valid_settings
 from .signed import signing
 from .skill_scripts import OUTPUT_LIMIT
-from .tasks import task_rows
+from .tasks import queue_chain, task_edges, task_rows
 
 RADIO_WINDOW = 86400
 JOBS_SHOWN = 20
@@ -103,6 +103,9 @@ class View:
         people = {node["id"]: {"name": node["label"], "now": directory.now(node["id"]) or node["label"], "names": node["names"]} for node in drawn["nodes"] if node["kind"] != "subagent"}
         settings = self.settings.get()
         inbox = self.inbox(now, tasks, directory)
+        queue = queue_entries(self.council)
+        order = stored_order(self.council / AGENT_ORDER)
+        rows = task_rows(tasks, queue, self.tree.get())
         return {
             "settings": settings,
             "media": media_origins(settings),
@@ -128,8 +131,9 @@ class View:
             "messages": [message_row(message) for message in self.messages.listed() if begin <= message["created_ts"] <= end],
             "operator": operator_rows(tasks),
             "register": register_rows(tasks),
-            "tasks": task_rows(tasks, queue_entries(self.council), self.tree.get()),
-            "agent_order": agent_order(tasks, claims, stored_order(self.council / AGENT_ORDER)),
+            "tasks": rows,
+            "task_edges": task_edges(rows, queue_chain(queue, tasks, order, now)),
+            "agent_order": agent_order(tasks, claims, order),
             "radio": radio,
             "claims": claims,
             "grants": grant_rows,

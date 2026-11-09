@@ -344,9 +344,9 @@ class TestPasskeyPage(unittest.TestCase):
     def test_the_section_and_a_failed_registration_name_the_keepassxc_localhost_setting(self):
         done = subprocess.run(["node", "-e", PASSKEY_PROBE, str(PASSKEY_PAGE)], capture_output=True, text=True, timeout=60, check=True)
         shown = json.loads(done.stdout)
-        self.assertIn("nicht registriert: NotAllowedError", shown["failed"])
+        self.assertIn("not registered: NotAllowedError", shown["failed"])
         for where in ("section", "failed"):
-            for text in ("Nutzung von localhost mit Passkeys zulassen", "Allow using localhost with passkeys", "Passkeys request canceled.", "entsperrt"):
+            for text in ("Allow using localhost with passkeys", "Passkeys request canceled.", "unlocked"):
                 with self.subTest(where=where, text=text):
                     self.assertIn(text, shown[where])
 

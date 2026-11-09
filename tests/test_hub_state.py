@@ -151,7 +151,7 @@ class TestHubState(HubCase):
             set(state),
             {
                 "now", "since", "until", "first", "alarm_since", "reviews", "asks", "decisions", "messages", "operator",
-                "register", "tasks", "agent_order", "radio", "claims", "grants", "night", "silence", "graph",
+                "register", "tasks", "task_edges", "agent_order", "radio", "claims", "grants", "night", "silence", "graph",
                 "inbox", "pending", "rules", "approvers", "jobs", "views", "llm", "people", "settings", "media", "speech",
                 "badges", "kinds",
             },
@@ -162,7 +162,7 @@ class TestHubState(HubCase):
             "all stations, this is Maintainer, board, out",
             "MAYDAY MAYDAY MAYDAY, this is Docs Docs Docs, disk full, over",
             "PAN-PAN PAN-PAN PAN-PAN, all stations, this is Docs, slow, over",
-            "SECURITE SECURITE SECURITE, all stations, this is Maintainer, rotate, over",
+            "say-cure-ee-tay say-cure-ee-tay say-cure-ee-tay, all stations, this is Maintainer, rotate, over",
         ])
         speech = self.httpd.hub.speech
         self.assertEqual([row["voice"] for row in state["radio"]], [speech.voice_of(row["source"]) for row in state["radio"]])

@@ -86,7 +86,7 @@ class TestHubConsole(HubCase):
 
     def test_the_page_draws_the_console_as_text_and_follows_its_end(self):
         html = self.index()
-        for text in ('"/api/inbox/dismiss"', "console-out", "wartet auf den Runner", "Exit-Code", "textContent", "scrollHeight"):
+        for text in ('"/api/inbox/dismiss"', "console-out", "waiting for the runner", "Exit code", "textContent", "scrollHeight"):
             with self.subTest(text=text):
                 self.assertIn(text, html)
         for name in ("page-console.js", "page-deny.js", "page-rule-request.js"):

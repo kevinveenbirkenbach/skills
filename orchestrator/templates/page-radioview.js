@@ -3,15 +3,15 @@
   let radioDom = null;
 
   function voiceReplay(note) {
-    return typeof note === "string" && NOTE_ID.test(note) ? h("audio", {class: "voice-replay", controls: true, preload: "none", src: `/api/voice/${note}.wav`, "aria-label": "Sprachnachricht abspielen"}) : null;
+    return typeof note === "string" && NOTE_ID.test(note) ? h("audio", {class: "voice-replay", controls: true, preload: "none", src: `/api/voice/${note}.wav`, "aria-label": "Play voice message"}) : null;
   }
 
   function daysText(days) {
-    return {"0,1,2,3,4,5,6": "täglich", "0,1,2,3,4": "werktags", "5,6": "am Wochenende"}[days.join(",")] || days.map((day) => WEEKDAYS[day]).join(" ");
+    return {"0,1,2,3,4,5,6": "daily", "0,1,2,3,4": "weekdays", "5,6": "on weekends"}[days.join(",")] || days.map((day) => WEEKDAYS[day]).join(" ");
   }
 
   function scheduleOf(stream) {
-    return `${daysText(stream.days)}, ${stream.from === "00:00" && stream.to === "24:00" ? "rund um die Uhr" : `${stream.from} bis ${stream.to}`}`;
+    return `${daysText(stream.days)}, ${stream.from === "00:00" && stream.to === "24:00" ? "around the clock" : `${stream.from} to ${stream.to}`}`;
   }
 
   function stationState(stream, index) {
@@ -19,20 +19,20 @@
       return [radio.state, radio.short, radio.note];
     }
     if (!stream.on) {
-      return ["off", "aus", "In den Einstellungen ausgeschaltet"];
+      return ["off", "off", "Switched off in the settings"];
     }
     if (!Ambience.activeStream([stream], Ambience.slotOf(new Date()))) {
-      return ["idle", "nicht dran", `Spielt ${scheduleOf(stream)}; ▶ spielt ihn jetzt`];
+      return ["idle", "not due", `Plays ${scheduleOf(stream)}; ▶ plays it now`];
     }
-    return radio.pick === -1 ? ["stopped", "gestoppt", "Von Hand gestoppt; ▶ spielt ihn wieder"] : ["due", "dran", "Dran, sobald kein früherer Sender spielt"];
+    return radio.pick === -1 ? ["stopped", "stopped", "Stopped by hand; ▶ plays it again"] : ["due", "due", "Due as soon as no earlier station plays"];
   }
 
   function stationRow(stream, index) {
     const [kind, label, note] = stationState(stream, index);
     const live = index === radio.index && (kind === "playing" || kind === "loading");
     const action = live
-      ? iconBtn("bi-stop-fill", "Stopp", "btn small ghost", stopStation, `Stopp: ${stream.name} anhalten`)
-      : iconBtn("bi-play-fill", "Abspielen", "btn small ghost", () => playStation(index), `Abspielen: ${stream.name} jetzt hören`);
+      ? iconBtn("bi-stop-fill", "Stop", "btn small ghost", stopStation, `Stop: pause ${stream.name}`)
+      : iconBtn("bi-play-fill", "Play", "btn small ghost", () => playStation(index), `Play: listen to ${stream.name} now`);
     action.dataset.action = live ? "stop" : "play";
     return h("li", {class: "station", "data-station": index, "data-state": kind},
       h("span", {class: "station-name", title: stream.name}, stream.name),
@@ -52,26 +52,29 @@
     radioDom.stationsSig = sig;
     radioDom.stations.replaceChildren(...(settings.streams.length
       ? settings.streams.map(stationRow)
-      : [h("li", {class: "muted"}, "Noch kein Sender: unter ⚙ Einstellungen → Radio fügst du einen hinzu.")]));
+      : [h("li", {class: "muted"}, "No station yet: add one under ⚙ Settings → Internet radio.")]));
   }
 
   function speakerChips() {
     return Object.entries(people()).sort(([, a], [, b]) => a.now.localeCompare(b.now)).map(([key, entry]) => h("li", {class: "speaker", "data-key": key, title: entry.now},
-      h("span", {class: "speaker-face"}, face(entry.now, false)), h("span", {class: "speaker-name"}, entry.now)));
+      h("span", {class: "speaker-face"}, face(key, false)), h("span", {class: "speaker-name"}, entry.now)));
   }
 
   function drawSpeaker() {
     const now = speech.current && speech.current.who ? speech.current : null;
+    for (const art of document.querySelectorAll(".avatar[data-face]")) {
+      art.classList.toggle("speaking", Boolean(now && art.dataset.face === now.who));
+    }
     if (radioDom) {
       for (const chip of radioDom.speakers.querySelectorAll(".speaker")) {
         chip.classList.toggle("speaking", Boolean(now && chip.dataset.key === now.who));
       }
       radioDom.caption.hidden = !now;
       radioDom.caption.replaceChildren(...(now ? [
-        h("span", {class: "speaker-face"}, face(nameOf(now.who), false)),
-        h("strong", {}, `${nameOf(now.who)} spricht`),
+        h("span", {class: "speaker-face"}, face(now.who, false)),
+        h("strong", {}, `${nameOf(now.who)} speaking`),
         h("span", {class: "caption-line", title: now.line}, now.line),
-        iconBtn("bi-stop-fill", "Vorlesen abbrechen", "btn small ghost", cancelSpeech),
+        iconBtn("bi-stop-fill", "Stop speaking", "btn small ghost", cancelSpeech),
       ] : []));
     }
     if (ui.screen === "agents" && (ui.views.agents === "orbit" || ui.views.agents === "chord")) {
@@ -83,9 +86,9 @@
     const rows = state.messages.slice(-5).reverse();
     return rows.length ? h("ul", {class: "mini"}, rows.map((message) => h("li", {},
       h("div", {class: "row"}, klass(message.class || "post"), when(message.created_ts)),
-      h("span", {class: "muted"}, `an ${message.to === "*" ? "alle" : message.to}`),
+      h("span", {class: "muted"}, `to ${message.to === "*" ? "all" : message.to}`),
       h("span", {}, short(message.text)),
-      voiceReplay(message.voice)))) : h("p", {class: "muted"}, "Im gewählten Zeitraum noch nichts gesendet.");
+      voiceReplay(message.voice)))) : h("p", {class: "muted"}, "Nothing sent in the chosen time range yet.");
   }
 
   function drawRadio() {
@@ -113,19 +116,19 @@
   }
 
   function radioScreen() {
-    const speakers = h("ul", {class: "speakers", "aria-label": "Stationen"});
+    const speakers = h("ul", {class: "speakers", "aria-label": "Speakers"});
     const caption = h("div", {class: "radio-caption", role: "status", "aria-live": "polite", hidden: true});
-    const stations = h("ul", {class: "stations", "aria-label": "Sender"});
+    const stations = h("ul", {class: "stations", "aria-label": "Stations"});
     const outbox = h("div", {});
     const {form, recipient} = composerForm();
     radioDom = {speakers, caption, stations, outbox, recipient, crew: "", names: "", sent: "", stationsSig: ""};
     return h("div", {class: "stack radio-view"},
       h("h2", {class: "title"}, "Radio"),
       h("div", {class: "radio-grid"},
-        h("section", {class: "card radio-talk", "aria-label": "Funk"}, h("h3", {class: "group-title"}, "Funk"), caption, speakers, form),
+        h("section", {class: "card radio-talk", "aria-label": "Radio"}, h("h3", {class: "group-title"}, "Radio"), caption, speakers, form),
         h("div", {class: "stack"},
-          h("section", {class: "card", "aria-label": "Internetradio"},
-            h("div", {class: "card-head"}, h("h3", {class: "group-title"}, "Internetradio"), btn("Sender bearbeiten", "btn small ghost", settingsSheet)),
+          h("section", {class: "card", "aria-label": "Internet radio"},
+            h("div", {class: "card-head"}, h("h3", {class: "group-title"}, "Internet radio"), btn("Edit stations", "btn small ghost", settingsSheet)),
             stations),
-          h("section", {class: "card", "aria-label": "Zuletzt gesendet"}, h("h3", {class: "group-title"}, "Zuletzt gesendet"), outbox))));
+          h("section", {class: "card", "aria-label": "Recently sent"}, h("h3", {class: "group-title"}, "Recently sent"), outbox))));
   }

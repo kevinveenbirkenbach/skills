@@ -221,7 +221,7 @@ class TestRedirects(unittest.TestCase):
 
     def test_only_https_urls_are_probed(self):
         before = len(cdn().dialed)
-        self.assertEqual(self.resolver().resolve(["http://10.0.0.5:8000/nacht", STATION]), {"http://10.0.0.5:8000/nacht": ([], ""), STATION: (["https://*.cdn.test"], "")})
+        self.assertEqual(self.resolver().resolve(["http://10.0.0.5:8000/night", STATION]), {"http://10.0.0.5:8000/night": ([], ""), STATION: (["https://*.cdn.test"], "")})
         self.assertEqual(len(cdn().dialed) - before, 2)
 
     def test_media_sources_widen_one_label_and_pass_the_settings_check(self):
@@ -284,9 +284,9 @@ class TestRedirectSettings(HubCase):
         self.assertEqual(set(prepared), {"payload", "challenge", "credentials"})
         self.assertEqual(prepared["payload"]["items"], [signing.item_hash(signing.stream_item(["https://attacker.radio.test"], [streams[0]["url"]]))])
         unsigned = self.post_json("/api/settings", {**self.payload(streams), "proof": None}, self.guard(self.host))
-        self.assertEqual(unsigned[:3:2], (400, b"nicht signiert: no signature\n"))
+        self.assertEqual(unsigned[:3:2], (400, b"not signed: no signature\n"))
         stranger = {**self.payload(streams), "proof": key(-7, "stranger").proof(prepared["payload"], self.origin)}
-        self.assertEqual(self.post_json("/api/settings", stranger, self.guard(self.host))[:3:2], (400, b"nicht signiert: the signing key is not pinned\n"))
+        self.assertEqual(self.post_json("/api/settings", stranger, self.guard(self.host))[:3:2], (400, b"not signed: the signing key is not pinned\n"))
         self.assertEqual(self.dials(), before)
         self.assertNotIn("attacker.radio.test", cdn().httpd.asked)
         self.assertFalse((self.state / "settings.json").exists())
@@ -326,7 +326,7 @@ class TestRedirectSettings(HubCase):
         self.assertEqual(self.prepared(streams)["payload"]["items"], [signing.item_hash(signing.stream_item(["https://station.radio.test"], [other["url"]]))])
         before = self.dials()
         unsigned = self.post_json("/api/settings", {**self.payload(streams), "proof": None}, self.guard(self.host))
-        self.assertEqual(unsigned[:3:2], (400, b"nicht signiert: no signature\n"))
+        self.assertEqual(unsigned[:3:2], (400, b"not signed: no signature\n"))
         self.assertEqual(self.dials(), before)
         self.assertEqual(self.httpd.hub.settings.get(), saved)
 

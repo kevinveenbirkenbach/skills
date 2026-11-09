@@ -53,7 +53,7 @@ class Timeline:
         rows = []
         for index, row in enumerate(radio_rows(radio, begin, end)):
             alarm = row["class"] in ("mayday", "pan-pan") and row["ts"] >= end - MAYDAY_ACTIVE
-            title = f"{row['from'] or '?'} → {', '.join(row['to']) or 'alle'}"
+            title = f"{row['from'] or '?'} → {', '.join(row['to']) or 'all'}"
             source = directory.key(row["from"], row["ts"])
             who = {"agent": directory.at(source, row["ts"]) or row["from"], "now": directory.now(source), "session": source}
             ref = {"to": row["to"], "class": row["class"], "targets": [directory.key(name, row["ts"]) for name in row["to"]]}

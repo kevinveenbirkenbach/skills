@@ -19,8 +19,11 @@
 .caption-line { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 svg .node.speaking circle { stroke: var(--ok); stroke-width: 4; animation: speaking-node 1.3s ease-in-out infinite; }
 @keyframes speaking-node { 50% { stroke-width: 10; stroke-opacity: .45; } }
+.face-art .mouth { transform-box: fill-box; transform-origin: center; }
+.speaking .face-art .mouth { animation: talk .3s ease-in-out infinite alternate; }
+@keyframes talk { to { transform: scale(1.15, 2.2); } }
 @media (prefers-reduced-motion: reduce) {
-  .speaker.speaking .speaker-face::after, .radio-caption .speaker-face::after, svg .node.speaking circle { animation: none; }
+  .speaker.speaking .speaker-face::after, .radio-caption .speaker-face::after, svg .node.speaking circle, .speaking .face-art .mouth { animation: none; }
 }
 .stations { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .station { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-2); min-width: 0; padding: 3px 3px 3px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--sunken); }

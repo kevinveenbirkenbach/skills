@@ -11,7 +11,7 @@ from .signed import signing
 
 ITEM_LIMIT = 20
 JOB_VERSION = 1
-LABELS = {"appoint": "besetzt", "takeover": "übergeben", "recall": "abberufen"}
+LABELS = {"appoint": "appointed", "takeover": "handed over", "recall": "recalled"}
 
 
 def office_request(raw: object) -> bool:
@@ -77,7 +77,7 @@ class Offices:
         self.office_spool.put(job_id, job)
         names = ", ".join(f"{item['office']} {LABELS[item['action']]}" for item in items)
         lines = "\n".join(f"{item['action']} {item['office']}: {item['holder'] or '-'} -> {item['session'] or '-'}" for item in items)
-        self.log.add({"kind": "run", "title": f"Amt signiert: {names}"[:200], "text": lines, "ref": {"offices": job_id, "status": "queued"}})
+        self.log.add({"kind": "run", "title": f"Office signed: {names}"[:200], "text": lines, "ref": {"offices": job_id, "status": "queued"}})
         return {"id": job_id, "status": "queued", "items": job["items"]}
 
     def office_state(self, job_id: str) -> dict:

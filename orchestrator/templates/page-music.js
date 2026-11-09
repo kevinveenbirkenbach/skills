@@ -142,7 +142,7 @@
       return;
     }
     button.setAttribute("aria-pressed", String(settings.music.on));
-    relabel(button, "bi-music-note-beamed", settings.music.on ? "Musik an" : "Musik", settings.music.on ? "Musik an: generative Musik ausschalten" : "Musik: generative Musik einschalten");
+    relabel(button, "bi-music-note-beamed", settings.music.on ? "Music on" : "Music", settings.music.on ? "Music on: turn generative music off" : "Music: turn generative music on");
   }
 
   function toggleMusic() {

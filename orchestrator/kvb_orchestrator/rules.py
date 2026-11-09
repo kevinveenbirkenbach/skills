@@ -72,7 +72,7 @@ class Rules:
         try:
             passkey.verify_assertion(assertion, rule, verifier.pinned(self.approvers), signing.origin_of(self.public_port))
         except signing.Refused as error:
-            raise ToolError(f"nicht signiert: {error}") from None
+            raise ToolError(f"not signed: {error}") from None
         return {"payload": rule, "assertion": assertion}
 
     def store_rule(self, rule: dict, fields: dict, proof: dict, enabled: bool, now: float) -> dict:

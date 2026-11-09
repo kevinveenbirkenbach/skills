@@ -47,7 +47,7 @@ FIELDS = (
     "branch", "base",
 )
 TEXT_FIELDS = ("title", "objective", "description", "worker", "workdir", "branch", "base")
-LIST_FIELDS = {"tools": "tool"}
+LIST_FIELDS = {"tools": "tool", "after": "after"}
 ARTIFACT = re.compile(r"^[a-z]+:\S")
 FIBONACCI = (1, 2, 3, 5, 8, 13, 21, 34, 55, 89)
 OPERATOR = "Operator"
@@ -226,12 +226,41 @@ def when(value: str | None) -> str:
 
 
 def wsjf(row: dict) -> tuple[float, float, float] | None:
-    estimates = list(row.get("estimates", {}).values())
-    if not estimates:
+    """Returns:
+        Business value, complexity and their quotient: the Operator's
+        business value where it recorded one, else the median of all, over
+        the median complexity; None while no estimate carries a complexity.
+    """
+    estimates = row.get("estimates", {})
+    sized = [e["complexity"] for e in estimates.values() if "complexity" in e]
+    if not sized:
         return None
-    value = statistics.median(e["value"] for e in estimates)
-    complexity = statistics.median(e["complexity"] for e in estimates)
+    own = estimates.get(OPERATOR)
+    value = own["value"] if own else statistics.median(e["value"] for e in estimates.values())
+    complexity = statistics.median(sized)
     return value, complexity, round(value / complexity, 2)
+
+
+def follows(tasks: dict[str, dict], start: str, target: str) -> bool:
+    seen: set[str] = set()
+    todo = list(tasks.get(start, {}).get("after", []))
+    while todo:
+        current = todo.pop()
+        if current == target:
+            return True
+        if current not in seen:
+            seen.add(current)
+            todo.extend(tasks.get(current, {}).get("after", []))
+    return False
+
+
+def check_after(tasks: dict[str, dict], task: str, after: list[str]) -> None:
+    for other in after:
+        check_task(other)
+        if other == task:
+            fail(f"{task} cannot follow itself")
+        if other not in tasks:
+            fail(f"{task}: --after {other} is no task of the register")
 
 
 def agent_order() -> list[str]:
@@ -338,6 +367,7 @@ def cmd_set(args: argparse.Namespace) -> int:
         if not ARTIFACT.match(ref):
             fail(f"invalid artifact {ref!r}; use <kind>:<ref>, e.g. image:<name>:<tag>")
     with database() as tasks:
+        check_after(tasks, args.task, args.after)
         entry = tasks.setdefault(args.task, {"roles": {}})
         if args.status == "done" and open_results(entry):
             fail(f"{args.task}: {open_results(entry)} key result(s) open; mark them met or set stopped")
@@ -356,6 +386,8 @@ def cmd_set(args: argparse.Namespace) -> int:
                 entry[field] = items
             else:
                 entry.pop(field, None)
+        if args.after and follows(tasks, args.task, args.task):
+            fail(f"{args.task}: --after {', '.join(args.after)} closes a cycle; drop one with --drop-after")
         kept = [a for a in entry.get("artifacts", []) if a["ref"] not in args.drop_artifact]
         known = {a["ref"] for a in kept}
         kept += [{"ref": r, "added": stamp()} for r in dict.fromkeys(args.artifact) if r not in known]
@@ -422,7 +454,7 @@ def cmd_get(args: argparse.Namespace) -> int:
     roles = ", ".join(f"{p}={v}" for p, v in sorted(row["roles"].items()))
     print(f"roles: {roles or '-'}")
     for party, estimate in sorted(row.get("estimates", {}).items()):
-        print(f"estimate {party}: business value {estimate['value']}, complexity {estimate['complexity']}")
+        print(f"estimate {party}: business value {estimate['value']}, complexity {estimate.get('complexity', '-')}")
     score = wsjf(row)
     if score:
         print(f"wsjf: {score[2]:g}")
@@ -431,8 +463,9 @@ def cmd_get(args: argparse.Namespace) -> int:
 
 def cmd_estimate(args: argparse.Namespace) -> int:
     check_task(args.task)
+    alone = args.complexity is None and args.party == OPERATOR
     if not args.drop:
-        for name in ("value", "complexity"):
+        for name in ("value",) if alone else ("value", "complexity"):
             if getattr(args, name) not in FIBONACCI:
                 fail(f"--{name} must be one of {', '.join(map(str, FIBONACCI))}")
     with database() as tasks:
@@ -441,7 +474,9 @@ def cmd_estimate(args: argparse.Namespace) -> int:
         if args.drop:
             estimates.pop(args.party, None)
         else:
-            estimates[args.party] = {"value": args.value, "complexity": args.complexity, "at": stamp()}
+            complexity = estimates.get(args.party, {}).get("complexity") if alone else args.complexity
+            sized = {} if complexity is None else {"complexity": complexity}
+            estimates[args.party] = {"value": args.value, **sized, "at": stamp()}
         if not estimates:
             entry.pop("estimates")
     print(f"{args.task}: estimate {'dropped' if args.drop else 'recorded'} for {args.party}")

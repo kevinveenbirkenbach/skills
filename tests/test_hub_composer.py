@@ -115,21 +115,21 @@ class TestHubComposer(HubCase):
     def test_an_operator_message_needs_the_passkey_and_carries_its_recording(self):
         self.claim("s1", "Skills session")
         voice = self.note(self.clip(b"\x01\x00"))
-        payload = {"to": "Skills", "text": " bitte rebasen ", "upload": "", "class": "call", "voice": voice}
+        payload = {"to": "Skills", "text": " please rebase ", "upload": "", "class": "call", "voice": voice}
         status, _, body = self.post_json("/api/messages/sign", payload, self.guard(self.host))
         self.assertEqual(status, 200, body)
         self.assertEqual(json.loads(body)["credentials"], [])
         unpinned = key(-7, "stranger").proof(json.loads(body)["payload"], self.origin)
-        self.assertEqual(self.post_json("/api/messages", {**payload, "proof": unpinned}, self.guard(self.host))[:3:2], (400, b"nicht signiert: no key is pinned\n"))
+        self.assertEqual(self.post_json("/api/messages", {**payload, "proof": unpinned}, self.guard(self.host))[:3:2], (400, b"not signed: no key is pinned\n"))
         signer = self.pin()
         proof = self.message_proof(payload, signer)
         for changed, reason in (
-            ({"proof": None}, b"nicht signiert: no signature\n"),
-            ({"proof": key(-7, "stranger").proof(proof["payload"], self.origin)}, b"nicht signiert: the signing key is not pinned\n"),
+            ({"proof": None}, b"not signed: no signature\n"),
+            ({"proof": key(-7, "stranger").proof(proof["payload"], self.origin)}, b"not signed: the signing key is not pinned\n"),
             ({"proof": signer.proof(proof["payload"], "http://127.0.0.1:1")}, None),
-            ({"text": "bitte mergen", "proof": proof}, b"nicht signiert: the signature does not list this item\n"),
-            ({"class": "post", "proof": proof}, b"nicht signiert: the signature does not list this item\n"),
-            ({"voice": "", "proof": proof}, b"nicht signiert: the signature does not list this item\n"),
+            ({"text": "please merge", "proof": proof}, b"not signed: the signature does not list this item\n"),
+            ({"class": "post", "proof": proof}, b"not signed: the signature does not list this item\n"),
+            ({"voice": "", "proof": proof}, b"not signed: the signature does not list this item\n"),
         ):
             with self.subTest(changed=list(changed)):
                 status, _, answer = self.post_json("/api/messages", {**payload, **changed}, self.guard(self.host))
@@ -141,10 +141,10 @@ class TestHubComposer(HubCase):
         self.assertEqual(status, 201, body)
         sent = json.loads(body)
         recording = f"{HOST_STATE}/voice/{voice}.wav"
-        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["send", "call", "--to", "Skills session", "--session", "Operator", f"[kvb-orchestrator msg {sent['id']}] bitte rebasen voice: {recording}"])])
-        self.assertEqual(self.post_json("/api/messages", {**payload, "proof": proof}, self.guard(self.host))[:3:2], (400, b"nicht signiert: this signature was already used for this item\n"))
-        verified = self.check(sent["id"], "bitte rebasen", "Skills session")["structuredContent"]
-        self.assertEqual((verified["match"], verified["text"], verified["class"], verified["voice"]), (True, "bitte rebasen", "call", recording))
+        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["send", "call", "--to", "Skills session", "--session", "Operator", f"[kvb-orchestrator msg {sent['id']}] please rebase voice: {recording}"])])
+        self.assertEqual(self.post_json("/api/messages", {**payload, "proof": proof}, self.guard(self.host))[:3:2], (400, b"not signed: this signature was already used for this item\n"))
+        verified = self.check(sent["id"], "please rebase", "Skills session")["structuredContent"]
+        self.assertEqual((verified["match"], verified["text"], verified["class"], verified["voice"]), (True, "please rebase", "call", recording))
         row = self.snapshot()["messages"][-1]
         self.assertEqual((row["id"], row["class"], row["voice"], row["signed"]), (sent["id"], "call", voice, True))
         self.assertEqual(len(self.scripts.calls), 1)
@@ -176,18 +176,18 @@ class TestHubComposer(HubCase):
         self.claim("s1", "Skills session")
         signer = self.pin()
         voice = self.note(self.clip(b"\x01\x00"))
-        status, _, body = self.say({"to": "Skills", "text": "bitte\n rebasen", "class": "call", "voice": voice}, signer)
+        status, _, body = self.say({"to": "Skills", "text": "please\n rebase", "class": "call", "voice": voice}, signer)
         self.assertEqual(status, 201, body)
         sent = json.loads(body)["id"]
         row = self.scripts.calls[-1][1][-1].split("] ", 1)[1]
-        for text, to in (("bitte rebasen", "Skills"), ("bitte  rebasen", "Skills session"), (row, "Skills")):
+        for text, to in (("please rebase", "Skills"), ("please  rebase", "Skills session"), (row, "Skills")):
             with self.subTest(text=text, to=to):
                 result = self.check(sent, text, to)
                 self.assertFalse(result["isError"], result)
                 found = result["structuredContent"]
-                self.assertEqual((found["match"], found["text"], found["to"], found["class"]), (True, "bitte\n rebasen", "Skills", "call"))
+                self.assertEqual((found["match"], found["text"], found["to"], found["class"]), (True, "please\n rebase", "Skills", "call"))
                 self.assertEqual(found["voice"], f"{HOST_STATE}/voice/{voice}.wav")
-        for text, to in (("bitte mergen", "Skills"), ("bitte rebasen", "Stage"), ("bitte rebasen", "*"), ("bitte", "Skills")):
+        for text, to in (("please merge", "Skills"), ("please rebase", "Stage"), ("please rebase", "*"), ("please", "Skills")):
             with self.subTest(text=text, to=to):
                 result = self.check(sent, text, to)
                 self.assertTrue(result["isError"], result)
@@ -256,7 +256,7 @@ class TestHubComposer(HubCase):
         payload = {"to": "Skills", "text": "hear this", "upload": "", "class": "call", "voice": voice}
         proof = self.message_proof(payload, signer)
         wav.write_bytes(self.clip(b"\x02\x00"))
-        self.assertEqual(self.post_json("/api/messages", {**payload, "proof": proof}, self.guard(self.host))[:3:2], (400, b"nicht signiert: the signature does not list this item\n"))
+        self.assertEqual(self.post_json("/api/messages", {**payload, "proof": proof}, self.guard(self.host))[:3:2], (400, b"not signed: the signature does not list this item\n"))
         self.assertEqual(self.scripts.calls, [])
         wav.write_bytes(original)
         status, _, body = self.post_json("/api/messages", {**payload, "proof": proof}, self.guard(self.host))
@@ -273,7 +273,7 @@ class TestHubComposer(HubCase):
         with mock.patch.object(signed.passkey, "serialization", None), mock.patch.object(tempfile, "tempdir", str(missing)):
             status, _, body = self.post_json("/api/messages", {**payload, "proof": proof}, self.guard(self.host))
         self.assertEqual(status, 400, body)
-        self.assertTrue(body.startswith(b"nicht signiert: "), body)
+        self.assertTrue(body.startswith(b"not signed: "), body)
         self.assertEqual(self.scripts.calls, [])
 
 

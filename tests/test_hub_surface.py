@@ -118,7 +118,7 @@ class TestHubSurface(HubCase):
                 self.assertEqual(status, 400)
 
     def test_the_stream_has_four_categories_and_transcripts_stay_out_by_default(self):
-        self.assertEqual({key: value["label"] for key, value in events.VIEWS.items()}, {"fuer-dich": "Für dich", "funk": "Funk", "arbeit": "Arbeit", "transkripte": "Transkripte"})
+        self.assertEqual({key: value["label"] for key, value in events.VIEWS.items()}, {"fuer-dich": "For you", "funk": "Radio", "arbeit": "Work", "transkripte": "Transcripts"})
         self.assertEqual(events.VIEWS["transkripte"]["kinds"], ["transcript"])
         self.assertNotIn("transcript", events.VIEWS["fuer-dich"]["kinds"] + events.VIEWS["funk"]["kinds"] + events.VIEWS["arbeit"]["kinds"])
         self.assertEqual(sorted(events.VIEWS["fuer-dich"]["kinds"]), sorted(events.VIEWS["funk"]["kinds"] + events.VIEWS["arbeit"]["kinds"]))
@@ -139,13 +139,13 @@ class TestHubSurface(HubCase):
 
         self.assertEqual(texts("deploy"), ["radio:Docs:old deploy", "radio:Docs:fresh deploy", "radio:Ops:deploy done", "review:feat: deploy:feat: deploy"])
         self.assertEqual(texts("agent:Docs"), ["radio:Docs:old deploy", "radio:Docs:fresh deploy"])
-        self.assertEqual(texts("art:funk deploy"), ["radio:Docs:old deploy", "radio:Docs:fresh deploy", "radio:Ops:deploy done"])
-        self.assertEqual(texts("art:review"), ["review:feat: deploy:feat: deploy"])
-        self.assertEqual(texts("seit:1h agent:Docs"), ["radio:Docs:fresh deploy"])
-        self.assertEqual(texts("seit:5m done"), ["radio:Ops:deploy done"])
+        self.assertEqual(texts("kind:radio deploy"), ["radio:Docs:old deploy", "radio:Docs:fresh deploy", "radio:Ops:deploy done"])
+        self.assertEqual(texts("kind:review"), ["review:feat: deploy:feat: deploy"])
+        self.assertEqual(texts("since:1h agent:Docs"), ["radio:Docs:fresh deploy"])
+        self.assertEqual(texts("since:5m done"), ["radio:Ops:deploy done"])
         since = time.strftime("%Y-%m-%dT%H:%M", time.localtime(now - 600))
-        self.assertEqual(texts(f"seit:{since} art:funk"), ["radio:Docs:fresh deploy", "radio:Ops:deploy done"])
-        for q in ("art:bogus", "seit:soon", "seit:5y", "agent:"):
+        self.assertEqual(texts(f"since:{since} kind:Radio"), ["radio:Docs:fresh deploy", "radio:Ops:deploy done"])
+        for q in ("kind:bogus", "since:soon", "since:5y", "agent:"):
             with self.subTest(q=q):
                 self.assertEqual(self.get(f"/api/events?q={quote(q)}")[0], 400)
 

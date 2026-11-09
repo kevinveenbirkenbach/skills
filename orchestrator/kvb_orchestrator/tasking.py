@@ -9,7 +9,7 @@ from .register import REGISTER, read_register, status_of
 from .signed import signing
 from .tasks import editable
 
-CHANGE_LIMIT = 10
+CHANGE_LIMIT = 100
 CHANGE_KEYS = ("kind", "id", "argv")
 
 
@@ -25,7 +25,9 @@ class Tasking:
     def task_changes(self, raw: object) -> list[dict]:
         """Args:
             raw: the page's items, each {"kind": "task", "id", "argv"} with
-                the rasci.py arguments of one priority pin or WSJF estimate.
+                the rasci.py arguments of one priority pin, WSJF estimate or
+                operator business value; a bulk change over a selection is
+                one item per task under one passkey assertion.
 
         Returns:
             The signed items, each for an open register task outside
@@ -60,11 +62,11 @@ class Tasking:
         items = self.task_changes(payload["items"])
         proof = self.covered(payload["proof"], items, time.time())
         for item in items:
-            self.still_signed(proof, item)
+            self.operator_proven(proof, item)
         ids = []
         for item in items:
             fields = {"kind": TASK_JOB, "task": item["id"], "argv": item["argv"], "command": shown_command(item["argv"]), "directory": "", "sha256": "", "status": "queued", "proof": proof}
             ids.append(self.jobs.add({**fields, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None})["id"])
         commands = [shown_command(item["argv"]) for item in items]
-        self.log.add({"kind": "run", "title": f"Aufgabe signiert geändert: {', '.join(item['id'] for item in items)}"[:200], "text": "\n".join(commands), "ref": {"jobs": ids, "status": "queued"}})
+        self.log.add({"kind": "run", "title": f"Task change signed: {', '.join(item['id'] for item in items)}"[:200], "text": "\n".join(commands), "ref": {"jobs": ids, "status": "queued"}})
         return {"jobs": ids, "status": "queued"}

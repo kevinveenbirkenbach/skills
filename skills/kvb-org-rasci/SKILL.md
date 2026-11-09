@@ -13,7 +13,7 @@ itself (holder as R and A, `running`, start, workdir, branch); its release
 sets `done` and the end, or `stopped` while a key result is still open.
 
 ```bash
-rasci.py set <task> --title <t> --objective <o> --description <d> --prio <n> --status queued|running|blocked|done|stopped --worker "<agent | subagent <type> (<model>)>" --workdir <dir> --branch <b> --base <upstream branch> --artifact <kind>:<ref> --tool <script or command> [--start <iso>] [--end <iso>] [--drop-artifact <a>] [--drop-tool <t>]
+rasci.py set <task> --title <t> --objective <o> --description <d> --prio <n> --status queued|running|blocked|done|stopped --worker "<agent | subagent <type> (<model>)>" --workdir <dir> --branch <b> --base <upstream branch> --artifact <kind>:<ref> --tool <script or command> --after <task> [--start <iso>] [--end <iso>] [--drop-artifact <a>] [--drop-tool <t>] [--drop-after <task>]
 rasci.py kr <task> add "<measurable result>" | met <n> | open <n> | rm <n>
 rasci.py role <task> "<party>" <letters>
 rasci.py get <task>
@@ -22,6 +22,7 @@ rasci.py show [--all]
 rasci.py show --wide [--all]
 rasci.py artifacts [--ended] [--task <task>]
 rasci.py estimate <task> "<party>" --value <fib> --complexity <fib>
+rasci.py estimate <task> Operator --value <fib>
 rasci.py wsjf [--all]
 rasci.py tools
 rasci.py agents
@@ -61,7 +62,10 @@ published). `done` is refused while one is open; a task ended short of them is
 - Priority is the rank of the `kvb-org-wsjf` skill: an operator's pin
   (`--prio`) first, then WSJF from the estimates the chair collects; `show`
   prints the rank as Prio and the score as WSJF; the agent order of
-  `kvb-org-priority` only breaks ties.
+  `kvb-org-priority` only breaks ties. The Operator's business value, also
+  recorded alone, replaces the median.
+- `--after <task>` records that a task follows another (a Gantt arrow);
+  an unknown task and a cycle are refused.
 - Write only your own rows; another session's task belongs to that session.
 - Read `show` (Prio, WSJF, Task, Status, Worker, A; cells cut short) or
   `get` instead of asking a peer what it works on. `show --wide` adds OKR,

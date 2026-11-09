@@ -1,9 +1,9 @@
   const PLAY_REFUSED = {
-    NotAllowedError: ["blocked", "Klick nötig", "Der Browser blockiert automatisches Abspielen: ein Klick auf ▶ oder irgendwo auf die Seite startet den Sender."],
-    NotSupportedError: ["error", "nicht abspielbar", "Nicht abspielbar: der Browser versteht Format oder Adresse nicht, oder der Sender leitet auf eine Adresse um, von der die Seite keinen Ton laden darf."],
+    NotAllowedError: ["blocked", "Click needed", "The browser blocks autoplay: a click on ▶ or anywhere on the page starts the station."],
+    NotSupportedError: ["error", "not playable", "Not playable: the browser does not understand the format or the address, or the station redirects to an address the page may not load sound from."],
   };
-  const MEDIA_ERRORS = {1: "Laden abgebrochen", 2: "Netzwerkfehler", 3: "Ton nicht dekodierbar", 4: "Format oder Adresse nicht abspielbar"};
-  const RESOLVE_STEP = "Radio → Sender bearbeiten: ändere die Adresse des Senders, oder entferne ihn, speichere, lege ihn neu an und speichere wieder; dann löst der Server die Weiterleitung neu auf und gibt ihr Ziel frei.";
+  const MEDIA_ERRORS = {1: "Loading aborted", 2: "Network error", 3: "Sound not decodable", 4: "Format or address not playable"};
+  const RESOLVE_STEP = "Radio → Edit stations: change the station's address, or remove it, save, add it again and save once more; then the server resolves the redirect again and releases its target.";
 
   function radioVolume() {
     if (radio.element) {
@@ -47,22 +47,22 @@
       told.box.remove();
     }
     const stream = settings.streams[radio.index];
-    const box = toast(`Radio ${kind === "blocked" ? "blockiert" : "stumm"}: ${stream ? stream.name : radio.url}`, [note], false);
+    const box = toast(`Radio ${kind === "blocked" ? "blocked" : "silent"}: ${stream ? stream.name : radio.url}`, [note], false);
     radio.told = {...fresh, status: [kind, label, note], box};
   }
 
   function redirectNote(stream) {
     if (stream && stream.via === null) {
-      return "Der Server hat die Weiterleitung dieses Senders noch nicht aufgelöst; ein Speichern nach zehn Minuten versucht es erneut.";
+      return "The server has not resolved this station's redirect yet; saving after ten minutes tries again.";
     }
     const released = stream ? stream.via : [];
     const unloaded = released.filter((origin) => !pageMedia.has(origin));
     if (unloaded.length) {
-      return `Der Sender leitet auf ${unloaded.join(", ")} um; die geladene Seite darf von dort noch keinen Ton laden: Seite neu laden.`;
+      return `The station redirects to ${unloaded.join(", ")}; the loaded page may not load sound from there yet: reload the page.`;
     }
     return released.length
-      ? `Der Sender leitet auf eine Adresse außerhalb der freigegebenen ${released.join(", ")} um. ${RESOLVE_STEP}`
-      : `Der Sender leitet auf eine Adresse um, die noch nicht freigegeben ist; der Browser nennt das Ziel einer Weiterleitung nicht. ${RESOLVE_STEP}`;
+      ? `The station redirects to an address outside the released ${released.join(", ")}. ${RESOLVE_STEP}`
+      : `The station redirects to an address that is not released yet; the browser does not name the target of a redirect. ${RESOLVE_STEP}`;
   }
 
   function stopStream() {
@@ -100,7 +100,7 @@
     const missing = stream ? Ambience.stationOrigins(stream).filter((origin) => !pageMedia.has(origin)) : [];
     radio.index = index;
     if (missing.length) {
-      radioStatus("reload", "lädt neu", `Neue Adresse ${missing.join(", ")}: die Seite lädt neu, damit der Browser von dort Ton laden darf.`);
+      radioStatus("reload", "reloading", `New address ${missing.join(", ")}: the page reloads so the browser may load sound from there.`);
       if (missing.every((origin) => state.media.includes(origin))) {
         window.location.reload();
       }
@@ -108,7 +108,7 @@
     }
     radio.url = url;
     radio.waiting = false;
-    radioStatus(url ? "loading" : "", url ? "verbindet" : "", url ? "Verbindet mit dem Sender …" : "");
+    radioStatus(url ? "loading" : "", url ? "connecting" : "", url ? "Connecting to the station …" : "");
     fadeRadio(0, () => {
       if (radio.url !== url) {
         return;
@@ -121,7 +121,7 @@
       radio.element.play().then(() => {
         radio.playing = true;
         radio.told = null;
-        radioStatus("playing", "spielt", `spielt seit ${clock.format(new Date())}`);
+        radioStatus("playing", "playing", `playing since ${clock.format(new Date())}`);
         tuneMusic(FADE / 1000);
         fadeRadio(1, () => null);
       }).catch((error) => {
@@ -129,7 +129,7 @@
           return;
         }
         radio.waiting = true;
-        const [kind, label, note] = PLAY_REFUSED[error.name] || ["error", "Fehler", `${error.name}: ${error.message}`];
+        const [kind, label, note] = PLAY_REFUSED[error.name] || ["error", "Error", `${error.name}: ${error.message}`];
         radioTrouble(kind, label, note, "refused");
       });
     });
@@ -159,13 +159,13 @@
       radio.playing = false;
       radio.waiting = true;
       tuneMusic(FADE / 1000);
-      const reason = failure ? MEDIA_ERRORS[failure.code] || `Fehler ${failure.code}` : "unbekannter Fehler";
-      radioTrouble("error", "Fehler", `Der Sender spielt nicht: ${reason}${failure && failure.message ? ` (${failure.message})` : ""}.`, "media");
+      const reason = failure ? MEDIA_ERRORS[failure.code] || `Error ${failure.code}` : "unknown error";
+      radioTrouble("error", "Error", `The station does not play: ${reason}${failure && failure.message ? ` (${failure.message})` : ""}.`, "media");
     });
     document.addEventListener("securitypolicyviolation", (event) => {
       // Trip-wire: for a redirected load, blockedURI is the station's own URL, never the redirect target.
       if (event.effectiveDirective === "media-src" && radio.url && !event.blockedURI.startsWith(window.location.origin)) {
-        radioTrouble("error", "gesperrt", redirectNote(settings.streams[radio.index]), "csp");
+        radioTrouble("error", "blocked", redirectNote(settings.streams[radio.index]), "csp");
       }
     });
     return element;

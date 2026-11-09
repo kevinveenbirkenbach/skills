@@ -18,7 +18,7 @@
     --host-state: the state directory's path on the host, named in the radio
         rows that carry an upload or a voice recording.
     --skills: installed skills directory holding the kvb-org-radio,
-        kvb-org-rasci and kvb-org-sunset scripts.
+        kvb-org-rasci and kvb-org-suspend scripts.
     --transcripts: directory the Claude Code transcripts (*.jsonl) lie under.
     --templates: directory holding index.html.j2 and the *.js modules it
         includes.

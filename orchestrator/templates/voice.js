@@ -12,10 +12,12 @@ const Voice = (() => {
   }
 
   function loudness(tone, settings) {
-    if (tone !== "mayday") {
-      return settings.sounds[tone].volume;
-    }
-    return Math.max(...Object.values(settings.sounds).map((sound) => sound.volume), settings.music.volume);
+    const level = tone === "mayday" ? Math.max(...Object.values(settings.sounds).map((sound) => sound.volume), settings.music.volume) : settings.sounds[tone].volume;
+    return level * settings.squelch;
+  }
+
+  function beep(present, settings, kinds) {
+    return kinds.find((kind) => present[kind] && settings.sounds[kind].on && loudness(kind, settings) > 0) || null;
   }
 
   function speakable(row, speech) {
@@ -64,7 +66,7 @@ const Voice = (() => {
     return buffer;
   }
 
-  return {toneOf, loudness, speakable, enqueue, frames, wav};
+  return {toneOf, loudness, beep, speakable, enqueue, frames, wav};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Voice;

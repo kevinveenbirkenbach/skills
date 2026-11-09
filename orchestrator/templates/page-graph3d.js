@@ -1,14 +1,14 @@
   const LAYOUTS = [
-    ["none", "Kraft", "bi-magnet", "Kräfte ordnen frei: Verbundenes zieht sich an, alles stößt sich ab"],
-    ["time", "Zeit", "bi-clock", "Tiefe = Zeit: Früheres liegt hinten, Jüngeres vorn"],
-    ["spawn", "Spawn-Tiefe", "bi-layers", "Tiefe = Spawn-Tiefe: jede Ebene eine Generation"],
+    ["none", "Force", "bi-magnet", "Forces arrange freely: linked nodes attract, everything repels"],
+    ["time", "Time", "bi-clock", "Depth = time: earlier lies behind, later in front"],
+    ["spawn", "Spawn depth", "bi-layers", "Depth = spawn depth: each level one generation"],
   ];
   const KIND_COLORS = {operator: "accent", chair: "accent", session: "info", subagent: "violet", twig: "violet", repo: "warn", branch: "info", worktree: "teal", agent: "accent", artefact: "violet", task: "muted"};
   const LINK_COLORS = {spawn: "violet", contains: "line-strong", merge: "grant", overlap: "alarm", direct: "direct", broadcast: "broadcast", alarm: "alarm", security: "security", grant: "grant"};
   const SPAWNED = new Set(["twig", "subagent"]);
   const DEPTH_GAP = 90;
   const TIME_DEPTH = 640;
-  const g3 = {lib: null, three: null, graph: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: ""};
+  const g3 = {lib: null, three: null, graph: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: "", picked: null};
 
   const layoutOf = () => space.views.graph.axis;
 
@@ -19,7 +19,7 @@
       tag.nonce = NONCE;
       tag.async = true;
       tag.addEventListener("load", resolve);
-      tag.addEventListener("error", () => reject(new Error(`${src} nicht geladen`)));
+      tag.addEventListener("error", () => reject(new Error(`${src} not loaded`)));
       document.head.append(tag);
     });
   }
@@ -39,12 +39,13 @@
   }
 
   function layoutTools(tab) {
-    const group = h("div", {class: "segmented", role: "group", "aria-label": "Anordnung"}, LAYOUTS.map(([id, label, name, hint]) => h("button", {
+    const group = h("div", {class: "segmented", role: "group", "aria-label": "Layout"}, LAYOUTS.map(([id, label, name, hint]) => h("button", {
       type: "button", class: "icon-only", "data-layout": id, ...named(label, `${label}: ${hint}`), "aria-pressed": String(layoutOf() === id), on: {click: () => chooseLayout(tab, id, group)},
     }, icon(name))));
     return h("div", {class: "space-tools"}, group,
-      iconBtn("bi-arrow-counterclockwise", "Ansicht zurücksetzen", "btn small ghost", () => g3.graph && g3.graph.zoomToFit(calm.matches ? 0 : 600, 40)),
-      h("span", {class: "muted"}, "Ziehen dreht · rechts ziehen verschiebt · Rad zoomt · Klick öffnet das Panel"));
+      iconBtn("bi-arrow-counterclockwise", "Reset view", "btn small ghost", () => g3.graph && g3.graph.zoomToFit(calm.matches ? 0 : 600, 40)),
+      h("span", {class: "muted"}, "Drag turns · right drag pans · wheel zooms · click opens the popup"),
+      nodeSearch(() => model3d(tab).nodes, (node) => pick3d(tab, node)));
   }
 
   function chooseLayout(tab, id, group) {
@@ -108,7 +109,7 @@
   function colors3d() {
     const css = window.getComputedStyle(document.documentElement);
     const value = (name) => css.getPropertyValue(`--${name}`).trim() || "#888";
-    const roles = new Set([...Object.values(KIND_COLORS), ...Object.values(LINK_COLORS), "text"]);
+    const roles = new Set([...Object.values(KIND_COLORS), ...Object.values(LINK_COLORS), "text", "alarm"]);
     g3.colors = Object.fromEntries([...roles].map((role) => [role, value(role)]));
     return g3.colors;
   }
@@ -141,19 +142,37 @@
   }
 
   function pick3d(tab, node) {
-    if (tab === "artifacts") {
-      artSelect(node.id);
-    } else if (node.kind === "twig") {
+    if (node.kind === "twig") {
       focusSub(node.session, node.sub);
-    } else {
-      select(node.id);
+      return;
     }
+    (tab === "artifacts" ? artSelect : select)(node.id, anchor3d(node.id), () => mark3d(null));
+    mark3d(node.id);
   }
 
-  function list3d(tab, data) {
-    const pickable = data.nodes.filter((node) => node.kind !== "operator");
-    return h("details", {class: "space-list"}, h("summary", {}, `${pickable.length} Knoten als Liste`),
-      h("div", {class: "chips", role: "group", "aria-label": "Knoten"}, pickable.slice(0, 400).map((node) => h("button", {type: "button", class: "chip", title: node.label, "data-node": node.id, on: {click: () => pick3d(tab, node)}}, node.label))));
+  function anchor3d(id) {
+    return () => {
+      const node = g3.graph && g3.host && g3.host.isConnected ? g3.graph.graphData().nodes.find((entry) => entry.id === id) : null;
+      if (!node || !Number.isFinite(node.x)) {
+        return null;
+      }
+      const at = g3.graph.graph2ScreenCoords(node.x, node.y, node.z);
+      const box = g3.host.querySelector(".graph3d").getBoundingClientRect();
+      return {left: box.left + at.x - 8, top: box.top + at.y - 8, width: 16, height: 16};
+    };
+  }
+
+  function mark3d(id) {
+    g3.picked = id;
+    if (g3.graph) {
+      g3.graph.nodeColor(g3.graph.nodeColor()).nodeVal(g3.graph.nodeVal());
+    }
+    const box = g3.host && g3.host.querySelector(".graph3d");
+    if (box && id) {
+      box.dataset.picked = id;
+    } else if (box) {
+      delete box.dataset.picked;
+    }
   }
 
   function signature3d(tab, data) {
@@ -176,7 +195,7 @@
       dispose3d();
       g3.host = host;
       g3.tab = tab;
-      host.replaceChildren(h("div", {class: "graph3d", role: "img", "aria-label": `3D-Graph ${tab === "agents" ? "der Agenten" : "der Artefakte"}; die Knoten stehen auch darunter als Liste`}), h("div", {class: "space-note"}, "Lade 3D …"));
+      host.replaceChildren(h("div", {class: "graph3d", role: "img", "aria-label": `3D graph of the ${tab === "agents" ? "agents" : "artifacts"}; the search above finds every node`}), h("div", {class: "space-note"}, "Loading 3D …"));
     }
     g3.sig = sig;
     const box = host.querySelector(".graph3d");
@@ -190,21 +209,21 @@
       return;
     }
     if (!Graph) {
-      host.replaceChildren(emptyState("3D nicht geladen", g3.failed || "3d-force-graph fehlt."));
+      host.replaceChildren(emptyState("3D not loaded", g3.failed || "3d-force-graph is missing."));
       return;
     }
     if (!g3.graph) {
       try {
         g3.graph = Graph({controlType: "orbit"})(box);
       } catch (error) {
-        host.replaceChildren(emptyState("3D nicht verfügbar", `Dieser Browser gibt kein WebGL: ${error.message || error}`));
+        host.replaceChildren(emptyState("3D unavailable", `This browser offers no WebGL: ${error.message || error}`));
         g3.host = null;
         return;
       }
       const colors = colors3d();
       g3.graph.backgroundColor("rgba(0,0,0,0)").showNavInfo(false).nodeRelSize(5).nodeOpacity(0.92).linkOpacity(0.45)
-        .nodeLabel((node) => h("span", {}, node.label)).nodeVal((node) => ({operator: 6, chair: 4, repo: 6, branch: 3, session: 2.5}[node.kind] || 1))
-        .nodeColor((node) => g3.colors[KIND_COLORS[node.kind]] || colors.text).linkColor((link) => g3.colors[LINK_COLORS[link.kind]] || colors.text)
+        .nodeLabel((node) => h("span", {}, node.label)).nodeVal((node) => ({operator: 6, chair: 4, repo: 6, branch: 3, session: 2.5}[node.kind] || 1) * (node.id === g3.picked ? 4 : 1))
+        .nodeColor((node) => (node.id === g3.picked ? g3.colors.alarm : g3.colors[KIND_COLORS[node.kind]] || colors.text)).linkColor((link) => g3.colors[LINK_COLORS[link.kind]] || colors.text)
         .linkWidth((link) => (link.kind === "contains" || link.kind === "spawn" ? 0.6 : Math.min(0.8 + Math.log2(1 + (link.count || 1)), 4)))
         .onNodeClick((node) => pick3d(g3.tab, node)).onEngineStop(() => g3.graph && g3.graph.zoomToFit(calm.matches ? 0 : 400, 40));
       g3.graph.warmupTicks(calm.matches ? 160 : 80);
@@ -218,8 +237,8 @@
     place(data.nodes, layout);
     g3.graph.width(box.clientWidth).height(box.clientHeight).graphData(data);
     drawPlanes(layout, data.nodes);
-    const words = `${data.nodes.length} Knoten · ${data.links.length} Kanten · ${LAYOUTS.find(([id]) => id === layout)[1]}${calm.matches ? " · ohne Bewegung (prefers-reduced-motion)" : ""}`;
-    host.replaceChildren(box, h("div", {class: "space-note"}, words), list3d(tab, data));
+    const words = `${data.nodes.length} nodes · ${data.links.length} edges · ${LAYOUTS.find(([id]) => id === layout)[1]}${calm.matches ? " · without motion (prefers-reduced-motion)" : ""}`;
+    host.replaceChildren(box, h("div", {class: "space-note"}, words));
     window.requestAnimationFrame(() => g3.graph && g3.host === host && g3.graph.zoomToFit(0, 40));
   }
 

@@ -4,6 +4,7 @@ import secrets
 import time
 
 from .asking import ask_state
+from .choosing import answer_signed
 from .cleanup import cleanup_request
 from .denying import DENIABLE, DENY_KEYS, denial_note, request_status, request_words
 from .errors import Conflict, Missing, ToolError
@@ -35,7 +36,8 @@ def inbox_item(raw: dict, label: str, title: str, gate: str, subject: dict | Non
         label: the chosen option of a decision, else empty.
         title: what the stream logs for the item.
         gate: the review gate, else empty.
-        subject: what an approval signs; None for a decision.
+        subject: what an approval signs; for a decision the answer post to
+            the asking agent.
         requester: the requesting agent's name for a denial, else empty.
 
     Returns:
@@ -81,7 +83,7 @@ class Approving:
         try:
             verifier.check(proof, item, "", trust, time.time())
         except signing.Refused as error:
-            raise ToolError(f"nicht signiert: {error}") from None
+            raise ToolError(f"not signed: {error}") from None
         return proof
 
     def still_signed(self, proof: dict, item: dict) -> None:
@@ -94,7 +96,7 @@ class Approving:
                 raise signing.Refused("the signature does not list this item")
             passkey.verify_assertion(proof["assertion"], proof["payload"], verifier.pinned(self.approvers), signing.origin_of(self.public_port))
         except signing.Refused as error:
-            raise ToolError(f"nicht signiert: {error}") from None
+            raise ToolError(f"not signed: {error}") from None
 
     def covered(self, proof: object, signed: list[dict], now: float) -> dict | None:
         """Args:
@@ -105,14 +107,15 @@ class Approving:
         Returns:
             The proof to relay, None when nothing needs a signature. The hub
             verifies the signature of a denial itself, since it acts on it;
-            of an approval it checks the shape, and the executors verify.
+            of an approval it checks the shape, and the executors verify,
+            the hub itself for a choice answer when it sends it.
         """
         if not signed:
             if proof is not None:
                 raise ToolError("proof must be null when no item needs a signature")
             return None
         if not isinstance(proof, dict):
-            raise ToolError("nicht signiert: an approval of an ask, review or operator command needs the passkey signature")
+            raise ToolError("not signed: an approval of an ask, review, choice or operator command needs the passkey signature")
         expect(proof, ("payload", "assertion"))
         try:
             payload = signing.checked_approval(proof["payload"], now)
@@ -136,15 +139,15 @@ class Approving:
         item = {"kind": kind_name, "id": record["id"], "verb": "approve", "label": record.get("recommended", ""), "sha256": "", "title": shown(title)[:200], "gate": record.get("gate", ""), "signed": signed, "note": None}
         batch = self.batches.add([item], f"rule:{rule['id']}", rule.get("proof"), self.apply)
         words = f"{rule['kind']} {rule['tool']} {rule['pattern']}".replace("  ", " ")
-        self.log.add({"kind": "rule", "title": f"Regel gibt frei: {item['title']}", "text": words, "ref": {"rule": rule["id"], "batch": batch["id"], "item": item["id"]}})
+        self.log.add({"kind": "rule", "title": f"Rule grants: {item['title']}", "text": words, "ref": {"rule": rule["id"], "batch": batch["id"], "item": item["id"]}})
 
     def apply(self, batch: dict) -> None:
         for item in batch["items"]:
             try:
                 outcome = self.settle_item(item, batch["proof"] if item["signed"] is not None else None)
             except (OSError, ToolError) as error:
-                outcome = f"fehlgeschlagen: {error}"
-            verb = "Freigabe" if item["verb"] == "approve" else "Ablehnung"
+                outcome = f"failed: {error}"
+            verb = "Grant" if item["verb"] == "approve" else "Denial"
             label = f" → {item['label']}" if item["label"] else ""
             ref = {"kind": item["kind"], "id": item["id"], "verb": item["verb"], "source": batch["source"], "outcome": outcome}
             self.log.add({"kind": "approval", "title": f"{verb} {item['kind']}: {item['title']}{label}", "text": f"{outcome} ({batch['source']})", "ref": ref})
@@ -158,15 +161,17 @@ class Approving:
         if item["kind"] == "ask":
             record = self.asks.get(item["id"])
             if record is None or ask_state(record, time.time())["status"] == "expired":
-                return "abgelaufen"
+                return "expired"
             record, changed = self.asks.decide(item["id"], {"status": "allowed" if approve else "denied", "proof": proof})
         elif item["kind"] == "review":
             record, changed = self.reviews.decide(item["id"], {"status": "approved" if approve else "rejected", "proof": proof})
+        elif item["signed"] is not None:
+            return self.answer_choice(item, proof)
         else:
             record, changed = self.decisions.decide(item["id"], {"status": "decided", "choice": item["label"]})
         if record is None:
-            return "unbekannt"
-        return record["status"] if changed else f"schon {record['status']}"
+            return "unknown"
+        return record["status"] if changed else f"already {record['status']}"
 
     def requester(self, raw: dict, who: str) -> str:
         """Returns:
@@ -216,9 +221,9 @@ class Approving:
                 raise ToolError("a decision is approved with one of its option labels")
             label = raw["label"]
         if kind_name == "rule":
-            return inbox_item(raw, "", f"Regel {request_words(record)}", "", request_signed(record), self.requester(raw, record["agent"]))
+            return inbox_item(raw, "", f"Rule {request_words(record)}", "", request_signed(record), self.requester(raw, record["agent"]))
         title = {"review": record.get("title"), "ask": f"{record.get('tool')} {record.get('command')}", "decision": record.get("question")}[kind_name]
-        subject = {"review": review_signed, "ask": ask_signed}[kind_name](record) if kind_name != "decision" else None
+        subject = {"review": review_signed, "ask": ask_signed}[kind_name](record) if kind_name != "decision" else answer_signed(record, label)
         return inbox_item(raw, label, title, record.get("gate", ""), subject, self.requester(raw, record["session"] if kind_name == "ask" else ""))
 
     def checked(self, raw: object) -> list[dict]:
@@ -259,5 +264,5 @@ class Approving:
     def undo(self, batch_id: str) -> dict:
         batch = self.batches.undo(batch_id)
         titles = ", ".join(item["title"][:80] for item in batch["items"])
-        self.log.add({"kind": "approval", "title": f"Rückgängig: {titles}", "text": batch["source"], "ref": {"batch": batch_id}})
+        self.log.add({"kind": "approval", "title": f"Undone: {titles}", "text": batch["source"], "ref": {"batch": batch_id}})
         return {"id": batch_id, "status": "undone"}

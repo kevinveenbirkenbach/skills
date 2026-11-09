@@ -22,7 +22,7 @@
   const named = (label, hint) => ({title: hint || label, "aria-label": label});
   const iconBtn = (name, label, cls, run, hint) => h("button", {type: "button", class: `${cls} icon-only`, ...named(label, hint), on: {click: run}}, icon(name));
   const dash = (value) => (value === "" || value === "-" || value === null || value === undefined ? "–" : value);
-  const targetsOf = (row) => (row.to.length ? row.to.join(", ") : "alle");
+  const targetsOf = (row) => (row.to.length ? row.to.join(", ") : "all");
   const fixed = (value) => value.toFixed(1);
   const short = (text) => (text.length > 80 ? `${text.slice(0, 80)}…` : text);
   const btn = (label, cls, run) => h("button", {type: "button", class: cls, on: {click: run}}, label);
@@ -32,7 +32,7 @@
     const diff = ts - nowSeconds();
     const size = Math.abs(diff);
     if (size < 45) {
-      return "gerade eben";
+      return "just now";
     }
     if (size < 3600) {
       return relative.format(Math.round(diff / 60), "minute");
@@ -65,18 +65,17 @@
     }
     const updated = document.getElementById("updated");
     updated.classList.toggle("offline", ui.offline);
-    updated.textContent = `${ui.offline ? "Keine Verbindung · " : ""}${live() ? "Live" : "Stand"} ${absolute.format(stampOf(live() ? state.now : state.until))}`;
+    updated.textContent = `${ui.offline ? "No connection · " : ""}${live() ? "Live" : "As of"} ${absolute.format(stampOf(live() ? state.now : state.until))}`;
   }
 
-  function avatar(name) {
-    let hash = 2166136261;
-    for (const char of String(name)) {
-      hash = Math.imul(hash ^ char.codePointAt(0), 16777619) >>> 0;
-    }
-    return EMOJI[hash % EMOJI.length];
-  }
-  const face = (name, big) => h("span", {class: big ? "avatar big" : "avatar", "aria-hidden": "true"}, avatar(name));
-  const person = (name) => (name && name !== "-" && name !== "alle" && name !== HUMAN ? h("button", {type: "button", class: "linkish", title: `${name} öffnen`, on: {click: () => openAgent(name)}}, name) : dash(name));
+  const faceParts = (key) => Faces.of(key).parts.map(([tag, attrs]) => s(tag, attrs));
+  const talking = (key) => Boolean(speech.current && speech.current.who === key);
+  const face = (who, big) => {
+    const key = agentKey(who);
+    return h("span", {class: `avatar${big ? " big" : ""}${talking(key) ? " speaking" : ""}`, "data-face": key, "aria-hidden": "true"},
+      s("svg", {class: "face-art", viewBox: `0 0 ${Faces.SIZE} ${Faces.SIZE}`, focusable: "false"}, faceParts(key)));
+  };
+  const person = (name) => (name && name !== "-" && name !== "all" && name !== HUMAN ? h("button", {type: "button", class: "linkish", title: `Open ${name}`, on: {click: () => openAgent(name)}}, name) : dash(name));
   const people = () => state.people || {};
   const labelOf = (key) => (people()[key] || {name: String(key).replace(/^name:/, "")}).name;
   const nameOf = (key) => (people()[key] || {now: String(key).replace(/^name:/, "")}).now;
@@ -85,7 +84,7 @@
   const stamp = (life) => [life.born ? `🐣 ${life.born}` : "", life.died ? `🪦 ${life.died}` : ""].filter(Boolean).join(" · ");
 
   function toast(title, lines, good) {
-    const box = h("div", {class: `toast${good ? "" : " bad"}`, role: "status", title: "Schließen"}, h("strong", {}, title), lines.length ? h("pre", {}, lines.join("\n")) : null);
+    const box = h("div", {class: `toast${good ? "" : " bad"}`, role: "status", title: "Close"}, h("strong", {}, title), lines.length ? h("pre", {}, lines.join("\n")) : null);
     box.addEventListener("click", () => box.remove());
     document.getElementById("toasts").append(box);
     window.setTimeout(() => box.remove(), good ? 9000 : 20000);
@@ -103,15 +102,15 @@
   }
 
   function copyButton(text) {
-    const button = iconBtn("bi-clipboard", "Kopieren", "btn small ghost", null, "Kopieren: in die Zwischenablage");
+    const button = iconBtn("bi-clipboard", "Copy", "btn small ghost", null, "Copy: to the clipboard");
     button.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(text);
-        relabel(button, "bi-clipboard-check", "Kopiert");
+        relabel(button, "bi-clipboard-check", "Copied");
       } catch {
-        relabel(button, "bi-x-circle", "Nicht möglich");
+        relabel(button, "bi-x-circle", "Not possible");
       }
-      window.setTimeout(() => relabel(button, "bi-clipboard", "Kopieren"), 1600);
+      window.setTimeout(() => relabel(button, "bi-clipboard", "Copy"), 1600);
     });
     return button;
   }
@@ -127,7 +126,7 @@
   function openSheet(title, body, wide) {
     const sheet = document.getElementById("sheet");
     sheet.replaceChildren(h("div", {class: `sheet-box${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": title},
-      h("div", {class: "sheet-head"}, h("h2", {class: "panel-title"}, title), h("span", {class: "spacer"}), iconBtn("bi-x-lg", "Schließen", "btn small ghost", closeSheet)),
+      h("div", {class: "sheet-head"}, h("h2", {class: "panel-title"}, title), h("span", {class: "spacer"}), iconBtn("bi-x-lg", "Close", "btn small ghost", closeSheet)),
       h("div", {class: "sheet-body"}, body)));
     sheet.hidden = false;
   }

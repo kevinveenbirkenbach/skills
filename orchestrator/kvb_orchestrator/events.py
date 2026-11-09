@@ -17,18 +17,18 @@ from .register import status_of
 from .transcripts import LOG_KEEP, STREAM_CUT, STREAM_KINDS
 
 KINDS = (
-    ("radio", "Funk"), ("review", "Reviews"), ("ask", "Asks"), ("decision", "Entscheidungen"), ("operator", "Operator"), ("register", "Register"),
-    ("rename", "Namen"), ("cron", "Crons"), ("rule", "Regeln"), ("approval", "Freigaben"), ("run", "Runner"), ("transcript", "Transkripte"),
+    ("radio", "Radio"), ("review", "Reviews"), ("ask", "Asks"), ("decision", "Decisions"), ("operator", "Operator"), ("register", "Register"),
+    ("rename", "Names"), ("cron", "Crons"), ("rule", "Firewall"), ("approval", "Grants"), ("run", "Runner"), ("transcript", "Transcripts"),
 )
 EVENT_KINDS = tuple(name for name, _ in KINDS)
 WORK = [name for name in EVENT_KINDS if name not in ("radio", "transcript")]
 VIEWS = {
-    "fuer-dich": {"label": "Für dich", "kinds": ["radio", *WORK], "waiting": True},
-    "funk": {"label": "Funk", "kinds": ["radio"], "waiting": False},
-    "arbeit": {"label": "Arbeit", "kinds": WORK, "waiting": False},
-    "transkripte": {"label": "Transkripte", "kinds": ["transcript"], "waiting": False},
+    "fuer-dich": {"label": "For you", "kinds": ["radio", *WORK], "waiting": True},
+    "funk": {"label": "Radio", "kinds": ["radio"], "waiting": False},
+    "arbeit": {"label": "Work", "kinds": WORK, "waiting": False},
+    "transkripte": {"label": "Transcripts", "kinds": ["transcript"], "waiting": False},
 }
-ART = {word: name for name, label in KINDS for word in (name, label.lower())}
+KIND_WORDS = {word: name for name, label in KINDS for word in (name, label.lower())}
 SPAN = re.compile(r"(\d{1,4})([mhd])")
 UNITS = {"m": 60, "h": 3600, "d": 86400}
 
@@ -44,14 +44,14 @@ def since_of(word: str, now: float) -> float:
     try:
         return datetime.datetime.fromisoformat(word).timestamp()
     except ValueError:
-        raise ToolError("seit: takes 30m, 2h, 3d or a date like 2026-11-06 or 2026-11-06T08:30") from None
+        raise ToolError("since: takes 30m, 2h, 3d or a date like 2026-11-06 or 2026-11-06T08:30") from None
 
 
 def search(text: str, now: float) -> dict:
     """Args:
-        text: the search line: words, `agent:<name>`, `art:<kind or label>`
-            and `seit:<span or date>`.
-        now: the clock `seit:` spans count back from.
+        text: the search line: words, `agent:<name>`, `kind:<kind or label>`
+            and `since:<span or date>`.
+        now: the clock `since:` spans count back from.
 
     Returns:
         The plain words as `q`, plus `agent`, `kinds` and `since` for each
@@ -60,16 +60,16 @@ def search(text: str, now: float) -> dict:
     found: dict = {"q": []}
     for word in text.split():
         key, colon, value = word.partition(":")
-        if not colon or key not in ("agent", "art", "seit"):
+        if not colon or key not in ("agent", "kind", "since"):
             found["q"].append(word)
         elif not value:
             raise ToolError(f"{key}: needs a value")
         elif key == "agent":
             found["agent"] = value
-        elif key == "art":
-            if value.lower() not in ART:
-                raise ToolError(f"art: takes one of {', '.join(EVENT_KINDS)}")
-            found.setdefault("kinds", set()).add(ART[value.lower()])
+        elif key == "kind":
+            if value.lower() not in KIND_WORDS:
+                raise ToolError(f"kind: takes one of {', '.join(EVENT_KINDS)}")
+            found.setdefault("kinds", set()).add(KIND_WORDS[value.lower()])
         else:
             found["since"] = since_of(value, now)
     found["q"] = " ".join(found["q"]).lower()
@@ -128,7 +128,7 @@ def register_changes(before: dict[str, dict], after: dict[str, dict], now: float
             continue
         if old is None or new is None:
             row = new if old is None else old
-            change = f"neu: {shown(row.get('title'))}" if old is None else "entfernt"
+            change = f"new: {shown(row.get('title'))}" if old is None else "removed"
         else:
             keys = sorted(key for key in set(old) | set(new) if old.get(key) != new.get(key))
             change = "; ".join(f"{key}: {described(old.get(key))} → {described(new.get(key))}" for key in keys)

@@ -8,16 +8,38 @@ SPEECH_LIMIT = 1000
 SPOKEN_TEXT = 500
 SPOKEN_NAME = 60
 SPOKEN_GROUP = 120
-ALARM_WORDS = {"pan-pan": "PAN-PAN", "security": "SECURITE"}
+ALARM_WORDS = {"pan-pan": "PAN-PAN", "security": "say-cure-ee-tay"}
 ADDRESSED = ("post", "call", "receipt")
 CALLS = re.compile(r"^(?:(?:MAYDAY|PAN[ -]?PAN|SECURIT[EÉY])\b[\s:,.;!-]*)+", re.IGNORECASE)
 HUB_MARK = re.compile(r"\[kvb-orchestrator msg [0-9a-f]{16}\]")
 HUB_FILE = re.compile(r"\s+file: /\S*$")
 SPOKEN_LINE = re.compile(LINE.format(SPEECH_LIMIT))
+HASH = re.compile(r"\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,}\b|[0-9]", re.IGNORECASE)
+NATO = dict(zip("abcdef", ("alfa", "bravo", "charlie", "delta", "echo", "foxtrot")))
+ICAO = dict(zip("0123456789", ("zero", "one", "two", "tree", "four", "fife", "six", "seven", "eight", "niner")))
+
+
+def pronounced(text: str) -> str:
+    """Args:
+        text: a radio text as displayed.
+
+    Returns:
+        The text with each hex run of 7 or more characters holding a letter
+        and a digit spelled in the NATO alphabet and every other digit
+        spoken on its own in ICAO pronunciation.
+    """
+    return HASH.sub(spelled, text)
+
+
+def spelled(found: re.Match) -> str:
+    start, end = found.span()
+    before = " " if start and found.string[start - 1].isalnum() else ""
+    after = " " if end < len(found.string) and found.string[end].isalnum() else ""
+    return before + " ".join(NATO.get(char) or ICAO[char] for char in found[0].lower()) + after
 
 
 def clip(text: str, limit: int) -> str:
-    words = " ".join(text.split())
+    words = " ".join(pronounced(text).split())
     if len(words) <= limit:
         return words
     return words[:limit].rsplit(" ", 1)[0] or words[:limit]

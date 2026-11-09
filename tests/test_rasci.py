@@ -162,6 +162,53 @@ class TestRasci(unittest.TestCase):
         self._run("set", "work/side", "--base", "")
         self.assertFalse(any(line.startswith("base:") for line in self._out("get", "work/side")))
 
+    def _after(self) -> dict[str, list[str]]:
+        rows = json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
+        return {task: row["after"] for task, row in rows.items() if "after" in row}
+
+    def test_after_stores_and_drops_a_dependency_and_refuses_unknown_tasks_and_cycles(self):
+        for task in ("work/a", "work/b", "work/c"):
+            self._out("set", task)
+        self._out("set", "work/b", "--after", "work/a")
+        self._out("set", "work/c", "--after", "work/b", "--after", "work/a", "--after", "work/b")
+        self.assertEqual(self._after(), {"work/b": ["work/a"], "work/c": ["work/b", "work/a"]})
+        self.assertIn("after: work/b", self._out("get", "work/c"))
+        before = (self.root / "rasci.json").read_bytes()
+        for args, reason in (
+            (("set", "work/a", "--after", "work/c"), "closes a cycle"),
+            (("set", "work/a", "--after", "work/b", "--title", "kept out"), "closes a cycle"),
+            (("set", "work/a", "--after", "work/a"), "cannot follow itself"),
+            (("set", "work/a", "--after", "work/nope"), "no task of the register"),
+            (("set", "work/new", "--after", "work/nope"), "no task of the register"),
+            (("set", "work/a", "--after", "Bad Task"), "invalid task"),
+        ):
+            with self.subTest(args=args):
+                result = self._run(*args)
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn(reason, result.stderr)
+                self.assertEqual((self.root / "rasci.json").read_bytes(), before)
+        self._out("set", "work/c", "--drop-after", "work/b")
+        self.assertEqual(self._after(), {"work/b": ["work/a"], "work/c": ["work/a"]})
+        self._out("set", "work/b", "--drop-after", "work/a")
+        self._out("set", "work/a", "--after", "work/b")
+        self.assertEqual(self._after(), {"work/a": ["work/b"], "work/c": ["work/a"]})
+
+    def test_the_operator_business_value_replaces_the_median_and_may_stand_alone(self):
+        self._run("estimate", "work/a", "One", "--value", "8", "--complexity", "2")
+        self._run("estimate", "work/a", "Two", "--value", "13", "--complexity", "3")
+        self._out("estimate", "work/a", "Operator", "--value", "34")
+        row = json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))["work/a"]
+        self.assertNotIn("complexity", row["estimates"]["Operator"])
+        self.assertEqual(self._out("wsjf")[2], "| 1 | work/a | - | 34 | 2.5 | 13.6 | One, Operator, Two | queued |")
+        self.assertIn("estimate Operator: business value 34, complexity -", self._out("get", "work/a"))
+        self._out("estimate", "work/a", "Operator", "--value", "21", "--complexity", "8")
+        self._out("estimate", "work/a", "Operator", "--value", "5")
+        row = json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))["work/a"]
+        self.assertEqual((row["estimates"]["Operator"]["value"], row["estimates"]["Operator"]["complexity"]), (5, 8))
+        self.assertEqual(self._out("wsjf")[2], "| 1 | work/a | - | 5 | 3 | 1.67 | One, Operator, Two | queued |")
+        self._out("estimate", "work/b", "Operator", "--value", "8")
+        self.assertEqual(self._out("wsjf")[3:], ["| 2 | work/b | - | - | - | - | Operator | queued |", "unestimated: work/b"])
+
     def test_done_tasks_show_only_with_all(self):
         self._run("set", "work/a", "--status", "done", "--end", "2026-11-01T12:00:00+00:00")
         self._run("role", "work/a", "Skills", "RA")
@@ -257,6 +304,8 @@ class TestRasci(unittest.TestCase):
             ("set", "work/a", "--artifact", "no-kind"),
             ("estimate", "work/a", "One", "--value", "4", "--complexity", "2"),
             ("estimate", "work/a", "One", "--value", "8"),
+            ("estimate", "work/a", "Operator", "--complexity", "8"),
+            ("estimate", "work/a", "Operator", "--value", "4"),
         ):
             with self.subTest(args=args):
                 self.assertEqual(self._run(*args).returncode, 2)

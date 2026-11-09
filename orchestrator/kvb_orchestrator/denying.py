@@ -76,28 +76,28 @@ class Denying:
             tasks = read_register(self.council / REGISTER)
             row = next((row for row in operator_rows(tasks) if row["task"] == item["id"]), None)
             if row is None or signing.denial_item(operator_signed(row), note["channel"], note["reason"], note["to"]) != item["signed"]:
-                return "verweigert: die Zeile hat sich seit der Ablehnung geändert"
+                return "refused: the row changed since the denial"
             if item["id"] in self.open_jobs():
-                return "läuft schon"
+                return "already running"
             run = self.scripts.run(RASCI, ["set", item["id"], "--status", "stopped"])
             if run["code"] != 0:
-                return f"fehlgeschlagen: {run['command']} → {run['code']}"
+                return f"failed: {run['command']} → {run['code']}"
             command, directory = row["command"][:200], row["directory"]
-            return f"gestoppt · {self.tell(item, proof, adder(tasks[item['id']]), f'operator command {command} in {directory}')}"
+            return f"stopped · {self.tell(item, proof, adder(tasks[item['id']]), f'operator command {command} in {directory}')}"
         ledger = self.asks if item["kind"] == "ask" else self.rule_requests
         record = ledger.get(item["id"])
         if record is None:
-            return "unbekannt"
+            return "unknown"
         now = time.time()
         if (ask_state(record, now)["status"] if item["kind"] == "ask" else request_status(record, now)) == "expired":
-            return "abgelaufen"
+            return "expired"
         record, changed = ledger.decide(item["id"], {"status": "denied", "proof": proof, **note})
         if not changed:
-            return f"schon {record['status']}"
+            return f"already {record['status']}"
         if item["kind"] == "ask":
             tool, command = record["tool"], record["command"][:200]
-            return f"abgelehnt · {self.tell(item, proof, record['session'], f'ask {tool}: {command}')}"
-        return f"abgelehnt · {self.tell(item, proof, record['agent'], f'rule request {request_words(record)}')}"
+            return f"denied · {self.tell(item, proof, record['session'], f'ask {tool}: {command}')}"
+        return f"denied · {self.tell(item, proof, record['agent'], f'rule request {request_words(record)}')}"
 
     def addressee(self, who: str) -> tuple[str, str]:
         return requester_of(read_claims(self.council), who)
@@ -120,11 +120,11 @@ class Denying:
         direct = channel in DIRECT
         address = self.addressee(note["to"])[1] if direct else EVERYONE
         if direct and not address:
-            return f"kein Empfänger für {channel}"
+            return f"no recipient for {channel}"
         text = denial_text(what, self.addressee(who)[0], note["reason"])
-        where = f"{channel} an {address}" if direct else f"{channel} an alle"
+        where = f"{channel} to {address}" if direct else f"{channel} to all"
         fields = {"to": note["to"], "address": address, "text": text, "upload": None, "voice": None, "voice_sha256": "", "class": channel}
         record = self.messages.add({**fields, "denial": item["signed"], "proof": proof, "created_ts": time.time()})
         targets = ["--to", address] if direct else []
         run = self.scripts.run(RADIO, [*DENY_CHANNELS[channel], *targets, "--session", HUMAN, f"[kvb-orchestrator msg {record['id']}] {' '.join(text.split())}"])
-        return where if run["code"] == 0 else f"{where} fehlgeschlagen ({run['code']})"
+        return where if run["code"] == 0 else f"{where} failed ({run['code']})"

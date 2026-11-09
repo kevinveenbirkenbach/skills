@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the organisation's night mode: one active session, the others relaxed or asleep.
+"""Keep the organisation's night mode: one active session, the others drained or suspended.
 
 Environment:
     AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
@@ -7,16 +7,18 @@ Environment:
     CLAUDE_CODE_SESSION_ID: the calling session.
 
 Args:
-    set evening|sunset [--session <id>]: start the mode with the caller as the
+    drain|suspend [--session <id>]: start the mode with the caller as the
         active session; prints every other live session as "<id>\t<name>".
     status [--session <id>]: print the mode, the active session, since when,
-        and the caller's part (active, awake, relax or sleep).
-    wake [--session <id>]: wake the caller alone while the others stay in the
-        mode; it then works like the active session.
-    clear [--session <id>]: end the mode (sunrise); prints every other live
-        session as "<id>\t<name>".
+        and the caller's part (active, resumed, drain or suspend).
+    resume [--session <id>]: end the mode; prints every other live session
+        as "<id>\t<name>".
+    resume --alone [--session <id>]: resume the caller alone while the others
+        stay in the mode; it then works like the active session.
 
-A missing, unreadable or invalid state means day: every agent works.
+A missing, unreadable or invalid state means day: every agent works. A state
+written before the rename (mode evening or sunset, resumed sessions under
+awake) reads as drain or suspend.
 
 Exit codes:
     0 done, 2 usage error.
@@ -37,7 +39,8 @@ from types import ModuleType
 ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 STATE = ROOT / "night.json"
 COUNCIL = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "council.py"
-PARTS = {"evening": "relax (kvb-agent-relax)", "sunset": "sleep (kvb-agent-sleep)"}
+PARTS = {"drain": "drain (kvb-agent-drain)", "suspend": "suspend (kvb-agent-suspend)"}
+RENAMED = {"evening": "drain", "sunset": "suspend"}
 
 
 def council() -> ModuleType:
@@ -47,18 +50,30 @@ def council() -> ModuleType:
     return module
 
 
+def migrated(state: object) -> object:
+    if not isinstance(state, dict):
+        return state
+    state = dict(state)
+    if isinstance(state.get("mode"), str):
+        state["mode"] = RENAMED.get(state["mode"], state["mode"])
+    if "awake" in state:
+        state.setdefault("resumed", state.pop("awake"))
+    return state
+
+
 def load() -> dict | None:
     try:
-        state = json.loads(STATE.read_text(encoding="utf-8"))
+        state = migrated(json.loads(STATE.read_text(encoding="utf-8")))
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
         state = None
     if (
         not isinstance(state, dict)
-        or state.get("mode") not in PARTS
+        or not isinstance(state.get("mode"), str)
+        or state["mode"] not in PARTS
         or not state.get("active")
-        or not isinstance(state.get("awake", []), list)
+        or not isinstance(state.get("resumed", []), list)
     ):
         print(f"night: {STATE} is unreadable or invalid; treated as day", file=sys.stderr)
         return None
@@ -76,11 +91,11 @@ def cmd_set(args: argparse.Namespace, cn: ModuleType) -> int:
     live = cn.live_sessions()
     save(
         {
-            "mode": args.mode,
+            "mode": args.command,
             "active": sid,
             "name": live.get(sid),
             "since": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
-            "awake": [],
+            "resumed": [],
         }
     )
     peers(live, sid)
@@ -94,16 +109,15 @@ def save(state: dict) -> None:
     os.replace(handle.name, STATE)
 
 
-def cmd_wake(args: argparse.Namespace, cn: ModuleType) -> int:
-    sid, _ = cn.caller(args.session)
+def resume_alone(sid: str) -> int:
     state = load()
     if state is None:
         print("mode: day")
         return 0
-    if sid != state["active"] and sid not in state.get("awake", []):
-        state["awake"] = [*state.get("awake", []), sid]
+    if sid != state["active"] and sid not in state.get("resumed", []):
+        state["resumed"] = [*state.get("resumed", []), sid]
         save(state)
-    print(f"awake: {sid}")
+    print(f"resumed: {sid}")
     return 0
 
 
@@ -118,15 +132,17 @@ def cmd_status(args: argparse.Namespace, _: ModuleType) -> int:
     sid = args.session or os.environ.get("CLAUDE_CODE_SESSION_ID")
     if sid == state["active"]:
         print("you: active")
-    elif sid in state.get("awake", []):
-        print("you: awake")
+    elif sid in state.get("resumed", []):
+        print("you: resumed")
     elif sid:
         print(f"you: {PARTS[state['mode']]}")
     return 0
 
 
-def cmd_clear(args: argparse.Namespace, cn: ModuleType) -> int:
+def cmd_resume(args: argparse.Namespace, cn: ModuleType) -> int:
     sid, _ = cn.caller(args.session)
+    if args.alone:
+        return resume_alone(sid)
     STATE.unlink(missing_ok=True)
     peers(cn.live_sessions(), sid)
     return 0
@@ -135,15 +151,13 @@ def cmd_clear(args: argparse.Namespace, cn: ModuleType) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("set")
-    p.add_argument("mode", choices=sorted(PARTS))
-    p.set_defaults(func=cmd_set)
+    for mode in PARTS:
+        sub.add_parser(mode).set_defaults(func=cmd_set)
     p = sub.add_parser("status")
     p.set_defaults(func=cmd_status)
-    p = sub.add_parser("clear")
-    p.set_defaults(func=cmd_clear)
-    p = sub.add_parser("wake")
-    p.set_defaults(func=cmd_wake)
+    p = sub.add_parser("resume")
+    p.add_argument("--alone", action="store_true")
+    p.set_defaults(func=cmd_resume)
     for p in sub.choices.values():
         p.add_argument("--session")
     args = parser.parse_args()

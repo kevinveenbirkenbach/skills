@@ -8,6 +8,11 @@
       closeSheet();
     }
   });
+  popupDialog().addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) {
+      closePopup();
+    }
+  });
   document.getElementById("palette-open").addEventListener("click", openPalette);
   document.getElementById("settings-open").addEventListener("click", settingsSheet);
   document.addEventListener("click", (event) => closeMenus(event.target instanceof Element ? event.target.closest("details.menu") : null));
@@ -26,6 +31,7 @@
   window.addEventListener("resize", measure);
   window.addEventListener("resize", redrawSky);
   window.addEventListener("resize", refresh3d);
+  window.addEventListener("resize", placePopup);
   skyPanel();
   radio.element = radioElement();
   drawSky();

@@ -12,6 +12,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "skills" / "kvb-skill-cleanup" / "scripts" / "legacy.py"
+REWORDED = """---
+name: {name}
+description: probe
+---
+
+The probe keeps this first line as it is.
+{name}: the first renamed line.
+{name}: the second renamed line.
+{name}: the third renamed line.
+It keeps this closing line as it is too.
+"""
 
 
 @unittest.skipUnless(shutil.which("git"), "git not installed")
@@ -108,6 +119,24 @@ class TestLegacy(unittest.TestCase):
                 ]
             ),
         )
+
+    def test_a_rename_that_rewrites_its_name_throughout_keeps_its_successor(self):
+        (self.repo / "skills" / "night-old").mkdir()
+        (self.repo / "skills" / "night-old" / "SKILL.md").write_text(REWORDED.format(name="night-old"), encoding="utf-8")
+        self._commit(self.repo, "add night-old")
+        self._git(self.repo, "mv", "skills/night-old", "skills/kvb-x-night")
+        (self.repo / "skills" / "kvb-x-night" / "SKILL.md").write_text(REWORDED.format(name="kvb-x-night"), encoding="utf-8")
+        self._commit(self.repo, "rename night-old to kvb-x-night")
+        default = subprocess.run(
+            ["git", "diff", "-M", "--diff-filter=R", "--name-only", "HEAD~1", "HEAD"],
+            cwd=self.repo, env=self.env, capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(default.stdout.strip(), "", "the probe must stay below git's default rename similarity")
+        self._skill(self.home / "night-old")
+        result = self._run("--skills-repo", str(self.repo), "--root", str(self.home), "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = {Path(row["path"]).name: (row["verdict"], row["successor"]) for row in json.loads(result.stdout)}
+        self.assertEqual(rows["night-old"], ("legacy", "kvb-x-night"))
 
     def test_invalid_input_exits_2(self):
         missing = self._run("--skills-repo", str(self.repo), "--root", str(self.home / "nope"))

@@ -20,18 +20,19 @@ class TestHubInbox(HubCase):
         decision_id = self.decision("Merge now")
         inbox = {item["id"]: item for item in self.snapshot()["inbox"]}
         self.assertEqual([inbox[key]["green"] for key in (green, red, ask_id, risky, decision_id)], [True, False, True, False, True])
-        self.assertEqual(inbox[risky]["warnings"], ["löscht rekursiv"])
+        self.assertEqual(inbox[risky]["warnings"], ["deletes recursively"])
         batch = [self.entry("review", green, "", ""), self.entry("ask", ask_id, "", ""), self.entry("decision", decision_id, "Merge now", "")]
-        signer = key(-7, "main")
+        signer = self.pin()
         self.assertEqual(self.approve([self.entry("review", green, "", ""), self.entry("review", red, "", "")], None)[0], 400)
         self.assertEqual(self.approve([self.entry("decision", decision_id, "Later", "")], None)[0], 400)
         self.assertEqual(self.approve([self.entry("review", green, "", ""), self.entry("review", green, "", "")], None)[0], 400)
         self.assertEqual(self.approve([self.entry("review", "0123456789abcdef", "", "")], None)[0], 404)
         self.assertEqual(self.post_json("/api/inbox/approve", {"items": batch, "proof": None}, self.client())[0], 403)
         prepared = self.prepare(batch)
-        listed = [signing.item_hash(signing.review_item(green, "/repo/.git", "/repo/.worktrees/feature/x", "feature/x", TREE)), signing.item_hash(signing.ask_item(ask_id, "Bash", "make deploy", "/repo", "s1"))]
+        answer = signing.message_item("Skills", "post", f"Choice for decision {decision_id} (Merge the hub?): Merge now", "", "", "")
+        listed = [signing.item_hash(signing.review_item(green, "/repo/.git", "/repo/.worktrees/feature/x", "feature/x", TREE)), signing.item_hash(signing.ask_item(ask_id, "Bash", "make deploy", "/repo", "s1")), signing.item_hash(answer)]
         self.assertEqual((prepared["payload"]["items"], prepared["challenge"]), (sorted(listed), signing.challenge(prepared["payload"])))
-        unsigned = [self.entry("decision", decision_id, "Merge now", ""), {**self.entry("review", red, "", ""), "verb": "reject"}]
+        unsigned = [{**self.entry("review", red, "", ""), "verb": "reject"}]
         self.assertIsNone(self.prepare(unsigned)["payload"])
         partial = signer.proof(self.prepare(batch[:1])["payload"], self.origin)
         for proof in (None, partial, {"payload": prepared["payload"]}, {"payload": {**prepared["payload"], "expires": int(time.time()) - 1}, "assertion": {}}):
@@ -77,8 +78,8 @@ class TestHubInbox(HubCase):
             with self.subTest(payload=payload):
                 self.assertEqual(self.post_json("/api/inbox/mark", payload, self.guard(self.host))[0], 400)
         titles = [row["title"] for row in self.events("kinds=approval")["events"]]
-        self.assertIn("Freigabe review: feat: green", titles)
-        self.assertTrue(any(title.startswith("Rückgängig: ") for title in titles))
+        self.assertIn("Grant review: feat: green", titles)
+        self.assertTrue(any(title.startswith("Undone: ") for title in titles))
 
     def test_the_sign_endpoint_and_the_page_offer_the_pinned_keys_only(self):
         ask_id = self.create_ask(ASK)
@@ -96,7 +97,7 @@ class TestHubInbox(HubCase):
         self.approvers.chmod(0o666)
         self.assertEqual(self.snapshot()["approvers"], [])
         html = self.index()
-        for text in ("Passkey registrieren", "navigator.credentials.get", "navigator.credentials.create", "approval.py pin --port", "~/.config/kvb-orchestrator/approvers.json", "nicht signiert"):
+        for text in ("Register passkey", "navigator.credentials.get", "navigator.credentials.create", "approval.py pin --port", "~/.config/kvb-orchestrator/approvers.json", "not signed"):
             with self.subTest(text=text):
                 self.assertIn(text, html)
 

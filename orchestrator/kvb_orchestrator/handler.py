@@ -17,7 +17,7 @@ TTS_ROUTE = "/api/tts"
 WAV_TYPE = "audio/wav"
 STT_ROUTE = "/api/stt"
 ROUTE = re.compile(r"/reviews/([0-9a-f]{16})/(page|files|approve|reject)")
-ITEM = re.compile(r"/api/(asks|decisions)/([0-9a-f]{16})(?:/(allow|deny|choose))?")
+ITEM = re.compile(r"/api/(asks|decisions)/([0-9a-f]{16})(?:/(allow|deny))?")
 ENTRY = re.compile(r"/api/stream/([0-9]{1,12})")
 BOARD = re.compile(r"/api/board/([a-z-]{1,32})")
 UPLOADS = "/api/uploads"
@@ -48,8 +48,10 @@ VOICE_ITEM = re.compile(r"/api/voice/([0-9a-f]{16})(\.wav)?")
 MESSAGE_SIGN_ROUTE = "/api/messages/sign"
 BOARD_SIGN_ROUTE = "/api/board/sign"
 SETTINGS_SIGN_ROUTE = "/api/settings/sign"
+CHOICES_ROUTE = "/api/choices"
+CHOICES_SIGN_ROUTE = "/api/choices/sign"
 WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
-ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE)
+ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE)
 
 
 class Handler(Exchange):
@@ -182,6 +184,10 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.voice_notes.submit(body), HTTPStatus.ACCEPTED)
         if path == MESSAGE_SIGN_ROUTE:
             return lambda body: self.answer(lambda: hub.sign_message(body), HTTPStatus.OK)
+        if path == CHOICES_SIGN_ROUTE:
+            return lambda body: self.answer(lambda: hub.sign_choices(body), HTTPStatus.OK)
+        if path == CHOICES_ROUTE:
+            return lambda body: self.answer(lambda: hub.request_choices(body), HTTPStatus.CREATED)
         return None
 
     def posted(self, path: str) -> bool:

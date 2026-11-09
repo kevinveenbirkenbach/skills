@@ -1,7 +1,7 @@
   function orbit() {
     const nodes = state.graph.nodes;
     positions = layout(nodes);
-    const svg = chartFrame(400, "Orbit: Operator in der Mitte; wer zusammen arbeitet oder funkt, rückt zusammen, Stille driften nach außen");
+    const svg = chartFrame(400, "Orbit: operator in the middle; whoever works or radios together moves closer, the silent drift outward");
     svg.append(...RINGS.map((r) => s("circle", {class: "ring", r})));
     const edgeLayer = s("g", {});
     const halos = new Map();
@@ -16,7 +16,7 @@
         const index = halos.get(link.source) || 0;
         halos.set(link.source, index + 1);
         edgeLayer.append(s("circle", {class: `halo t-${shade}`, cx: fixed(from.x), cy: fixed(from.y), r: radiusOf(link.source) + 7 + index * 7, "stroke-width": width(link.count)},
-          s("title", {}, `${link.source} an alle: ${words}`)));
+          s("title", {}, `${link.source} to all: ${words}`)));
         continue;
       }
       const to = positions.get(link.target);
@@ -45,7 +45,7 @@
       const angle = spotOf(node.id, fresh).chord;
       return [node.id, {x: radius * Math.cos(angle), y: radius * Math.sin(angle), angle}];
     }));
-    const svg = chartFrame(450, "Chord: Nachrichten zwischen Agenten, Reihenfolge nach Nähe");
+    const svg = chartFrame(450, "Chord: messages between agents, ordered by closeness");
     const arcs = s("g", {});
     const point = (angle, r) => `${fixed(r * Math.cos(angle))},${fixed(r * Math.sin(angle))}`;
     for (const node of nodes) {
@@ -91,7 +91,7 @@
       const angle = at.angle + (index - 1) * 0.05;
       const length = Math.min(8 + 6 * Math.log2(1 + fan.count), 40);
       arcs.append(s("line", {class: `tick t-${fan.shade}`, x1: fixed((radius + 22) * Math.cos(angle)), y1: fixed((radius + 22) * Math.sin(angle)), x2: fixed((radius + 22 + length) * Math.cos(angle)), y2: fixed((radius + 22 + length) * Math.sin(angle)), "stroke-width": 4},
-        s("title", {}, `${fan.source} an alle: ${fan.count}×`)));
+        s("title", {}, `${fan.source} to all: ${fan.count}×`)));
     }
     svg.append(arcs, s("g", {}, nodes.map((node) => nodeMark(node, spots.get(node.id), 74))));
     return svg;
@@ -110,10 +110,10 @@
     const height = top + lanes.length * lane + 12;
     const x = (ts) => left + ((ts - begin) / (end - begin)) * (full - left - right);
     const y = new Map(lanes.map((node, index) => [node.id, top + index * lane + lane / 2]));
-    const svg = s("svg", {viewBox: `0 0 ${full} ${height}`, class: "chart", role: "img", "aria-label": "Swimlane: Nachrichten über die Zeit"}, defs());
+    const svg = s("svg", {viewBox: `0 0 ${full} ${height}`, class: "chart", role: "img", "aria-label": "Swimlane: messages over time"}, defs());
     lanes.forEach((node, index) => {
       svg.append(s("rect", {class: index % 2 ? "lane odd" : "lane", x: 0, y: top + index * lane, width: full, height: lane}));
-      svg.append(s("text", {class: "lane-label", x: 14, y: top + index * lane + lane / 2, dy: "0.35em", "text-anchor": "start", on: {click: () => select(node.id)}}, node.label));
+      svg.append(s("text", {class: "lane-label", x: 14, y: top + index * lane + lane / 2, dy: "0.35em", "text-anchor": "start", "data-pick": node.id, on: {click: () => select(node.id)}}, node.label));
     });
     for (let index = 0; index <= 6; index += 1) {
       const ts = begin + ((end - begin) * index) / 6;
@@ -131,7 +131,7 @@
         return;
       }
       const shade = tone(cls);
-      const hint = s("title", {}, `${clock.format(stampOf(ts))} · ${dash(labelOf(from))} → ${to.length ? to.map(labelOf).join(", ") : "alle"}\n${words}`);
+      const hint = s("title", {}, `${clock.format(stampOf(ts))} · ${dash(labelOf(from))} → ${to.length ? to.map(labelOf).join(", ") : "all"}\n${words}`);
       if (!to.length) {
         const rays = [[-6, -13], [0, -15], [6, -13], [-6, 13], [0, 15], [6, 13]].map(([dx, dy]) => `M${x0},${y0} l${dx},${dy}`).join(" ");
         marks.append(s("g", {class: `mark t-${shade}`}, hint, s("path", {d: rays}), s("circle", {cx: x0, cy: y0, r: 3.5})));
@@ -150,7 +150,7 @@
       arrows(row.class, row.ts, row.source, row.targets, row.text.length > 120 ? `${row.text.slice(0, 120)}…` : row.text);
     }
     for (const grant of state.grants) {
-      arrows("grant", grant.ts, chairKey(), [grant.target], `Queue-Freigabe ${grant.kind} (${grant.id})`);
+      arrows("grant", grant.ts, chairKey(), [grant.target], `Queue grant ${grant.kind} (${grant.id})`);
     }
     svg.append(marks);
     return svg;
@@ -158,29 +158,23 @@
 
   function legend() {
     return h("div", {class: "legend"}, LEGEND.map(([name, label]) => h("span", {}, h("i", {class: `swatch t-${name}`}), label)),
-      h("span", {class: "muted"}, "Linienstärke = Anzahl · Nähe = Zusammenarbeit der letzten Zeit"));
+      h("span", {class: "muted"}, "Line width = count · closeness = recent collaboration"));
   }
 
-  function side() {
-    const node = state.graph.nodes.find((entry) => entry.id === ui.node);
-    if (!node) {
-      return [h("h2", {class: "panel-title"}, "Details"), h("p", {class: "muted"}, "Klicke auf einen Knoten: sein Panel zeigt Aufgaben, Claims, Subagenten und Verlauf.")];
-    }
+  function nodePopup(node) {
     const messages = state.radio.filter((row) => row.source === node.id || row.targets.includes(node.id)).slice(-10).reverse();
     return [
-      h("div", {class: "panel-head"},
-        h("div", {}, h("h2", {class: "panel-title"}, node.label), h("span", {class: "muted"}, `${NODE_KINDS[node.kind]}${node.parent ? ` von ${labelOf(node.parent)}` : ""}`)),
-        iconBtn("bi-x-lg", "Schließen", "btn small ghost", () => select(node.id))),
-      h("h3", {}, "Letzte Nachrichten", counter(messages.length)),
-      messages.length ? h("ul", {class: "mini"}, messages.map((row) => h("li", {},
-        h("div", {class: "row"}, klass(row.class), when(row.ts)),
-        h("span", {class: "muted"}, `${dash(row.from)} → ${targetsOf(row)}`),
-        h("span", {}, row.text)))) : h("p", {class: "muted"}, "Keine Nachrichten im gewählten Zeitraum."),
+      popupHead(null, node.label, h("span", {class: "muted"}, NODE_KINDS[node.kind])),
+      h("div", {class: "popup-body"}, h("h3", {}, "Latest messages", counter(messages.length)),
+        messages.length ? h("ul", {class: "mini"}, messages.map((row) => h("li", {},
+          h("div", {class: "row"}, klass(row.class), when(row.ts)),
+          h("span", {class: "muted"}, `${dash(row.from)} → ${targetsOf(row)}`),
+          h("span", {}, row.text)))) : h("p", {class: "muted"}, "No messages in the chosen time range.")),
     ];
   }
 
   function viewSwitch(screen) {
-    return h("div", {class: "segmented", role: "group", "aria-label": "Ansicht"}, Nav.viewsOf(screen).map(([id, name]) => h("button", {
+    return h("div", {class: "segmented", role: "group", "aria-label": "View"}, Nav.viewsOf(screen).map(([id, name]) => h("button", {
       type: "button", class: "icon-only", ...named(name), "aria-pressed": String(ui.views[screen] === id), on: {click: () => go(screen, id)},
     }, icon(Nav.ICONS[id]))));
   }
@@ -188,9 +182,8 @@
   function agentsScreen() {
     const view = ui.views.agents;
     const stageBox = h("div", {class: "stage"});
-    const aside = h("aside", {class: "card panel", "aria-live": "polite"});
     const toolbar = agentsToolbar();
-    graphDom = {stage: stageBox, aside, pulses: null, toolbar};
-    const body = view === "tree" ? spawnScreen() : view === "hierarchy" ? hierarchyScreen() : h("div", {class: "graph-body"}, h("div", {class: "card stage-card"}, stageBox, view === "3d" ? null : legend()), aside);
+    graphDom = {stage: stageBox, pulses: null, toolbar};
+    const body = view === "tree" ? spawnScreen() : view === "hierarchy" ? hierarchyScreen() : h("div", {class: "card stage-card"}, stageBox, view === "3d" ? null : legend());
     return h("div", {class: "graph"}, toolbar.bar, h("div", {class: "card controls"}, viewSwitch("agents"), view === "3d" ? layoutTools("agents") : null), body);
   }

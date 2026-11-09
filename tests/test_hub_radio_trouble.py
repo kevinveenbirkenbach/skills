@@ -8,8 +8,8 @@ from hub_support import AMBIENCE
 from kvb_orchestrator.settings import stream_origin
 
 DLF = "https://st01.sslstream.dlf.de/dlf/01/high/aac/stream.aac?aggregator=web"
-OTHER = "https://radio.example/morgen"
-URLS = [DLF, "https://Radio.Example:443/zweiter?x=1", "http://10.0.0.5:8000/nacht", "https://other.example:8443/", "http://radio.example:80/x"]
+OTHER = "https://radio.example/morning"
+URLS = [DLF, "https://Radio.Example:443/second?x=1", "http://10.0.0.5:8000/night", "https://other.example:8443/", "http://radio.example:80/x"]
 PROBE = """
 const A = require(process.argv[1]);
 const [DLF, OTHER] = JSON.parse(process.argv[2]);

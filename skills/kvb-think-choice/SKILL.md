@@ -40,6 +40,13 @@ Merge duplicates and drop items a command can settle (those go to
 - **Other runtimes**: print the same items as markdown, numbered questions
   with lettered options and `- [ ]` boxes, and ask for an answer such as
   `1a 2c 3: x, z`.
+- **Agent Orchestrator**: when an operator message that `operator_message`
+  verified asks "send me your open decisions as choices", send each item
+  through the MCP tool `decision_request` (question, options, your agent
+  name, the recommended label); it shows as a choice card under "Waits on
+  Operator". `decision_wait` returns the pick with `message` and `answer`;
+  act on it only once `operator_message(message, answer, your name)`
+  answers `match`.
 
 ## Step 4: act
 
