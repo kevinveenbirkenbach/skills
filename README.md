@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `check`, `org`, `agent`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `check` analyses and reports findings, `org` coordinates agents, `agent` acts on one agent itself: its repository setup (code index, agent instructions) and its state (relax, sleep, wake up), `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `release`, `check`, `org`, `agent`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `release` announces a release (changelog, article, posts), `check` analyses and reports findings, `org` coordinates agents, `agent` acts on one agent itself: its repository setup (code index, agent instructions) and its state (relax, sleep, wake up), `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -23,6 +23,7 @@ flowchart LR
   kvb --> code[code]
   kvb --> ci[ci]
   kvb --> git[git]
+  kvb --> release[release]
   kvb --> check[check]
   kvb --> org[org]
   kvb --> agent[agent]
@@ -56,7 +57,7 @@ flowchart LR
   git --> git_update_branches[kvb-git-update-branches]
   git --> git_branch_gc[kvb-git-branch-gc]
   git --> git_orphans_find[kvb-git-orphans-find]
-  git --> git_changelog[kvb-git-changelog]
+  release --> release_changelog[kvb-release-changelog]
   git --> git_hotfix[kvb-git-hotfix]
   git --> git_push[kvb-git-push]
   git --> git_diff[kvb-git-diff]
@@ -160,7 +161,7 @@ flowchart LR
     update_branches[kvb-git-update-branches]
     branch_gc[kvb-git-branch-gc]
     orphans_find[kvb-git-orphans-find]
-    changelog[kvb-git-changelog]
+    changelog[kvb-release-changelog]
     hotfix[kvb-git-hotfix]
     git_push[kvb-git-push]
     git_diff[kvb-git-diff]

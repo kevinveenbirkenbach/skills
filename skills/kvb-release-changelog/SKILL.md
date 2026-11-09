@@ -1,5 +1,5 @@
 ---
-name: kvb-git-changelog
+name: kvb-release-changelog
 description: >
   Write the `pkgmgr release` message; prints only. Trigger on "release
   message", "changelog entry", before cutting a release, or pkgmgr's
