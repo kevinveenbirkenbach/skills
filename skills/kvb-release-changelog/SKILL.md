@@ -6,7 +6,7 @@ description: >
   markdown-lint rejection.
 ---
 
-Read `reasons.md` next to this file when a rule seems not to fit or a lint
+Read `reasons.md` next to this file when a rule does not fit or a lint
 finding is unclear, and `special.md` for: no tag, a failed previous-tag
 workflow, a test- or CI-only release, no `markdownlint-cli2`, a pasted pkgmgr
 rejection.
@@ -35,8 +35,9 @@ git log --no-merges --format='%h %s%n%b' <tag>..HEAD
 Fixed. `!` or `BREAKING CHANGE:`: Breaking, plus one Upgrade notes line per
 required action. `docs`, `style`, `refactor`, `test`, `ci`, `build`,
 `chore`: omitted unless a user sees the effect. Dependency bumps: one
-collapsed line, or omitted. Order: Breaking, Added, Changed, Fixed, Upgrade
-notes; empty sections left out.
+line, or omitted. Order: Breaking, Added, Changed, Fixed, Version
+jumps, Upgrade notes, Contributors (always, with URLs: `sections.md`);
+empty sections left out.
 
 ## 3. Format
 
@@ -44,7 +45,7 @@ notes; empty sections left out.
    bold-only lines.
 2. No version heading, date or "Release X.Y.Z" line.
 3. One bullet, one line: too long means shorter, never wrapped.
-4. Line length: the repository's MD013 limit (markdownlint's default 80);
+4. Line length: the repository's MD013 limit (default 80);
    aim for 78 or less.
 5. Lists: no nesting, a blank line before and after (MD004, MD032), the
    marker of the existing CHANGELOG.md's first list item; `-` without a
