@@ -51,11 +51,11 @@ order (commits, pushes, installs, binaries, removals, manual steps), one
 `bash` block per step, and a last block with `operator.py run`. Once the
 operator reports a `manual` step done, run `operator.py done <slug>`.
 
-`run` is the operator's script, never an agent's: per step it shows
-directory, command, reason, check and a preview of the change (commits and
-diffstat to push, files an install changes, what a removal deletes, the
-repository state), and runs the command only on `y`; `d` shows the full
-diff, `s` skips, `q` stops. Nothing answers for the operator.
+`run` is the operator's script, never an agent's; `run.md` next to this
+file says what it shows and asks. A post from Operator that cancels your
+row, or reports its command failed, took the row out of the queue: fix the
+cause it names, then re-add the corrected command under the same slug or
+drop the step; never re-add it unchanged.
 
 Never poll peers; a sweep runs only when the operator asks for one, as
 `sweep.md` next to this file says.
