@@ -11,6 +11,13 @@ finding is unclear, and `special.md` for: no tag, a failed previous-tag
 workflow, a test- or CI-only release, no `markdownlint-cli2`, a pasted pkgmgr
 rejection.
 
+## 0. Listen, then brainstorm
+
+Run the `kvb-think-listen` skill for what only the operator knows (the tag,
+the audience, the highlights, what to leave out), reusing `listen.yml` when
+the `kvb-release` skill passed one; then the `kvb-think-brainstorm` skill on
+how each change reads for its user, before step 1.
+
 ## 1. Find the range
 
 ```bash
@@ -60,16 +67,7 @@ empty sections left out.
 
 ## 4. Lint it the way pkgmgr does
 
-1. Write `# Changelog`, blank line, `## [X.Y.Z] - <date>`, blank line, the
-   message to a scratch file outside the repository.
-2. From the repository root, so its config applies:
-   `markdownlint-cli2 --no-globs - < <scratch-file>`.
-3. A finding on line N is message line N - 4: shorten it and lint again;
-   print nothing before 0 errors.
-4. Lint a scratch copy of CHANGELOG.md with the wrapped entry inserted below
-   its `# Changelog` line the same way. A finding in older entries that the
-   unmodified file lacks comes from the new entry: fix the message, never
-   the older entries.
+Follow `lint.md` next to this file; print nothing before 0 errors.
 
 ## 5. Output
 
