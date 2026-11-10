@@ -303,6 +303,27 @@ from three views down to any agent, branch or artefact.
     time-agent-depth layout.
 58. **Steady 3D camera**: the 3D view fits the graph once per build; state
     refreshes keep the operator's camera.
+59. **Radio numbers and paths** (operator 2026-11-10): only the spoken line
+    changes, the displayed text stays as written. Digits are spoken in ICAO
+    words in Title Case, Ze-ro, One, Two, Tree, Fow-er, Fife, Six, Seven,
+    Eight, Ni-ner, and the NATO letters of hashes too (Alfa to Foxtrot);
+    this replaces the words of decisions 40 and 41. A time is four digits,
+    hour padded, no colon, seconds as two more digits; a UTC time ("08:15
+    UTC", "08:15Z", "0815Z", "08:15 Zulu") ends in one "Zulu", another zone
+    word follows the digits as written. A date with a time is the DTG
+    DDHHMM, "Zulu" when zoned, the full month name and the two-digit year
+    ("One Ze-ro One Fow-er Tree Ze-ro Zulu November Two Six"); an explicit
+    offset is converted to UTC first, no zone drops "Zulu", a date alone is
+    day, month and year. A dot between digits is "Decimal" and the "v" of a
+    version is dropped. An absolute, home or relative path (the relative one
+    with a slash and an extension on its last segment) is "file <name> in
+    <parent>" when the last segment has an extension (a dot and 1 to 5
+    alphanumerics), else "folder <name> in <parent>"; a trailing slash means
+    folder, "." is "dot", "-" and "_" a space, `tmp` at the root "temp", `~`
+    "home"; a URL is no path. Paths go first, then date-times, times and the
+    remaining digits and hashes. Rejected for paths: every segment with
+    "slash", the file name only, mapping to known repositories, not speaking
+    paths.
 
 ## Approach
 
@@ -764,6 +785,8 @@ flowchart TD
         business value signature (forged, replayed, altered), sort orders.
   - [x] S5.1: regression and velocity trend with their forecast dates, point
         tooltips, ETA in both modes, radio settings stored from the gear.
+  - [ ] S5.5: ICAO digit words, Zulu times, DTG with offset conversion,
+        dates, decimals and spoken paths.
 - **Integration**
   - [ ] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's

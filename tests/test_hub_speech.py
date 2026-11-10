@@ -230,17 +230,87 @@ class TestPhraseology(unittest.TestCase):
             with self.subTest(arguments=arguments):
                 self.assertEqual(phrasing.phrase(*arguments), expected)
 
-    def test_hashes_spell_in_nato_and_digits_in_icao_only_when_spoken(self):
-        cases = (
-            ("8e180be", "eight echo one eight zero bravo echo"),
-            ("42305", "four two tree zero fife"),
-            ("fix 8E180BE, PR #1326", "fix eight echo one eight zero bravo echo, PR #one tree two six"),
-            ("8e180b decade deadbeef", "eight e one eight zero b decade deadbeef"),
-        )
+    def assertSpoken(self, cases: tuple[tuple[str, str], ...]) -> None:
         for text, expected in cases:
             with self.subTest(text=text):
                 self.assertEqual(phrasing.phrase("broadcast", "Docs", [], text), f"all stations, this is Docs, {expected}, out")
+
+    def test_hashes_spell_in_nato_and_digits_in_icao_only_when_spoken(self):
+        self.assertSpoken((
+            ("8e180be", "Eight Echo One Eight Ze-ro Bravo Echo"),
+            ("42305", "Fow-er Two Tree Ze-ro Fife"),
+            ("0123456789", "Ze-ro One Two Tree Fow-er Fife Six Seven Eight Ni-ner"),
+            ("fix 8E180BE, PR #1326", "fix Eight Echo One Eight Ze-ro Bravo Echo, PR #One Tree Two Six"),
+            ("8e180b decade deadbeef abcdef0", "Eight e One Eight Ze-ro b decade deadbeef Alfa Bravo Charlie Delta Echo Foxtrot Ze-ro"),
+        ))
         self.assertEqual(phrasing.pronounced(phrasing.pronounced("8e180be 42305")), phrasing.pronounced("8e180be 42305"))
+
+    def test_times_are_four_digits_and_utc_ends_in_zulu(self):
+        self.assertSpoken((
+            ("08:15 UTC", "Ze-ro Eight One Fife Zulu"),
+            ("23:00 UTC", "Two Tree Ze-ro Ze-ro Zulu"),
+            ("08:15Z", "Ze-ro Eight One Fife Zulu"),
+            ("0815Z", "Ze-ro Eight One Fife Zulu"),
+            ("08:15 Zulu", "Ze-ro Eight One Fife Zulu"),
+            ("08:15:30 utc", "Ze-ro Eight One Fife Tree Ze-ro Zulu"),
+            ("standup at 14:30", "standup at One Fow-er Tree Ze-ro"),
+            ("restart at 9:05.", "restart at Ze-ro Ni-ner Ze-ro Fife."),
+            ("08:15 CET", "Ze-ro Eight One Fife CET"),
+            ("25:00 later", "Two Fife:Ze-ro Ze-ro later"),
+        ))
+
+    def test_dates_and_date_time_groups_speak_as_dtg_in_zulu(self):
+        dtg = "One Ze-ro One Fow-er Tree Ze-ro Zulu November Two Six"
+        self.assertSpoken((
+            ("2026-11-10T14:30Z", dtg),
+            ("2026-11-10T14:30:00+00:00", dtg),
+            ("2026-11-10T14:30:00.123456+00:00", dtg),
+            ("2026-11-10 14:30 UTC", dtg),
+            ("10 November 2026, 14:30 UTC", dtg),
+            ("2026-11-10T15:30+01:00", dtg),
+            ("2026-11-10T09:30-0500", dtg),
+            ("2026-11-10T00:30+01:00", "Ze-ro Ni-ner Two Tree Tree Ze-ro Zulu November Two Six"),
+            ("2026-01-01T00:30+01:00", "Tree One Two Tree Tree Ze-ro Zulu December Two Fife"),
+            ("2026-11-10T14:30", "One Ze-ro One Fow-er Tree Ze-ro November Two Six"),
+            ("2026-11-10 14:30 CET", "One Ze-ro One Fow-er Tree Ze-ro November Two Six CET"),
+            ("since 2026-11-10.", "since One Ze-ro November Two Six."),
+            ("10 November 2026", "One Ze-ro November Two Six"),
+            ("1st Nov 2026", "Ze-ro One November Two Six"),
+        ))
+
+    def test_a_dot_between_digits_is_decimal(self):
+        self.assertSpoken((
+            ("release v17.0.0", "release One Seven Decimal Ze-ro Decimal Ze-ro"),
+            ("load 3.5.", "load Tree Decimal Fife."),
+            ("python3.12", "python Tree Decimal One Two"),
+        ))
+
+    def test_paths_speak_as_file_or_folder_in_their_parent(self):
+        self.assertSpoken((
+            ("/home/k/Repositories/x/skills/kvb-org-radio/scripts/radio.py", "file radio dot py in scripts"),
+            ("/tmp/make-test-3.log", "file make test Tree dot log in temp"),
+            ("/etc/docker/certs.d/", "folder certs dot d in docker"),
+            ("/tmp/gui-playwright-bump", "folder gui playwright bump in temp"),
+            ("/tmp", "folder temp"),
+            ("/var/tmp/cache_dir", "folder cache dir in tmp"),
+            ("(/x.log)", "(file x dot log)"),
+            ("~/notes.md", "file notes dot md in home"),
+            ("~/a/b", "folder b in a"),
+            ("see skills/kvb-org-radio/SKILL.md.", "see file SKILL dot md in kvb org radio."),
+            ("/tmp/worktree-8e180be", "folder worktree Eight Echo One Eight Ze-ro Bravo Echo in temp"),
+            ("/tmp/report-2026-11-10.md", "file report Two Ze-ro Two Six One One One Ze-ro dot md in temp"),
+            ("and/or", "and/or"),
+            ("https://example.com/a/b.py", "https://example.com/a/b.py"),
+            ("https://github.com/infinito-nexus/core/pull/1326", "https://github.com/infinito-nexus/core/pull/One Tree Two Six"),
+        ))
+
+    def test_a_row_with_a_path_and_a_utc_time_reads_in_radio_phraseology(self):
+        text = "log /tmp/make-test-3.log since 08:15 UTC, fix 8e180be"
+        self.assertEqual(
+            phrasing.phrase("call", "Docs", ["Skills"], text),
+            "Skills, Skills, this is Docs, log file make test Tree dot log in temp since Ze-ro Eight One Fife Zulu, fix Eight Echo One Eight Ze-ro Bravo Echo, over",
+        )
+        self.assertEqual(phrasing.pronounced(phrasing.pronounced(text)), phrasing.pronounced(text))
 
     def test_a_phrase_fits_the_speech_limit_on_one_line(self):
         for cls in council.CLASSES:
