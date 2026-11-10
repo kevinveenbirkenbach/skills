@@ -303,6 +303,16 @@ from three views down to any agent, branch or artefact.
     time-agent-depth layout.
 58. **Steady 3D camera**: the 3D view fits the graph once per build; state
     refreshes keep the operator's camera.
+59. **Radio in the header** (operator 2026-11-10, replaces the toolbar button
+    of decision 52 and the Radio tab): a radio icon button at the top right,
+    next to Commands and Settings, opens the radio spot above the main area
+    of whichever tab is open. The spot holds the composer, the gear, an
+    icon-only Cancel mayday with its tooltip, who is speaking, the last five
+    sent messages and the internet radio stations. The Agents toolbar loses
+    its radio button, the Radio tab and its "Send …" button go away, and an
+    old `#stream/radio` link opens the Stream with the spot open. Rejected:
+    keeping the Radio tab, the speaker chips (every Agents view already marks
+    the speaker).
 
 ## Approach
 
@@ -741,6 +751,19 @@ flowchart TD
 - [x] Two state refreshes after a manual camera move leave the 3D camera
       where the operator put it.
 
+### Phase 6: radio in the header (S5.4)
+
+- [ ] The header shows Radio, Commands and Settings as icon buttons; Radio
+      opens the spot above the main area on Stream, Inbox, Agents, Artifacts
+      and Tasks, and closes it again.
+- [ ] No Radio tab, no "Send …" button and no radio button in the Agents
+      toolbar remain; `#stream/radio` lands on `#stream` with the spot open
+      and the message field focused.
+- [ ] Cancel mayday shows only its icon, keeps its tooltip, its confirmation
+      and its passkey signature.
+- [ ] The spot shows the speaking caption, the last five sent messages and
+      the stations with play and stop.
+
 ### Tests
 
 - **Unit**
@@ -764,6 +787,8 @@ flowchart TD
         business value signature (forged, replayed, altered), sort orders.
   - [x] S5.1: regression and velocity trend with their forecast dates, point
         tooltips, ETA in both modes, radio settings stored from the gear.
+  - [ ] S5.4: the navigation without the Radio tab, `#stream/radio`
+        redirecting to `#stream` with the spot flag.
 - **Integration**
   - [ ] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's
@@ -792,3 +817,7 @@ flowchart TD
   - [x] S5.1: radio spot (send, gear, cancel mayday), Day/Night tooltips,
         one-row Tasks toolbar, trend and point tooltips, ETA column, Tasks
         3D and a steady 3D camera, each at 1920, 1366 and 390 px.
+  - [ ] S5.4: the header radio button opens the spot on every tab, every
+        class sends from it, the icon-only Cancel mayday, the speaking
+        caption and the stations inside the spot, in Chromium and Firefox at
+        1920, 1366 and 390 px.

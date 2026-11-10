@@ -36,70 +36,71 @@
     return h("button", {type: "button", class: cls, ...named(label, hint), on: {click: () => confirmAct(action)}}, name ? icon(name) : null, label);
   }
 
-  function openSpot(spot, open) {
+  let spotDom = null;
+
+  function openSpot(open) {
     ui.spot = open;
-    spot.panel.hidden = !open;
-    spot.toggle.setAttribute("aria-expanded", String(open));
+    spotDom.panel.hidden = !open;
+    spotDom.toggle.setAttribute("aria-expanded", String(open));
     window.requestAnimationFrame(refresh3d);
     if (open) {
-      spot.text.focus();
+      spotDom.text.focus();
     }
   }
 
-  function toggleGear(spot) {
-    const open = spot.gearBox.hidden;
-    spot.gearBox.replaceChildren(...(open ? [radioSettings(() => toggleGear(spot))] : []));
-    spot.gearBox.hidden = !open;
-    spot.gear.setAttribute("aria-expanded", String(open));
+  function toggleGear() {
+    const open = spotDom.gearBox.hidden;
+    spotDom.gearBox.replaceChildren(...(open ? [radioSettings(toggleGear)] : []));
+    spotDom.gearBox.hidden = !open;
+    spotDom.gear.setAttribute("aria-expanded", String(open));
     window.requestAnimationFrame(refresh3d);
   }
 
   function radioSpot() {
     const {form, recipient, text} = composerForm();
     const gearBox = h("div", {class: "radio-gear", id: "radio-gear", hidden: true});
-    const gear = h("button", {type: "button", class: "btn small ghost icon-only spot-toggle", "aria-expanded": "false", "aria-controls": "radio-gear", ...named("Radio settings", "Radio settings: tones, squelch and read aloud")}, icon("bi-gear"));
-    const clear = actionButton("clear-mayday", "btn small danger", "bi-life-preserver");
+    const gear = iconBtn("bi-gear", "Radio settings", "btn small ghost spot-toggle", toggleGear, "Radio settings: tones, squelch and read aloud");
+    gear.setAttribute("aria-expanded", "false");
+    gear.setAttribute("aria-controls", "radio-gear");
+    const [, label, , hint] = actionOf("clear-mayday");
+    const clear = iconBtn("bi-life-preserver", label, "btn small danger", () => confirmAct("clear-mayday"), hint);
     const panel = h("section", {class: "card radio-spot", id: "radio-spot", "aria-label": "Radio", hidden: !ui.spot},
-      h("div", {class: "spot-head"}, h("h3", {class: "group-title"}, "Radio"), h("span", {class: "spacer"}), gear, clear), h("div", {class: "spot-body"}, form, gearBox));
-    const toggle = h("button", {type: "button", class: "btn small spot-toggle", "aria-expanded": String(ui.spot), "aria-controls": "radio-spot", ...named("Radio", "Radio: post, call or a message to all, with Record and the radio settings")}, icon("bi-broadcast-pin"), caret());
-    const spot = {panel, toggle, gear, gearBox, text};
-    toggle.addEventListener("click", () => openSpot(spot, !ui.spot));
-    gear.addEventListener("click", () => toggleGear(spot));
-    return {toggle, panel, clear, recipient};
+      h("div", {class: "spot-head"}, h("h3", {class: "group-title"}, "Radio"), h("span", {class: "spacer"}), gear, clear), h("div", {class: "spot-body"}, form, radioSide(), gearBox));
+    const toggle = document.getElementById("radio-open");
+    toggle.setAttribute("aria-expanded", String(ui.spot));
+    toggle.addEventListener("click", () => openSpot(!ui.spot));
+    document.getElementById("spot-host").replaceChildren(panel);
+    spotDom = {panel, toggle, gear, gearBox, text, clear, recipient, names: ""};
   }
 
   function openRadio() {
-    ui.spot = true;
-    go("agents", null);
-    window.setTimeout(() => {
-      const field = document.querySelector("#radio-spot textarea");
-      if (field) {
-        field.focus();
-      }
-    }, 50);
+    openSpot(true);
+  }
+
+  function drawSpot() {
+    spotDom.clear.disabled = !state.silence;
+    const names = agentNames();
+    if (JSON.stringify(names) !== spotDom.names) {
+      spotDom.names = JSON.stringify(names);
+      const chosen = spotDom.recipient.value;
+      spotDom.recipient.replaceChildren(...names.map((name) => h("option", {value: name, selected: name === chosen}, name)));
+    }
   }
 
   function agentsToolbar() {
-    const spot = radioSpot();
     const mode = h("span", {});
     const night = h("details", {class: "menu"}, h("summary", named("Day/Night"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box"}, mode,
       h("div", {class: "actions"}, ACTIONS.slice(1).map(([id]) => actionButton(id, "btn small")))));
-    const bar = h("div", {class: "toolbar", role: "toolbar", "aria-label": "Controls"}, spot.toggle, iconBtn("bi-sort-down", "Priority", "btn small", openAgentOrder, "Priority: agent order in the hierarchy"), night);
-    return {bar, spot: spot.panel, clear: spot.clear, recipient: spot.recipient, mode, names: ""};
+    const bar = h("div", {class: "toolbar", role: "toolbar", "aria-label": "Controls"}, iconBtn("bi-sort-down", "Priority", "btn small", openAgentOrder, "Priority: agent order in the hierarchy"), night);
+    return {bar, mode};
   }
 
   function drawToolbar() {
+    drawSpot();
     const toolbar = graphDom && graphDom.toolbar;
     if (!toolbar) {
       return;
     }
     const [mode, tone] = NIGHT[state.night] || [state.night, "neutral"];
-    toolbar.clear.disabled = !state.silence;
     toolbar.mode.replaceChildren(pill(mode, tone));
-    const names = agentNames();
-    if (JSON.stringify(names) !== toolbar.names) {
-      toolbar.names = JSON.stringify(names);
-      const chosen = toolbar.recipient.value;
-      toolbar.recipient.replaceChildren(...names.map((name) => h("option", {value: name, selected: name === chosen}, name)));
-    }
   }

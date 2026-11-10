@@ -33,6 +33,7 @@
   window.addEventListener("resize", refresh3d);
   window.addEventListener("resize", placePopup);
   skyPanel();
+  radioSpot();
   radio.element = radioElement();
   drawSky();
   musicButton();

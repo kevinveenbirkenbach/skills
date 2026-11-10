@@ -55,20 +55,12 @@
       : [h("li", {class: "muted"}, "No station yet: add one under ⚙ Settings → Internet radio.")]));
   }
 
-  function speakerChips() {
-    return Object.entries(people()).sort(([, a], [, b]) => a.now.localeCompare(b.now)).map(([key, entry]) => h("li", {class: "speaker", "data-key": key, title: entry.now},
-      h("span", {class: "speaker-face"}, face(key, false)), h("span", {class: "speaker-name"}, entry.now)));
-  }
-
   function drawSpeaker() {
     const now = speech.current && speech.current.who ? speech.current : null;
     for (const art of document.querySelectorAll(".avatar[data-face]")) {
       art.classList.toggle("speaking", Boolean(now && art.dataset.face === now.who));
     }
     if (radioDom) {
-      for (const chip of radioDom.speakers.querySelectorAll(".speaker")) {
-        chip.classList.toggle("speaking", Boolean(now && chip.dataset.key === now.who));
-      }
       radioDom.caption.hidden = !now;
       radioDom.caption.replaceChildren(...(now ? [
         h("span", {class: "speaker-face"}, face(now.who, false)),
@@ -95,12 +87,6 @@
     if (!radioDom) {
       return;
     }
-    const crew = JSON.stringify(people());
-    if (crew !== radioDom.crew) {
-      radioDom.crew = crew;
-      radioDom.speakers.replaceChildren(...speakerChips());
-      drawSpeaker();
-    }
     const sent = JSON.stringify(state.messages.slice(-5));
     if (sent !== radioDom.sent) {
       radioDom.sent = sent;
@@ -109,20 +95,12 @@
     drawStations();
   }
 
-  function radioScreen() {
-    const speakers = h("ul", {class: "speakers", "aria-label": "Speakers"});
+  function radioSide() {
     const caption = h("div", {class: "radio-caption", role: "status", "aria-live": "polite", hidden: true});
     const stations = h("ul", {class: "stations", "aria-label": "Stations"});
     const outbox = h("div", {});
-    const send = h("button", {type: "button", class: "btn small soft", ...named("Send …", "Send: the radio spot under the Agents toolbar"), on: {click: openRadio}}, icon("bi-broadcast-pin"), "Send …");
-    radioDom = {speakers, caption, stations, outbox, crew: "", sent: "", stationsSig: ""};
-    return h("div", {class: "stack radio-view"},
-      h("h2", {class: "title"}, "Radio"),
-      h("div", {class: "radio-grid"},
-        h("section", {class: "card radio-talk", "aria-label": "Radio"}, h("div", {class: "card-head"}, h("h3", {class: "group-title"}, "Radio"), send), caption, speakers),
-        h("div", {class: "stack"},
-          h("section", {class: "card", "aria-label": "Internet radio"},
-            h("div", {class: "card-head"}, h("h3", {class: "group-title"}, "Internet radio"), btn("Edit stations", "btn small ghost", settingsSheet)),
-            stations),
-          h("section", {class: "card", "aria-label": "Recently sent"}, h("h3", {class: "group-title"}, "Recently sent"), outbox))));
+    radioDom = {caption, stations, outbox, sent: "", stationsSig: ""};
+    return h("div", {class: "radio-side"}, caption,
+      h("section", {"aria-label": "Recently sent"}, h("h3", {class: "group-title"}, "Recently sent"), outbox),
+      h("section", {"aria-label": "Internet radio"}, h("div", {class: "card-head"}, h("h3", {class: "group-title"}, "Internet radio"), btn("Edit stations", "btn small ghost", settingsSheet)), stations));
   }

@@ -35,8 +35,8 @@ OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
 TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn", "3d")
-SCREENS = ["stream", "stream/inbox", "stream/rules", "stream/radio", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
-SUBS = ["Inbox", "Firewall", "Radio"]
+SCREENS = ["stream", "stream/inbox", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
+SUBS = ["Inbox", "Firewall"]
 TABS = ["Stream", "Agents", "Artifacts", "Tasks"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -100,7 +100,7 @@ PROBE = """(async () => {@HELPERS@
       const box = document.getElementById("radio-spot");
       return box ? {hidden: box.hidden, channels: [...box.querySelector("form.composer select").options].map((option) => option.value)} : null;
     })(),
-    composers: all("#main form.composer").map((form) => (form.closest("#radio-spot") ? "spot" : "other")),
+    composers: all("form.composer").map((form) => (form.closest("#radio-spot") ? "spot" : "other")),
     inbox: all("#main .inbox-list > li").length,
     icons: icons.length,
     unlabelled: icons.map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160)),
@@ -475,7 +475,7 @@ RADIO_STATE = """(async () => {@HELPERS@@MEDIA@
 })()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
 RADIO_VIEW = """(async () => {@HELPERS@@MEDIA@
   location.hash = "#stream/radio";
-  const row = await until(() => document.querySelector('#main [data-station="0"]'), 8000);
+  const row = await until(() => all('#radio-spot [data-station="0"]').find((item) => item.getClientRects().length), 8000);
   if (!row) {
     const initial = JSON.parse(document.getElementById("state").textContent);
     return {error: "no station row", log: log(), wrapped: !String(HTMLMediaElement.prototype.play).includes("[native code]"), streams: initial.settings.streams, media: initial.media, now: new Date().toString()};
@@ -493,7 +493,7 @@ RADIO_VIEW = """(async () => {@HELPERS@@MEDIA@
   };
 })()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
 RADIO_CLICK = """(async () => {@HELPERS@@MEDIA@
-  const row = document.querySelector('#main [data-station="0"]');
+  const row = document.querySelector('#radio-spot [data-station="0"]');
   if (!row) {
     return {error: "no station row", log: log(), media: await advancing()};
   }
@@ -504,27 +504,26 @@ RADIO_CLICK = """(async () => {@HELPERS@@MEDIA@
   }
   await until(() => sample() && !sample().paused, 6000);
   const media = await advancing();
-  const now = document.querySelector('#main [data-station="0"]');
+  const now = document.querySelector('#radio-spot [data-station="0"]');
   return {clicked, state: now.dataset.state, note: text(now.querySelector(".station-note")), media, log: log()};
 })()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
 SPEAKING = """
   const caption = () => {
-    const node = document.querySelector("#main .radio-caption");
+    const node = document.querySelector("#radio-spot:not([hidden]) .radio-caption");
     return node && !node.hidden ? node : null;
   };
-  const ring = (chip) => (chip ? getComputedStyle(chip.querySelector(".speaker-face"), "::after").animationName : null);
+  const ring = (box) => getComputedStyle(box.querySelector(".speaker-face"), "::after").animationName;
   const mouth = (art) => (art ? [art.classList.contains("speaking"), getComputedStyle(art.querySelector(".mouth")).animationName] : null);
   const faces = () => ({
-    speaking: mouth(document.querySelector('#main .speakers .avatar[data-face="s2"]')),
-    silent: mouth(document.querySelector('#main .speakers .avatar[data-face="s1"]')),
-    keys: [...new Set(all("#main .avatar.speaking").map((art) => art.dataset.face))],
+    speaking: mouth(document.querySelector('#radio-spot .radio-caption .avatar[data-face="s2"]')),
+    silent: mouth(document.querySelector('.avatar[data-face]:not([data-face="s2"])')),
+    keys: [...new Set(all(".avatar.speaking").map((art) => art.dataset.face))],
   });
   const cue = async (word) => {
-    await until(() => document.querySelector("#main .speakers .speaker"), 8000);
+    await until(() => document.querySelector("#radio-spot:not([hidden])"), 8000);
     await fetch("/api/tts", {method: "POST", headers: {"X-Kvb-Orchestrator": "1", "Content-Type": "application/json"}, body: JSON.stringify({text: word, voice: ""}), cache: "no-store"});
     const found = await until(caption, 25000);
-    const chip = document.querySelector("#main .speaker.speaking");
-    return found ? {who: text(found.querySelector("strong")), line: text(found.querySelector(".caption-line")), chip: chip ? chip.dataset.key : null, ring: ring(chip), faces: faces()} : {error: "no caption", toasts: all("#toasts .toast").map(text)};
+    return found ? {who: text(found.querySelector("strong")), line: text(found.querySelector(".caption-line")), chip: found.querySelector(".avatar").dataset.face, ring: ring(found), faces: faces()} : {error: "no caption", toasts: all("#toasts .toast").map(text)};
   };
 """
 SPEAK = """(async () => {@HELPERS@@SPEAKING@
@@ -542,12 +541,12 @@ SPEAK_GRAPH = """(async () => {@HELPERS@@SPEAKING@
 SPEAK_END = """(async () => {@HELPERS@@SPEAKING@
   const ended = Boolean(await until(() => !document.querySelector("#main svg .node") || !document.querySelector("#main svg .node.speaking"), 20000));
   location.hash = "#stream/radio";
-  await until(() => document.querySelector("#main .radio-caption"), 6000);
+  await until(() => document.querySelector("#radio-spot:not([hidden]) .radio-caption"), 6000);
   await sleep(300);
-  return {ended, caption: Boolean(caption()), chips: all("#main .speaker.speaking").length, faces: all("#main .avatar.speaking").length};
+  return {ended, caption: Boolean(caption()), faces: all(".avatar.speaking").length};
 })()""".replace("@HELPERS@", HELPERS).replace("@SPEAKING@", SPEAKING)
 SPOT_OPEN = """
-  const spotToggle = await until(() => all('#main [role="toolbar"] button').find((node) => name(node) === "Radio"), 8000);
+  const spotToggle = document.getElementById("radio-open");
   if (spotToggle && spotToggle.getAttribute("aria-expanded") !== "true") {
     spotToggle.click();
     await sleep(300);
@@ -588,7 +587,7 @@ COMPOSE = """(async () => {@HELPERS@@SPOT_OPEN@
   };
 })()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN).replace("@CLASHES@", OVERLAP)
 COMPOSE_SEND = """(async () => {@HELPERS@
-  const form = document.querySelector("#main form.composer");
+  const form = document.querySelector("#radio-spot form.composer");
   const field = form.querySelector("textarea");
   field.value = `${field.value} please`;
   field.dispatchEvent(new Event("input", {bubbles: true}));
@@ -627,7 +626,7 @@ CLEAR_MAYDAY = """(async () => {@HELPERS@
   accept = true;
   button.click();
   const done = await until(() => fresh().find((toast) => toast.startsWith("Cancel mayday")), 15000);
-  return {toolbar, title: button.title, declined, accepted: {question: questions.slice(declined.question.length), posted: posted.slice(declined.posted.length)}, done};
+  return {toolbar, title: button.title, shown: text(button), declined, accepted: {question: questions.slice(declined.question.length), posted: posted.slice(declined.posted.length)}, done};
 })()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN)
 NIGHT_MENU = """(async () => {@HELPERS@
   const questions = [];
@@ -690,11 +689,9 @@ SPOT_SEND = """(async () => {@HELPERS@
     questions.push(question);
     return true;
   };
-  const toggle = await until(() => all('#main [role="toolbar"] button').find((node) => name(node) === "Radio"), 8000);
-  if (!toggle) {
-    return {error: text(document.getElementById("main"))};
-  }
-  const bar = document.querySelector('#main [role="toolbar"]');
+  await until(() => document.querySelector('#main [role="toolbar"]'), 8000);
+  const toggle = document.getElementById("radio-open");
+  const main = document.getElementById("main");
   const spot = document.getElementById("radio-spot");
   const closed = [spot.hidden, toggle.getAttribute("aria-expanded")];
   toggle.click();
@@ -705,7 +702,7 @@ SPOT_SEND = """(async () => {@HELPERS@
   const found = {
     closed,
     open: [spot.hidden, toggle.getAttribute("aria-expanded"), document.activeElement === field],
-    inline: [getComputedStyle(spot).position, spot.getBoundingClientRect().top >= bar.getBoundingClientRect().bottom, spot.previousElementSibling === bar],
+    inline: [getComputedStyle(spot).position, spot.getBoundingClientRect().bottom <= main.getBoundingClientRect().top, spot.parentElement.nextElementSibling === main],
     toolbar: all('#main [role="toolbar"] > *').map((node) => name(node.tagName === "DETAILS" ? node.querySelector("summary") : node)),
     channels: all("option", channel).map((option) => option.value),
     record: all("button", form).filter((button) => button.hasAttribute("aria-pressed")).map(text),
@@ -733,15 +730,26 @@ SPOT_SEND = """(async () => {@HELPERS@
   return found;
 })()""".replace("@HELPERS@", HELPERS).replace("@FITS@", FITS)
 RADIO_JUMP = """(async () => {@HELPERS@
-  const jump = await until(() => all("#main .radio-view button").find((button) => name(button) === "Send …"), 8000);
-  if (!jump) {
+  const spot = await until(() => location.hash === "#stream" && document.querySelector("#radio-spot:not([hidden])"), 8000);
+  if (!spot) {
     return {error: text(document.getElementById("main"))};
   }
-  const composers = all("#main form.composer").length;
-  jump.click();
-  const spot = await until(() => location.hash.startsWith("#agents/") && document.querySelector("#radio-spot:not([hidden])"), 4000);
   await sleep(200);
-  return {composers, hash: location.hash, open: Boolean(spot), focused: Boolean(spot) && document.activeElement === spot.querySelector("textarea")};
+  const focused = document.activeElement === spot.querySelector("textarea");
+  const tabs = [];
+  for (const hash of ["#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list"]) {
+    location.hash = hash;
+    await sleep(500);
+    const main = document.getElementById("main");
+    tabs.push([hash, !spot.hidden, spot.getBoundingClientRect().bottom <= main.getBoundingClientRect().top]);
+  }
+  const toggle = document.getElementById("radio-open");
+  toggle.click();
+  await sleep(200);
+  return {
+    hash: "#stream", focused, tabs, closed: [spot.hidden, toggle.getAttribute("aria-expanded")],
+    header: all("header.top button").map((button) => [button.id, name(button), text(button)]), radioTab: Boolean(document.getElementById("tab-radio")),
+  };
 })()""".replace("@HELPERS@", HELPERS)
 GEAR_SAVE = """(async () => {@HELPERS@@CLASHES@
   const spot = document.getElementById("radio-spot");
@@ -1610,9 +1618,9 @@ class TestOrchestratorE2E(HubCase):
             with self.subTest(url=step["url"], width=step["width"]):
                 self.assertNotIn("error", probe)
                 self.assertEqual((probe["title"], probe["h1"]), ("(2) Agent Orchestrator", "Agent Orchestrator"))
-                self.assertEqual(probe["header"], ["palette-open", "settings-open"])
+                self.assertEqual(probe["header"], ["radio-open", "palette-open", "settings-open"])
                 self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
-                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-inbox": "2", "tab-rules": None, "tab-radio": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": None})
+                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-inbox": "2", "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": None})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")
                 self.assertFalse(probe["rail"])
                 self.assertEqual((probe["time"], probe["replay"]), ("24 h ▾", True))
@@ -1620,7 +1628,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual(labelled(probe), {"unlabelled": [], "broken": []})
                 self.assertFalse(probe["wide"], "the page scrolls sideways")
                 self.assertEqual((probe["panel"], probe["nodeChips"]), (0, 0))
-                self.assertEqual(probe["composers"], ["spot"] if probe["hash"].startswith("#agents/") else [])
+                self.assertEqual(probe["composers"], ["spot"])
         self.assertEqual([probe["tall"] for probe in probes if probe["hash"] == "#agents/orbit"], [False] * len(WIDTHS))
         by_hash = {probe["hash"]: probe for probe in probes}
         stream = by_hash["#stream"]
@@ -1634,7 +1642,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertTrue(by_hash[f"#{tab}/3d"]["canvas"], by_hash[f"#{tab}/3d"]["note"])
                 self.assertRegex(by_hash[f"#{tab}/3d"]["note"], r"^\d+ nodes · \d+ edges · Force$")
         agents = by_hash["#agents/orbit"]
-        self.assertEqual(agents["toolbar"], ["Radio", "Priority", "Day/Night"])
+        self.assertEqual(agents["toolbar"], ["Priority", "Day/Night"])
         self.assertEqual(agents["spot"], {"hidden": True, "channels": CHOICE_CHANNELS})
         hierarchy = by_hash["#agents/hierarchy"]
         self.assertEqual([office for office, _ in hierarchy["org"]], ["chair", "identity/oidc", "work/s1", "work/s2"])
@@ -1722,7 +1730,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(data["errors"], [])
         speaking, graph, ended, calm = data["results"]
         self.talks(speaking, graph)
-        self.assertEqual(ended, {"ended": True, "caption": False, "chips": 0, "faces": 0})
+        self.assertEqual(ended, {"ended": True, "caption": False, "faces": 0})
         self.assertEqual((calm["who"], calm["line"], calm["ring"]), ("Stage speaking", "Disk almost full (e2e-cue-2)", "none"), calm)
         self.assertEqual(calm["faces"]["speaking"], [True, "none"], calm)
 
@@ -1791,8 +1799,8 @@ class TestOrchestratorE2E(HubCase):
         for result, (width, _) in zip(data["results"], WIDTHS, strict=True):
             with self.subTest(width=width):
                 self.assertNotIn("error", result)
-                self.assertEqual(result["toolbar"], ["Radio", "Priority", "Day/Night", "Drain", "Suspend", "Resume"])
-                self.assertEqual(result["title"], "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it")
+                self.assertEqual(result["toolbar"], ["Priority", "Day/Night", "Drain", "Suspend", "Resume"])
+                self.assertEqual((result["title"], result["shown"]), ("Cancel mayday: lift the radio silence so the agents write again; your passkey signs it", ""))
                 self.assertEqual(result["declined"], {"question": [question], "posted": [], "toasts": []})
                 self.assertEqual(result["accepted"], {"question": [question], "posted": ["/api/board/sign", "/api/board/clear-mayday"]})
                 self.assertTrue((result["done"] or "").startswith("Cancel mayday: done"), result)
@@ -1801,7 +1809,7 @@ class TestOrchestratorE2E(HubCase):
     def test_chromium_sends_every_class_from_the_radio_spot_and_keeps_its_gear_settings_through_a_reload_at_three_widths(self):
         local = f"http://localhost:{self.port}/"
         values = {1920: ("0.35", "false", "true"), 1366: ("0.45", "true", "false"), 390: ("0.55", "false", "true")}
-        steps = [{"width": 1366, "height": 768, "url": f"{local}#stream/radio", "wait": 1200, "probe": RADIO_JUMP, "shot": self.shot("1366-radio-tab-jump-to-spot")}]
+        steps = [{"width": 1366, "height": 768, "url": f"{local}#stream/radio", "wait": 1200, "probe": RADIO_JUMP, "shot": self.shot("1366-radio-header-spot-every-tab")}]
         for width, height in WIDTHS:
             squelch, tone, post = values[width]
             gear = GEAR_SAVE.replace("@SQUELCH@", squelch).replace("@TONE@", tone).replace("@POST@", post)
@@ -1816,7 +1824,10 @@ class TestOrchestratorE2E(HubCase):
         labels = dict(zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True))
         mayday = "Send a mayday to all? All agents pause writing steps until you cancel it."
         jump, *walked = data["results"]
-        self.assertEqual(jump, {"composers": 0, "hash": "#agents/orbit", "open": True, "focused": True})
+        self.assertEqual(jump, {
+            "hash": "#stream", "focused": True, "tabs": [[tab, True, True] for tab in ("#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list")], "closed": [True, "false"],
+            "header": [["radio-open", "Radio", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
+        })
         for index, (width, _) in enumerate(WIDTHS):
             sent, saved, read = walked[3 * index : 3 * (index + 1)]
             squelch, tone, post = values[width]
@@ -1825,7 +1836,7 @@ class TestOrchestratorE2E(HubCase):
                     self.assertNotIn("error", probe)
                 self.assertEqual((sent["closed"], sent["open"]), ([True, "false"], [False, "true", True]))
                 self.assertEqual(sent["inline"], ["static", True, True])
-                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Radio", "Priority", "Day/Night"], CHOICE_CHANNELS, ["Record"]))
+                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night"], CHOICE_CHANNELS, ["Record"]))
                 self.assertEqual(sent["heads"], [["Radio settings", "Radio settings: tones, squelch and read aloud"], ["Cancel mayday", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"]])
                 self.assertEqual((sent["tall"], sent["wide"]), (False, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)

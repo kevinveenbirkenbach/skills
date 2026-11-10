@@ -3,15 +3,8 @@
 .rule-form .field, .settings .grid .field { width: 100%; min-width: 0; }
 .rule-form [hidden] { display: none; }
 .rule-form > label.check { display: inline-flex; min-height: 34px; }
-.radio-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
-@media (max-width: 960px) { .radio-grid { grid-template-columns: minmax(0, 1fr); } }
-.radio-talk { display: grid; gap: var(--sp-3); }
-.speakers { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
-.speaker { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 3px 10px 3px 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-size: var(--fs-sm); }
-.speaker.speaking { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
-.speaker-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .speaker-face { position: relative; display: inline-grid; flex: none; border-radius: 50%; }
-.speaker.speaking .speaker-face::after, .radio-caption .speaker-face::after { content: ""; position: absolute; inset: -4px; border: 2px solid var(--ok); border-radius: 50%; pointer-events: none; animation: speaking 1.3s var(--ease) infinite; }
+.radio-caption .speaker-face::after { content: ""; position: absolute; inset: -4px; border: 2px solid var(--ok); border-radius: 50%; pointer-events: none; animation: speaking 1.3s var(--ease) infinite; }
 @keyframes speaking { from { opacity: .95; transform: scale(1); } to { opacity: 0; transform: scale(1.6); } }
 .radio-caption { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2) var(--sp-3); border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: var(--radius-sm); background: var(--ok-soft); }
 .radio-caption[hidden] { display: none; }
@@ -23,7 +16,7 @@ svg .node.speaking circle { stroke: var(--ok); stroke-width: 4; animation: speak
 .speaking .face-art .mouth { animation: talk .3s ease-in-out infinite alternate; }
 @keyframes talk { to { transform: scale(1.15, 2.2); } }
 @media (prefers-reduced-motion: reduce) {
-  .speaker.speaking .speaker-face::after, .radio-caption .speaker-face::after, svg .node.speaking circle, .speaking .face-art .mouth { animation: none; }
+  .radio-caption .speaker-face::after, svg .node.speaking circle, .speaking .face-art .mouth { animation: none; }
 }
 .stations { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .station { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-2); min-width: 0; padding: 3px 3px 3px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--sunken); }
@@ -38,9 +31,11 @@ svg .node.speaking circle { stroke: var(--ok); stroke-width: 4; animation: speak
   .station-when { display: none; }
 }
 .spot-toggle[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
-.radio-spot { display: grid; gap: var(--sp-3); max-height: 46vh; overflow: auto; }
+.radio-spot { display: grid; gap: var(--sp-3); max-height: 46vh; margin-bottom: var(--sp-4); overflow: auto; }
 .radio-spot[hidden], .radio-gear[hidden] { display: none; }
+body.fit .spot-host { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; }
 body.fit .radio-spot { flex: 0 1 auto; min-height: 0; }
+.radio-side { display: grid; gap: var(--sp-3); align-content: start; min-width: 0; }
 .spot-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .spot-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: var(--sp-4); align-items: start; }
 .radio-gear { min-width: 0; }

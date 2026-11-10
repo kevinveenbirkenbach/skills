@@ -21,8 +21,8 @@ console.log(JSON.stringify({
   tasks: N.viewsOf("tasks").map(([id, label]) => [id, label]),
   icon: N.ICONS.hierarchy,
   routes: hashes.map((hash) => N.route(hash)),
-  hashes: [["stream", null], ["inbox", null], ["rules", null], ["radio", null], ["agents", "chord"], ["artifacts", "3d"], ["tasks", "board"]].map(([screen, view]) => N.hashOf(screen, view)),
-  tabOf: ["stream", "inbox", "rules", "radio", "agents", "artifacts", "tasks"].map((screen) => N.tabOf(screen)),
+  hashes: [["stream", null], ["inbox", null], ["rules", null], ["agents", "chord"], ["artifacts", "3d"], ["tasks", "board"]].map(([screen, view]) => N.hashOf(screen, view)),
+  tabOf: ["stream", "inbox", "rules", "agents", "artifacts", "tasks"].map((screen) => N.tabOf(screen)),
 }));
 """
 
@@ -33,8 +33,8 @@ class TestNavModule(unittest.TestCase):
         done = subprocess.run(["node", "-e", NAV_PROBE, str(NAV)], capture_output=True, text=True, timeout=60, check=True)
         cls.data = json.loads(done.stdout)
 
-    def test_the_navigation_has_four_entries_and_stream_has_inbox_rules_and_radio(self):
-        stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Firewall"], ["radio", "Radio"]]]
+    def test_the_navigation_has_four_entries_and_stream_has_inbox_and_rules(self):
+        stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Firewall"]]]
         self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []]])
 
     def test_agents_and_artifacts_offer_five_views_in_order_and_tasks_six(self):
@@ -71,7 +71,7 @@ class TestNavModule(unittest.TestCase):
             {"screen": "artifacts", "view": None, "redirect": None},
             {"screen": "agents", "view": "hierarchy", "redirect": "#agents/hierarchy"},
             {"screen": "artifacts", "view": "tree", "redirect": "#artifacts/tree"},
-            {"screen": "radio", "view": None, "redirect": None},
+            {"screen": "stream", "view": None, "redirect": "#stream", "spot": True},
             stream,
             {"screen": "tasks", "view": None, "redirect": None},
             {"screen": "tasks", "view": "board", "redirect": None},
@@ -86,8 +86,8 @@ class TestNavModule(unittest.TestCase):
         ])
 
     def test_every_screen_has_its_own_hash_and_tab(self):
-        self.assertEqual(self.data["hashes"], ["#stream", "#stream/inbox", "#stream/rules", "#stream/radio", "#agents/chord", "#artifacts/3d", "#tasks/board"])
-        self.assertEqual(self.data["tabOf"], ["stream", "stream", "stream", "stream", "agents", "artifacts", "tasks"])
+        self.assertEqual(self.data["hashes"], ["#stream", "#stream/inbox", "#stream/rules", "#agents/chord", "#artifacts/3d", "#tasks/board"])
+        self.assertEqual(self.data["tabOf"], ["stream", "stream", "stream", "agents", "artifacts", "tasks"])
 
 
 if __name__ == "__main__":

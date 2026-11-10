@@ -12,12 +12,12 @@ from kvb_orchestrator import council, events, settings, skill_scripts, view
 
 
 class TestHubSurface(HubCase):
-    def test_the_header_holds_only_the_title_the_palette_and_the_settings(self):
+    def test_the_header_holds_only_the_title_the_radio_the_palette_and_the_settings(self):
         html = self.index()
         self.assertIn("<title>Agent Orchestrator</title>", html)
         header = re.search(r'<header class="top">(.*?)</header>', html, re.DOTALL).group(1)
         self.assertIn("<h1>Agent Orchestrator</h1>", header)
-        self.assertEqual(re.findall(r'<button[^>]*id="([^"]+)"', header), ["palette-open", "settings-open"])
+        self.assertEqual(re.findall(r'<button[^>]*id="([^"]+)"', header), ["radio-open", "palette-open", "settings-open"])
         self.assertEqual(re.findall(r"<(?:nav|select|input|textarea)\b", header), [])
         for gone in ('id="rail"', 'id="inbox-bar"', 'id="status"', 'id="board-open"', 'id="rules-open"', 'id="timebar"'):
             with self.subTest(gone=gone):

@@ -29,6 +29,9 @@
     if (route.redirect) {
       window.history.replaceState(null, "", route.redirect);
     }
+    if (route.spot) {
+      openSpot(true);
+    }
     ui.screen = route.screen;
     if (route.view) {
       ui.views[route.screen] = route.view;
@@ -48,7 +51,7 @@
   }
 
   function screenOf() {
-    return {stream: streamScreen, inbox: tasksScreen, rules: rulesScreen, radio: radioScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen}[ui.screen]();
+    return {stream: streamScreen, inbox: tasksScreen, rules: rulesScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen}[ui.screen]();
   }
 
   function render(force) {
@@ -60,7 +63,6 @@
       graphDom = null;
       stream.dom = null;
       tree.dom = null;
-      radioDom = null;
       inboxDom = null;
       inboxSig = "";
       taskView.dom = null;

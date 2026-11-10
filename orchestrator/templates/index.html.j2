@@ -420,6 +420,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <header class="top">
   <div class="brand"><span class="logo" aria-hidden="true"></span><div class="brand-text"><h1>Agent Orchestrator</h1><span class="sky-note" id="sky-note"></span></div></div>
   <div class="tools">
+    <button type="button" class="btn small ghost icon-only spot-toggle" id="radio-open" title="Radio: post, call or a message to all, with Record, the radio settings and the stations" aria-label="Radio" aria-controls="radio-spot" aria-expanded="false"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-broadcast-pin"></use></svg></button>
     <button type="button" class="btn small ghost icon-only" id="palette-open" title="Commands (Ctrl+K)" aria-label="Commands"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-command"></use></svg></button>
     <button type="button" class="btn small ghost icon-only" id="settings-open" title="Settings and ambience" aria-label="Settings"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-gear"></use></svg></button>
   </div>
@@ -433,6 +434,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <div class="banner" id="mayday" role="alert" hidden></div>
 </div>
 <div class="shell">
+<div class="spot-host" id="spot-host"></div>
 <main id="main"></main>
 </div>
 <dialog class="popup fade" id="popup" aria-label="Details"><svg class="leader" aria-hidden="true"><line></line></svg><div class="popup-box"></div></dialog>
