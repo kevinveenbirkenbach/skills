@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `release`, `check`, `org`, `agent`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `release` announces a release (changelog, article, posts), `check` analyses and reports findings, `org` coordinates agents, `agent` acts on one agent itself: its repository setup (code index, agent instructions) and its state (drain, suspend, resume), `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `release`, `check`, `org`, `agent`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `release` announces a release (changelog, article, posts), `check` analyses and reports findings, `org` coordinates agents, `agent` acts on one agent itself: its repository setup (code index, agent instructions) and its state (drain, suspend, resume), `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help` and the collectors `kvb-dream`, `kvb-optimize`, `kvb-release` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -58,6 +58,8 @@ flowchart LR
   git --> git_branch_gc[kvb-git-branch-gc]
   git --> git_orphans_find[kvb-git-orphans-find]
   release --> release_changelog[kvb-release-changelog]
+  release --> release_article[kvb-release-article]
+  release --> release_post[kvb-release-post]
   git --> git_hotfix[kvb-git-hotfix]
   git --> git_push[kvb-git-push]
   git --> git_diff[kvb-git-diff]
@@ -106,6 +108,7 @@ flowchart LR
   none --> transcend_all[kvb-transcend]
   none --> dream_all[kvb-dream]
   none --> optimize_all[kvb-optimize]
+  none --> release_all[kvb-release]
   none --> coach_all[kvb-coach]
   coach --> coach_meditation[kvb-coach-meditation]
 ```
@@ -162,10 +165,14 @@ flowchart LR
     update_branches[kvb-git-update-branches]
     branch_gc[kvb-git-branch-gc]
     orphans_find[kvb-git-orphans-find]
-    changelog[kvb-release-changelog]
     hotfix[kvb-git-hotfix]
     git_push[kvb-git-push]
     git_diff[kvb-git-diff]
+  end
+  subgraph cat_release [release]
+    changelog[kvb-release-changelog]
+    release_article[kvb-release-article]
+    release_post[kvb-release-post]
   end
   subgraph cat_check [check]
     advocate[kvb-check-legal]
@@ -220,6 +227,7 @@ flowchart LR
     transcend[kvb-transcend]
     dream[kvb-dream]
     optimize[kvb-optimize]
+    release_all[kvb-release]
     coach[kvb-coach]
   end
   subgraph cat_coach [coach]
@@ -364,6 +372,17 @@ flowchart LR
   autotune --> essence
   transcend --> skill_transcend
   transcend --> code_transcend
+  release_all --> changelog
+  release_all --> release_article
+  release_all --> release_post
+  release_all --> active_listening
+  release_all --> brainstorm
+  release_article --> active_listening
+  release_article --> brainstorm
+  release_post --> active_listening
+  release_post --> brainstorm
+  changelog --> active_listening
+  changelog --> brainstorm
   skill_transcend --> active_listening
   skill_transcend --> autotune
   code_transcend --> active_listening
