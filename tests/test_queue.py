@@ -308,7 +308,17 @@ class TestHistory(unittest.TestCase):
         crowded = [history_row(n, mem_before=90, mem_max=95) for n in range(5)]
         self.assertEqual(self.learn(crowded)[1]["test"]["limit"], 1)
 
-    def test_footprint_takes_the_larger_of_kind_and_signature_at_least_the_minimum_and_none_for_a_new_kind(self):
+    def test_a_light_command_of_a_heavy_kind_and_an_unlearned_one_are_not_booked_at_the_heaviest_share(self):
+        signatures = {
+            "skills: make test": {"ram_share": 3.3, "cpu_share": 4, "kinds": {"test"}},
+            "gate.py hold": {"ram_share": 42.6, "cpu_share": 93.5, "kinds": {"test", "test-nostack"}},
+        }
+        kinds = {"test": {"ram_share": 35.2, "cpu_share": 83.6}, "test-nostack": {"ram_share": 5.6, "cpu_share": 73.8}}
+        footprint = self.history.footprint
+        self.assertEqual(footprint("test", "skills: make test", signatures, kinds), {"ram": 3.3, "cpu": 4})
+        self.assertEqual(footprint("test-nostack", "core: docker build", signatures, kinds), {"ram": 5.6, "cpu": 73.8})
+
+    def test_footprint_takes_the_learned_signature_else_the_kind_at_least_the_minimum_and_none_for_a_new_kind(self):
         small = [history_row(n, signature="make test", mem_max=25, cpu_max=20) for n in range(5)]
         big = [
             history_row(n + 5, kind="quality-high", signature="make verify-test", mem_max=80, cpu_max=90)

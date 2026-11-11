@@ -58,8 +58,7 @@ From the last 30 days, once 5 runs exist:
 - per signature, the disk need is p90 disk taken plus 1 GB;
 - per kind, the slot limit is how many p90 RAM and CPU shares fit between the
   median load at the grant and `load_limits`, at least 1;
-- per job, the footprint is the larger p90 share of its kind and of its
-  signature, else the largest of its kind.
+- per job, the footprint is its signature's p90 share, else its kind's.
 
 Until then the seeds hold: `slot_need_gb[kind]` for disk, 1 slot per kind,
 the whole budget as footprint: it runs alone.
