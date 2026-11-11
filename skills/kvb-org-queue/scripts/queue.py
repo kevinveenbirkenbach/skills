@@ -46,7 +46,8 @@ Args:
     list: a header, then one line per entry: position (run for active jobs),
         id, status, kind, task, need GB, minutes waited, ETA minutes (until a
         running job ends or a waiting one starts, from learned medians; - while
-        one is unknown), workdir, blocking reason. Entries of dead holders are
+        one is unknown), workdir, blocking reason (the one the holder saw at
+        its last poll, host load included). Entries of dead holders are
         dropped first.
     history: a markdown table per command signature and one per kind of what
         the last 30 days of history teach, with each slot limit's source.
@@ -347,7 +348,8 @@ def over_budget(used: dict[str, float], share: dict[str, float], budget: dict[st
 
 def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memory: str, silenced: bool,
              slot_limits: dict[str, int], footprints: dict[str, dict[str, float]], budget: dict[str, float],
-             ranks: dict[str, int], agents: dict[str, int], now: float) -> dict[str, str | None]:
+             ranks: dict[str, int], agents: dict[str, int], loaded: dict[str, str],
+             now: float) -> dict[str, str | None]:
     """Decide every waiting entry in grant order, without disk or processes.
 
     Args:
@@ -367,6 +369,8 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       agents: {agent name: index in the operator's agent order}; it breaks
         ties of equal rank only, an entry whose holder is missing there after
         all of them.
+      loaded: {entry id: why live CPU or RAM holds it back (load_reason())}
+        for the waiting entries the host load keeps out.
       now: epoch seconds; each whole hour waited moves an entry one rank up.
 
     Returns:
@@ -374,8 +378,10 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       An unblocked entry counts as granted for the entries after it, whoever
       holds it, so a lower entry never takes a higher entry's slot; one
       blocked by disk or budget reserves its need against the entries after it.
-      A waiting entry whose holder has not polled for CLAIM_SECONDS reserves
-      nothing and comes last.
+      A hotfix entry that passes every check but the host load holds back
+      every entry after it, so lighter jobs cannot keep the load up. A waiting
+      entry whose holder has not polled for CLAIM_SECONDS reserves nothing and
+      comes last.
     """
     active = [e for e in entries if e["status"] == "active"]
     available = free_gb - sum(e["need_gb"] for e in active)
@@ -385,12 +391,18 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
     busy = {e["workdir"] for e in active}
     verdicts: dict[str, str | None] = {}
     waiting = [e for e in entries if e["status"] == "waiting"]
+    held = None
     for entry in ordered([e for e in waiting if not silent(e, now)], ranks, agents, now):
+        if held is not None:
+            verdicts[entry["id"]] = f"waits behind hotfix {held}, which the host load holds back"
+            continue
         kind, need, workdir, share = entry["kind"], entry["need_gb"], entry["workdir"], footprints[entry["id"]]
         reason = host_reason(stage, memory, silenced, need) or slot_reason(kind, workdir, slot_limits, counts, busy)
         if reason is None:
             reason, used, available = resources(need, share, used, available, floor, budget, taken)
-            if reason is None:
+            if reason is None and entry["hotfix"] and entry["id"] in loaded:
+                reason, held = loaded[entry["id"]], entry["id"]
+            elif reason is None:
                 taken += 1
                 counts[kind] += 1
                 busy.add(workdir)
@@ -475,8 +487,19 @@ def footprint(entry: dict, signatures: dict[str, dict], kinds: dict[str, dict]) 
     return history.footprint(entry["kind"], signature_of(entry), signatures, kinds)
 
 
+def held_back(cfg: dict, entries: list[dict], now: float, signatures: dict[str, dict], kinds: dict[str, dict],
+              cpu: float, mem: float) -> dict[str, str]:
+    loaded = {}
+    for entry in entries:
+        if entry["status"] == "waiting":
+            pending = pending_ram(entries, entry["id"], now, signatures, kinds)
+            if (reason := load_reason(cfg["load_limits"], cpu, mem, pending)) is not None:
+                loaded[entry["id"]] = reason
+    return loaded
+
+
 def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, signatures: dict[str, dict],
-           kinds: dict[str, dict]) -> dict[str, str | None]:
+           kinds: dict[str, dict], loaded: dict[str, str]) -> dict[str, str | None]:
     slots = {kind: limit for kind, (limit, _) in limits(cfg, kinds, entries).items()}
     budget = cfg["budget_percent"]
     footprints = {}
@@ -486,7 +509,7 @@ def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, signature
     return evaluate(
         entries, free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now),
         watch.memory_stage(watch.memory(), cfg), silenced(now), slots, footprints, budget,
-        register_ranks(), agent_ranks(), now,
+        register_ranks(), agent_ranks(), loaded, now,
     )
 
 
@@ -591,9 +614,10 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
                 print(f"queue: {entry_id} was cancelled", file=sys.stderr)
                 return CANCELLED, 0
             rejoin(data, mine[0], now)
-            verdicts = decide(cfg, data["entries"], free, now, signatures, kinds)
-            pending = pending_ram(data["entries"], entry_id, now, signatures, kinds)
-            reason = verdicts[entry_id] or load_reason(cfg["load_limits"], cpu, mem, pending)
+            loaded = held_back(cfg, data["entries"], now, signatures, kinds, cpu, mem)
+            verdicts = decide(cfg, data["entries"], free, now, signatures, kinds, loaded)
+            reason = verdicts[entry_id] or loaded.get(entry_id)
+            mine[0]["reason"] = reason
             if reason is None:
                 concurrent = sum(e["status"] == "active" for e in data["entries"])
                 mine[0].update(status="active", granted=now)
@@ -724,7 +748,7 @@ def cmd_list(_: argparse.Namespace) -> int:
     with store() as data:
         data["entries"] = prune(data["entries"])
         entries = list(data["entries"])
-        verdicts = decide(cfg, entries, free, now, signatures, kinds)
+        verdicts = decide(cfg, entries, free, now, signatures, kinds, {})
     by_id = {e["id"]: e for e in entries}
     running = [(signature_of(e), e["granted"]) for e in entries if e["status"] == "active"]
     rows = [
@@ -734,7 +758,8 @@ def cmd_list(_: argparse.Namespace) -> int:
     ahead: list[str] = []
     for n, (entry_id, reason) in enumerate(verdicts.items(), 1):
         e = by_id[entry_id]
-        rows.append((str(n), e, history.eta(signatures, running, ahead, now), reason or "granted on its next poll"))
+        polled = reason if silent(e, now) else e.get("reason") or reason
+        rows.append((str(n), e, history.eta(signatures, running, ahead, now), polled or "granted on its next poll"))
         ahead.append(signature_of(e))
     print("position\tid\tstatus\tkind\ttask\tneed_gb\twaited_min\teta_min\tworkdir\treason")
     for position, e, eta, reason in rows:

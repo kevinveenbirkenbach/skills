@@ -31,6 +31,7 @@ BASE = {
     "budget": {"ram": 75, "cpu": 100},
     "ranks": {"work/a": 0, "work/b": 1, "work/c": 2},
     "agents": {},
+    "loaded": {},
     "now": NOW,
 }
 CHILD = (
@@ -252,6 +253,16 @@ class TestEvaluate(unittest.TestCase):
             job(4, task="work/b", workdir="/x"),
         ])
         self.assertEqual(verdicts, {"j2": "/w runs another job", "j3": None, "j4": "/x runs another job"})
+
+    def test_a_hotfix_the_host_load_holds_back_holds_back_every_entry_after_it_and_a_normal_one_does_not(self):
+        load = "RAM 55 % used + 42 % still to come reach the limit 90 %"
+        hotfix, light = job(1, hotfix="main-red"), job(2, task="work/b")
+        self.assertEqual(
+            self.decide([hotfix, light], loaded={"j1": load}),
+            {"j1": load, "j2": "waits behind hotfix j1, which the host load holds back"},
+        )
+        self.assertEqual(self.decide([job(1), light], loaded={"j1": load}), {"j1": None, "j2": None})
+        self.assertEqual(self.decide([hotfix, light]), {"j1": None, "j2": None})
 
 
 class TestHistory(unittest.TestCase):
@@ -513,6 +524,13 @@ class TestQueueCommands(unittest.TestCase):
             err.read_text(encoding="utf-8"), "queue: deploy-1 waits at position 1: all 0 deploy slots taken\n"
         )
         self.assertEqual(self.entries(), [])
+
+    def test_list_shows_the_host_load_the_holder_saw_at_its_last_poll(self):
+        self.cfg["load_limits"]["mem_percent"] = 0
+        self.write_config()
+        self.blocked_hold("true")
+        reason = self.run_queue("list").stdout.splitlines()[1].split("\t")[-1]
+        self.assertRegex(reason, r"^RAM \d+ % used \+ \d+ % still to come reach the limit 0 %$")
 
     def test_hold_refuses_bad_input_with_exit_2_and_enqueues_nothing(self):
         def hold(*args: str) -> list[str]:
