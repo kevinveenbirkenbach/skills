@@ -1766,7 +1766,7 @@ class TestOrchestratorE2E(HubCase):
             with self.subTest(url=step["url"], width=step["width"]):
                 self.assertNotIn("error", probe)
                 self.assertEqual((probe["title"], probe["h1"]), ("(2) Agent Orchestrator", "Agent Orchestrator"))
-                self.assertEqual(probe["header"], ["radio-open", "palette-open", "settings-open"])
+                self.assertEqual(probe["header"], ["radio-open", "bubbles-toggle", "palette-open", "settings-open"])
                 self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
                 self.assertEqual(probe["badges"], {"tab-stream": None, "tab-inbox": "2", "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": None})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")
@@ -1974,7 +1974,7 @@ class TestOrchestratorE2E(HubCase):
         jump, *walked = data["results"]
         self.assertEqual(jump, {
             "hash": "#stream", "focused": True, "tabs": [[tab, True, True] for tab in ("#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list")], "closed": [True, "false"],
-            "header": [["radio-open", "Radio", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
+            "header": [["radio-open", "Radio", ""], ["bubbles-toggle", "Speech bubbles", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
         })
         for index, (width, _) in enumerate(WIDTHS):
             sent, saved, read = walked[3 * index : 3 * (index + 1)]

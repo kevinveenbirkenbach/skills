@@ -15,6 +15,7 @@
   });
   document.getElementById("palette-open").addEventListener("click", openPalette);
   document.getElementById("settings-open").addEventListener("click", settingsSheet);
+  document.getElementById("bubbles-toggle").addEventListener("click", toggleBubbles);
   document.addEventListener("click", (event) => closeMenus(event.target instanceof Element ? event.target.closest("details.menu") : null));
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement) {
@@ -37,6 +38,7 @@
   radio.element = radioElement();
   drawSky();
   musicButton();
+  syncBubbles();
   syncMusic();
   syncRadio();
   timeBar();

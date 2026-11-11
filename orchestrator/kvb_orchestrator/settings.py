@@ -49,6 +49,7 @@ SETTINGS = {
     },
     "estimation": "none",
     "trend": {"mode": "off", "days": 7},
+    "bubbles": False,
 }
 SPACE_AXES = ("none", "time", "spawn")
 SPACE_LIMITS = {
@@ -220,6 +221,7 @@ def valid_settings(raw: object) -> dict:
         "space": space_setting(data["space"]),
         "estimation": data["estimation"],
         "trend": trend_setting(data["trend"]),
+        "bubbles": flag(data["bubbles"], "bubbles"),
     }
 
 

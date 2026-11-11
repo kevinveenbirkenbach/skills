@@ -411,6 +411,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "style-ui.css" %}
 
 {% include "style-tasks.css" %}
+
+{% include "style-bubbles.css" %}
 </style>
 </head>
 <body>
@@ -421,6 +423,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
   <div class="brand"><span class="logo" aria-hidden="true"></span><div class="brand-text"><h1>Agent Orchestrator</h1><span class="sky-note" id="sky-note"></span></div></div>
   <div class="tools">
     <button type="button" class="btn small ghost icon-only spot-toggle" id="radio-open" title="Radio: post, call or a message to all, with Record, the radio settings and the stations" aria-label="Radio" aria-controls="radio-spot" aria-expanded="false"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-broadcast-pin"></use></svg></button>
+    <button type="button" class="btn small ghost icon-only" id="bubbles-toggle" title="Speech bubbles" aria-label="Speech bubbles" aria-pressed="false" aria-controls="bubbles"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-chat-quote"></use></svg></button>
     <button type="button" class="btn small ghost icon-only" id="palette-open" title="Commands (Ctrl+K)" aria-label="Commands"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-command"></use></svg></button>
     <button type="button" class="btn small ghost icon-only" id="settings-open" title="Settings and ambience" aria-label="Settings"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-gear"></use></svg></button>
   </div>
@@ -442,12 +445,15 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <div class="palette" id="palette" hidden></div>
 <div class="sky-panel" id="sky-panel" role="group" aria-label="View of the sky" hidden></div>
+<div class="bubbles" id="bubbles" aria-hidden="true" hidden><div class="bubble-bar"></div></div>
 <script nonce="{{ nonce }}" id="state" type="application/json">{{ state | tojson }}</script>
 <script nonce="{{ nonce }}">
 {% include "ambience.js" %}
 </script>
 <script nonce="{{ nonce }}">
 {% include "voice.js" %}
+
+{% include "bubbles.js" %}
 
 {% include "nav.js" %}
 
@@ -549,6 +555,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-settings.js" %}
 
 {% include "page-speech.js" %}
+
+{% include "page-bubbles.js" %}
 
 {% include "page-alerts.js" %}
 

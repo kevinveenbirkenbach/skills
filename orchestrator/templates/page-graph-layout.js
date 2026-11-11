@@ -125,6 +125,7 @@
     const tasks = node.tasks.length ? ` · ${node.tasks.length} tasks` : "";
     return s("g", {
       class: classes, transform: `translate(${fixed(at.x)} ${fixed(at.y)})`, tabindex: 0, role: "button", "aria-label": `${node.label}, ${NODE_KINDS[node.kind]}`, "data-pick": node.id,
+      "data-face": node.kind === "subagent" ? null : node.id,
       on: {
         click: () => select(node.id),
         keydown: (event) => {

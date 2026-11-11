@@ -72,6 +72,7 @@
     if (ui.screen === "agents" && (ui.views.agents === "orbit" || ui.views.agents === "chord")) {
       stage();
     }
+    drawBubbles();
   }
 
   function sentRows() {

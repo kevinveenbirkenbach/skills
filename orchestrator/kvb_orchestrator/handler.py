@@ -41,8 +41,14 @@ OFFICES_ROUTE = "/api/offices"
 OFFICE_STATE = re.compile(r"/api/offices/([0-9a-f]{16})")
 TASKS_ROUTE = "/api/tasks"
 VENDOR_ROUTE = re.compile(r"/vendor/([a-z0-9.-]{1,64})")
-VENDOR = {"3d-force-graph.min.js": "3d-force-graph/3d-force-graph.min.js", "three.module.js": "three/three.module.js", "three.core.js": "three/three.core.js"}
 SCRIPT_TYPE = "text/javascript; charset=utf-8"
+FONT_TYPE = "font/woff2"
+VENDOR = {
+    "3d-force-graph.min.js": ("3d-force-graph/3d-force-graph.min.js", SCRIPT_TYPE),
+    "three.module.js": ("three/three.module.js", SCRIPT_TYPE),
+    "three.core.js": ("three/three.core.js", SCRIPT_TYPE),
+    "comic-neue.woff2": ("comic-neue/comic-neue-latin-400-normal.woff2", FONT_TYPE),
+}
 VOICE_ROUTE = "/api/voice"
 VOICE_ITEM = re.compile(r"/api/voice/([0-9a-f]{16})(\.wav)?")
 MESSAGE_SIGN_ROUTE = "/api/messages/sign"
@@ -82,7 +88,7 @@ class Handler(Exchange):
         elif path == "/":
             self.index()
         elif vendored and vendored.group(1) in VENDOR:
-            self.vendored(VENDOR[vendored.group(1)])
+            self.vendored(*VENDOR[vendored.group(1)])
         elif voice and voice.group(2):
             self.replay_voice(voice.group(1))
         elif voice:
@@ -248,9 +254,9 @@ class Handler(Exchange):
         headers = {"Content-Security-Policy": csp, "X-Frame-Options": "DENY"}
         self.send(HTTPStatus.OK, "text/html; charset=utf-8", page.encode("utf-8"), headers)
 
-    def vendored(self, name: str) -> None:
+    def vendored(self, name: str, content_type: str) -> None:
         headers = {"Content-Security-Policy": PLAIN_CSP, "Cache-Control": "private, max-age=86400"}
-        self.attempt((self.server.hub.vendor / name).read_bytes, lambda data: self.send(HTTPStatus.OK, SCRIPT_TYPE, data, headers))
+        self.attempt((self.server.hub.vendor / name).read_bytes, lambda data: self.send(HTTPStatus.OK, content_type, data, headers))
 
     def stored(self, review_id: str, name: str) -> None:
         suffix, content_type, csp = STORED[name]
