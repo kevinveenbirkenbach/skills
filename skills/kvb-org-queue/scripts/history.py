@@ -212,21 +212,14 @@ def footprint(kind: str, name: str, signatures: dict[str, dict], kinds: dict[str
       kinds: the kind map of learn().
 
     Returns:
-      {ram, cpu}: the larger of the kind's p90 share and the signature's, at
-      least MIN_SHARE_PERCENT; a signature not learned yet takes the largest
-      learned share of its kind. None while the kind is not learned yet.
+      {ram, cpu}: the signature's p90 share once learned, else the kind's, at
+      least MIN_SHARE_PERCENT. None while the kind is not learned yet.
     """
     if kind not in kinds or kinds[kind]["ram_share"] is None:
         return None
-    own_kind = kinds[kind]
-    if name in signatures and signatures[name]["ram_share"] is not None:
-        peers = [signatures[name]]
-    else:
-        peers = [s for s in signatures.values() if kind in s["kinds"] and s["ram_share"] is not None]
-    return {
-        resource: max([MIN_SHARE_PERCENT, own_kind[f"{resource}_share"], *(peer[f"{resource}_share"] for peer in peers)])
-        for resource in RESOURCES
-    }
+    own = signatures.get(name)
+    source = own if own and own["ram_share"] is not None else kinds[kind]
+    return {resource: max(MIN_SHARE_PERCENT, source[f"{resource}_share"]) for resource in RESOURCES}
 
 
 def seed_ram(kinds: dict[str, dict]) -> float:
