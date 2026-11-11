@@ -40,8 +40,8 @@ fi
 
 for dst in "${TARGET}/.agents/skills" "${TARGET}/.claude/skills"; do
 	log "skills: copying -> ${dst}"
-	rm -rf "${dst}"
 	mkdir -p "${dst}"
+	find "${dst}" -mindepth 1 -delete
 	cp -a "${src}/." "${dst}/"
 done
 
