@@ -23,7 +23,7 @@ confirms it.
    evidence, the score block, and one `Closes #<n>` line per issue the
    branch fixes, each verified as the `kvb-git-issue-close` skill does.
 5. **Confirm** with one `AskUserQuestion`: title (Conventional Commits),
-   base, state and labels. The state follows the bar of the `kvb-org-split`
+   base, state and labels. The state follows the bar of the `kvb-org-swarm`
    skill (fix confidence ≥ 90 %, break risk ≤ 5 %, cost and time
    ≤ 100 %): ready at or above it, a draft with the residuals in the body
    below it. A cost or time over 100 % goes into this question with

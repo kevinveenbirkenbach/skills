@@ -14,7 +14,7 @@ skill's Rules apply here too.
    the first, keep going until the job is actually green, not just past the
    first error.
 3. **Fix at the root**: apply the real fix for each proven root cause in the
-   sidetree, with a test and a negative control as the `kvb-org-split` skill
+   sidetree, with a test and a negative control as the `kvb-org-swarm` skill
    demands. Light runs (no Docker, about a minute: targeted pytest or
    unittest, ruff, single lint files) self-admit with
    `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
@@ -23,7 +23,7 @@ skill's Rules apply here too.
    `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold --kind <kind>
    --task <register task> -- <command>`, which waits for the rule-based
    grant and releases on exit. The fix enters the main line only
-   at the funnel's bar (the `kvb-org-split` skill's: fix confidence ≥ 90 %,
+   at the funnel's bar (the `kvb-org-swarm` skill's: fix confidence ≥ 90 %,
    break risk ≤ 5 %, cost and time ≤ 100 % in the `kvb-check-score`
    block; over 100 %, ask the operator before the commit, naming the cause)
    after its independent review; below the bar the cluster ends as a

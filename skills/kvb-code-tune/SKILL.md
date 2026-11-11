@@ -15,7 +15,7 @@ with the questions of `listen.md` next to this file. Keep the answers for the
 session, never ask again, work only inside them; a candidate outside them
 becomes a proposal. Invoked by another skill (kvb-ci-triage, kvb-ci-observe)
 or an autonomous run: no questions; examine the handed-over log with the
-defaults (10 s floor per run, the `kvb-org-split` skill's 90/5 bar as merge
+defaults (10 s floor per run, the `kvb-org-swarm` skill's 90/5 bar as merge
 bar, 60 minutes per delegated agent), ask only when an operator-only fact
 blocks.
 

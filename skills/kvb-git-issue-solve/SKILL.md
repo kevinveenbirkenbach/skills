@@ -23,7 +23,7 @@ request, so a red one blocks nothing else.
    created once: `gh label create "in analysis" --color FBCA04 --description
    "An agent analyses this issue"`, `gh label create "in progress" --color
    1D76DB --description "An agent works on a fix"`.
-4. **Solve** each with the `kvb-org-split` skill: claim `work/issue-<n>`,
+4. **Solve** each with the `kvb-org-swarm` skill: claim `work/issue-<n>`,
    enter it in the `kvb-org-rasci` register (objective: the issue fixed; key
    results: a test that failed before and passes after, the pull request
    open), branch `fix/<scope>/<n>` from the default branch in its own
@@ -40,10 +40,10 @@ request, so a red one blocks nothing else.
    edit <n> --remove-label "in analysis" --add-label "in progress"`.
 5. **Open the pull request** with the `kvb-git-pr-create` skill, closing
    exactly its issue; one for a failing default branch is posted with
-   `radio.py post`. Below the split bar the proposal becomes a draft pull
+   `radio.py post`. Below the swarm bar the proposal becomes a draft pull
    request with the residuals and the evidence that would close them.
 6. **Report** per issue, then release its claim and tear its sidetree down
-   as `kvb-org-split` describes; the branch stays until the merge. An issue
+   as `kvb-org-swarm` describes; the branch stays until the merge. An issue
    dropped or handed on loses its label and gets a comment saying why.
 
 ## Output
