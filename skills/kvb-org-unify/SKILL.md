@@ -1,9 +1,7 @@
 ---
 name: kvb-org-unify
 description: >
-  Unify a swarm's branches into one integration branch, gate it once, land it
-  on the operator's word, then clear worktrees, branches and leftovers.
-  Trigger on "unify", "swarm zusammenführen" or after a kvb-org-swarm round.
+  Merge a swarm's branches, gate once, land on the operator's word, then clean up.
 ---
 
 The `kvb-org-swarm` skill splits a goal into sidetrees; this skill brings them
