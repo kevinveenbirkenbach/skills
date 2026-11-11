@@ -20,12 +20,13 @@ Scan:
 
 Accepted:
     One JSON row per reviewed false positive (id, rule, path, sha1 of the stripped
-    source line, reason, repo, date), appended by accept to
+    source line, or of the whole file for a finding without a line, reason, repo,
+    date), appended by accept to
     <council root>/security-accepted.jsonl of the kvb-org-organize watch.py, whose
     hook keeps the rows in ~/.local/state/agents-council/security-accepted.jsonl;
-    a scan reads both. A finding with that rule, path and line text is accepted and
-    leaves the score; an edit of the line brings it back. A row without rule, path
-    and sha1 is a usage error.
+    a scan reads both. A finding with that rule, path and text is accepted and
+    leaves the score; an edit of the line, or of the file, brings it back. A row
+    without rule, path and sha1 is a usage error.
 
 Output:
     `🛡️ security <n> % (medusa: <k> findings, <a> accepted in <m> files: <severity> <path>:<line>, ...)`,
@@ -116,10 +117,13 @@ def located(name: str, tree: Path) -> str:
 
 def fingerprint(tree: Path, path: str, line: int | None) -> str | None:
     try:
-        rows = (tree / path).read_text(encoding="utf-8", errors="replace").splitlines()
+        text = (tree / path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    if line is None or not 1 <= line <= len(rows):
+    if line is None:
+        return hashlib.sha1(text.encode()).hexdigest()
+    rows = text.splitlines()
+    if not 1 <= line <= len(rows):
         return None
     return hashlib.sha1(rows[line - 1].strip().encode()).hexdigest()
 

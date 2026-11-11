@@ -33,6 +33,8 @@ for path in sorted(p for p in target.rglob("*") if p.is_file()):
                     "severity": severity, "rule_id": "FAKE-" + severity, "file": str(path), "line": number,
                     "code": text,
                 }})
+        if "MARK-FILE" in text:
+            findings.append({{"severity": "MEDIUM", "rule_id": "FAKE-FILE", "file": str(path), "line": None}})
 report = {{"issues": findings}} if os.environ.get("FAKE_MEDUSA_SHAPE") == "other" else {{"findings": findings}}
 (out / "medusa-scan-20261104-120000.json").write_text(json.dumps(report))
 """
@@ -162,6 +164,18 @@ class TestSecurity(unittest.TestCase):
         result = self.accept("--rule", "R", "--path", "app.py", "--sha1", "XYZ", "--reason", "r")
         self.assertEqual(result.returncode, 2)
         self.assertIn("--sha1 must be 40 lowercase hex digits", result.stderr)
+
+    def test_a_file_level_finding_is_accepted_by_the_sha1_of_its_file_until_the_file_changes(self):
+        text = "FROM debian  # MARK-FILE\n"
+        self.write("Dockerfile", text)
+        sha1 = hashlib.sha1(text.encode()).hexdigest()
+        self.assertEqual(json.loads(self.scan("--json", env=self.env).stdout)["findings"][0]["sha1"], sha1)
+        result = self.accept("--rule", "FAKE-FILE", "--path", "Dockerfile", "--sha1", sha1, "--reason", "fixture")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.scan(env=self.env)
+        self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings, 1 accepted in 1 file)\n")
+        self.write("Dockerfile", text + "USER app\n")
+        self.assertEqual(self.scan(env=self.env).returncode, 3)
 
     def test_one_accept_takes_every_rule_of_a_line(self):
         line = "z = both()  # MARK-HIGH MARK-LOW"
