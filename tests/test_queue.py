@@ -6,6 +6,7 @@ import fcntl
 import importlib.util
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -531,6 +532,41 @@ class TestQueueCommands(unittest.TestCase):
         self.blocked_hold("true")
         reason = self.run_queue("list").stdout.splitlines()[1].split("\t")[-1]
         self.assertRegex(reason, r"^RAM \d+ % used \+ \d+ % still to come reach the limit 0 %$")
+
+    def install_host_skills(self) -> Path:
+        skills = self.base / "home" / ".agents" / "skills"
+        for name in ("kvb-org-queue", "kvb-org-organize", "kvb-org-rasci"):
+            shutil.copytree(QUEUE.parents[2] / name, skills / name)
+        return skills / "kvb-org-queue" / "scripts" / "queue.py"
+
+    def test_a_hold_on_other_code_than_the_host_install_restarts_with_it_before_any_grant(self):
+        host = self.install_host_skills()
+        ran = self.base / "ran"
+        args = ("hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", "touch", str(ran))
+        same = self.run_queue(*args)
+        self.assertEqual((same.returncode, same.stderr), (0, ""))
+        self.assertTrue(ran.exists())
+        ran.unlink()
+        seen = self.base / "argv.json"
+        host.write_text(f"import json, sys\njson.dump(sys.argv[1:], open({str(seen)!r}, 'w'))\nsys.exit(9)\n", encoding="utf-8")
+        other = self.run_queue(*args)
+        self.assertEqual(other.returncode, 9, other.stderr)
+        self.assertIn(f"grants nothing on its own code. Restarting this hold with {host};", other.stderr)
+        self.assertEqual(json.loads(seen.read_text(encoding="utf-8")), list(args))
+        self.assertFalse(ran.exists())
+        self.assertEqual(self.entries(), [])
+
+    def test_list_marks_an_entry_on_other_code_than_the_host_install(self):
+        queue = _load(QUEUE)
+        me, mine = os.getpid(), queue.identity(os.getpid())
+        self.install_host_skills()
+        self.write_store([
+            {**stored(1, "waiting", me, mine, None, None), "code": queue.CODE},
+            stored(2, "waiting", me, mine, None, None),
+        ])
+        reasons = [line.split("\t")[-1] for line in self.run_queue("list").stdout.splitlines()[1:]]
+        self.assertEqual(reasons[0], "granted on its next poll")
+        self.assertTrue(reasons[1].startswith(f"queue code without a stamp, the host runs {queue.CODE}: "), reasons[1])
 
     def test_hold_refuses_bad_input_with_exit_2_and_enqueues_nothing(self):
         def hold(*args: str) -> list[str]:
