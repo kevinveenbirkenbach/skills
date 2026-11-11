@@ -12,13 +12,13 @@ description: >
    cherry-pick or merge, never touch the staging index or the tree.
 2. A similar fix on another branch is a stop: run the kvb-think-dialectic
    skill on the two candidates (staged version as thesis, foreign commit as
-   antithesis) until one survives, then present sha, branch, both diffs, the
+   antithesis) until one survives, then present sha, branch, both diff stats, the
    verdict and the recommended move (keep staged / take theirs / combine).
    Wait for the operator's decision; do not commit.
 3. Nothing similar found, or the operator picked the staged version: run the
    kvb-git-commit-no-verify skill on the currently staged changes
    (kvb-code-clean pass and kvb-check-legal check first, then the
-   full staged diff and the kvb-check-score commit table of 📁 worktree,
+   kvb-check-score commit table of 📁 worktree,
    🌿 branch, 📊 diff stat, scores with 🛡️ security and gate, then
    `git commit --no-verify`, exact staging index only, its message carrying
    the `score.py --message-block` paragraph right before the
