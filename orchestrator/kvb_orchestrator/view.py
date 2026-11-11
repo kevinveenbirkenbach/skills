@@ -8,6 +8,7 @@ from .council import (
     NEWS,
     grants,
     night_mode,
+    night_parts,
     radio_rows,
     read_claims,
     sessions,
@@ -138,6 +139,7 @@ class View:
             "claims": claims,
             "grants": grant_rows,
             "night": night_mode(self.council),
+            "night_parts": night_parts(self.council),
             "silence": silence_of(self.council, now),
             "graph": drawn,
         }

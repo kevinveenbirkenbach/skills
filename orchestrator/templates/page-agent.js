@@ -14,6 +14,8 @@
     const node = state.graph.nodes.find((entry) => entry.id === ui.agent);
     const tasks = node ? node.tasks : [];
     const claims = node ? node.claims : [];
+    const part = state.night_parts[ui.agent] || state.night;
+    agentDom.night.replaceChildren(pill(...(NIGHT[part] || [part, "neutral"])));
     agentDom.info.replaceChildren(
       h("p", {class: "muted"}, claims.length ? `Offices: ${claims.map((claim) => claim.office).join(", ")}` : "No office"),
       h("h3", {}, "Tasks", counter(tasks.length)),
@@ -108,10 +110,14 @@
     const subs = h("div", {}, h("p", {class: "muted"}, "Loading subagents …"));
     const log = h("div", {"aria-live": "polite"});
     const life = h("span", {class: "muted"});
+    const night = h("span", {});
+    const claimed = nightAgents().some(([sid]) => sid === key);
+    const nightRow = h("div", {class: "actions agent-night", role: "group", "aria-label": "Day/Night"}, night, h("span", {class: "spacer"}),
+      claimed ? ACTIONS.slice(1).map(([id]) => actionButton(id, "btn small", null, () => [key])) : null);
     const former = (people()[key] || {names: []}).names.filter((entry) => entry !== name);
     openPopup(name, [
       popupHead(face(name, true), name, h("span", {class: "muted"}, former.length ? `Agent · formerly ${former.join(", ")}` : "Agent"), " ", life),
-      h("div", {class: "popup-body"}, info, h("h3", {}, "Subagents"), subs, h("h3", {}, "History"), log),
+      h("div", {class: "popup-body"}, nightRow, info, h("h3", {}, "Subagents"), subs, h("h3", {}, "History"), log),
       form,
     ], anchor, () => {
       agentDom = null;
@@ -121,7 +127,7 @@
       }
     });
     ui.agent = key;
-    agentDom = {info, history: log};
+    agentDom = {info, history: log, night};
     drawAgent();
     loadSubagents(key, subs, life);
     text.focus();

@@ -303,6 +303,15 @@ from three views down to any agent, branch or artefact.
     time-agent-depth layout.
 58. **Steady 3D camera**: the 3D view fits the graph once per build; state
     refreshes keep the operator's camera.
+59. **Day/Night per agent** (operator 2026-11-10, decisions 59 and 60): the
+    Day/Night menu lists "All" and one checkbox per claimed agent. All ticked
+    runs the global drain, suspend or resume as before; a subset runs it only
+    for the ticked sessions (`night.py --target`), the passkey signs the
+    board item with those sessions, and the radio call reaches only them.
+    Rejected: a second menu for single agents.
+60. **Agent panel Day/Night**: every agent panel shows the agent's part and,
+    for a claimed agent, Drain, Suspend and Resume for that agent alone, by
+    day too. Rejected: single-agent parts only during a night.
 
 ## Approach
 
@@ -741,6 +750,20 @@ flowchart TD
 - [x] Two state refreshes after a manual camera move leave the 3D camera
       where the operator put it.
 
+### Phase 6: Day/Night per agent (S5.2)
+
+- [ ] `night.py drain|suspend|resume --target=<id>` sets and lifts one
+      session's part by day and during a mode, and `night.py status` prints
+      it as the `you:` line (`tests/test_night.py`).
+- [ ] The Day/Night menu lists "All" and one checkbox per claimed agent; all
+      ticked sends the unchanged board item, a subset signs and runs only for
+      the ticked sessions, and none ticked disables the three buttons.
+- [ ] A proof for one set of agents is refused for another set and for all,
+      and an unclaimed session is refused before anything runs
+      (`tests/test_hub_board.py`).
+- [ ] Every agent panel shows the agent's part and Drain, Suspend and Resume
+      for that agent alone.
+
 ### Tests
 
 - **Unit**
@@ -764,6 +787,9 @@ flowchart TD
         business value signature (forged, replayed, altered), sort orders.
   - [x] S5.1: regression and velocity trend with their forecast dates, point
         tooltips, ETA in both modes, radio settings stored from the gear.
+  - [ ] S5.2: night.py targets by day and during a mode, the signed board
+        item with agents (forged set, unclaimed session), the parts in the
+        state.
 - **Integration**
   - [ ] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's
@@ -792,3 +818,6 @@ flowchart TD
   - [x] S5.1: radio spot (send, gear, cancel mayday), Day/Night tooltips,
         one-row Tasks toolbar, trend and point tooltips, ETA column, Tasks
         3D and a steady 3D camera, each at 1920, 1366 and 390 px.
+  - [ ] S5.2: agent checkboxes in the Day/Night menu and the agent panel's
+        buttons, signed in Chromium and refused unsigned in Firefox, each at
+        1920, 1366 and 390 px.

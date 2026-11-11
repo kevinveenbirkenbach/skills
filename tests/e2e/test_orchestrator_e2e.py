@@ -26,7 +26,7 @@ sys.path.insert(0, str(HERE.parent))
 from hub_case import HubCase
 from hub_engines import wav_bytes
 from hub_support import ASK, HOST_STATE, OPTIONS, RUNNER, iso, verifier
-from kvb_orchestrator import skill_scripts
+from kvb_orchestrator import messaging, skill_scripts
 from test_hub_cleanup import DONE_TIP, FAKE_PKGMGR, host
 from test_hub_offices import COUNCIL_SCRIPT
 from test_hub_offices import host as office_host
@@ -678,10 +678,60 @@ NIGHT_LOOK = """(async () => {@HELPERS@
   return {
     children: [...box.children].map((node) => [node.tagName.toLowerCase(), node.className]),
     badge: all(".pill", box).map(text),
+    picks: all(".night-picks label", box).map((label) => [text(label), label.querySelector("input").checked]),
     buttons: all("button", box).map((button) => [name(button), button.title]),
     paragraphs: all("p", box).length,
     wide: document.documentElement.scrollWidth > window.innerWidth + 1,
   };
+})()""".replace("@HELPERS@", HELPERS)
+NIGHT_PICK = """(async () => {@HELPERS@
+  const questions = [];
+  window.confirm = (question) => {
+    questions.push(question);
+    return true;
+  };
+  navigator.credentials.get = @SIGNS@ ? navigator.credentials.get.bind(navigator.credentials) : () => Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
+  const posted = [];
+  const send = window.fetch.bind(window);
+  window.fetch = (path, init) => {
+    if (String(path).startsWith("/api/board/")) {
+      const body = JSON.parse(init.body);
+      posted.push([String(path), Object.keys(body), body.action || null, body.agents || null]);
+    }
+    return send(path, init);
+  };
+  const menu = await until(() => all('#main [role="toolbar"] details.menu').find((node) => name(node.querySelector("summary")) === "Day/Night"), 8000);
+  if (!menu) {
+    return {error: text(document.getElementById("main"))};
+  }
+  menu.open = true;
+  await sleep(200);
+  const box = menu.querySelector(".menu-box");
+  const picks = () => all(".night-picks label", box).map((label) => [text(label), label.querySelector("input").checked]);
+  const enabled = () => all(".actions button", box).map((button) => !button.disabled);
+  const tick = (label) => all(".night-picks label", box).find((node) => text(node) === label).querySelector("input").click();
+  const fresh = async (label, click) => {
+    const shown = new Set(all("#toasts .toast"));
+    click();
+    return until(() => all("#toasts .toast").filter((node) => !shown.has(node)).map(text).find((entry) => entry.startsWith(`${label}:`)), 15000);
+  };
+  const found = {badge: all(".pill", box).map(text), start: picks()};
+  tick("Skills");
+  found.one = [picks(), enabled()];
+  found.drain = await fresh("Drain", () => all(".actions button", box).find((button) => name(button) === "Drain").click());
+  found.kept = picks();
+  tick("Stage");
+  found.none = [picks(), enabled()];
+  tick("All");
+  found.all = [picks(), enabled()];
+  menu.open = false;
+  document.getElementById("palette-open").click();
+  const item = await until(() => all(".palette-list li").find((li) => text(li.querySelector("span")) === "Stage"), 4000);
+  item.click();
+  const row = await until(() => document.querySelector("#popup .agent-night"), 4000);
+  found.popup = {badge: all(".pill", row).map(text), buttons: all("button", row).map(name)};
+  found.suspend = await fresh("Suspend", () => all("button", row).find((button) => name(button) === "Suspend").click());
+  return {...found, questions, posted, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
 })()""".replace("@HELPERS@", HELPERS)
 FITS = "tall: document.documentElement.scrollHeight > window.innerHeight, wide: document.documentElement.scrollWidth > window.innerWidth + 1"
 SPOT_SEND = """(async () => {@HELPERS@
@@ -1883,8 +1933,9 @@ class TestOrchestratorE2E(HubCase):
         for look, (width, _) in zip(seen, WIDTHS, strict=True):
             with self.subTest(browser=browser, width=width):
                 self.assertNotIn("error", look)
-                self.assertEqual(look["children"], [["span", ""], ["div", "actions"]])
+                self.assertEqual(look["children"], [["span", ""], ["div", "night-picks"], ["div", "actions"]])
                 self.assertEqual((look["badge"], look["paragraphs"], look["wide"]), (["Day"], 0, False))
+                self.assertEqual(look["picks"], [["All", True], ["Skills", True], ["Stage", True]])
                 self.assertEqual(look["buttons"], [list(entry) for entry in NIGHT_HINTS])
         self.assertNotIn("error", found)
         self.assertEqual(found["labels"], ["Drain", "Suspend", "Resume"])
@@ -1911,6 +1962,39 @@ class TestOrchestratorE2E(HubCase):
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
     def test_firefox_asks_the_passkey_for_drain_suspend_and_resume_and_runs_nothing_unsigned(self):
         self.check_night_menu("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"), signs=False)
+
+    def check_night_picks(self, browser: str, driver: str, binary: str, signs: bool) -> None:
+        """Args:
+            signs: as in check_night_menu.
+        """
+        self.write_council({"night.json": {"parts": {"s2": "drain"}}})
+        probe = NIGHT_PICK.replace("@SIGNS@", "true" if signs else "false")
+        steps = [{"width": width, "height": height, "url": f"http://localhost:{self.port}/?{width}#agents/orbit", "wait": 1200, "probe": probe, "shot": str(OUT / f"{browser}-{width}-night-picks.png")} for width, height in WIDTHS]
+        data = self.drive(steps, self.authenticator() if signs else None, driver, binary)
+        (OUT / f"{browser}-night-picks.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        everyone, one, nobody = [["All", True], ["Skills", True], ["Stage", True]], [["All", False], ["Skills", False], ["Stage", True]], [["All", False], ["Skills", False], ["Stage", False]]
+        for found, (width, _) in zip(data["results"], WIDTHS, strict=True):
+            with self.subTest(browser=browser, width=width):
+                self.assertNotIn("error", found)
+                self.assertEqual((found["badge"], found["start"], found["wide"]), (["Day", "1 alone"], everyone, False))
+                self.assertEqual((found["one"], found["kept"], found["none"], found["all"]), ([one, [True] * 3], one, [nobody, [False] * 3], [everyone, [True] * 3]))
+                self.assertEqual(found["popup"], {"badge": ["Draining"], "buttons": ["Drain", "Suspend", "Resume"]})
+                self.assertEqual([question.split(":")[0] for question in found["questions"]], ["Drain Stage", "Suspend Stage"])
+                sent = [["/api/board/sign", ["action", "agents"], "drain", ["s2"]], ["/api/board/drain", ["proof", "agents"], None, ["s2"]], ["/api/board/sign", ["action", "agents"], "suspend", ["s2"]], ["/api/board/suspend", ["proof", "agents"], None, ["s2"]]]
+                self.assertEqual(found["posted"], sent if signs else sent[::2])
+                self.assertEqual([found["drain"].split("$")[0].split()[1], found["suspend"].split("$")[0].split()[1]], ["done", "done"] if signs else ["not", "not"])
+        nights = [args for script, args in self.scripts.calls if script == skill_scripts.NIGHT]
+        self.assertEqual(nights, [[action, "--session", "Operator", "--target=s2"] for _ in WIDTHS for action in ("drain", "suspend")] if signs else [])
+        calls = [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
+        self.assertEqual(calls, [["send", "call", "--to", "Stage", "--session", "Operator", messaging.ALONE[action]] for _ in WIDTHS for action in ("drain", "suspend")] if signs else [])
+
+    def test_chromium_drains_and_suspends_chosen_agents_from_the_menu_and_the_agent_panel_at_three_widths(self):
+        self.check_night_picks("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"), signs=True)
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_asks_the_passkey_for_chosen_agents_and_runs_nothing_unsigned_at_three_widths(self):
+        self.check_night_picks("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"), signs=False)
 
     def test_chromium_deletes_a_merged_branch_after_dry_run_and_signature(self):
         tree = json.loads(self.tree_file.read_text(encoding="utf-8"))

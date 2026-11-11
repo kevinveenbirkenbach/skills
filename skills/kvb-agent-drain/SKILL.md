@@ -6,7 +6,8 @@ description: >
 ---
 
 Verify first: `${CLAUDE_SKILL_DIR}/../kvb-org-suspend/scripts/night.py status`
-prints `you: drain`. On `you: active` or `mode: day` do nothing and say so.
+prints `you: drain`, by day too when the operator drained this session alone.
+On another `you:` line, or none, do nothing and say so.
 The request asks for less, so it needs no operator approval.
 
 Follow steps 2 to 4 of the `kvb-agent-suspend` skill (start nothing, end your

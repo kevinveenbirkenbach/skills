@@ -9,7 +9,9 @@ When tokens or rate limits run short, the organisation narrows to one working
 agent: the session the operator types this in. Suspend is the hard step;
 `kvb-org-drain` is the soft one. `${CLAUDE_SKILL_DIR}/scripts/night.py` keeps
 the state for drain, suspend and resume; every agent verifies a request with
-`night.py status`.
+`night.py status`. `--target=<session id>` on drain, suspend or resume sets or
+lifts only that session's part, by day too, as the Agent Orchestrator's agent
+picks do; every other session keeps its own.
 
 ## Procedure
 

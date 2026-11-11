@@ -42,6 +42,9 @@ svg .node.speaking circle { stroke: var(--ok); stroke-width: 4; animation: speak
 .radio-spot[hidden], .radio-gear[hidden] { display: none; }
 body.fit .radio-spot { flex: 0 1 auto; min-height: 0; }
 .spot-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.night-picks { display: flex; flex-wrap: wrap; gap: 4px var(--sp-3); max-width: 420px; max-height: 30vh; overflow: auto; }
+.night-picks:empty { display: none; }
+.agent-night { align-items: center; margin: 0 0 var(--sp-2); }
 .spot-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: var(--sp-4); align-items: start; }
 .radio-gear { min-width: 0; }
 .composer { display: grid; gap: var(--sp-2); }
