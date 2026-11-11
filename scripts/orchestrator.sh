@@ -150,7 +150,7 @@ install_hub() {
 	port="$(port_of "${REPO_ROOT}/orchestrator/.env")"
 	log "skills: starting the Agent Orchestrator on http://localhost:${port}/"
 	rm -rf "${HUB}"
-	mkdir -p "${HUB}" "${STATE}" "${APPROVALS}" "${COUNCIL}" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}"
+	mkdir -p "${HUB}" "${STATE}" "${APPROVALS}" "${COUNCIL}" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" "${HOME}/.local/state/agents-council/resources"
 	chmod 700 "${APPROVERS}"
 	cp -a "${REPO_ROOT}/orchestrator/." "${HUB}/"
 	# Python loads a cached .pyc whose header matches the source mtime and size, and cp -a keeps the mtime: one planted in the sandbox-writable tree would run on the host
@@ -158,8 +158,8 @@ install_hub() {
 	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py" "${HUB}/client/cleanup.py" "${HUB}/client/offices.py" "${HUB}/client/sessions.py"
 	log "skills: the PermissionRequest hook client is ${HUB}/client/permission_hook.py"
 	log "skills: approvals need a pinned passkey: settings, 'Passkey registrieren', then 'make orchestrator-pin CREDENTIAL=<blob>'; until then every executor refuses"
-	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\n' \
-		"$(id -u)" "$(id -g)" "${STATE}" "${COUNCIL}" "${HOME}/.claude/skills" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" >>"${HUB}/.env"
+	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\nKVB_ORCHESTRATOR_KEPT=%s\n' \
+		"$(id -u)" "$(id -g)" "${STATE}" "${COUNCIL}" "${HOME}/.claude/skills" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" "${HOME}/.local/state/agents-council" >>"${HUB}/.env"
 	if ! docker compose --file "${HUB}/compose.yml" up -d --build; then
 		warn "skills: docker compose failed; the Agent Orchestrator stays down until 'make orchestrator-install' succeeds."
 	fi

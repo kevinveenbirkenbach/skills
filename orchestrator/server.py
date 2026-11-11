@@ -25,6 +25,8 @@
     --tree-file: the JSON file `pkgmgr branch tree --output` writes, mounted
         read-only; read again whenever it changes.
     --timers: directory holding the systemd user units (*.timer).
+    --kept: ~/.local/state/agents-council, mounted read-only: gates.db and
+        the resources/ files of the host sampler.
     --vendor: directory holding the vendored Bootstrap Icons sprite,
         3d-force-graph and three with their licence texts.
     --cleanup: host-mounted directory the hub writes signed branch deletions
@@ -78,7 +80,7 @@ def main() -> int:
     parser.add_argument("--bind", required=True)
     for name in ("--listen-port", "--public-port"):
         parser.add_argument(name, type=int, required=True)
-    paths = ("--council", "--pages", "--state", "--host-state", "--skills", "--transcripts", "--templates", "--tree-file", "--timers", "--vendor", "--cleanup", "--offices", "--llm-key-file", "--approvers")
+    paths = ("--council", "--pages", "--state", "--host-state", "--skills", "--transcripts", "--templates", "--tree-file", "--timers", "--kept", "--vendor", "--cleanup", "--offices", "--llm-key-file", "--approvers")
     for name in (*paths, "--piper", "--voices", "--whisper", "--whisper-model", "--scratch"):
         parser.add_argument(name, type=Path, required=True)
     for name in ("--llm-url", "--llm-model", "--operator-voice"):
@@ -94,7 +96,7 @@ def main() -> int:
             transcripts=args.transcripts,
             scripts=Scripts(skills=args.skills, council=args.council, home=args.state),
             templates=args.templates,
-            places=Places(tree_file=args.tree_file, timers=args.timers, vendor=args.vendor, cleanup=args.cleanup, offices=args.offices),
+            places=Places(tree_file=args.tree_file, timers=args.timers, vendor=args.vendor, cleanup=args.cleanup, offices=args.offices, kept=args.kept),
             model=Model(url=args.llm_url.strip(), model=args.llm_model.strip(), key=read_key(args.llm_key_file)),
             engines=Engines(piper=args.piper, voices=args.voices, operator_voice=args.operator_voice, whisper=args.whisper, whisper_model=args.whisper_model, scratch=args.scratch),
             approvers=args.approvers,
