@@ -62,7 +62,7 @@ Keep any fact with no other home (it is not redundancy) and the trigger
 wording of a `description`: tighten it, never drop the "when". Dates stay
 absolute; never introduce "recently" while shortening.
 
-## Step 4: show the diff, then write
+## Step 4: confirm, then write
 
 Write in place: an essence beside the original saves nothing, the original
 still loads. A git repository needs a clean status for the rewritten paths,
@@ -70,8 +70,8 @@ so git alone reverts every edit; not clean: report and stop. `~/.claude` and
 `~/.agents` are usually not under git: copy each file to `<file>.pre-essence`
 first.
 
-Present per file the diff and the lines and characters saved; ask one
-confirmation for the batch; write only after it.
+Present per file the lines and characters saved and what was cut, never the
+diff; ask one confirmation for the batch; write only after it.
 
 ## Step 5: verify
 

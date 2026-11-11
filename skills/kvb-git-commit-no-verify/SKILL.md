@@ -9,12 +9,12 @@ description: >
    staged and unstaged changes first, then the kvb-check-legal check over
    the staging index. A legal blocker stops here.
 2. Show in the message right before the `git commit` call, never only after
-   it, the full staged diff (`git diff --cached`), then the commit table of
-   the kvb-check-score skill (`score.py ... --commit-table <worktree>`):
-   📁 worktree, 🌿 branch, 📊 staged diff stat, then fix, break, cost,
-   time, security, score and gate of the staged bundle, as the
-   kvb-check-confidence skill produces them: break risk derived through the
-   kvb-check-break-risk skill, never estimated.
+   it, the commit table of the kvb-check-score skill (`score.py ...
+   --commit-table <worktree>`): 📁 worktree, 🌿 branch, 📊 staged diff stat,
+   then fix, break, cost, time, security, score and gate of the staged
+   bundle, as the kvb-check-confidence skill produces them: break risk
+   derived through the kvb-check-break-risk skill, never estimated. Never
+   print a diff in the chat, only its stat.
 3. Approval-prompt duty: the commit call's approval prompt (Claude Code: the
    Bash `description`; other runtimes: their prompt text) names the worktree
    path, the branch, the diff stat and the score values (🎯 fix, 💥 break,
@@ -27,8 +27,7 @@ description: >
    operator's word for this one commit only once its `approval.py verify`
    step exits 0 on the exact staged tree; otherwise the chat question stays
    the fallback. The same duty holds for every call that creates a commit,
-   `git merge` included (there the incoming diff stat, and the incoming diff
-   in the message before).
+   `git merge` included (there the incoming diff stat).
 4. Commit exactly the staging index with `git commit --no-verify` and a
    Conventional-Commits message derived from the staged diff; never add
    unstaged files, never push. The message carries the output of
