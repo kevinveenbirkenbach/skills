@@ -130,7 +130,6 @@ META = re.compile(r"[\s|&;()<>$`\\\"'*?\[\]{}~!#]")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 COMMIT = re.compile(r"\bcommit\b")
 HEADER = "| # | Directory | Command | Why | Check |"
-# Trip-wire: agents name these repos, and git runs commands their config names (fsmonitor, hooks, pager, external diff, textconv, gpg, filters, lazy fetch) as the operator.
 GIT = ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "log.showSignature=false", "--no-pager", "--no-optional-locks"]
 DIFF = [*GIT, "diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all"]
 STYLES = {"head": "\x1b[1m", "label": "\x1b[2m", "command": "\x1b[1;36m", "preview": "\x1b[33m"}
@@ -333,7 +332,6 @@ def cmd_list(rasci: ModuleType, args: argparse.Namespace) -> int:
 
 
 def runnable(row: dict) -> bool:
-    # Trip-wire: legacy rows carry a prose title and no directory, and a newline written into the register shows as a typed \n but runs a second command; only printable rows recorded by `add` are commands.
     return bool(row["directory"] and row["command"]) and row["command"].isprintable() and row["check"] != "decision"
 
 
