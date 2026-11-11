@@ -47,11 +47,12 @@ class HubCase(unittest.TestCase):
         self.projects = base / "projects"
         self.tree_file = base / "tree" / "branch-tree.json"
         self.timers = base / "timers"
+        self.kept = base / "kept"
         self.cleanup = base / "state" / "cleanup"
         self.offices = base / "state" / "offices"
         self.approvers = base / "config" / "approvers.json"
         self.replay = base / "replay"
-        for path in (self.pages, self.state, self.outside, self.projects, self.tree_file.parent, self.timers):
+        for path in (self.pages, self.state, self.outside, self.projects, self.tree_file.parent, self.timers, self.kept):
             path.mkdir()
         silence = mock.patch.object(server.Handler, "log_message")
         silence.start()
@@ -70,7 +71,7 @@ class HubCase(unittest.TestCase):
             transcripts=self.projects,
             scripts=self.scripts,
             templates=HUB / "templates",
-            places=server.Places(tree_file=self.tree_file, timers=self.timers, vendor=HUB / "vendor", cleanup=self.cleanup, offices=self.offices),
+            places=server.Places(tree_file=self.tree_file, timers=self.timers, vendor=HUB / "vendor", cleanup=self.cleanup, offices=self.offices, kept=self.kept),
             model=server.Model(url="", model="", key=""),
             engines=self.engines,
             approvers=self.approvers,

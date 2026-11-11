@@ -49,6 +49,7 @@ class Places:
     vendor: Path
     cleanup: Path
     offices: Path
+    kept: Path
 
 
 def environment(templates: Path) -> jinja2.Environment:
@@ -89,6 +90,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     agent_sessions: Path
     model: Model
     timers: Path
+    kept: Path
     settings: Settings
     redirects: Redirects
     speech: Speech
@@ -137,6 +139,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         agent_sessions=state / SNAPSHOT,
         model=model,
         timers=places.timers,
+        kept=places.kept,
         council=council,
         pages=pages,
         public_port=public_port,

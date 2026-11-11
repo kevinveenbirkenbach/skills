@@ -49,6 +49,8 @@ services:
       - /tree/branch-tree.json
       - --timers
       - /timers
+      - --kept
+      - /kept
       - --vendor
       - /app/vendor
       - --cleanup
@@ -114,6 +116,12 @@ services:
       - type: bind
         source: "${KVB_ORCHESTRATOR_TIMERS:?written into .env by scripts/install.sh}"
         target: /timers
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_ORCHESTRATOR_KEPT:?written into .env by scripts/install.sh}"
+        target: /kept
         read_only: true
         bind:
           create_host_path: false

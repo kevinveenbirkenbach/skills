@@ -113,7 +113,12 @@ def database() -> Iterator[dict[str, dict]]:
         except OSError as error:
             fail(f"cannot lock {LOCK}: {error.strerror}")
         tasks = load()
+        before = {task: json.dumps(row, sort_keys=True) for task, row in tasks.items()}
         yield tasks
+        now = stamp()
+        for task, row in tasks.items():
+            if before.get(task) != json.dumps(row, sort_keys=True):
+                row["updated"] = now
         nofollow.replace(ROOT, DB, json.dumps(tasks, indent=1, sort_keys=True), FILE_MODE)
 
 
@@ -284,7 +289,19 @@ def ranked(rows: dict[str, dict]) -> list[str]:
         agent = order.get(row.get("worker"), len(order))
         return (pinned is None, pinned or 0, score is None, -(score[2] if score else 0), agent, task)
 
-    return sorted(rows, key=key)
+    placed: list[str] = []
+
+    def place(task: str, trail: frozenset) -> None:
+        if task in placed or task in trail:
+            return
+        for before in rows[task].get("after", []):
+            if before in rows:
+                place(before, trail | {task})
+        placed.append(task)
+
+    for task in sorted(rows, key=key):
+        place(task, frozenset())
+    return placed
 
 
 def by_agent(rows: dict[str, dict]) -> dict[str, list[str]]:
@@ -362,6 +379,8 @@ def cmd_set(args: argparse.Namespace) -> int:
     check_task(args.task)
     if args.prio is not None and args.prio < 1:
         fail("--prio must be 1 or higher")
+    if args.unpin and args.prio is not None:
+        fail("--unpin removes the pin; it cannot go with --prio")
     times = {f: stamp(getattr(args, f)) for f in ("start", "end") if getattr(args, f)}
     for ref in args.artifact:
         if not ARTIFACT.match(ref):
@@ -375,6 +394,8 @@ def cmd_set(args: argparse.Namespace) -> int:
             value = getattr(args, field)
             if value is not None:
                 entry[field] = value
+        if args.unpin:
+            entry.pop("prio", None)
         if args.status:
             apply_status(entry, args.status)
         entry.update(times)
@@ -591,6 +612,7 @@ def main() -> int:
     for field in (*TEXT_FIELDS, "start", "end"):
         p.add_argument(f"--{field}")
     p.add_argument("--prio", type=int)
+    p.add_argument("--unpin", action="store_true")
     for flag in (*LIST_FIELDS.values(), "artifact"):
         p.add_argument(f"--{flag}", action="append", default=[])
         p.add_argument(f"--drop-{flag}", action="append", default=[])
