@@ -48,7 +48,14 @@ class TestCouncil(unittest.TestCase):
             input=stdin,
             cwd=cwd,
             check=False,
+            timeout=30,
         )
+
+    def _repo(self) -> Path:
+        repo = Path(self.tmp.name) / "repo"
+        (repo / ".git").mkdir(parents=True)
+        (repo / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        return repo
 
     def test_first_claim_wins_and_second_is_refused(self):
         self.assertEqual(self._run("s1", "claim", "work/x", "--work", "w").returncode, 0)
@@ -131,8 +138,7 @@ class TestCouncil(unittest.TestCase):
         self.assertEqual(sorted(self.root.rglob("*")), [])
 
     def test_gate_blocks_unclaimed_edits_in_a_git_worktree_only(self):
-        repo = Path(self.tmp.name) / "repo"
-        (repo / ".git").mkdir(parents=True)
+        repo = self._repo()
         inside = json.dumps({"session_id": "s1", "tool_input": {"file_path": str(repo / "f")}})
         outside = json.dumps(
             {"session_id": "s1", "tool_input": {"file_path": str(self.home / "f")}}
@@ -142,9 +148,20 @@ class TestCouncil(unittest.TestCase):
         self._run("s1", "claim", "work/x", "--work", "w")
         self.assertEqual(self._run("s1", "gate", stdin=inside).returncode, 0)
 
+    def test_gate_counts_only_a_git_dir_holding_head_or_a_gitdir_file(self):
+        base = Path(self.tmp.name)
+        (base / "stray" / ".git").mkdir(parents=True)
+        (base / "linked").mkdir()
+        (base / "linked" / ".git").write_text("gitdir: /elsewhere/.git/worktrees/linked\n", encoding="utf-8")
+        (base / "fifo").mkdir()
+        os.mkfifo(base / "fifo" / ".git", 0o600)
+        for folder, code in (("stray", 0), ("linked", 2), ("fifo", 0)):
+            with self.subTest(folder=folder):
+                edit = json.dumps({"session_id": "s1", "tool_input": {"file_path": str(base / folder / "f")}})
+                self.assertEqual(self._run("s1", "gate", stdin=edit).returncode, code)
+
     def test_gate_still_blocks_past_a_planted_fifo_or_malformed_claim(self):
-        repo = Path(self.tmp.name) / "repo"
-        (repo / ".git").mkdir(parents=True)
+        repo = self._repo()
         inside = json.dumps({"session_id": "s1", "tool_input": {"file_path": str(repo / "f")}})
         (self.root / "work" / "fifo").mkdir(parents=True)
         os.mkfifo(self.root / "work" / "fifo" / "claim.json", 0o600)
