@@ -85,6 +85,28 @@ class TestHubDeny(HubCase):
         self.assertIn("call to Skills session", logged[0]["text"])
         self.assertNotIn(ask_id, [item["id"] for item in self.snapshot()["inbox"]])
 
+    def test_one_signature_denies_a_mixed_selection_and_tells_each_requester(self):
+        self.claim("s1", "Skills session")
+        row = {"title": PUSH, "workdir": "/repo", "description": "ship", "check": "manual", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
+        self.write_council({"rasci.json": {"operator/push": row}})
+        ask_id = self.create_ask(ASK)
+        review_id = self.request("feat: deny me", "")
+        digest = hashlib.sha256(PUSH.encode()).hexdigest()
+        entries = [
+            self.denial("ask", ask_id, "", "post", ""),
+            self.denial("operator", "operator/push", digest, "post", ""),
+            {**self.entry("review", review_id, "", ""), "verb": "reject"},
+        ]
+        with mock.patch.object(batches, "UNDO", 0.05):
+            self.assertEqual(self.approve(entries, self.signed(entries, self.pin()))[0], 202)
+            self.settle(lambda: self.ask_status(ask_id, "0") == "denied")
+        self.settle(lambda: (skill_scripts.RASCI, ["set", "operator/push", "--status", "stopped"]) in self.scripts.calls)
+        self.settle(lambda: self.tool("review_wait", {"id": review_id, "timeout_seconds": 0})["structuredContent"]["status"] == "rejected")
+        self.settle(lambda: len(self.radio()) >= 2)
+        self.assertEqual(sorted(sent[:3] for sent in self.radio()), [["post", "--to", "Skills session"]] * 2)
+        self.assertTrue(all("Denied by the operator: " in sent[-1] for sent in self.radio()), self.radio())
+        self.assertFalse({ask_id, review_id} & {item["id"] for item in self.snapshot()["inbox"]})
+
     def test_every_class_but_mayday_reaches_the_agent_or_all(self):
         session = "s9"
         signer = self.pin()

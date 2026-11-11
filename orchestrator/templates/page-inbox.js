@@ -65,24 +65,30 @@
   const rejectOne = (item) => submit([entryOf(item, "reject", "")], `Denial: ${short(item.title)}`);
   const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Choice: ${label}`);
 
-  function bulk(items, label) {
-    const usable = items.filter(selectable);
+  const denialOf = (item) => (item.deniable ? {...entryOf(item, "reject", ""), channel: "post", reason: "", to: item.to} : item.kind === "review" ? entryOf(item, "reject", "") : null);
+  const pickable = (item) => !item.held && (selectable(item) || denialOf(item) !== null);
+
+  function bulk(items, label, deny) {
+    const usable = items.filter(deny ? (item) => denialOf(item) !== null : selectable);
     if (!usable.length) {
-      toast(`${label}: nothing to grant`, [], false);
+      toast(`${label}: nothing to ${deny ? "deny" : "grant"}`, [], false);
       return;
     }
     const rows = usable.map((item) => h("li", {},
-      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.kind === "decision" ? h("span", {class: "muted"}, `→ ${item.recommended}`) : null),
+      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.kind === "decision" && !deny ? h("span", {class: "muted"}, `→ ${item.recommended}`) : null),
       h("strong", {}, item.title),
       item.kind === "operator" ? h("div", {class: "command"}, h("code", {}, item.command)) : null,
       item.kind === "operator" ? h("span", {class: "muted"}, `in ${item.directory}`) : null,
       item.kind === "ask" ? h("div", {class: "command"}, h("code", {}, item.command)) : null));
-    const confirm = h("button", {type: "button", class: "btn primary"}, `Grant ${usable.length}`);
+    const confirm = h("button", {type: "button", class: deny ? "btn danger" : "btn primary"}, `${deny ? "Deny" : "Grant"} ${usable.length}`);
     confirm.addEventListener("click", () => {
       closeSheet();
-      submit(usable.map((item) => entryOf(item, "approve", item.kind === "decision" ? item.recommended : "")), `${label}: ${usable.length} entries`);
+      submit(usable.map((item) => (deny ? denialOf(item) : entryOf(item, "approve", item.kind === "decision" ? item.recommended : ""))), `${label}: ${usable.length} entries`);
     });
-    openSheet(label, [h("p", {class: "muted"}, "Every entry and every full command that gets granted. After the click the passkey signs the whole selection once; then 3 s remain to undo."), h("ul", {class: "mini"}, rows), h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
+    const note = deny
+      ? "Every entry and every full command that gets denied; each requester gets its denial by post. After the click the passkey signs the whole selection once; then 3 s remain to undo."
+      : "Every entry and every full command that gets granted. After the click the passkey signs the whole selection once; then 3 s remain to undo.";
+    openSheet(label, [h("p", {class: "muted"}, note), h("ul", {class: "mini"}, rows), h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
     confirm.focus();
   }
 
@@ -101,8 +107,8 @@
     return date.getTime() / 1000;
   }
 
-  function toggle(item) {
-    if (!item || !selectable(item)) {
+  function toggle(item, refocus) {
+    if (!item || !pickable(item)) {
       return;
     }
     const key = keyOf(item);
@@ -111,7 +117,12 @@
     } else {
       ui.selected.add(key);
     }
+    ui.cursor = Math.max(visibleInbox().findIndex((entry) => keyOf(entry) === key), 0);
     drawInbox();
+    const box = inboxDom.querySelector(`.item[data-index="${ui.cursor}"] > input[type="checkbox"]`);
+    if (refocus && box) {
+      box.focus({preventScroll: true});
+    }
   }
 
   function actionsFor(item) {
@@ -142,7 +153,7 @@
   function inboxItem(item, index) {
     const red = item.kind === "review" && item.gate !== "pass";
     const classes = ["item", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
-    const box = h("input", {type: "checkbox", "aria-label": `Select ${item.title}`, checked: ui.selected.has(keyOf(item)), disabled: !selectable(item), on: {change: () => toggle(item)}});
+    const box = h("input", {type: "checkbox", "aria-label": `Select ${item.title}`, checked: ui.selected.has(keyOf(item)), disabled: !pickable(item), on: {change: () => toggle(item, true)}});
     return h("li", {class: classes, "data-index": index},
       box,
       h("div", {},
@@ -204,12 +215,15 @@
       ui.snoozed = event.target.checked;
       drawInbox();
     }}});
-    const choose = h("button", {type: "button", class: "btn small soft", ...named(`Grant selection (${chosen.length})`), disabled: !chosen.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection")}}, icon("bi-check2-square"), String(chosen.length));
-    const all = h("button", {type: "button", class: "btn small primary", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green")}}, icon("bi-check2-all"), String(green.length));
+    const deniable = chosen.filter((item) => denialOf(item) !== null);
+    const grantable = chosen.filter(selectable);
+    const choose = h("button", {type: "button", class: "btn small soft", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection", false)}}, icon("bi-check2-square"), String(grantable.length));
+    const deny = h("button", {type: "button", class: "btn small danger", ...named(`Deny selection (${deniable.length})`, `Deny selection (${deniable.length}): each requester gets its denial by post, one passkey signature, 3 s to undo`), disabled: !deniable.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), String(deniable.length));
+    const all = h("button", {type: "button", class: "btn small primary", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), String(green.length));
     inboxDom.replaceChildren(
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Inbox", counter(waitingCount())), h("span", {class: "spacer"}),
         hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null),
-      h("div", {class: "inbox-actions"}, choose, all),
+      h("div", {class: "inbox-actions"}, choose, deny, all),
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
       items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now."));
     settleConsoles(items);

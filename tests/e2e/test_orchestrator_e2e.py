@@ -26,7 +26,7 @@ sys.path.insert(0, str(HERE.parent))
 from hub_case import HubCase
 from hub_engines import wav_bytes
 from hub_support import ASK, HOST_STATE, OPTIONS, RUNNER, iso, verifier
-from kvb_orchestrator import skill_scripts
+from kvb_orchestrator import batches, skill_scripts
 from test_hub_cleanup import DONE_TIP, FAKE_PKGMGR, host
 from test_hub_offices import COUNCIL_SCRIPT
 from test_hub_offices import host as office_host
@@ -909,6 +909,48 @@ RUN_DONE = """(async () => {@HELPERS@@LABELS@
   const lines = out().textContent.trim().split("\\n");
   return {done: line(), last: lines[lines.length - 1], lines: lines.length, followed: atEnd(), actions: all(".item-actions button", out().closest("li")).map(name)};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
+INBOX_PICK = """(async () => {@HELPERS@
+  navigator.credentials.get = @SIGNS@ ? navigator.credentials.get.bind(navigator.credentials) : () => Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
+  const posted = [];
+  const send = window.fetch.bind(window);
+  window.fetch = (path, init) => {
+    if (["/api/sign", "/api/inbox/approve"].includes(String(path))) {
+      posted.push([String(path), JSON.parse(init.body).items.map((item) => [item.id, item.verb, item.channel || null])]);
+    }
+    return send(path, init);
+  };
+  const list = await until(() => document.querySelector("#main .inbox-list"), 8000);
+  if (!list) {
+    return {error: text(document.getElementById("main"))};
+  }
+  let scroller = list;
+  while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 4 && getComputedStyle(scroller).overflowY !== "visible")) {
+    scroller = scroller.parentElement;
+  }
+  scroller = scroller || document.scrollingElement;
+  const last = all("#main .inbox-list > li").filter((li) => li.textContent.includes("echo row")).pop();
+  last.scrollIntoView({block: "center"});
+  await sleep(300);
+  const title = text(last.querySelector(".linkish"));
+  const before = scroller.scrollTop;
+  last.querySelector("input").click();
+  await sleep(300);
+  const after = scroller.scrollTop;
+  const holder = document.activeElement && document.activeElement.closest("li");
+  const focused = Boolean(holder && text(holder.querySelector(".linkish")) === title && document.activeElement.checked);
+  all("#main .inbox-list > li").find((li) => li.textContent.includes("pick a name")).querySelector("input").click();
+  await sleep(300);
+  const buttons = all("#main .inbox-actions button").map(name);
+  all("#main .inbox-actions button").find((button) => name(button).startsWith("Deny selection")).click();
+  await until(() => document.querySelector(".sheet-box .actions"), 4000);
+  const listed = all(".sheet-box ul.mini > li strong").map(text);
+  const confirm = all(".sheet-box .actions button").find((button) => text(button).startsWith("Deny "));
+  const label = text(confirm);
+  const shown = new Set(all("#toasts .toast"));
+  confirm.click();
+  const toast = await until(() => all("#toasts .toast").filter((node) => !shown.has(node)).map(text).find((entry) => entry.startsWith("Deny selection")), 15000);
+  return {title, before, moved: Math.abs(after - before), focused, buttons, listed, label, toast, posted, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
+})()""".replace("@HELPERS@", HELPERS)
 LAYOUT = """(async () => {@HELPERS@@LABELS@
   await until(() => document.querySelector("#main .console") && rowOf("Rule request"), 8000);
   const rule = rowOf("Rule request");
@@ -2098,6 +2140,46 @@ class TestOrchestratorE2E(HubCase):
                 self.layout(probe)
                 self.assertEqual(probe["console"], "doneExit code 0 after 9 s")
                 self.assertTrue(shot.is_file() and shot.stat().st_size > 1000, shot)
+
+    def check_inbox_picks(self, browser: str, driver: str, binary: str, signs: bool) -> None:
+        """Args:
+            signs: as in check_night_menu.
+        """
+        fill = {"description": "fill", "workdir": "/repo", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
+        rows = {f"operator/row-{n:02}": {**fill, "title": f"echo row {n:02}", "check": "manual", "seq": n} for n in range(1, 15)}
+        rows["operator/name"] = {**fill, "title": "pick a name", "check": "decision", "seq": 15}
+        self.write_council({"rasci.json": rows})
+        probe = INBOX_PICK.replace("@SIGNS@", "true" if signs else "false")
+        steps = [{"width": width, "height": height, "url": f"http://localhost:{self.port}/?{width}#stream/inbox", "wait": 1200, "probe": probe, "shot": str(OUT / f"{browser}-{width}-inbox-deny-selection.png")} for width, height in WIDTHS]
+        stops = []
+        with mock.patch.object(batches, "UNDO", 0.3):
+            data = self.drive(steps, self.authenticator() if signs else None, driver, binary)
+            if signs:
+                self.settle(lambda: len([call for call in self.scripts.calls if call[0] == skill_scripts.RASCI]) >= 2 * len(WIDTHS))
+            stops = [args for script, args in self.scripts.calls if script == skill_scripts.RASCI]
+        (OUT / f"{browser}-inbox-deny-selection.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        denied = []
+        for found, (width, _) in zip(data["results"], WIDTHS, strict=True):
+            with self.subTest(browser=browser, width=width):
+                self.assertNotIn("error", found)
+                self.assertGreater(found["before"], 0, found)
+                self.assertEqual((found["moved"], found["focused"], found["wide"]), (0, True, False), found)
+                self.assertTrue({"Grant selection (1)", "Deny selection (2)"} <= set(found["buttons"]), found["buttons"])
+                self.assertEqual((sorted(found["listed"]), found["label"]), (sorted([found["title"], "pick a name"]), "Deny 2"))
+                task = f"operator/row-{found['title'][-2:]}"
+                items = sorted([[task, "reject", "post"], ["operator/name", "reject", "post"]])
+                self.assertEqual([[path, sorted(entries)] for path, entries in found["posted"]], [["/api/sign", items], *([["/api/inbox/approve", items]] if signs else [])])
+                self.assertIn("takes effect" if signs else "not signed", found["toast"])
+                denied += [task, "operator/name"]
+        self.assertEqual(sorted(stops), sorted([["set", task, "--status", "stopped"] for task in denied]) if signs else [])
+
+    def test_chromium_keeps_the_inbox_scroll_on_a_tick_and_denies_a_selection_with_one_signature_at_three_widths(self):
+        self.check_inbox_picks("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"), signs=True)
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_keeps_the_inbox_scroll_on_a_tick_and_denies_nothing_unsigned_at_three_widths(self):
+        self.check_inbox_picks("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"), signs=False)
 
     def choice_steps(self, browser: str, signs: bool, questions: dict[int, str]) -> list[dict]:
         flag = "true" if signs else "false"
