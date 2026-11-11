@@ -34,7 +34,7 @@ hotfix.py void --repo <worktree> --target <t> [--target ...]
 ## Before every deploy, merge or gate
 
 1. `sync`: fetches, merges `origin/<default>`, then every branch up the funnel
-   chain the `kvb-org-split` skill records as `base` (open rows of this
+   chain the `kvb-org-swarm` skill records as `base` (open rows of this
    repository), each with `--no-verify --no-edit`. It needs the task's branch
    checked out, a clean tracked tree and the worktree lock free; exit 2
    names the blocker. Exit 4: a merge conflicted and was aborted;

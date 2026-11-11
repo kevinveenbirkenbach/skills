@@ -1,7 +1,7 @@
 # Coordinating a failure or fix with peers
 
-`kvb-org-coordinate`, `kvb-ci-triage`, `kvb-code-tune`, `kvb-org-split` and
-`kvb-cleanup` follow these steps.
+`kvb-org-coordinate`, `kvb-ci-triage`, `kvb-code-tune`, `kvb-org-swarm`,
+`kvb-org-unify` and `kvb-cleanup` follow these steps.
 
 1. **Look**: `council.py list`, the `kvb-org-rasci` register, the radio,
    `hotfix.py match --line '<line>' --repo <worktree>` of the `kvb-git-hotfix`

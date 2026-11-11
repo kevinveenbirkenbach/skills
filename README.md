@@ -74,7 +74,8 @@ flowchart LR
   check --> check_ansible[kvb-check-ansible]
   check --> check_score[kvb-check-score]
   org --> org_organize[kvb-org-organize]
-  org --> org_split[kvb-org-split]
+  org --> org_swarm[kvb-org-swarm]
+  org --> org_unify[kvb-org-unify]
   org --> org_coordinate[kvb-org-coordinate]
   org --> org_perform[kvb-org-perform]
   org --> org_matrix[kvb-org-matrix]
@@ -188,7 +189,8 @@ flowchart LR
   end
   subgraph cat_org [org]
     democracy[kvb-org-organize]
-    funnel[kvb-org-split]
+    funnel[kvb-org-swarm]
+    unify[kvb-org-unify]
     coordinate[kvb-org-coordinate]
     subagent_model[kvb-org-perform]
     status_matrix[kvb-org-matrix]
@@ -297,6 +299,12 @@ flowchart LR
   democracy --> merge_fix
   democracy -. claim and release .-> rasci
   funnel --> rasci
+  unify --> funnel
+  unify --> rasci
+  unify --> gate
+  unify --> branch_gc
+  unify --> cleanup
+  unify --> radio
   status_matrix --> rasci
   cleanup --> artefacts
   artefacts --> rasci

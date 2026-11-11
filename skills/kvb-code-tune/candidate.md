@@ -28,7 +28,7 @@ Levers that usually pay:
 
 ## Delegating it
 
-Hand every optimization to an agent through the `kvb-org-split` skill: one
+Hand every optimization to an agent through the `kvb-org-swarm` skill: one
 sidetree per candidate, branched from an exact commit, with a time cap and
 "measure first, report the time split before implementing". One agent per
 candidate, never more; the brief names the step, its log line and number, the

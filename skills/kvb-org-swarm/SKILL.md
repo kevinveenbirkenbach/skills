@@ -1,11 +1,11 @@
 ---
-name: kvb-org-split
+name: kvb-org-swarm
 description: >
   Keep agent work in its own worktree until it meets the 90/5 bar
   (kvb-check-score), else a proposal. Trigger when delegating or parallelizing.
 ---
 
-# Funnel
+# Swarm
 
 The main line only receives changes that have earned it. Everything else stays
 in a sidetree until it does, or leaves as a proposal.
@@ -52,9 +52,8 @@ in a sidetree until it does, or leaves as a proposal.
 5. **Independent review.** Before any merge, run the `kvb-think-dialectic`
    skill with skeptics who did not write the change, briefed the same way
    (exact diff and claim, capped answer). A hole returns the change to stage 3.
-6. **Merge.** At or above the bar, merge the sidetree branch by the
-   repository's commit rules, then re-verify on the main line with the
-   project's gate.
+6. **Merge.** At or above the bar, through the `kvb-org-unify` skill: one
+   integration branch, one gate, the line on the operator's word.
 7. **Tear down.** Read `teardown.md` next to this file before tearing down a
    merged, proposed or abandoned sidetree.
 

@@ -67,7 +67,7 @@ commit starts from zero.
   only while a host process under it lives; a `docker compose exec` deploy
   runs on in its container unguarded.
 - 90/5 is allowed only on `gate: green` for the exact head: in
-  `kvb-check-score`, the `90/5` label and the `kvb-org-split` bar.
+  `kvb-check-score`, the `90/5` label and the `kvb-org-swarm` bar.
 - Never edit `kvb-gate.json` by hand.
 
 ## Output

@@ -35,7 +35,7 @@ steps 0 to 2; the judgement stays yours.
    member's only when the first leaves part of the cluster unexplained. Pull
    them even when the log looks conclusive: it only names the artifact; the
    assertion, server-side exception and state dumps are inside.
-5. **One funnel per cluster** via the `kvb-org-split` skill: one agent per
+5. **One funnel per cluster** via the `kvb-org-swarm` skill: one agent per
    claimed cluster, its own worktree and branch from the exact current HEAD,
    that cluster its only concern, worked as `funnel.md` next to this file
    says (dialectic, shared vs hidden causes, root fix); read it before

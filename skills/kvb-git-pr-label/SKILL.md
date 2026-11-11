@@ -11,7 +11,7 @@ holds:
 - **`hotfix`**: the pull request targets the default branch and fixes a
   failure on it, a red default-branch run or an issue that reproduces there;
   name the run or issue.
-- **`90/5`**: the pull request meets the bar of the `kvb-org-split` skill (fix
+- **`90/5`**: the pull request meets the bar of the `kvb-org-swarm` skill (fix
   confidence ≥ 90 %, break risk ≤ 5 %, cost and time ≤ 100 %; over
   100 %, ask the operator first, naming the cause), from the
   `kvb-check-score` block in its body or freshly assessed, and only when
