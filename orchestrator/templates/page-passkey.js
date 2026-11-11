@@ -32,7 +32,9 @@
     }
   }
 
-  async function signedProof(path, fields, label) {
+  let signing = false;
+
+  async function prove(path, fields, label) {
     const result = await sendJson(path, fields);
     if (!result.ok || !result.data) {
       toast(`${label}: not possible`, fail(result), false);
@@ -43,6 +45,19 @@
     }
     const signed = await assertion(result.data, label);
     return signed ? {proof: {payload: result.data.payload, assertion: signed}} : null;
+  }
+
+  async function signedProof(path, fields, label) {
+    if (signing) {
+      toast(`${label}: not signed`, ["Another passkey signature is still open: finish or cancel it first; nothing was sent."], false);
+      return null;
+    }
+    signing = true;
+    try {
+      return await prove(path, fields, label);
+    } finally {
+      signing = false;
+    }
   }
 
   function proofFor(entries, label) {
