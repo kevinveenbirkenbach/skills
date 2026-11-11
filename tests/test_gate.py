@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import fcntl
 import importlib.util
 import io
 import json
 import os
+import pwd
 import shutil
 import signal
 import subprocess
@@ -17,6 +19,7 @@ import time
 import unittest
 from pathlib import Path
 from typing import ClassVar
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "skills" / "kvb-check-gate" / "scripts" / "gate.py"
@@ -68,6 +71,7 @@ RED = {
 }
 USAGE = {"Makefile": "test:\n\t@true\nbuild:\n\t@true\n"}
 VOID = {"Makefile": ".PHONY: test test-a test-b\ntest:\n\t@echo all\ntest-a:\n\t@echo a\ntest-b:\n\t@echo b\n"}
+ORACLE = {"Makefile": ".PHONY: test test-oracle\ntest:\n\t@echo all\ntest-oracle:\n\t@echo oracle\n"}
 FAILED = ("--fail-regex", r"FAILED TARGETS: \S")
 SYNC_HOLDER = "4242\thotfix.py sync --task t\n"
 COUNTING_CHILD = (
@@ -140,6 +144,49 @@ class GateCase(unittest.TestCase):
 
     def last_status_line(self) -> str:
         return self.gate("status", "--repo", str(self.repo)).stdout.splitlines()[-1]
+
+
+class TestExcluded(GateCase):
+    files = ORACLE
+
+    def call(self, gate: object, command: str, **fields: object) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, self.env, clear=True), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                code = getattr(gate, command)(argparse.Namespace(repo=str(self.repo), **fields))
+            except SystemExit as stop:
+                code = stop.code
+        return code, out.getvalue(), err.getvalue()
+
+    def exclude(self, gate: object, listed: object) -> None:
+        gate.CONFIG.write_text(json.dumps({"gate_excluded_targets": listed}), encoding="utf-8")
+
+    def test_an_excluded_target_is_shown_excluded_never_required_and_refused_by_run(self):
+        gate = load_gate()
+        gate.CONFIG = self.root / "config.json"
+        run = {"log_dir": str(self.logs), "fail_regex": None}
+        self.assertEqual(self.call(gate, "cmd_run", target=["test"], **run)[0], 0)
+        code, out, _ = self.call(gate, "cmd_status", json=True)
+        self.assertEqual((code, json.loads(out)["open"]), (1, ["missing: test-oracle"]))
+        self.exclude(gate, ["test-oracle"])
+        code, out, _ = self.call(gate, "cmd_status", json=True)
+        after = json.loads(out)
+        self.assertEqual((code, after["gate"]), (0, "green"))
+        self.assertEqual({r["target"]: r["status"] for r in after["targets"]}, {"test": "green", "test-oracle": "excluded"})
+        self.assertEqual(self.call(gate, "cmd_status", json=False)[1].splitlines()[-1], f"gate: green (excluded: test-oracle by {gate.CONFIG})")
+        code, _, err = self.call(gate, "cmd_run", target=["test-oracle"], **run)
+        self.assertEqual(code, 2)
+        self.assertIn("excluded from every gate by gate_excluded_targets", err)
+        self.exclude(gate, ["test", "test-oracle"])
+        code, out, _ = self.call(gate, "cmd_status", json=True)
+        self.assertEqual((code, json.loads(out)["open"]), (1, ["every make test* target is excluded"]))
+        self.exclude(gate, "test-oracle")
+        self.assertEqual(self.call(gate, "cmd_status", json=False)[0], 2)
+
+    def test_the_exclusion_list_ignores_home_and_environment_overrides(self):
+        with mock.patch.dict(os.environ, {"HOME": str(self.root), "AGENTS_COUNCIL_CONFIG": str(self.root / "config.json")}):
+            gate = load_gate()
+        self.assertEqual(gate.CONFIG, Path(pwd.getpwuid(os.getuid()).pw_dir) / ".claude" / "agents-council" / "config.json")
 
 
 class TestGreenPath(GateCase):

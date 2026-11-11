@@ -11,9 +11,11 @@ confidence ≥ 90 %, break risk ≤ 5 %, cost and time ≤ 100 % in
 the cause) before every `make test*` target of the project, each Makefile target named `test` or starting with
 `test-`, ran green on the exact head with a clean tracked tree. Until then
 the numbers are provisional and every target not green is a residual.
+Targets in the operator's `gate_excluded_targets` are excluded, not
+residuals.
 
 `${CLAUDE_SKILL_DIR}/scripts/gate.py` reads the targets from the Makefile and
-its includes without running make, and keeps results per commit in
+its includes and keeps results per commit in
 `kvb-gate.json` in the git common dir: linked worktrees share them, a new
 commit starts from zero.
 
@@ -30,8 +32,8 @@ commit starts from zero.
 3. **Status**: `gate.py status --repo <root>`. `gate: green` ends here; a
    `missing hotfix` reason means back to step 1.
 4. **Admit**: every gate target is heavy and runs only inside
-   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold` (step 5),
-   which grants by rule and releases on exit. Only a single test module
+   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold` (step 5).
+   Only a single test module
    self-admits (`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py
    admit --kind test-nostack`), and it never turns a gate target green. A
    hotfix gate adds `--hotfix <slug>` and takes the next free gate slot.
