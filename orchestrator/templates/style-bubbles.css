@@ -1,0 +1,19 @@
+#bubbles-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.bubbles { position: fixed; inset: 0; z-index: 20; overflow: hidden; pointer-events: none; }
+.bubbles[hidden] { display: none; }
+.speech-bubble { --scale: 1; --tail: 0px; position: absolute; display: grid; gap: 2px; width: max-content; max-width: min(280px, 72vw); padding: 8px 13px; border: 2px solid var(--text); border-radius: 18px; background: var(--panel); color: var(--text); box-shadow: var(--shadow-lift); font: 400 var(--fs-md)/1.35 "Comic Neue", "Comic Sans MS", cursive; transform: translate(-50%, -100%) scale(var(--scale)); transform-origin: 50% 100%; transition: transform .3s var(--ease), opacity .4s var(--ease); }
+.speech-bubble::before, .speech-bubble::after { content: ""; position: absolute; top: 100%; left: calc(50% + var(--tail)); border-style: solid; border-color: transparent; }
+.speech-bubble::before { margin-left: -9px; border-width: 12px 9px 0; border-top-color: var(--text); }
+.speech-bubble::after { margin-left: -6px; border-width: 8px 6px 0; border-top-color: var(--panel); }
+.speech-bubble.leaving { opacity: 0; }
+.bubble-words { display: block; max-height: calc(6 * 1.35em); overflow: hidden; overflow-wrap: anywhere; scroll-behavior: smooth; }
+.speech-bubble[data-state="waiting"] .bubble-words { letter-spacing: .12em; }
+.bubble-who { display: none; color: var(--muted); font: 650 var(--fs-xs)/1.2 var(--sans); }
+.bubble-bar { position: absolute; right: 0; bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); left: 0; display: flex; flex-wrap: wrap-reverse; justify-content: center; align-items: flex-end; gap: var(--sp-3) var(--sp-4); padding: 0 var(--sp-3); }
+.bubble-bar .speech-bubble { position: relative; transform: scale(var(--scale)); }
+.bubble-bar .speech-bubble::before, .bubble-bar .speech-bubble::after { display: none; }
+.bubble-bar .bubble-who { display: block; }
+@media (prefers-reduced-motion: reduce) {
+  .speech-bubble { transition: opacity .4s var(--ease); }
+  .bubble-words { scroll-behavior: auto; }
+}

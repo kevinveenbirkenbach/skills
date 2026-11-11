@@ -13,6 +13,7 @@
     syncMusic();
     syncRadio();
     musicButton();
+    syncBubbles();
   }
 
   async function saveSettings(next) {
@@ -187,6 +188,7 @@
         space: savedSpace(),
         estimation: settings.estimation,
         trend: settings.trend,
+        bubbles: settings.bubbles,
       };
       if (await saveSettings(next)) {
         closeSheet();

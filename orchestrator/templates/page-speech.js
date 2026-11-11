@@ -12,30 +12,66 @@
   function say(item) {
     speech.pending = Voice.enqueue(speech.pending, item, SPEECH_QUEUE);
     pump();
+    drawBubbles();
+  }
+
+  function readSilently(item, next) {
+    Object.assign(item, {started: performance.now(), duration: Bubbles.reading(item.words.length)});
+    speech.current = item;
+    speech.timer = window.setTimeout(() => {
+      Object.assign(speech, {current: null, timer: 0});
+      drawSpeaker();
+      next();
+    }, item.duration * 1000);
+    drawSpeaker();
+  }
+
+  function endSilent() {
+    window.clearTimeout(speech.timer);
+    Object.assign(speech, {current: null, timer: 0, busy: false});
+  }
+
+  function dropSilent() {
+    speech.pending = speech.pending.filter((item) => !item.silent);
+    if (speech.timer) {
+      endSilent();
+      drawSpeaker();
+      pump();
+    }
   }
 
   async function pump() {
     if (speech.busy || !speech.pending.length) {
       return;
     }
-    const sound = context();
-    if (!sound) {
+    const [item, ...rest] = speech.pending;
+    const sound = item.silent ? null : context();
+    if (!item.silent && !sound) {
       speech.pending = [];
       return;
     }
-    const [item, ...rest] = speech.pending;
     speech.pending = rest;
     speech.busy = true;
     const next = () => {
       speech.busy = false;
       pump();
     };
+    if (item.silent) {
+      readSilently(item, next);
+      return;
+    }
+    speech.loading = item;
+    drawBubbles();
     try {
       const response = await fetch("/api/tts", {method: "POST", headers: {"X-Kvb-Orchestrator": "1", "Content-Type": "application/json"}, body: JSON.stringify({text: item.text, voice: item.voice}), cache: "no-store"});
       if (!response.ok) {
         throw new Error(`${response.status} ${(await response.text()).trim()}`);
       }
       const buffer = await sound.decodeAudioData(await response.arrayBuffer());
+      if (speech.loading !== item) {
+        next();
+        return;
+      }
       const source = sound.createBufferSource();
       const gain = sound.createGain();
       gain.gain.value = loudness(item.tone);
@@ -47,29 +83,45 @@
         next();
       }, {once: true});
       duck(buffer.duration);
-      Object.assign(speech, {current: item, source});
+      Object.assign(item, {started: performance.now(), duration: buffer.duration});
+      Object.assign(speech, {current: item, source, loading: null});
       drawSpeaker();
       source.start();
     } catch (error) {
+      const kept = speech.loading === item;
+      speech.loading = null;
       speechFailed([String(error.message || error)]);
+      if (kept && settings.bubbles && item.words) {
+        readSilently(item, next);
+        return;
+      }
       next();
     }
   }
 
   function cancelSpeech() {
-    speech.pending = [];
+    if (speech.timer) {
+      endSilent();
+    }
+    Object.assign(speech, {pending: [], current: null, loading: null});
     if (speech.source) {
       speech.source.stop();
     }
+    clearBubbles();
+    drawSpeaker();
   }
 
   function speakRows(rows) {
-    if (!settings.speech.on || !state.speech.tts) {
+    const voiced = settings.speech.on && state.speech.tts;
+    if (!voiced && !settings.bubbles) {
       return;
     }
-    for (const row of rows.filter((entry) => entry.ts >= state.now - SPEECH_FRESH && Voice.speakable(entry, settings.speech))) {
-      const line = row.text.split("\n").map((part) => part.trim()).find(Boolean) || "";
-      say({text: row.speech, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, line: short(line)});
+    for (const row of rows.filter((entry) => entry.ts >= state.now - SPEECH_FRESH)) {
+      const audible = voiced && Voice.speakable(row, settings.speech);
+      if (audible || (settings.bubbles && Bubbles.picked(row, settings.speech))) {
+        const line = row.text.split("\n").map((part) => part.trim()).find(Boolean) || "";
+        say({text: row.speech, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, line: short(line), words: Bubbles.words(row.text), silent: !audible});
+      }
     }
   }
 

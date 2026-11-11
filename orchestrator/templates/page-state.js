@@ -45,7 +45,7 @@
   const sky = {canvas: document.getElementById("sky"), stars: Ambience.stars(320, 7), mode: "", frame: 0};
   const music = {gain: null, filter: null, drone: [], timer: 0, tension: 0, ducked: 0};
   const radio = {element: null, url: "", level: 0, timer: 0, playing: false, waiting: false, index: -1, pick: null, sig: "", state: "", short: "", note: "", told: null};
-  const speech = {pending: [], busy: false, warned: 0, current: null, source: null};
+  const speech = {pending: [], busy: false, warned: 0, current: null, source: null, loading: null, timer: 0};
   const mic = {recorder: null, held: false, busy: false, timer: 0};
   const space = {
     views: {graph: {...state.settings.space.graph}, sky: {...state.settings.space.sky}}, glides: {graph: null, sky: null}, edits: 0, saved: 0, timer: 0, look: false, compass: null,
