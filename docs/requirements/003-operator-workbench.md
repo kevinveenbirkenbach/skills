@@ -10,7 +10,7 @@ changed and what it costs, and a gate means something again.
 
 ## Decisions (operator-confirmed 2026-11-11; do not re-litigate)
 
-1. **One document**: the whole package lives here as work packages W1 to W5.
+1. **One document**: the whole package lives here as work packages W1 to W6.
    Rejected: one document per feature.
 2. **Operator tasks next to Tasks**: the Inbox entry leaves the top navigation
    and the Stream; the Tasks entry carries the count of open operator tasks;
@@ -78,10 +78,19 @@ changed and what it costs, and a gate means something again.
 15. **Simplicity**: icons, counts and names instead of text; every action is
     reachable in the GUI.
 16. **Delivery**: one subtree `feature/operator-workbench` with split
-    worktrees, at most 4 subagents at a time on W1 to W4, W5 serially in the
-    requesting agent with Experiment; one gate (make test, e2e Chromium and
-    Firefox at 1920, 1366 and 390 px, MEDUSA, 90/5); master only on the
+    worktrees, at most 4 subagents at a time on W1 to W4 and W6, W5 serially
+    in the requesting agent with Experiment; one gate (make test, e2e Chromium
+    and Firefox at 1920, 1366 and 390 px, MEDUSA, 90/5); master only on the
     operator's word. Rejected: 8 in parallel, serial without subagents.
+17. **Speech bubbles**: one toolbar icon switches speech bubbles on in every
+    view that shows agents. The agent being read aloud gets the largest
+    bubble, its words appear one by one in time with the audio; when it ends
+    the bubble fades while the next one grows and is read. Waiting messages
+    show a small `…` bubble, the newest smallest, steps in between. Without
+    TTS the bubbles run at reading pace. Font: vendored Comic Neue (SIL OFL
+    1.1). Rejected: a ticker, the full text with a karaoke mark, bubbles only
+    with audio, system fonts only, a switch only in the settings, a caption
+    under the speaker only.
 
 ## Approach
 
@@ -95,7 +104,7 @@ flowchart TD
     subgraph C["📐 1 · Contracts"]
         C1["🗄️ gates.db schema, staged-change job, diff payload, sampler files"] --> C2["🔴 Red tests per work package"]
     end
-    C2 --> W1A & W2A & W3A & W4A & W5A
+    C2 --> W1A & W2A & W3A & W4A & W5A & W6A
     subgraph W1["📥 W1 · Operator tasks"]
         W1A["🛠️ Nav badge, Waits on Operator cards, diff, feedback"] --> W1B{"🧪 Green?"}
         W1B -- "🔴 fix" --> W1A
@@ -116,7 +125,11 @@ flowchart TD
         W5A["🛠️ gates.py, receipts, hooks, queue after-wait"] --> W5B{"🤝 Experiment agrees?"}
         W5B -- "✏️ changes" --> W5A
     end
-    W1B & W2B & W3B & W4B -- "🟢" --> U1
+    subgraph W6["💬 W6 · Speech bubbles"]
+        W6A["🛠️ Bubble layer, anchors per view, word reveal, queue sizes"] --> W6B{"🧪 Green?"}
+        W6B -- "🔴 fix" --> W6A
+    end
+    W1B & W2B & W3B & W4B & W6B -- "🟢" --> U1
     W5B -- "👍" --> U1
     subgraph U["🔀 2 · Unify"]
         U1["🔀 Merge splits into the subtree"] --> U2{"🧪 Gate: make test, e2e x3, MEDUSA, 90/5"}
@@ -281,6 +294,35 @@ The work packages meet only through these interfaces:
 - **Mounts**: the hub mounts `~/.local/state/agents-council` read-only and
   opens `gates.db` read-only.
 
+### W6 Speech bubbles
+
+- [ ] A `bi-chat-quote` toolbar icon (`title` and `aria-label` "Speech
+      bubbles") switches the bubbles on and off for every view that shows
+      agents (Agents graph, 3D, Hierarchy, Radio, Stream); the choice is kept
+      in the hub settings and survives a reload.
+- [ ] One overlay layer (fixed, `pointer-events: none`) draws all bubbles; a
+      DOM view anchors a bubble at the visible `[data-face]` element of its
+      agent, the 3D view projects the agent's node through the camera on every
+      frame; an agent without an anchor in the active view speaks from a
+      caption bar at the bottom.
+- [ ] The bubble of `speech.current` is the largest (scale 1) and shows its
+      line word by word, word i of n at i/n of `buffer.duration`; text beyond
+      6 lines scrolls up inside the bubble. On `ended` it fades out within
+      400 ms while the next item grows to scale 1 and starts.
+- [ ] Every item of `speech.pending` shows a `…` bubble at its agent, scaled
+      by queue position: current 1, then 0.8, 0.65, at least 0.5, so the
+      newest is the smallest; an agent with several waiting items shows one
+      bubble at the size of its earliest.
+- [ ] With speech off, TTS unavailable or muted, the same rows run through the
+      same queue timed at 180 words per minute, at least 1.5 s each.
+- [ ] Bubble text uses Comic Neue as a vendored woff2 with its SIL OFL 1.1
+      text in `orchestrator/vendor/`, stack `"Comic Neue", "Comic Sans MS",
+      cursive`; no external font request, the CSP stays unchanged.
+- [ ] Stop speaking clears every bubble at once; switching the bubbles off
+      leaves speech playback unchanged; `prefers-reduced-motion` drops the
+      scaling and scrolling animation.
+- [ ] Bubble text is set as text content, never as HTML.
+
 ### Simplicity
 
 - [ ] Every new control is a Bootstrap Icon with `title` and `aria-label`; no new
@@ -297,6 +339,8 @@ The work packages meet only through these interfaces:
   - [ ] Resources sample parsing on fixtures (df, meminfo, nvidia-smi, asleep
         GPU); token offsets; retention fold; diff cap and masking; feedback
         payload.
+  - [ ] Bubble schedule: scale per queue position, word reveal times from a
+        duration, reading-pace duration, one bubble per agent.
 - Integration:
   - [ ] A scratch repository with installed hooks refuses a commit without a
         receipt and passes it after a queue gate; refuses a merge below the
@@ -314,3 +358,7 @@ The work packages meet only through these interfaces:
         line, card popup; forecast two lines and ∞.
   - [ ] Artifacts clean-all dry run, Ancestry in both tabs, a gate set;
         Resources charts; no page scrollbar.
+  - [ ] Bubbles on: two radio rows without TTS show the first agent's bubble
+        largest with its words appearing, the second as a smaller `…`; after
+        the first ends the second grows; the setting survives a reload; off
+        hides the layer.
