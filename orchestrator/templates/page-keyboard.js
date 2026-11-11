@@ -62,7 +62,7 @@
       moveCursor(event.key === "j" ? 1 : -1);
     } else if (inInbox && event.key === "x") {
       event.preventDefault();
-      toggle(current);
+      toggle(current, false);
     } else if (inInbox && event.key === "a") {
       event.preventDefault();
       if (current && !current.held) {
