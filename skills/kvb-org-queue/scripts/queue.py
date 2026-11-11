@@ -120,6 +120,7 @@ SIBLINGS = {
     "nofollow": SKILLS / "kvb-org-organize" / "scripts" / "nofollow.py",
 }
 POLL_SECONDS = 20
+CLAIM_SECONDS = 3 * POLL_SECONDS
 TICK_SECONDS = 0.2
 HOUR = 3600
 CANCELLED = 3
@@ -373,6 +374,8 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       An unblocked entry counts as granted for the entries after it, whoever
       holds it, so a lower entry never takes a higher entry's slot; one
       blocked by disk or budget reserves its need against the entries after it.
+      A waiting entry whose holder has not polled for CLAIM_SECONDS reserves
+      nothing and comes last.
     """
     active = [e for e in entries if e["status"] == "active"]
     available = free_gb - sum(e["need_gb"] for e in active)
@@ -381,7 +384,8 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
     counts = Counter(e["kind"] for e in active)
     busy = {e["workdir"] for e in active}
     verdicts: dict[str, str | None] = {}
-    for entry in ordered([e for e in entries if e["status"] == "waiting"], ranks, agents, now):
+    waiting = [e for e in entries if e["status"] == "waiting"]
+    for entry in ordered([e for e in waiting if not silent(e, now)], ranks, agents, now):
         kind, need, workdir, share = entry["kind"], entry["need_gb"], entry["workdir"], footprints[entry["id"]]
         reason = host_reason(stage, memory, silenced, need) or slot_reason(kind, workdir, slot_limits, counts, busy)
         if reason is None:
@@ -391,7 +395,21 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
                 counts[kind] += 1
                 busy.add(workdir)
         verdicts[entry["id"]] = reason
+    for entry in waiting:
+        if silent(entry, now):
+            verdicts[entry["id"]] = f"no poll for {now - entry['polled']:.0f} s; reserves nothing until it polls again"
     return verdicts
+
+
+def silent(entry: dict, now: float) -> bool:
+    return entry["status"] == "waiting" and now - entry.get("polled", now) > CLAIM_SECONDS
+
+
+def rejoin(data: dict, entry: dict, now: float) -> None:
+    if silent(entry, now):
+        data["seq"] += 1
+        entry.update(seq=data["seq"], enqueued=now)
+    entry["polled"] = now
 
 
 def plus(used: dict[str, float], share: dict[str, float]) -> dict[str, float]:
@@ -572,6 +590,7 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
             if not mine:
                 print(f"queue: {entry_id} was cancelled", file=sys.stderr)
                 return CANCELLED, 0
+            rejoin(data, mine[0], now)
             verdicts = decide(cfg, data["entries"], free, now, signatures, kinds)
             pending = pending_ram(data["entries"], entry_id, now, signatures, kinds)
             reason = verdicts[entry_id] or load_reason(cfg["load_limits"], cpu, mem, pending)

@@ -208,6 +208,22 @@ class TestEvaluate(unittest.TestCase):
         verdicts = self.decide([job(1, task="work/b", kind="deploy"), job(2, kind="deploy")])
         self.assertEqual(verdicts, {"j2": None, "j1": "all 1 deploy slots taken"})
 
+    def test_a_waiter_that_stopped_polling_reserves_nothing_and_the_next_one_is_granted(self):
+        behind = job(3, task="work/b", kind="deploy", polled=NOW)
+        verdicts = self.decide([job(2, kind="deploy", polled=NOW - 61), behind])
+        self.assertEqual(verdicts, {"j3": None, "j2": "no poll for 61 s; reserves nothing until it polls again"})
+        for polling in (job(2, kind="deploy", polled=NOW - 59), job(2, kind="deploy")):
+            self.assertEqual(self.decide([polling, behind]), {"j2": None, "j3": "all 1 deploy slots taken"})
+
+    def test_a_silent_waiter_rejoins_at_the_back_once_it_polls_again(self):
+        data = {"seq": 7, "entries": []}
+        silent = job(2, polled=NOW - 61, enqueued=NOW - 2 * HOUR)
+        self.queue.rejoin(data, silent, NOW)
+        self.assertEqual((silent["seq"], silent["enqueued"], silent["polled"], data["seq"]), (8, NOW, NOW, 8))
+        polling = job(3, polled=NOW - 30, enqueued=NOW - HOUR)
+        self.queue.rejoin(data, polling, NOW)
+        self.assertEqual((polling["seq"], polling["enqueued"], polling["polled"], data["seq"]), (3, NOW - HOUR, NOW, 8))
+
     def test_disk_reservation_keeps_smaller_jobs_from_starving_a_big_one(self):
         big, small = job(1, need_gb=50), job(2, task="work/b", need_gb=5)
         verdicts = self.decide([big, small], free_gb=40.0)
