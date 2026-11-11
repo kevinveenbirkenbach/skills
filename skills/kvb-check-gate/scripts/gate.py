@@ -6,10 +6,14 @@ Args:
         parsed statically from the Makefile make reads in <dir> and every file
         it includes; make is never run.
     status --repo <dir> [--json]: per listed target green, red or missing for
-        HEAD, from `kvb-gate.json` in the git common dir; `hotfix.py pending
-        --target <t> ...` of the kvb-git-hotfix skill, given the listed
-        targets, keeps the gate open while a merged hotfix that turns one of
-        them green is missing from HEAD.
+        HEAD, from `kvb-gate.json` in the git common dir, or excluded when the
+        list gate_excluded_targets in CONFIG names it; an excluded target never
+        keeps the gate open, excluding every target does. CONFIG is
+        .claude/agents-council/config.json in the passwd home of the account
+        running gate.py, never $HOME. `hotfix.py pending --target <t> ...`
+        of the kvb-git-hotfix skill, given the other listed targets, keeps the
+        gate open while a merged hotfix that turns one of them green is
+        missing from HEAD.
     run --repo <dir> --target <t> [--target ...] --log-dir <dir>
         [--fail-regex <re> ...]: under the worktree lock, run each target as
         `make -C <dir> <t>` with stdout and stderr in
@@ -44,7 +48,8 @@ Args:
 Output:
     list: one `<target>\t<file>:<line>` per target.
     status: one `<status>\t<target>\t<log>\t<finished>\t<reason>` per target,
-        then `gate: green`, or `gate: open (...)` naming what is missing,
+        then `gate: green`, `gate: green (excluded: <target>, ... by
+        <CONFIG>)`, or `gate: open (...)` naming what is missing,
         `missing hotfix: <slug>, ...` included.
     run: one `<status>\t<target>\t<log>\t<reason>` per target; on a void
         `void: merge main for hotfix <slug>, then rerun`.
@@ -54,8 +59,8 @@ Output:
 Exit codes:
     list: 0 done, 2 usage error.
     status: 0 gate green, 1 gate open, 2 usage error.
-    run: 0 every target green, 1 a target red, 2 usage error, dirty tracked
-        files or HEAD moved during a run, 3 void: the remaining targets are
+    run: 0 every target green, 1 a target red, 2 usage error, an excluded
+        target, dirty tracked files or HEAD moved during a run, 3 void: the remaining targets are
         neither run nor recorded, 75 (EX_TEMPFAIL) busy: another run or hold
         holds the worktree, or a sync still holds it after SYNC_WAIT_SECONDS.
     hold: the command's exit code unchanged, 128+N when signal N ended it;
@@ -71,6 +76,7 @@ import fcntl
 import glob
 import json
 import os
+import pwd
 import re
 import shlex
 import signal
@@ -103,6 +109,8 @@ POLL_SECONDS = 0.1
 BUSY = os.EX_TEMPFAIL
 FORWARDED = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 HOTFIX = Path(__file__).resolve().parents[2] / "kvb-git-hotfix" / "scripts" / "hotfix.py"
+CONFIG = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".claude" / "agents-council" / "config.json"
+EXCLUDED = "gate_excluded_targets"
 
 
 def fail(message: str) -> NoReturn:
@@ -380,6 +388,18 @@ def repository(value: str) -> Path:
     return repo
 
 
+def excluded() -> set[str]:
+    if not CONFIG.is_file():
+        return set()
+    try:
+        listed = json.loads(CONFIG.read_text(encoding="utf-8")).get(EXCLUDED, [])
+    except (OSError, ValueError, AttributeError) as error:
+        fail(f"cannot read {EXCLUDED} from {CONFIG}: {error}")
+    if not isinstance(listed, list) or not all(isinstance(target, str) for target in listed):
+        fail(f"{EXCLUDED} in {CONFIG} must be a list of target names")
+    return set(listed)
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     found = targets(repository(args.repo))
     if args.json:
@@ -400,22 +420,30 @@ def cmd_status(args: argparse.Namespace) -> int:
     sha = head(repo)
     state = load(state_path(repo))
     dirty, untracked = tree(repo)
+    skip = excluded()
+    required = [target for target in found if target not in skip]
+    skipped = [target for target in found if target in skip]
     rows = []
     for target in found:
         entry = state[sha].get(target) if sha in state else None
-        rows.append({"target": target, "status": "missing"} if entry is None else {"target": target, **entry})
+        if target in skip:
+            rows.append({"target": target, "status": "excluded", "reason": f"{EXCLUDED} in {CONFIG}"})
+        else:
+            rows.append({"target": target, "status": "missing"} if entry is None else {"target": target, **entry})
     missing = [r["target"] for r in rows if r["status"] == "missing"]
     red = [r["target"] for r in rows if r["status"] == "red"]
     reasons = []
     if not found:
         reasons.append("no make test* target found")
+    elif not required:
+        reasons.append("every make test* target is excluded")
     if missing:
         reasons.append(f"missing: {', '.join(missing)}")
     if red:
         reasons.append(f"red: {', '.join(red)}")
     if dirty:
         reasons.append(f"dirty: {len(dirty)} tracked file(s)")
-    hotfixes = missing_hotfixes(repo, list(found)) if hotfix_checks() else []
+    hotfixes = missing_hotfixes(repo, required) if required and hotfix_checks() else []
     if hotfixes:
         reasons.append(f"missing hotfix: {', '.join(hotfixes)}")
     gate = "open" if reasons else "green"
@@ -431,7 +459,12 @@ def cmd_status(args: argparse.Namespace) -> int:
             print("\t".join([r["status"], r["target"], *(cell(r.get(k)) for k in ("log", "finished", "reason"))]))
         if untracked:
             print(f"untracked\t{len(untracked)} file(s), not part of the gate")
-        print("gate: green" if gate == "green" else f"gate: open ({'; '.join(reasons)})")
+        if reasons:
+            print(f"gate: open ({'; '.join(reasons)})")
+        elif skipped:
+            print(f"gate: green (excluded: {', '.join(skipped)} by {CONFIG})")
+        else:
+            print("gate: green")
     return 0 if gate == "green" else 1
 
 
@@ -447,6 +480,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     unknown = [t for t in args.target if t not in found]
     if unknown:
         fail(f"not a make test* target of {repo}: {', '.join(unknown)}")
+    barred = sorted(set(args.target) & excluded())
+    if barred:
+        fail(f"excluded from every gate by {EXCLUDED} in {CONFIG}: {', '.join(barred)}")
     with worktree_lock(repo, ["gate.py", "run", "--repo", str(repo), *target_flags(args.target)], []) as lock:
         sha = head(repo)
         dirty, untracked = tree(repo)
