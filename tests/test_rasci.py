@@ -166,6 +166,22 @@ class TestRasci(unittest.TestCase):
         rows = json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
         return {task: row["after"] for task, row in rows.items() if "after" in row}
 
+    def test_unpin_drops_the_pin_a_change_stamps_only_its_row_and_the_rank_follows_after(self):
+        rows = lambda: json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
+        self._out("set", "work/a", "--prio", "1", "--worker", "One")
+        self._out("set", "work/b", "--prio", "2", "--worker", "One")
+        self.assertEqual(self._out("agents")[0].split("\t")[3], "work/a, work/b")
+        self._out("set", "work/a", "--after", "work/b")
+        self.assertEqual(self._out("agents")[0].split("\t")[3], "work/b, work/a")
+        stamped = rows()["work/a"]["updated"]
+        self._out("set", "work/b", "--unpin")
+        self.assertNotIn("prio", rows()["work/b"])
+        self.assertEqual(rows()["work/a"]["updated"], stamped)
+        self.assertIn("updated", rows()["work/b"])
+        refused = self._run("set", "work/b", "--unpin", "--prio", "3")
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("--unpin", refused.stderr)
+
     def test_after_stores_and_drops_a_dependency_and_refuses_unknown_tasks_and_cycles(self):
         for task in ("work/a", "work/b", "work/c"):
             self._out("set", task)
