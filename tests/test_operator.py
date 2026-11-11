@@ -126,6 +126,9 @@ class TestOperator(unittest.TestCase):
         return json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
 
     def test_checks_close_rows_once_their_condition_holds(self):
+        for name in ("pipx", "git-sign-push"):
+            (self.bin / name).write_text("#!/bin/sh\n", encoding="utf-8")
+            (self.bin / name).chmod(0o755)
         repo = self._repo("repo", upstream=True)
         src, dst = self.base / "src", self.base / "dst"
         (src / "sub").mkdir(parents=True)
@@ -226,6 +229,25 @@ class TestOperator(unittest.TestCase):
             self._out("list"),
             [HEADER, "|---|---|---|---|---|", "| 1 | - | sudo reboot | - | manual |"],
         )
+
+    def test_add_refuses_a_command_no_shell_can_run_unless_it_is_a_decision(self):
+        for command in ("Edit pcs.yml: add the group", "/kvb-skill-cleanup", "deploy -p <your pass file>", "gipsn"):
+            result = self._run("add", "x", "--dir", str(self.base), "--command", command, "--reason", "r",
+                               "--check", "manual")
+            self.assertEqual(result.returncode, 2, command)
+            self.assertIn("record the step with --check decision", result.stderr)
+        self._add("subshell", self.base, "(umask 077; touch secret)", "r", "manual")
+        self._add("env", self.base, "GIT_CONFIG_COUNT=1 git status", "r", "manual")
+        self._add("ask", self.base, "Edit pcs.yml: add the group", "r", "decision")
+        self.assertEqual(self._open(), ["operator/subshell", "operator/env", "operator/ask"])
+
+    def test_an_older_prose_row_stays_out_of_blocks_and_run(self):
+        result = self._run("set", "operator/prose", "--title", "Rotate the credential", "--workdir", str(self.base),
+                           "--status", "queued", script=RASCI)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self._add("go", self.base, "true", "runnable", "manual")
+        self.assertEqual(self._out("list")[4:], [*self._block(2, "go", self.base, "true"), *RUNNER])
+        self.assertNotIn("Rotate", self._feed("y\n").stdout)
 
     def test_bash_block_skips_legacy_rows_without_directory(self):
         result = self._run("set", "operator/legacy", "--title", "Rotate leaked credentials", "--status", "queued",
