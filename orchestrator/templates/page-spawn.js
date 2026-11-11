@@ -93,7 +93,7 @@
     const name = open ? h("button", {type: "button", class: "linkish", title: entry.kind === "twig" ? "Show transcript in the stream" : `Open ${entry.label}`, "data-pick": entry.kind === "twig" ? null : entry.id, on: {click: open}}, entry.label) : h("strong", {}, entry.label);
     const meta = entry.kind === "twig" ? h("span", {class: "muted"}, `Depth ${entry.row.depth} · `, when(entry.row.started)) : h("span", {class: "muted"}, NODE_KINDS[entry.kind]);
     return h("li", {"data-kind": entry.kind, "data-running": entry.running === null ? null : String(entry.running)},
-      h("div", {class: "spawn-row"}, h("span", {class: "state", role: "img", ...named(NODE_KINDS[entry.kind] || "Subagent")}, icon(SPAWN_KINDS[entry.kind])), name, running, meta),
+      h("div", {class: "spawn-row"}, h("span", {class: "state", role: "img", ...named(NODE_KINDS[entry.kind] || "Subagent")}, icon(SPAWN_KINDS[entry.kind])), name, entry.kind === "session" || entry.kind === "chair" ? presenceMark(entry.id, false) : null, running, meta),
       entry.children.length ? h("ul", {class: "spawn-tree"}, entry.children.map(spawnItem)) : null);
   }
 

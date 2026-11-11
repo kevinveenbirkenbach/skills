@@ -15,6 +15,7 @@
     const tasks = node ? node.tasks : [];
     const claims = node ? node.claims : [];
     agentDom.info.replaceChildren(
+      ...[presenceMark(ui.agent, true)].filter(Boolean),
       h("p", {class: "muted"}, claims.length ? `Offices: ${claims.map((claim) => claim.office).join(", ")}` : "No office"),
       h("h3", {}, "Tasks", counter(tasks.length)),
       tasks.length ? h("ul", {class: "mini"}, tasks.map((task) => h("li", {},

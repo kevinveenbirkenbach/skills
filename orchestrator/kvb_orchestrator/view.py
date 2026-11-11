@@ -8,6 +8,7 @@ from .council import (
     NEWS,
     grants,
     night_mode,
+    night_parts,
     radio_rows,
     read_claims,
     sessions,
@@ -22,6 +23,7 @@ from .jobs import JOB_OPEN
 from .messaging import message_row
 from .orbits import TRACK_STEPS, track
 from .phrasing import phrase
+from .presence import presence, read_snapshot
 from .records import epoch, iso_epoch, read_jsonl
 from .register import (
     AGENT_ORDER,
@@ -138,6 +140,8 @@ class View:
             "claims": claims,
             "grants": grant_rows,
             "night": night_mode(self.council),
+            "night_parts": night_parts(self.council),
+            "presence": presence(read_snapshot(self.agent_sessions, now), night_parts(self.council), night_mode(self.council), claims, news, now),
             "silence": silence_of(self.council, now),
             "graph": drawn,
         }

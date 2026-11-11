@@ -10,7 +10,8 @@
   const SPAWNED = new Set(["twig", "subagent"]);
   const DEPTH_GAP = 90;
   const TIME_DEPTH = 640;
-  const g3 = {lib: null, three: null, graph: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: "", picked: null, fit: false};
+  const TOP = {operator: 6, chair: 4, session: 2.5};
+  const g3 = {lib: null, three: null, THREE: null, graph: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: "", picked: null, fit: false, badges: new Map(), faces: new Set(), textures: new Map(), pulse: 0};
 
   const layoutsOf = (tab) => (tab === "tasks" ? LAYOUTS.filter(([id]) => id !== "spawn") : LAYOUTS);
   const layoutOf = (tab) => (layoutsOf(tab).some(([id]) => id === space.views.graph.axis) ? space.views.graph.axis : "none");
@@ -84,6 +85,7 @@
     const nodes = state.graph.nodes.map((node) => ({
       id: node.id, kind: node.kind, label: node.label, depth: depthOf[node.kind], ts: born(node) || (node.timeline[0] || {}).since || state.since,
       parent: node.kind === "operator" ? null : node.kind === "chair" ? HUMAN : node.kind === "session" ? chairKey() : node.parent || chairKey(),
+      face: look.faces && Object.hasOwn(TOP, node.kind), badge: node.kind === "chair" || node.kind === "session",
     }));
     for (const node of state.graph.nodes.filter((entry) => entry.kind === "session" || entry.kind === "chair")) {
       const walk = (twig, parent, depth) => {
@@ -196,7 +198,135 @@
   }
 
   function signature3d(tab, data) {
-    return JSON.stringify([tab, layoutOf(tab), data.nodes.map((node) => [node.id, node.kind, node.depth, node.ts, node.tone]), data.links.map((link) => [link.source, link.target, link.kind])]);
+    return JSON.stringify([tab, layoutOf(tab), data.nodes.map((node) => [node.id, node.kind, node.depth, node.ts, node.tone, node.face]), data.links.map((link) => [link.source, link.target, link.kind])]);
+  }
+
+  function canvasTexture(size, paint) {
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    paint(canvas.getContext("2d"));
+    const texture = new g3.THREE.CanvasTexture(canvas);
+    texture.colorSpace = g3.THREE.SRGBColorSpace;
+    return texture;
+  }
+
+  function cached(key, make) {
+    if (!g3.textures.has(key)) {
+      g3.textures.set(key, make());
+    }
+    return g3.textures.get(key);
+  }
+
+  function paintFace(context, key) {
+    context.scale(128 / Faces.SIZE, 128 / Faces.SIZE);
+    for (const [tag, part] of Faces.of(key).parts) {
+      const path = tag === "path" ? new Path2D(part.d) : new Path2D();
+      if (tag === "ellipse") {
+        path.ellipse(part.cx, part.cy, part.rx, part.ry, 0, 0, 2 * Math.PI);
+      } else if (tag === "rect") {
+        path.roundRect(part.x, part.y, part.width, part.height, part.rx || 0);
+      }
+      context.globalAlpha = part.opacity ?? 1;
+      if (part.fill && part.fill !== "none") {
+        context.fillStyle = part.fill;
+        context.fill(path);
+      }
+      if (part.stroke) {
+        context.globalAlpha *= part["stroke-opacity"] ?? 1;
+        context.strokeStyle = part.stroke;
+        context.lineWidth = part["stroke-width"] || 1;
+        context.lineCap = part["stroke-linecap"] || "butt";
+        context.lineJoin = part["stroke-linejoin"] || "miter";
+        context.stroke(path);
+      }
+    }
+  }
+
+  function badgeTexture(value) {
+    const [, name, tone] = PRESENCE[value];
+    const color = g3.colors[tone] || g3.colors.text;
+    return cached(`${value}:${color}`, () => canvasTexture(64, (context) => {
+      context.fillStyle = "rgba(255, 255, 255, 0.92)";
+      context.arc(32, 32, 31, 0, 2 * Math.PI);
+      context.fill();
+      context.fillStyle = color;
+      context.translate(12, 12);
+      context.scale(2.5, 2.5);
+      for (const path of document.querySelectorAll(`#${name} path`)) {
+        context.fill(new Path2D(path.getAttribute("d")), path.getAttribute("fill-rule") || "nonzero");
+      }
+    }));
+  }
+
+  function count3d() {
+    const box = g3.host && g3.host.querySelector(".graph3d");
+    if (box) {
+      box.dataset.faces = String(g3.faces.size);
+      box.dataset.badges = String([...g3.badges.values()].filter((badge) => badge.visible).length);
+    }
+    if (!g3.pulse && g3.badges.size && !calm.matches) {
+      g3.pulse = window.requestAnimationFrame(pulse3d);
+    }
+  }
+
+  function paintBadge(key, badge) {
+    const value = presenceOf(key);
+    badge.visible = value !== null;
+    badge.userData.state = value;
+    const map = value ? badgeTexture(value) : null;
+    if (map && badge.material.map !== map) {
+      badge.material.map = map;
+      badge.material.needsUpdate = true;
+    }
+  }
+
+  function badges3d() {
+    for (const [key, badge] of g3.badges) {
+      paintBadge(key, badge);
+    }
+    count3d();
+  }
+
+  function pulse3d(now) {
+    g3.pulse = 0;
+    if (!g3.graph || !g3.badges.size || calm.matches) {
+      return;
+    }
+    for (const badge of g3.badges.values()) {
+      const {state: value, size} = badge.userData;
+      const beat = value === "alive" ? 1 + 0.2 * Math.max(0, Math.sin(now / 150)) : 1;
+      badge.scale.set(size * beat, size * beat, 1);
+      badge.material.rotation = value === "working" ? now / 500 : value === "suspending" ? Math.PI * (Math.floor(now / 1200) % 2) : 0;
+      badge.material.opacity = ["sleeping", "dead", "unreachable"].includes(value) ? 0.6 + 0.4 * Math.cos(now / (value === "unreachable" ? 200 : 900)) ** 2 : 1;
+    }
+    g3.pulse = window.requestAnimationFrame(pulse3d);
+  }
+
+  function object3d(node) {
+    const THREE = g3.THREE;
+    if (!THREE || !(node.face || node.badge)) {
+      return null;
+    }
+    const radius = Math.cbrt(TOP[node.kind]) * 5;
+    const group = new THREE.Group();
+    if (node.face) {
+      const face = new THREE.Sprite(new THREE.SpriteMaterial({map: cached(`face:${node.id}`, () => canvasTexture(128, (context) => paintFace(context, node.id)))}));
+      face.scale.set(radius * 2.4, radius * 2.4, 1);
+      group.add(face);
+      g3.faces.add(node.id);
+    }
+    if (node.badge) {
+      const badge = new THREE.Sprite(new THREE.SpriteMaterial());
+      badge.userData.size = radius * 1.1;
+      badge.scale.set(badge.userData.size, badge.userData.size, 1);
+      badge.position.set(0, radius * 1.7, 0);
+      paintBadge(node.id, badge);
+      g3.badges.set(node.id, badge);
+      group.add(badge);
+    }
+    count3d();
+    return group;
   }
 
   async function stage3d(tab, host) {
@@ -209,6 +339,7 @@
     const data = model3d(tab);
     const sig = signature3d(tab, data);
     if (g3.host === host && g3.sig === sig) {
+      badges3d();
       return;
     }
     if (g3.host !== host) {
@@ -232,6 +363,12 @@
       host.replaceChildren(emptyState("3D not loaded", g3.failed || "3d-force-graph is missing."));
       return;
     }
+    if (tab === "agents" && !g3.THREE) {
+      g3.THREE = await threeModule();
+      if (g3.host !== host) {
+        return;
+      }
+    }
     if (!g3.graph) {
       try {
         g3.graph = Graph({controlType: "orbit"})(box);
@@ -246,6 +383,7 @@
         .nodeColor((node) => (node.id === g3.picked ? g3.colors.alarm : g3.colors[node.tone || KIND_COLORS[node.kind]] || colors.text)).linkColor((link) => g3.colors[LINK_COLORS[link.kind]] || colors.text)
         .linkWidth((link) => (link.kind === "contains" || link.kind === "spawn" ? 0.6 : Math.min(0.8 + Math.log2(1 + (link.count || 1)), 4)))
         .linkDirectionalArrowLength((link) => (DEPENDENCIES.has(link.kind) ? 5 : 0)).linkDirectionalArrowRelPos(1)
+        .nodeThreeObject(object3d).nodeThreeObjectExtend((node) => !node.face)
         .onNodeClick((node) => pick3d(g3.tab, node)).onEngineStop(builtFit);
       g3.fit = true;
       g3.graph.warmupTicks(calm.matches ? 160 : 80);
@@ -257,6 +395,8 @@
     }
     const layout = layoutOf(tab);
     place(data.nodes, layout);
+    g3.badges = new Map();
+    g3.faces = new Set();
     g3.graph.width(box.clientWidth).height(box.clientHeight).graphData(data);
     drawPlanes(layout, data.nodes);
     const words = `${data.nodes.length} nodes · ${data.links.length} edges · ${LAYOUTS.find(([id]) => id === layout)[1]}${calm.matches ? " · without motion (prefers-reduced-motion)" : ""}`;
@@ -271,10 +411,14 @@
         g3.graph._destructor();
       }
     }
+    window.cancelAnimationFrame(g3.pulse);
+    g3.pulse = 0;
     g3.graph = null;
     g3.host = null;
     g3.sig = "";
     g3.planes = [];
+    g3.badges = new Map();
+    g3.faces = new Set();
   }
 
   function refresh3d() {

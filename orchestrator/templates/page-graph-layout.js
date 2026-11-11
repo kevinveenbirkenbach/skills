@@ -138,6 +138,7 @@
     s("title", {}, `${node.label} · ${NODE_KINDS[node.kind]}${node.parent ? ` of ${labelOf(node.parent)}` : ""}${tasks}`),
     s("circle", {r}),
     node.kind === "subagent" ? null : s("g", {class: "face-art", transform: `translate(${-r} ${-r}) scale(${(2 * r) / Faces.SIZE})`}, faceParts(node.id)),
+    node.kind === "subagent" ? null : presenceGlyph(node.id, r * 0.8, -r * 0.8, Math.max(10, r * 0.7)),
     caption(node, at, r, gap));
   }
 

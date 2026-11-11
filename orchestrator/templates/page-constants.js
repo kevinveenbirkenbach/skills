@@ -37,7 +37,15 @@
   const MOVE = 2000;
   const RELAYOUT = 60000;
   const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
-  const STORE = {views: "kvb-orchestrator.views"};
+  const STORE = {views: "kvb-orchestrator.views", status: "kvb-orchestrator.status"};
+  const PRESENCE = {
+    working: ["Working", "bi-gear-fill", "info"],
+    alive: ["Alive", "bi-heart-pulse-fill", "ok"],
+    sleeping: ["Sleeping", "bi-moon-stars-fill", "violet"],
+    suspending: ["Suspending", "bi-hourglass-split", "warn"],
+    unreachable: ["Unreachable", "bi-wifi-off", "bad"],
+    dead: ["Dead", "bi-x-octagon-fill", "bad"],
+  };
   const SOUND_KINDS = [["mayday", "MAYDAY / PAN-PAN"], ["review", "Reviews, asks, decisions"], ["direct", "Post and calls to you"], ["radio", "All radio"]];
   const SPEECH_CLASSES = [["post", "Post"], ["call", "Call"], ["newsletter", "Newsletter"], ["broadcast", "Broadcast"], ["mayday", "MAYDAY"], ["pan-pan", "PAN-PAN"], ["security", "Sécurité"]];
   const SPEECH_QUEUE = 20;

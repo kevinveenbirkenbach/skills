@@ -18,6 +18,30 @@ svg .node.speaking circle { stroke: var(--ok); stroke-width: 4; animation: speak
 @media (prefers-reduced-motion: reduce) {
   .radio-caption .speaker-face::after, svg .node.speaking circle, .speaking .face-art .mouth { animation: none; }
 }
+.presence { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; }
+.presence[data-tone="ok"] { color: var(--ok); }
+.presence[data-tone="bad"] { color: var(--bad); }
+.presence[data-tone="warn"] { color: var(--warn); }
+.presence[data-tone="info"] { color: var(--info); }
+.presence[data-tone="violet"] { color: var(--violet); }
+svg .presence { fill: currentColor; }
+svg .presence-dot { fill: var(--panel); stroke: currentColor; stroke-width: 1; }
+.presence .glyph { transform-box: fill-box; transform-origin: center; }
+.presence[data-state="working"] .glyph { animation: presence-spin 3s linear infinite; }
+.presence[data-state="alive"] .glyph { animation: presence-beat 1.6s ease-in-out infinite; }
+.presence[data-state="sleeping"] .glyph { animation: presence-drift 4s ease-in-out infinite; }
+.presence[data-state="suspending"] .glyph { animation: presence-flip 2.4s ease-in-out infinite; }
+.presence[data-state="unreachable"] .glyph { animation: presence-blink 1.2s ease-in-out infinite; }
+.presence[data-state="dead"] .glyph { animation: presence-fade 5s ease-in-out infinite; }
+@keyframes presence-spin { to { transform: rotate(360deg); } }
+@keyframes presence-beat { 15%, 45% { transform: scale(1.25); } 30% { transform: scale(1); } }
+@keyframes presence-drift { 50% { transform: translateY(-15%); opacity: .6; } }
+@keyframes presence-flip { 50%, 100% { transform: rotate(180deg); } }
+@keyframes presence-blink { 50% { opacity: .25; } }
+@keyframes presence-fade { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) {
+  .presence .glyph { animation: none; }
+}
 .stations { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .station { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-2); min-width: 0; padding: 3px 3px 3px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--sunken); }
 .station-name, .station-when { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

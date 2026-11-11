@@ -91,8 +91,30 @@
     const mode = h("span", {});
     const night = h("details", {class: "menu"}, h("summary", named("Day/Night"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box"}, mode,
       h("div", {class: "actions"}, ACTIONS.slice(1).map(([id]) => actionButton(id, "btn small")))));
-    const bar = h("div", {class: "toolbar", role: "toolbar", "aria-label": "Controls"}, iconBtn("bi-sort-down", "Priority", "btn small", openAgentOrder, "Priority: agent order in the hierarchy"), night);
+    const bar = h("div", {class: "toolbar", role: "toolbar", "aria-label": "Controls"}, iconBtn("bi-sort-down", "Priority", "btn small", openAgentOrder, "Priority: agent order in the hierarchy"), night, statusMenu());
     return {bar, mode};
+  }
+
+  function lookBox(id, label, on, run) {
+    const state = Object.hasOwn(PRESENCE, id) ? {class: "check presence", "data-state": id, "data-tone": PRESENCE[id][2]} : {class: "check"};
+    return h("label", state, h("input", {type: "checkbox", checked: on, "data-look": id, on: {change: (event) => run(event.target.checked)}}), state["data-state"] ? icon(PRESENCE[id][1], "glyph") : null, label);
+  }
+
+  function setLook(change) {
+    change();
+    keep(STORE.status, {hidden: [...look.hidden], faces: look.faces});
+    render(false);
+    drawAgent();
+  }
+
+  function statusMenu() {
+    return h("details", {class: "menu"}, h("summary", named("Status", "Status: which agent states show their symbol, and faces in 3D"), icon("bi-activity"), caret()),
+      h("div", {class: "menu-box"}, h("h3", {}, "Agent states"),
+        Object.entries(PRESENCE).map(([id, [label]]) => lookBox(id, label, !look.hidden.has(id), (on) => setLook(() => (on ? look.hidden.delete(id) : look.hidden.add(id))))),
+        h("h3", {}, "3D"),
+        lookBox("faces", "Faces in 3D", look.faces, (on) => setLook(() => {
+          look.faces = on;
+        }))));
   }
 
   function drawToolbar() {

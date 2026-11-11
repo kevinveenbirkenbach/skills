@@ -25,6 +25,11 @@
       .map((view) => ({name: view.name.slice(0, 60), kinds: view.kinds, waiting: view.waiting === true, q: typeof view.q === "string" ? view.q : "", agent: typeof view.agent === "string" ? view.agent : ""}));
   }
 
+  function validLook(value) {
+    const hidden = value && Array.isArray(value.hidden) ? value.hidden.filter((name) => Object.hasOwn(PRESENCE, name)) : [];
+    return {hidden: new Set(hidden), faces: !(value && value.faces === false)};
+  }
+
   let state = JSON.parse(document.getElementById("state").textContent);
   const KINDS = Object.entries(state.kinds);
   const ui = {screen: "stream", views: {agents: "orbit", artifacts: "tree", tasks: "list"}, preset: DAY, from: null, to: null, asOf: null, playing: false, busy: false, offline: false, agent: null, order: null, draft: "", spot: false, cursor: 0, selected: new Set(), snoozed: false, review: null, file: 0};
@@ -46,6 +51,7 @@
     views: {graph: {...state.settings.space.graph}, sky: {...state.settings.space.sky}}, glides: {graph: null, sky: null}, edits: 0, saved: 0, timer: 0, look: false, compass: null,
   };
   let userViews = validViews(stored(STORE.views, stored("kvb-hub.views", [])));
+  const look = validLook(stored(STORE.status, null));
   let settings = state.settings;
   let settingsSig = JSON.stringify(settings);
   let agentDom = null;

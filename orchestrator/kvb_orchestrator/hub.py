@@ -25,6 +25,7 @@ from .mcp import Mcp
 from .messaging import Messaging
 from .names import Names
 from .offices import Offices
+from .presence import SNAPSHOT
 from .redirects import Redirects
 from .requesting import Requesting
 from .reviewing import Reviewing
@@ -85,6 +86,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     names: Names
     watch: Watch
     tree: Tree
+    agent_sessions: Path
     model: Model
     timers: Path
     settings: Settings
@@ -132,6 +134,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         redirects=redirects,
         watch=Watch(),
         tree=Tree(file=places.tree_file, heartbeat=state / TREE_HEARTBEAT, lock=threading.Lock(), cached=None, stamp=None),
+        agent_sessions=state / SNAPSHOT,
         model=model,
         timers=places.timers,
         council=council,
