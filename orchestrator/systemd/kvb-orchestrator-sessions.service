@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Orchestrator sessions: Claude Code's sessions and whether their process runs, into the file the orchestrator reads, while its page polls
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/bin:/bin
+ExecCondition=/bin/sh -c 'test -n "$(find %h/.local/state/kvb-orchestrator/tree-heartbeat -mmin -5 2>/dev/null)"'
+ExecStart=/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/sessions.py --sessions %h/.claude/sessions --output %h/.local/state/kvb-orchestrator/agent-sessions.json
+Nice=10
+TimeoutStartSec=60

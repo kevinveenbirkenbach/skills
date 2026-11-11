@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Orchestrator sessions 15 seconds after its last run
+
+[Timer]
+OnActiveSec=5s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

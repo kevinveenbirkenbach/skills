@@ -169,6 +169,25 @@ def night_mode(council: Path) -> str:
     return mode if mode in MODES else "day"
 
 
+def night_parts(council: Path) -> dict[str, str]:
+    """Args:
+        council: the council directory with night.json.
+
+    Returns:
+        Per session the part that differs from night_mode: drain or suspend
+        for one set alone, day for the active and the resumed sessions while
+        a mode holds.
+    """
+    data = read_json(council / "night.json")
+    if not isinstance(data, dict):
+        return {}
+    resumed = data.get("resumed", data.get("awake"))
+    working = [data.get("active"), *(resumed if isinstance(resumed, list) else [])]
+    parts = {sid: "day" for sid in working if isinstance(sid, str)} if night_mode(council) != "day" else {}
+    alone = data.get("parts")
+    return {**parts, **({sid: mode for sid, mode in alone.items() if mode in MODES} if isinstance(alone, dict) else {})}
+
+
 def silence_of(council: Path, now: float) -> dict | None:
     data = read_json(council / "radio-silence.json")
     if not isinstance(data, dict):

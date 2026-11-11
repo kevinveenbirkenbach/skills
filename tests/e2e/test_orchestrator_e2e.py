@@ -743,6 +743,62 @@ RADIO_JUMP = """(async () => {@HELPERS@
   await sleep(200);
   return {composers, hash: location.hash, open: Boolean(spot), focused: Boolean(spot) && document.activeElement === spot.querySelector("textarea")};
 })()""".replace("@HELPERS@", HELPERS)
+PRESENCE_HELPERS = """
+  const states = () => all("#main .presence:not(label)").map((node) => node.dataset.state).sort();
+  const statusMenu = () => {
+    const menu = all('#main [role="toolbar"] details.menu').find((node) => name(node.querySelector("summary")) === "Status");
+    menu.open = true;
+    return menu;
+  };
+  const looks = (menu) => all("input[data-look]", menu).map((input) => [input.dataset.look, input.checked]);
+  const graph3d = async (faces) => {
+    const box = await until(() => {
+      const found = document.querySelector("#main .graph3d");
+      return found && found.dataset.faces !== undefined && (faces === null || found.dataset.faces === faces) ? found : null;
+    }, 15000);
+    return box ? [Number(box.dataset.faces), Number(box.dataset.badges)] : null;
+  };
+"""
+PRESENCE_WALK = """(async () => {@HELPERS@@PRESENCE@
+  const views = {};
+  for (const view of ["orbit", "chord", "swimlane", "tree", "hierarchy"]) {
+    location.hash = `#agents/${view}`;
+    await until(() => all("#main .presence:not(label)").length, 6000);
+    await sleep(300);
+    views[view] = states();
+  }
+  location.hash = "#agents/orbit";
+  await sleep(700);
+  const node = document.querySelector('#main svg .node[data-pick="s1"]');
+  const motion = getComputedStyle(node.querySelector(".presence .glyph")).animationName;
+  node.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+  const mark = await until(() => document.querySelector("#popup .presence"), 4000);
+  const profile = mark ? [mark.dataset.state, text(mark), mark.getAttribute("aria-label")] : null;
+  (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+  await sleep(300);
+  location.hash = "#agents/3d";
+  const shown = await graph3d(null);
+  const menu = statusMenu();
+  const before = looks(menu);
+  menu.querySelector('input[data-look="working"]').click();
+  menu.querySelector('input[data-look="faces"]').click();
+  const hidden = await graph3d("0");
+  location.hash = "#agents/orbit";
+  await sleep(700);
+  return {views, motion, profile, shown, before, hidden, orbit: states(), @FITS@};
+})()""".replace("@HELPERS@", HELPERS).replace("@PRESENCE@", PRESENCE_HELPERS).replace("@FITS@", FITS)
+PRESENCE_READ = """(async () => {@HELPERS@@PRESENCE@
+  await until(() => document.querySelector('#main svg .node[data-pick="s2"]'), 8000);
+  await sleep(300);
+  const menu = statusMenu();
+  const kept = {boxes: looks(menu), orbit: states()};
+  menu.querySelector('input[data-look="working"]').click();
+  menu.querySelector('input[data-look="faces"]').click();
+  await sleep(300);
+  const back = states();
+  location.hash = "#agents/3d";
+  return {...kept, back, restored: await graph3d(null)};
+})()""".replace("@HELPERS@", HELPERS).replace("@PRESENCE@", PRESENCE_HELPERS)
 GEAR_SAVE = """(async () => {@HELPERS@@CLASHES@
   const spot = document.getElementById("radio-spot");
   const gear = all(".spot-head button", spot).find((button) => name(button) === "Radio settings");
@@ -1634,7 +1690,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertTrue(by_hash[f"#{tab}/3d"]["canvas"], by_hash[f"#{tab}/3d"]["note"])
                 self.assertRegex(by_hash[f"#{tab}/3d"]["note"], r"^\d+ nodes · \d+ edges · Force$")
         agents = by_hash["#agents/orbit"]
-        self.assertEqual(agents["toolbar"], ["Radio", "Priority", "Day/Night"])
+        self.assertEqual(agents["toolbar"], ["Radio", "Priority", "Day/Night", "Status"])
         self.assertEqual(agents["spot"], {"hidden": True, "channels": CHOICE_CHANNELS})
         hierarchy = by_hash["#agents/hierarchy"]
         self.assertEqual([office for office, _ in hierarchy["org"]], ["chair", "identity/oidc", "work/s1", "work/s2"])
@@ -1791,7 +1847,7 @@ class TestOrchestratorE2E(HubCase):
         for result, (width, _) in zip(data["results"], WIDTHS, strict=True):
             with self.subTest(width=width):
                 self.assertNotIn("error", result)
-                self.assertEqual(result["toolbar"], ["Radio", "Priority", "Day/Night", "Drain", "Suspend", "Resume"])
+                self.assertEqual(result["toolbar"], ["Radio", "Priority", "Day/Night", "Drain", "Suspend", "Resume", "Status"])
                 self.assertEqual(result["title"], "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it")
                 self.assertEqual(result["declined"], {"question": [question], "posted": [], "toasts": []})
                 self.assertEqual(result["accepted"], {"question": [question], "posted": ["/api/board/sign", "/api/board/clear-mayday"]})
@@ -1825,7 +1881,7 @@ class TestOrchestratorE2E(HubCase):
                     self.assertNotIn("error", probe)
                 self.assertEqual((sent["closed"], sent["open"]), ([True, "false"], [False, "true", True]))
                 self.assertEqual(sent["inline"], ["static", True, True])
-                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Radio", "Priority", "Day/Night"], CHOICE_CHANNELS, ["Record"]))
+                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Radio", "Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
                 self.assertEqual(sent["heads"], [["Radio settings", "Radio settings: tones, squelch and read aloud"], ["Cancel mayday", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"]])
                 self.assertEqual((sent["tall"], sent["wide"]), (False, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
@@ -2497,6 +2553,46 @@ class TestOrchestratorE2E(HubCase):
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
     def test_firefox_draws_the_trend_forecast_point_tips_eta_and_tasks_3d_at_three_widths(self):
         self.check_trend_eta_3d("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
+
+    def check_presence(self, browser: str, driver: str, binary: str) -> None:
+        """Args:
+            browser: the file name prefix of the screenshots and the result.
+            driver: the browser driver script next to this file.
+            binary: the browser to drive.
+        """
+        record = {"status": "busy", "statusUpdatedAt": int(time.time() * 1000), "name": "Skills session", "running": True}
+        self.httpd.hub.agent_sessions.write_text(json.dumps({"written": time.time(), "sessions": {"s1": record}}), encoding="utf-8")
+        steps = []
+        for width, height in WIDTHS:
+            steps += [
+                {"width": width, "height": height, "url": f"{self.base}?{width}#agents/orbit", "wait": 1200, "probe": PRESENCE_WALK, "shot": str(OUT / f"{browser}-{width}-agents-presence.png")},
+                {"width": width, "height": height, "url": f"{self.base}?{width}-reloaded#agents/orbit", "wait": 1200, "probe": PRESENCE_READ, "shot": str(OUT / f"{browser}-{width}-agents-presence-3d.png")},
+            ]
+        data = self.drive(steps, None, driver, binary)
+        (OUT / f"{browser}-presence.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        pair = ["dead", "working"]
+        order = ["working", "alive", "sleeping", "suspending", "unreachable", "dead", "faces"]
+        for index, (width, _) in enumerate(WIDTHS):
+            walk, read = data["results"][2 * index : 2 * index + 2]
+            with self.subTest(width=width):
+                self.assertNotIn("error", walk)
+                self.assertNotIn("error", read)
+                self.assertEqual(walk["views"], {"orbit": pair, "chord": pair, "swimlane": pair, "tree": pair, "hierarchy": ["dead", "dead", "working", "working"]})
+                self.assertEqual((walk["motion"], walk["profile"]), ("presence-spin", ["working", "Working", "Working"]))
+                self.assertGreaterEqual(walk["shown"][0], 3, walk["shown"])
+                self.assertEqual(walk["shown"][1], 2)
+                self.assertEqual(walk["before"], [[look, True] for look in order])
+                self.assertEqual((walk["hidden"], walk["orbit"], walk["wide"]), ([0, 1], ["dead"], False))
+                self.assertEqual(read["boxes"], [[look, look not in ("working", "faces")] for look in order])
+                self.assertEqual((read["orbit"], read["back"], read["restored"]), (["dead"], pair, walk["shown"]))
+
+    def test_chromium_shows_agent_states_and_3d_faces_switchable_through_a_reload_at_three_widths(self):
+        self.check_presence("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"))
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_shows_agent_states_and_3d_faces_switchable_through_a_reload_at_three_widths(self):
+        self.check_presence("firefox", "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
 
     def test_chromium_pins_a_task_priority_after_signature_and_the_runner_applies_it(self):
         signer = self.pin()

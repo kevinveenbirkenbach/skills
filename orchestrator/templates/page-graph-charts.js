@@ -114,6 +114,7 @@
     lanes.forEach((node, index) => {
       svg.append(s("rect", {class: index % 2 ? "lane odd" : "lane", x: 0, y: top + index * lane, width: full, height: lane}));
       svg.append(s("text", {class: "lane-label", x: 14, y: top + index * lane + lane / 2, dy: "0.35em", "text-anchor": "start", "data-pick": node.id, on: {click: () => select(node.id)}}, node.label));
+      svg.append(...[presenceGlyph(node.id, left - 14, top + index * lane + lane / 2, 12)].filter(Boolean));
     });
     for (let index = 0; index <= 6; index += 1) {
       const ts = begin + ((end - begin) * index) / 6;

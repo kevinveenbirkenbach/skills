@@ -303,6 +303,34 @@ from three views down to any agent, branch or artefact.
     time-agent-depth layout.
 58. **Steady 3D camera**: the 3D view fits the graph once per build; state
     refreshes keep the operator's camera.
+59. **Agent states** (operator 2026-11-10, decisions 59 to 62): the hub
+    derives six states per agent session: sleeping (drain or suspend part,
+    idle),
+    suspending (drain or suspend part, still busy), working (process alive,
+    busy), alive (process alive, idle), dead (process gone while a claim or
+    task still names it) and unreachable (busy without an update for 15
+    minutes, or a call without a receipt for 10 minutes). Inputs: the Claude
+    Code session files (status, pid and its start tick), the night state and
+    the radio receipts; a runtime without a session file shows alive or dead
+    by its claim heartbeat. The hub's container sees neither the session
+    files nor the host's processes, so a host timer
+    (`kvb-orchestrator-sessions.timer`, every 15 seconds while the page
+    polls) writes a snapshot with each process checked into the hub's
+    state; one older than 5 minutes counts as absent. Rejected: an agent
+    hook reporting its own state (a hook and a reinstall on every agent),
+    the claim heartbeat alone (no working versus alive), the host's PID
+    namespace or `/proc` in the container (every process's command line in
+    reach of the web-facing hub).
+60. **State symbol**: an animated Bootstrap icon from the vendored sprite
+    next to every agent in Orbit, Chord, Swimlane, Tree and 3D and in the
+    agent panel; `prefers-reduced-motion` stops the animation. Rejected:
+    emoji (font-dependent), a colored ring only (six states hard to tell
+    apart).
+61. **Status menu**: a "Status" menu in the Agents toolbar holds one checkbox
+    per state and "Faces in 3D", stored per browser like the saved views,
+    no passkey. Rejected: hub-wide settings with a signature.
+62. **3D faces**: agent nodes in the 3D view show their face, on by default
+    and switchable; repositories and branches stay spheres.
 
 ## Approach
 
@@ -741,6 +769,19 @@ flowchart TD
 - [x] Two state refreshes after a manual camera move leave the 3D camera
       where the operator put it.
 
+### Phase 6: agent states and 3D faces (S5.3)
+
+- [ ] The state of every fixture session matches decision 59 for each of the
+      six states and for a session without a session file (unit test).
+- [ ] Orbit, Chord, Swimlane, Tree, 3D and the agent panel show the state
+      symbol of each fixture agent.
+- [ ] Unticking a state in the Status menu hides its symbols in every view;
+      the choice survives a reload.
+- [ ] The 3D view shows agent faces by default and spheres after unticking
+      "Faces in 3D".
+- [ ] `make orchestrator-install` enables `kvb-orchestrator-sessions.timer`,
+      and `make orchestrator-check` reports it active.
+
 ### Tests
 
 - **Unit**
@@ -764,6 +805,10 @@ flowchart TD
         business value signature (forged, replayed, altered), sort orders.
   - [x] S5.1: regression and velocity trend with their forecast dates, point
         tooltips, ETA in both modes, radio settings stored from the gear.
+  - [ ] S5.3: each agent state from a fixture snapshot, night state and
+        receipts, a session without a record; the host client's snapshot
+        from fixture session files with a reused pid; a stale or malformed
+        snapshot read as absent.
 - **Integration**
   - [ ] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's
@@ -792,3 +837,6 @@ flowchart TD
   - [x] S5.1: radio spot (send, gear, cancel mayday), Day/Night tooltips,
         one-row Tasks toolbar, trend and point tooltips, ETA column, Tasks
         3D and a steady 3D camera, each at 1920, 1366 and 390 px.
+  - [ ] S5.3: state symbols in every Agents view and the panel, the Status
+        menu toggles through a reload, 3D faces on and off, in Chromium and
+        Firefox at 1920, 1366 and 390 px.

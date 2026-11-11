@@ -75,6 +75,20 @@
     return h("span", {class: `avatar${big ? " big" : ""}${talking(key) ? " speaking" : ""}`, "data-face": key, "aria-hidden": "true"},
       s("svg", {class: "face-art", viewBox: `0 0 ${Faces.SIZE} ${Faces.SIZE}`, focusable: "false"}, faceParts(key)));
   };
+  const presenceOf = (key) => {
+    const value = (state.presence || {})[key];
+    return Object.hasOwn(PRESENCE, value) && !look.hidden.has(value) ? value : null;
+  };
+  const presenceMark = (key, labelled) => {
+    const value = presenceOf(key);
+    return value ? h("span", {class: "presence", "data-state": value, "data-tone": PRESENCE[value][2], role: "img", ...named(PRESENCE[value][0])}, icon(PRESENCE[value][1], "glyph"), labelled ? PRESENCE[value][0] : null) : null;
+  };
+  const presenceGlyph = (key, x, y, size) => {
+    const value = presenceOf(key);
+    return value ? s("g", {class: "presence", "data-state": value, "data-tone": PRESENCE[value][2], transform: `translate(${fixed(x)} ${fixed(y)})`},
+      s("title", {}, PRESENCE[value][0]), s("rect", {class: "presence-dot", x: fixed(-size * 0.65), y: fixed(-size * 0.65), width: fixed(size * 1.3), height: fixed(size * 1.3), rx: fixed(size * 0.65)}),
+      s("g", {class: "glyph"}, s("use", {href: `#${PRESENCE[value][1]}`, x: fixed(-size / 2), y: fixed(-size / 2), width: fixed(size), height: fixed(size)}))) : null;
+  };
   const person = (name) => (name && name !== "-" && name !== "all" && name !== HUMAN ? h("button", {type: "button", class: "linkish", title: `Open ${name}`, on: {click: () => openAgent(name)}}, name) : dash(name));
   const people = () => state.people || {};
   const labelOf = (key) => (people()[key] || {name: String(key).replace(/^name:/, "")}).name;
