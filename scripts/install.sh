@@ -2,7 +2,8 @@
 # Render the skills from skills-lock.json and copy them into TARGET.
 # TARGET defaults to $HOME (global install); pass a project root to
 # equip that project. Skills land in <TARGET>/.agents/skills and are
-# mirrored to <TARGET>/.claude/skills.
+# mirrored to <TARGET>/.claude/skills. A project install links every skill
+# the global install in $HOME already holds to that copy instead.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,11 +39,22 @@ if [[ -d "${REPO_ROOT}/skills" ]]; then
 	cp -a "${REPO_ROOT}/skills/." "${src}/"
 fi
 
-for dst in "${TARGET}/.agents/skills" "${TARGET}/.claude/skills"; do
+for root in .agents/skills .claude/skills; do
+	dst="${TARGET}/${root}"
 	log "skills: copying -> ${dst}"
 	mkdir -p "${dst}"
 	find "${dst}" -mindepth 1 -delete
 	cp -a "${src}/." "${dst}/"
+	if [[ ! "${TARGET}" -ef "${HOME}" ]]; then
+		log "skills: linking in ${dst} what ${HOME}/${root} already holds"
+		for skill in "${dst}"/*; do
+			global="${HOME}/${root}/${skill##*/}"
+			if [[ -e "${global}" ]]; then
+				rm -rf "${skill}"
+				ln -s "${global}" "${skill}"
+			fi
+		done
+	fi
 done
 
 settings="${TARGET}/.claude/settings.local.json"

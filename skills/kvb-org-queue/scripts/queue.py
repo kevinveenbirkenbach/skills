@@ -33,7 +33,10 @@ Args:
         CMD in the current directory with inherited stdio in a session of its
         own, forward SIGINT and SIGTERM to its process group, measure every
         POLL_SECONDS and at its end, record its history row and leave the
-        queue.
+        queue. The entry carries its code (a hash of this file and the
+        SIBLINGS); a poll that finds other code installed in
+        ~/.agents/skills leaves the queue ungranted and restarts the same hold
+        with the installed queue.py.
         --kind: a key of slot_need_gb in the config.
         --task: an open task of the kvb-org-rasci register; its rank orders
             the queue, and the operator's agent order (`rasci.py agents
@@ -47,8 +50,9 @@ Args:
         id, status, kind, task, need GB, minutes waited, ETA minutes (until a
         running job ends or a waiting one starts, from learned medians; - while
         one is unknown), workdir, blocking reason (the one the holder saw at
-        its last poll, host load included). Entries of dead holders are
-        dropped first.
+        its last poll, host load included; prefixed when the entry runs other
+        code than the installed one). Entries of dead holders are dropped
+        first.
     history: a markdown table per command signature and one per kind of what
         the last 30 days of history teach, with each slot limit's source.
     cancel ID: remove the caller's waiting entry ID; its hold exits 3.
@@ -80,8 +84,9 @@ Exit codes:
         a command exiting 75 (EX_TEMPFAIL: it did no work, such as a declined
         `operator.py granted`) leaves no history row;
         before the command started 2 on a usage or config error or when it
-        cannot start, 3 when cancel removed the entry, 128+N when signal N
-        reached hold.
+        cannot start or cannot restart with the installed code, 3 when cancel
+        removed the entry, 128+N when signal N reached hold; after a restart,
+        the installed hold's exit code.
     list, history: 0 done, 2 config error.
     cancel: 0 removed, 2 no waiting entry of the caller with that id.
     block: 0 allow, or ask when it prints an ask decision, or a council root
@@ -97,6 +102,7 @@ import argparse
 import contextlib
 import fcntl
 import functools
+import hashlib
 import importlib.util
 import json
 import os
@@ -120,6 +126,9 @@ SIBLINGS = {
     "history": Path(__file__).resolve().parent / "history.py",
     "nofollow": SKILLS / "kvb-org-organize" / "scripts" / "nofollow.py",
 }
+HOST_SKILLS = Path.home() / ".agents" / "skills"
+EXE = os.path.realpath(sys.executable)
+CODE_FILES = tuple(path.relative_to(SKILLS) for path in (Path(__file__).resolve(), *SIBLINGS.values()))
 POLL_SECONDS = 20
 CLAIM_SECONDS = 3 * POLL_SECONDS
 TICK_SECONDS = 0.2
@@ -155,6 +164,20 @@ HOLDS = watch.ROOT / "holds"
 TAG = re.compile(r"\d+-\d+")
 SILENCE = watch.ROOT / "radio-silence.json"
 HISTORIES = (watch.HISTORY, watch.KEPT_HISTORY)
+
+
+def code_of(root: Path) -> str | None:
+    try:
+        return hashlib.sha256(b"".join((root / name).read_bytes() for name in CODE_FILES)).hexdigest()[:12]
+    except OSError:
+        return None
+
+
+CODE = code_of(SKILLS)
+
+
+class Stale(Exception):
+    pass
 
 
 def fail(message: str) -> NoReturn:
@@ -603,6 +626,9 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
     """
     shown = None
     while not caught:
+        host = code_of(HOST_SKILLS)
+        if host not in (None, CODE):
+            raise Stale(host, caught)
         cpu, mem = watch.load(cfg)
         free, _ = watch.disk(cfg)
         now = time.time()
@@ -710,7 +736,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
         entry = enqueue({
             "kind": args.kind, "task": args.task, "need_gb": need, "hotfix": args.hotfix,
             "workdir": here, "session": session, "name": council.live_sessions().get(session) or session,
-            "lock": tag, "pid": os.getpid(), "pid_start": identity(os.getpid()), "child": None,
+            "lock": tag, "code": CODE, "pid": os.getpid(), "pid_start": identity(os.getpid()), "child": None,
             "child_start": None, "status": "waiting", "enqueued": time.time(), "granted": None,
             "cmd": shlex.join(args.command),
         })
@@ -761,8 +787,11 @@ def cmd_list(_: argparse.Namespace) -> int:
         polled = reason if silent(e, now) else e.get("reason") or reason
         rows.append((str(n), e, history.eta(signatures, running, ahead, now), polled or "granted on its next poll"))
         ahead.append(signature_of(e))
+    host = code_of(HOST_SKILLS) or CODE
     print("position\tid\tstatus\tkind\ttask\tneed_gb\twaited_min\teta_min\tworkdir\treason")
     for position, e, eta, reason in rows:
+        if e.get("code") != host:
+            reason = f"queue code {e.get('code') or 'without a stamp'}, the host runs {host}: {reason}"
         waited = ((e["granted"] or now) - e["enqueued"]) / 60
         print(tab_line(
             [position, e["id"], e["status"], e["kind"], e["task"], f"{e['need_gb']:g}", f"{waited:.0f}",
@@ -919,7 +948,26 @@ def main() -> int:
         except (OSError, ValueError, KeyError, TypeError, AttributeError, re.error):
             return 0
     commands = {"hold": cmd_hold, "list": cmd_list, "history": cmd_history, "cancel": cmd_cancel}
-    return commands[args.cmd](args)
+    try:
+        return commands[args.cmd](args)
+    except Stale as stale:
+        host, caught = stale.args
+        for signum in FORWARDED:
+            signal.signal(signum, signal.SIG_DFL)
+        if caught:
+            return 128 + caught[0]
+        script = HOST_SKILLS / CODE_FILES[0]
+        print(
+            f"queue: this hold ran queue code {CODE} from {SKILLS}, but the queue code installed on this host is "
+            f"{host} in {HOST_SKILLS}. Holders on different code each apply their own rules to the shared queue "
+            f"and together overrun the RAM and CPU budget, so this hold grants nothing on its own code. "
+            f"Restarting this hold with {script}; run every queue.py command from that path.",
+            file=sys.stderr, flush=True,
+        )
+        try:
+            os.execv(EXE, [EXE, str(script), *sys.argv[1:]])
+        except OSError as error:
+            fail(f"cannot restart with {script}: {error.strerror}; run the same hold with {script}")
 
 
 if __name__ == "__main__":
