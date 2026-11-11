@@ -27,7 +27,11 @@ Args:
             decision  a decision with no command to run: listed in the table
                 only, never in a block or `run`; only `done` closes it.
         Paths are absolute; no argument holds a shell metacharacter; the
-        command is one line without control characters.
+        command is one line without control characters. Unless the check is
+        decision, the command starts, after VAR=value words, with a program
+        on PATH, a path to one or a shell builtin and holds no <placeholder>;
+        an alias, a slash command or prose is refused, and an older row
+        holding one stays in the table only.
     list [--json]: run the check of every queued or blocked operator row and
         set the passing ones done.
     run: walk the open rows that hold a directory and a command, in list
@@ -129,6 +133,9 @@ OPEN = ("queued", "blocked")
 META = re.compile(r"[\s|&;()<>$`\\\"'*?\[\]{}~!#]")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 COMMIT = re.compile(r"\bcommit\b")
+ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+SLOT = re.compile(r"<[A-Za-z][^<>]*>")
+BUILTINS = frozenset({".", ":", "cd", "exec", "exit", "export", "set", "source", "umask"})
 HEADER = "| # | Directory | Command | Why | Check |"
 GIT = ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "log.showSignature=false", "--no-pager", "--no-optional-locks"]
 DIFF = [*GIT, "diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all"]
@@ -186,6 +193,19 @@ def problem(check: str) -> str | None:
             return "installed takes <source dir>=<installed dir>"
         return path_problem(source, "source") or path_problem(target, "installed dir")
     return path_problem(arg, kind)
+
+
+def unrunnable(command: str, directory: str) -> str | None:
+    if SLOT.search(command):
+        return "holds a <...> slot to fill in"
+    try:
+        words = [word for word in shlex.split(command) if not ASSIGNMENT.match(word)]
+    except ValueError:
+        return "does not parse as a shell command"
+    program = os.path.expanduser(next((word.lstrip("(") for word in words if word.lstrip("(")), ""))
+    if program in BUILTINS or shutil.which(os.path.join(directory, program) if "/" in program else program):
+        return None
+    return f"names no program on PATH ({program!r})"
 
 
 def git_env() -> dict[str, str]:
@@ -249,6 +269,9 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
         fail("--command and --reason must not be empty")
     if not command.isprintable():
         fail(f"--command {visible(command, '')!r} holds a control character; record one line")
+    refused = None if args.check == "decision" else unrunnable(command, args.dir)
+    if refused:
+        fail(f"--command {command!r} {refused}; write the real command, or record the step with --check decision")
     council = module("council", rasci.COUNCIL)
     sid, _ = council.caller(args.session)
     party = council.live_sessions().get(sid) or sid
@@ -332,7 +355,10 @@ def cmd_list(rasci: ModuleType, args: argparse.Namespace) -> int:
 
 
 def runnable(row: dict) -> bool:
-    return bool(row["directory"] and row["command"]) and row["command"].isprintable() and row["check"] != "decision"
+    return (
+        bool(row["directory"] and row["command"]) and row["command"].isprintable() and row["check"] != "decision"
+        and not unrunnable(row["command"], row["directory"])
+    )
 
 
 def visible(text: str, keep: str) -> str:
