@@ -28,10 +28,11 @@ INTERPRETERS = re.compile(r"python[\d.]*|bash|sh|zsh|node|perl|ruby")
 MAKE_VALUE_OPTIONS = frozenset({"-C", "-f", "-I", "-o", "-W"})
 RESOURCES = ("ram", "cpu")
 SIGNATURE_HEADER = ("Signature", "Kind", "Runs", "Median min", "p90 disk GB", "p90 RAM %", "Need GB")
-KIND_HEADER = ("Kind", "Runs", "p90 RAM share %", "p90 CPU share %", "Slot limit", "Source")
+KIND_HEADER = ("Kind", "Runs", "p90 RAM share %", "Median CPU share %", "Slot limit", "Source")
 
 def first_operand(tokens: Iterable[str]) -> list[str]:
-    return [token for token in tokens if not token.startswith("-")][:1]
+    operand = next((token for token in tokens if not token.startswith("-")), None)
+    return [] if operand is None or os.sep in operand else [operand]
 
 
 def make_target(tokens: Iterator[str]) -> list[str]:
@@ -56,7 +57,8 @@ def signature(argv: list[str]) -> str:
       <first operand>` for an interpreter running a script (python, bash, ...)
       and `<interpreter> -c` for inline code; else `<argv[0] basename> <first
       operand>`. An operand is an argument not starting with `-`; a missing
-      target or operand is left out.
+      target or operand is left out, and so is an operand holding a path
+      separator.
     """
     name = os.path.basename(argv[0])
     tokens = iter(argv[1:])
@@ -156,7 +158,7 @@ def command_stats(rows: list[dict]) -> dict:
         disk = p90([r["disk_gb"] for r in rows])
         stats.update(
             minutes=statistics.median(r["minutes"] for r in rows), disk_gb=disk,
-            ram_share=p90(shares(rows, "mem")), cpu_share=p90(shares(rows, "cpu")),
+            ram_share=p90(shares(rows, "mem")), cpu_share=statistics.median(shares(rows, "cpu")),
             need_gb=math.ceil(disk + DISK_MARGIN_GB),
         )
     return stats
@@ -170,7 +172,7 @@ def fit(ceiling: float, rows: list[dict], resource: str, share: float) -> int:
 def kind_stats(rows: list[dict], limits: dict) -> dict:
     stats = {"runs": len(rows), "ram_share": None, "cpu_share": None, "limit": None}
     if len(rows) >= MIN_RUNS:
-        ram, cpu = p90(shares(rows, "mem")), p90(shares(rows, "cpu"))
+        ram, cpu = p90(shares(rows, "mem")), statistics.median(shares(rows, "cpu"))
         stats.update(ram_share=ram, cpu_share=cpu, limit=max(1, min(
             fit(limits["mem_percent"], rows, "mem", ram), fit(limits["cpu_percent"], rows, "cpu", cpu),
         )))
@@ -190,9 +192,9 @@ def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[str, dict], dic
       (signatures, kinds). signatures: {signature: {kinds, runs, minutes,
       disk_gb, ram_share, cpu_share, need_gb}}; kinds: {kind: {runs, ram_share,
       cpu_share, limit}}. With fewer than MIN_RUNS rows every value but kinds
-      and runs is None. minutes is the median, disk_gb, ram_share and
-      cpu_share the p90 of the disk taken and of max minus before in
-      percentage points; need_gb is ceil(disk_gb + DISK_MARGIN_GB); limit is
+      and runs is None. minutes is the median, disk_gb and ram_share the p90
+      of the disk taken and of max minus before in percentage points,
+      cpu_share the median of max minus before; need_gb is ceil(disk_gb + DISK_MARGIN_GB); limit is
       max(1, min over RAM and CPU of floor((load limit - median before) /
       max(share, MIN_SHARE_PERCENT))).
     """
@@ -212,7 +214,7 @@ def footprint(kind: str, name: str, signatures: dict[str, dict], kinds: dict[str
       kinds: the kind map of learn().
 
     Returns:
-      {ram, cpu}: the signature's p90 share once learned, else the kind's, at
+      {ram, cpu}: the signature's learned share once learned, else the kind's, at
       least MIN_SHARE_PERCENT. None while the kind is not learned yet.
     """
     if kind not in kinds or kinds[kind]["ram_share"] is None:

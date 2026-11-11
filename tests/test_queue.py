@@ -32,6 +32,8 @@ BASE = {
     "ranks": {"work/a": 0, "work/b": 1, "work/c": 2},
     "agents": {},
     "loaded": {},
+    "exclusive": set(),
+    "light": set(),
     "now": NOW,
 }
 CHILD = (
@@ -201,6 +203,38 @@ class TestEvaluate(unittest.TestCase):
         self.assertEqual(list(self.decide(tied)), ["j5", "j6"])
         self.assertEqual(list(self.decide(tied, agents={"Alpha": 0, "Beta": 1})), ["j6", "j5"])
 
+    def test_an_exclusive_kind_runs_only_beside_light_kinds_in_both_directions(self):
+        gates = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"}}
+        slots = {"slot_limits": {"quality-high": 1, "iteration": 2, "test-nostack": 2}}
+        gate, deploy, light = job(1, kind="quality-high", status="active"), job(2, kind="iteration", workdir="/d"), job(3, kind="test-nostack", workdir="/l")
+        self.assertEqual(self.decide([gate, deploy, light], **slots), {"j2": None, "j3": None})
+        self.assertEqual(
+            self.decide([gate, deploy, light], **slots, **gates),
+            {"j2": "quality-high runs only beside test-nostack", "j3": None},
+        )
+        running, waiting = job(2, kind="iteration", status="active", workdir="/d"), job(1, kind="quality-high")
+        self.assertEqual(
+            self.decide([running, waiting], **slots, **gates),
+            {"j1": "quality-high runs only beside test-nostack, but iteration runs"},
+        )
+
+    def test_an_exclusive_entry_kept_out_by_a_running_job_holds_back_lower_non_light_entries(self):
+        gates = {
+            "exclusive": {"quality-high"}, "light": {"test-nostack"},
+            "slot_limits": {"quality-high": 1, "iteration": 2, "test-nostack": 2},
+        }
+        running = job(1, kind="iteration", status="active")
+        gate, deploy, light = job(2, kind="quality-high"), job(3, kind="iteration", task="work/b"), job(4, kind="test-nostack", task="work/c")
+        self.assertEqual(self.decide([running, gate, deploy, light], **gates), {
+            "j2": "quality-high runs only beside test-nostack, but iteration runs",
+            "j3": "waits behind j2, which needs the host beside light kinds only",
+            "j4": None,
+        })
+        self.assertEqual(
+            self.decide([gate, deploy, light], **gates),
+            {"j2": None, "j3": "quality-high runs only beside test-nostack", "j4": None},
+        )
+
     def test_the_slot_limit_counts_active_jobs_per_kind(self):
         verdicts = self.decide([job(1, kind="deploy", status="active"), job(2, kind="deploy"), job(3)])
         self.assertEqual(verdicts, {"j2": "all 1 deploy slots taken", "j3": None})
@@ -283,6 +317,7 @@ class TestHistory(unittest.TestCase):
             ("python3", "-m", "unittest", "tests.test_queue"): "unittest tests.test_queue",
             ("python3", "-c", "print(1)"): "python3 -c",
             ("bash", "scripts/install.sh"): "install.sh",
+            ("python3", "/s/security.py", "--repo", "/w/.worktrees/fix/a", "--base", "HEAD"): "security.py",
             ("docker", "compose", "up", "-d"): "docker compose",
             ("/bin/true",): "true",
         }
@@ -306,6 +341,12 @@ class TestHistory(unittest.TestCase):
         stats = self.learn([history_row(n, disk_gb=gb, minutes=m) for n, (gb, m) in enumerate(runs)])[0]["make test"]
         self.assertAlmostEqual(stats["disk_gb"], 7.6)
         self.assertEqual((stats["need_gb"], stats["minutes"]), (9, 7))
+
+    def test_a_neighbours_cpu_spike_in_one_row_does_not_lift_the_learned_cpu_share(self):
+        rows = [*(history_row(n, cpu_before=10, cpu_max=12) for n in range(4)), history_row(4, cpu_before=10, cpu_max=90)]
+        signatures, kinds = self.learn(rows)
+        self.assertEqual((signatures["make test"]["cpu_share"], kinds["test"]["cpu_share"]), (2, 2))
+        self.assertEqual(kinds["test"]["ram_share"], 10)
 
     def test_learn_fits_the_slot_limit_between_the_median_load_and_the_load_limits(self):
         loads = ((10, 5), (20, 5), (20, 10), (30, 15), (40, 15))
@@ -682,7 +723,7 @@ class TestQueueCommands(unittest.TestCase):
             "| make compose-deploy | deploy | 5 | 12.0 | 4.6 | 10.0 | 6 |\n"
             "| true | test | 2 | - | - | - | - |\n"
             "\n"
-            "| Kind | Runs | p90 RAM share % | p90 CPU share % | Slot limit | Source |\n"
+            "| Kind | Runs | p90 RAM share % | Median CPU share % | Slot limit | Source |\n"
             "| --- | --- | --- | --- | --- | --- |\n"
             "| build | 0 | - | - | 1 | seed |\n"
             "| deploy | 5 | 10.0 | 20.0 | 5 | learned |\n"

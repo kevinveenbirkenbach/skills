@@ -66,7 +66,9 @@ Config keys: budget_percent {ram, cpu}, required: the active and granted jobs'
 learned footprints (history.footprint, the whole budget for a kind not learned
 yet) may sum to at most these percentage points, a job alone always fits;
 slot_limits {kind: N}, optional, caps the learned slot limit of a kind from
-above (history.slot_limits); queue_enforce (bool), optional, read by block
+above (history.slot_limits); exclusive_kinds [kind] and light_kinds [kind],
+optional: a job of an exclusive kind runs only beside jobs of light kinds, and
+no job of another kind starts beside it; queue_enforce (bool), optional, read by block
 only. The watch.py keys disk, thresholds_gb (stop is the floor every grant
 leaves free), slot_need_gb (the disk seed per kind), load_limits (every grant
 also needs CPU busy below cpu_percent and RAM used plus the job's learned RAM
@@ -349,7 +351,7 @@ def over_budget(used: dict[str, float], share: dict[str, float], budget: dict[st
 def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memory: str, silenced: bool,
              slot_limits: dict[str, int], footprints: dict[str, dict[str, float]], budget: dict[str, float],
              ranks: dict[str, int], agents: dict[str, int], loaded: dict[str, str],
-             now: float) -> dict[str, str | None]:
+             exclusive: set[str], light: set[str], now: float) -> dict[str, str | None]:
     """Decide every waiting entry in grant order, without disk or processes.
 
     Args:
@@ -371,6 +373,8 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
         all of them.
       loaded: {entry id: why live CPU or RAM holds it back (load_reason())}
         for the waiting entries the host load keeps out.
+      exclusive: kinds that run only beside light kinds (exclusive_kinds).
+      light: kinds allowed beside an exclusive one (light_kinds).
       now: epoch seconds; each whole hour waited moves an entry one rank up.
 
     Returns:
@@ -379,7 +383,9 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       holds it, so a lower entry never takes a higher entry's slot; one
       blocked by disk or budget reserves its need against the entries after it.
       A hotfix entry that passes every check but the host load holds back
-      every entry after it, so lighter jobs cannot keep the load up. A waiting
+      every entry after it, so lighter jobs cannot keep the load up. An
+      exclusive entry that only running jobs of other kinds keep out holds
+      back every entry after it but light ones, so none overtakes it. A waiting
       entry whose holder has not polled for CLAIM_SECONDS reserves nothing and
       comes last.
     """
@@ -391,13 +397,20 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
     busy = {e["workdir"] for e in active}
     verdicts: dict[str, str | None] = {}
     waiting = [e for e in entries if e["status"] == "waiting"]
-    held = None
+    held = drain = None
     for entry in ordered([e for e in waiting if not silent(e, now)], ranks, agents, now):
         if held is not None:
             verdicts[entry["id"]] = f"waits behind hotfix {held}, which the host load holds back"
             continue
         kind, need, workdir, share = entry["kind"], entry["need_gb"], entry["workdir"], footprints[entry["id"]]
+        if drain is not None and kind not in light:
+            verdicts[entry["id"]] = f"waits behind {drain}, which needs the host beside light kinds only"
+            continue
         reason = host_reason(stage, memory, silenced, need) or slot_reason(kind, workdir, slot_limits, counts, busy)
+        if reason is None:
+            reason = alone_reason(kind, counts, exclusive, light)
+            if reason is not None and kind in exclusive:
+                drain = entry["id"]
         if reason is None:
             reason, used, available = resources(need, share, used, available, floor, budget, taken)
             if reason is None and entry["hotfix"] and entry["id"] in loaded:
@@ -464,6 +477,18 @@ def slot_reason(kind: str, workdir: str, slot_limits: dict[str, int], counts: Co
     return None
 
 
+def alone_reason(kind: str, counts: Counter, exclusive: set[str], light: set[str]) -> str | None:
+    if kind in light:
+        return None
+    running = sorted(k for k, n in counts.items() if n and k not in light)
+    if kind in exclusive and running:
+        return f"{kind} runs only beside {', '.join(sorted(light)) or 'nothing'}, but {', '.join(running)} runs"
+    blocking = [k for k in running if k in exclusive]
+    if blocking:
+        return f"{', '.join(blocking)} runs only beside {', '.join(sorted(light)) or 'nothing'}"
+    return None
+
+
 def register_ranks() -> dict[str, int]:
     rasci = sibling("rasci")
     return {task: index for index, task in enumerate(rasci.ranked(rasci.merged(False)))}
@@ -509,7 +534,8 @@ def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, signature
     return evaluate(
         entries, free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now),
         watch.memory_stage(watch.memory(), cfg), silenced(now), slots, footprints, budget,
-        register_ranks(), agent_ranks(), loaded, now,
+        register_ranks(), agent_ranks(), loaded,
+        set(cfg.get("exclusive_kinds", [])), set(cfg.get("light_kinds", [])), now,
     )
 
 

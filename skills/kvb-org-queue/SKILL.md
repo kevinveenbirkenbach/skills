@@ -32,18 +32,18 @@ Light runs (no Docker, about a minute) self-admit with
 
 ## Order and grant
 
-Every 20 s each waiting hold evaluates the whole queue under one lock:
+Every 20 s each waiting hold evaluates the queue under one lock:
 
 1. Hotfix jobs first, then the register rank (`rasci.py show`), one place
    earlier per whole hour waited, then arrival.
 2. In that order, a job is blocked at disk stage stop or critical, at warn
    when it needs disk, at memory stage stop, during a radio-silence mayday,
-   while its kind's slots are taken, or while its workdir runs another job.
+   while its kind's slots are taken, or while its workdir runs another job;
+   `exclusive_kinds` run only beside `light_kinds`.
 3. A job whose disk need would cut below the stop threshold, or whose
    footprint would push the running ones past `budget_percent`, reserves it
    against the jobs behind it; a job alone always fits.
-4. An unblocked job counts as granted for the jobs behind it: none takes its
-   slot.
+4. An unblocked job counts as granted for the jobs behind it.
 5. Every job, alone too, needs CPU, and RAM used plus what it and the
    running jobs may still take, below `load_limits`.
 
@@ -56,12 +56,12 @@ kind, minutes, disk, RAM and CPU) to `queue-history.jsonl`; the
 From the last 30 days, once 5 runs exist:
 
 - per signature, the disk need is p90 disk taken plus 1 GB;
-- per kind, the slot limit is how many p90 RAM and CPU shares fit between the
-  median load at the grant and `load_limits`, at least 1;
-- per job, the footprint is its signature's p90 share, else its kind's.
+- per kind, the slot limit is how many p90 RAM and median CPU shares fit
+  between the median load at the grant and `load_limits`, at least 1;
+- per job, the footprint is its signature's share, else its kind's.
 
 Until then the seeds hold: `slot_need_gb[kind]` for disk, 1 slot per kind,
-the whole budget as footprint: it runs alone.
+the whole budget as footprint.
 The optional `slot_limits {kind: N}` only caps a limit from above.
 
 ## Inspect and cancel
