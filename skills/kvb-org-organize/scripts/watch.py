@@ -1047,16 +1047,19 @@ def cache_files(dirs: list[str]) -> list[tuple[float, int, str, str]]:
     files = []
     seen: set[tuple[int, int]] = set()
     for root in map(os.path.expanduser, dirs):
-        for base, _, names, fd in os.fwalk(root, follow_symlinks=False):
-            for name in names:
-                try:
-                    st = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                except OSError:
-                    continue
-                if (st.st_dev, st.st_ino) in seen:
-                    continue
-                seen.add((st.st_dev, st.st_ino))
-                files.append((st.st_atime, st.st_blocks * 512, os.path.join(base, name), root))
+        try:
+            for base, _, names, fd in os.fwalk(root, follow_symlinks=False):
+                for name in names:
+                    try:
+                        st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                    except OSError:
+                        continue
+                    if (st.st_dev, st.st_ino) in seen:
+                        continue
+                    seen.add((st.st_dev, st.st_ino))
+                    files.append((st.st_atime, st.st_blocks * 512, os.path.join(base, name), root))
+        except OSError:
+            continue
     return files
 
 

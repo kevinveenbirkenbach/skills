@@ -637,6 +637,16 @@ class TestWatchCommands(unittest.TestCase):
         kept = self.base / ".local" / "state" / "agents-council" / "queue-history.jsonl"
         self.assertNotIn("outside", kept.read_text(encoding="utf-8") if kept.exists() else "")
 
+    def test_cache_trim_skips_a_missing_cache_root_and_trims_the_others(self):
+        watch = _load()
+        old = self.cache / "old"
+        old.write_bytes(b"x" * 4096)
+        os.utime(old, (0, 0))
+        self.cfg["cache_dirs"] = [str(self.base / "missing"), str(old), str(self.cache)]
+        self.cfg["cache_budget_percent"] = 0
+        watch.trim_caches(self.cfg)
+        self.assertFalse(old.exists())
+
     def test_cache_trim_counts_the_blocks_a_sparse_file_holds(self):
         watch = _load()
         with (self.cache / "sparse").open("wb") as handle:
