@@ -17,6 +17,7 @@ NIGHTS = {
     "suspend": (["suspend"], "Operator ran kvb-org-suspend in the Agent Orchestrator: run kvb-agent-suspend; verify with night.py status."),
     "resume": (["resume"], "Operator ran kvb-org-resume: run kvb-agent-resume; verify with night.py status."),
 }
+ALONE = {action: f"Operator chose {action} for you alone in the Agent Orchestrator: run kvb-agent-{action}; verify with night.py status." for action in NIGHTS}
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 DIRECT = {"post": ["post"], "call": ["send", "call"]}
 TO_ALL = {"newsletter": ["post"], **{cls: ["send", cls] for cls in ("broadcast", "pan-pan", "security", "mayday")}}
@@ -24,6 +25,29 @@ EVERYONE = "*"
 DENIED = "Denied by the operator."
 MESSAGE_KEYS = ("to", "text", "upload", "class", "voice")
 SIGNED_BOARD = ("clear-mayday", *NIGHTS, "estimates")
+
+
+def night_targets(action: str, payload: dict, claims: list[dict]) -> list[str]:
+    """Args:
+        action: the board action.
+        payload: the request; its optional "agents" lists the session ids a
+            night action is limited to.
+        claims: the council's claims; only a claimed agent's session can be
+            chosen.
+
+    Returns:
+        The chosen session ids, sorted; empty for every agent.
+    """
+    agents = payload.pop("agents", [])
+    if not isinstance(agents, list) or not all(isinstance(sid, str) for sid in agents) or len(set(agents)) != len(agents):
+        raise ToolError("agents must be a list of distinct session ids")
+    if agents and action not in NIGHTS:
+        raise ToolError(f"agents apply only to {', '.join(NIGHTS)}")
+    known = {claim["session"] for claim in claims if claim["agent"] != HUMAN and claim["session"] != "-"}
+    unknown = [sid for sid in agents if sid not in known]
+    if unknown:
+        raise ToolError(f"no claimed agent has the session {', '.join(unknown)[:300]}")
+    return sorted(agents)
 
 
 def chosen(payload: dict, choices: dict[str, list[str]]) -> list[str]:
@@ -176,16 +200,21 @@ class Messaging:
 
     def sign_board(self, body: bytes) -> dict:
         payload = decode(body)
-        expect(payload, ("action",))
-        if payload["action"] not in SIGNED_BOARD:
+        action = payload.get("action")
+        if action not in SIGNED_BOARD:
             raise ToolError(f"action must be one of {', '.join(SIGNED_BOARD)}")
-        return self.challenge_for([signing.board_item(payload["action"])])
+        agents = night_targets(action, payload, read_claims(self.council))
+        expect(payload, ("action",))
+        return self.challenge_for([signing.board_item(action, agents)])
 
     def board(self, action: str, body: bytes) -> dict:
+        claims = read_claims(self.council)
+        agents = []
         if action in SIGNED_BOARD:
             payload = decode(body)
+            agents = night_targets(action, payload, claims)
             expect(payload, ("proof",))
-            self.operator_proven(payload["proof"], signing.board_item(action))
+            self.operator_proven(payload["proof"], signing.board_item(action, agents))
         if action == "clear-mayday":
             runs = [self.scripts.run(RADIO, ["clear", "--force", "--session", HUMAN])]
         elif action == "broadcast":
@@ -212,8 +241,10 @@ class Messaging:
             runs = [self.scripts.run(ESTIMATE, ["request", "--session", HUMAN])]
         elif action in NIGHTS:
             command, text = NIGHTS[action]
-            runs = [self.scripts.run(NIGHT, [*command, "--session", HUMAN])]
-            peers = ordered({claim["address"] for claim in read_claims(self.council) if claim["address"] and claim["agent"] != HUMAN})
+            if agents:
+                text = ALONE[action]
+            runs = [self.scripts.run(NIGHT, [*command, "--session", HUMAN, *(f"--target={sid}" for sid in agents)])]
+            peers = ordered({claim["address"] for claim in claims if claim["address"] and claim["agent"] != HUMAN and (not agents or claim["session"] in agents)})
             if peers and runs[0]["code"] == 0:
                 targets = [part for peer in peers for part in ("--to", peer)]
                 runs.append(self.scripts.run(RADIO, [*DIRECT["call"], *targets, "--session", HUMAN, text]))

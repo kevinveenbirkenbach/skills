@@ -136,8 +136,8 @@ class HubCase(unittest.TestCase):
         self.assertEqual(status, 200, body)
         return signer.proof(json.loads(body)["payload"], self.origin)
 
-    def board_proof(self, action: str, signer: Key) -> dict:
-        status, _, body = self.post_json("/api/board/sign", {"action": action}, self.guard(self.host))
+    def board_proof(self, action: str, signer: Key, agents: list[str] | None = None) -> dict:
+        status, _, body = self.post_json("/api/board/sign", {"action": action, **({} if agents is None else {"agents": agents})}, self.guard(self.host))
         self.assertEqual(status, 200, body)
         return signer.proof(json.loads(body)["payload"], self.origin)
 

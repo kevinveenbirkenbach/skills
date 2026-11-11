@@ -13,14 +13,19 @@
 
   const actionOf = (action) => ACTIONS.find(([id]) => id === action);
 
-  async function confirmAct(action) {
+  const nightAgents = () => [...new Map(state.claims.filter((claim) => claim.agent && claim.agent !== HUMAN && claim.session !== "-").map((claim) => [claim.session, claim.agent]))]
+    .sort(([one, a], [two, b]) => a.localeCompare(b) || one.localeCompare(two));
+
+  async function confirmAct(action, agents) {
     const [, label, question] = actionOf(action);
-    if (!window.confirm(question)) {
+    const names = new Map(nightAgents());
+    if (!window.confirm(agents.length ? question.replace("all agents", agents.map((sid) => names.get(sid) || sid).join(", ")) : question)) {
       return;
     }
-    const signed = await signedProof("/api/board/sign", {action}, label);
+    const chosen = agents.length ? {agents} : {};
+    const signed = await signedProof("/api/board/sign", {action, ...chosen}, label);
     if (signed) {
-      await act(action, label, {proof: signed.proof});
+      await act(action, label, {proof: signed.proof, ...chosen});
     }
   }
 
@@ -31,9 +36,39 @@
 
   const picked = (group) => group.querySelector("input:checked").value;
 
-  function actionButton(action, cls, name) {
+  function actionButton(action, cls, name, agents) {
     const [, label, , hint] = actionOf(action);
-    return h("button", {type: "button", class: cls, ...named(label, hint), on: {click: () => confirmAct(action)}}, name ? icon(name) : null, label);
+    return h("button", {type: "button", class: cls, ...named(label, hint), on: {click: () => confirmAct(action, agents())}}, name ? icon(name) : null, label);
+  }
+
+  function nightChosen() {
+    const agents = nightAgents().map(([sid]) => sid);
+    const on = agents.filter((sid) => !ui.nightOff.has(sid));
+    return on.length === agents.length ? [] : on;
+  }
+
+  function syncPicks(toolbar) {
+    const boxes = [...toolbar.picks.querySelectorAll("input[data-session]")];
+    boxes.forEach((box) => {
+      box.checked = !ui.nightOff.has(box.dataset.session);
+    });
+    toolbar.picks.querySelector("input[data-all]").checked = boxes.every((box) => box.checked);
+    const none = boxes.length > 0 && boxes.every((box) => !box.checked);
+    toolbar.nightButtons.forEach((button) => {
+      button.disabled = none;
+    });
+  }
+
+  function pickAgents(toolbar, sids, on) {
+    sids.forEach((sid) => (on ? ui.nightOff.delete(sid) : ui.nightOff.add(sid)));
+    syncPicks(toolbar);
+  }
+
+  function drawPicks(toolbar) {
+    const agents = nightAgents();
+    const box = (label, attrs, sids) => h("label", {class: "check"}, h("input", {type: "checkbox", ...attrs, on: {change: (event) => pickAgents(toolbar, sids, event.target.checked)}}), label);
+    toolbar.picks.replaceChildren(box("All", {"data-all": true}, agents.map(([sid]) => sid)), ...agents.map(([sid, name]) => box(name, {"data-session": sid}, [sid])));
+    syncPicks(toolbar);
   }
 
   let spotDom = null;
@@ -63,7 +98,7 @@
     gear.setAttribute("aria-expanded", "false");
     gear.setAttribute("aria-controls", "radio-gear");
     const [, label, , hint] = actionOf("clear-mayday");
-    const clear = iconBtn("bi-life-preserver", label, "btn small danger", () => confirmAct("clear-mayday"), hint);
+    const clear = iconBtn("bi-life-preserver", label, "btn small danger", () => confirmAct("clear-mayday", []), hint);
     const panel = h("section", {class: "card radio-spot", id: "radio-spot", "aria-label": "Radio", hidden: !ui.spot},
       h("div", {class: "spot-head"}, h("h3", {class: "group-title"}, "Radio"), h("span", {class: "spacer"}), gear, clear), h("div", {class: "spot-body"}, form, radioSide(), gearBox));
     const toggle = document.getElementById("radio-open");
@@ -89,10 +124,12 @@
 
   function agentsToolbar() {
     const mode = h("span", {});
-    const night = h("details", {class: "menu"}, h("summary", named("Day/Night"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box"}, mode,
-      h("div", {class: "actions"}, ACTIONS.slice(1).map(([id]) => actionButton(id, "btn small")))));
+    const picks = h("div", {class: "night-picks", role: "group", "aria-label": "Agents"});
+    const nightButtons = ACTIONS.slice(1).map(([id]) => actionButton(id, "btn small", null, nightChosen));
+    const night = h("details", {class: "menu"}, h("summary", named("Day/Night"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box"}, mode, picks,
+      h("div", {class: "actions"}, nightButtons)));
     const bar = h("div", {class: "toolbar", role: "toolbar", "aria-label": "Controls"}, iconBtn("bi-sort-down", "Priority", "btn small", openAgentOrder, "Priority: agent order in the hierarchy"), night, statusMenu());
-    return {bar, mode};
+    return {bar, mode, picks, nightButtons, agents: ""};
   }
 
   function lookBox(id, label, on, run) {
@@ -124,5 +161,11 @@
       return;
     }
     const [mode, tone] = NIGHT[state.night] || [state.night, "neutral"];
-    toolbar.mode.replaceChildren(pill(mode, tone));
+    const alone = Object.values(state.night_parts).filter((part) => part !== "day").length;
+    toolbar.mode.replaceChildren(pill(mode, tone), alone ? pill(`${alone} alone`, "warn") : null);
+    const agents = JSON.stringify(nightAgents());
+    if (agents !== toolbar.agents) {
+      toolbar.agents = agents;
+      drawPicks(toolbar);
+    }
   }

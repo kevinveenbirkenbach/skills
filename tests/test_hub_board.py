@@ -12,7 +12,7 @@ from unittest import mock
 from urllib.parse import quote
 
 from hub_case import HubCase
-from hub_support import ASK, HOST_STATE, REPO_ROOT, iso, key, server
+from hub_support import ASK, HOST_STATE, REPO_ROOT, iso, key, server, signing
 from kvb_orchestrator import handler, messaging, skill_scripts, transcripts
 
 
@@ -153,6 +153,53 @@ class TestHubBoard(HubCase):
         self.assertEqual(self.get("/api/board/sign")[0], 405)
         self.assertEqual(len(self.scripts.calls), 1)
 
+    def test_a_night_action_for_chosen_agents_signs_them_and_calls_only_them(self):
+        self.claim("s1", "Skills session")
+        self.claim("s2", "Gatekeeper")
+        signer = self.pin()
+        good = self.guard(self.host)
+
+        def board(action: str, payload: dict) -> tuple[int, bytes]:
+            status, _, body = self.post_json(f"/api/board/{action}", payload, good)
+            return status, body
+
+        self.assertEqual(signing.board_item("drain", []), {"kind": "board", "action": "drain"})
+        proof = self.board_proof("drain", signer, ["s2"])
+        self.assertEqual(board("drain", {"proof": proof})[1], b"not signed: the signature does not list this item\n")
+        self.assertEqual(board("drain", {"proof": self.board_proof("drain", signer), "agents": ["s2"]})[1], b"not signed: the signature does not list this item\n")
+        self.assertEqual(board("drain", {"proof": proof, "agents": ["s2", "s1"]})[1], b"not signed: the signature does not list this item\n")
+        self.assertEqual(self.scripts.calls, [])
+        self.assertEqual(board("drain", {"proof": proof, "agents": ["s2"]})[0], 200)
+        self.assertEqual(self.scripts.calls, [
+            (skill_scripts.NIGHT, ["drain", "--session", "Operator", "--target=s2"]),
+            (skill_scripts.RADIO, ["send", "call", "--to", "Gatekeeper", "--session", "Operator", messaging.ALONE["drain"]]),
+        ])
+        self.assertIn("run kvb-agent-drain;", messaging.ALONE["drain"])
+        self.assertEqual(board("resume", {"proof": self.board_proof("resume", signer, ["s2", "s1"]), "agents": ["s1", "s2"]})[0], 200)
+        self.assertEqual(self.scripts.calls[-2:], [
+            (skill_scripts.NIGHT, ["resume", "--session", "Operator", "--target=s1", "--target=s2"]),
+            (skill_scripts.RADIO, ["send", "call", "--to", "Gatekeeper", "--to", "Skills session", "--session", "Operator", messaging.ALONE["resume"]]),
+        ])
+        calls = len(self.scripts.calls)
+        for action, agents in (("drain", ["s9"]), ("drain", ["s2", "s2"]), ("drain", "s2"), ("drain", [2]), ("drain", ["Operator"]), ("clear-mayday", ["s2"]), ("estimates", ["s1"])):
+            with self.subTest(action=action, agents=agents):
+                self.assertEqual(self.post_json("/api/board/sign", {"action": action, "agents": agents}, good)[0], 400)
+                self.assertEqual(board(action, {"proof": None, "agents": agents})[0], 400)
+        self.assertEqual(len(self.scripts.calls), calls)
+
+    def test_the_state_shows_each_sessions_own_part(self):
+        for night, parts in (
+            ({"parts": {"s2": "drain", "s3": "noon"}}, {"s2": "drain"}),
+            ({"mode": "drain", "active": "Operator", "resumed": ["s1"], "parts": {"s1": "suspend"}}, {"Operator": "day", "s1": "suspend"}),
+            ({"mode": "sunset", "active": "Operator", "awake": ["s3"]}, {"Operator": "day", "s3": "day"}),
+            ({"active": "Operator", "resumed": ["s1"]}, {}),
+            ({"mode": "drain", "parts": ["s1"], "resumed": "s1"}, {}),
+            (["drain"], {}),
+        ):
+            with self.subTest(night=night):
+                self.write_council({"night.json": night})
+                self.assertEqual(self.snapshot()["night_parts"], parts)
+
     def test_every_night_action_is_a_command_the_shipped_night_script_takes(self):
         with tempfile.TemporaryDirectory() as tmp:
             scripts = skill_scripts.Scripts(skills=REPO_ROOT / "skills", council=Path(tmp) / "council", home=Path(tmp))
@@ -162,6 +209,10 @@ class TestHubBoard(HubCase):
                     self.assertEqual(run["code"], 0, run["stderr"])
                     status = scripts.run(skill_scripts.NIGHT, ["status", "--session", "Operator"])["stdout"].splitlines()
                     self.assertEqual(status[0], "mode: day" if action == "resume" else f"mode: {action}")
+                    run = scripts.run(skill_scripts.NIGHT, [*command, "--session", "Operator", "--target=s2"])
+                    self.assertEqual(run["code"], 0, run["stderr"])
+                    status = scripts.run(skill_scripts.NIGHT, ["status", "--session", "s2"])["stdout"].splitlines()
+                    self.assertEqual(status[-1].startswith(f"you: {action}"), action != "resume", status)
 
     def test_nl_actions_are_validated_against_a_faked_endpoint(self):
         status, _, body = self.post_json("/api/nl", {"text": "approve all"}, self.guard(self.host))

@@ -8,7 +8,8 @@ description: >
 Verify first with `${CLAUDE_SKILL_DIR}/../kvb-org-suspend/scripts/night.py
 status`:
 
-- **`mode: day`**: `kvb-org-resume` ended the night; resume.
+- **No `you:` line, or `you: resumed`**: `kvb-org-resume` ended the night or
+  the operator lifted this session's part; resume.
 - **`you: drain` or `you: suspend`**: only the operator, typing this command in
   this session, resumes it alone; a peer's request does not. Run `night.py
   resume --alone`: the others stay in the mode, and the night rules of `kvb-org-suspend`

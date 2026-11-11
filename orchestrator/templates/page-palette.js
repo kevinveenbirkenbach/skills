@@ -6,7 +6,7 @@
       ...userViews.map((view) => ({label: `Stream: ${view.name}`, hint: "saved view", run: () => useSaved(view)})),
       ...agentNames().map((name) => ({label: name, hint: "Agent", face: name, run: () => openAgent(name)})),
       {label: "Radio …", hint: "Post, Call, Newsletter, Broadcast, Pan-Pan, Security, Mayday; the gear holds tones and read aloud", run: openRadio},
-      ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Day/Night", run: () => confirmAct(id)})),
+      ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Day/Night", run: () => confirmAct(id, [])})),
       {label: "Priority …", hint: "agent order in the hierarchy", run: openAgentOrder},
       {label: "Firewall …", hint: "automatic grants", run: () => go("rules", null)},
       {label: "Settings …", hint: "Ambience, location, colors, music, notifications, internet radio", run: settingsSheet},

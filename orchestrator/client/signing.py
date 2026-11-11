@@ -135,8 +135,17 @@ def message_item(to: str, cls: str, text: str, upload: str, voice: str, voice_sh
     return {"kind": "message", "to": to, "class": cls, "text": text, "upload": upload, "voice": voice, "voice_sha256": voice_sha256}
 
 
-def board_item(action: str) -> dict:
-    return {"kind": "board", "action": action}
+def board_item(action: str, agents: list[str]) -> dict:
+    """Args:
+        action: the board action.
+        agents: the session ids a night action is limited to, sorted; empty
+            for every agent, which keeps the item of a board action without
+            agents unchanged.
+
+    Returns:
+        The item the operator's passkey signs.
+    """
+    return {"kind": "board", "action": action, **({"agents": agents} if agents else {})}
 
 
 def stream_item(origins: list[str], urls: list[str]) -> dict:

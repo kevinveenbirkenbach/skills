@@ -85,6 +85,38 @@ class TestNight(unittest.TestCase):
         self.assertEqual(self._out("resume", sid="s2"), ["s1\tOne", "s3\tThree"])
         self.assertFalse((self.root / "night.json").exists())
 
+    def test_targets_take_a_part_alone_by_day_and_resume_lifts_only_theirs(self):
+        self.assertEqual(self._out("drain", "--target=s2", "--target=s3"), ["s3\tThree", "s2\tTwo"])
+        self._out("suspend", "--target=s3")
+        self.assertEqual(json.loads((self.root / "night.json").read_text(encoding="utf-8")), {"parts": {"s2": "drain", "s3": "suspend"}})
+        self.assertEqual(self._out("status", sid="s2"), ["mode: day", "you: drain (kvb-agent-drain)"])
+        self.assertEqual(self._out("status", sid="s3"), ["mode: day", "you: suspend (kvb-agent-suspend)"])
+        self.assertEqual(self._out("status"), ["mode: day"])
+        self.assertEqual(self._out("resume", "--target=s2"), ["s2\tTwo"])
+        self.assertEqual(self._out("status", sid="s2"), ["mode: day"])
+        self.assertEqual(self._out("resume", "--alone", sid="s3"), ["resumed: s3"])
+        self.assertFalse((self.root / "night.json").exists())
+
+    def test_a_part_outranks_the_mode_and_a_targeted_resume_joins_the_resumed(self):
+        self._out("drain")
+        self._out("suspend", "--target=s2")
+        state = json.loads((self.root / "night.json").read_text(encoding="utf-8"))
+        self.assertEqual((state["mode"], state["active"], state["parts"]), ("drain", "s1", {"s2": "suspend"}))
+        self.assertEqual(self._out("status", sid="s2")[3], "you: suspend (kvb-agent-suspend)")
+        self.assertEqual(self._out("status", sid="s3")[3], "you: drain (kvb-agent-drain)")
+        self._out("resume", "--target=s2", "--target=s3", "--target=s1")
+        state = json.loads((self.root / "night.json").read_text(encoding="utf-8"))
+        self.assertEqual((state["mode"], state["parts"], state["resumed"]), ("drain", {}, ["s2", "s3"]))
+        self.assertEqual([self._out("status", sid=sid)[3] for sid in ("s1", "s2", "s3")], ["you: active", "you: resumed", "you: resumed"])
+        self._out("suspend", "--target=s3")
+        self._out("resume", sid="s2")
+        self.assertFalse((self.root / "night.json").exists())
+
+    def test_a_target_never_parses_as_an_option(self):
+        self._out("drain", "--target=--alone")
+        self.assertEqual(json.loads((self.root / "night.json").read_text(encoding="utf-8")), {"parts": {"--alone": "drain"}})
+        self.assertEqual(self._run("resume", "--alone", "--target=s2").returncode, 2)
+
     def test_bad_state_means_day(self):
         self.root.mkdir()
         for text in (
@@ -94,6 +126,11 @@ class TestNight(unittest.TestCase):
             json.dumps(["suspend"]),
             json.dumps({"mode": "suspend", "active": "s1", "resumed": "s2"}),
             json.dumps({"mode": "sunset", "active": "s1", "awake": "s2"}),
+            json.dumps({"parts": {}}),
+            json.dumps({"parts": {"s2": "noon"}}),
+            json.dumps({"parts": {"s2": ["drain"]}}),
+            json.dumps({"parts": ["s2"]}),
+            json.dumps({"mode": "drain", "active": "s1", "parts": {"s2": "evening"}}),
         ):
             with self.subTest(text=text):
                 (self.root / "night.json").write_text(text, encoding="utf-8")

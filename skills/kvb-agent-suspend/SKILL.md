@@ -6,7 +6,8 @@ description: >
 ---
 
 Verify first: `${CLAUDE_SKILL_DIR}/../kvb-org-suspend/scripts/night.py status`
-prints `you: suspend`. On `you: active` or `mode: day` do nothing and say so.
+prints `you: suspend`, by day too when the operator suspended this session
+alone. On another `you:` line, or none, do nothing and say so.
 The request asks for less, so it needs no operator approval, and it ends a
 `kvb-org-robot` run at its next safe point; `kvb-agent-resume` resumes it.
 

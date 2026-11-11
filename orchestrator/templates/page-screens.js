@@ -99,7 +99,7 @@
     const banner = document.getElementById("mayday");
     const silence = state.silence;
     banner.hidden = !silence;
-    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "cancel", "btn small", () => confirmAct("clear-mayday"), "cancel: end the mayday (radio.py clear)")] : []));
+    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "cancel", "btn small", () => confirmAct("clear-mayday", []), "cancel: end the mayday (radio.py clear)")] : []));
     document.title = `${state.badges.inbox ? `(${state.badges.inbox}) ` : ""}Agent Orchestrator`;
     window.setTimeout(measure, 0);
   }
