@@ -313,11 +313,46 @@ class TestEvaluate(unittest.TestCase):
         running = job(5, kind="test-nostack", task="work/c", status="active")
         self.assertEqual(
             self.decide([running, head, twin, gate, light], loaded=loaded, footprints=shares | {"j5": {"ram": 6, "cpu": 11}}, **rules),
-            {
-                "j1": None, "j2": "all 1 quality-high slots taken", "j3": "test runs only beside test-nostack, but quality-high runs",
-                "j4": "CPU 73 % in use or reserved + 40 % > budget 100 %; reserved",
-            },
+            {"j1": None, "j2": "all 1 quality-high slots taken", "j3": "test runs only beside test-nostack, but quality-high runs", "j4": None},
         )
+
+    def test_a_light_entry_meets_only_running_and_granted_jobs_while_heavy_ones_keep_every_reservation(self):
+        rules = {"slot_limits": {"test": 5, "test-nostack": 5, "deploy": 1}, "light": {"test-nostack"}}
+        with self.subTest("budget reservations hold back heavy kinds only"):
+            running, head, twin = job(1, status="active"), job(2), job(3, task="work/b")
+            light, heavy = job(4, kind="test-nostack", task="work/c", need_gb=0), job(5, task="work/c")
+            shares = {
+                "j1": {"ram": 30, "cpu": 50}, "j2": {"ram": 50, "cpu": 60}, "j3": {"ram": 50, "cpu": 60},
+                "j4": {"ram": 6, "cpu": 11}, "j5": {"ram": 5, "cpu": 5},
+            }
+            self.assertEqual(self.decide([running, head, twin, light, heavy], footprints=shares, **rules), {
+                "j2": "RAM 30 % in use or reserved + 50 % > budget 75 %, CPU 50 % in use or reserved + 60 % > budget 100 %; reserved",
+                "j3": "RAM 80 % in use or reserved + 50 % > budget 75 %, CPU 110 % in use or reserved + 60 % > budget 100 %; reserved",
+                "j4": None,
+                "j5": "RAM 136 % in use or reserved + 5 % > budget 75 %, CPU 181 % in use or reserved + 5 % > budget 100 %; reserved",
+            })
+        with self.subTest("disk reservations hold back heavy kinds only"):
+            big, small, late = job(1, need_gb=50), job(2, kind="test-nostack", task="work/b", need_gb=0), job(3, task="work/c", need_gb=5)
+            self.assertEqual(self.decide([big, small, late], free_gb=40.0, **rules), {
+                "j1": "50 GB would cut into the 10 GB floor; reserved", "j2": None, "j3": "5 GB would cut into the 10 GB floor; reserved",
+            })
+        with self.subTest("a granted light counts for later lights, a blocked one reserves against heavy kinds"):
+            running = job(1, status="active")
+            first, second = job(2, kind="test-nostack", need_gb=0), job(3, kind="test-nostack", task="work/b", need_gb=0)
+            heavy = job(4, task="work/c")
+            shares = {"j1": {"ram": 10, "cpu": 60}, "j2": {"ram": 0, "cpu": 30}, "j3": {"ram": 0, "cpu": 30}, "j4": {"ram": 5, "cpu": 5}}
+            self.assertEqual(self.decide([running, first, second, heavy], footprints=shares, **rules), {
+                "j2": None, "j3": "CPU 90 % in use or reserved + 30 % > budget 100 %; reserved",
+                "j4": "CPU 120 % in use or reserved + 5 % > budget 100 %; reserved",
+            })
+        with self.subTest("a head the host load keeps out while a job runs reserves against heavy kinds only"):
+            load = "RAM 55 % used + 41 % still to come reach the limit 90 %"
+            running, head = job(1, kind="test-nostack", status="active", need_gb=0), job(2, kind="deploy")
+            heavy, light = job(3, task="work/b"), job(4, kind="test-nostack", task="work/c", need_gb=0)
+            shares = {"j1": {"ram": 0, "cpu": 10}, "j2": {"ram": 0, "cpu": 60}, "j3": {"ram": 0, "cpu": 40}, "j4": {"ram": 0, "cpu": 40}}
+            self.assertEqual(self.decide([running, head, heavy, light], loaded={"j2": load}, footprints=shares, **rules), {
+                "j2": None, "j3": "CPU 70 % in use or reserved + 40 % > budget 100 %; reserved", "j4": None,
+            })
 
 
 class TestHistory(unittest.TestCase):
