@@ -37,7 +37,11 @@
       ui.views[route.screen] = route.view;
     }
     if (document.startViewTransition && drawn.screen && !calm.matches) {
-      document.startViewTransition(() => render(true));
+      document.startViewTransition(() => render(true)).ready.catch((error) => {
+        if (error.name !== "AbortError") {
+          throw error;
+        }
+      });
     } else {
       render(true);
     }
