@@ -1,5 +1,6 @@
   const gateStage = {items: [], drag: null};
   const DRAG_SLOP = 6;
+  const AGENT_R = {dot: 9, face: 13};
 
   function stageGate(key, change) {
     gateStage.items = gateStage.items.filter((item) => item.key !== key);
@@ -140,16 +141,22 @@
     };
     return ancestryChart(plan, "Ancestry: operator, chair, sessions, subagents", {
       edge: (link, d) => s("path", {class: "ancestry-edge", d, "data-child": link.child, "data-parent": link.parent}),
-      node: (node) => s("g", {
-        class: `node ancestry-node k-${node.kind}`, transform: `translate(${fixed(node.x)} ${fixed(node.y)})`, tabindex: 0, role: "button", "aria-label": node.label,
-        "data-agent": node.id, "data-kind": node.kind, "data-generation": node.generation,
-        on: {click: () => open(node), keydown: (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            open(node);
-          }
-        }},
-      }, s("title", {}, `${node.label} · ${NODE_KINDS[node.kind] || "Subagent"}`), s("circle", {r: 9}), s("text", {class: "label", y: 26, "text-anchor": "middle"}, short(node.label).slice(0, 24))),
+      node: (node) => {
+        const faced = look.faces && Object.hasOwn(TOP, node.kind);
+        const r = faced ? AGENT_R.face : AGENT_R.dot;
+        return s("g", {
+          class: `node ancestry-node k-${node.kind}`, transform: `translate(${fixed(node.x)} ${fixed(node.y)})`, tabindex: 0, role: "button", "aria-label": node.label,
+          "data-agent": node.id, "data-kind": node.kind, "data-generation": node.generation, "data-face": faced ? node.id : null,
+          on: {click: () => open(node), keydown: (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              open(node);
+            }
+          }},
+        }, s("title", {}, `${node.label} · ${NODE_KINDS[node.kind] || "Subagent"}`), s("circle", {r}),
+        faced ? s("g", {class: "face-art", transform: `translate(${-r} ${-r}) scale(${(2 * r) / Faces.SIZE})`}, faceParts(node.id)) : null,
+        s("text", {class: "label", y: r + 17, "text-anchor": "middle"}, short(node.label).slice(0, 24)));
+      },
     });
   }
 
