@@ -139,6 +139,12 @@ class TestGates(Scratch):
         check = self.gates("receipt", "check", "--repo", repo, "--tree", tree, "--level", "test")
         self.assertEqual((check.returncode, check.stderr), (0, ""))
 
+    def test_a_parent_row_with_a_lone_surrogate_is_skipped_and_the_others_still_count(self):
+        self.council.mkdir(exist_ok=True)
+        rows = [{"id": "bad", "repo": str(self.repo), "branch": "main", "parent": "\ud800"}, {"id": "good", "repo": str(self.repo), "branch": "main", "parent": "feature"}]
+        (self.council / "gate-parents.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        self.assertEqual(self.parents("main"), [{"parent": "feature", "source": "recorded"}])
+
     def test_a_receipt_older_than_30_days_neither_counts_nor_survives_the_next_write(self):
         repo, tree = str(self.repo), self.out("rev-parse", "HEAD^{tree}")
         old = {"id": "old", "repo": repo, "tree": tree, "level": "test", "gpu": "false", "at": time.time() - 31 * 86400}

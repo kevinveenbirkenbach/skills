@@ -184,6 +184,16 @@ def journal(origin: Path, kept_dir: Path, kept: Path) -> list[dict]:
     return list(merged.values())
 
 
+def encodable(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        value.encode()
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def journal_lock(path: Path) -> contextlib.AbstractContextManager:
     return watch.nofollow.locked(watch.ROOT, path.with_suffix(".lock"), FILE_MODE, None)
 
@@ -262,7 +272,7 @@ def opened(path: Path, write: bool, kept_dir: Path) -> sqlite3.Connection:
         db.executemany("INSERT INTO recorded VALUES (?, ?, ?)", [
             (row["repo"], row["branch"], row["parent"])
             for row in journal(watch.PARENTS, kept_dir, kept_dir / watch.KEPT_PARENTS.name)
-            if all(isinstance(row.get(key), str) for key in ("repo", "branch", "parent")) and row["branch"] != row["parent"]
+            if all(encodable(row.get(key)) for key in ("repo", "branch", "parent")) and row["branch"] != row["parent"]
         ])
     except BaseException:
         db.close()
