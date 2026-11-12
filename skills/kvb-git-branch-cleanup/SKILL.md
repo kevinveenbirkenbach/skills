@@ -1,7 +1,7 @@
 ---
 name: kvb-git-branch-cleanup
 description: >
-  Remove merged branches no worktree holds.
+  Remove merged branches outside worktrees.
 ---
 
 `pkgmgr branch cleanup` decides what is merged and does the removing; this
