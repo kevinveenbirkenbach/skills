@@ -30,8 +30,13 @@
     }
   }
 
+  const SELECTION_HOLD = 20000;
+  let selectedSince = 0;
+
   function refresh() {
-    if (!ui.busy && !ui.playing && !document.hidden && String(window.getSelection()).length === 0) {
+    const selected = String(window.getSelection()).length > 0;
+    selectedSince = selected ? selectedSince || Date.now() : 0;
+    if (!ui.busy && !ui.playing && !document.hidden && (!selected || Date.now() - selectedSince >= SELECTION_HOLD)) {
       load();
     }
   }

@@ -28,6 +28,7 @@
   document.addEventListener("pointerdown", unlock);
   document.addEventListener("keydown", keyboard);
   document.addEventListener("visibilitychange", refresh);
+  window.addEventListener("focus", refresh);
   window.addEventListener("hashchange", apply);
   window.addEventListener("resize", measure);
   window.addEventListener("resize", redrawSky);
