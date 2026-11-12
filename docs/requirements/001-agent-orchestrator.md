@@ -739,6 +739,8 @@ flowchart TD
 
 ### Phase 6: Resources (S7)
 
+Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
+
 - [ ] The tab shows tokens per agent and accumulated, and CPU, RAM, disk and
       load, on the shared time axis, several values per chart.
 - [ ] Token counts equal the sum of the transcript usage fields of a fixture

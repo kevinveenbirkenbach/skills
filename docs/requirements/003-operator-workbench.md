@@ -301,22 +301,22 @@ flowchart TD
 
 ### W4 Resources
 
-- [ ] `resources.py sample`, run every 60 s by a user timer that
+- [x] `resources.py sample`, run every 60 s by a user timer that
       `make orchestrator-install` enables, appends one row: used and total per
       mount, CPU, RAM and swap percent, load, GPU utilization and VRAM per
       GPU, waiting and active queue jobs.
-- [ ] An NVIDIA GPU whose PCI `runtime_status` is not `active` is recorded as
+- [x] An NVIDIA GPU whose PCI `runtime_status` is not `active` is recorded as
       asleep without running `nvidia-smi`.
-- [ ] `resources.py tokens` adds input, output, cache-read and cache-write
+- [x] `resources.py tokens` adds input, output, cache-read and cache-write
       tokens per agent and model from transcript usage fields since the last
       byte offset; no sampler or parser calls an LLM.
-- [ ] Rows older than 7 days fold into 15-minute means; means older than 90
+- [x] Rows older than 7 days fold into 15-minute means; means older than 90
       days are dropped.
 - [ ] The Resources entry shows on one time axis disks, CPU, RAM, swap, GPU,
       VRAM and stacked tokens per agent; bands mark idle (< 30 %) and
       saturated (> 90 %); a marker flags spans where jobs waited while CPU and
       RAM stayed under 50 %; the view reads only the sampler files.
-- [ ] 001 S7 points to this section.
+- [x] 001 S7 points to this section.
 
 ### Contracts
 
@@ -344,7 +344,7 @@ The work packages meet only through these interfaces:
   used, total}], cpu, ram, swap, load, gpus: [{name, util, vram_used,
   vram_total} | {name, asleep: true}], queue: {waiting, active}}`),
   `tokens.jsonl` (`{t, agent, model, input, output, cache_read,
-  cache_write}`, t the hour) and `offsets.json` under
+  cache_write}`, t the hour), `offsets.json` and `cpu.json` under
   `~/.local/state/agents-council/resources/`.
 - **Mounts**: the hub mounts `~/.local/state/agents-council` read-only and
   opens `gates.db` read-only.
@@ -394,6 +394,10 @@ The work packages meet only through these interfaces:
   - [ ] Resources sample parsing on fixtures (df, meminfo, nvidia-smi, asleep
         GPU); token offsets; retention fold; diff cap and masking; feedback
         payload.
+  - [x] W4 part of the item above: sample parsing on fixtures (df, meminfo,
+        CPU ticks between runs, nvidia-smi, asleep and unread GPU); token
+        offsets, a message counted once across fork transcripts; retention
+        fold.
   - [ ] Bubble schedule: scale per queue position, word reveal times from a
         duration, reading-pace duration, one bubble per agent.
 - Integration:
@@ -403,7 +407,7 @@ The work packages meet only through these interfaces:
   - [ ] The host executor applies a signed board batch to a scratch register
         and refuses a forged one; deletes a local merged branch without a
         token and refuses a remote one.
-  - [ ] The sampler writes rows in a scratch HOME.
+  - [x] The sampler writes rows in a scratch HOME.
 - E2E, headless Chromium and Firefox at 1920, 1366 and 390 px:
   - [ ] Tasks badge, no Inbox entry, operator cards with bulk actions, review
         diff expanded, feedback by right-click and `f` reaching the radio

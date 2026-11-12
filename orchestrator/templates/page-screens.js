@@ -55,7 +55,7 @@
   }
 
   function screenOf() {
-    return {stream: streamScreen, inbox: tasksScreen, rules: rulesScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen}[ui.screen]();
+    return {stream: streamScreen, inbox: tasksScreen, rules: rulesScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen, resources: resourcesScreen}[ui.screen]();
   }
 
   function render(force) {
@@ -73,7 +73,7 @@
       const main = document.getElementById("main");
       main.setAttribute("aria-labelledby", `tab-${ui.screen}`);
       main.replaceChildren(screenOf());
-      document.body.classList.toggle("fit", ["tasks", "inbox"].includes(ui.screen) || (["agents", "artifacts"].includes(ui.screen) && !["tree", "hierarchy"].includes(ui.views[ui.screen])));
+      document.body.classList.toggle("fit", ["tasks", "inbox", "resources"].includes(ui.screen) || (["agents", "artifacts"].includes(ui.screen) && !["tree", "hierarchy"].includes(ui.views[ui.screen])));
       drawn.screen = ui.screen;
       drawn.sig = sig;
       if (g3.host && !g3.host.isConnected) {

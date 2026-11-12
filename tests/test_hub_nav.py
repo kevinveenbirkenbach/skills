@@ -65,9 +65,9 @@ class TestNavModule(unittest.TestCase):
         done = subprocess.run(["node", "-e", NAV_PROBE, str(NAV)], capture_output=True, text=True, timeout=60, check=True)
         cls.data = json.loads(done.stdout)
 
-    def test_the_navigation_has_four_entries_and_no_inbox_and_stream_keeps_only_the_firewall(self):
+    def test_the_navigation_has_five_entries_and_no_inbox_and_stream_keeps_only_the_firewall(self):
         stream = ["stream", "Stream", [["rules", "Firewall"]]]
-        self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []]])
+        self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []], ["resources", "Resources", []]])
         self.assertNotIn("inbox", json.dumps(self.data["tabs"]))
 
     def test_agents_and_artifacts_offer_five_views_in_order_and_tasks_six(self):

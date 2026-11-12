@@ -35,9 +35,9 @@ OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
 TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn", "3d")
-SCREENS = ["stream", "tasks/operator", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
+SCREENS = ["stream", "tasks/operator", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS), "resources"]
 SUBS = ["Firewall"]
-TABS = ["Stream", "Agents", "Artifacts", "Tasks"]
+TABS = ["Stream", "Agents", "Artifacts", "Tasks", "Resources"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const until = async (check, ms) => {
@@ -1785,7 +1785,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual((probe["title"], probe["h1"]), ("(2) Agent Orchestrator", "Agent Orchestrator"))
                 self.assertEqual(probe["header"], ["radio-open", "bubbles-toggle", "palette-open", "settings-open"])
                 self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
-                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": "2"})
+                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": "2", "tab-resources": None})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")
                 self.assertFalse(probe["rail"])
                 self.assertEqual((probe["time"], probe["replay"]), ("24 h ▾", True))

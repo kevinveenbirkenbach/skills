@@ -1,0 +1,12 @@
+[Unit]
+Description=Agent Orchestrator resources: disks, CPU, RAM, swap, load, GPU, the queue and the transcripts' tokens, into the files the orchestrator reads
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/bin:/bin
+EnvironmentFile=%h/.local/share/kvb-orchestrator/.env
+ExecStart=/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/resources.py sample --state ${KVB_ORCHESTRATOR_KEPT}/resources --council ${KVB_ORCHESTRATOR_COUNCIL} --proc /proc --sys /sys
+ExecStart=/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/resources.py tokens --state ${KVB_ORCHESTRATOR_KEPT}/resources --council ${KVB_ORCHESTRATOR_COUNCIL} --transcripts ${KVB_ORCHESTRATOR_PROJECTS}
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=300
