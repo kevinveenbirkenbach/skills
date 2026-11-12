@@ -123,6 +123,7 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.assertEqual(((config / NEW).stat().st_mode & 0o777, (config / NEW / "approvers.json").stat().st_mode & 0o777), (0o700, 0o600))
         self.assertTrue((units / f"{NEW}-runner.service").is_file())
         self.assertTrue((units / f"{NEW}-sessions.timer").is_file())
+        self.assertTrue((units / f"{NEW}-resources.timer").is_file())
         self.assertIn(f"KVB_ORCHESTRATOR_STATE={local / NEW}", (share / NEW / ".env").read_text(encoding="utf-8"))
         settings = self.home / ".claude" / "settings.json"
         data = json.loads(settings.read_text(encoding="utf-8"))
@@ -131,7 +132,7 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.assertIn(f"{share / NEW}/client/permission_hook.py", hooks[1]["hooks"][0]["command"])
         self.assertEqual(settings.stat().st_mode & 0o777, 0o640)
         self.assertIn(f"{OLD}/client", (self.home / ".claude" / f"settings.json.before-{NEW}-migration").read_text(encoding="utf-8"))
-        self.assertEqual((first["images"], first["mcp"], first["enabled"]), ([f"{NEW}:local"], {NEW: "http://127.0.0.1:8737/mcp"}, [f"{NEW}-offices.path", f"{NEW}-runner.service", f"{NEW}-sessions.timer"]))
+        self.assertEqual((first["images"], first["mcp"], first["enabled"]), ([f"{NEW}:local"], {NEW: "http://127.0.0.1:8737/mcp"}, [f"{NEW}-offices.path", f"{NEW}-resources.timer", f"{NEW}-runner.service", f"{NEW}-sessions.timer"]))
         self.assertIn(["docker", "compose", "--file", str(share / OLD / "compose.yml"), "down", "--remove-orphans"], first["calls"])
 
         before = snapshot(self.home)

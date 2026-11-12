@@ -4,7 +4,8 @@
 #            write its .env, build and start the container, register the MCP
 #            server for Claude Code, build pkgmgr from the newest signed tag of
 #            PKGMGR_REPO and enable the tree timer and the cleanup path unit,
-#            enable the sessions timer and the offices path unit; re-enable the runner and re-register
+#            enable the sessions timer and the offices path unit, enable the
+#            resources timer; re-enable the runner and re-register
 #            the hook when the migration took them over; an enabled runner gets
 #            the fresh unit and a restart
 #   migrate  move every trace of the earlier name to the kvb-orchestrator names
@@ -40,6 +41,7 @@ TREE_UNIT="${NAME}-tree"
 CLEANUP_UNIT="${NAME}-cleanup"
 OFFICES_UNIT="${NAME}-offices"
 SESSIONS_UNIT="${NAME}-sessions"
+RESOURCES_UNIT="${NAME}-resources"
 INSTALLED_SKILLS="${HOME}/.claude/skills"
 HOST_SCRIPTS=(kvb-org-organize/scripts/council.py kvb-org-organize/scripts/nofollow.py kvb-org-rasci/scripts/rasci.py)
 TREE_DIR="${HOME}/.local/state/pkgmgr/tree"
@@ -155,7 +157,7 @@ install_hub() {
 	cp -a "${REPO_ROOT}/orchestrator/." "${HUB}/"
 	# Python loads a cached .pyc whose header matches the source mtime and size, and cp -a keeps the mtime: one planted in the sandbox-writable tree would run on the host
 	find "${HUB}" -name __pycache__ -type d -prune -exec rm -rf {} +
-	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py" "${HUB}/client/cleanup.py" "${HUB}/client/offices.py" "${HUB}/client/sessions.py"
+	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py" "${HUB}/client/cleanup.py" "${HUB}/client/offices.py" "${HUB}/client/sessions.py" "${HUB}/client/resources.py"
 	log "skills: the PermissionRequest hook client is ${HUB}/client/permission_hook.py"
 	log "skills: approvals need a pinned passkey: settings, 'Passkey registrieren', then 'make orchestrator-pin CREDENTIAL=<blob>'; until then every executor refuses"
 	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\nKVB_ORCHESTRATOR_KEPT=%s\n' \
@@ -243,6 +245,18 @@ sessions_timer() {
 	log "skills: ${SESSIONS_UNIT}.timer writes ${STATE}/agent-sessions.json every 15 seconds while the Agent Orchestrator page polls"
 }
 
+resources_timer() {
+	if ! has_systemd; then
+		warn "skills: no systemd user session; the Resources view stays empty."
+		return 0
+	fi
+	cp -f "${HUB}/systemd/${RESOURCES_UNIT}.service" "${HUB}/systemd/${RESOURCES_UNIT}.timer" "${UNITS}/"
+	systemctl --user daemon-reload
+	systemctl --user enable --now "${RESOURCES_UNIT}.timer"
+	systemctl --user restart "${RESOURCES_UNIT}.timer"
+	log "skills: ${RESOURCES_UNIT}.timer samples the host and counts the transcripts' tokens into ${HOME}/.local/state/agents-council/resources every minute"
+}
+
 skills_current() {
 	local script
 	for script in "${HOST_SCRIPTS[@]}"; do
@@ -271,6 +285,7 @@ install_all() {
 	install_hub
 	tree_timer
 	sessions_timer
+	resources_timer
 	offices_unit
 	if ((TOOK_RUNNER)) || runner_enabled; then runner || true; fi
 	if ((TOOK_HOOK)); then
@@ -353,6 +368,11 @@ check() {
 		ok "${SESSIONS_UNIT}.timer active"
 	else
 		todo "${SESSIONS_UNIT}.timer off: agent states wait for make orchestrator-install"
+	fi
+	if [[ "$(systemctl --user is-active "${RESOURCES_UNIT}.timer" 2>/dev/null || true)" == "active" ]]; then
+		ok "${RESOURCES_UNIT}.timer active"
+	else
+		todo "${RESOURCES_UNIT}.timer off: the Resources view waits for make orchestrator-install"
 	fi
 	if [[ "$(systemctl --user is-active "${OFFICES_UNIT}.path" 2>/dev/null || true)" == "active" ]]; then
 		ok "${OFFICES_UNIT}.path active"

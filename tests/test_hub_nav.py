@@ -64,9 +64,9 @@ class TestNavModule(unittest.TestCase):
         done = subprocess.run(["node", "-e", NAV_PROBE, str(NAV)], capture_output=True, text=True, timeout=60, check=True)
         cls.data = json.loads(done.stdout)
 
-    def test_the_navigation_has_four_entries_and_stream_has_inbox_and_rules(self):
+    def test_the_navigation_has_five_entries_and_stream_has_inbox_and_rules(self):
         stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Firewall"]]]
-        self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []]])
+        self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []], ["resources", "Resources", []]])
 
     def test_agents_and_artifacts_offer_five_views_in_order_and_tasks_six(self):
         shared = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]]

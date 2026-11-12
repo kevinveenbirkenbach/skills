@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import re
 import secrets
+import time
 from collections.abc import Callable
 from http import HTTPStatus
 from urllib.parse import urlsplit
 
 from .engines import STT_LIMIT
 from .exchange import PLAIN_CSP, Exchange
+from .resources import RESOURCES, sampled
 
 BODY_LIMIT = 1 << 20
 UPLOAD_LIMIT = 50 << 20
@@ -107,6 +109,8 @@ class Handler(Exchange):
             self.answer(lambda: hub.events(self.query()), HTTPStatus.OK)
         elif path == "/api/tree":
             self.answer(hub.repositories, HTTPStatus.OK)
+        elif path == "/api/resources":
+            self.answer(lambda: sampled(hub.kept / RESOURCES, hub.span(self.query(), time.time())), HTTPStatus.OK)
         elif path == "/api/subagents":
             self.answer(lambda: hub.subagents(self.query()), HTTPStatus.OK)
         elif path == "/api/runner/jobs":
