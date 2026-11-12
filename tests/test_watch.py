@@ -387,6 +387,17 @@ class TestWatchCommands(unittest.TestCase):
         self.assertTrue(state.exists(), "the hook hung in the mirror before it wrote the stage")
         self.assertEqual(json.loads(state.read_text(encoding="utf-8"))["stage"], "ok")
 
+    def test_watch_keeps_the_gate_receipts_and_the_recorded_parents(self):
+        self._quiet_disk()
+        names = ("gate-receipts.jsonl", "gate-parents.jsonl")
+        for name in names:
+            (self.root / name).write_text('{"id": "r1"}\n', encoding="utf-8")
+        payload = json.dumps({"session_id": "s1", "hook_event_name": "PostToolUse"})
+        self.assertEqual(self._run("watch", stdin=payload).returncode, 0)
+        for name in names:
+            kept = self.base / ".local" / "state" / "agents-council" / name
+            self.assertEqual(kept.read_text(encoding="utf-8"), '{"id": "r1"}\n')
+
     def test_watch_skips_the_mirror_round_while_its_lock_is_held(self):
         self._quiet_disk().write_text('{"id": "a"}\n', encoding="utf-8")
         kept = self.base / ".local" / "state" / "agents-council" / "queue-history.jsonl"

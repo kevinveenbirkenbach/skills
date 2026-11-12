@@ -23,8 +23,7 @@ commit starts from zero.
 
 1. **Sync**: `${CLAUDE_SKILL_DIR}/../kvb-git-hotfix/scripts/hotfix.py sync
    --repo <root> --task <your register task>`, then `hotfix.py pending
-   --repo <root>`, by the `kvb-git-hotfix` skill. A merge moves HEAD, so the
-   gate starts over from there.
+   --repo <root>`. A merge moves HEAD, so the gate starts over from there.
 2. **List**: `gate.py list --repo <root>`. A warning about an unresolved
    include or target expression means the list may be short: read that line
    and name the gap. A project without any target keeps the gate open; ask
@@ -32,7 +31,7 @@ commit starts from zero.
 3. **Status**: `gate.py status --repo <root>`. `gate: green` ends here; a
    `missing hotfix` reason means back to step 1.
 4. **Admit**: every gate target is heavy and runs only inside
-   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold` (step 5).
+   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold`.
    Only a single test module
    self-admits (`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py
    admit --kind test-nostack`), and it never turns a gate target green. A
@@ -71,6 +70,7 @@ commit starts from zero.
 - 90/5 is allowed only on `gate: green` for the exact head: in
   `kvb-check-score`, the `90/5` label and the `kvb-org-swarm` bar.
 - Never edit `kvb-gate.json` by hand.
+- Receipts and git hooks: `scripts/gates.py`.
 
 ## Output
 

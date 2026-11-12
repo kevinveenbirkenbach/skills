@@ -2,7 +2,8 @@
 """Queue the heavy jobs of parallel agents and grant them in a fixed order, without messages.
 
 Usage:
-    queue.py hold --kind KIND --task TASK [--need-gb N] [--hotfix SLUG] [--session ID] -- CMD...
+    queue.py hold --kind KIND --task TASK [--need-gb N] [--hotfix SLUG] [--session ID]
+        [--receipt LEVEL --log PATH] -- CMD...
     queue.py list
     queue.py history
     queue.py cancel ID [--session ID]
@@ -40,12 +41,21 @@ Args:
         --kind: a key of slot_need_gb in the config.
         --task: an open task of the kvb-org-rasci register; its rank orders
             the queue, and the operator's agent order (`rasci.py agents
-            order`) of the holding session breaks ties.
+            order`) of the holding session breaks ties. While one of its
+            `after` tasks in the register is neither done nor stopped, the
+            entry waits with `waits for <task>` (the reason names the
+            `rasci.py set --drop-after` that lifts it), after every other
+            entry, and reserves nothing.
         --need-gb: disk the job takes, in GB; when omitted the need learned
             for the command's signature, else slot_need_gb[kind].
         --hotfix: the slug of the register row hotfix/<slug> the job proves;
             hotfix jobs go first.
         --session: the caller's session for runtimes other than Claude Code.
+        --receipt: a gate level of kvb-check-gate's gates.py above none; the
+            command's stdout and stderr go to --log instead, and when it
+            exits 0 on the tree it started on (gates.py tree of the workdir
+            before and after) hold records a receipt for that tree, level
+            and log, with INFINITO_TEST_GPU of its environment.
     list: a header, then one line per entry: position (run for active jobs),
         id, status, kind, task, need GB, minutes waited, ETA minutes (until a
         running job ends or a waiting one starts, from learned medians; - while
@@ -129,6 +139,7 @@ SIBLINGS = {
     "history": Path(__file__).resolve().parent / "history.py",
     "nofollow": SKILLS / "kvb-org-organize" / "scripts" / "nofollow.py",
 }
+TOOLS = {"gates": SKILLS / "kvb-check-gate" / "scripts" / "gates.py"}
 HOST_SKILLS = Path.home() / ".agents" / "skills"
 EXE = os.path.realpath(sys.executable)
 CODE_FILES = tuple(path.relative_to(SKILLS) for path in (Path(__file__).resolve(), *SIBLINGS.values()))
@@ -158,7 +169,7 @@ ALIASES = "aliases"
 
 @functools.cache
 def sibling(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(f"kvb_queue_{name}", SIBLINGS[name])
+    spec = importlib.util.spec_from_file_location(f"kvb_queue_{name}", {**SIBLINGS, **TOOLS}[name])
     loaded = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(loaded)
     return loaded
@@ -637,6 +648,22 @@ def agent_ranks() -> dict[str, int]:
     return {name: index for index, name in enumerate(sibling("rasci").agent_order())}
 
 
+def after_waits(entries: list[dict]) -> dict[str, str]:
+    rasci = sibling("rasci")
+    register = rasci.load()
+    waits = {}
+    for entry in entries:
+        task = entry["task"]
+        ahead = [
+            other for other in register.get(task, {}).get("after", [])
+            if other in register and register[other].get("status") not in rasci.ENDED
+        ]
+        if entry["status"] == "waiting" and ahead:
+            lift = shlex.join(["rasci.py", "set", task, "--drop-after", ahead[0]])
+            waits[entry["id"]] = f"waits for {ahead[0]}, an after task of {task} not yet done or stopped; {lift} lifts it"
+    return waits
+
+
 def stage(cfg: dict, free_gb: float, now: float) -> str:
     state = watch.read_json(watch.STATE)
     return state["stage"] if "stage" in state else watch.stage_for(free_gb, [], cfg, now)
@@ -681,12 +708,13 @@ def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, signature
     for entry in entries:
         share = footprint(entry, signatures, kinds)
         footprints[entry["id"]] = dict(budget) if share is None else share
+    waits = after_waits(entries)
     return evaluate(
-        entries, free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now),
+        [e for e in entries if e["id"] not in waits], free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now),
         watch.memory_stage(watch.memory(), cfg), silenced(now), slots, footprints, budget,
         register_ranks(), agent_ranks(), loaded,
         set(cfg.get("exclusive_kinds", [])), set(cfg.get("light_kinds", [])), now,
-    )
+    ) | waits
 
 
 def load_reason(limits: dict, cpu: float, mem: float, ram_share: float) -> str | None:
@@ -854,6 +882,36 @@ def record(job: dict, start: float, code: int, samples: list[dict[str, float]], 
         keep(history.row(job, start, time.time(), code, samples, concurrent))
 
 
+def gated(args: argparse.Namespace, here: str) -> tuple[ModuleType | None, int | None]:
+    if args.receipt is None:
+        if args.log is not None:
+            fail("--log goes with --receipt")
+        return None, None
+    gates = sibling("gates")
+    if args.receipt not in gates.LEVELS[1:] or args.log is None:
+        fail(f"--receipt takes one of {', '.join(gates.LEVELS[1:])} and needs --log")
+    gates.root(here)
+    try:
+        return gates, os.open(args.log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    except OSError as error:
+        fail(f"cannot write the log {args.log}: {error.strerror}")
+
+
+def start_tree(gates: ModuleType | None, here: str) -> str | None:
+    return None if gates is None else gates.worktree_tree(here)
+
+
+def keep_receipt(gates: ModuleType | None, args: argparse.Namespace, here: str, before: str | None, code: int) -> None:
+    if gates is None or code != 0:
+        return
+    after = gates.worktree_tree(here)
+    if after != before:
+        print(f"queue: the command changed the tree from {before} to {after}; no receipt", file=sys.stderr)
+        return
+    gates.add_receipt(gates.root(here), before, args.receipt, os.path.abspath(args.log))
+    print(f"queue: receipt {args.receipt} for tree {before}", file=sys.stderr)
+
+
 def cmd_hold(args: argparse.Namespace) -> int:
     cfg = config()
     if args.kind not in cfg["slot_need_gb"]:
@@ -864,6 +922,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
     if args.hotfix is not None and HOTFIX + args.hotfix not in rasci.load():
         fail(f"the register has no row {HOTFIX}{args.hotfix}")
     here = workdir()
+    gates, out = gated(args, here)
     names = aliases(here, args.command, os.getcwd())
     signatures, kinds = learned(cfg, time.time())
     need = args.need_gb
@@ -901,9 +960,12 @@ def cmd_hold(args: argparse.Namespace) -> int:
             if caught:
                 return 128 + caught[0]
             samples = [measure(cfg)]
+            before = start_tree(gates, here)
             start = time.time()
             try:
-                child = subprocess.Popen(args.command, start_new_session=True, pass_fds=(lock_fd,))
+                child = subprocess.Popen(
+                    args.command, start_new_session=True, pass_fds=(lock_fd,), stdout=out, stderr=out
+                )
             except OSError as error:
                 print(f"queue: cannot start {args.command[0]}: {error.strerror}", file=sys.stderr)
                 return 2
@@ -915,6 +977,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
             job = {"id": f"{entry['id']}-{time.time_ns()}", "kind": args.kind, "signature": names[0],
                    "workdir": entry["workdir"]}
             record(job, start, code, samples, concurrent)
+            keep_receipt(gates, args, here, before, code)
             return code
         finally:
             leave(entry["id"])
@@ -1081,6 +1144,8 @@ def cli() -> argparse.ArgumentParser:
     hold.add_argument("--need-gb", type=float)
     hold.add_argument("--hotfix")
     hold.add_argument("--session")
+    hold.add_argument("--receipt")
+    hold.add_argument("--log")
     hold.add_argument("command", nargs="+")
     sub.add_parser("list")
     sub.add_parser("history")
