@@ -28,7 +28,7 @@ MANAGED = Path("/etc/claude-code")
 SETTINGS = ("settings.json", "settings.local.json")
 SETTINGS_LIMIT = 1 << 20
 GLOB = re.compile(r"[*?\[]")
-FLOOR =("~/.ssh", "~/.gnupg", "~/.aws", "~/.kube", "~/.netrc", "~/.git-credentials", "~/.config/gcloud", "~/.docker/config.json", "~/.claude")
+FLOOR = ("~/.ssh", "~/.gnupg", "~/.aws", "~/.kube", "~/.netrc", "~/.git-credentials", "~/.config/gcloud", "~/.docker/config.json", "~/.claude")
 READ_RULE = re.compile(r"\s*Read(?:\((.*)\))?\s*")
 
 
