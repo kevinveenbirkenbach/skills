@@ -152,32 +152,35 @@
 
   function inboxItem(item, index) {
     const red = item.kind === "review" && item.gate !== "pass";
-    const classes = ["item", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
+    const commanded = item.kind === "ask" || item.kind === "operator";
+    const classes = ["item", "entry", `k-${item.kind}`, "waiting", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
     const box = h("input", {type: "checkbox", "aria-label": `Select ${item.title}`, checked: ui.selected.has(keyOf(item)), disabled: !pickable(item), on: {change: () => toggle(item, true)}});
-    return h("li", {class: classes, "data-index": index},
+    return h("li", {class: classes, "data-index": index, "data-ref": keyOf(item), "data-to": item.to || null},
       box,
-      h("div", {},
-        h("div", {class: "head-row"},
-          pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
-          item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
-          item.warnings.map((warning) => pill(warning, "bad")),
-          item.pinned ? pill("pinned", "violet") : null,
-          item.until ? pill(`until ${absolute.format(stampOf(item.until))}`, "neutral") : null,
-          h("span", {class: "spacer"}), when(item.ts)),
-        h("button", {type: "button", class: "linkish", title: "Open", on: {click: () => openItem(item)}}, item.title),
-        item.agent ? h("div", {class: "muted"}, "from ", person(item.agent)) : null,
+      h("div", {class: "msg-meta"},
+        when(item.ts),
+        pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
+        item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
+        item.warnings.map((warning) => pill(warning, "bad")),
+        item.pinned ? pill("pinned", "violet") : null,
+        item.until ? pill(`until ${absolute.format(stampOf(item.until))}`, "neutral") : null),
+      h("div", {class: "entry-body"},
+        h("div", {class: "route"},
+          h("button", {type: "button", class: "linkish headline", title: "Open", on: {click: () => openItem(item)}}, item.kind === "operator" ? item.id : item.kind === "ask" ? item.title.split(": ")[0] : item.title),
+          item.agent ? [face(item.agent, false), person(item.agent)] : null),
         item.kind === "review" ? h("div", {class: "muted"}, item.detail, item.score ? ` · ${item.score}` : "") : null,
-        item.kind === "operator" && item.title !== item.command ? h("div", {class: "command"}, h("code", {}, item.command)) : null,
-        item.kind === "operator" ? h("div", {class: "muted"}, `in ${dash(item.directory)}`, item.detail && item.detail !== "-" ? ` · ${item.detail}` : "") : null,
+        commanded ? h("div", {class: "command", "data-path": item.directory || "-"}, h("code", {}, item.command), copyButton(item.command)) : null,
+        commanded ? h("span", {class: "muted"}, `in ${dash(item.directory)}`) : null,
+        item.kind === "operator" && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, item.detail) : null,
+        diffBlocks(item),
         item.job ? consoleOf(item.job) : null,
         item.kind === "rule" ? ruleRequestBody(item) : null,
-        item.kind === "ask" ? h("div", {class: "muted"}, `in ${dash(item.directory)}`) : null,
         item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
           type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, title: `${option.label}: your passkey signs this answer, a post to ${item.agent}`, disabled: item.held, on: {click: () => chooseOne(item, option.label)},
-        }, h("strong", {}, option.label), option.description ? h("span", {}, option.description) : null))) : null),
-      h("div", {class: "item-actions"},
+        }, h("strong", {}, option.label), option.description ? h("span", {}, option.description) : null))) : null,
+        feedbackList(keyOf(item))),
+      h("div", {class: "item-actions line-actions"},
         actionsFor(item),
-        item.kind === "operator" ? copyButton(item.command) : null,
         h("span", {class: "spacer"}),
         iconBtn("bi-hourglass-split", "1 h", "btn small ghost", () => mark(item, nowSeconds() + 3600, item.pinned), "1 h: snooze for one hour"),
         iconBtn("bi-sunrise", "tomorrow", "btn small ghost", () => mark(item, tomorrow(), item.pinned), "tomorrow: snooze until 8 am tomorrow"),
@@ -202,7 +205,7 @@
         ui.selected.delete(key);
       }
     }
-    const sig = JSON.stringify([items.map(withoutOutput), [...ui.selected], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60)]);
+    const sig = JSON.stringify([items.map(withoutOutput), [...ui.selected], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
     if (sig === inboxSig) {
       repaintConsoles(items);
       return;
@@ -221,7 +224,7 @@
     const deny = h("button", {type: "button", class: "btn small danger", ...named(`Deny selection (${deniable.length})`, `Deny selection (${deniable.length}): each requester gets its denial by post, one passkey signature, 3 s to undo`), disabled: !deniable.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), String(deniable.length));
     const all = h("button", {type: "button", class: "btn small primary", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), String(green.length));
     inboxDom.replaceChildren(
-      h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Inbox", counter(waitingCount())), h("span", {class: "spacer"}),
+      h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Waits on Operator", counter(waitingCount())), h("span", {class: "spacer"}),
         hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null),
       h("div", {class: "inbox-actions"}, choose, deny, all),
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),

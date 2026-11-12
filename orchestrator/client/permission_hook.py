@@ -16,7 +16,14 @@ Returns:
         reason only when a pinned passkey signed it. Nothing on timeout,
         error, a missing or invalid signature, a value longer than the hub
         takes or a hub that is down, so Claude Code shows its own dialog.
-        The exit code is 0.
+        The exit code is 0. An ask for a Bash git commit carries the diff
+        staged_diff.py builds of the tree its directory stages (of the
+        working tree against HEAD with -a or --all), content withheld per
+        the MEDUSA rules of the pipx install; none when it cannot be built
+        or the body would pass DIFF_BODY_LIMIT. An allow of such an ask
+        turns into a deny with CHANGED when what the commit records
+        (staged_diff.binding) differs right before answering from the
+        preview's, and with UNBOUND when either cannot be read.
 """
 
 from __future__ import annotations
@@ -30,17 +37,22 @@ import urllib.request
 from pathlib import Path
 
 import hub_api
+import hub_limits
 import signing
+import staged_diff
 import verifier
 
 POLL = 25.0
 NAME_LIMIT = 200
 COMMAND_LIMIT = 4000
-PATH_LIMIT = 4096
+PATH_LIMIT = hub_limits.PATH_LIMIT
 LIMITS = {"tool": NAME_LIMIT, "command": COMMAND_LIMIT, "cwd": PATH_LIMIT, "session": NAME_LIMIT, "agent": NAME_LIMIT}
 DENIED = "The operator denied this in the Agent Orchestrator."
+CHANGED = "staged tree changed since the preview"
+UNBOUND = "the staged tree cannot be read, so the allow is not bound to it"
 REASON_LIMIT = 2000
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+FAILURES = (OSError, ValueError, staged_diff.DiffError)
 
 
 def summary(tool_input: object) -> str:
@@ -61,10 +73,67 @@ def facts(hook: dict) -> dict:
     }
 
 
-def create(base: str, ask: dict, timeout: float) -> str:
-    payload = {**ask, "timeout": timeout}
+def commit_target(ask: dict) -> tuple[Path, bool] | None:
+    return staged_diff.commit_of(ask["command"], ask["cwd"]) if ask["tool"] == "Bash" and ask["cwd"] else None
+
+
+def commit_diff(ask: dict, rules: Path | None) -> tuple[str | None, dict]:
+    """Returns:
+        For a commit ask, what the commit records (staged_diff.binding, None
+        when it cannot be read) and {"diff": the preview of exactly that},
+        {} when it cannot be built; None and {} for any other ask.
+    """
+    target = commit_target(ask)
+    if target is None:
+        return None, {}
+    try:
+        pinned = staged_diff.binding(*target)
+    except FAILURES as error:
+        print(f"kvb-orchestrator: the ask goes without its diff and an allow of it turns into a deny: {error}", file=sys.stderr)
+        return None, {}
+    try:
+        return pinned, {"diff": staged_diff.bound_diff(*target, pinned, rules)}
+    except FAILURES as error:
+        print(f"kvb-orchestrator: the ask goes without its diff: {error}", file=sys.stderr)
+        return pinned, {}
+
+
+def clean(text: str) -> str:
+    return CONTROL.sub("?", text.strip())[:REASON_LIMIT]
+
+
+def bound(chosen: dict | None, ask: dict, pinned: str | None) -> dict | None:
+    """Args:
+        pinned: what the commit recorded when the ask was made, None when
+            that could not be read.
+
+    Returns:
+        chosen, or for an allow of a commit ask a deny with CHANGED when
+        what it records now differs from pinned, with UNBOUND and the error
+        when either cannot be read.
+    """
+    if chosen != {"behavior": "allow"} or commit_target(ask) is None:
+        return chosen
+    try:
+        now = staged_diff.binding(*commit_target(ask))
+    except FAILURES as error:
+        return {"behavior": "deny", "message": f"{UNBOUND}: {clean(str(error))}"}
+    if pinned is None:
+        return {"behavior": "deny", "message": UNBOUND}
+    return chosen if now == pinned else {"behavior": "deny", "message": CHANGED}
+
+
+def encoded(payload: dict) -> bytes:
+    return json.dumps(payload).encode()
+
+
+def create(base: str, ask: dict, timeout: float, shown: dict) -> str:
+    data = encoded({**ask, "timeout": timeout, **shown})
+    if len(data) > hub_limits.DIFF_BODY_LIMIT:
+        print(f"kvb-orchestrator: the ask goes without its diff, its {len(data)} bytes pass the hub's {hub_limits.DIFF_BODY_LIMIT}", file=sys.stderr)
+        data = encoded({**ask, "timeout": timeout})
     headers = {"Content-Type": "application/json", **hub_api.GUARD}
-    request = urllib.request.Request(f"{base}/api/asks", data=json.dumps(payload).encode(), headers=headers, method="POST")
+    request = urllib.request.Request(f"{base}/api/asks", data=data, headers=headers, method="POST")
     ask_id = hub_api.call(request, hub_api.SLACK)["id"]
     if not isinstance(ask_id, str) or not signing.ID.fullmatch(ask_id):
         raise ValueError("the hub answered no ask id")
@@ -87,7 +156,7 @@ def denied(answer: dict, item: dict, trust: verifier.Trust) -> str:
     except (signing.Refused, OSError) as error:
         print(f"kvb-orchestrator: the reason is not signed, the agent gets the denial without it: {error}", file=sys.stderr)
         return DENIED
-    return f"{DENIED} Reason: {CONTROL.sub('?', reason.strip())[:REASON_LIMIT]}"
+    return f"{DENIED} Reason: {clean(reason)}"
 
 
 def decision(answer: dict, item: dict, trust: verifier.Trust) -> dict | None:
@@ -120,13 +189,14 @@ def main() -> int:
         if too_long:
             print(f"kvb-orchestrator: {', '.join(too_long)} too long to sign in full, Claude Code asks instead", file=sys.stderr)
             return 0
-        ask_id = create(base, ask, args.timeout)
+        pinned, shown = commit_diff(ask, staged_diff.rules_root())
+        ask_id = create(base, ask, args.timeout, shown)
         answer = {"status": "pending"}
         while answer["status"] == "pending" and (left := deadline - time.monotonic()) > 0:
             answer = status(base, ask_id, min(left, POLL))
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return 0
-    chosen = decision(answer, signing.ask_item(ask_id, ask["tool"], ask["command"], ask["cwd"], ask["session"]), trust)
+    chosen = bound(decision(answer, signing.ask_item(ask_id, ask["tool"], ask["command"], ask["cwd"], ask["session"]), trust), ask, pinned)
     if chosen is not None:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": chosen}}))
     return 0

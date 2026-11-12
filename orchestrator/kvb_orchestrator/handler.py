@@ -6,6 +6,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 from urllib.parse import urlsplit
 
+from .diffs import DIFF_BODY_LIMIT
 from .engines import STT_LIMIT
 from .exchange import PLAIN_CSP, Exchange
 
@@ -56,6 +57,7 @@ BOARD_SIGN_ROUTE = "/api/board/sign"
 SETTINGS_SIGN_ROUTE = "/api/settings/sign"
 CHOICES_ROUTE = "/api/choices"
 CHOICES_SIGN_ROUTE = "/api/choices/sign"
+DIFF_ROUTE = re.compile(r"/api/diffs/(review|ask)/([0-9a-f]{16})")
 WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
 ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE)
 
@@ -83,10 +85,13 @@ class Handler(Exchange):
         cleanup = CLEANUP_STATE.fullmatch(path)
         office = OFFICE_STATE.fullmatch(path)
         voice = VOICE_ITEM.fullmatch(path)
+        diff = DIFF_ROUTE.fullmatch(path)
         if self.host() is None:
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
         elif path == "/":
             self.index()
+        elif diff:
+            self.answer(lambda: hub.diff_of(diff.group(1), diff.group(2)), HTTPStatus.OK)
         elif vendored and vendored.group(1) in VENDOR:
             self.vendored(*VENDOR[vendored.group(1)])
         elif voice and voice.group(2):
@@ -237,7 +242,7 @@ class Handler(Exchange):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: STT_LIMIT, VOICE_ROUTE: STT_LIMIT}.get(path, BODY_LIMIT))
+        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: STT_LIMIT, VOICE_ROUTE: STT_LIMIT, "/mcp": DIFF_BODY_LIMIT, "/api/asks": DIFF_BODY_LIMIT}.get(path, BODY_LIMIT))
         if length is None:
             return
         host = self.host()

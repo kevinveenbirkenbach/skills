@@ -42,7 +42,8 @@ const N = require(process.argv[1]);
 const hashes = ["", "#stream", "#stream/inbox", "#stream/rules", "#stream/nope", "#agents/chord", "#agents/3d", "#agents", "#agents/nope",
   "#artifacts/tree", "#artifacts/orbit", "#graph", "#graph/swimlane", "#graph/orbit", "#tree", "#bogus", "#agents%2Fswimlane",
   "#agents/hierarchy", "#artifacts/hierarchy", "#graph/hierarchy", "#tree/hierarchy", "#stream/radio", "#radio",
-  "#tasks", "#tasks/board", "#tasks/rasci", "#tasks/orbit", "#agents/board", "#tasks/hierarchy", "#tasks/gantt", "#tasks/burn", "#agents/gantt", "#tasks/3d"];
+  "#tasks", "#tasks/board", "#tasks/rasci", "#tasks/orbit", "#agents/board", "#tasks/hierarchy", "#tasks/gantt", "#tasks/burn", "#agents/gantt", "#tasks/3d",
+  "#tasks/operator", "#tasks%2Foperator", "#stream/operator", "#agents/operator"];
 console.log(JSON.stringify({
   tabs: N.TABS.map(([id, label]) => [id, label, (N.SUBS[id] || []).map(([sub, name]) => [sub, name])]),
   views: N.VIEWS.map(([id, label]) => [id, label]),
@@ -64,9 +65,10 @@ class TestNavModule(unittest.TestCase):
         done = subprocess.run(["node", "-e", NAV_PROBE, str(NAV)], capture_output=True, text=True, timeout=60, check=True)
         cls.data = json.loads(done.stdout)
 
-    def test_the_navigation_has_four_entries_and_stream_has_inbox_and_rules(self):
-        stream = ["stream", "Stream", [["inbox", "Inbox"], ["rules", "Firewall"]]]
+    def test_the_navigation_has_four_entries_and_no_inbox_and_stream_keeps_only_the_firewall(self):
+        stream = ["stream", "Stream", [["rules", "Firewall"]]]
         self.assertEqual(self.data["tabs"], [stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []]])
+        self.assertNotIn("inbox", json.dumps(self.data["tabs"]))
 
     def test_agents_and_artifacts_offer_five_views_in_order_and_tasks_six(self):
         shared = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]]
@@ -83,7 +85,7 @@ class TestNavModule(unittest.TestCase):
         self.assertEqual(self.data["routes"], [
             stream,
             stream,
-            {"screen": "inbox", "view": None, "redirect": None},
+            {"screen": "inbox", "view": None, "redirect": "#tasks/operator"},
             {"screen": "rules", "view": None, "redirect": None},
             stream,
             {"screen": "agents", "view": "chord", "redirect": None},
@@ -114,11 +116,15 @@ class TestNavModule(unittest.TestCase):
             {"screen": "tasks", "view": "burn", "redirect": None},
             {"screen": "agents", "view": None, "redirect": None},
             {"screen": "tasks", "view": "3d", "redirect": None},
+            {"screen": "inbox", "view": None, "redirect": None},
+            {"screen": "inbox", "view": None, "redirect": None},
+            stream,
+            {"screen": "agents", "view": None, "redirect": None},
         ])
 
-    def test_every_screen_has_its_own_hash_and_tab(self):
-        self.assertEqual(self.data["hashes"], ["#stream", "#stream/inbox", "#stream/rules", "#agents/chord", "#artifacts/3d", "#tasks/board"])
-        self.assertEqual(self.data["tabOf"], ["stream", "stream", "stream", "agents", "artifacts", "tasks"])
+    def test_every_screen_has_its_own_hash_and_tab_and_operator_tasks_live_under_tasks(self):
+        self.assertEqual(self.data["hashes"], ["#stream", "#tasks/operator", "#stream/rules", "#agents/chord", "#artifacts/3d", "#tasks/board"])
+        self.assertEqual(self.data["tabOf"], ["stream", "tasks", "stream", "agents", "artifacts", "tasks"])
 
 
 class TestScreenTransition(unittest.TestCase):

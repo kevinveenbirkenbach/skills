@@ -35,8 +35,8 @@ OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
 TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn", "3d")
-SCREENS = ["stream", "stream/inbox", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
-SUBS = ["Inbox", "Firewall"]
+SCREENS = ["stream", "tasks/operator", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS)]
+SUBS = ["Firewall"]
 TABS = ["Stream", "Agents", "Artifacts", "Tasks"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -175,7 +175,7 @@ AFTER_TAKEOVER = """(async () => {@HELPERS@
 INBOX_CHIP = """(async () => {@HELPERS@
   const chip = (id) => document.querySelector(`#main [aria-label="Task filters"] button[data-filter="${id}"]`);
   chip("operator").click();
-  await until(() => location.hash === "#stream/inbox" && document.querySelector("#main .inbox-list"), 4000);
+  await until(() => location.hash === "#tasks/operator" && document.querySelector("#main .inbox-list"), 4000);
   const inbox = {hash: location.hash, items: all("#main .inbox-list > li").length, counted: Number(text(chip("operator").querySelector(".count"))), pressed: chip("operator").getAttribute("aria-pressed"), current: all("#tabs button[aria-current=page]").map(name)};
   chip("grant").click();
   await until(() => location.hash.startsWith("#tasks/"), 4000);
@@ -1045,13 +1045,13 @@ INBOX_PICK = """(async () => {@HELPERS@
   const last = all("#main .inbox-list > li").filter((li) => li.textContent.includes("echo row")).pop();
   last.scrollIntoView({block: "center"});
   await sleep(300);
-  const title = text(last.querySelector(".linkish"));
+  const title = text(last.querySelector(".command code"));
   const before = scroller.scrollTop;
   last.querySelector("input").click();
   await sleep(300);
   const after = scroller.scrollTop;
   const holder = document.activeElement && document.activeElement.closest("li");
-  const focused = Boolean(holder && text(holder.querySelector(".linkish")) === title && document.activeElement.checked);
+  const focused = Boolean(holder && text(holder.querySelector(".command code")) === title && document.activeElement.checked);
   all("#main .inbox-list > li").find((li) => li.textContent.includes("pick a name")).querySelector("input").click();
   await sleep(300);
   const buttons = all("#main .inbox-actions button").map(name);
@@ -1768,7 +1768,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual((probe["title"], probe["h1"]), ("(2) Agent Orchestrator", "Agent Orchestrator"))
                 self.assertEqual(probe["header"], ["radio-open", "bubbles-toggle", "palette-open", "settings-open"])
                 self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
-                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-inbox": "2", "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": None})
+                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": "2"})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")
                 self.assertFalse(probe["rail"])
                 self.assertEqual((probe["time"], probe["replay"]), ("24 h ▾", True))
@@ -1782,7 +1782,7 @@ class TestOrchestratorE2E(HubCase):
         stream = by_hash["#stream"]
         self.assertEqual([probe["chips"] for probe in probes if probe["hash"] == "#stream"], [["For you", "Radio", "Work", "Transcripts"]] * len(WIDTHS))
         self.assertEqual((stream["menus"], stream["custom"]), (["Filter"], True))
-        self.assertEqual(by_hash["#stream/inbox"]["inbox"], 2)
+        self.assertEqual(by_hash["#tasks/operator"]["inbox"], 2)
         for tab, own in (("agents", ["Hierarchy"]), ("artifacts", [])):
             with self.subTest(tab=tab):
                 self.assertEqual(by_hash[f"#{tab}/orbit"]["views"], ["Orbit", "Chord", "Swimlane", "Tree", "3D", *own])
@@ -1824,7 +1824,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(listed["flows"], ["file", "file"])
         self.assertEqual(by_hash["#tasks/board"]["columns"], [["queued", ["queue/gate-3"]], ["running", ["work/feature", "work/stage"]], ["blocked", ["work/docs"]], ["done", ["work/old", "operator/push"]], ["stopped", []]])
         self.assertEqual(by_hash["#tasks/rasci"]["matrix"], [6, 6, "CIRARASRARAR"])
-        self.assertEqual([probe["taskFilters"][3][1] for probe in probes if probe["hash"] == "#stream/inbox"], ["true"] * len(WIDTHS))
+        self.assertEqual([probe["taskFilters"][3][1] for probe in probes if probe["hash"] == "#tasks/operator"], ["true"] * len(WIDTHS))
         extra = data["results"][len(probes) :]
         self.assertEqual([probe["hash"] for probe in extra[:3]], ["#agents/orbit", "#agents/chord", "#artifacts/tree"])
         actions = extra[3]
@@ -1840,7 +1840,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(actions["centred"], [True, "none"])
         calm, chips = extra[4:]
         self.assertRegex(calm["note"], r"Force · without motion \(prefers-reduced-motion\)$")
-        self.assertEqual({key: value for key, value in chips["inbox"].items() if key != "counted"}, {"hash": "#stream/inbox", "items": chips["inbox"]["counted"], "pressed": "true", "current": ["Inbox"]})
+        self.assertEqual({key: value for key, value in chips["inbox"].items() if key != "counted"}, {"hash": "#tasks/operator", "items": chips["inbox"]["counted"], "pressed": "true", "current": ["Tasks"]})
         self.assertGreaterEqual(chips["inbox"]["items"], 1)
         self.assertEqual(chips["back"], {"hash": "#tasks/list", "rows": [["queue/gate-3", "Queue job"]]})
 

@@ -1,7 +1,8 @@
 const Nav = (() => {
   "use strict";
   const TABS = [["stream", "Stream"], ["agents", "Agents"], ["artifacts", "Artifacts"], ["tasks", "Tasks"]];
-  const SUBS = {stream: [["inbox", "Inbox"], ["rules", "Firewall"]]};
+  const SUBS = {stream: [["rules", "Firewall"]]};
+  const PANES = {inbox: ["tasks", "operator"]};
   const VIEWS = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]];
   const TASK_VIEWS = [["list", "List"], ["board", "Board"], ["rasci", "RASCI"], ["gantt", "Gantt"], ["burn", "Burndown and burnup"], ["3d", "3D"]];
   const OWN = {agents: [["hierarchy", "Hierarchy"]]};
@@ -15,10 +16,13 @@ const Nav = (() => {
   const known = (screen, view) => viewsOf(screen).some(([id]) => id === view);
 
   function tabOf(screen) {
-    return Object.keys(SUBS).find((tab) => SUBS[tab].some(([id]) => id === screen)) || screen;
+    return Object.hasOwn(PANES, screen) ? PANES[screen][0] : Object.keys(SUBS).find((tab) => SUBS[tab].some(([id]) => id === screen)) || screen;
   }
 
   function hashOf(screen, view) {
+    if (Object.hasOwn(PANES, screen)) {
+      return `#${PANES[screen].join("/")}`;
+    }
     return tabOf(screen) === screen ? (view ? `#${screen}/${view}` : `#${screen}`) : `#${tabOf(screen)}/${screen}`;
   }
 
@@ -26,6 +30,10 @@ const Nav = (() => {
     const [head, sub] = decodeURIComponent(String(hash).replace(/^#/, "")).split("/");
     if (head === "stream" && sub === "radio") {
       return {screen: "stream", view: null, redirect: "#stream", spot: true};
+    }
+    const pane = Object.keys(PANES).find((screen) => PANES[screen][0] === head && PANES[screen][1] === sub);
+    if (pane || (head === "stream" && sub === "inbox")) {
+      return {screen: pane || "inbox", view: null, redirect: pane ? null : hashOf("inbox", null)};
     }
     if (Object.hasOwn(OLD, head)) {
       const [screen, fallback] = OLD[head];
@@ -41,7 +49,7 @@ const Nav = (() => {
     return {screen: "stream", view: null, redirect: null};
   }
 
-  return {TABS, SUBS, VIEWS, TASK_VIEWS, ICONS, viewsOf, route, hashOf, tabOf};
+  return {TABS, SUBS, PANES, VIEWS, TASK_VIEWS, ICONS, viewsOf, route, hashOf, tabOf};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Nav;

@@ -6,16 +6,18 @@ import stat
 import time
 from pathlib import Path
 
+from .diffs import DIFF_SUFFIX, diff_bytes, stored_diff, valid_diff
 from .errors import Conflict, Missing, ToolError
 from .fields import WAIT_CAP, bounded, decode, expect, field, seconds
 from .review_page import review_files
-from .signed import review_signed
+from .signed import limits, review_signed
 
 PAGE_LIMIT = 32 << 20
-NOTES_LIMIT = 100_000
+NOTES_LIMIT = limits.NOTES_LIMIT
 SCORE_LIMIT = 500
 GATES = ("pass", "fail")
 REQUEST = ("repo", "worktree", "branch", "tree", "title", "page", "notes", "gate", "score")
+OPTIONAL = ("agent", "diff")
 LISTED = ("id", "created", "worktree", "branch", "tree", "title")
 STATE = ("id", "status", "tree", "decided")
 
@@ -55,7 +57,7 @@ class Reviewing:
         return data
 
     def request(self, arguments: dict) -> dict:
-        expect(arguments, REQUEST)
+        expect(arguments, (*REQUEST, *(name for name in OPTIONAL if name in arguments)))
         fields = {name: field(arguments, name) for name in ("repo", "worktree", "branch", "tree", "title")}
         notes = arguments["notes"]
         if not isinstance(notes, str) or len(notes) > NOTES_LIMIT:
@@ -63,11 +65,17 @@ class Reviewing:
         if arguments["gate"] not in GATES:
             raise ToolError("gate must be pass or fail")
         score = " ".join(bounded(arguments, "score", SCORE_LIMIT).split())
+        agent = field(arguments, "agent").strip() if "agent" in arguments else ""
+        diff = valid_diff(arguments["diff"]) if "diff" in arguments else None
         page = self.read_page(field(arguments, "page"))
-        extra = {"notes": notes, "gate": arguments["gate"], "score": score}
-        review = self.reviews.submit({**fields, "title": fields["title"].strip(), **extra}, page, review_files(page))
+        extra = {"notes": notes, "gate": arguments["gate"], "score": score, "agent": agent, "diff_files": None if diff is None else len(diff)}
+        attached = {} if diff is None else {DIFF_SUFFIX["review"]: diff_bytes(diff)}
+        review = self.reviews.submit({**fields, "title": fields["title"].strip(), **extra}, page, review_files(page), attached)
         self.automate("review", review)
         return {"id": review["id"], "status": review["status"], "url": self.url()}
+
+    def diff_of(self, kind_name: str, item_id: str) -> dict:
+        return stored_diff(self.reviews.pages, kind_name, item_id)
 
     def review_proof(self, review_id: str) -> dict:
         review = self.reviews.get(review_id)

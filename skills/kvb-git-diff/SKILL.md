@@ -16,16 +16,21 @@ once the operator's pinned passkey signature over it verifies here.
    pkgmgr review --out /tmp/kvb-git-diff/<repo>-<branch>.html --max-file-lines 400 --base <base> --note <table>
    ```
 
-2. Call the kvb-orchestrator MCP tool `review_request` with `repo` (what
-   `git rev-parse --path-format=absolute --git-common-dir` prints),
-   `worktree` (what `git rev-parse --show-toplevel` prints), `branch` (what
-   `git symbolic-ref --short HEAD` prints), `tree` (what `git write-tree`
-   prints), `title` (the commit subject), `page` (the `--out` path), `notes`
-   (the commit table), `gate` (`pass` when every gate the calling skill ran is green, else
-   `fail`) and `score` (the kvb-check-score line). Only a `pass` review can
-   be approved in bulk or by a rule. Tell the operator in one line that the
-   review waits in the hub at the `url` it returns, written out as plain
-   text: chat links do not open for this operator.
+2. Request the review in the worktree; it ships the staged diff, every file
+   MEDUSA's secret rules or an armour line flag by stat only, so the hub
+   shows it on the card. `<gate>` is
+   `pass` when every gate the calling skill ran is green, else `fail`;
+   `<agent>` your agent name, which inline feedback is posted to:
+
+   ```bash
+   python3 ~/.local/share/kvb-orchestrator/client/approval.py request --port 8737 --title "<subject>" --page /tmp/kvb-git-diff/<repo>-<branch>.html --notes <table> --gate <gate> --score "<score line>" --agent "<agent>"
+   ```
+
+   Only a `pass` review can be approved in bulk or by a rule. Tell the
+   operator in one line that the review waits in the hub at the `url` it
+   prints, written out as plain text: chat links do not open for this
+   operator. Without the script, the MCP tool `review_request` takes the
+   same fields without the diff.
 3. Call `review_wait` with its `id` and `timeout_seconds` 240 until the
    status is no longer `pending`.
 4. `approved`: in the worktree, verify the operator's passkey signature

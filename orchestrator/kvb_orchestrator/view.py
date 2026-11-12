@@ -51,7 +51,7 @@ INDEX_CSP = (
 
 def badges(inbox: list[dict], claims: list[dict], jobs: list[dict], now: float) -> dict[str, int]:
     return {
-        "inbox": sum(1 for item in inbox if not item["until"]),
+        "tasks": sum(1 for item in inbox if not item["until"]),
         "agents": len({claim["agent"] for claim in claims if claim["beat"] is not None and claim["beat"] >= now - ACTIVE}),
         "artifacts": sum(1 for job in jobs if job["status"] in JOB_OPEN),
     }

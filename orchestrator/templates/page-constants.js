@@ -72,7 +72,7 @@
     direct: [[740, 0, 0.2]],
     radio: [[520, 0, 0.07]],
   };
-  const KEYS = [["Ctrl+K", "Commands, views, agents and AI command"], ["1 · 2 · 3 · 4", "Stream · Agents · Artifacts · Tasks"], ["j / k", "Inbox: next / previous entry"], ["x", "Inbox: select entry"], ["a", "Inbox: grant entry (3 s to undo)"], ["Enter", "Inbox: open entry"], ["/", "Search the stream"], ["h", "Look at the sky: drag turns the view, wheel or two fingers zoom, Esc ends"], ["Arrows · + / − · 0", "Sky (focused): turn · zoom · reset"], ["Drag · wheel", "3D: turn, right drag pans, wheel zooms"],["🎙 hold", "Voice input into the agent field or the command line, never sent automatically"], ["?", "This help"], ["Esc", "Close"]];
+  const KEYS = [["Ctrl+K", "Commands, views, agents and AI command"], ["1 · 2 · 3 · 4", "Stream · Agents · Artifacts · Tasks"], ["j / k", "Waits on Operator: next / previous entry"], ["x", "Waits on Operator: select entry"], ["a", "Waits on Operator: grant entry (3 s to undo)"], ["Enter", "Waits on Operator: open entry"], ["f", "Feedback on the selected lines of a diff or a command"], ["/", "Search the stream"], ["h", "Look at the sky: drag turns the view, wheel or two fingers zoom, Esc ends"], ["Arrows · + / − · 0", "Sky (focused): turn · zoom · reset"], ["Drag · wheel", "3D: turn, right drag pans, wheel zooms"],["🎙 hold", "Voice input into the agent field or the command line, never sent automatically"], ["?", "This help"], ["Esc", "Close"]];
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
   const relative = new Intl.RelativeTimeFormat("en", {numeric: "auto"});
   const absolute = new Intl.DateTimeFormat("en-GB", {dateStyle: "medium", timeStyle: "short"});
