@@ -110,11 +110,17 @@ class Reviews(Ledger):
     def stored(self, review_id: str, suffix: str) -> Path:
         return self.pages / f"{review_id}{suffix}"
 
-    def submit(self, fields: dict[str, str], page: bytes, files: list[dict]) -> dict:
+    def submit(self, fields: dict[str, str], page: bytes, files: list[dict], attached: dict[str, bytes]) -> dict:
+        """Args:
+            attached: further files written before the review shows, by
+                suffix.
+        """
         with self.changed:
             review_id = self.fresh()
             write_atomic(self.stored(review_id, ".html"), page)
             write_atomic(self.stored(review_id, ".json"), json.dumps({"files": files}).encode("utf-8"))
+            for suffix, data in attached.items():
+                write_atomic(self.stored(review_id, suffix), data)
             return self.insert(review_id, {**fields, "files": len(files), "status": "pending", "decided": None})
 
 

@@ -60,7 +60,7 @@
 
   function render(force) {
     for (const [id, {button}] of navButtons) {
-      button.setAttribute("aria-current", ui.screen === id ? "page" : "false");
+      button.setAttribute("aria-current", ui.screen === id || (!navButtons.has(ui.screen) && Nav.tabOf(ui.screen) === id) ? "page" : "false");
     }
     const sig = signature();
     if (force || drawn.screen !== ui.screen || drawn.sig !== sig) {
@@ -98,13 +98,13 @@
       const {badge} = navButtons.get(id);
       badge.textContent = String(count);
       badge.hidden = count === 0;
-      badge.className = `badge${id === "inbox" && count ? " urgent" : ""}`;
+      badge.className = `badge${id === "tasks" && count ? " urgent" : ""}`;
     }
     const banner = document.getElementById("mayday");
     const silence = state.silence;
     banner.hidden = !silence;
     banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "cancel", "btn small", () => confirmAct("clear-mayday", []), "cancel: end the mayday (radio.py clear)")] : []));
-    document.title = `${state.badges.inbox ? `(${state.badges.inbox}) ` : ""}Agent Orchestrator`;
+    document.title = `${state.badges.tasks ? `(${state.badges.tasks}) ` : ""}Agent Orchestrator`;
     window.setTimeout(measure, 0);
   }
 

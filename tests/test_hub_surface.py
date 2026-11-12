@@ -24,16 +24,16 @@ class TestHubSurface(HubCase):
                 self.assertNotIn(gone, html)
         self.assertIn('<nav class="tabs" id="tabs"', html)
 
-    def test_badges_count_waiting_items_active_agents_and_open_runner_jobs(self):
+    def test_badges_count_waiting_operator_tasks_on_tasks_active_agents_and_open_runner_jobs(self):
         now = 1000.0
         inbox = [{"until": None}, {"until": None}, {"until": now + 60}]
         claims = [{"agent": "A", "beat": now - 10}, {"agent": "A", "beat": now - 20}, {"agent": "B", "beat": now - 900}, {"agent": "C", "beat": now - 901}, {"agent": "D", "beat": None}]
         jobs = [{"status": "queued"}, {"status": "running"}, {"status": "done"}, {"status": "failed"}]
-        self.assertEqual(view.badges(inbox, claims, jobs, now), {"inbox": 2, "agents": 2, "artifacts": 2})
-        self.assertEqual(view.badges([], [], [], now), {"inbox": 0, "agents": 0, "artifacts": 0})
+        self.assertEqual(view.badges(inbox, claims, jobs, now), {"tasks": 2, "agents": 2, "artifacts": 2})
+        self.assertEqual(view.badges([], [], [], now), {"tasks": 0, "agents": 0, "artifacts": 0})
         self.claim("s1", "Skills session")
         self.create_ask(ASK)
-        self.assertEqual(self.snapshot()["badges"], {"inbox": 1, "agents": 1, "artifacts": 0})
+        self.assertEqual(self.snapshot()["badges"], {"tasks": 1, "agents": 1, "artifacts": 0})
         self.assertIn("<title>(1) Agent Orchestrator</title>", self.index())
 
     def test_register_workers_map_to_the_agent_named_before_the_bracket(self):

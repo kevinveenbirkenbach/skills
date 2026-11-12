@@ -1,6 +1,6 @@
   function helpSheet() {
     openSheet("Keyboard shortcuts", [h("dl", {class: "keys"}, KEYS.map(([key, text]) => [h("dt", {}, key), h("dd", {}, text)])),
-      h("p", {class: "muted"}, "Control room: full screen with large type for a second screen, under ⚙ Ambience. j, k, x, a and Enter work in the inbox.")], false);
+      h("p", {class: "muted"}, "Control room: full screen with large type for a second screen, under ⚙ Ambience. j, k, x, a and Enter work in Waits on Operator.")], false);
   }
 
   function overlayOpen() {
@@ -68,6 +68,8 @@
       if (current && !current.held) {
         approveOne(current);
       }
+    } else if (event.key === "f" && feedbackKey()) {
+      event.preventDefault();
     } else if (event.key === "Enter" && current && target === document.body) {
       event.preventDefault();
       openItem(current);

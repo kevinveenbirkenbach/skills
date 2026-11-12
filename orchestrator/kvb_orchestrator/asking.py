@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from .choosing import EVERYONE, answer_text
+from .diffs import store_diff, valid_diff
 from .errors import Conflict, Missing, ToolError
 from .fields import (
     COMMAND_LIMIT,
@@ -60,12 +61,16 @@ def option_of(option: object) -> dict:
 class Asking:
     def ask(self, body: bytes) -> dict:
         payload = decode(body)
+        diff = valid_diff(payload.pop("diff")) if "diff" in payload else None
         expect(payload, ("tool", *ASK_TEXTS, "timeout"))
         values = {name: bounded(payload, name, limit) for name, limit in ASK_TEXTS.items()}
         lifetime = seconds(payload, "timeout", ASK_LIFETIME)
         created = time.time()
-        fields = {**values, "tool": field(payload, "tool").strip(), "status": "pending", "decided": None, "proof": None}
-        record = self.asks.add({**fields, "created_ts": created, "expires": created + lifetime})
+        fields = {**values, "tool": field(payload, "tool").strip(), "status": "pending", "decided": None, "proof": None, "diff_files": None if diff is None else len(diff)}
+        ask_id = self.asks.fresh()
+        if diff is not None:
+            store_diff(self.reviews.pages, "ask", ask_id, diff)
+        record = self.asks.insert(ask_id, {**fields, "created_ts": created, "expires": created + lifetime})
         self.automate("ask", record)
         return {"id": record["id"], "status": record["status"]}
 

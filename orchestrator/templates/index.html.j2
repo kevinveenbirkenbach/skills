@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{% if state.badges.inbox %}({{ state.badges.inbox }}) {% endif %}Agent Orchestrator</title>
+<title>{% if state.badges.tasks %}({{ state.badges.tasks }}) {% endif %}Agent Orchestrator</title>
 <style nonce="{{ nonce }}">
 :root {
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
@@ -413,6 +413,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "style-tasks.css" %}
 
 {% include "style-bubbles.css" %}
+
+{% include "style-diff.css" %}
 </style>
 </head>
 <body>
@@ -454,6 +456,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "voice.js" %}
 
 {% include "bubbles.js" %}
+
+{% include "diffs.js" %}
 
 {% include "nav.js" %}
 
@@ -501,6 +505,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-rule-request.js" %}
 
 {% include "page-review.js" %}
+
+{% include "page-diff.js" %}
 
 {% include "page-filters.js" %}
 

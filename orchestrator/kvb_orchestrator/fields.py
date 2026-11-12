@@ -5,14 +5,15 @@ import math
 import re
 
 from .errors import ToolError
+from .signed import limits
 
 WAIT_CAP = 300
 TEXT_LIMIT = 20_000
 COMMAND_LIMIT = 4000
-PATH_LIMIT = 4096
+PATH_LIMIT = limits.PATH_LIMIT
 NAME_LIMIT = 120
 COUNT = re.compile(r"[0-9]{1,12}")
-PATH = re.compile(r"/[^\x00-\x1f\x7f]{0,4095}")
+PATH = re.compile(rf"/[^\x00-\x1f\x7f]{{0,{PATH_LIMIT - 1}}}")
 LINE = r"(?=[^\x00-\x1f\x7f]*\S)[^\x00-\x1f\x7f]{{1,{0}}}"
 ORDER_NAME = re.compile(r"(?![\s-])[^,\x00-\x1f\x7f]{1,200}")
 FIELDS = {

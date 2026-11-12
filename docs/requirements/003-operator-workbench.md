@@ -20,7 +20,9 @@ changed and what it costs, and a gate means something again.
 3. **Diff preview**: every review card shows its diff expanded; the requesting
    agent's script ships it with the review (the hub reads no git, 001); one
    block per file, a file over 400 changed lines collapsed, 2 MiB cap with the
-   rest listed by stat; lines MEDUSA's secret rules match are masked.
+   rest listed by stat; a file whose old or new content holds an armour
+   line or matches a MEDUSA secret rule (every file when no rule loads)
+   ships only path, status, mode and counts with the note "content withheld".
    Rejected: the hub reads git.
    Every Ask for a `git commit` shows the staged diff the same way (with
    `-a` or `--all` the diff against HEAD); the permission hook on the host
@@ -145,29 +147,41 @@ flowchart TD
 
 ### W1 Operator tasks
 
-- [ ] The top navigation has no Inbox entry; the Tasks entry shows the count of
+- [x] The top navigation has no Inbox entry; the Tasks entry shows the count of
       waiting, unsnoozed operator tasks, hidden at 0.
-- [ ] The Stream has no inbox button; `#stream/inbox` opens `#tasks/operator`.
-- [ ] `#tasks/operator` shows each operator task as a Stream card (command,
+- [x] The Stream has no inbox button; `#stream/inbox` opens `#tasks/operator`.
+- [x] `#tasks/operator` shows each operator task as a Stream card (command,
       directory, reason, run, deny, copy, snooze, pin) with a checkbox; the
       bulk bar acts on the checked cards.
-- [ ] The Stream keeps its operator cards with their actions.
-- [ ] The bulk approve counts and approves every checked card, asks, reviews
+- [x] The Stream keeps its operator cards with their actions.
+- [x] The bulk approve counts and approves every checked card, asks, reviews
       and operator commands alike, with one passkey.
-- [ ] Approving or denying an Ask in the hub also settles the agent's native
+- [x] Approving or denying an Ask in the hub also settles the agent's native
       permission dialog where the runtime allows it (the permission hook
       waits for the hub's decision); where it does not, the limit is recorded
       here.
-- [ ] A review card shows its diff expanded: one unified block per file,
+      Limit: Claude Code runs the PermissionRequest hook before it shows its
+      own dialog, so a hub decision within the hook's `--timeout` settles the
+      ask and no native dialog appears. After the timeout, with the hub down
+      or an answer whose signature does not verify, the hook answers nothing
+      and Claude Code shows its own dialog, which a later hub decision no
+      longer settles. `make orchestrator-hook` installs the hook for Claude
+      Code only; other runtimes keep their native prompt and post no ask.
+- [x] A review card shows its diff expanded: one unified block per file,
       additions and deletions coloured, a file over 400 changed lines
       collapsed, a binary file named only.
-- [ ] The review request of `approval.py` (kvb-git-diff) carries
+- [x] The review request of `approval.py` (kvb-git-diff) carries
       `git diff --cached` of the exact staged tree; past 2 MiB the rest is
       listed per file with its stat.
-- [ ] An Ask for a `git commit` carries the staged diff of its working
+- [x] An Ask for a `git commit` carries the staged diff of its working
       directory (with `-a` or `--all` the diff against HEAD), attached by
       `permission_hook.py`, and shows it like a review, feedback included.
-- [ ] A diff line MEDUSA's secret rules match is shown masked.
+- [x] A file whose content holds an armour line or matches MEDUSA's secret
+      rules, and every file when no rule loads, is shown by stat with the
+      note "content withheld".
+- [x] An allow of a commit Ask is bound to the staged tree `git write-tree`
+      prints (with `-a` also the working tree); a different tree at approval
+      turns it into a deny "staged tree changed since the preview".
 - [ ] Selecting lines in a diff or a command and choosing Feedback (right-click
       menu, key `f`, or the button at the selection) posts one radio `post` to
       the requesting agent with path, line range, quote and text; the feedback
@@ -317,10 +331,12 @@ The work packages meet only through these interfaces:
   `--drop-after <t>`, `--prio <n>` or `--unpin`; every changed row carries
   `updated` (ISO time), which Stale reads.
 - **Review diff**: the review request of `approval.py` gains `diff`, a list of
-  `{path, status, additions, deletions, patch, masked}`: status one of A, M,
-  D, R or B (binary), patch the unified text (empty for binary files and
-  past the 2 MiB cap), masked the line numbers shown masked. An Ask for a
-  `git commit` carries the same `diff` from `permission_hook.py`.
+  `{path, status, mode, additions, deletions, patch, note}`: status one of
+  A, M, D, R or B (binary), mode the git file mode (`old => new` when it
+  changed), patch the unified text (empty for binary files, past the 2 MiB
+  cap and for withheld content), note empty or "content withheld". An Ask
+  for a `git commit` carries the same `diff` from `permission_hook.py`; a
+  body past the hub's limit goes without it.
 - **Feedback**: a feedback is a message to the requesting agent through the
   existing signed message flow, text `Feedback on <ref> <path>:<from>-<to>:
   "<quote>" <text>`.

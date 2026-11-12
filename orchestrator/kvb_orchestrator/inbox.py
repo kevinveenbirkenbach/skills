@@ -19,16 +19,17 @@ SNOOZE_LIMIT = 8 * 86400
 class Inbox:
     def inbox(self, now: float, tasks: dict[str, dict], directory: Directory) -> list[dict]:
         claims = read_claims(self.council)
-        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None}
+        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None}
         items = []
         for review in self.reviews.pending():
             created = iso_epoch(review["created"]) or now
             gate = review.get("gate", "")
-            fields = {"title": review["title"], "detail": review["branch"], "green": gate == "pass", "gate": gate, "score": review.get("score", ""), "directory": review["worktree"]}
+            agent = review.get("agent", "")
+            fields = {"title": review["title"], "detail": review["branch"], "green": gate == "pass", "gate": gate, "score": review.get("score", ""), "directory": review["worktree"], "agent": agent, "to": requester_of(claims, agent)[0], "diff": review.get("diff_files")}
             items.append({**base, "kind": "review", "id": review["id"], "ts": created, **fields})
         for ask in (ask for ask in self.asks.pending() if ask["expires"] > now):
             warnings = signing.warnings(ask["command"])
-            fields = {"title": f"{ask['tool']}: {ask['command'][:200]}", "agent": directory.now(ask["session"]), "to": requester_of(claims, ask["session"])[0], "green": not warnings, "warnings": warnings, "deniable": True}
+            fields = {"title": f"{ask['tool']}: {ask['command'][:200]}", "agent": directory.now(ask["session"]), "to": requester_of(claims, ask["session"])[0], "green": not warnings, "warnings": warnings, "deniable": True, "diff": ask.get("diff_files")}
             items.append({**base, "kind": "ask", "id": ask["id"], "ts": ask["created_ts"], **fields, "command": ask["command"], "directory": ask["cwd"]})
         for decision in self.decisions.pending():
             recommended = decision.get("recommended", "")

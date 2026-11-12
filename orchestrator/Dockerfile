@@ -36,7 +36,7 @@ RUN chmod 0755 /opt/voices /opt/whisper
 
 COPY server.py /app/server.py
 COPY kvb_orchestrator /app/kvb_orchestrator
-COPY client/signing.py client/passkey.py client/verifier.py /app/client/
+COPY client/hub_limits.py client/signing.py client/passkey.py client/verifier.py /app/client/
 COPY templates /app/templates
 COPY vendor /app/vendor
 

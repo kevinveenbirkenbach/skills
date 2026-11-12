@@ -112,7 +112,7 @@
     }
     if (entry.kind === "ask" || entry.kind === "operator") {
       const where = entry.kind === "ask" ? entry.ref.cwd : entry.ref.directory;
-      return [h("div", {class: "command"}, h("code", {}, entry.kind === "ask" ? entry.text : entry.title), copyButton(entry.kind === "ask" ? entry.text : entry.title)), h("span", {class: "muted"}, `in ${dash(where)}`), entry.kind === "operator" && entry.text !== "-" ? h("p", {class: "text"}, entry.text) : null];
+      return [h("div", {class: "command", "data-path": where || "-"}, h("code", {}, entry.kind === "ask" ? entry.text : entry.title), copyButton(entry.kind === "ask" ? entry.text : entry.title)), h("span", {class: "muted"}, `in ${dash(where)}`), entry.kind === "operator" && entry.text !== "-" ? h("p", {class: "text"}, entry.text) : null];
     }
     if (entry.kind === "review") {
       return [entry.text ? h("pre", {class: "notes"}, entry.text) : null, h("div", {class: "line-actions"}, iconBtn("bi-eye", "View diff", "btn small soft", () => reviewSheet(entry.ref.id)))];
@@ -134,11 +134,13 @@
     const renamed = entry.now && entry.now !== entry.agent ? h("span", {title: `now: ${entry.now}`}, person(entry.agent)) : person(entry.agent);
     const who = entry.agent ? [face(entry.agent, false), renamed] : entry.session ? h("strong", {title: entry.session}, entry.session.slice(0, 8)) : null;
     const headline = entry.kind === "transcript" || entry.kind === "ask" || entry.kind === "operator" ? null : h("span", {class: "headline"}, entry.title);
-    return h("li", {class: `entry k-${entry.kind}${entry.waiting ? " waiting" : ""}${alarm ? " alarm" : ""}`},
+    return h("li", {class: `entry k-${entry.kind}${entry.waiting ? " waiting" : ""}${alarm ? " alarm" : ""}`, "data-ref": item ? keyOf(item) : null, "data-to": item && item.to ? item.to : null},
       h("div", {class: "msg-meta"}, when(entry.ts), kindPill(entry), extras(entry)),
       h("div", {},
         h("div", {class: "route"}, who, entry.sub ? h("button", {type: "button", class: "linkish muted", on: {click: () => focusSub(entry.session, entry.sub)}}, `› Subagent ${entry.sub.slice(0, 12)}`) : null, entry.kind === "ask" ? h("strong", {}, entry.title) : null, headline),
         body(entry),
+        item ? diffBlocks(item) : null,
+        item ? feedbackList(keyOf(item)) : null,
         item ? h("div", {class: "line-actions"}, actionsFor(item)) : null));
   }
 
