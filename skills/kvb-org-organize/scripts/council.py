@@ -11,7 +11,9 @@ Environment:
 Exit codes:
     0 done, 2 usage error, 3 office held by a live session,
     4 office held by a dead session (take it over with `takeover`),
-    gate: 2 blocks the tool call.
+    gate: 2 blocks the tool call: an edit without a claim of this session
+        below a directory whose .git is a directory holding HEAD or a file
+        starting with gitdir:.
 """
 
 from __future__ import annotations
@@ -284,8 +286,21 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def is_git_marker(marker: Path) -> bool:
+    if marker.is_dir():
+        return (marker / "HEAD").is_file()
+    # is_file() first: opening a planted FIFO named .git would hang this hook.
+    if not marker.is_file():
+        return False
+    try:
+        with marker.open("rb") as handle:
+            return handle.read(7) == b"gitdir:"
+    except OSError:
+        return False
+
+
 def in_git_worktree(target: Path) -> bool:
-    return any((path / ".git").exists() for path in (target, *target.parents))
+    return any(is_git_marker(path / ".git") for path in (target, *target.parents))
 
 
 def cmd_gate(_: argparse.Namespace) -> int:
