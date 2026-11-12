@@ -31,12 +31,15 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/security.py --repo <root> --base <ref>
 
 It copies the files changed since `<ref>`, untracked ones included and
 symlinks left out, to a temporary tree, scans it once with
-`medusa scan <tree> --format json -o <dir> --no-cache` and prints one line:
+`medusa scan <tree> --format json -o <dir> --no-cache --workers <w>` (w at
+most `WORKERS` of the script) and prints one line:
 `🛡️ security <n> % (medusa: <k> findings in <m> files: <severity> <path>:<line>, ...)`.
 `<n>` is 100 minus 50 per critical, 25 per high, 10 per medium and 2 per low
 finding, at least 0. It shows locations and counts only, never a matched
 value. Pass `<n>` as `--security` and the critical count as `--critical`
-(`--json` holds it) to `score.py`.
+(`--json` holds it) to `score.py`. A rescan of byte-identical files with the
+same medusa reuses the findings in `<council root>/security-cache/` for
+`CACHE_SECONDS` instead of running medusa again.
 
 - Exit 0: 100 %. Exit 3: below 100 without a critical finding; the score
   gate asks the operator. Exit 1: a critical finding; the score gate forbids

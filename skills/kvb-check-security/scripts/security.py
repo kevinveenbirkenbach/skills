@@ -15,10 +15,21 @@ Args:
 Scan:
     The regular files `git diff <ref>` names plus untracked ones, symlinks left
     out, copied to a temporary tree and scanned once with
-    `medusa scan <tree> --format json -o <dir> --no-cache`, HOME pointing into
-    the temporary directory because medusa creates ~/.medusa on start, read from
+    `medusa scan <tree> --format json -o <dir> --no-cache --workers <w>`, w the
+    files scanned but at most WORKERS, HOME pointing into the temporary
+    directory because medusa creates ~/.medusa on start, read from
     `<dir>/medusa-scan-*.json`: a `findings` list whose entries carry
     `severity` (critical, high, medium, low or info), `rule_id`, `file` and `line`.
+
+Cache:
+    The findings of a scan, keyed by the sha256 of this script, the resolved
+    medusa binary with its mtime and size, PATH, every MEDUSA_* variable and
+    the path, mode and content sha256 of every scanned file, in
+    <council root>/security-cache/<key>.json for CACHE_SECONDS. A later scan
+    with the same key reads them instead of running medusa; any edit of a
+    scanned file, of medusa or of this script misses. The folder is used only
+    when it is a directory of the current user that neither group nor others
+    may write, an entry only when it is a regular file of the current user.
 
 Accepted:
     One JSON row per reviewed false positive (id, rule, path, sha1 of the stripped
@@ -58,9 +69,11 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -68,6 +81,14 @@ WEIGHTS = {"critical": 50, "high": 25, "medium": 10, "low": 2, "info": 0}
 SAFE = 100
 SHOWN = 5
 REACH = 2
+WORKERS = 4
+CACHE = "security-cache"
+CACHE_SECONDS = 24 * 3600
+NOTHING = type(None)
+SHAPE = {
+    "severity": (str,), "rule": (str, NOTHING), "path": (str,), "line": (int, NOTHING),
+    "sha1": (str, NOTHING), "context": (str, NOTHING),
+}
 SHA1 = re.compile(r"[0-9a-f]{40}")
 WATCH = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "watch.py"
 HAND = (
@@ -250,7 +271,69 @@ def findings(reports: Path, tree: Path) -> list[dict]:
     return sorted(found, key=lambda f: (rank.index(f["severity"]), f["path"], f["line"] or 0))
 
 
-def scan(medusa: str, root: Path, base: str) -> tuple[int, list[dict]]:
+def keyed(medusa: str, tree: Path) -> str:
+    binary = Path(medusa).resolve()
+    info = binary.stat()
+    key = hashlib.sha256(Path(__file__).read_bytes())
+    key.update(f"\0{binary}\0{info.st_mtime_ns}\0{info.st_size}\0{os.environ.get('PATH', '')}\0".encode())
+    key.update("".join(f"{k}={v}\0" for k, v in sorted(os.environ.items()) if k.startswith("MEDUSA_")).encode())
+    for path in sorted(p for p in tree.rglob("*") if p.is_file()):
+        key.update(f"{path.relative_to(tree).as_posix()}\0{path.stat().st_mode & 0o777:o}\0".encode())
+        key.update(hashlib.sha256(path.read_bytes()).digest())
+    return key.hexdigest()
+
+
+def shelf(root: Path) -> Path | None:
+    folder = root / CACHE
+    try:
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        info = folder.lstat()
+    except OSError:
+        return None
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
+        return None
+    return folder
+
+
+def recalled(folder: Path, key: str) -> list[dict] | None:
+    entry = folder / f"{key}.json"
+    try:
+        info = entry.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or time.time() - info.st_mtime > CACHE_SECONDS:
+            return None
+        found = json.loads(entry.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(found, list) or not all(
+        isinstance(f, dict) and f.keys() == SHAPE.keys() and all(isinstance(f[k], t) for k, t in SHAPE.items())
+        and f["severity"] in WEIGHTS
+        for f in found
+    ):
+        return None
+    return found
+
+
+def remember(folder: Path, key: str, found: list[dict]) -> None:
+    now = time.time()
+    for old in folder.glob("*.json"):
+        try:
+            if now - old.lstat().st_mtime > CACHE_SECONDS:
+                old.unlink()
+        except OSError:
+            continue
+    try:
+        descriptor, name = tempfile.mkstemp(dir=folder, prefix=".", suffix=".tmp")
+    except OSError:
+        return
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(found, handle)
+        os.replace(name, folder / f"{key}.json")
+    except OSError:
+        Path(name).unlink(missing_ok=True)
+
+
+def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, list[dict]]:
     with tempfile.TemporaryDirectory(prefix="kvb-security-") as scratch:
         work = Path(scratch)
         tree, reports, home = work / "tree", work / "reports", work / "home"
@@ -259,15 +342,23 @@ def scan(medusa: str, root: Path, base: str) -> tuple[int, list[dict]]:
         scanned = copy(root, changed(root, base), tree)
         if not scanned:
             return 0, []
+        key = keyed(medusa, tree)
+        hit = recalled(cache, key) if cache else None
+        if hit is not None:
+            return scanned, hit
         result = subprocess.run(
-            [medusa, "scan", str(tree), "--format", "json", "-o", str(reports), "--no-cache"],
+            [medusa, "scan", str(tree), "--format", "json", "-o", str(reports), "--no-cache",
+             "--workers", str(min(scanned, WORKERS))],
             cwd=work, stdin=subprocess.DEVNULL, capture_output=True, check=False,
             env={**os.environ, "HOME": str(home)},
         )
         try:
-            return scanned, findings(reports, tree)
+            found = findings(reports, tree)
         except Unreadable as error:
             raise Unreadable(f"{error} (medusa exit {result.returncode})") from None
+        if cache:
+            remember(cache, key, found)
+        return scanned, found
 
 
 def plural(n: int, noun: str) -> str:
@@ -296,7 +387,7 @@ def main() -> int:
     problem = None if medusa else "medusa missing"
     if medusa:
         try:
-            scanned, every = scan(medusa, root, args.base)
+            scanned, every = scan(medusa, root, args.base, shelf(council.ROOT))
         except Unreadable as error:
             problem = f"medusa report unreadable: {error}"
     if problem:

@@ -95,7 +95,9 @@ class TestSecurity(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 3, result.stderr)
         argv = json.loads((self.bin / "argv.json").read_text(encoding="utf-8"))
-        self.assertEqual([argv[0], *argv[2:4], argv[4], argv[6]], ["scan", "--format", "json", "-o", "--no-cache"])
+        self.assertEqual(
+            [argv[0], *argv[2:4], argv[4], *argv[6:]], ["scan", "--format", "json", "-o", "--no-cache", "--workers", "2"]
+        )
         result = self.scan("--json", env=self.env)
         self.assertNotIn(PLACEHOLDER, result.stdout + result.stderr)
         found = json.loads(result.stdout)
@@ -257,6 +259,57 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env={**self.env, "FAKE_MEDUSA_SHAPE": "other"})
         self.assertEqual(result.returncode, 4)
         self.assertRegex(result.stdout, r"^🛡️ security – \(medusa report unreadable: .*holds no findings list")
+
+    def test_a_rescan_of_unchanged_files_reads_the_cache_and_any_edit_runs_medusa_again(self):
+        self.write("app.py", "print(1)\nx = 1  # MARK-HIGH\n")
+        argv = self.bin / "argv.json"
+        first = self.scan("--json", env=self.env)
+        self.assertTrue(argv.exists())
+        argv.unlink()
+        again = self.scan("--json", env=self.env)
+        self.assertEqual((again.stdout, again.returncode), (first.stdout, first.returncode))
+        self.assertFalse(argv.exists())
+        self.assertEqual(len(list((self.base / "council" / "security-cache").glob("*.json"))), 1)
+        self.write("app.py", "print(1)\nx = 2  # MARK-HIGH\n")
+        edited = self.scan("--json", env=self.env)
+        self.assertTrue(argv.exists())
+        self.assertNotEqual(json.loads(edited.stdout)["findings"][0]["sha1"], json.loads(first.stdout)["findings"][0]["sha1"])
+        argv.unlink()
+        (self.repo / "app.py").chmod(0o755)
+        self.scan(env=self.env)
+        self.assertTrue(argv.exists())
+        argv.unlink()
+        medusa = self.bin / "medusa"
+        os.utime(medusa, ns=(medusa.stat().st_atime_ns, medusa.stat().st_mtime_ns + 1))
+        self.scan(env=self.env)
+        self.assertTrue(argv.exists())
+        argv.unlink()
+        self.scan(env={**self.env, "MEDUSA_TRACE_RULES": "1"})
+        self.assertTrue(argv.exists())
+
+    def test_an_expired_tampered_or_shared_cache_runs_medusa(self):
+        self.write("app.py", "print(2)\n")
+        argv = self.bin / "argv.json"
+        folder = self.base / "council" / "security-cache"
+        self.scan(env=self.env)
+        [entry] = folder.glob("*.json")
+        os.utime(entry, (0, 0))
+        argv.unlink()
+        self.scan(env=self.env)
+        self.assertTrue(argv.exists())
+        self.assertEqual(list(folder.glob("*.json")), [entry])
+        self.assertGreater(entry.stat().st_mtime, 0)
+        entry.write_text('[{"severity": "none"}]', encoding="utf-8")
+        argv.unlink()
+        result = self.scan(env=self.env)
+        self.assertTrue(argv.exists())
+        self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings in 1 file)\n")
+        folder.chmod(0o777)
+        entry.unlink()
+        argv.unlink()
+        self.scan(env=self.env)
+        self.assertTrue(argv.exists())
+        self.assertEqual(list(folder.glob("*.json")), [])
 
     def test_usage_errors_exit_2(self):
         result = subprocess.run(
