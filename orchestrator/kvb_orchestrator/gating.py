@@ -7,7 +7,6 @@ import time
 from contextlib import closing
 from pathlib import Path
 from types import ModuleType
-from urllib.parse import quote
 
 from .errors import ToolError
 from .fields import decode, expect
@@ -31,9 +30,10 @@ def shown_command(argv: list[str]) -> str:
 
 def gates_module(script: Path) -> ModuleType | None:
     """Returns:
-        The installed gates.py as a module, for its resolve() and
-        parents_of(), which read only the database; loaded again after an
-        install changed it, None when it is missing or does not load.
+        The installed gates.py as a module, for its opened(), resolve() and
+        parents_of(), which only read the database and the parent journals;
+        loaded again after an install changed it, None when it is missing or
+        does not load.
     """
     try:
         changed = script.stat().st_mtime_ns
@@ -71,13 +71,14 @@ def read_gates(gates: ModuleType | None, db: Path, scan: dict) -> dict:
 
     Returns:
         {repo: {branch: {parents, rules, resolved}}} as `gates.py show --json`
-        prints it, read with the database opened read-only and without git;
-        {} without the script or a readable database.
+        prints it, read through gates.opened() with the database read-only,
+        the kept parent journal from the same mount and without git; {}
+        without the script or a readable database.
     """
     if gates is None or not db.is_file():
         return {}
     try:
-        with closing(sqlite3.connect(f"file:{quote(str(db))}?mode=ro", uri=True)) as connection:
+        with closing(gates.opened(db, False, db.parent)) as connection:
             return {repo["path"]: {entry["name"]: branch_gates(gates, connection, repo["path"], entry["name"]) for entry in repo["branches"]} for repo in scan["repos"]}
     except sqlite3.Error:
         return {}

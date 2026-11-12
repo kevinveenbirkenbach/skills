@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import time
@@ -131,7 +130,7 @@ class TestRunnerGates(HubCase):
         self.queue([rule("commit", "quality-high", branch="main", repo=repo), parent("main", branch="feature/x", repo=repo)])
         self.run_gates_runner(["--gates", str(GATES)])
         self.assertEqual(self.finished(), [("done", 0), ("done", 0)])
-        with closing(sqlite3.connect(self.db)) as db:
+        with closing(gates.opened(self.db, False, self.db.parent)) as db:
             self.assertEqual(gates.resolve(db, repo, "feature/x", "commit"), ("quality-high", "main"))
             self.assertEqual(gates.parents_of(db, repo, "feature/x"), [("main", "operator")])
         self.assertEqual([call for call in self.scripts.calls if call[0].endswith("operator.py")], [])
@@ -163,7 +162,7 @@ class TestRunnerGates(HubCase):
 class TestHubGateView(HubCase):
     def write_db(self, repo: str) -> Path:
         db_path = self.kept / "gates.db"
-        db = gates.connect(db_path)
+        db = gates.opened(db_path, True, self.kept)
         db.executemany("INSERT INTO rules VALUES (?, ?, ?, ?, ?)", [(repo, "main", "commit", "test", 0.0), (repo, "main", "merge", "quality-high", 0.0), (repo, "feature", "pr", "e2e", 0.0), (repo, "feature/kept", "merge", "quick", 0.0)])
         db.executemany("INSERT INTO parents VALUES (?, ?, ?, ?)", [(repo, "feature", "main", "recorded"), (repo, "feature/done", "feature", "derived"), (repo, "feature/done", "feature/kept", "operator"), (repo, "feature/kept", "main", "derived")])
         db.commit()
@@ -182,13 +181,23 @@ class TestHubGateView(HubCase):
         self.assertEqual(status, 200, body)
         shown = json.loads(body)["gates"]
         self.assertEqual(sorted(shown[repo]), ["feature", "feature/done", "feature/kept", "main"])
-        with closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as db, mock.patch.object(gates, "branches", return_value={name: "0" * 40 for name in shown[repo]}):
+        with closing(gates.opened(db_path, False, self.kept)) as db, mock.patch.object(gates, "branches", return_value={name: "0" * 40 for name in shown[repo]}):
             self.assertEqual(shown[repo], gates.show(db, [repo])[repo])
         done = shown[repo]["feature/done"]
         self.assertEqual(done["parents"], [{"parent": "feature", "source": "derived"}, {"parent": "feature/kept", "source": "operator"}])
         self.assertEqual(done["resolved"], {"commit": {"level": "test", "source": "main"}, "merge": {"level": "quality-high", "source": "main"}, "push": {"level": "none", "source": None}, "pr": {"level": "e2e", "source": "feature"}})
         self.assertEqual(db_path.read_bytes(), before)
         self.assertEqual(sorted(path.name for path in self.kept.iterdir()), ["gates.db"])
+
+    def test_a_parent_in_the_kept_journal_of_the_mount_shows_as_recorded(self):
+        root = self.write_tree()
+        repo = f"{root}/repos/github.com/me/demo"
+        self.write_db(repo)
+        row = {"id": "1-1", "repo": repo, "branch": "main", "parent": "feature/kept"}
+        (self.kept / "gate-parents.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+        status, _, body = self.get("/api/tree")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["gates"][repo]["main"]["parents"], [{"parent": "feature/kept", "source": "recorded"}])
 
     def test_without_a_database_or_with_a_broken_one_the_tree_carries_no_gates(self):
         self.write_tree()
@@ -199,7 +208,7 @@ class TestHubGateView(HubCase):
     def test_a_stored_level_outside_levels_or_an_older_gates_py_without_parents_of_keeps_the_tree_up_without_gates(self):
         root = self.write_tree()
         repo = f"{root}/repos/github.com/me/demo"
-        db = gates.connect(self.write_db(repo))
+        db = gates.opened(self.write_db(repo), True, self.kept)
         db.execute("UPDATE rules SET level = 'bogus' WHERE branch = 'main' AND action = 'commit'")
         db.commit()
         status, _, body = self.get("/api/tree")

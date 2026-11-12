@@ -115,7 +115,7 @@ class TestWorkbenchArtifacts(HubCase):
         next(item for item in data["repos"][0]["items"] if item["branch"] == "feature/kept")["skip"] = None
         self.tree_file.write_text(json.dumps(data), encoding="utf-8")
         self.repo = f"{root}/repos/github.com/me/demo"
-        db = gates.connect(self.kept / "gates.db")
+        db = gates.opened(self.kept / "gates.db", True, self.kept)
         db.executemany("INSERT INTO rules VALUES (?, ?, ?, ?, ?)", [(self.repo, "main", "commit", "test", 0.0), (self.repo, "feature/done", "pr", "e2e", 0.0)])
         db.executemany("INSERT INTO parents VALUES (?, ?, ?, ?)", [(self.repo, "feature", "main", "recorded"), (self.repo, "feature/done", "feature", "derived"), (self.repo, "feature/done", "feature/kept", "operator"), (self.repo, "feature/kept", "main", "derived")])
         db.commit()

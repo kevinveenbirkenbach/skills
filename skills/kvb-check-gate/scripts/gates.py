@@ -169,9 +169,9 @@ def current_branch(worktree: str) -> str | None:
     return named.stdout.strip() if named.returncode == 0 else None
 
 
-def journal(origin: Path, kept: Path) -> list[dict]:
+def journal(origin: Path, kept_dir: Path, kept: Path) -> list[dict]:
     merged: dict[str, dict] = {}
-    for base, path in ((watch.KEPT, kept), (watch.ROOT, origin)):
+    for base, path in ((kept_dir, kept), (watch.ROOT, origin)):
         if base == watch.ROOT and watch.guard_root(hook=True) is not None:
             continue
         try:
@@ -233,11 +233,21 @@ def receipted(repo: str, tree: str, level: str) -> bool:
     cutoff = time.time() - RECEIPT_SECONDS
     return any(
         row.get("repo") == repo and row.get("tree") == tree and fresh(row, cutoff) and meets(row, level)
-        for row in journal(watch.RECEIPTS, watch.KEPT_RECEIPTS)
+        for row in journal(watch.RECEIPTS, watch.KEPT, watch.KEPT_RECEIPTS)
     )
 
 
-def opened(path: Path, write: bool) -> sqlite3.Connection:
+def opened(path: Path, write: bool, kept_dir: Path) -> sqlite3.Connection:
+    """Args:
+        path: gates.db; read-only unless write, in memory when it is missing.
+        write: open it for rule and parent changes.
+        kept_dir: the directory holding the kept gate-parents.jsonl: watch.KEPT
+            on the host, the read-only mount of it in the hub.
+
+    Returns:
+        The connection with the TEMP table recorded filled from the parent
+        journals, which parents_of(), resolve() and show() read.
+    """
     if write:
         path.parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(path)
@@ -245,14 +255,18 @@ def opened(path: Path, write: bool) -> sqlite3.Connection:
         db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
     else:
         db = sqlite3.connect(":memory:")
-    if write or not path.exists():
-        db.executescript(SCHEMA)
-    db.execute("CREATE TEMP TABLE recorded (repo TEXT, branch TEXT, parent TEXT)")
-    db.executemany("INSERT INTO recorded VALUES (?, ?, ?)", [
-        (row["repo"], row["branch"], row["parent"])
-        for row in journal(watch.PARENTS, watch.KEPT_PARENTS)
-        if all(isinstance(row.get(key), str) for key in ("repo", "branch", "parent")) and row["branch"] != row["parent"]
-    ])
+    try:
+        if write or not path.exists():
+            db.executescript(SCHEMA)
+        db.execute("CREATE TEMP TABLE recorded (repo TEXT, branch TEXT, parent TEXT)")
+        db.executemany("INSERT INTO recorded VALUES (?, ?, ?)", [
+            (row["repo"], row["branch"], row["parent"])
+            for row in journal(watch.PARENTS, kept_dir, kept_dir / watch.KEPT_PARENTS.name)
+            if all(isinstance(row.get(key), str) for key in ("repo", "branch", "parent")) and row["branch"] != row["parent"]
+        ])
+    except BaseException:
+        db.close()
+        raise
     return db
 
 
@@ -517,7 +531,7 @@ def run_hook(name: str, argv: list[str], db_path: Path) -> int:
             record_after_checkout(here)
         return 0
     targets = hook_targets(name, here)
-    db = opened(db_path, False)
+    db = opened(db_path, False, watch.KEPT)
     refused = [text for branch, tree, action in targets if (text := refusal(db, here, branch, tree, action))]
     for text in refused:
         print(text, file=sys.stderr)
@@ -631,7 +645,7 @@ def main() -> int:
     verb = getattr(args, "verb", None)
     if args.command in ("tree", "quick", "hooks", "hook", "receipt") or verb == "record":
         return journal_command(args)
-    db = opened(args.db, args.command in ("rule", "parents"))
+    db = opened(args.db, args.command in ("rule", "parents"), watch.KEPT)
     repo = root(args.repo) if getattr(args, "repo", None) else None
     if args.command == "resolve":
         level, source = resolve(db, repo, args.branch, args.action)
