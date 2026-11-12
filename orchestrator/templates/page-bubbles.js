@@ -58,10 +58,18 @@
     view.node.style.setProperty("--tail", `${fixed((middle - left) / scale)}px`);
   }
 
+  function saidOf(item) {
+    return item.words || Bubbles.words(item.line);
+  }
+
+  function wordsRead(item) {
+    return item.started ? Bubbles.shown(saidOf(item).length, item.duration, (performance.now() - item.started) / 1000) : 0;
+  }
+
   function drawBubble(entry, view) {
     const {item} = entry;
-    const said = item.words || Bubbles.words(item.line);
-    const count = item.started ? Bubbles.shown(said.length, item.duration, (performance.now() - item.started) / 1000) : 0;
+    const said = saidOf(item);
+    const count = wordsRead(item);
     const text = said.slice(0, count).join(" ") || "…";
     if (view.words.textContent !== text) {
       view.words.textContent = text;
@@ -81,6 +89,7 @@
     for (const [item, view] of bubbles.shown) {
       if (!kept.has(item)) {
         bubbles.shown.delete(item);
+        view.node.dataset.read = String(wordsRead(item));
         view.node.classList.add("leaving");
         window.setTimeout(() => view.node.remove(), BUBBLE_FADE);
       }

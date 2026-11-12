@@ -20,6 +20,9 @@ OUT = Path(os.environ.get("E2E_OUT", "/tmp/workbench-w6-shots"))
 CUE = "e2e-bubbles"
 FIRST = "Disk almost full on the build host, the gate waits for space now"
 SECOND = "Gate green for the merge"
+READING = max(1.5, len(FIRST.split()) * 60 / 180)
+EARLY = 0.1
+LATE = 2.0
 VIEWS = {1920: "agents/orbit", 1366: "stream/radio", 390: "agents/hierarchy"}
 SECOND_FROM = {1920: "Skills", 1366: "Skills", 390: "Docs"}
 SECOND_ANCHORED = {1920: True, 1366: False, 390: False}
@@ -28,6 +31,7 @@ GUARD = """() => {
   window.e2eViolations = [];
   document.addEventListener("securitypolicyviolation", (event) => window.e2eViolations.push(`${event.violatedDirective} ${event.blockedURI}`));
 }"""
+HOOKED = f"() => {{\n  ({GUARD})();\n  ({base.GRAPH_HOOK})();\n}}"
 READ = """
   const toggle = document.getElementById("bubbles-toggle");
   const layer = document.getElementById("bubbles");
@@ -50,6 +54,17 @@ READ = """
 """
 BUBBLES_ON = """(async () => {@HELPERS@@READ@
   const before = [toggle.getAttribute("aria-pressed"), layer.hidden];
+  window.e2eBubbleLog = [];
+  const note = (node) => window.e2eBubbleLog.push({
+    t: performance.now(), who: node.dataset.who, state: node.dataset.state || null, words: Number(node.dataset.words || 0),
+    leaving: node.classList.contains("leaving"), read: node.dataset.read === undefined ? null : Number(node.dataset.read), removed: !node.isConnected,
+  });
+  new MutationObserver((records) => {
+    for (const record of records) {
+      const gone = [...record.removedNodes].filter((node) => node instanceof Element && node.matches(".speech-bubble") && !node.isConnected);
+      [...(record.type === "attributes" && record.target.matches(".speech-bubble") ? [record.target] : []), ...gone].forEach(note);
+    }
+  }).observe(layer, {subtree: true, childList: true, attributes: true, attributeFilter: ["class", "data-state", "data-words", "data-read"]});
   toggle.click();
   const on = Boolean(await until(() => toggle.getAttribute("aria-pressed") === "true" && !layer.hidden, 8000));
   await cue("@CUE@");
@@ -60,23 +75,25 @@ BUBBLES_ON = """(async () => {@HELPERS@@READ@
   return {before, on, first: read(speaking()), second: read(waiting())};
 })()"""
 BUBBLES_GROW = """(async () => {@HELPERS@@READ@
-  const who = speaking() ? speaking().dataset.who : null;
-  const seen = [];
-  let [grown, faded, gone] = [null, null, null];
-  const end = Date.now() + 15000;
-  while (who && !grown && Date.now() < end) {
-    const now = speaking();
-    if (now && now.dataset.who === who) {
-      seen.push(Number(now.dataset.words));
-    } else if (now) {
-      faded = Boolean(layer.querySelector(`.speech-bubble.leaving[data-who="${CSS.escape(who)}"]`));
-      await sleep(450);
-      gone = !layer.querySelector(`.speech-bubble[data-who="${CSS.escape(who)}"]`);
-      grown = read(speaking());
-    }
-    await sleep(40);
+  const log = window.e2eBubbleLog || [];
+  const who = (log.find((entry) => entry.state === "speaking") || {}).who || null;
+  const mine = () => log.filter((entry) => entry.who === who);
+  const left = await until(() => mine().find((entry) => entry.leaving), 15000);
+  let grown = null;
+  if (left) {
+    await Promise.all((speaking() ? speaking().getAnimations() : []).map((animation) => animation.finished.catch(() => null)));
+    grown = read(speaking());
+    await until(() => mine().some((entry) => entry.removed), 4000);
   }
-  return {who, seen: seen.filter((value, index) => value !== seen[index - 1]), faded, gone, grown};
+  const entries = mine();
+  const fade = entries.findIndex((entry) => entry.leaving);
+  const reading = entries.slice(0, fade < 0 ? entries.length : fade).filter((entry) => entry.state === "speaking").map((entry) => entry.words);
+  const start = entries.find((entry) => entry.state === "speaking");
+  return {
+    who, words: reading.filter((value, index) => value !== reading[index - 1]), read: left ? left.read : null,
+    seconds: start && left ? Math.round(left.t - start.t) / 1000 : null,
+    faded: fade > 0 && entries.slice(fade).every((entry) => entry.leaving), gone: entries.some((entry) => entry.removed), grown,
+  };
 })()"""
 BUBBLES_DONE = """(async () => {@HELPERS@@READ@
   const cleared = Boolean(await until(() => !layer.querySelector(".speech-bubble"), 10000));
@@ -85,7 +102,15 @@ BUBBLES_DONE = """(async () => {@HELPERS@@READ@
 })()"""
 BUBBLES_3D = """(async () => {@HELPERS@@READ@
   const canvas = Boolean(await until(() => document.querySelector("#main .graph3d canvas"), 15000));
-  await sleep(1500);
+  await until(() => {
+    const graph = (window.e2eGraphs || []).at(-1);
+    const nodes = graph ? graph.graphData().nodes : [];
+    const frame = document.querySelector("#main .graph3d").getBoundingClientRect();
+    return nodes.length && nodes.every((node) => {
+      const at = Number.isFinite(node.x) ? graph.graph2ScreenCoords(node.x, node.y, node.z) : {x: -1, y: -1};
+      return at.x >= 0 && at.y >= 0 && at.x <= frame.width && at.y <= frame.height;
+    });
+  }, 15000);
   await cue("@CUE@");
   if (!(await until(speaking, 25000))) {
     return {canvas, error: "no bubble in 3D", bubbles: live().map(read)};
@@ -189,10 +214,11 @@ class TestWorkbenchBubbles(HubCase):
                 motion = "opacity" if calm and width == 390 else "transform, opacity"
                 self.assertEqual((first["transition"], second["transition"]), (motion, motion))
                 self.assertEqual(grow["who"], first_key)
-                self.assertGreaterEqual(len(grow["seen"]), 3, grow)
-                self.assertEqual(grow["seen"], sorted(grow["seen"]), grow)
-                self.assertEqual(grow["seen"][-1], len(FIRST.split()), grow)
+                self.assertGreaterEqual(len(grow["words"]), 2, grow)
+                self.assertEqual(grow["words"], sorted(grow["words"]), grow)
+                self.assertEqual(grow["read"], len(FIRST.split()), grow)
                 self.assertEqual((grow["faded"], grow["gone"]), (True, True), grow)
+                self.assertTrue(READING - EARLY <= grow["seconds"] <= READING + LATE, grow)
                 grown = grow["grown"]
                 self.assertEqual((grown["who"], grown["scale"], grown["rendered"], grown["state"]), (second_key, 1, 1, "speaking"), grown)
                 self.assertEqual(grown["text"], " ".join(SECOND.split()[: grown["words"]]))
@@ -209,7 +235,7 @@ class TestWorkbenchBubbles(HubCase):
         self.assertFalse(self.httpd.hub.settings.get()["bubbles"])
 
     def test_chromium_reads_two_rows_without_tts_as_growing_bubbles_keeps_the_switch_and_hides_the_layer_at_three_widths(self):
-        data = self.drive(self.steps("chromium", True, True), None, init=GUARD)
+        data = self.drive(self.steps("chromium", True, True), None, init=HOOKED)
         (OUT / "chromium-bubbles.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
         self.check(data, "chromium", True, True)
