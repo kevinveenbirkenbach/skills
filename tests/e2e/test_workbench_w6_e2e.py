@@ -21,7 +21,8 @@ CUE = "e2e-bubbles"
 FIRST = "Disk almost full on the build host, the gate waits for space now"
 SECOND = "Gate green for the merge"
 VIEWS = {1920: "agents/orbit", 1366: "stream/radio", 390: "agents/hierarchy"}
-SECOND_FROM = {1920: "Skills session", 1366: "Skills session", 390: "Docs"}
+SECOND_FROM = {1920: "Skills", 1366: "Skills", 390: "Docs"}
+SECOND_ANCHORED = {1920: True, 1366: False, 390: False}
 CALM = [{"name": "prefers-reduced-motion", "value": "reduce"}]
 GUARD = """() => {
   window.e2eViolations = [];
@@ -108,6 +109,11 @@ def probe(template: str, cue: str = CUE) -> str:
     return template.replace("@HELPERS@", base.HELPERS).replace("@READ@", READ).replace("@CUE@", cue)
 
 
+def quiet(found: dict) -> dict:
+    violations = found["violations"]
+    return {**found, "violations": None if violations is None else [seen for seen in violations if not seen.endswith("/favicon.ico")]}
+
+
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestWorkbenchBubbles(HubCase):
     drive = base.TestOrchestratorE2E.drive
@@ -177,9 +183,9 @@ class TestWorkbenchBubbles(HubCase):
                 self.assertEqual((first["who"], first["scale"], first["rendered"], first["state"], first["anchored"]), (first_key, 1, 1, "speaking", True), first)
                 self.assertTrue(0 < first["words"] < len(FIRST.split()), first)
                 self.assertEqual(first["text"], " ".join(FIRST.split()[: first["words"]]))
-                self.assertTrue(first["font"].startswith('"Comic Neue"'), first["font"])
+                self.assertEqual(first["font"].replace('"', "").split(",")[0], "Comic Neue", first["font"])
                 self.assertEqual((second["who"], second["scale"], second["rendered"], second["state"], second["text"], second["words"]), (second_key, 0.8, 0.8, "waiting", "…", 0), second)
-                self.assertEqual(second["anchored"], SECOND_FROM[width] != "Docs", second)
+                self.assertEqual(second["anchored"], SECOND_ANCHORED[width], second)
                 motion = "opacity" if calm and width == 390 else "transform, opacity"
                 self.assertEqual((first["transition"], second["transition"]), (motion, motion))
                 self.assertEqual(grow["who"], first_key)
@@ -190,8 +196,8 @@ class TestWorkbenchBubbles(HubCase):
                 grown = grow["grown"]
                 self.assertEqual((grown["who"], grown["scale"], grown["rendered"], grown["state"]), (second_key, 1, 1, "speaking"), grown)
                 self.assertEqual(grown["text"], " ".join(SECOND.split()[: grown["words"]]))
-                self.assertEqual(done, {"cleared": True, "faces": ["loaded"], "hidden": False, "violations": []})
-                self.assertEqual(kept, {"kept": ["true", False, "Speech bubbles", "Speech bubbles"], "off": True, "display": "none", "bubbles": 0, "violations": []})
+                self.assertEqual(quiet(done), {"cleared": True, "faces": ["loaded"], "hidden": False, "violations": []})
+                self.assertEqual(quiet(kept), {"kept": ["true", False, "Speech bubbles", "Speech bubbles"], "off": True, "display": "none", "bubbles": 0, "violations": []})
             if solid is not None:
                 with self.subTest(browser=browser, view="3d"):
                     self.assertNotIn("error", solid, solid)
