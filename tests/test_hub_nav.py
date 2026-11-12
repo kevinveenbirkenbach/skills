@@ -4,7 +4,38 @@ import json
 import subprocess
 import unittest
 
-from hub_support import NAV
+from hub_support import HUB, NAV
+
+SCREENS = HUB / "templates" / "page-screens.js"
+TRANSITION_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const unhandled = [];
+process.on("unhandledRejection", (error) => unhandled.push(error.name));
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+function switched(name) {
+  const error = new Error(`transition ${name}`);
+  error.name = name;
+  const started = [];
+  vm.runInNewContext(`${code}\\napply();`, {
+    Nav: {TABS: [], route: () => ({screen: "agents", view: "chord"})}, ui: {views: {}}, drawn: {screen: true}, calm: {matches: false}, h: () => null,
+    window: {location: {hash: "#agents/chord"}, history: {replaceState: () => null}},
+    document: {getElementById: () => ({append: () => null}), startViewTransition: (update) => {
+      started.push(typeof update);
+      return {ready: Promise.reject(error), finished: Promise.resolve(), updateCallbackDone: Promise.resolve()};
+    }},
+  });
+  return started;
+}
+(async () => {
+  const started = [...switched("AbortError"), ...switched("InvalidStateError")];
+  for (let round = 0; round < 5; round += 1) {
+    await settle();
+  }
+  console.log(JSON.stringify({started, unhandled}));
+})().catch((error) => console.log(JSON.stringify({crash: String(error)})));
+"""
 
 NAV_PROBE = """
 const N = require(process.argv[1]);
@@ -88,6 +119,12 @@ class TestNavModule(unittest.TestCase):
     def test_every_screen_has_its_own_hash_and_tab(self):
         self.assertEqual(self.data["hashes"], ["#stream", "#stream/inbox", "#stream/rules", "#agents/chord", "#artifacts/3d", "#tasks/board"])
         self.assertEqual(self.data["tabOf"], ["stream", "stream", "stream", "agents", "artifacts", "tasks"])
+
+
+class TestScreenTransition(unittest.TestCase):
+    def test_a_view_transition_skipped_by_the_next_switch_stays_quiet_and_other_failures_still_surface(self):
+        done = subprocess.run(["node", "-e", TRANSITION_PROBE, str(SCREENS)], capture_output=True, text=True, timeout=60, check=True)
+        self.assertEqual(json.loads(done.stdout), {"started": ["function", "function"], "unhandled": ["InvalidStateError"]})
 
 
 if __name__ == "__main__":
