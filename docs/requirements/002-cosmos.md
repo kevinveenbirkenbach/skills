@@ -2,8 +2,8 @@
 
 ## User Story
 
-As the operator and the designer, I want the orchestrator's sky, music and
-orbit scene as one reusable component behind a small live globe, so that the
+As the operator and the designer, I want the orchestrator's sky as one
+reusable component behind a small live globe, so that the
 orchestrator and every Infinito.Nexus web app can show the same calm
 background without carrying its code twice.
 
@@ -36,6 +36,13 @@ background without carrying its code twice.
    core's custom roles (requirement 046) on core main. Rejected: starting now.
 8. **Icons**: the controls use Bootstrap Icons per decision 19 of
    requirement 001.
+9. **Scope revision (operator-confirmed 2026-11-12)**: cosmos takes the sky
+   only. The orchestrator keeps its generated music and its orbit and 3D
+   scene; no `<cosmos-graph>` exists, and the cosmos requirement forbids any
+   cosmos file drawing the agent graph. The orchestrator vendors the file
+   set the cosmos repository ships (`cosmos.js`, `LICENSE`, `NOTICE.md`).
+   This replaces the music, orbit and 3D parts of decisions 1 and 3.
+   Rejected: removing the music, moving the 3D views.
 
 ## Approach
 
@@ -58,7 +65,7 @@ flowchart TD
     end
     CF -- "👍 commit word" --> O1
     subgraph O["🧭 2 · Orchestrator on cosmos (Skills)"]
-        O1["🔁 Pin cosmos, drop ambience.js, sky and generated music"] --> O2{"🧪 Orchestrator tests green?"}
+        O1["🔁 Pin cosmos, drop the sky code"] --> O2{"🧪 Orchestrator tests green?"}
         O2 -- "🔴 no: fix" --> O1
         O2 -- "🟢 yes" --> OF{"💬 Operator feedback?"}
         OF -- "✏️ changes" --> O1
@@ -89,19 +96,16 @@ flowchart TD
 
 ### Components
 
-- [ ] `<cosmos-ambience>` takes `latitude`, `longitude`, `mode`
-      (`full` or `colors`) and `music` with a volume, and follows
-      `prefers-reduced-motion`.
+- [ ] `<cosmos-ambience>` takes `latitude`, `longitude` and `mode`
+      (`full` or `colors`), and follows `prefers-reduced-motion`.
 - [ ] It sets `--cosmos-sky-top`, `--cosmos-sky-bottom`, `--cosmos-stage` and
       `--cosmos-text` and updates them at least once a minute.
 - [ ] Text against sky keeps a contrast of at least 4.5:1 at every minute of a
       day at 0° N 0° W and at 52.5° N 13.4° E (unit test).
 - [ ] Sun and moon positions match published reference values within 1° for
       at least six fixed dates (unit test).
-- [ ] `<cosmos-graph>` renders the 3D scene on vendored `3d-force-graph`
-      1.80.1 and `three` 0.186.1 and takes nodes and links as data.
-- [ ] The generated meditative music plays with a volume; no radio stream
-      code is in the repository.
+- [ ] No cosmos file draws the agent graph, plays music or holds radio
+      stream code.
 
 ### Globe menu
 
@@ -115,9 +119,8 @@ flowchart TD
 
 - [ ] The orchestrator vendors a pinned cosmos tag and loads it under its
       nonce CSP.
-- [ ] `ambience.js`, the sky code and the generated music are gone from the
-      orchestrator; its radio-stream schedule stays.
-- [ ] The orchestrator's 3D views render through `<cosmos-graph>`.
+- [ ] The sky code is gone from the orchestrator; its generated music and
+      its radio-stream schedule stay.
 
 ### Core (IAM)
 
