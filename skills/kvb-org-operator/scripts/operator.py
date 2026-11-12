@@ -505,7 +505,7 @@ def heavy_row(watch: ModuleType, cfg: dict | None, row: dict) -> bool:
         command lacks; prints the memory stage and `queue.py list` for a
         heavy one, its output control characters made visible.
     """
-    if cfg is None or not watch.heavy(row["command"], cfg, tuple(cfg["never_block"])):
+    if cfg is None or not watch.heavy(row["command"], cfg, tuple(cfg["never_block"]), row["directory"]):
         return False
     problem = watch.missing(cfg, (*watch.MEMORY_KEYS, "budget_percent.ram", "budget_percent.cpu", f"slot_need_gb.{HOLD_KIND}"))
     if problem is None and needs_terminal(row["command"]):

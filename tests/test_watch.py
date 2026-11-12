@@ -174,6 +174,18 @@ class TestWatchCommands(unittest.TestCase):
         self._stage("warn")
         self.assertEqual(self._run("block", stdin=self._bash("make compose-deploy")).returncode, 0)
 
+    def test_block_counts_discovered_files_in_the_payload_cwd_and_an_unusable_cwd_as_unknown(self):
+        self._stage("stop")
+        for name in ("tree/a/test_main.py", "tree/b/test_main.py"):
+            (self.base / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.base / name).write_text("", encoding="utf-8")
+        command = {"command": "python3 -m unittest discover -s tree -p test_main.py"}
+        self.assertEqual(self._run("block", stdin=json.dumps({"tool_input": command, "cwd": str(self.base)})).returncode, 2)
+        for cwd in (str(self.base / "tree"), 5, ["/"], {"a": 1}, "tree", None):
+            with self.subTest(cwd=cwd):
+                blocked = self._run("block", stdin=json.dumps({"tool_input": command, "cwd": cwd}))
+                self.assertEqual((blocked.returncode, blocked.stderr), (0, ""))
+
     def test_block_heavy_jobs_while_a_mayday_holds_radio_silence(self):
         self._stage("ok")
         self.root.mkdir(exist_ok=True)

@@ -15,8 +15,8 @@ skill's Rules apply here too.
    first error.
 3. **Fix at the root**: apply the real fix for each proven root cause in the
    sidetree, with a test and a negative control as the `kvb-org-swarm` skill
-   demands. Light runs (no Docker, about a minute: targeted pytest or
-   unittest, ruff, single lint files) self-admit with
+   demands. Light runs (no Docker, about a minute: one test file or
+   module, ruff) self-admit with
    `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
    test-nostack`; `make test`, gates, deploys and anything with Docker run in
    the background through

@@ -64,7 +64,9 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
+import fnmatch
 import importlib.util
+import itertools
 import json
 import math
 import os
@@ -186,6 +188,9 @@ PYTEST_VALUE_OPTIONS = frozenset({
 UNITTEST_VALUE_OPTIONS = frozenset({"-k"})
 DISCOVER_VALUE_OPTIONS = frozenset({"-s", "-p", "-t", "-k", "--start-directory", "--pattern", "--top-level-directory"})
 PATTERN_OPTIONS = frozenset({"-p", "--pattern"})
+START_OPTIONS = frozenset({"-s", "--start-directory"})
+CHDIR_OPTIONS = frozenset({"-C", "--chdir"})
+CHDIR_LONG = "--chdir="
 MAKE_VALUE_OPTIONS = frozenset({
     "-C", "-f", "-I", "-o", "-W", "--directory", "--file", "--makefile", "--include-dir", "--old-file", "--assume-old",
     "--what-if", "--new-file", "--assume-new",
@@ -619,13 +624,71 @@ def python_module(args: list[str]) -> tuple[str, list[str]]:
     return "", []
 
 
-def light_unittest(args: list[str]) -> bool:
+def tool(run: list[str]) -> tuple[str, list[str]]:
+    """Returns:
+        The program's name and arguments, the module and its arguments for
+        `python -m` or a Python script.
+    """
+    name, args = os.path.basename(run[0]), run[1:]
+    return python_module(args) if PYTHON.fullmatch(name) else (name, args)
+
+
+def discover_patterns(rest: list[str]) -> list[str]:
+    """Returns:
+        The file patterns `unittest discover` gets after `discover`: -p or
+        --pattern values, else the second operand; empty for the default.
+    """
+    patterns = [rest[at + 1] for at, word in enumerate(rest[:-1]) if word in PATTERN_OPTIONS]
+    return patterns or operands(rest, DISCOVER_VALUE_OPTIONS)[1:2]
+
+
+def started_in(prefix: list[str], cwd: str | None) -> str | None:
+    """Args:
+        prefix: the words in front of a command's program.
+        cwd: the directory the shell runs the command line in, None when
+            unknown.
+
+    Returns:
+        The directory the command starts in: cwd joined with every `env
+        -C|--chdir` value of prefix in order, each relative to the one
+        before; None when cwd is None.
+    """
+    if cwd is None:
+        return None
+    dirs = [word[len(CHDIR_LONG):] if word.startswith(CHDIR_LONG) else prefix[at + 1]
+            for at, word in enumerate(prefix)
+            if word.startswith(CHDIR_LONG) or (word in CHDIR_OPTIONS and at + 1 < len(prefix))]
+    return os.path.join(cwd, *dirs)
+
+
+def one_discovered(rest: list[str], base: str | None) -> bool:
+    """Args:
+        rest: the arguments after `unittest discover`.
+        base: the directory the command starts in (started_in()), None when
+            unknown.
+
+    Returns:
+        Whether exactly one file below the start directory matches the
+        pattern: a plain name can match a file in every package of a tree.
+        Without base or start directory, whether the pattern is one file
+        name (TEST_FILE), so an unknown tree never blocks a single file.
+    """
+    patterns = discover_patterns(rest)
+    if not patterns:
+        return False
+    starts = [rest[at + 1] for at, word in enumerate(rest[:-1]) if word in START_OPTIONS]
+    start = (starts or operands(rest, DISCOVER_VALUE_OPTIONS)[:1] or ["."])[-1]
+    if base is None or not os.path.isdir(os.path.join(base, start)):
+        return TEST_FILE.fullmatch(patterns[-1]) is not None
+    found = (name for _, _, files in os.walk(os.path.join(base, start)) for name in files
+             if fnmatch.fnmatchcase(name, patterns[-1]))
+    return len([*itertools.islice(found, 2)]) == 1
+
+
+def light_unittest(args: list[str], base: str | None) -> bool:
     if args[:1] != ["discover"]:
         return len(operands(args, UNITTEST_VALUE_OPTIONS)) == 1
-    rest = args[1:]
-    patterns = [rest[at + 1] for at, word in enumerate(rest[:-1]) if word in PATTERN_OPTIONS]
-    patterns = patterns or operands(rest, DISCOVER_VALUE_OPTIONS)[1:2]
-    return bool(patterns) and TEST_FILE.fullmatch(patterns[-1]) is not None
+    return one_discovered(args[1:], base)
 
 
 def heavy_pytest(args: list[str]) -> bool:
@@ -633,8 +696,8 @@ def heavy_pytest(args: list[str]) -> bool:
     return not (PYTEST_LIGHT.intersection(args) or (len(files) == 1 and TEST_FILE.fullmatch(files[0])))
 
 
-def heavy_unittest(args: list[str]) -> bool:
-    return not (HELP.intersection(args) or light_unittest(args))
+def heavy_unittest(args: list[str], base: str | None) -> bool:
+    return not (HELP.intersection(args) or light_unittest(args, base))
 
 
 def make_targets(args: list[str]) -> list[str]:
@@ -660,22 +723,26 @@ def heavy_docker(args: list[str]) -> bool:
 
 
 HEAVY_TOOLS = {
-    "pytest": heavy_pytest, "py.test": heavy_pytest, "unittest": heavy_unittest, "make": heavy_make,
+    "pytest": heavy_pytest, "py.test": heavy_pytest, "make": heavy_make,
     "docker": heavy_docker, "docker-compose": heavy_compose,
 }
 
 
-def heavy_words(run: list[str], cfg: dict, exempt: tuple[str, ...]) -> bool:
+def heavy_words(run: list[str], cfg: dict, exempt: tuple[str, ...], base: str | None) -> bool:
+    """Args:
+        base: the directory the command starts in (started_in()), None when
+            unknown.
+    """
     if not run:
         return False
     code = inline_code(run)
     if code is not None:
-        return heavy(code, cfg, exempt)
-    name, args = os.path.basename(run[0]), run[1:]
-    if PYTHON.fullmatch(name):
-        name, args = python_module(args)
-        if name in WRAPPERS:
-            return heavy_words(program([name, *args]), cfg, exempt)
+        return heavy(code, cfg, exempt, base)
+    name, args = tool(run)
+    if PYTHON.fullmatch(os.path.basename(run[0])) and name in WRAPPERS:
+        return heavy_words(program([name, *args]), cfg, exempt, base)
+    if name == "unittest":
+        return heavy_unittest(args, base)
     return name in HEAVY_TOOLS and HEAVY_TOOLS[name](args)
 
 
@@ -683,23 +750,24 @@ def segment_texts(words: list[str], run: list[str]) -> list[str]:
     return list(dict.fromkeys(" ".join("''" if SPACE.search(word) else word for word in part) for part in (words, run)))
 
 
-def judged(texts: list[str], run: list[str], cfg: dict, exempt: tuple[str, ...]) -> bool:
+def judged(texts: list[str], run: list[str], cfg: dict, exempt: tuple[str, ...], base: str | None) -> bool:
     if any(re.search(pattern, text) for pattern in exempt for text in texts):
         return False
     if any(re.search(pattern, text) for pattern in cfg["heavy_commands"] for text in texts):
         return True
-    return heavy_words(run, cfg, exempt)
+    return heavy_words(run, cfg, exempt, base)
 
 
-def heavy_part(words: list[str], cfg: dict, exempt: tuple[str, ...]) -> bool:
+def heavy_part(words: list[str], cfg: dict, exempt: tuple[str, ...], cwd: str | None) -> bool:
     """Returns:
         Whether one simple command is heavy; a make call is judged per target
         as `make <target>`, so an exempt target never covers the next one.
     """
     run = program(words)
+    base = started_in(words[: len(words) - len(run)], cwd)
     if run and os.path.basename(run[0]) == "make" and not dry_run(run[1:]):
-        return any(judged([f"make {target}"], ["make", target], cfg, exempt) for target in make_targets(run[1:]))
-    return judged(segment_texts(words, run), run, cfg, exempt)
+        return any(judged([f"make {target}"], ["make", target], cfg, exempt, base) for target in make_targets(run[1:]))
+    return judged(segment_texts(words, run), run, cfg, exempt, base)
 
 
 def marked_heredocs(command: str) -> tuple[str, list[re.Match[str]]]:
@@ -795,6 +863,15 @@ def substituted(text: str) -> tuple[str, list[str]]:
     return "".join(kept) + text[at:], codes
 
 
+def payload_cwd(payload: dict) -> str | None:
+    """Returns:
+        The hook payload's cwd when it is an absolute path, else None
+        (unknown, heavy()).
+    """
+    cwd = payload.get("cwd")
+    return cwd if isinstance(cwd, str) and os.path.isabs(cwd) else None
+
+
 def cmd_block(cfg: dict, problem: str | None) -> int:
     """Args:
         cfg: the config.
@@ -803,7 +880,7 @@ def cmd_block(cfg: dict, problem: str | None) -> int:
     """
     payload = json.load(sys.stdin)
     raw = (payload.get("tool_input") or {}).get("command", "")
-    if not heavy(raw, cfg, tuple(cfg["never_block"])):
+    if not heavy(raw, cfg, tuple(cfg["never_block"]), payload_cwd(payload)):
         return 0
     reason = block_reason(cfg, problem)
     if reason is None:
@@ -990,20 +1067,23 @@ def swap_holders(base: Path, names: dict[str, str]) -> list[str]:
     return [f"{' > '.join(swap_chain(scope, size, names))} {size / GB:.1f} GB" for size, scope in ranked]
 
 
-def heavy(command: str, cfg: dict, exempt: tuple[str, ...]) -> bool:
+def heavy(command: str, cfg: dict, exempt: tuple[str, ...], cwd: str | None) -> bool:
     """Args:
         command: the shell command line as typed, quotes included.
         cfg: the config; its heavy_commands search each simple command with
             quoted text blanked, and a make call also as `make <targets>`.
         exempt: regexes; a simple command one of them finds is never heavy
             (never_block, the queue's own hold), the others still count.
+        cwd: the directory the shell runs it in (the hook payload's cwd),
+            None when unknown; a cd, pushd or popd in it makes it unknown.
 
     Returns:
         Whether one simple command is a heavy job: an image build through
         docker compose (build, or up, run or create with --build), a
         heavy_commands match, make install or verify-* (not as a dry run), or
-        pytest or unittest on anything but exactly one test file or module,
-        help and version aside. Wrappers (program()), the code of `sh -c`,
+        pytest or unittest on anything but exactly one test file or module
+        (a discover pattern only when one_discovered()), help and version
+        aside. Wrappers (program()), the code of `sh -c`,
         command substitutions (substituted(), also in heredocs the shell
         expands) and heredocs a shell reads as its code count the same. A
         command with an unbalanced quote, which no shell runs, counts by the
@@ -1021,7 +1101,10 @@ def heavy(command: str, cfg: dict, exempt: tuple[str, ...]) -> bool:
         text = executable_text(command)
         return not any(re.search(p, text) for p in exempt) and any(re.search(p, text) for p in cfg["heavy_commands"])
     nested = codes + expanded_codes(heredocs) + fed_bodies(parts)
-    return any(heavy_part(words, cfg, exempt) for words in parts) or any(heavy(code, cfg, exempt) for code in nested)
+    if any(words[:1] in (["cd"], ["pushd"], ["popd"]) for words in parts):
+        cwd = None
+    return (any(heavy_part(words, cfg, exempt, cwd) for words in parts)
+            or any(heavy(code, cfg, exempt, cwd) for code in nested))
 
 
 def cmd_admit(cfg: dict, args: argparse.Namespace) -> int:
