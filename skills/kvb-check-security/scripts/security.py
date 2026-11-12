@@ -20,11 +20,16 @@ Scan:
     directory because medusa creates ~/.medusa on start, read from
     `<dir>/medusa-scan-*.json`: a `findings` list whose entries carry
     `severity` (critical, high, medium, low or info), `rule_id`, `file` and `line`.
+    medusa skips the SKIPPED suffixes (.mjs, .cjs, any case), so such a file is
+    copied under its name with ALIAS (.js) appended, again while a path or
+    folder of the change holds that name, or under the sha1 of its path with
+    ALIAS when that file name would pass NAME_MAX bytes; its findings are
+    fingerprinted from that copy and reported and accepted at its repository path.
 
 Cache:
     The findings of a scan, keyed by the sha256 of this script, the resolved
     medusa binary with its mtime and size, PATH, every MEDUSA_* variable and
-    the path, mode and content sha256 of every scanned file, in
+    the tree path, repository path, mode and content sha256 of every scanned file, in
     <council root>/security-cache/<key>.json for CACHE_SECONDS. A later scan
     with the same key reads them instead of running medusa; any edit of a
     scanned file, of medusa or of this script misses. The folder is used only
@@ -82,6 +87,9 @@ SAFE = 100
 SHOWN = 5
 REACH = 2
 WORKERS = 4
+SKIPPED = (".mjs", ".cjs")
+ALIAS = ".js"
+NAME_MAX = 255
 CACHE = "security-cache"
 CACHE_SECONDS = 24 * 3600
 NOTHING = type(None)
@@ -120,18 +128,42 @@ def changed(root: Path, base: str) -> list[str]:
     return sorted({p for p in listed.split("\0") if p})
 
 
-def copy(root: Path, paths: list[str], tree: Path) -> int:
-    copied = 0
+def alias(name: str, taken: set[str]) -> str:
+    """Returns:
+        the tree path of name, whose suffix medusa skips: its file name with
+        ALIAS appended, again while taken holds that path, or the sha1 of name
+        treated the same way when that file name would pass NAME_MAX bytes.
+    """
+    folder = Path(name).parent
+    for stem in (Path(name).name, digest(name)):
+        scratch = stem + ALIAS
+        while (folder / scratch).as_posix() in taken:
+            scratch += ALIAS
+        if len(os.fsencode(scratch)) <= NAME_MAX:
+            break
+    return (folder / scratch).as_posix()
+
+
+def copy(root: Path, paths: list[str], tree: Path) -> dict[str, str]:
+    """Returns:
+        the tree path of every copied file mapped to its repository path.
+    """
+    names = {}
+    taken = set(paths) | {parent.as_posix() for name in paths for parent in Path(name).parents}
     for name in paths:
         source = root / name
         # Trip-wire: a symlink's target may lie outside the repository; even a copied link lets the scan read it.
         if source.is_symlink() or not source.is_file():
             continue
-        target = tree / name
+        scratch = name
+        if Path(name).suffix.lower() in SKIPPED:
+            scratch = alias(name, taken)
+            taken.add(scratch)
+        target = tree / scratch
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-        copied += 1
-    return copied
+        names[scratch] = name
+    return names
 
 
 def located(name: str, tree: Path) -> str:
@@ -240,7 +272,7 @@ def accept(argv: list[str]) -> int:
     return 0
 
 
-def findings(reports: Path, tree: Path) -> list[dict]:
+def findings(reports: Path, tree: Path, names: dict[str, str]) -> list[dict]:
     files = sorted(reports.glob("medusa-scan-*.json")) if reports.is_dir() else []
     if not files:
         raise Unreadable(f"no medusa-scan-*.json in {reports}")
@@ -257,12 +289,12 @@ def findings(reports: Path, tree: Path) -> list[dict]:
         if severity not in WEIGHTS:
             raise Unreadable(f"{files[-1].name}: a finding without a known severity")
         line = entry.get("line") if isinstance(entry.get("line"), int) else None
-        path = located(str(entry.get("file") or "?"), tree)
-        sha1, context = fingerprint(tree, path, line)
+        scratch = located(str(entry.get("file") or "?"), tree)
+        sha1, context = fingerprint(tree, scratch, line)
         found.append({
             "severity": severity,
             "rule": entry.get("rule_id") if isinstance(entry.get("rule_id"), str) else None,
-            "path": path,
+            "path": names.get(scratch, scratch),
             "line": line,
             "sha1": sha1,
             "context": context,
@@ -271,14 +303,15 @@ def findings(reports: Path, tree: Path) -> list[dict]:
     return sorted(found, key=lambda f: (rank.index(f["severity"]), f["path"], f["line"] or 0))
 
 
-def keyed(medusa: str, tree: Path) -> str:
+def keyed(medusa: str, tree: Path, names: dict[str, str]) -> str:
     binary = Path(medusa).resolve()
     info = binary.stat()
     key = hashlib.sha256(Path(__file__).read_bytes())
     key.update(f"\0{binary}\0{info.st_mtime_ns}\0{info.st_size}\0{os.environ.get('PATH', '')}\0".encode())
     key.update("".join(f"{k}={v}\0" for k, v in sorted(os.environ.items()) if k.startswith("MEDUSA_")).encode())
-    for path in sorted(p for p in tree.rglob("*") if p.is_file()):
-        key.update(f"{path.relative_to(tree).as_posix()}\0{path.stat().st_mode & 0o777:o}\0".encode())
+    for scratch, name in sorted(names.items()):
+        path = tree / scratch
+        key.update(f"{scratch}\0{name}\0{path.stat().st_mode & 0o777:o}\0".encode())
         key.update(hashlib.sha256(path.read_bytes()).digest())
     return key.hexdigest()
 
@@ -339,10 +372,11 @@ def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, l
         tree, reports, home = work / "tree", work / "reports", work / "home"
         tree.mkdir()
         home.mkdir()
-        scanned = copy(root, changed(root, base), tree)
+        names = copy(root, changed(root, base), tree)
+        scanned = len(names)
         if not scanned:
             return 0, []
-        key = keyed(medusa, tree)
+        key = keyed(medusa, tree, names)
         hit = recalled(cache, key) if cache else None
         if hit is not None:
             return scanned, hit
@@ -353,7 +387,7 @@ def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, l
             env={**os.environ, "HOME": str(home)},
         )
         try:
-            found = findings(reports, tree)
+            found = findings(reports, tree, names)
         except Unreadable as error:
             raise Unreadable(f"{error} (medusa exit {result.returncode})") from None
         if cache:
