@@ -28,9 +28,13 @@ def kind_of(task: str) -> str:
     return "hotfix" if task.startswith(HOTFIX) else "task"
 
 
-def editable(task: str, row: dict) -> bool:
+def movable(task: str) -> bool:
     shown_whole = len(task) <= TEXT_SHOWN and signing.TASK.fullmatch(task) is not None
-    return shown_whole and kind_of(task) == "task" and status_of(row) not in ENDED
+    return shown_whole and kind_of(task) == "task"
+
+
+def editable(task: str, row: dict) -> bool:
+    return movable(task) and status_of(row) not in ENDED
 
 
 def fibonacci(value: object) -> bool:
@@ -131,6 +135,7 @@ def task_row(task: str, row: dict, trees: list[dict]) -> dict:
         "kind": kind_of(task),
         "ended": ended,
         "editable": editable(task, row),
+        "movable": movable(task),
         "prio": prio_of(row),
         "estimates": estimates,
         "wsjf": wsjf(estimates),
@@ -138,6 +143,7 @@ def task_row(task: str, row: dict, trees: list[dict]) -> dict:
         "points": points(estimates),
         "start": iso_epoch(row.get("start")),
         "end": iso_epoch(row.get("end")) if ended else None,
+        "updated": iso_epoch(row.get("updated")),
         "after": after_of(row),
         "base": shown(row.get("base"))[:TEXT_SHOWN],
         "roles": roles_of(row),
@@ -163,6 +169,7 @@ def queue_row(entry: dict, created: float, trees: list[dict]) -> dict:
         "kind": "queue",
         "ended": False,
         "editable": False,
+        "movable": False,
         "prio": None,
         "estimates": {},
         "wsjf": None,
@@ -170,6 +177,7 @@ def queue_row(entry: dict, created: float, trees: list[dict]) -> dict:
         "points": None,
         "start": (epoch(entry.get("granted")) or created) if entry.get("status") == "active" else None,
         "end": None,
+        "updated": None,
         "after": [],
         "base": "-",
         "roles": {},
@@ -248,6 +256,24 @@ def queue_chain(queue: list[tuple[dict, float]], tasks: dict[str, dict], agents:
     active = sorted((pair for pair in queue if pair[0].get("status") == "active"), key=lambda pair: epoch(pair[0].get("granted")) or pair[1])
     waiting = sorted((pair for pair in queue if pair[0].get("status") == "waiting"), key=waiting_key)
     return [(shown(entry.get("id"))[:TEXT_SHOWN], entry.get("status") == "waiting") for entry, _ in [*active, *waiting]]
+
+
+def queue_line(chain: list[tuple[str, bool]], queue: list[tuple[dict, float]]) -> list[str]:
+    """Args:
+        chain: queue_chain().
+        queue: the kvb-org-queue entries with their enqueue time.
+
+    Returns:
+        The tasks holding a live queue entry, each once, in the grant order
+        of their first entry.
+    """
+    owners = {shown(entry.get("id"))[:TEXT_SHOWN]: entry.get("task") for entry, _ in queue}
+    line: list[str] = []
+    for job, _ in chain:
+        task = owners.get(job)
+        if isinstance(task, str) and len(task) <= TEXT_SHOWN and task not in line:
+            line.append(task)
+    return line
 
 
 def branch_of(row: dict) -> str:

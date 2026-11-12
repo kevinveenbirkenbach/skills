@@ -27,6 +27,7 @@ PRIO = re.compile(r"[1-9][0-9]{0,2}")
 FIBONACCI = ("1", "2", "3", "5", "8", "13", "21", "34", "55", "89")
 ESTIMATOR = "Operator"
 COMMANDS = "operator/"
+STATUSES = ("queued", "running", "blocked", "done", "stopped")
 APPROVAL_KEYS = {"v", "kind", "items", "nonce", "expires"}
 RULE_KEYS = {"v", "kind", "id", "kinds", "tool", "pattern", "scope", "expires"}
 WARNINGS = (
@@ -156,14 +157,31 @@ def task_item(task: str, argv: list[str]) -> dict:
     return {"kind": "task", "id": task, "argv": argv}
 
 
+def board_flags(task: str, flags: list[str]) -> bool:
+    if flags == ["--unpin"]:
+        return True
+    if len(flags) != 2:
+        return False
+    flag, value = flags
+    if flag == "--prio":
+        return bool(PRIO.fullmatch(value))
+    if flag == "--status":
+        return value in STATUSES
+    linked = flag in ("--after", "--drop-after")
+    return linked and value != task and bool(TASK.fullmatch(value)) and not value.startswith(COMMANDS)
+
+
 def task_argv(task: object, argv: object) -> list[str]:
     """Args:
         task: the register task the change is for, a rasci.py slug outside
             operator/.
-        argv: the rasci.py arguments, one of `set <task> --prio <1-999>`,
-            `estimate <task> Operator --value <fib> --complexity <fib>`,
-            `estimate <task> Operator --value <fib>` (the operator's business
-            value alone) or `estimate <task> Operator --drop`.
+        argv: the rasci.py arguments, one of `set <task>` with exactly one
+            of `--prio <1-999>`, `--unpin`, `--status <status>`,
+            `--after <other>` or `--drop-after <other>` (other a register
+            slug outside operator/), `estimate <task> Operator --value <fib>
+            --complexity <fib>`, `estimate <task> Operator --value <fib>`
+            (the operator's business value alone) or
+            `estimate <task> Operator --drop`.
 
     Returns:
         argv, the hub and the runner check it the same way.
@@ -176,12 +194,11 @@ def task_argv(task: object, argv: object) -> list[str]:
     if not isinstance(argv, list) or not all(isinstance(part, str) for part in argv):
         raise Refused("the argv is no list of texts")
     rest = argv[3:]
-    pinned = argv[:3] == ["set", task, "--prio"] and len(argv) == 4 and bool(PRIO.fullmatch(argv[3]))
     valued = len(rest) in (2, 4) and rest[0] == "--value" and rest[1] in FIBONACCI
     estimated = valued and (len(rest) == 2 or (rest[2] == "--complexity" and rest[3] in FIBONACCI))
-    if pinned or (argv[:3] == ["estimate", task, ESTIMATOR] and (estimated or rest == ["--drop"])):
+    if (argv[:2] == ["set", task] and board_flags(task, argv[2:])) or (argv[:3] == ["estimate", task, ESTIMATOR] and (estimated or rest == ["--drop"])):
         return argv
-    raise Refused("the argv is no task priority or WSJF estimate change of this task")
+    raise Refused("the argv is no task priority, status, dependency or WSJF estimate change of this task")
 
 
 def approval_payload(hashes: list[str], nonce: str, expires: int) -> dict:

@@ -130,7 +130,7 @@ PROBE = """(async () => {@HELPERS@
     order: all("#main .agent-order li").map((item) => item.dataset.name),
     taskFilters: all('#main [aria-label="Task filters"] button').map((button) => [button.dataset.filter, button.getAttribute("aria-pressed"), text(button.querySelector(".count"))]),
     taskRows: all("#main .task-row").map((row) => [row.dataset.task, row.classList.contains("open-work")]),
-    columns: all("#main .task-column").map((column) => [column.dataset.column, all(".task-card", column).map((card) => card.dataset.task)]),
+    columns: all("#main .task-column").map((column) => [column.dataset.column, all(`#main .kanban-cell[data-column="${column.dataset.column}"] .task-card`).map((card) => card.dataset.task)]),
     matrix: [all("#main table.matrix thead th").length, all("#main table.matrix tbody tr").length, all("#main table.matrix td .letter").map(text).join("")],
     flows: all("#main .flow").map((flow) => flow.dataset.flow),
     flowEdges: all("#main svg.chart path.flow").map((path) => path.dataset.side),
@@ -1839,7 +1839,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(listed["taskFilters"], [["all", "true", "6"], ["open", "false", "4"], ["work", "false", "4"], ["operator", "false", "2"], ["grant", "false", "1"], ["ended", "false", "2"]])
         self.assertEqual(listed["taskRows"], [[task, task not in ("work/old", "operator/push")] for task in order])
         self.assertEqual(listed["flows"], ["file", "file"])
-        self.assertEqual(by_hash["#tasks/board"]["columns"], [["queued", ["queue/gate-3"]], ["running", ["work/feature", "work/stage"]], ["blocked", ["work/docs"]], ["done", ["work/old", "operator/push"]], ["stopped", []]])
+        self.assertEqual(by_hash["#tasks/board"]["columns"], [["queued", ["work/docs", "queue/gate-3"]], ["running", ["work/feature", "work/stage"]], ["done", []]])
         self.assertEqual(by_hash["#tasks/rasci"]["matrix"], [6, 6, "CIRARASRARAR"])
         self.assertEqual([probe["taskFilters"][3][1] for probe in probes if probe["hash"] == "#tasks/operator"], ["true"] * len(WIDTHS))
         extra = data["results"][len(probes) :]
@@ -2423,7 +2423,7 @@ class TestOrchestratorE2E(HubCase):
                     self.assertEqual((fit["hash"], fit["bar"], fit["choices"], fit["tall"], fit["wide"]), (f"#tasks/{name}", CHOICE_CHANNELS, 0, False, False), fit)
                     self.assertEqual((fit["rows"] == 1, fit["layout"]), (width != 390, ["toolbar", "chips", "body"]), fit)
                     if name == "board":
-                        self.assertEqual(fit["columns"], ["queued", "running", "blocked", "done", "stopped"])
+                        self.assertEqual(fit["columns"], ["queued", "running", "done"])
         hub = self.httpd.hub
         if not signs:
             self.assertEqual((self.scripts.calls, hub.messages.listed()), ([], []))
@@ -2664,11 +2664,11 @@ class TestOrchestratorE2E(HubCase):
             self.assertAlmostEqual(begin, start, delta=0.01)
             self.assertAlmostEqual(end, forecast if forecast is not None else probe["points"][-1][0], delta=0.01)
         if forecast is None:
-            self.assertEqual((probe["note"], probe["marker"]), ([None, "No forecast: the trend never reaches 0 remaining, so done never meets scope"], None))
+            self.assertEqual((probe["note"], probe["marker"]), ([None, "∞"], None))
             return
         self.assertAlmostEqual(probe["note"][0], forecast, delta=0.01)
         self.assertAlmostEqual(probe["marker"], forecast, delta=0.01)
-        self.assertTrue(probe["note"][1].startswith("Forecast: "), probe["note"])
+        self.assertNotEqual(probe["note"][1], "∞", probe["note"])
 
     def check_trend_eta_3d(self, browser: str, driver: str, binary: str) -> None:
         self.trend_work(time.time())

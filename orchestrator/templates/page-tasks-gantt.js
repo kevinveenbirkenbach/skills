@@ -3,6 +3,7 @@
   const EDGE_WORDS = {after: "Follows (rasci.py set --after)", base: "Branches from (base branch)", queue: "Waits behind (queue order)"};
   const SERIES_WORDS = {scope: "Scope (burnup)", done: "Done (burnup)", remaining: "Remaining (burndown)", unestimated: "Unestimated tasks"};
   const STEP_WORDS = [["started", "Started"], ["ended", "Ended"], ["joined", "Joined the scope"]];
+  const FINISH_WORDS = {fixed: ["Finish at fixed scope", "bi-flag"], growing: ["Finish at growing scope", "bi-graph-up-arrow"]};
   const ESTIMATION_ICONS = {none: "bi-1-circle", points: "bi-suit-diamond"};
   const TREND_DAYS = [1, 365];
   const TREND_REACH = 3;
@@ -108,10 +109,40 @@
     return marks;
   }
 
-  function trendNote(trend) {
-    const forecast = trend ? trend.forecast : null;
-    const words = forecast !== null ? `Forecast: ${absolute.format(stampOf(forecast))}` : trend ? "No forecast: the trend never reaches 0 remaining, so done never meets scope" : "No forecast: too few points for a trend";
-    return h("span", {class: "burn-forecast", "data-forecast": forecast === null ? "" : String(forecast)}, icon("bi-graph-up-arrow"), words);
+  function finishNotes(trend, finish) {
+    if (!trend) {
+      return h("span", {class: "burn-forecast", "data-forecast": ""}, icon("bi-graph-up-arrow"), "No forecast: too few points for a trend");
+    }
+    return Object.entries(FINISH_WORDS).map(([kind, [words, name]]) => {
+      const at = finish[kind];
+      const when = at === null ? "∞" : absolute.format(stampOf(at));
+      return h("span", {class: `burn-key burn-finish k-${kind}${kind === "growing" ? " burn-forecast" : ""}`, "data-finish": kind, "data-forecast": at === null ? "" : String(at), role: "img", ...named(`${words}: ${when}`)}, icon(name), when);
+    });
+  }
+
+  /**
+   * @param series - the burn points.
+   * @param trend - Plan.trend() of the points.
+   * @param finish - Plan.finishes() of the points.
+   * @param reach - the chart's last time.
+   * @returns one {kind, at, from: [t, level], to: [t, level]} per reached finish, from the last point to its date cut at
+   * reach: the fixed-scope finish runs level at the last scope, the growing-scope one along the scope trend.
+   */
+  function finishSegments(series, trend, finish, reach) {
+    const last = series[series.length - 1];
+    const levels = {fixed: () => last.scope, growing: (t) => Plan.lineAt(trend.lines.scope, t)};
+    return Object.keys(FINISH_WORDS).filter((kind) => finish[kind] !== null).map((kind) => {
+      const end = Math.min(finish[kind], reach);
+      return {kind, at: finish[kind], from: [last.t, levels[kind](last.t)], to: [end, levels[kind](end)]};
+    });
+  }
+
+  function burnFinish(svg, segments, x, y) {
+    for (const {kind, at, from, to} of segments) {
+      const words = s("title", {}, `${FINISH_WORDS[kind][0]}: ${absolute.format(stampOf(at))}`);
+      svg.append(s("path", {class: `burn-finish-line k-${kind}`, "data-finish": kind, "data-from": from[0], "data-to": to[0], "data-at": at, d: `M${fixed(x(from[0]))},${fixed(y(from[1]))} L${fixed(x(to[0]))},${fixed(y(to[1]))}`}, words),
+        s("circle", {class: `burn-finish-end k-${kind}`, "data-finish": kind, cx: fixed(x(to[0])), cy: fixed(y(to[1])), r: 4}));
+    }
   }
 
   function burnTrend(svg, trend, end, x, y) {
@@ -127,22 +158,22 @@
     }
   }
 
-  function burnSpan(picked, trend) {
+  function burnSpan(picked, trend, finish) {
     const forecast = trend ? trend.forecast : null;
-    if (forecast === null) {
-      return {reach: picked.to, end: picked.to};
-    }
-    const reach = Math.min(Math.max(forecast, picked.to), picked.to + TREND_REACH * Math.max(picked.to - picked.from, 1));
-    return {reach, end: Math.min(forecast, reach)};
+    const latest = Math.max(picked.to, ...Object.values(finish).filter((at) => at !== null));
+    const reach = Math.min(latest, picked.to + TREND_REACH * Math.max(picked.to - picked.from, 1));
+    return {reach, end: forecast === null ? picked.to : Math.min(forecast, reach)};
   }
 
   function burnChart(rows, shown) {
     const picked = Plan.scoped(rows, taskView.scope, {filtered: shown, since: state.since, until: state.until, now: state.now, holders: lineHolders()});
     const series = Plan.burn(picked.rows, {estimation: estimation(), from: picked.from, to: picked.to}).points;
     const trend = Plan.trend(series, settings.trend);
-    const {reach, end} = burnSpan(picked, trend);
+    const finish = Plan.finishes(series, trend);
+    const {reach, end} = burnSpan(picked, trend, finish);
     const names = estimation() === "points" ? Plan.SERIES : Plan.SERIES.filter((name) => name !== "unestimated");
-    const ends = trend ? Plan.TRENDED.flatMap((name) => [trend.start, end].map((t) => Plan.lineAt(trend.lines[name], t))) : [];
+    const segments = trend ? finishSegments(series, trend, finish, reach) : [];
+    const ends = trend ? [...Plan.TRENDED.flatMap((name) => [trend.start, end].map((t) => Plan.lineAt(trend.lines[name], t))), ...segments.flatMap((segment) => [segment.from[1], segment.to[1]])] : [];
     const top = Math.max(1, ...series.flatMap((point) => names.map((name) => point[name])), ...ends);
     const unit = estimation() === "points" ? "story points; unestimated tasks as a line of their own" : "tasks";
     const svg = s("svg", {class: "chart burn", viewBox: `0 0 ${BURN.width} ${BURN.height}`, role: "img", "aria-label": `Burndown and burnup in ${unit}; hover a point for the work packages of its step`});
@@ -157,10 +188,12 @@
     }
     if (trend) {
       burnTrend(svg, trend, end, x, y);
+      burnFinish(svg, segments, x, y);
     }
     svg.append(burnPoints(series, Plan.steps(picked.rows, series, picked.from), names, x, y));
+    const stale = h("span", {class: "pill burn-stale", "data-tone": "warn", "data-stale": String(picked.stale.length), role: "img", ...named(`Stale: ${picked.stale.length}`, `Stale: ${picked.stale.length} tasks without a register change for ${Plan.STALE_DAYS} days, counted apart`)}, icon("bi-hourglass-bottom"), String(picked.stale.length));
     const legend = h("div", {class: "legend"}, names.map((name) => h("span", {class: `burn-key k-${name}`, "data-series": name}, `${SERIES_WORDS[name]}: ${last[name]}`)),
-      settings.trend.mode === "off" ? null : trendNote(trend));
+      settings.trend.mode === "off" ? null : finishNotes(trend, finish), stale);
     return h("div", {class: "burn-box"}, svg, legend, h("p", {class: "muted"}, `${picked.rows.length} tasks in scope, counted in ${unit}`));
   }
 

@@ -9,6 +9,9 @@ const Plan = (() => {
   const TRENDED = ["scope", "done", "remaining"];
   const OUTSIDE = ["queue", "command"];
   const DAY = 86400;
+  const STALE_DAYS = 3;
+
+  const stale = (row, now) => !row.ended && typeof row.updated === "number" && now - row.updated >= STALE_DAYS * DAY;
 
   function median(values) {
     const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
@@ -134,19 +137,22 @@ const Plan = (() => {
    * window), "agent:<name>" (the tasks the agent works on or holds a RASCI role in) or "line:<office>" (those of
    * the office's holder, over the whole time).
    * @param context - {filtered, since, until, now, holders: {office: holder}}.
-   * @returns {rows, from, to}: the scope's rows without queue jobs and commands and its time range.
+   * @returns {rows, stale, from, to}: the scope's rows without queue jobs, operator commands and stale tasks, the
+   * stale ones apart, and its time range.
    */
   function scoped(rows, choice, context) {
     const own = (name) => (row) => row.worker === name || Object.hasOwn(row.roles, name);
     const [kind, ...rest] = String(choice).split(":");
     const key = rest.join(":");
     const chosen = kind === "filter" ? context.filtered : kind === "agent" ? rows.filter(own(key)) : kind === "line" ? rows.filter(own(context.holders[key])) : rows;
-    const kept = chosen.filter((row) => !OUTSIDE.includes(row.kind));
+    const inside = chosen.filter((row) => !OUTSIDE.includes(row.kind));
+    const kept = inside.filter((row) => !stale(row, context.now));
+    const apart = inside.filter((row) => stale(row, context.now));
     if (kind === "filter") {
-      return {rows: kept, from: context.since, to: context.until};
+      return {rows: kept, stale: apart, from: context.since, to: context.until};
     }
     const first = Math.min(...kept.flatMap((row) => [row.start, row.end]).filter((value) => value !== null));
-    return {rows: kept, from: Number.isFinite(first) ? Math.min(first, context.now) : context.now - 86400, to: context.now};
+    return {rows: kept, stale: apart, from: Number.isFinite(first) ? Math.min(first, context.now) : context.now - 86400, to: context.now};
   }
 
   /**
@@ -196,6 +202,7 @@ const Plan = (() => {
   }
 
   const LAST_SECOND = 8.64e12;
+  const reachable = (t) => (t !== null && Number.isFinite(t) && Math.abs(t) <= LAST_SECOND ? t : null);
 
   function leastSquares(pairs) {
     const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -233,10 +240,27 @@ const Plan = (() => {
     }
     const rest = lines.remaining;
     const reached = rest.slope < 0 ? rest.t0 - rest.y0 / rest.slope : null;
-    return {start, lines, forecast: reached !== null && Number.isFinite(reached) && Math.abs(reached) <= LAST_SECOND ? reached : null};
+    return {start, lines, forecast: reachable(reached)};
   }
 
   const lineAt = (line, t) => line.y0 + line.slope * (t - line.t0);
+
+  /**
+   * @param points - burn() points, in time order.
+   * @param found - trend() of the points, or null.
+   * @returns {fixed, growing}: the finish at fixed scope, where the done trend reaches the last scope (the last point
+   * when nothing remains, never before it), and the finish at growing scope, where the done trend meets the scope
+   * trend (trend()'s forecast); each null when never reached, both null without a trend.
+   */
+  function finishes(points, found) {
+    if (!found) {
+      return {fixed: null, growing: null};
+    }
+    const last = points[points.length - 1];
+    const done = found.lines.done;
+    const fixed = last.remaining <= 0 ? last.t : done.slope > 0 ? Math.max(last.t, done.t0 + (last.scope - done.y0) / done.slope) : null;
+    return {fixed: reachable(fixed), growing: found.forecast};
+  }
 
   const KEYS = {
     prio: () => null,
@@ -270,7 +294,7 @@ const Plan = (() => {
     return keyed.map((entry) => entry.row);
   }
 
-  return {FORECASTS, ESTIMATIONS, TRENDS, SORTS, SERIES, TRENDED, STATUS_ORDER, median, medians, forecastLength, bars, etas, scoped, burn, steps, trend, lineAt, sortRows};
+  return {FORECASTS, ESTIMATIONS, TRENDS, SORTS, SERIES, TRENDED, STATUS_ORDER, STALE_DAYS, median, medians, forecastLength, bars, etas, stale, scoped, burn, steps, trend, finishes, lineAt, sortRows};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Plan;
