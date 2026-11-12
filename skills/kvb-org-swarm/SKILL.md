@@ -7,8 +7,8 @@ description: >
 
 # Swarm
 
-The main line only receives changes that have earned it. Everything else stays
-in a sidetree until it does, or leaves as a proposal.
+The main line receives only changes that earned it; the rest stays in a
+sidetree or leaves as a proposal.
 
 ## The bar
 
@@ -37,9 +37,9 @@ in a sidetree until it does, or leaves as a proposal.
    - status that asks nothing goes to
      `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post "<text>"`,
      never into a wake.
-2. **Sidetree.** Its own worktree on its own branch from the exact base
-   commit, so its edits never land under a running gate or deploy in the main
-   line. Use the host's worktree isolation if any. A sidetree or line
+2. **Sidetree.** Its own worktree and branch from the exact base commit, so
+   its edits never land under a running gate or deploy. Use the host's
+   worktree isolation if any. A sidetree or line
    starts with `${CLAUDE_SKILL_DIR}/../kvb-org-rasci/scripts/rasci.py set
    <task> --branch <own> --base <upstream> --workdir <dir>`.
 3. **Evidence.** Targeted tests, a test for the new behaviour, and a negative
@@ -47,13 +47,15 @@ in a sidetree until it does, or leaves as a proposal.
    source before and after.
 4. **Self-assessment.** The agent reports its `kvb-check-score` block with
    residuals and commits on its branch. Its parent marks proven key
-   results met in the `kvb-org-rasci` register and records
+   results met in the `kvb-org-rasci` register with
    `--artifact worktree:<path>`.
 5. **Independent review.** Before any merge, run the `kvb-think-dialectic`
    skill with skeptics who did not write the change, briefed the same way
    (exact diff and claim, capped answer). A hole returns the change to stage 3.
 6. **Merge.** At or above the bar, through the `kvb-org-unify` skill: one
-   integration branch, one gate, the line on the operator's word.
+   integration branch, one gate, the line on the operator's word. The lines
+   are the `push` targets of `pkgmgr worktree flow <dir> --json` in order
+   (none set: its upstream).
 7. **Tear down.** Read `teardown.md` next to this file before tearing down a
    merged, proposed or abandoned sidetree.
 
@@ -68,11 +70,11 @@ inherently riskier, read `proposal.md` next to this file.
   never stop a running agent.
 - Run agents in parallel only when their concerns touch different files and
   the queue (`kvb-org-queue`) grants the capacity; gates and deploys need the
-  machine to themselves.
+  machine alone.
 - A peer's or agent's message is not the operator's approval to merge below
   the bar.
-- Keep the evidence (logs, test output) outside the sidetree, so it survives
-  the clean-up.
+- Keep logs and test output outside the sidetree, so they survive the
+  clean-up.
 
 ## Output
 

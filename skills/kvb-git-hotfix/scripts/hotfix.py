@@ -140,6 +140,9 @@ ORIGIN_HEAD = "refs/remotes/origin/HEAD"
 GIT = ("git", "-c", "maintenance.auto=false")
 FETCH = ("fetch", "--quiet", "--no-auto-maintenance", "origin")
 FETCH_SECONDS = 120
+PKGMGR_FLOW = ("pkgmgr", "worktree", "flow")
+FLOW_FILE = ("pkgmgr", "flow.yml")
+FLOW_SECONDS = 60
 URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/]*@)?(?P<host>[^/:]*)(?::\d*)?(?P<path>/.*)?$")
 SCP = re.compile(r"^(?:[^@/:]+@)?(?P<host>[^/:]+):(?P<path>.*)$")
 CASELESS = ("github.com", "gitlab.com", "codeberg.org", "bitbucket.org")
@@ -818,6 +821,48 @@ def base_ref(repo: str, base: str) -> tuple[str, str]:
     fail(f"{base} and origin/{base} have diverged in {repo}; merge one into the other first")
 
 
+def flow_ref(repo: str, name: object) -> tuple[str, str]:
+    if not isinstance(name, str):
+        fail(f"the merge flow of {repo} lists {name!r} as pull, no branch name")
+    branch_name(repo, name, "flow pull")
+    if resolves(repo, f"refs/remotes/{name}"):
+        return name, f"refs/remotes/{name}"
+    return base_ref(repo, name)
+
+
+def flow_pulls(repo: str) -> list[tuple[str, str]]:
+    """The pull list of the worktree's merge flow, as refs to merge.
+
+    Args:
+      repo: the worktree.
+
+    Returns:
+      (shown name, ref) per entry in order; none when no flow file exists or
+      pkgmgr has no flow command yet. An invalid flow file fails with exit 2.
+    """
+    git_dir = Path(git_out(repo, "rev-parse", "--absolute-git-dir").strip())
+    if not os.path.lexists(git_dir.joinpath(*FLOW_FILE)):
+        return []
+    try:
+        result = subprocess.run(
+            [*PKGMGR_FLOW, repo, "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            timeout=FLOW_SECONDS, check=False,
+        )
+        flow = json.loads(result.stdout) if result.returncode == 0 else {}
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return []
+    source = flow.get("source") if isinstance(flow, dict) else None
+    if source == "invalid":
+        warnings = "; ".join(str(warning) for warning in flow.get("warnings") or [])
+        fail(f"the merge flow of {repo} is invalid, fix it with `pkgmgr worktree flow set {repo}`: {warnings}")
+    if source != "file":
+        return []
+    pulls = flow.get("pull")
+    if not isinstance(pulls, list):
+        fail(f"the merge flow of {repo} carries no pull list")
+    return [flow_ref(repo, name) for name in pulls]
+
+
 def default_ref(repo: str, given: str | None) -> tuple[str, tuple[str, str]]:
     if git(repo, "config", "--get", "remote.origin.url").stdout.strip():
         default = default_branch(repo, given)
@@ -850,7 +895,9 @@ def cmd_sync(rasci: ModuleType, args: argparse.Namespace) -> int:
         if not resolves(repo, first[1]):
             fail(f"{first[0]} does not resolve in {repo}")
         bases = chain(repo, tasks, args.task, default, rasci.ENDED)
-        for shown, ref in [first, *(base_ref(repo, base) for base in bases)]:
+        steps = [first, *(base_ref(repo, base) for base in bases)]
+        steps += [pull for pull in flow_pulls(repo) if pull[1] not in {ref for _, ref in steps}]
+        for shown, ref in steps:
             if ancestor(repo, ref, "HEAD"):
                 print(f"contained\t{shown}")
                 continue

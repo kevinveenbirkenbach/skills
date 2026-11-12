@@ -74,8 +74,8 @@ in-scope session's scripts, tests and skills into their repositories.
 
 The `kvb-cleanup` skill for the disk, `/tmp`, Docker and agent directories the
 window filled, with the finished tasks' artifacts (`rasci.py artifacts
---ended`) as candidates; then `kvb-git-orphans-find` per in-scope
-repository, which hands merged-clean rows to `kvb-git-branch-gc`. Each keeps
+--ended`) as candidates; then `kvb-git-worktree-orphans` per in-scope
+repository, which hands merged-clean rows to `kvb-git-gc`. Each keeps
 its own confirmations; the dream never writes, deletes or commits for them. Close
 with `date +%s > ~/.claude/.dream-stamps/"$CLAUDE_CODE_SESSION_ID"`, so the
 next hint is twelve hours out.

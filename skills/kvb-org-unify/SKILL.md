@@ -61,7 +61,7 @@ row.
 Per merged branch and for `unify/<goal>`, the teardown of `kvb-org-swarm`
 (`teardown.md`: jobs, stacks, container-owned files, worktree, register). A
 proposal keeps its branch and loses worktree, stacks and temporary files. Then
-the dry runs of `kvb-git-branch-gc` (`--merged-into <line>`) and the
+the dry runs of `kvb-git-branch-cleanup` (`--merged-into <line>`) and the
 inventory of `kvb-cleanup` for the swarm's logs, scratch and Docker leftovers,
 merged into one table (area, item, size, owner, risk, what breaks if wrong)
 and one `AskUserQuestion` pick; each skill removes only the picked items, by

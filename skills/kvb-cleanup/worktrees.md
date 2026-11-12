@@ -5,9 +5,10 @@
 Per worktree: size (`du -sh`), dirty state, whether its branch is pushed and
 whether its HEAD is in an integration line (the default branch and every
 branch the project merges features into; ask the operator or the project's
-memory). With `pkgmgr`, `pkgmgr branch gc --json --sizes --merged-into
-<line>` (one per line) measures it all; merged-clean items go to the
-`kvb-git-branch-gc` skill.
+memory). With `pkgmgr`, `pkgmgr gc --json --sizes --merged-into <line>`
+(one per line) measures it all; its candidates go to the `kvb-git-gc` skill.
+At `warn` or worse, or with worktrees on top of the report, add the largest of
+`kvb-git-worktree-orphans --sizes`.
 
 Clean and in a line: medium, its ignored files (`node_modules`, build output,
 evidence) are lost. Dirty: a candidate only when every changed, staged and
