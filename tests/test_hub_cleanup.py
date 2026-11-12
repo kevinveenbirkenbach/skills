@@ -117,7 +117,7 @@ class TestHubCleanup(HubCase):
     def test_a_branch_held_by_a_worktree_offers_no_delete_and_names_branch_gc(self):
         item = self.ready(True, True)
         done = self.branches()["feature/done"]
-        held = f"held by worktree {item['worktree']}: pkgmgr branch cleanup skips it, use branch gc (kvb-git-branch-gc, pkgmgr gc)"
+        held = f"held by worktree {item['worktree']}: pkgmgr branch cleanup skips it, use branch gc (kvb-git-gc, pkgmgr gc)"
         self.assertEqual((done["cleanup"], done["held"], done["plan"][1]), (None, held, held))
         status, body = self.sign([item])
         self.assertEqual((status, body.decode()), (400, f"feature/done in {item['repository']} is no merged-clean branch without skip reason at that tip in the tree file\n"))

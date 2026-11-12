@@ -29,7 +29,7 @@
       }
     });
     openSheet(items.length > 1 ? `Delete ${items.length} merged branches` : `Delete ${items[0].branch}`, [
-      h("p", {class: "muted"}, "Dry run of pkgmgr branch cleanup for exactly these entries: it deletes the local branch and never touches a worktree, Compose stack or volume. No remote branch: the host refuses an entry whose plan deletes one. A branch held by a worktree is not deleted here: branch gc (kvb-git-branch-gc, pkgmgr gc) removes it, and its docker compose down -v deletes the stack's volumes. The host checks your signature and refuses every entry whose state has changed since."),
+      h("p", {class: "muted"}, "Dry run of pkgmgr branch cleanup for exactly these entries: it deletes the local branch and never touches a worktree, Compose stack or volume. No remote branch: the host refuses an entry whose plan deletes one. A branch held by a worktree is not deleted here: branch gc (kvb-git-gc, pkgmgr gc) removes it, and its docker compose down -v deletes the stack's volumes. The host checks your signature and refuses every entry whose state has changed since."),
       h("ul", {class: "mini", "aria-label": "Dry run"}, rows),
       outcome,
       h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm),

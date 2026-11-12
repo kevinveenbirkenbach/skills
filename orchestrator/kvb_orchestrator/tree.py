@@ -18,7 +18,7 @@ FLOW_SOURCE = re.compile(r"[a-z][a-z0-9-]{0,31}")
 INVALID = "invalid"
 # renaming it silently stops the tree timer: kvb-orchestrator-tree.service tests this file's age
 TREE_HEARTBEAT = "tree-heartbeat"
-GC_SKILL = "kvb-git-branch-gc"
+GC_SKILL = "kvb-git-gc"
 GC_COMPOSE_DOWN = ("docker", "compose", "-p", "{project}", "down", "-v", "--remove-orphans")
 
 
