@@ -1,5 +1,5 @@
   const TASK_STATUS = {queued: ["waiting", "info"], running: ["running", "ok"], blocked: ["blocked", "bad"], done: ["done", "neutral"], stopped: ["stopped", "neutral"], awaiting: ["waiting for a grant", "warn"]};
-  const TASK_COLUMNS = [["queued", "Waiting"], ["running", "Running"], ["blocked", "Blocked"], ["done", "Done"], ["stopped", "Stopped"]];
+  const TASK_COLUMNS = Kanban.COLUMNS;
   const TASK_KINDS = {command: ["Command", "bad"], hotfix: ["Hotfix", "warn"], queue: ["Queue job", "teal"]};
   const TASK_FILTERS = [
     ["all", "All", "bi-list-check", () => true],
@@ -18,7 +18,6 @@
     false: "ETA: the end of the ended task",
   };
 
-  const columnOf = (row) => (TASK_COLUMNS.some(([id]) => id === row.status) ? row.status : "queued");
   const branchOf = (row) => row.worktree_branch || (row.branch !== "-" ? row.branch : "");
   const titleOf = (row) => (row.title !== "-" ? row.title : row.task);
   const openJobs = (task) => state.jobs.filter((job) => job.kind === "task" && job.task === task && (job.status === "queued" || job.status === "running"));
@@ -78,26 +77,6 @@
       h("div", {class: "task-meta"}, row.worker !== "-" ? h("span", {class: "who"}, face(row.worker, false), person(row.worker)) : null, roleSummary(row), taskPlace(row)),
       flowLine(row.flow, branchOf(row)),
       workChips(row.open_work));
-  }
-
-  function taskCard(row) {
-    const classes = ["task-card", row.open_work.length ? "open-work" : "", row.ended ? "ended" : ""].filter(Boolean).join(" ");
-    return h("li", {class: classes, "data-task": row.task},
-      h("div", {class: "head-row"}, h("code", {class: "task-id"}, row.task)),
-      opener(row),
-      h("div", {class: "states"}, taskBadges(row, row.status === "awaiting")),
-      row.worker !== "-" ? h("span", {class: "muted"}, row.worker) : null,
-      row.flow ? flowLine(row.flow, branchOf(row)) : null,
-      workChips(row.open_work));
-  }
-
-  function taskBoard(rows) {
-    return h("div", {class: "task-board"}, TASK_COLUMNS.map(([id, label]) => {
-      const cards = rows.filter((row) => columnOf(row) === id);
-      return h("section", {class: "card task-column", "data-column": id, "aria-label": label},
-        h("h3", {class: "group-title"}, label, counter(cards.length)),
-        cards.length ? h("ol", {class: "task-cards"}, cards.map(taskCard)) : h("p", {class: "muted"}, "empty"));
-    }));
   }
 
   function roleLetters(letters) {
@@ -239,7 +218,7 @@
         const etas = etaOf();
         return h("ol", {class: "task-list"}, Plan.sortRows(found, taskView.sort, taskView.descending).map((row) => taskItem(row, etas.get(row.task))));
       },
-      board: taskBoard,
+      board: kanbanBoard,
       rasci: taskMatrix,
       gantt: ganttChart,
       burn: (found) => burnChart(rows, found),

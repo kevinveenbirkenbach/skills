@@ -94,4 +94,5 @@ class Jobs:
         runs = [self.scripts.run(OPERATOR_SCRIPT, ["done", job["task"].removeprefix(OPERATOR)])] if command_done else []
         tail = "\n".join(output.splitlines()[-20:])
         self.log.add({"kind": "run", "title": f"{status}: {job['command'][:200]}", "text": tail, "ref": {"job": job_id, "task": job["task"], "code": code, "status": status}})
-        return {"id": job_id, "status": status, "code": code, "runs": runs}
+        told = self.tell_applied(job) if job.get("kind") == TASK_JOB else []
+        return {"id": job_id, "status": status, "code": code, "runs": runs, "told": told}

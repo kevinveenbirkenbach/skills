@@ -38,7 +38,7 @@ from .reviewing import review_row
 from .settings import media_origins, station_origins, valid_settings
 from .signed import signing
 from .skill_scripts import OUTPUT_LIMIT
-from .tasks import queue_chain, task_edges, task_rows
+from .tasks import queue_chain, queue_line, task_edges, task_rows
 
 RADIO_WINDOW = 86400
 JOBS_SHOWN = 20
@@ -108,6 +108,7 @@ class View:
         queue = queue_entries(self.council)
         order = stored_order(self.council / AGENT_ORDER)
         rows = task_rows(tasks, queue, self.tree.get())
+        chain = queue_chain(queue, tasks, order, now)
         return {
             "settings": settings,
             "media": media_origins(settings),
@@ -134,7 +135,8 @@ class View:
             "operator": operator_rows(tasks),
             "register": register_rows(tasks),
             "tasks": rows,
-            "task_edges": task_edges(rows, queue_chain(queue, tasks, order, now)),
+            "task_edges": task_edges(rows, chain),
+            "queue_line": queue_line(chain, queue),
             "agent_order": agent_order(tasks, claims, order),
             "radio": radio,
             "claims": claims,

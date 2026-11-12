@@ -175,8 +175,8 @@ flowchart TD
 
 ### W2 Kanban
 
-- [ ] Columns Waiting, Running and Done; no Blocked or Stopped column.
-- [ ] A blocked task carries a red Blocked label, a stopped one a grey Stopped
+- [x] Columns Waiting, Running and Done; no Blocked or Stopped column.
+- [x] A blocked task carries a red Blocked label, a stopped one a grey Stopped
       label in Done; `operator/*` rows are not on the board.
 - [ ] Swimlanes P1, P2, P3, P4+ and Unpinned, collapsible, Unpinned sorted by
       WSJF rank; Done cards older than 24 h hidden until shown.
@@ -190,8 +190,8 @@ flowchart TD
 - [ ] Staged moves show at once as pending; "Apply n changes" signs them with
       one passkey; the host executor applies them through `rasci.py`, refuses
       a cycle or a `done` with an open key result, and the card shows why.
-- [ ] Each affected agent receives one post listing the operator's changes to
-      its rows.
+- [x] Each affected agent receives one post listing the operator's changes to
+      its rows that `rasci.py` applied, once the whole signed batch ended.
 - [ ] A click on a card opens its detail popup.
 
 ### W2 Forecast
@@ -331,7 +331,7 @@ The work packages meet only through these interfaces:
 ### Tests
 
 - Unit:
-  - [ ] Board staging, lanes and refusals (cycle, open key result); forecast
+  - [x] Board staging, lanes and refusals (cycle, open key result); forecast
         fixed, growing and never; stale; scope without `operator/*`.
   - [ ] Gates resolve (own rule, strictest of several ancestors, none);
         parents derive; receipt tree sha with unstaged and untracked files;

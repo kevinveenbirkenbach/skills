@@ -16,9 +16,12 @@ Returns:
     Runs as the operator, outside any sandbox, every operator command a
     pinned passkey signed in the Agent Orchestrator: exactly the signed text, with bash
     in the signed directory, each signature once and before its expiry.
-    Runs every signed task change (priority pin or WSJF estimate) as
+    Runs every signed task change (priority pin, status, dependency or WSJF
+    estimate; a board batch is one job per change) as
     `python3 -I -B <rasci> <argv>` from / without a shell, after checking the
-    argv shape itself, and kills its process group after 30 s. Refuses task
+    argv shape itself, and kills its process group after 30 s; rasci.py
+    refuses a cycle or a done with an open key result, and its reason is the
+    job's output. Refuses task
     changes without --rasci and --council or into a council that is a
     symlink or another uid's, and every other job. Posts the last 200 output lines
     back while it runs and the exit code at its end. The exit code is 0.
