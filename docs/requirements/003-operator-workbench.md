@@ -280,7 +280,7 @@ flowchart TD
     Operator rules stay: commits and handed-over pushes run with
     `--no-verify`, so the hooks are a second line, never the only gate check;
     `kvb-git-push` still verifies quality-high on the exact commit, and an
-    explicit per-push waiver ("ohne gate") from the operator stays possible.
+    explicit per-push waiver from the operator stays possible.
     (3) pre-commit quick checks start nothing heavy: no make test, no Docker,
     nothing that belongs in `queue.py hold`. (4) No oracle tests and GPU off
     in the resolved level.
