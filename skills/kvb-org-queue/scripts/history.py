@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import json
 import math
+import operator
 import os
 import re
 import statistics
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Hashable, Iterable, Iterator
 from pathlib import Path
 
 MIN_RUNS = 5
@@ -27,6 +28,10 @@ SEED_LIMIT = 1
 INTERPRETERS = re.compile(r"python[\d.]*|bash|sh|zsh|node|perl|ruby")
 MAKE_VALUE_OPTIONS = frozenset({"-C", "-f", "-I", "-o", "-W"})
 RESOURCES = ("ram", "cpu")
+SIGNATURE_KEY = operator.itemgetter("kind", "signature")
+NAME_KEY = operator.itemgetter("signature")
+KIND_KEY = operator.itemgetter("kind")
+ANY_KIND = "*"
 SIGNATURE_HEADER = ("Signature", "Kind", "Runs", "Median min", "p90 disk GB", "p90 RAM %", "Need GB")
 KIND_HEADER = ("Kind", "Runs", "p90 RAM share %", "Median CPU share %", "Slot limit", "Source")
 
@@ -142,18 +147,15 @@ def shares(rows: list[dict], resource: str) -> list[float]:
     return [r[f"{resource}_max"] - r[f"{resource}_before"] for r in rows]
 
 
-def grouped(rows: list[dict], key: str) -> dict[str, list[dict]]:
-    groups: dict[str, list[dict]] = {}
+def grouped(rows: list[dict], key: Callable[[dict], Hashable]) -> dict[Hashable, list[dict]]:
+    groups: dict[Hashable, list[dict]] = {}
     for entry in rows:
-        groups.setdefault(entry[key], []).append(entry)
+        groups.setdefault(key(entry), []).append(entry)
     return groups
 
 
 def command_stats(rows: list[dict]) -> dict:
-    stats = {
-        "kinds": sorted({r["kind"] for r in rows}), "runs": len(rows),
-        "minutes": None, "disk_gb": None, "ram_share": None, "cpu_share": None, "need_gb": None,
-    }
+    stats = {"runs": len(rows), "minutes": None, "disk_gb": None, "ram_share": None, "cpu_share": None, "need_gb": None}
     if len(rows) >= MIN_RUNS:
         disk = p90([r["disk_gb"] for r in rows])
         stats.update(
@@ -179,49 +181,113 @@ def kind_stats(rows: list[dict], limits: dict) -> dict:
     return stats
 
 
-def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[str, dict], dict[str, dict]]:
+def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[tuple[str, str], dict], dict[str, dict]]:
     """Derive disk need per command and slot limit per kind from recent rows.
 
     Args:
       rows: history rows, as read() returns them.
       now: epoch seconds; rows that ended more than WINDOW_SECONDS earlier are
         ignored.
-      cfg: the config; load_limits.mem_percent and cpu_percent bound a limit.
+      cfg: the config; load_limits.mem_percent and cpu_percent bound a limit,
+        light_kinds marks a kind light.
 
     Returns:
-      (signatures, kinds). signatures: {signature: {kinds, runs, minutes,
-      disk_gb, ram_share, cpu_share, need_gb}}; kinds: {kind: {runs, ram_share,
-      cpu_share, limit}}. With fewer than MIN_RUNS rows every value but kinds
-      and runs is None. minutes is the median, disk_gb and ram_share the p90
-      of the disk taken and of max minus before in percentage points,
-      cpu_share the median of max minus before; need_gb is ceil(disk_gb + DISK_MARGIN_GB); limit is
+      (signatures, kinds). signatures: {(kind, signature): {runs, minutes,
+      disk_gb, ram_share, cpu_share, need_gb}}, and {(ANY_KIND, signature):
+      ...} over the rows of every kind with that signature, which is what a
+      queue before the per-kind learning booked; kinds: {kind: {runs,
+      ram_share, cpu_share, limit, light}}. With fewer than MIN_RUNS rows
+      every value but runs and light is None.
+      minutes is the median, disk_gb and ram_share the p90 of the disk taken
+      and of max minus before in percentage points, cpu_share the median of
+      max minus before; need_gb is ceil(disk_gb + DISK_MARGIN_GB); limit is
       max(1, min over RAM and CPU of floor((load limit - median before) /
       max(share, MIN_SHARE_PERCENT))).
     """
     recent = [r for r in rows if now - r["end"] <= WINDOW_SECONDS]
-    signatures = {name: command_stats(group) for name, group in grouped(recent, "signature").items()}
-    kinds = {name: kind_stats(group, cfg["load_limits"]) for name, group in grouped(recent, "kind").items()}
+    light = set(cfg.get("light_kinds", []))
+    signatures = {(ANY_KIND, name): command_stats(group) for name, group in grouped(recent, NAME_KEY).items()}
+    signatures.update((key, command_stats(group)) for key, group in grouped(recent, SIGNATURE_KEY).items())
+    kinds = {
+        name: {**kind_stats(group, cfg["load_limits"]), "light": name in light}
+        for name, group in grouped(recent, KIND_KEY).items()
+    }
     return signatures, kinds
 
 
-def footprint(kind: str, name: str, signatures: dict[str, dict], kinds: dict[str, dict]) -> dict[str, float] | None:
+def own(signatures: dict[tuple[str, str], dict], kind: str, name: str) -> dict | None:
+    stats = signatures.get((kind, name))
+    return stats if stats is not None and stats["runs"] >= MIN_RUNS else None
+
+
+def wider(signatures: dict[tuple[str, str], dict], aliases: tuple[str, ...]) -> list[dict]:
+    found = [signatures.get((ANY_KIND, name)) for name in aliases]
+    return [stats for stats in found if stats is not None and stats["runs"] >= MIN_RUNS]
+
+
+def footprint(kind: str, aliases: tuple[str, ...], signatures: dict[tuple[str, str], dict],
+              kinds: dict[str, dict]) -> dict[str, float] | None:
     """Predict the RAM and CPU share a job takes, in percentage points.
 
     Args:
       kind: the job's kind.
-      name: its command signature.
+      aliases: its signature, then the signature rows before the runner
+        naming carry for the same command.
       signatures: the signature map of learn().
       kinds: the kind map of learn().
 
     Returns:
-      {ram, cpu}: the signature's learned share once learned, else the kind's, at
-      least MIN_SHARE_PERCENT. None while the kind is not learned yet.
+      {ram, cpu}: the signature's share under kind once MIN_RUNS rows exist
+      there, for a kind not light at least booked_before(); else the
+      largest of the kind's share and each alias's share over every kind,
+      so a shape without runs of its own never books less than its kind or
+      the runs it was learned from; at least MIN_SHARE_PERCENT. None while
+      the kind is not learned yet.
     """
     if kind not in kinds or kinds[kind]["ram_share"] is None:
         return None
-    own = signatures.get(name)
-    source = own if own and own["ram_share"] is not None else kinds[kind]
-    return {resource: max(MIN_SHARE_PERCENT, source[f"{resource}_share"]) for resource in RESOURCES}
+    mine = own(signatures, kind, aliases[0])
+    if mine is None:
+        return largest([kinds[kind], *wider(signatures, aliases)])
+    return largest([mine] if kinds[kind]["light"] else [mine, booked_before(kind, aliases, signatures, kinds)])
+
+
+def booked_before(kind: str, aliases: tuple[str, ...], signatures: dict[tuple[str, str], dict],
+                  kinds: dict[str, dict]) -> dict:
+    """Returns:
+        The stats a queue before the per-kind learning booked the job on:
+        its last alias over every kind once learned, else its kind's.
+    """
+    pooled = wider(signatures, aliases[-1:])
+    return pooled[0] if pooled else kinds[kind]
+
+
+def ceiling(kind: str, aliases: tuple[str, ...], signatures: dict[tuple[str, str], dict],
+            kinds: dict[str, dict]) -> dict[str, float] | None:
+    """Returns:
+        The largest of every share footprint() can pick for the job: its
+        signature under kind once learned, its kind's and each alias's over
+        every kind, which holds booked_before(); None while the kind is not
+        learned yet.
+    """
+    if kind not in kinds or kinds[kind]["ram_share"] is None:
+        return None
+    mine = own(signatures, kind, aliases[0])
+    return largest([kinds[kind], *wider(signatures, aliases), *([mine] if mine is not None else [])])
+
+
+def largest(sources: list[dict]) -> dict[str, float]:
+    return {resource: max(MIN_SHARE_PERCENT, *(s[f"{resource}_share"] for s in sources)) for resource in RESOURCES}
+
+
+def learned_value(signatures: dict[tuple[str, str], dict], kind: str, aliases: tuple[str, ...],
+                  field: str) -> float | None:
+    """Returns:
+        field of the signature under kind once MIN_RUNS rows exist there,
+        else the largest field of the aliases over every kind, else None.
+    """
+    mine = own(signatures, kind, aliases[0])
+    return mine[field] if mine is not None else max((s[field] for s in wider(signatures, aliases)), default=None)
 
 
 def seed_ram(kinds: dict[str, dict]) -> float:
@@ -232,8 +298,16 @@ def seed_ram(kinds: dict[str, dict]) -> float:
     return max((stats["ram_share"] for stats in kinds.values() if stats["ram_share"] is not None), default=0.0)
 
 
-def need_gb(signatures: dict[str, dict], name: str) -> int | None:
-    return signatures[name]["need_gb"] if name in signatures else None
+def need_gb(signatures: dict[tuple[str, str], dict], kinds: dict[str, dict], kind: str,
+            aliases: tuple[str, ...]) -> int | None:
+    """Returns:
+        The disk need learned_value() finds, None while nothing is learned
+        (slot_need_gb); for a kind not light at least that of the last alias
+        over every kind, as a queue before the per-kind learning booked.
+    """
+    learned = learned_value(signatures, kind, aliases, "need_gb")
+    pooled = [] if kind in kinds and kinds[kind]["light"] else wider(signatures, aliases[-1:])
+    return max(learned, pooled[0]["need_gb"]) if pooled else learned
 
 
 def slot_limits(kinds: dict[str, dict], caps: dict[str, int], names: Iterable[str]) -> dict[str, tuple[int, str]]:
@@ -260,22 +334,24 @@ def slot_limits(kinds: dict[str, dict], caps: dict[str, int], names: Iterable[st
     return limits
 
 
-def eta(signatures: dict[str, dict], running: list[tuple[str, float]], ahead: list[str], now: float) -> float | None:
+def eta(signatures: dict[tuple[str, str], dict], running: list[tuple[tuple[str, tuple[str, ...]], float]],
+        ahead: list[tuple[str, tuple[str, ...]]], now: float) -> float | None:
     """Estimate the minutes until a waiting job starts, or until a running one ends.
 
     Args:
-      signatures: the signature map of learn(); its median minutes drive the
-        estimate.
-      running: (signature, grant epoch seconds) of the running jobs counted.
-      ahead: signatures of the waiting jobs before it.
+      signatures: the signature map of learn(); its median minutes
+        (learned_value()) drive the estimate.
+      running: ((kind, aliases), grant epoch seconds) of the running jobs
+        counted.
+      ahead: (kind, aliases) of the waiting jobs before it.
       now: epoch seconds.
 
     Returns:
       The remaining median minutes of running plus the median minutes of
       ahead, as if run one after another; None when one has no median yet.
     """
-    def median(name: str) -> float | None:
-        return signatures[name]["minutes"] if name in signatures else None
+    def median(key: tuple[str, tuple[str, ...]]) -> float | None:
+        return learned_value(signatures, key[0], key[1], "minutes")
 
     parts = [(median(name), (now - granted) / 60) for name, granted in running]
     parts += [(median(name), 0.0) for name in ahead]
@@ -293,7 +369,7 @@ def table(header: tuple[str, ...], rows: list[list[str]]) -> str:
     return "".join(f"| {' | '.join(line)} |\n" for line in lines)
 
 
-def report(signatures: dict[str, dict], kinds: dict[str, dict], limits: dict[str, tuple[int, str]]) -> str:
+def report(signatures: dict[tuple[str, str], dict], kinds: dict[str, dict], limits: dict[str, tuple[int, str]]) -> str:
     """Render the learned values as two markdown tables.
 
     Args:
@@ -302,12 +378,13 @@ def report(signatures: dict[str, dict], kinds: dict[str, dict], limits: dict[str
       limits: slot_limits() for every kind to list.
 
     Returns:
-      A table per signature, a blank line, a table per kind.
+      A table per signature and kind, sorted by signature, a blank line, a
+      table per kind.
     """
     commands = [
-        [name, ", ".join(s["kinds"]), str(s["runs"]), cell(s["minutes"]), cell(s["disk_gb"]),
+        [name, kind, str(s["runs"]), cell(s["minutes"]), cell(s["disk_gb"]),
          cell(s["ram_share"]), "-" if s["need_gb"] is None else str(s["need_gb"])]
-        for name, s in sorted(signatures.items())
+        for (kind, name), s in sorted(signatures.items(), key=lambda item: item[0][::-1]) if kind != ANY_KIND
     ]
     per_kind = []
     for kind, (limit, source) in limits.items():

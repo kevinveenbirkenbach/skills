@@ -38,8 +38,8 @@ any listed name. Never silently truncate.
 ## Step 3: run
 
 Before each run, admit it under the `kvb-org-organize` Capacity rules: a
-light run (no Docker, about a minute: targeted pytest or unittest, ruff, a
-single lint file) self-admits with
+light run (no Docker, about a minute: one test file or module, ruff)
+self-admits with
 `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
 test-nostack`; `make test`, quality gates and anything with Docker run in the
 background through

@@ -27,8 +27,9 @@ turn: hold runs the command on its grant and exits with its code.
 - In a worktree the command stays `gate.py run|hold` (`kvb-check-gate`):
   `queue.py hold ... -- python3 <gate.py> run ...`.
 
-Light runs (no Docker, about a minute) self-admit with
-`watch.py admit --kind test-nostack` (`kvb-org-organize`).
+One test file or module, or ruff, without Docker self-admits with
+`watch.py admit --kind test-nostack` (`kvb-org-organize`); any other test
+run goes through hold with kind `test`.
 
 ## Order and grant
 

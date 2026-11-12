@@ -37,14 +37,14 @@ ends or goes stale, or after a restart.
 
 ## Capacity
 
-- Light runs (no Docker, about a minute: targeted pytest or unittest, ruff,
-  single lint files) self-admit: `watch.py admit --kind test-nostack`, start
-  on `grant`.
-- `make test`, `make test-lint`, quality gates, deploys, iteration loops,
-  swarm, image builds, cloud, shared-data cleanup, anything with Docker or
-  over a few minutes: run through `queue.py hold` (`kvb-org-queue`), which
-  grants by rule and releases on exit; the chair only handles exceptions. In
-  a worktree wrap `gate.py run` or `gate.py hold` (`kvb-check-gate`).
+- Light runs (no Docker, about a minute: one test file or module, ruff)
+  self-admit: `watch.py admit --kind test-nostack`, start on `grant`.
+- Other test runs, `make test`, `make test-lint`, quality gates, deploys,
+  iteration loops, swarm, image builds, cloud, shared-data cleanup, anything
+  with Docker or over a few minutes: run through `queue.py hold`
+  (`kvb-org-queue`), which grants by rule and releases on exit; the chair only
+  handles exceptions. In a worktree wrap `gate.py run` or `gate.py hold`
+  (`kvb-check-gate`).
 - No running job is cut short for capacity; only the operator orders one
   down. Exception: void by a missing merged hotfix (`kvb-git-hotfix`).
   `RESOURCE` hook lines address the chair; others adjust plans.

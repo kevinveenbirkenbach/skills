@@ -26,7 +26,7 @@ cover the change set run now and give the green baseline; a suite already red
 is reported, not refactored around. No coverage: read `net.md` next to this
 file before editing.
 
-Light runs (targeted tests, ruff, single lint files) start once `watch.py
+Light runs (one test file or module, ruff) start once `watch.py
 admit --kind test-nostack` of the `kvb-org-organize` skill prints `grant`; no
 chair request.
 

@@ -80,7 +80,7 @@ also needs CPU busy below cpu_percent and RAM used plus the job's learned RAM
 share below mem_percent; both bound the learned slot limits), memory_limits (no
 grant at memory stage stop), heavy_commands and never_block are used as
 watch.py documents them. A signature is `<repository>: <command signature>`
-(qualified()).
+(aliases()).
 
 Exit codes:
     hold: the command's exit code unchanged, 128+N when signal N ended it;
@@ -148,6 +148,12 @@ RULE_PART = re.compile(r"( \*|\*)")
 MANAGED = Path("/etc/claude-code")
 BUDGET_KEYS = ("budget_percent.ram", "budget_percent.cpu")
 HOTFIX = "hotfix/"
+PYTEST = frozenset({"pytest", "py.test"})
+XDIST = frozenset({"-n", "--numprocesses"})
+XDIST_LONG = "--numprocesses="
+ADDOPTS = "PYTEST_ADDOPTS="
+FROZEN = "footprint"
+ALIASES = "aliases"
 
 
 @functools.cache
@@ -265,18 +271,99 @@ def script_tail(run: list[str]) -> list[str] | None:
     return None
 
 
-def qualified(workdir: str, argv: list[str]) -> str:
-    """Returns:
-        `<repository>: <history.signature of command_words>`: the directory
-        holding the main checkout's .git, so every worktree of one repository
-        shares it, else the workdir's name; one make test of two repositories
-        stays apart.
+def aliases(workdir: str, argv: list[str], cwd: str | None) -> tuple[str, ...]:
+    """Args:
+        workdir: the hold's workdir, which names the repository.
+        argv: the command as held.
+        cwd: the directory the hold runs it in, None when unknown
+            (runner_signature()).
+
+    Returns:
+        `<repository>: <runner_signature or else history.signature of
+        command_words>`, then `<repository>: <history.signature>`, the
+        signature history rows before the runner naming carry, when it
+        differs. The repository is the directory holding the main checkout's
+        .git, so every worktree of one repository shares it, else the
+        workdir's name; one make test of two repositories stays apart.
     """
-    return f"{repository(workdir)}: {history.signature(command_words(argv))}"
+    words = command_words(argv)
+    repo = repository(workdir)
+    plain = f"{repo}: {history.signature(words)}"
+    runner = runner_signature(words, argv, cwd)
+    return (plain,) if runner is None else tuple(dict.fromkeys((f"{repo}: {runner}", plain)))
 
 
-def signature_of(entry: dict) -> str:
-    return qualified(entry["workdir"], shlex.split(entry["cmd"]))
+def runner_signature(words: list[str], argv: list[str], cwd: str | None) -> str | None:
+    """Args:
+        words: the command, command_words() of argv.
+        argv: the command as held; a PYTEST_ADDOPTS= word in it adds its
+            options before the command's own.
+        cwd: the directory the hold runs it in, None when unknown; a
+            discover run then counts by its pattern alone
+            (watch.one_discovered()).
+
+    Returns:
+        `<runner> files=N` when each of the N tests a pytest or unittest run
+        names is one file or module, a discover pattern only when exactly
+        one file below its start directory matches it, else `<runner>
+        paths=N` (0 for the whole suite), then ` workers=W` for the last
+        pytest-xdist count; None for other commands. One test file and a
+        suite never share what they learn.
+    """
+    name, args = watch.tool(words)
+    named = tests_named(name, args)
+    if named is None:
+        return None
+    if name == "unittest" and args[:1] == ["discover"]:
+        prefix = argv[: argv.index(words[0])] if words[0] in argv else []
+        files = watch.one_discovered(args[1:], watch.started_in(prefix, cwd))
+    else:
+        files = bool(named) and all(name == "unittest" or watch.TEST_FILE.fullmatch(test) for test in named)
+    shape = f"{'unittest' if name == 'unittest' else 'pytest'} {'files' if files else 'paths'}={len(named)}"
+    count = workers([*addopts(argv), *args]) if name in PYTEST else None
+    return shape if count is None else f"{shape} workers={count}"
+
+
+def addopts(argv: list[str]) -> list[str]:
+    found = [word[len(ADDOPTS):] for word in argv if word.startswith(ADDOPTS)]
+    return found[-1].split() if found else []
+
+
+def tests_named(name: str, args: list[str]) -> list[str] | None:
+    if name in PYTEST:
+        return watch.operands(args, watch.PYTEST_VALUE_OPTIONS)
+    if name != "unittest":
+        return None
+    if args[:1] == ["discover"]:
+        return watch.discover_patterns(args[1:])
+    return watch.operands(args, watch.UNITTEST_VALUE_OPTIONS)
+
+
+def workers(args: list[str]) -> str | None:
+    found = None
+    for at, word in enumerate(args):
+        if word in XDIST and at + 1 < len(args):
+            found = args[at + 1]
+        elif word.startswith(XDIST_LONG):
+            found = word[len(XDIST_LONG):]
+        elif word.startswith("-n") and not word.startswith("--") and len(word) > 2:
+            found = word[2:].removeprefix("=")
+    return found
+
+
+def aliases_of(entry: dict) -> tuple[str, ...]:
+    """Returns:
+        The aliases the holder stored at enqueue, in the directory the
+        command starts in, else (an entry of older code, whose directory is
+        unknown) those derived here.
+    """
+    if ALIASES in entry:
+        return tuple(entry[ALIASES])
+    return aliases(entry["workdir"], shlex.split(entry["cmd"]), None)
+
+
+def key_of(entry: dict) -> tuple[str, tuple[str, ...]]:
+    return entry["kind"], aliases_of(entry)
 
 
 def identity(pid: int) -> str | None:
@@ -401,7 +488,7 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       silenced: whether a radio-silence mayday holds.
       slot_limits: {kind: max concurrent jobs}, an upper cap beside the budget.
       footprints: {entry id: {ram, cpu}}, the learned share of every entry
-        (history.footprint), in percentage points.
+        (footprint(), an active one's as granted), in percentage points.
       budget: {ram, cpu}: the sum of the footprints of active and granted
         entries may not pass it; a job alone always fits.
       ranks: {task: index in the register's ranking}; a task missing there
@@ -560,8 +647,19 @@ def silenced(now: float) -> bool:
     return "until" in state and state["until"] > now
 
 
-def footprint(entry: dict, signatures: dict[str, dict], kinds: dict[str, dict]) -> dict[str, float] | None:
-    return history.footprint(entry["kind"], signature_of(entry), signatures, kinds)
+def footprint(entry: dict, signatures: dict[tuple[str, str], dict], kinds: dict[str, dict]) -> dict[str, float] | None:
+    """Returns:
+        The footprint an active entry was granted on (its footprint field,
+        so what history learns later never moves a running job's
+        reservation); history.ceiling of an active entry an older queue
+        granted without one, so it never books less than that queue did;
+        else history.footprint of its aliases.
+    """
+    if entry["status"] == "active":
+        if FROZEN in entry:
+            return entry[FROZEN]
+        return history.ceiling(entry["kind"], aliases_of(entry), signatures, kinds)
+    return history.footprint(entry["kind"], aliases_of(entry), signatures, kinds)
 
 
 def held_back(cfg: dict, entries: list[dict], now: float, signatures: dict[str, dict], kinds: dict[str, dict],
@@ -702,7 +800,7 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
             mine[0]["reason"] = reason
             if reason is None:
                 concurrent = sum(e["status"] == "active" for e in data["entries"])
-                mine[0].update(status="active", granted=now)
+                mine[0].update(status="active", granted=now, **{FROZEN: footprint(mine[0], signatures, kinds)})
                 return None, concurrent
         position = list(verdicts).index(entry_id) + 1
         if (position, reason) != shown:
@@ -766,11 +864,11 @@ def cmd_hold(args: argparse.Namespace) -> int:
     if args.hotfix is not None and HOTFIX + args.hotfix not in rasci.load():
         fail(f"the register has no row {HOTFIX}{args.hotfix}")
     here = workdir()
-    signature = qualified(here, args.command)
-    signatures, _ = learned(cfg, time.time())
+    names = aliases(here, args.command, os.getcwd())
+    signatures, kinds = learned(cfg, time.time())
     need = args.need_gb
     if need is None:
-        need = history.need_gb(signatures, signature)
+        need = history.need_gb(signatures, kinds, args.kind, names)
     if need is None:
         need = cfg["slot_need_gb"][args.kind]
     if need < 0:
@@ -794,7 +892,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
             "workdir": here, "session": session, "name": council.live_sessions().get(session) or session,
             "lock": tag, "code": CODE, "pid": os.getpid(), "pid_start": identity(os.getpid()), "child": None,
             "child_start": None, "status": "waiting", "enqueued": time.time(), "granted": None,
-            "cmd": shlex.join(args.command),
+            "cmd": shlex.join(args.command), ALIASES: list(names),
         })
         try:
             code, concurrent = wait(cfg, entry["id"], caught)
@@ -814,7 +912,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
             update(entry["id"], child=child.pid, child_start=identity(child.pid))
             code = supervise(cfg, child, samples)
             code = code if code >= 0 else 128 - code
-            job = {"id": f"{entry['id']}-{time.time_ns()}", "kind": args.kind, "signature": signature,
+            job = {"id": f"{entry['id']}-{time.time_ns()}", "kind": args.kind, "signature": names[0],
                    "workdir": entry["workdir"]}
             record(job, start, code, samples, concurrent)
             return code
@@ -832,17 +930,17 @@ def cmd_list(_: argparse.Namespace) -> int:
         entries = list(data["entries"])
         verdicts = decide(cfg, entries, free, now, signatures, kinds, {})
     by_id = {e["id"]: e for e in entries}
-    running = [(signature_of(e), e["granted"]) for e in entries if e["status"] == "active"]
+    running = [(key_of(e), e["granted"]) for e in entries if e["status"] == "active"]
     rows = [
-        ("run", e, history.eta(signatures, [(signature_of(e), e["granted"])], [], now), "-")
+        ("run", e, history.eta(signatures, [(key_of(e), e["granted"])], [], now), "-")
         for e in entries if e["status"] == "active"
     ]
-    ahead: list[str] = []
+    ahead: list[tuple[str, str]] = []
     for n, (entry_id, reason) in enumerate(verdicts.items(), 1):
         e = by_id[entry_id]
         polled = reason if silent(e, now) else e.get("reason") or reason
         rows.append((str(n), e, history.eta(signatures, running, ahead, now), polled or "granted on its next poll"))
-        ahead.append(signature_of(e))
+        ahead.append(key_of(e))
     host = code_of(HOST_SKILLS) or CODE
     print("position\tid\tstatus\tkind\ttask\tneed_gb\twaited_min\teta_min\tworkdir\treason")
     for position, e, eta, reason in rows:
@@ -964,7 +1062,7 @@ def cmd_block() -> int:
     if cfg is None or cfg.get("queue_enforce") is not True:
         return 0
     gated = {**cfg, "heavy_commands": [*cfg["heavy_commands"], GATE.pattern]}
-    if watch.heavy(raw, gated, (THROUGH_QUEUE.pattern, *cfg["never_block"])):
+    if watch.heavy(raw, gated, (THROUGH_QUEUE.pattern, *cfg["never_block"]), watch.payload_cwd(payload)):
         print(
             f"kvb-org-queue: heavy jobs run through the queue: start `python3 {Path(__file__).resolve()} hold "
             "--kind <kind> --task <register task> -- <command>` in the background; it runs the command on its grant.",

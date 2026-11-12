@@ -155,12 +155,15 @@ class TestEvaluate(unittest.TestCase):
                         "GIT_COMMITTER_EMAIL": "t@x", "GIT_CONFIG_NOSYSTEM": "1"}
             for args in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "x"], ["worktree", "add", "-q", str(base / "wt")]):
                 subprocess.run(["git", *args], cwd=main, env=identity, check=True, capture_output=True)
-            self.assertEqual(self.queue.qualified(str(main), ["make", "test"]), "skills: make test")
-            self.assertEqual(self.queue.qualified(str(base / "wt"), ["make", "test"]), "skills: make test")
+            def qualified(workdir: Path, argv: list[str]) -> str:
+                return self.queue.aliases(str(workdir), argv, None)[0]
+
+            self.assertEqual(qualified(main, ["make", "test"]), "skills: make test")
+            self.assertEqual(qualified(base / "wt", ["make", "test"]), "skills: make test")
             plain = base / "plain"
             plain.mkdir()
-            self.assertEqual(self.queue.qualified(str(plain), ["true"]), "plain: true")
-            self.assertEqual(self.queue.qualified(str(base / "gone"), ["true"]), "gone: true")
+            self.assertEqual(qualified(plain, ["true"]), "plain: true")
+            self.assertEqual(qualified(base / "gone", ["true"]), "gone: true")
             for argv, expected in {
                 ("env", "TMPDIR=/t", "-i", "make", "test"): "make test",
                 ("nice", "-n", "10", "make", "compose-deploy"): "make compose-deploy",
@@ -174,9 +177,94 @@ class TestEvaluate(unittest.TestCase):
                 ("bash", "-c", "source .venv/bin/activate && make test"): "make test",
             }.items():
                 with self.subTest(argv=argv):
-                    self.assertEqual(self.queue.qualified(str(plain), list(argv)), f"plain: {expected}")
+                    self.assertEqual(qualified(plain, list(argv)), f"plain: {expected}")
             module = ["python3", "-m", "pytest", "--", "tests/"]
             self.assertEqual(self.queue.command_words(module), module)
+            single = ["env", "PYTHONDONTWRITEBYTECODE=1", "/v/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                      "tests/unit/test_x.py"]
+            self.assertEqual(qualified(plain, single), "plain: pytest files=1")
+            self.assertEqual(self.queue.aliases(str(plain), single, None),
+                             ("plain: pytest files=1", "plain: pytest no:cacheprovider"))
+            self.assertEqual(self.queue.aliases(str(plain), ["make", "test"], None), ("plain: make test",))
+
+    def test_a_test_run_is_named_by_the_files_or_paths_it_names_and_its_xdist_workers(self):
+        nine = [f"tests/unit/test_{n}.py" for n in range(9)]
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("tests/test_x.py", "tree/a/test_main.py", "tree/b/test_main.py", "a/x/test_main.py",
+                         "a/y/test_main.py"):
+                (Path(tmp) / name).parent.mkdir(parents=True, exist_ok=True)
+                (Path(tmp) / name).write_text("", encoding="utf-8")
+
+            def runner(argv: list[str], cwd: str | None) -> str | None:
+                return self.queue.runner_signature(self.queue.command_words(argv), argv, cwd)
+
+            discover = ["python3", "-m", "unittest", "discover"]
+            self.assertEqual(runner([*discover, "-s", "tests", "-p", "test_x.py"], tmp), "unittest files=1")
+            self.assertEqual(runner(["env", "-C", "tree", "env", "--chdir=a", *discover, "-p", "test_main.py"], tmp),
+                             "unittest files=1")
+            self.assertEqual(runner([*discover, "-s", "tree", "-p", "test_main.py"], tmp), "unittest paths=1")
+            self.assertEqual(runner([*discover, "-s", "tree", "-p", "test_main.py"], None), "unittest files=1")
+            self.assertEqual(runner([*discover, "-s", "nowhere", "-p", "test_main.py"], tmp), "unittest files=1")
+            self.assertEqual(runner([*discover, "-s", "nowhere", "-p", "test_*.py"], tmp), "unittest paths=1")
+            there = ("env", "-C", tmp, "python3", "-m", "unittest", "discover")
+            for argv, expected in {
+                ("python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/unit/test_x.py"): "pytest files=1",
+                ("pytest", "tests/unit/test_x.py::TestA::test_b", "-k", "a or b"): "pytest files=1",
+                ("python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", *nine): "pytest files=9",
+                ("python3", "-m", "pytest", "tests/unit", "tests/integration", "-p", "no:cacheprovider"): "pytest paths=2",
+                ("pytest", "tests/unit/test_x.py", "tests/lint"): "pytest paths=2",
+                ("python3", "-m", "pytest", "-q"): "pytest paths=0",
+                ("pytest", "-n", "auto", "tests/x.py"): "pytest files=1 workers=auto",
+                ("pytest", "-n4", "tests/"): "pytest paths=1 workers=4",
+                ("pytest", "-n=4", "tests/x.py"): "pytest files=1 workers=4",
+                ("pytest", "--numprocesses", "6", "tests/x.py"): "pytest files=1 workers=6",
+                ("py.test", "--numprocesses=8"): "pytest paths=0 workers=8",
+                ("env", "PYTEST_ADDOPTS=-q -n 4", "pytest", "tests/x.py"): "pytest files=1 workers=4",
+                ("env", "PYTEST_ADDOPTS=-n 4", "pytest", "-n", "2", "tests/x.py"): "pytest files=1 workers=2",
+                (*there, "-s", "tests", "-p", "test_x.py"): "unittest files=1",
+                (*there, "--start-directory", "tests", "--pattern", "test_x.py"): "unittest files=1",
+                (*there, "-s", "tree", "-p", "test_main.py"): "unittest paths=1",
+                (*there, "-s", "tests", "-p", "test_gone.py"): "unittest paths=1",
+                (*there, "-s", "tests", "-p", "test_*.py"): "unittest files=1",
+                (*there, "-s", "tree", "-p", "test_*.py"): "unittest paths=1",
+                (*there, "-s", "tests"): "unittest paths=0",
+                ("python3", "-m", "unittest", "-v", "tests.test_queue", "tests.test_watch"): "unittest files=2",
+                ("python3", "-m", "unittest"): "unittest paths=0",
+            }.items():
+                with self.subTest(argv=argv):
+                    self.assertEqual(runner(list(argv), "/"), expected)
+        for argv in (["make", "test"], ["python3", "/s/gate.py", "run"], ["python3", "-c", "print(1)"], ["true"]):
+            with self.subTest(argv=argv):
+                self.assertIsNone(self.queue.runner_signature(argv, argv, "/"))
+
+    def test_an_active_entry_keeps_the_footprint_it_was_granted_on_while_history_moves(self):
+        history = _load(HISTORY)
+        rows = [history_row(n, signature="w: make test", mem_max=70, cpu_max=90) for n in range(5)]
+        signatures, kinds = history.learn(rows, NOW, {"load_limits": {"mem_percent": 90, "cpu_percent": 90}})
+        granted = {"ram": 12.0, "cpu": 30.0}
+        running = {**job(1, status="active", granted=NOW - 60), "workdir": "/w", "cmd": "make test", "footprint": granted}
+        self.assertEqual(self.queue.footprint(running, signatures, kinds), granted)
+        unlearned = {**running, "footprint": None}
+        self.assertIsNone(self.queue.footprint(unlearned, signatures, kinds))
+        waiting = {**running, "status": "waiting"}
+        self.assertEqual(self.queue.footprint(waiting, signatures, kinds), {"ram": 50, "cpu": 80})
+        older = {k: v for k, v in running.items() if k != "footprint"}
+        self.assertEqual(self.queue.footprint(older, signatures, kinds), {"ram": 50, "cpu": 80})
+        self.assertEqual(self.queue.pending_ram([running], "j1", NOW, signatures, kinds), 12 + 12)
+
+    def test_an_active_entry_an_older_queue_granted_never_books_less_than_that_queue_did(self):
+        history = _load(HISTORY)
+        light = [history_row(n, kind="test-nostack", signature="w: gate.py hold", mem_max=23, cpu_max=22) for n in range(5)]
+        heavy = [history_row(n + 5, kind="quality-high", signature="w: gate.py hold", mem_max=60, cpu_max=80) for n in range(5)]
+        signatures, kinds = history.learn([*light, *heavy], NOW, {"load_limits": {"mem_percent": 90, "cpu_percent": 90},
+                                                                  "light_kinds": ["test-nostack"]})
+        landed = {**job(1, kind="test-nostack", status="active", granted=NOW - 60), "workdir": "/w",
+                  "cmd": "python3 /x/gate.py hold --repo ."}
+        self.assertEqual(self.queue.footprint(landed, signatures, kinds), {"ram": 40, "cpu": 41})
+        self.assertEqual(self.queue.footprint({**landed, "status": "waiting"}, signatures, kinds), {"ram": 3, "cpu": 12})
+        self.assertEqual(self.queue.footprint({**landed, "footprint": {"ram": 3, "cpu": 12}}, signatures, kinds),
+                         {"ram": 3, "cpu": 12})
+        self.assertIsNone(self.queue.footprint({**landed, "kind": "gui-dind"}, signatures, kinds))
 
     def test_memory_stage_stop_blocks_every_job_and_warn_none(self):
         entries = [job(1, need_gb=0), job(2, task="work/b")]
@@ -362,7 +450,8 @@ class TestHistory(unittest.TestCase):
         cls.history = _load(HISTORY)
 
     def learn(self, rows: list[dict]) -> tuple[dict, dict]:
-        return self.history.learn(rows, NOW, {"load_limits": {"mem_percent": 80, "cpu_percent": 90}})
+        return self.history.learn(rows, NOW, {"load_limits": {"mem_percent": 80, "cpu_percent": 90},
+                                              "light_kinds": ["test-nostack"]})
 
     def test_signature_names_a_command_apart_from_paths_options_and_variables(self):
         cases = {
@@ -385,24 +474,96 @@ class TestHistory(unittest.TestCase):
     def test_learn_waits_for_min_runs_inside_the_30_day_window(self):
         four = [history_row(n) for n in range(4)]
         signatures, kinds = self.learn(four)
-        self.assertEqual((signatures["make test"]["runs"], signatures["make test"]["need_gb"]), (4, None))
+        self.assertEqual((signatures["test", "make test"]["runs"], signatures["test", "make test"]["need_gb"]), (4, None))
         self.assertEqual((kinds["test"]["runs"], kinds["test"]["limit"]), (4, None))
         stale = history_row(4, end=NOW - self.history.WINDOW_SECONDS - 1)
-        self.assertIsNone(self.learn([*four, stale])[0]["make test"]["need_gb"])
+        self.assertIsNone(self.learn([*four, stale])[0]["test", "make test"]["need_gb"])
         signatures, kinds = self.learn([*four, history_row(4, end=NOW - self.history.WINDOW_SECONDS)])
-        self.assertEqual((signatures["make test"]["need_gb"], signatures["make test"]["minutes"]), (2, 10))
+        self.assertEqual((signatures["test", "make test"]["need_gb"], signatures["test", "make test"]["minutes"]), (2, 10))
         self.assertEqual(kinds["test"]["limit"], 2)
 
     def test_learn_needs_the_p90_disk_plus_one_gb_and_takes_the_median_minutes(self):
         runs = zip((4, 1, 10, 3, 2), (5, 9, 7, 1, 30))
-        stats = self.learn([history_row(n, disk_gb=gb, minutes=m) for n, (gb, m) in enumerate(runs)])[0]["make test"]
+        rows = [history_row(n, disk_gb=gb, minutes=m) for n, (gb, m) in enumerate(runs)]
+        stats = self.learn(rows)[0]["test", "make test"]
         self.assertAlmostEqual(stats["disk_gb"], 7.6)
         self.assertEqual((stats["need_gb"], stats["minutes"]), (9, 7))
+
+    def test_a_signature_learns_per_kind_once_the_kind_has_its_own_runs_and_over_every_kind_until_then(self):
+        heavy = [history_row(n, mem_max=60, cpu_max=95, disk_gb=9) for n in range(5)]
+        light = [history_row(n + 5, kind="test-nostack", mem_max=21, cpu_max=12, disk_gb=0) for n in range(5)]
+        signatures, kinds = self.learn([*heavy, *light])
+        footprint, need, tests = self.history.footprint, self.history.need_gb, ("make test",)
+        self.assertEqual(footprint("test-nostack", tests, signatures, kinds), {"ram": 1, "cpu": 2})
+        self.assertEqual(footprint("test", tests, signatures, kinds), {"ram": 40, "cpu": 85})
+        self.assertEqual((need(signatures, kinds, "test-nostack", tests), need(signatures, kinds, "test", tests)), (1, 10))
+        self.assertEqual(need(signatures, kinds, "deploy", tests), 10)
+        self.assertIsNone(need(signatures, kinds, "test", ("make lint",)))
+        other = [history_row(n + 10, kind="test-nostack", signature="true", mem_max=20, cpu_max=10) for n in range(5)]
+        signatures, kinds = self.learn([*heavy, *light[:4], *other])
+        self.assertEqual(footprint("test-nostack", tests, signatures, kinds), {"ram": 40, "cpu": 85})
+
+    def test_a_shape_below_min_runs_books_the_largest_of_its_kind_and_every_alias_so_it_never_under_reserves(self):
+        heavy = [history_row(n, mem_max=60, cpu_max=95) for n in range(2)]
+        light = [history_row(n + 2, kind="test-nostack", mem_max=21, cpu_max=12) for n in range(5)]
+        lint = [history_row(n + 7, signature="make lint", mem_max=50, cpu_max=60) for n in range(5)]
+        signatures, kinds = self.learn([*heavy, *light, *lint])
+        self.assertEqual(self.history.footprint("test", ("make test",), signatures, kinds), {"ram": 40, "cpu": 50})
+        heavy = [history_row(n, mem_max=60, cpu_max=95) for n in range(5)]
+        tiny = [history_row(n + 5, kind="test-nostack", signature="true", mem_max=21, cpu_max=11) for n in range(5)]
+        signatures, kinds = self.learn([*heavy, *light[:2], *tiny])
+        self.assertEqual(self.history.footprint("test-nostack", ("make test",), signatures, kinds), {"ram": 40, "cpu": 85})
+
+    def test_a_new_signature_without_runs_learns_from_the_rows_older_queues_wrote_under_its_old_signature(self):
+        old, new = "core: pytest no:cacheprovider", "core: pytest files=1"
+        legacy = [history_row(n, kind="test-nostack", signature=old, mem_max=35, cpu_max=70, disk_gb=4) for n in range(5)]
+        tiny = [history_row(n + 5, kind="test-nostack", signature="true", mem_max=21, cpu_max=11, disk_gb=0) for n in range(5)]
+        signatures, kinds = self.learn([*legacy, *tiny])
+        footprint, need = self.history.footprint, self.history.need_gb
+        self.assertEqual(footprint("test-nostack", (new, old), signatures, kinds), {"ram": 15, "cpu": 60})
+        self.assertEqual(need(signatures, kinds, "test-nostack", (new, old)), 5)
+        self.assertEqual(footprint("test-nostack", (new,), signatures, kinds)["ram"], kinds["test-nostack"]["ram_share"])
+        fresh = [history_row(n + 10, kind="test-nostack", signature=new, legacy_signature=old, mem_max=21, cpu_max=12,
+                             disk_gb=0) for n in range(5)]
+        signatures, kinds = self.learn([*legacy, *tiny, *fresh])
+        self.assertEqual(footprint("test-nostack", (new, old), signatures, kinds), {"ram": 1, "cpu": 2})
+        self.assertEqual(need(signatures, kinds, "test-nostack", (new, old)), 1)
+        self.assertEqual(signatures[self.history.ANY_KIND, old]["runs"], 5)
+
+    def test_a_heavy_kind_never_books_less_than_the_queue_before_the_per_kind_learning_and_a_light_one_may(self):
+        gate, plain, suite = "w: gate.py hold", "core: pytest no:cacheprovider", "core: pytest paths=1"
+        shared = [history_row(n, signature=gate, mem_max=40, cpu_max=30, disk_gb=2) for n in range(5)]
+        shared += [history_row(n + 5, kind="quality-high", signature=gate, mem_max=80, cpu_max=70, disk_gb=9)
+                   for n in range(5)]
+        diluted = [history_row(n, signature=plain, mem_max=50, cpu_max=40, disk_gb=6) for n in range(5)]
+        diluted += [history_row(n + 5, signature="core: make lint", mem_max=25, cpu_max=15, disk_gb=0) for n in range(50)]
+        diluted += [history_row(n + 55, kind="test-nostack", signature="core: pytest files=1", legacy_signature=plain,
+                                mem_max=21, cpu_max=11, disk_gb=0) for n in range(60)]
+        booked_at_7c0872e = [
+            (shared, "test", (gate,), {"ram": 60, "cpu": 40}, 10),
+            (shared, "quality-high", (gate,), {"ram": 60, "cpu": 40}, 10),
+            (diluted, "test", (suite, plain), {"ram": 30, "cpu": 30}, 7),
+        ]
+        for rows, kind, aliases, old, old_need in booked_at_7c0872e:
+            with self.subTest(kind=kind, aliases=aliases):
+                signatures, kinds = self.learn(rows)
+                for booked in (self.history.footprint, self.history.ceiling):
+                    new = booked(kind, aliases, signatures, kinds)
+                    self.assertTrue(all(new[resource] >= old[resource] for resource in old), (booked.__name__, new))
+                self.assertGreaterEqual(self.history.need_gb(signatures, kinds, kind, aliases), old_need)
+        signatures, kinds = self.learn(diluted)
+        light = ("core: pytest files=1", plain)
+        self.assertEqual(self.history.footprint("test-nostack", light, signatures, kinds), {"ram": 1, "cpu": 1})
+        self.assertEqual(self.history.need_gb(signatures, kinds, "test-nostack", light), 1)
+        xdist = "core: pytest paths=1 workers=auto"
+        signatures, kinds = self.learn([history_row(n, signature=xdist, disk_gb=25) for n in range(5)])
+        self.assertEqual(self.history.need_gb(signatures, kinds, "test", (xdist, "core: pytest auto")), 26)
+        self.assertIsNone(self.history.need_gb(signatures, kinds, "test", (suite, plain)))
 
     def test_a_neighbours_cpu_spike_in_one_row_does_not_lift_the_learned_cpu_share(self):
         rows = [*(history_row(n, cpu_before=10, cpu_max=12) for n in range(4)), history_row(4, cpu_before=10, cpu_max=90)]
         signatures, kinds = self.learn(rows)
-        self.assertEqual((signatures["make test"]["cpu_share"], kinds["test"]["cpu_share"]), (2, 2))
+        self.assertEqual((signatures["test", "make test"]["cpu_share"], kinds["test"]["cpu_share"]), (2, 2))
         self.assertEqual(kinds["test"]["ram_share"], 10)
 
     def test_learn_fits_the_slot_limit_between_the_median_load_and_the_load_limits(self):
@@ -418,14 +579,16 @@ class TestHistory(unittest.TestCase):
         self.assertEqual(self.learn(crowded)[1]["test"]["limit"], 1)
 
     def test_a_light_command_of_a_heavy_kind_and_an_unlearned_one_are_not_booked_at_the_heaviest_share(self):
+        light, heavy = {"runs": 5, "ram_share": 3.3, "cpu_share": 4}, {"runs": 5, "ram_share": 42.6, "cpu_share": 93.5}
         signatures = {
-            "skills: make test": {"ram_share": 3.3, "cpu_share": 4, "kinds": {"test"}},
-            "gate.py hold": {"ram_share": 42.6, "cpu_share": 93.5, "kinds": {"test", "test-nostack"}},
+            ("test", "skills: make test"): light, (self.history.ANY_KIND, "skills: make test"): light,
+            ("test", "gate.py hold"): heavy, (self.history.ANY_KIND, "gate.py hold"): heavy,
         }
-        kinds = {"test": {"ram_share": 35.2, "cpu_share": 83.6}, "test-nostack": {"ram_share": 5.6, "cpu_share": 73.8}}
+        kinds = {"test": {"ram_share": 35.2, "cpu_share": 83.6, "light": False},
+                 "test-nostack": {"ram_share": 5.6, "cpu_share": 73.8, "light": True}}
         footprint = self.history.footprint
-        self.assertEqual(footprint("test", "skills: make test", signatures, kinds), {"ram": 3.3, "cpu": 4})
-        self.assertEqual(footprint("test-nostack", "core: docker build", signatures, kinds), {"ram": 5.6, "cpu": 73.8})
+        self.assertEqual(footprint("test", ("skills: make test",), signatures, kinds), {"ram": 3.3, "cpu": 4})
+        self.assertEqual(footprint("test-nostack", ("core: docker build",), signatures, kinds), {"ram": 5.6, "cpu": 73.8})
 
     def test_footprint_takes_the_learned_signature_else_the_kind_at_least_the_minimum_and_none_for_a_new_kind(self):
         small = [history_row(n, signature="make test", mem_max=25, cpu_max=20) for n in range(5)]
@@ -436,13 +599,14 @@ class TestHistory(unittest.TestCase):
         idle = [history_row(n + 10, kind="idle", signature="true", mem_max=20, cpu_max=5) for n in range(5)]
         signatures, kinds = self.learn([*small, *big, *idle])
         footprint = self.history.footprint
-        self.assertEqual(footprint("test", "make test", signatures, kinds), {"ram": 5, "cpu": 10})
-        self.assertEqual(footprint("test", "make verify-test", signatures, kinds), {"ram": 60, "cpu": 80})
-        self.assertEqual(footprint("test", "make unseen", signatures, kinds), {"ram": 5, "cpu": 10})
-        self.assertEqual(footprint("idle", "true", signatures, kinds), {"ram": 1, "cpu": 1})
-        self.assertIsNone(footprint("gui-dind", "make test-up", signatures, kinds))
+        self.assertEqual(footprint("test", ("make test",), signatures, kinds), {"ram": 5, "cpu": 10})
+        self.assertEqual(footprint("quality-high", ("make verify-test",), signatures, kinds), {"ram": 60, "cpu": 80})
+        self.assertEqual(footprint("test", ("make verify-test",), signatures, kinds), {"ram": 60, "cpu": 80})
+        self.assertEqual(footprint("test", ("make unseen",), signatures, kinds), {"ram": 5, "cpu": 10})
+        self.assertEqual(footprint("idle", ("true",), signatures, kinds), {"ram": 1, "cpu": 1})
+        self.assertIsNone(footprint("gui-dind", ("make test-up",), signatures, kinds))
         signatures, kinds = self.learn(small[:4])
-        self.assertIsNone(footprint("test", "make test", signatures, kinds))
+        self.assertIsNone(footprint("test", ("make test",), signatures, kinds))
 
     def test_slot_limits_take_the_learned_limit_else_the_seed_and_a_smaller_cap(self):
         kinds = {"deploy": {"limit": 3}, "build": {"limit": None}}
@@ -477,10 +641,12 @@ class TestHistory(unittest.TestCase):
     def test_eta_adds_the_remaining_and_the_waiting_median_minutes(self):
         signatures = self.learn([history_row(n) for n in range(5)])[0]
         eta = self.history.eta
-        self.assertEqual(eta(signatures, [("make test", NOW - 240)], ["make test"], NOW), 16)
-        self.assertEqual(eta(signatures, [("make test", NOW - 900)], [], NOW), 0)
+        tests = ("test", ("make test",))
+        self.assertEqual(eta(signatures, [(tests, NOW - 240)], [tests], NOW), 16)
+        self.assertEqual(eta(signatures, [(tests, NOW - 900)], [], NOW), 0)
         self.assertEqual(eta(signatures, [], [], NOW), 0)
-        self.assertIsNone(eta(signatures, [], ["make test", "true"], NOW))
+        self.assertIsNone(eta(signatures, [], [tests, ("test", ("true",))], NOW))
+        self.assertEqual(eta(signatures, [], [("deploy", ("make test",))], NOW), 10)
 
 
 class TestQueueCommands(unittest.TestCase):
@@ -561,7 +727,11 @@ class TestQueueCommands(unittest.TestCase):
         )
 
     def bash(self, command: str) -> int:
-        return self.hook(json.dumps({"tool_input": {"command": command}})).returncode
+        return self.bash_in(command, self.base)
+
+    def bash_in(self, command: str, cwd: Path | None) -> int:
+        payload = {"tool_input": {"command": command}, **({} if cwd is None else {"cwd": str(cwd)})}
+        return self.hook(json.dumps(payload)).returncode
 
     def wait_for(self, condition: Callable[[], bool]) -> None:
         deadline = time.monotonic() + 30
@@ -581,11 +751,13 @@ class TestQueueCommands(unittest.TestCase):
             [entry[k] for k in ("id", "status", "kind", "task", "need_gb", "hotfix", "workdir", "session")],
             ["test-1", "active", "test", "work/a", 0.001, "fix-1", str(self.base), "s1"],
         )
+        signature = f"{self.base.name}: {Path(sys.executable).name} -c"
+        self.assertEqual((entry["aliases"], entry["footprint"]), ([signature], None))
         self.assertEqual(self.entries(), [])
         [row] = [json.loads(line) for line in self.history_file.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(
             [row[k] for k in ("kind", "signature", "workdir", "exit", "concurrent")],
-            ["test", f"{self.base.name}: {Path(sys.executable).name} -c", str(self.base), 7, 0],
+            ["test", signature, str(self.base), 7, 0],
         )
         self.assertTrue(row["id"].startswith("test-1-"))
         self.assertLessEqual(row["start"], row["end"])
@@ -885,7 +1057,15 @@ class TestQueueCommands(unittest.TestCase):
         self.cfg["queue_enforce"] = True
         self.cfg["heavy_commands"] = []
         self.write_config()
+        for name in ("tests/test_queue.py", "tests/test_watch.py", "sub/tests/test_queue.py", "tree/a/test_main.py",
+                     "tree/b/test_main.py"):
+            (self.base / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.base / name).write_text("", encoding="utf-8")
         for command in (
+            "python3 -m unittest discover -s tree -p test_main.py",
+            "python3 -m unittest discover -s tests -p test_gone.py",
+            "python3 -m unittest discover -s . -p test_queue.py",
+            "python3 -m unittest discover tree test_main.py",
             "docker compose up -d --build",
             "docker compose -f x.yml build web",
             "docker-compose up --build",
@@ -979,6 +1159,8 @@ class TestQueueCommands(unittest.TestCase):
             "python3 /x/queue.py hold --kind test --task work/a -- pytest tests/",
             'pytest "tests/unit/test_x.py"',
             "python3 -m unittest discover -s tests -p 'test_queue.py'",
+            "env -C sub python3 -m unittest discover -s tests -p test_queue.py",
+            f"env --chdir={self.base / 'sub'} python3 -m unittest discover -s tests -p 'test_q*.py'",
             "grep -rn pytest tests/",
             "which pytest",
             "pytest --version",
@@ -1012,9 +1194,12 @@ class TestQueueCommands(unittest.TestCase):
             "bash script.sh <<'EOF'\nmake install\nEOF",
             "out=$(cat <<'EOF'\nmake install\nEOF\n)",
             "echo kvbheredoc1 kvbheredoczz",
+            "cd sub && python3 -m unittest discover -s . -p test_queue.py",
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.bash(command), 0)
+        self.assertEqual(self.bash_in("python3 -m unittest discover -s tests -p 'test_*.py'", self.base / "sub"), 0)
+        self.assertEqual(self.bash_in("python3 -m unittest discover -s tree -p test_main.py", None), 0)
 
     def test_block_matches_a_config_regex_on_the_wrapped_program_too(self):
         self.cfg["queue_enforce"] = True
