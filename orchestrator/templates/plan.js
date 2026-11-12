@@ -23,12 +23,12 @@ const Plan = (() => {
   }
 
   /**
-   * @param rows - task rows with status, start, end (epoch seconds or null) and points (median complexity or null).
-   * @returns {duration, perPoint}: the median seconds a done task took from start to end, and the median seconds
-   * per point of the done tasks with points; null where no done task gives one.
+   * @param rows - task rows with kind, status, start, end (epoch seconds or null) and points (median complexity or null).
+   * @returns {duration, perPoint}: the median seconds a done task, never a queue job, took from start to end, and the
+   * median seconds per point of the done tasks with points; null where no done task gives one.
    */
   function medians(rows) {
-    const done = rows.filter((row) => row.status === "done" && row.start !== null && row.end !== null && row.end >= row.start);
+    const done = rows.filter((row) => row.kind !== "queue" && row.status === "done" && row.start !== null && row.end !== null && row.end >= row.start);
     return {
       duration: median(done.map((row) => row.end - row.start)),
       perPoint: median(done.filter((row) => row.points).map((row) => (row.end - row.start) / row.points)),

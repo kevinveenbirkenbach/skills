@@ -85,7 +85,7 @@ class View:
     def state(self, begin: float, end: float, now: float, steps: int) -> dict:
         tasks = read_register(self.council / REGISTER)
         news = read_jsonl(self.council / NEWS)
-        history = read_jsonl(self.council / "queue-history.jsonl")
+        history = self.history.rows()
         claims = read_claims(self.council)
         names = sessions(claims)
         directory = self.directory(claims, news, now)
@@ -105,7 +105,7 @@ class View:
         people = {node["id"]: {"name": node["label"], "now": directory.now(node["id"]) or node["label"], "names": node["names"]} for node in drawn["nodes"] if node["kind"] != "subagent"}
         settings = self.settings.get()
         inbox = self.inbox(now, tasks, directory)
-        queue = queue_entries(self.council)
+        queue = queue_entries(self.council, self.history.rows)
         order = stored_order(self.council / AGENT_ORDER)
         rows = task_rows(tasks, queue, self.tree.get())
         chain = queue_chain(queue, tasks, order, now)

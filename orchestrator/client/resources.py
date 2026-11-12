@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime
+import functools
 import hashlib
 import json
 import os
@@ -54,6 +55,8 @@ import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
+
+import queue_live
 
 INTERVAL = 60
 BUCKET = 900
@@ -226,9 +229,19 @@ def gpus(sys_root: Path, run: Callable[[list[str]], str | None]) -> list[dict]:
 
 
 def queue(council: Path) -> dict:
+    """Returns:
+        {waiting, active}: the queue.json entries with an enqueue time that
+        queue_live.settled() keeps without an outcome, as the hub counts them.
+    """
     data = read_json(council / "queue.json")
     entries = data.get("entries") if isinstance(data, dict) else None
-    statuses = [entry.get("status") for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
+    found = []
+    for entry in entries if isinstance(entries, list) else []:
+        created = queue_live.moment(entry.get("enqueued")) if isinstance(entry, dict) else None
+        if created is not None:
+            found.append((entry, created))
+    history = functools.partial(queue_live.read_history, council / queue_live.HISTORY)
+    statuses = [entry.get("status") for entry, _, result in queue_live.settled(council, found, history) if result is None]
     return {"waiting": statuses.count("waiting"), "active": statuses.count("active")}
 
 
