@@ -20,7 +20,7 @@ from .skill_scripts import SAFE_PATH
 
 MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 SPEAKER_LIMIT = 10000
-TTS_TIMEOUT = 60
+TTS_TIMEOUT = 120
 TTS_KEEP = 200
 STT_RATE = 16000
 STT_SECONDS = 120

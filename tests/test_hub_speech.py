@@ -196,6 +196,13 @@ class TestHubSpeech(HubCase):
 
 
 class TestSpeechImage(unittest.TestCase):
+    def test_the_hub_is_capped_at_four_cpus_and_piper_gets_time_for_it(self):
+        compose = (HUB / "compose.yml").read_text(encoding="utf-8")
+        cpus = re.search(r"(?m)^ {4}cpus: ([0-9.]+)$", compose)
+        self.assertIsNotNone(cpus, "compose.yml sets no cpus limit for the hub")
+        self.assertLessEqual(float(cpus[1]), 4)
+        self.assertGreaterEqual(engines.TTS_TIMEOUT, 120)
+
     def test_every_directory_a_chmod_without_search_bit_creates_is_opened_again(self):
         text = (HUB / "Dockerfile").read_text(encoding="utf-8").replace("\\\n", " ")
         steps = [" ".join(step.split()) for step in text.splitlines() if step.strip() and not step.lstrip().startswith("#")]
