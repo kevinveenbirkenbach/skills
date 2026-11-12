@@ -296,8 +296,28 @@ class TestEvaluate(unittest.TestCase):
             self.decide([hotfix, light], loaded={"j1": load}),
             {"j1": load, "j2": "waits behind hotfix j1, which the host load holds back"},
         )
-        self.assertEqual(self.decide([job(1), light], loaded={"j1": load}), {"j1": None, "j2": None})
+        self.assertEqual(self.decide([job(1), light], loaded={"j1": load}), {"j1": load, "j2": None})
         self.assertEqual(self.decide([hotfix, light]), {"j1": None, "j2": None})
+
+    def test_with_no_job_active_a_head_the_host_load_alone_keeps_out_reserves_nothing_and_with_one_active_it_does(self):
+        load = "RAM 55 % used + 41 % still to come reach the limit 90 %"
+        head, twin = job(1, kind="quality-high"), job(2, kind="quality-high", task="work/b")
+        gate, light = job(3, task="work/b"), job(4, kind="test-nostack", task="work/c")
+        shares = {"j1": {"ram": 41, "cpu": 62}, "j2": {"ram": 41, "cpu": 62}, "j3": {"ram": 20, "cpu": 40}, "j4": {"ram": 6, "cpu": 40}}
+        rules = {"slot_limits": {"quality-high": 1, "test": 5, "test-nostack": 6}, "exclusive": {"quality-high", "test"}, "light": {"test-nostack"}}
+        loaded = {"j1": load, "j2": load}
+        self.assertEqual(
+            self.decide([head, twin, gate, light], loaded=loaded, footprints=shares, **rules),
+            {"j1": load, "j2": load, "j3": None, "j4": None},
+        )
+        running = job(5, kind="test-nostack", task="work/c", status="active")
+        self.assertEqual(
+            self.decide([running, head, twin, gate, light], loaded=loaded, footprints=shares | {"j5": {"ram": 6, "cpu": 11}}, **rules),
+            {
+                "j1": None, "j2": "all 1 quality-high slots taken", "j3": "test runs only beside test-nostack, but quality-high runs",
+                "j4": "CPU 73 % in use or reserved + 40 % > budget 100 %; reserved",
+            },
+        )
 
 
 class TestHistory(unittest.TestCase):

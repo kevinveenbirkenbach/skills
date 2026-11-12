@@ -406,7 +406,10 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       holds it, so a lower entry never takes a higher entry's slot; one
       blocked by disk or budget reserves its need against the entries after it.
       A hotfix entry that passes every check but the host load holds back
-      every entry after it, so lighter jobs cannot keep the load up. An
+      every entry after it, so lighter jobs cannot keep the load up. While no
+      queue job is active, any other entry the host load alone keeps out
+      reserves nothing and holds nothing back: that load lies outside the
+      queue, so holding the queue frees none of it. An
       exclusive entry that only running jobs of other kinds keep out holds
       back every entry after it but light ones, so none overtakes it. A waiting
       entry whose holder has not polled for CLAIM_SECONDS reserves nothing and
@@ -435,13 +438,17 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
             if reason is not None and kind in exclusive:
                 drain = entry["id"]
         if reason is None:
-            reason, used, available = resources(need, share, used, available, floor, budget, taken)
-            if reason is None and entry["hotfix"] and entry["id"] in loaded:
-                reason, held = loaded[entry["id"]], entry["id"]
-            elif reason is None:
-                taken += 1
-                counts[kind] += 1
-                busy.add(workdir)
+            reason, after, left = resources(need, share, used, available, floor, budget, taken)
+            if reason is None and entry["id"] in loaded and (entry["hotfix"] or not active):
+                reason = loaded[entry["id"]]
+                if entry["hotfix"]:
+                    held = entry["id"]
+            else:
+                used, available = after, left
+                if reason is None:
+                    taken += 1
+                    counts[kind] += 1
+                    busy.add(workdir)
         verdicts[entry["id"]] = reason
     for entry in waiting:
         if silent(entry, now):
