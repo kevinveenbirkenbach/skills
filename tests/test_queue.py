@@ -15,6 +15,7 @@ import time
 import unittest
 from collections.abc import Callable
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 QUEUE = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
@@ -756,6 +757,27 @@ class TestQueueCommands(unittest.TestCase):
         self.assertEqual(hold.wait(timeout=30), 128 + signal.SIGTERM)
         self.assertFalse(lock.exists())
         self.assertEqual(self.entries(), [])
+
+    def test_a_waiting_hold_is_granted_once_the_config_it_waits_on_changes(self):
+        self.cfg["slot_limits"]["deploy"] = 0
+        self.write_config()
+        hold, _ = self.blocked_hold("true")
+        self.cfg["slot_limits"]["deploy"] = 1
+        self.write_config()
+        self.assertEqual(hold.wait(timeout=60), 0)
+        self.assertEqual(self.entries(), [])
+
+    def test_fresh_takes_the_new_config_and_keeps_the_last_good_one_on_a_broken_or_partial_file(self):
+        queue = _load(QUEUE)
+        good = dict(self.cfg)
+        new = {**self.cfg, "slot_limits": {"test": 2, "deploy": 2}}
+        partial = {key: value for key, value in self.cfg.items() if key != "budget_percent"}
+        for loaded, expected in ((new, new), (None, good), (partial, good), ([], good)):
+            with self.subTest(loaded=loaded), mock.patch.object(queue.watch, "load_config", return_value=loaded):
+                self.assertEqual(queue.fresh(good), expected)
+        for error in (ValueError("half-saved"), OSError("gone")):
+            with self.subTest(error=error), mock.patch.object(queue.watch, "load_config", side_effect=error):
+                self.assertEqual(queue.fresh(good), good)
 
     def test_hold_takes_the_need_learned_for_its_command_from_both_history_files(self):
         self.cfg["slot_limits"]["deploy"] = 0

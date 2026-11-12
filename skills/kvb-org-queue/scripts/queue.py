@@ -198,6 +198,20 @@ def config() -> dict:
     return cfg
 
 
+def fresh(cfg: dict) -> dict:
+    """Returns:
+        The config as it stands now, else cfg while the file is missing,
+        unreadable or incomplete, so a half-saved edit never ends a wait.
+    """
+    try:
+        now = watch.load_config()
+    except (OSError, ValueError):
+        return cfg
+    if not isinstance(now, dict) or watch.missing(now, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) is not None:
+        return cfg
+    return now
+
+
 def caps(cfg: dict) -> dict[str, int]:
     return cfg.get("slot_limits", {})
 
@@ -657,7 +671,7 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
     """Poll until the grant.
 
     Args:
-      cfg: the config.
+      cfg: the config at the hold's start; every poll reads it anew.
       entry_id: this hold's entry.
       caught: signals the caller caught; the first ends the wait.
 
@@ -670,6 +684,7 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
         host = code_of(HOST_SKILLS)
         if host not in (None, CODE):
             raise Stale(host, caught)
+        cfg = fresh(cfg)
         cpu, mem = watch.load(cfg)
         free, _ = watch.disk(cfg)
         now = time.time()
