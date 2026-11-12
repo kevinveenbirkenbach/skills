@@ -461,175 +461,180 @@ flowchart TD
 
 ### Radio model
 
-- [ ] `radio.py send` accepts exactly `call`, `broadcast`, `pan-pan`,
+- [x] `radio.py send` accepts exactly `call`, `broadcast`, `pan-pan`,
       `mayday`, `security` and the alias `direct`; `post`, `newsletter` and
       any other class exit 2.
-- [ ] `radio.py post --to X` stores `post`; `radio.py post` without `--to`
+- [x] `radio.py post --to X` stores `post`; `radio.py post` without `--to`
       stores `newsletter`.
-- [ ] `call` and `send direct` require `--to`; `broadcast`, `pan-pan`,
+- [x] `call` and `send direct` require `--to`; `broadcast`, `pan-pan`,
       `mayday` and `security` exit 2 with `--to`.
-- [ ] `send direct --wake` is stored as `call`, `send direct` as `post`.
-- [ ] New rows carry a version mark; rows without it are read as before:
+- [x] `send direct --wake` is stored as `call`, `send direct` as `post`.
+- [x] New rows carry a version mark; rows without it are read as before:
       `direct` as `post` (as `call` when it woke), `broadcast` as
       `newsletter`.
-- [ ] The UserPromptSubmit hook (`radio.py hook`) and the PostToolBatch hook
+- [x] The UserPromptSubmit hook (`radio.py hook`) and the PostToolBatch hook
       (`radio.py tool`) never print a `post` or `newsletter` row.
-- [ ] A new Stop hook `radio.py mailbox`, registered in
+- [x] A new Stop hook `radio.py mailbox`, registered in
       `scripts/enable-plugins.js`, prints the unseen `post` and `newsletter`
       rows of the session at most 10 at a time with a "N more" line, marks
       them seen and exits 2; with nothing unseen it exits 0 and prints
       nothing.
-- [ ] `radio.py listen` wakes an idle session only for `call`, `broadcast`,
+- [x] `radio.py listen` wakes an idle session only for `call`, `broadcast`,
       `pan-pan`, `mayday` and `security`, never for `post` or `newsletter`.
-- [ ] `radio.py tool` delivers `call` (to its addressee), `broadcast`,
+- [x] `radio.py tool` delivers `call` (to its addressee), `broadcast`,
       `pan-pan`, `mayday` and `security` at the next tool step.
-- [ ] When a call reaches the callee's context, a receipt row (callee, call
+- [x] When a call reaches the callee's context, a receipt row (callee, call
       time, read time) is stored; the caller's mailbox shows
       "CALL <to> read <time>". The receipt never wakes the caller.
-- [ ] While `radio-silence.json` holds an active mayday, a PreToolUse hook
+- [x] While `radio-silence.json` holds an active mayday, a PreToolUse hook
       (matcher `Edit|Write|MultiEdit|NotebookEdit|Bash`) exits 2 for Edit,
       Write, MultiEdit and NotebookEdit and for every Bash command that
       matches neither the config's `never_block` nor its new `mayday_allow`
       regexes nor a plain call of `radio.py`.
-- [ ] The mayday's sender passes; `radio.py assist` adds the caller to the
+- [x] The mayday's sender passes; `radio.py assist` adds the caller to the
       mayday's helpers, who pass too, and the mayday line names them.
-- [ ] After `radio.py clear` the same calls pass again.
-- [ ] `skills/kvb-org-radio/SKILL.md` separates the radio (`send`,
+- [x] After `radio.py clear` the same calls pass again.
+- [x] `skills/kvb-org-radio/SKILL.md` separates the radio (`send`,
       immediate) and the post (`post`, delayed), each class with when to use
       it and how it is delivered; post is the default; markdownlint stays
       green.
 
 ### Organisation update
 
-- [ ] A skill `kvb-org-update` with `scripts/update.py` exists.
-- [ ] `update.py --repo <skills repo> --dry-run` prints every skill whose
+- [x] A skill `kvb-org-update` with `scripts/update.py` exists.
+- [x] `update.py --repo <skills repo> --dry-run` prints every skill whose
       files changed between the last announced revision (kept in the council
       directory) and `HEAD`, with the subjects of the commits that touched it.
-- [ ] Without `--dry-run` it sends one `newsletter` through `radio.py post`
+- [x] Without `--dry-run` it sends one `newsletter` through `radio.py post`
       that names each changed skill and tells every agent to re-read its
       `SKILL.md` before the next use, then records `HEAD` as announced; a
       second run without new commits sends nothing.
 - [ ] The radio change of phase 1 is announced through it.
+      Obsolete (operator 2026-11-12): a past event no record proves any more.
 
 ### Orchestrator surface and rename
 
-- [ ] The page title and heading read "Agent Orchestrator".
-- [ ] `grep -rnE 'kvb-hub|kvb_hub|KVB_HUB'` over the repository finds only the
+- [x] The page title and heading read "Agent Orchestrator".
+- [x] `grep -rnE 'kvb-hub|kvb_hub|KVB_HUB'` over the repository finds only the
       migration code and its tests.
-- [ ] The install migrates `~/.local/share/kvb-hub`, `~/.config/kvb-hub`,
+- [x] The install migrates `~/.local/share/kvb-hub`, `~/.config/kvb-hub`,
       `~/.local/state/kvb-hub-approvals`, the `kvb-hub` MCP registration, the
       settings hook entries, the systemd unit and the container to the
       `kvb-orchestrator` names. A second run changes nothing (scratch-HOME
       test).
 - [ ] The navigation has exactly three top-level entries Stream, Agents and
       Artifacts; Stream has the sub-items Inbox and Firewall.
-- [ ] Every agent appears once under its current name: a register worker
+      Obsolete: decision 23 adds Tasks, 003 decision 2 removes Inbox.
+- [x] Every agent appears once under its current name: a register worker
       such as "Stage (this session)" or "infinito-nexus-core-c8 (Production)"
       maps to the agent named before the bracket.
-- [ ] The keys 1 to 3 switch the top-level entries.
-- [ ] The hashes `#stream`, `#stream/inbox`, `#stream/rules`,
+- [x] The keys 1 to 3 switch the top-level entries.
+- [x] The hashes `#stream`, `#stream/inbox`, `#stream/rules`,
       `#agents/<view>` and `#artifacts/<view>` route; `#graph…` and `#tree`
       redirect to their successors.
-- [ ] Agents and Artifacts show a switch with Orbit, Chord, Swimlane, Tree and
+- [x] Agents and Artifacts show a switch with Orbit, Chord, Swimlane, Tree and
       3D in this order, and each view has its own hash.
 - [ ] The header holds exactly the title, the ⌘K button and the ⚙ button.
-- [ ] Badges:
-  - [ ] Inbox shows the waiting items that are not snoozed.
-  - [ ] Agents shows the agents with a heartbeat in the last 900 s.
-  - [ ] Artifacts shows the runner jobs that are queued or running.
-  - [ ] A badge at 0 is hidden.
+      Obsolete: decision 59 adds Radio, 003 decision 17 the bubbles switch.
+- [x] Badges:
+  - [x] Inbox shows the waiting items that are not snoozed.
+  - [x] Agents shows the agents with a heartbeat in the last 900 s.
+  - [x] Artifacts shows the runner jobs that are queued or running.
+  - [x] A badge at 0 is hidden.
 - [ ] A red Mayday banner with "cancel" exists if and only if a mayday is
       active; "cancel" runs `radio.py clear`.
 - [ ] The Agents toolbar holds:
   - [ ] Radio to all, with the class choice Newsletter, Broadcast, Pan-Pan,
         Security, Mayday and Newsletter preselected.
   - [ ] Cancel mayday, Priority and Day/Night.
-- [ ] The agent panel sends with the choice Post (preselected) or Call.
-- [ ] ⚙ "Ambience" holds Sky, Music, Control room and Notifications;
+  Obsolete: decisions 52 and 59 move the composer and Cancel mayday into
+  the header radio spot; Priority and Day/Night ship.
+- [x] The agent panel sends with the choice Post (preselected) or Call.
+- [x] ⚙ "Ambience" holds Sky, Music, Control room and Notifications;
       ⌘K lists every former header tool.
-- [ ] The Stream shows exactly four category chips For you, Radio, Work and
+- [x] The Stream shows exactly four category chips For you, Radio, Work and
       Transcripts, and one search line that filters by `agent:`, `kind:` and
       `since:`.
 - [ ] "Filter ▾" holds the kind sub-filters, the transcript parts, the saved
       views and the custom range.
-- [ ] The time control reads "24 h ▾" and holds the replay.
-- [ ] Transcripts are off by default.
-- [ ] The Inbox renders in the main area under `#stream/inbox`; the right
+- [x] The time control reads "24 h ▾" and holds the replay.
+- [x] Transcripts are off by default.
+- [x] The Inbox renders in the main area under `#stream/inbox`; the right
       rail `#rail` no longer exists, at any width.
-- [ ] The read-aloud class choice lists exactly the seven classes of
+- [x] The read-aloud class choice lists exactly the seven classes of
       decision 3; Mayday stays checked and locked.
 
 ### pkgmgr branch tree
 
-- [ ] The kvb-think-dialectic result on the data path is recorded in the
+- [x] The kvb-think-dialectic result on the data path is recorded in the
       phase 3 commit body before any code of phase 3 is written.
-- [ ] `pkgmgr branch tree --format json` prints, for every repository pkgmgr
+- [x] `pkgmgr branch tree --format json` prints, for every repository pkgmgr
       knows and every worktree under `<repo>/.worktrees` and
       `~/.local/share/worktrees`, these fields:
-  - [ ] the repository's path, remote and default branch;
-  - [ ] per branch: upstream, ahead, behind and gone;
-  - [ ] per worktree: path, HEAD and its state, one of `clean`, `changed` or
+  - [x] the repository's path, remote and default branch;
+  - [x] per branch: upstream, ahead, behind and gone;
+  - [x] per worktree: path, HEAD and its state, one of `clean`, `changed` or
         `missing`;
-  - [ ] detached worktrees, and `generated_at`.
-- [ ] It lists every repository `pkgmgr list` names, also one without extra
+  - [x] detached worktrees, and `generated_at`.
+- [x] It lists every repository `pkgmgr list` names, also one without extra
       branches or worktrees.
-- [ ] Per branch and worktree it carries the gc state (`merged-clean`,
+- [x] Per branch and worktree it carries the gc state (`merged-clean`,
       `unmerged`, `dirty`, `protected`, `stale`), what merged it (ancestor,
       `pr#N`, `line:X`), the counts of staged, unstaged and untracked files,
       ahead, behind, gone, locked and the gc skip reason.
-- [ ] Tree and gc share one classification function; on a fixture
+- [x] Tree and gc share one classification function; on a fixture
       `pkgmgr branch tree --format json` and `pkgmgr branch gc --json` agree
       on every item's state.
-- [ ] Forge facts (open and merged pull requests) are fetched at most once
+- [x] Forge facts (open and merged pull requests) are fetched at most once
       per 10 min per repository, only with a token from the Secret Service;
       without one the file says `forge: unavailable` and "merged by" falls
       back to ancestor and line.
-- [ ] `delete_ready` is true only while the token resolves through the
+- [x] `delete_ready` is true only while the token resolves through the
       Secret Service, which the scan never unlocks; otherwise it is false
       with the reason.
-- [ ] `--format yaml` prints the same data.
-- [ ] `--output FILE` writes it atomically.
-- [ ] The scan starts no hook, filter, fsmonitor, pager or external diff of a
+- [x] `--format yaml` prints the same data.
+- [x] `--output FILE` writes it atomically.
+- [x] The scan starts no hook, filter, fsmonitor, pager or external diff of a
       scanned repository and never lazy-fetches (fixture test with a planted
       `core.fsmonitor`).
-- [ ] `pkgmgr branch open|close|drop|gc` rewrite the file when it exists.
-- [ ] The orchestrator install enables a systemd user timer that writes it
+- [x] `pkgmgr branch open|close|drop|gc` rewrite the file when it exists.
+- [x] The orchestrator install enables a systemd user timer that writes it
       60 s after its previous run ended while the page polled within the
       last 5 min, on at most half a core, with pkgmgr built from the newest
       signed tag.
-- [ ] The orchestrator mounts the file read-only and reads only it.
-- [ ] `orchestrator/kvb_orchestrator/tree.py`'s git scan is gone and no
+- [x] The orchestrator mounts the file read-only and reads only it.
+- [x] `orchestrator/kvb_orchestrator/tree.py`'s git scan is gone and no
       module of the orchestrator starts `git`.
 
 ### Agents and Artifacts views
 
-- [ ] Artifacts:
-  - [ ] Orbit, Chord, Swimlane and Tree draw what decision 16 names, from the
+- [x] Artifacts:
+  - [x] Orbit, Chord, Swimlane and Tree draw what decision 16 names, from the
         pkgmgr tree file.
-  - [ ] Register artefacts (images, volumes, logs) appear as leaves of their
+  - [x] Register artefacts (images, volumes, logs) appear as leaves of their
         task or worktree.
-- [ ] Agents:
-  - [ ] Orbit, Chord and Swimlane keep today's content.
-  - [ ] Tree shows the operator → chair → sessions → subagents spawn tree
+- [x] Agents:
+  - [x] Orbit, Chord and Swimlane keep today's content.
+  - [x] Tree shows the operator → chair → sessions → subagents spawn tree
         with running and finished states.
-- [ ] 3D in both tabs runs on the vendored `3d-force-graph` 1.80.1 and
+- [x] 3D in both tabs runs on the vendored `3d-force-graph` 1.80.1 and
       `three` 0.186.1, with their MIT licence texts beside them and no CDN
       request (CSP unchanged).
-- [ ] 3D offers the layouts Force, Time and Spawn depth.
-- [ ] A click on a 3D node opens the same panel as in 2D.
-- [ ] 3D respects `prefers-reduced-motion`.
+- [x] 3D offers the layouts Force, Time and Spawn depth.
+- [x] A click on a 3D node opens the same panel as in 2D.
+- [x] 3D respects `prefers-reduced-motion`.
 
 ### Delete merged branches
 
 - [ ] The Artifacts Tree marks every branch and worktree with icons for
       merged (with what merged it), clean, uncommitted changes (with counts),
       unpushed commits, gone upstream, locked, stale and protected.
-- [ ] A `merged-clean` item without a gc skip reason shows a delete button,
+- [x] A `merged-clean` item without a gc skip reason shows a delete button,
       and the Tree header shows "Delete all merged"; both are disabled,
       with the reason as tooltip, while `delete_ready` is false.
-- [ ] A click shows the gc dry-run lines of exactly the chosen items;
+- [x] A click shows the gc dry-run lines of exactly the chosen items;
       "Delete" requires the operator signature through `/api/sign`.
-- [ ] The orchestrator writes the signed job (repository, branch, worktree
+- [x] The orchestrator writes the signed job (repository, branch, worktree
       and tip sha per item, no command) into a host-mounted job directory and
       holds no git, token or key.
 - [ ] A systemd user path unit verifies the signature on the host and runs
@@ -637,36 +642,36 @@ flowchart TD
       matched exactly, never as a pattern; `--local` removes the worktree, the local
       branch, the compose stack without `-v` and its images, never a remote
       branch, and needs no SSH key.
-- [ ] The unit refuses, and changes nothing for, an item whose tip or state
+- [x] The unit refuses, and changes nothing for, an item whose tip or state
       differs from the signed one, an unknown repository, a non-`merged-clean`
       item and a job with a bad or missing signature, and reports why.
-- [ ] The unit writes each item's result back and rewrites the tree file; the
+- [x] The unit writes each item's result back and rewrites the tree file; the
       Tree shows the result.
 
 ### Icons
 
-- [ ] Bootstrap Icons 1.13.1 is vendored once as an SVG sprite with its MIT
+- [x] Bootstrap Icons 1.13.1 is vendored once as an SVG sprite with its MIT
       licence text beside it; no page loads it from a CDN.
-- [ ] The navigation, the header, the view switches, the toolbars, the
+- [x] The navigation, the header, the view switches, the toolbars, the
       Stream chips and the Inbox actions of the orchestrator show icons
       instead of text labels.
 - [ ] The review pages and the meditation page show icons instead of text
       labels on their buttons.
-- [ ] Every icon element has a `title` and an `aria-label` that carry the
+- [x] Every icon element has a `title` and an `aria-label` that carry the
       former text (DOM test over every page).
 
 ### Phase 5: inbox, UI, Hierarchy, Tasks
 
-- [ ] A deny is refused by the hub unless its passkey proof verifies; the
+- [x] A deny is refused by the hub unless its passkey proof verifies; the
       PermissionRequest hook quotes a deny reason only when it verifies.
-- [ ] A rule, also one an agent requested, is stored only with a passkey
+- [x] A rule, also one an agent requested, is stored only with a passkey
       assertion the hub verified against the pinned keys.
-- [ ] `operator_message(id, text, to)` answers `match` only for a verified
+- [x] `operator_message(id, text, to)` answers `match` only for a verified
       proof whose signed text and recipient equal the arguments.
-- [ ] The offices unit and the runner stay off while the installed
+- [x] The offices unit and the runner stay off while the installed
       `council.py`, `nofollow.py` or `rasci.py` differ from the tree.
-- [ ] `rasci.py agents order` writes only `agent-order.json` and no `--prio`.
-- [ ] W1 to W4 are merged into master, each commit with its score block.
+- [x] `rasci.py agents order` writes only `agent-order.json` and no `--prio`.
+- [x] W1 to W4 are merged into master, each commit with its score block.
 
 ### Phase 6: English and radio speech (S0)
 
@@ -813,57 +818,57 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
 
 ### Phase 6: radio in the header (S5.4)
 
-- [ ] The header shows Radio, Commands and Settings as icon buttons; Radio
+- [x] The header shows Radio, Commands and Settings as icon buttons; Radio
       opens the spot above the main area on Stream, Inbox, Agents, Artifacts
       and Tasks, and closes it again.
-- [ ] No Radio tab, no "Send …" button and no radio button in the Agents
+- [x] No Radio tab, no "Send …" button and no radio button in the Agents
       toolbar remain; `#stream/radio` lands on `#stream` with the spot open
       and the message field focused.
-- [ ] Cancel mayday shows only its icon, keeps its tooltip, its confirmation
+- [x] Cancel mayday shows only its icon, keeps its tooltip, its confirmation
       and its passkey signature.
 - [ ] The spot shows the speaking caption, the last five sent messages and
       the stations with play and stop.
 
 ### Phase 6: agent states and 3D faces (S5.3)
 
-- [ ] The state of every fixture session matches decision 61 for each of the
+- [x] The state of every fixture session matches decision 61 for each of the
       six states and for a session without a session file (unit test).
-- [ ] Orbit, Chord, Swimlane, Tree, 3D and the agent panel show the state
+- [x] Orbit, Chord, Swimlane, Tree, 3D and the agent panel show the state
       symbol of each fixture agent.
-- [ ] Unticking a state in the Status menu hides its symbols in every view;
+- [x] Unticking a state in the Status menu hides its symbols in every view;
       the choice survives a reload.
-- [ ] The 3D view shows agent faces by default and spheres after unticking
+- [x] The 3D view shows agent faces by default and spheres after unticking
       "Faces in 3D".
 - [ ] `make orchestrator-install` enables `kvb-orchestrator-sessions.timer`,
       and `make orchestrator-check` reports it active.
 
 ### Phase 6: Day/Night per agent (S5.2)
 
-- [ ] `night.py drain|suspend|resume --target=<id>` sets and lifts one
+- [x] `night.py drain|suspend|resume --target=<id>` sets and lifts one
       session's part by day and during a mode, and `night.py status` prints
       it as the `you:` line (`tests/test_night.py`).
-- [ ] The Day/Night menu lists "All" and one checkbox per claimed agent; all
+- [x] The Day/Night menu lists "All" and one checkbox per claimed agent; all
       ticked sends the unchanged board item, a subset signs and runs only for
       the ticked sessions, and none ticked disables the three buttons.
-- [ ] A proof for one set of agents is refused for another set and for all,
+- [x] A proof for one set of agents is refused for another set and for all,
       and an unclaimed session is refused before anything runs
       (`tests/test_hub_board.py`).
-- [ ] Every agent panel shows the agent's part and Drain, Suspend and Resume
+- [x] Every agent panel shows the agent's part and Drain, Suspend and Resume
       for that agent alone.
 
 ### Tests
 
 - **Unit**
-  - [ ] Radio: class mapping, `--to` rules, the mailbox Stop hook, the
+  - [x] Radio: class mapping, `--to` rules, the mailbox Stop hook, the
         receipt and the mayday block hook, each red before and green after.
-  - [ ] Organisation update on a fixture repository: changed skills with
+  - [x] Organisation update on a fixture repository: changed skills with
         their subjects, nothing new sends nothing.
-  - [ ] pkgmgr branch tree on fixture repositories: ahead, behind, gone,
+  - [x] pkgmgr branch tree on fixture repositories: ahead, behind, gone,
         detached and missing worktree, JSON and YAML, the planted fsmonitor,
         staged, unstaged and untracked counts, tree and gc states agreeing.
-  - [ ] Delete job: a bad signature, a changed tip, a non-`merged-clean`
+  - [x] Delete job: a bad signature, a changed tip, a non-`merged-clean`
         item and a branch name with pattern characters are each refused.
-  - [ ] Orchestrator: the scratch-HOME migration, routing including old
+  - [x] Orchestrator: the scratch-HOME migration, routing including old
         hashes, badge counts.
   - [ ] Phase 6: pronunciation (Sécurité, NATO hashes, ICAO digits),
         rename-once timeline, squelch scheduler, face generator, settings
@@ -874,35 +879,36 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
         business value signature (forged, replayed, altered), sort orders.
   - [x] S5.1: regression and velocity trend with their forecast dates, point
         tooltips, ETA in both modes, radio settings stored from the gear.
-  - [ ] S5.4: the navigation without the Radio tab, `#stream/radio`
+  - [x] S5.4: the navigation without the Radio tab, `#stream/radio`
         redirecting to `#stream` with the spot flag.
-  - [ ] S5.5: ICAO digit words, Zulu times, DTG with offset conversion,
+  - [x] S5.5: ICAO digit words, Zulu times, DTG with offset conversion,
         dates, decimals and spoken paths.
-  - [ ] S5.3: each agent state from a fixture snapshot, night state and
+  - [x] S5.3: each agent state from a fixture snapshot, night state and
         receipts, a session without a record; the host client's snapshot
         from fixture session files with a reused pid; a stale or malformed
         snapshot read as absent.
-  - [ ] S5.2: night.py targets by day and during a mode, the signed board
+  - [x] S5.2: night.py targets by day and during a mode, the signed board
         item with agents (forged set, unclaimed session), the parts in the
         state.
 - **Integration**
-  - [ ] Two scratch sessions exchange `post` and `call` through the real hook
+  - [x] Two scratch sessions exchange `post` and `call` through the real hook
         entry points (JSON on stdin): the post appears only on the callee's
         Stop and the call at its next tool step with a receipt to the caller.
-  - [ ] A mayday blocks an Edit until `clear`.
+  - [x] A mayday blocks an Edit until `clear`.
   - [ ] The orchestrator's `/api/tree` serves a pkgmgr-written file.
   - [ ] On a fixture repository with a file remote and a test token source, a
         signed job through the path unit removes the merged worktree, the
         local and the remote branch, and the rewritten tree no longer lists
-        them.
-  - [ ] `make test` green on the commit of each phase.
+        them. Obsolete: contradicts decision 21; 003 decision 10 replaces it.
+  - [ ] `make test` green on the HEAD that carries every phase (operator
+        2026-11-12).
 - **E2E**
-  - [ ] A headless Chromium and Firefox run opens Stream, Inbox, Firewall and
+  - [x] A headless Chromium and Firefox run opens Stream, Inbox, Firewall and
         every view of Agents and Artifacts at 1920, 1366 and 390 px wide and
         saves the screenshots shown at each operator checkpoint.
-  - [ ] It sends a Call from the agent panel and sees its receipt in the
+  - [x] It sends a Call from the agent panel and sees its receipt in the
         Stream.
-  - [ ] On fixture data it shows the state icons in the Artifacts Tree and
+  - [x] On fixture data it shows the state icons in the Artifacts Tree and
         runs the delete flow: dry-run dialog, signature, result.
   - [ ] Phase 6: no page scrollbar on any view, agent and node popups,
         choice request and signed answer, Firewall settings diff and
@@ -917,9 +923,9 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
         class sends from it, the icon-only Cancel mayday, the speaking
         caption and the stations inside the spot, in Chromium and Firefox at
         1920, 1366 and 390 px.
-  - [ ] S5.3: state symbols in every Agents view and the panel, the Status
+  - [x] S5.3: state symbols in every Agents view and the panel, the Status
         menu toggles through a reload, 3D faces on and off, in Chromium and
         Firefox at 1920, 1366 and 390 px.
-  - [ ] S5.2: agent checkboxes in the Day/Night menu and the agent panel's
+  - [x] S5.2: agent checkboxes in the Day/Night menu and the agent panel's
         buttons, signed in Chromium and refused unsigned in Firefox, each at
         1920, 1366 and 390 px.
