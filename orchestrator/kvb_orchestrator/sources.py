@@ -49,7 +49,7 @@ class Sources:
         reviews = self.reviews.listed()
         scan = assign(self.tree.get(), tasks, read_claims(self.council), reviews)
         history = read_jsonl(self.council / "queue-history.jsonl")
-        return {**enrich(scan, tasks, reviews, self.touched, history, self.jobs.listed()), "cleanups": self.cleanup_results()}
+        return {**enrich(scan, tasks, reviews, self.touched, history, self.jobs.listed()), "cleanups": self.cleanup_results(), "gates": self.gate_view(scan)}
 
     def schedules(self, claims: list[dict], now: float) -> list[dict]:
         beats = {claim["session"]: claim["beat"] for claim in claims if claim["beat"] is not None}

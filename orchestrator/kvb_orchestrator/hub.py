@@ -16,6 +16,7 @@ from .cleanup import Cleaning, Spool
 from .denying import Denying
 from .engines import Engines, Speech
 from .events import Log, Watch
+from .gating import Gating
 from .icons import sheet
 from .inbox import Inbox
 from .jobs import Jobs
@@ -65,7 +66,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int

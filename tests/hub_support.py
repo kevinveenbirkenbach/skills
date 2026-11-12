@@ -83,6 +83,8 @@ ESTIMATE = REPO_ROOT / "skills" / "kvb-org-queue-estimate" / "scripts" / "estima
 
 
 class FakeScripts:
+    skills = REPO_ROOT / "skills"
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, list[str]]] = []
         self.code = 0

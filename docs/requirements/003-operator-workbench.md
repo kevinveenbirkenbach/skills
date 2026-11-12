@@ -205,7 +205,7 @@ flowchart TD
 
 ### W3 Artifacts
 
-- [ ] "Clean all merged" shows the gc dry run of every `merged-clean` item; one
+- [x] "Clean all merged" shows the gc dry run of every `merged-clean` item; one
       passkey runs the signed job.
 - [ ] Without a GitHub token, local branches merged by ancestry into the
       default branch and without a remote branch can be deleted; the others

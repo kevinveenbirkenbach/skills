@@ -12,15 +12,17 @@ JOB_OPEN = ("queued", "running")
 RUN_OUTPUT = 64 << 10
 CONSOLE = ("id", "status", "code", "output", "created_ts", "started", "finished")
 TASK_JOB = "task"
+GATE_JOB = "gate"
+CHANGES = (TASK_JOB, GATE_JOB)
 
 
 def runner_job(job: dict) -> dict:
     """Returns:
-        What the runner claims: an operator command, or a task change with
-        kind and argv; a runner that predates task changes verifies the
-        latter as an operator command and refuses it.
+        What the runner claims: an operator command, or a task or gate change
+        with kind and argv; a runner that predates such changes verifies them
+        as an operator command and refuses them.
     """
-    change = {"kind": TASK_JOB, "argv": job["argv"]} if job.get("kind") == TASK_JOB else {}
+    change = {"kind": job["kind"], "argv": job["argv"]} if job.get("kind") in CHANGES else {}
     return {**{key: job[key] for key in ("id", "task", "command", "directory", "sha256")}, **change, "proof": job.get("proof")}
 
 
@@ -90,7 +92,7 @@ class Jobs:
         job, changed = self.jobs.transition(job_id, "running", {"status": status, "code": code, "output": output, "finished": time.time()})
         if not changed:
             raise Conflict({"id": job_id, "status": job["status"]})
-        command_done = status == "done" and job.get("kind") != TASK_JOB
+        command_done = status == "done" and job.get("kind") not in CHANGES
         runs = [self.scripts.run(OPERATOR_SCRIPT, ["done", job["task"].removeprefix(OPERATOR)])] if command_done else []
         tail = "\n".join(output.splitlines()[-20:])
         self.log.add({"kind": "run", "title": f"{status}: {job['command'][:200]}", "text": tail, "ref": {"job": job_id, "task": job["task"], "code": code, "status": status}})

@@ -9,6 +9,7 @@ from .cleanup import cleanup_request
 from .denying import DENIABLE, DENY_KEYS, denial_note, request_status, request_words
 from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field
+from .gating import gate_request
 from .offices import office_request
 from .records import digest, shown
 from .register import REGISTER, adder, operator_rows, read_register, runnable
@@ -250,6 +251,8 @@ class Approving:
             signed = self.appointable(raw)
         elif task_request(raw):
             signed = self.task_changes(raw)
+        elif gate_request(raw):
+            signed = self.gate_changes(raw)
         else:
             signed = [item["signed"] for item in self.checked(raw) if item["signed"] is not None]
         return self.challenge_for(signed)

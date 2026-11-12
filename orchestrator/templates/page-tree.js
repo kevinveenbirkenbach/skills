@@ -25,24 +25,43 @@
     ];
   }
 
+  const FORGE_UNAVAILABLE = "forge unavailable";
+  const deletableNow = (entry) => Boolean(entry.cleanup) && (tree.data.delete_ready === true || entry.token_free === true);
+  const tokenLocked = (entry) => tree.data.delete_ready !== true && entry.state === "merged-clean" && !entry.held && (entry.cleanup ? entry.token_free !== true : entry.skip === FORGE_UNAVAILABLE);
+
   function deleteButton(entry) {
-    if (!entry.cleanup) {
-      return null;
+    if (entry.held) {
+      return h("span", {class: "hint held", title: entry.held}, chip("bi-folder-symlink", entry.held, "neutral"));
     }
-    const ready = tree.data.delete_ready === true;
+    if (!entry.cleanup) {
+      return tokenLocked(entry) ? chip("bi-key", "token needed", "warn") : null;
+    }
+    const ready = deletableNow(entry);
     const hint = ready ? `Delete: remove ${entry.name} locally, after dry run and signature` : `Delete blocked: ${tree.data.delete_reason || "delete_ready is false"}`;
     const button = iconBtn("bi-trash3", "Delete", "btn small danger", () => deleteDialog([entry.cleanup]), hint);
     button.disabled = !ready;
-    return h("span", {class: "hint", title: hint}, button);
+    return h("span", {class: "hint", title: hint}, button, ready ? null : chip("bi-key", "token needed", "warn"));
+  }
+
+  async function storeToken() {
+    const result = await sendJson("/api/cleanup/token", {});
+    toast(result.ok ? "Token: operator row added" : "Token: no operator row", result.ok && result.data ? [result.data.task] : fail(result), result.ok);
   }
 
   function deleteAll() {
-    const items = (tree.data.repos || []).flatMap((repo) => repo.branches).filter((entry) => entry.cleanup).map((entry) => entry.cleanup);
-    const ready = tree.data.delete_ready === true && items.length > 0;
-    const hint = tree.data.delete_ready !== true ? `Delete all merged blocked: ${tree.data.delete_reason || "delete_ready is false"}` : items.length ? `Delete all merged: ${items.length} branches after dry run and signature` : "Delete all merged: no merged branch without a skip reason";
-    const button = iconBtn("bi-trash3-fill", "Delete all merged", "btn small danger", () => deleteDialog(items), hint);
+    const branches = (tree.data.repos || []).flatMap((repo) => repo.branches);
+    const items = branches.filter(deletableNow).map((entry) => entry.cleanup);
+    const waiting = branches.filter(tokenLocked);
+    const locked = waiting.filter((entry) => entry.cleanup).map((entry) => entry.cleanup);
+    const held = (tree.data.repos || []).flatMap((repo) => repo.branches.filter((entry) => entry.held).map((entry) => ({repository: repo.path, branch: entry.name, tip: entry.head})));
+    const ready = items.length > 0;
+    const hint = !ready && tree.data.delete_ready !== true ? `Delete all merged blocked: ${tree.data.delete_reason || "delete_ready is false"}` : items.length ? `Delete all merged: ${items.length} branches after dry run and signature` : "Delete all merged: no merged branch without a skip reason";
+    const button = iconBtn("bi-trash3-fill", "Delete all merged", "btn small danger", () => deleteDialog(items, locked, held), hint);
     button.disabled = !ready;
-    return h("span", {class: "hint", title: hint}, button, items.length ? counter(items.length) : null);
+    return h("span", {class: "hint", title: hint}, button, items.length ? counter(items.length) : null,
+      waiting.length ? chip("bi-key", `${waiting.length} token needed`, "warn", waiting.length) : null,
+      held.length ? chip("bi-folder-symlink", `${held.length} held by a worktree: use branch gc`, "neutral", held.length) : null,
+      tree.data.delete_ready !== true ? iconBtn("bi-key-fill", "Store token", "btn small soft", storeToken, "Store token: add the operator row that stores the GitHub token in the Secret Service") : null);
   }
 
   function leafRow(found) {
@@ -82,7 +101,7 @@
     const result = resultOf(repo, entry);
     return h("div", {class: "branch-row"},
       h("div", {class: "branch-name"}, h("strong", {}, entry.name), h("span", {class: "states"}, branchStates(entry)), entry.upstream ? h("span", {class: "muted"}, `↔ ${entry.upstream}`) : null,
-        h("span", {class: "muted", title: entry.head}, entry.head.slice(0, 10)), result ? resultChip(result) : null, h("span", {class: "spacer"}), deleteButton(entry)),
+        h("span", {class: "muted", title: entry.head}, entry.head.slice(0, 10)), result ? resultChip(result) : null, h("span", {class: "spacer"}), gateIcons(repo.path, entry.name), deleteButton(entry)),
       entry.worktrees.map(worktreeRow));
   }
 
@@ -96,7 +115,7 @@
       tree.dom.list.replaceChildren(emptyState(tree.busy || !tree.data ? "Reading repositories …" : "No tree", tree.data ? tree.data.error : "pkgmgr writes the tree every minute while this page is open."));
       return;
     }
-    tree.dom.removeAll.replaceChildren(deleteAll());
+    tree.dom.removeAll.replaceChildren(deleteAll(), gateApply() || "");
     const q = tree.q.trim().toLowerCase();
     const hit = (...texts) => !q || texts.some((text) => String(text).toLowerCase().includes(q));
     const repos = [];
@@ -124,6 +143,7 @@
         h("summary", {}, icon("bi-git"), h("span", {}, repo.name), counter(`${repo.branches.length} branches`), counter(`${trees.length} worktrees`),
           dirty ? chip("bi-pencil-square", `${dirty} worktrees with changes`, "warn", dirty) : null, merged ? chip("bi-sign-merge-left", `${merged} merged, deletable`, "ok", merged) : null,
           busy ? chip("bi-lightning-charge", `${busy} worktrees with open work`, "warn", busy) : null),
+        repo.branches.length ? branchAncestry(repo) : null,
         branches.map((entry) => branchRow(repo, entry)),
         detached.length ? h("div", {class: "branch-row"}, h("div", {class: "branch-name"}, h("strong", {}, "detached HEAD")), detached.map(worktreeRow)) : null);
       details.addEventListener("toggle", () => {

@@ -40,6 +40,8 @@ CLEANUP_STATE = re.compile(r"/api/cleanup/([0-9a-f]{16})")
 OFFICES_ROUTE = "/api/offices"
 OFFICE_STATE = re.compile(r"/api/offices/([0-9a-f]{16})")
 TASKS_ROUTE = "/api/tasks"
+GATES_ROUTE = "/api/gates"
+TOKEN_ROUTE = "/api/cleanup/token"
 VENDOR_ROUTE = re.compile(r"/vendor/([a-z0-9.-]{1,64})")
 SCRIPT_TYPE = "text/javascript; charset=utf-8"
 FONT_TYPE = "font/woff2"
@@ -57,7 +59,7 @@ SETTINGS_SIGN_ROUTE = "/api/settings/sign"
 CHOICES_ROUTE = "/api/choices"
 CHOICES_SIGN_ROUTE = "/api/choices/sign"
 WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
-ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE)
+ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE)
 
 
 class Handler(Exchange):
@@ -168,6 +170,10 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.appoint(body), HTTPStatus.ACCEPTED)
         if path == TASKS_ROUTE:
             return lambda body: self.answer(lambda: hub.change_tasks(body), HTTPStatus.ACCEPTED)
+        if path == GATES_ROUTE:
+            return lambda body: self.answer(lambda: hub.change_gates(body), HTTPStatus.ACCEPTED)
+        if path == TOKEN_ROUTE:
+            return lambda body: self.answer(lambda: hub.token_row(body), HTTPStatus.CREATED)
         if inbox:
             return lambda body: self.answer(lambda: hub.mark(body), HTTPStatus.OK)
         if undo:

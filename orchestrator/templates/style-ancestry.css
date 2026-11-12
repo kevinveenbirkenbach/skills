@@ -1,0 +1,17 @@
+.ancestry-frame { max-width: 100%; min-width: 0; margin: 6px 0 10px; overflow-x: auto; overflow-y: hidden; contain: inline-size; }
+svg.ancestry { display: block; margin: 0 auto; touch-action: none; user-select: none; }
+svg .ancestry-edge { fill: none; stroke: var(--line-strong); stroke-width: 1.6; cursor: pointer; }
+svg .ancestry-edge:hover { stroke: var(--accent); }
+svg .ancestry-edge.derived { stroke-dasharray: 5 5; }
+svg .ancestry-edge.pending { stroke: var(--info); stroke-dasharray: 2 4; }
+svg .ancestry-edge.dropping { stroke: var(--bad); opacity: .5; }
+svg .ancestry-node { cursor: grab; }
+svg .ancestry-node:active { cursor: grabbing; }
+svg .ancestry-node .label { fill: var(--text); font-size: var(--fs-2xs); }
+.gates { display: inline-flex; align-items: center; gap: 2px; }
+.gate-mark { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; }
+.gate-mark:hover { background: var(--hover); }
+.gate-mark.inherited { opacity: .4; }
+.gate-mark.pending { outline: 1px dashed var(--info); color: var(--info); }
+.gate-apply, .gate-staged { display: inline-flex; align-items: center; gap: 4px; }
+.dry-run.locked pre { opacity: .6; }

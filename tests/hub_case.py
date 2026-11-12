@@ -232,8 +232,14 @@ class HubCase(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
 
     def write_tree(self) -> Path:
+        return self.write_fixture("branch-tree.json")
+
+    def write_fixture(self, fixture: str) -> Path:
+        """Args:
+            fixture: the tree file under tests/ to write, @ROOT@ replaced.
+        """
         root = self.outside / "scan"
-        sample = (Path(__file__).parent / "branch-tree.json").read_text(encoding="utf-8")
+        sample = (Path(__file__).parent / fixture).read_text(encoding="utf-8")
         self.tree_file.write_text(sample.replace("@ROOT@", str(root)), encoding="utf-8")
         return root
 

@@ -10,6 +10,9 @@
         ~/.claude/skills/kvb-org-rasci/scripts/rasci.py; optional.
     --council: the council directory holding rasci.json, the agents'
         AGENTS_COUNCIL_ROOT; optional, task changes need both.
+    --gates: the installed gates script, e.g.
+        ~/.claude/skills/kvb-check-gate/scripts/gates.py; optional, gate
+        changes need it.
     --once: handle the queued jobs once and exit.
 
 Returns:
@@ -18,9 +21,12 @@ Returns:
     in the signed directory, each signature once and before its expiry.
     Runs every signed task change (priority pin or WSJF estimate) as
     `python3 -I -B <rasci> <argv>` from / without a shell, after checking the
-    argv shape itself, and kills its process group after 30 s. Refuses task
-    changes without --rasci and --council or into a council that is a
-    symlink or another uid's, and every other job. Posts the last 200 output lines
+    argv shape itself, and kills its process group after 30 s. Runs every
+    signed gate change (rule set|drop, parents add|drop) the same way as
+    `python3 -I -B <gates> <argv>` with the operator's HOME, so gates.py
+    writes its default gates.db. Refuses task changes without --rasci and
+    --council or into a council that is a symlink or another uid's, gate
+    changes without --gates, and every other job. Posts the last 200 output lines
     back while it runs and the exit code at its end. The exit code is 0.
 """
 
@@ -52,8 +58,10 @@ BEAT = 2.0
 SAFE_PATH = "/usr/bin:/bin"
 TASK_JOB = "task"
 TASK_LIMIT = 30.0
+GATE_JOB = "gate"
 REFUSED = "refused: no valid operator signature for this command"
 UNREGISTERED = "refused: this runner was started without --rasci and --council; reinstall its unit with make orchestrator-runner"
+UNGATED = "refused: this runner was started without --gates; reinstall its unit with make orchestrator-runner"
 
 
 class Register(NamedTuple):
@@ -113,6 +121,24 @@ def task_refusal(job: dict, trust: verifier.Trust, now: float) -> str | None:
     return None
 
 
+def gate_refusal(job: dict, trust: verifier.Trust, now: float) -> str | None:
+    """Args:
+        job: the claimed gate change with argv and proof.
+        trust: the pinned keys, the runner's replay store and the origin.
+        now: the current time in epoch seconds.
+
+    Returns:
+        Why the change must not run, or None when signing.gate_argv()
+        accepts its argv and a pinned key signed it.
+    """
+    try:
+        argv = signing.gate_argv(job["argv"])
+        verifier.check(job.get("proof"), signing.gate_item(argv), "", trust, now)
+    except (signing.Refused, OSError) as error:
+        return f"{REFUSED}: {error}"
+    return None
+
+
 def council_refusal(council: Path) -> str | None:
     """Args:
         council: the directory rasci.py writes the register into.
@@ -159,6 +185,23 @@ def change(job: dict, register: Register, report: Callable[[dict], None]) -> int
     argv = signing.task_argv(job["task"], job["argv"])
     env = {"PATH": SAFE_PATH, "HOME": str(Path.home()), "AGENTS_COUNCIL_ROOT": str(register.council)}
     return spawn([sys.executable, "-I", "-B", str(register.rasci), *argv], "/", env, report, TASK_LIMIT)
+
+
+def gate(job: dict, gates: Path, report: Callable[[dict], None]) -> int:
+    """Args:
+        job: the claimed and verified gate change with argv.
+        gates: the gates script.
+        report: called with {"output", "code", "refused"}.
+
+    Returns:
+        The exit code of gates.py, run from / on the argv gate_argv() checked.
+
+    Raises:
+        signing.Refused for an argv of any other shape.
+    """
+    argv = signing.gate_argv(job["argv"])
+    env = {"PATH": SAFE_PATH, "HOME": str(Path.home())}
+    return spawn([sys.executable, "-I", "-B", str(gates), *argv], "/", env, report, TASK_LIMIT)
 
 
 def spawn(argv: list[str], cwd: str, env: dict[str, str] | None, report: Callable[[dict], None], limit: float | None = None) -> int:
@@ -224,22 +267,26 @@ def sender(base: str, job_id: str) -> Callable[[dict], None]:
     return send
 
 
-def cycle(base: str, trust: verifier.Trust, register: Register | None) -> None:
+def cycle(base: str, trust: verifier.Trust, register: Register | None, gates: Path | None = None) -> None:
     for job in call(base, "/api/runner/jobs", None)["jobs"]:
         try:
             claimed = call(base, f"/api/runner/{job['id']}/claim", {})
         except urllib.error.HTTPError:
             continue
         send = sender(base, claimed["id"])
-        task = claimed.get("kind") == TASK_JOB
-        if not task:
-            reason = refusal(claimed, trust, time.time())
-        else:
+        kind = claimed.get("kind")
+        if kind == TASK_JOB:
             reason = UNREGISTERED if register is None else council_refusal(register.council) or task_refusal(claimed, trust, time.time())
+        elif kind == GATE_JOB:
+            reason = UNGATED if gates is None else gate_refusal(claimed, trust, time.time())
+        else:
+            reason = refusal(claimed, trust, time.time())
         if reason is not None:
             send({"output": reason, "code": None, "refused": True})
-        elif task:
+        elif kind == TASK_JOB:
             change(claimed, register, send)
+        elif kind == GATE_JOB:
+            gate(claimed, gates, send)
         else:
             execute(claimed, send)
 
@@ -252,6 +299,7 @@ def main() -> int:
     parser.add_argument("--replay", type=Path, required=True)
     parser.add_argument("--rasci", type=Path)
     parser.add_argument("--council", type=Path)
+    parser.add_argument("--gates", type=Path)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     base = hub_api.base_url(args.port)
@@ -259,7 +307,7 @@ def main() -> int:
     register = Register(rasci=args.rasci, council=args.council) if args.rasci and args.council else None
     while True:
         try:
-            cycle(base, trust, register)
+            cycle(base, trust, register, args.gates)
         except (OSError, ValueError, KeyError, TypeError):
             pass
         if args.once:
