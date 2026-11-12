@@ -24,8 +24,11 @@ pathlib.Path(__file__).with_name("home.txt").write_text(os.environ["HOME"])
 pathlib.Path(os.environ["HOME"], ".medusa").mkdir()
 target, out = pathlib.Path(args[1]), pathlib.Path(args[args.index("-o") + 1])
 out.mkdir(parents=True)
+scannable = sorted(p for p in target.rglob("*") if p.is_file() and p.suffix.lower() not in (".mjs", ".cjs"))
+if not scannable:
+    sys.exit(0)
 findings = []
-for path in sorted(p for p in target.rglob("*") if p.is_file()):
+for path in scannable:
     for number, text in enumerate(path.read_text().splitlines(), 1):
         for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
             if "MARK-" + severity in text:
@@ -74,6 +77,7 @@ class TestSecurity(unittest.TestCase):
         subprocess.run(["git", *args], cwd=self.repo, env=self.env, capture_output=True, check=True)
 
     def write(self, path: str, text: str) -> None:
+        (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
         (self.repo / path).write_text(text, encoding="utf-8")
 
     def scan(self, *extra: str, env: dict[str, str]) -> subprocess.CompletedProcess:
@@ -220,6 +224,59 @@ class TestSecurity(unittest.TestCase):
         self.assertIn("accepted FAKE-HIGH, FAKE-LOW app.py", result.stdout)
         result = self.scan(env=self.env)
         self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings, 2 accepted in 1 file)\n")
+
+    def test_mjs_and_cjs_files_medusa_skips_are_scanned_and_reported_at_their_repository_path(self):
+        line = "run(request.query)  // MARK-HIGH"
+        self.write("tool.mjs", f"import run from 'run';\n{line}\n")
+        result = self.scan(env=self.env)
+        self.assertEqual(
+            (result.stdout, result.returncode),
+            ("🛡️ security 75 % (medusa: 1 finding in 1 file: high tool.mjs:2)\n", 3),
+        )
+        sha1 = hashlib.sha1(line.encode()).hexdigest()
+        result = self.accept(
+            "--rule", "FAKE-HIGH", "--path", "tool.mjs", "--sha1", sha1, "--line", "2", "--reason", "fixture"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.write("tool.mjs.js", "a  // MARK-MEDIUM\n")
+        self.write("lib.CJS", "b  // MARK-LOW\n")
+        result = self.scan(env=self.env)
+        self.assertEqual(
+            (result.stdout, result.returncode),
+            ("🛡️ security 88 % (medusa: 2 findings, 1 accepted in 3 files: medium tool.mjs.js:1, low lib.CJS:1)\n", 3),
+        )
+
+    def test_a_folder_named_like_the_alias_keeps_both_paths_apart(self):
+        self.write("tool.mjs", "a  // MARK-HIGH\n")
+        self.write("tool.mjs.js/inner.py", "b  # MARK-LOW\n")
+        result = self.scan(env=self.env)
+        self.assertEqual(
+            (result.stdout, result.returncode),
+            ("🛡️ security 73 % (medusa: 2 findings in 2 files: high tool.mjs:1, low tool.mjs.js/inner.py:1)\n", 3),
+        )
+
+    def test_the_cache_keeps_the_repository_path_of_an_aliased_file(self):
+        text = "a  // MARK-HIGH\n"
+        self.write("tool.mjs", text)
+        first = json.loads(self.scan("--json", env=self.env).stdout)
+        (self.repo / "tool.mjs").unlink()
+        self.write("tool.mjs.js", text)
+        second = json.loads(self.scan("--json", env=self.env).stdout)
+        self.assertEqual([f["path"] for f in first["findings"] + second["findings"]], ["tool.mjs", "tool.mjs.js"])
+
+    def test_a_nested_mjs_file_is_reported_at_its_nested_path(self):
+        self.write("a/b/tool.mjs", "a  // MARK-MEDIUM\n")
+        result = self.scan(env=self.env)
+        self.assertEqual(
+            (result.stdout, result.returncode),
+            ("🛡️ security 90 % (medusa: 1 finding in 1 file: medium a/b/tool.mjs:1)\n", 3),
+        )
+
+    def test_an_mjs_file_name_without_room_for_the_alias_is_scanned_under_a_short_one(self):
+        name = "t" * 250 + ".mjs"
+        self.write(name, "a  // MARK-LOW\n")
+        found = json.loads(self.scan("--json", env=self.env).stdout)
+        self.assertEqual((found["files"], [(f["path"], f["line"]) for f in found["findings"]]), (1, [(name, 1)]))
 
     def test_critical_exits_1_and_floors_at_0(self):
         self.write("app.py", "a  # MARK-CRITICAL\nb  # MARK-CRITICAL\nc  # MARK-CRITICAL\n")
