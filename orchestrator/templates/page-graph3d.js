@@ -128,6 +128,16 @@
     }
   }
 
+  function keepPlaces(nodes) {
+    const laid = new Map(g3.graph.graphData().nodes.filter((node) => Number.isFinite(node.x)).map((node) => [node.id, node]));
+    for (const node of nodes) {
+      const old = laid.get(node.id);
+      if (old) {
+        Object.assign(node, {x: old.x, y: old.y, z: old.z});
+      }
+    }
+  }
+
   function colors3d() {
     const css = window.getComputedStyle(document.documentElement);
     const value = (name) => css.getPropertyValue(`--${name}`).trim() || "#888";
@@ -394,6 +404,7 @@
       }
     }
     const layout = layoutOf(tab);
+    keepPlaces(data.nodes);
     place(data.nodes, layout);
     g3.badges = new Map();
     g3.faces = new Set();

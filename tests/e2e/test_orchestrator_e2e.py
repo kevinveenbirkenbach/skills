@@ -69,9 +69,23 @@ HELPERS = """
     return rows;
   };
   const taskLayout = () => all("#main .graph.tasks > *").map((node) => (node.matches('[role="toolbar"]') ? "toolbar" : node.matches('[aria-label="Task filters"]') ? "chips" : "body"));
+  const screenShown = async (ms) => {
+    const shown = await until(() => {
+      if (typeof Nav !== "object") {
+        return false;
+      }
+      const route = Nav.route(location.hash);
+      const view = route.view ? Nav.viewsOf(route.screen).find(([id]) => id === route.view)[1] : null;
+      const pressed = name(document.querySelector('#main [aria-label="View"] button[aria-pressed="true"]'));
+      return document.getElementById("main").getAttribute("aria-labelledby") === `tab-${route.screen}` && (!view || pressed === view);
+    }, ms);
+    await sleep(0);
+    return Boolean(shown);
+  };
 """
 PROBE = """(async () => {@HELPERS@
-  await until(() => !document.querySelector("#main .space-note") || !text(document.querySelector("#main .space-note")).startsWith("Loading"), 8000);
+  await screenShown(8000);
+  await until(() => !(text(document.querySelector("#main .space-note")) || "").startsWith("Loading") && !all("#main .empty h2").some((title) => text(title).endsWith("…")), 8000);
   const badge = (button) => {
     const found = button.querySelector(".badge");
     return found && !found.hidden ? text(found) : null;
@@ -772,8 +786,10 @@ SPOT_SEND = """(async () => {@HELPERS@
     field.dispatchEvent(new Event("input", {bubbles: true}));
     const shown = new Set(all("#toasts .toast"));
     const prompts = questions.length;
-    form.querySelector('button[type="submit"]').click();
+    const submit = form.querySelector('button[type="submit"]');
+    submit.click();
     const toast = await until(() => all("#toasts .toast").filter((node) => !shown.has(node)).map(text).find((entry) => entry.includes(" to ")), 20000);
+    await until(() => !submit.disabled, 20000);
     found.runs.push({cls, direct, toast, question: questions.slice(prompts), left: field.value});
   }
   document.getElementById("toasts").replaceChildren();
@@ -821,13 +837,13 @@ PRESENCE_WALK = """(async () => {@HELPERS@@PRESENCE@
   const views = {};
   for (const view of ["orbit", "chord", "swimlane", "tree", "hierarchy"]) {
     location.hash = `#agents/${view}`;
+    await screenShown(6000);
     await until(() => all("#main .presence:not(label)").length, 6000);
-    await sleep(300);
     views[view] = states();
   }
   location.hash = "#agents/orbit";
-  await sleep(700);
-  const node = document.querySelector('#main svg .node[data-pick="s1"]');
+  await screenShown(6000);
+  const node = await until(() => document.querySelector('#main svg .node[data-pick="s1"]'), 6000);
   const motion = getComputedStyle(node.querySelector(".presence .glyph")).animationName;
   node.dispatchEvent(new MouseEvent("click", {bubbles: true}));
   const mark = await until(() => document.querySelector("#popup .presence"), 4000);
@@ -842,7 +858,8 @@ PRESENCE_WALK = """(async () => {@HELPERS@@PRESENCE@
   menu.querySelector('input[data-look="faces"]').click();
   const hidden = await graph3d("0");
   location.hash = "#agents/orbit";
-  await sleep(700);
+  await screenShown(6000);
+  await until(() => document.querySelector('#main svg .node[data-pick="s2"]'), 6000);
   return {views, motion, profile, shown, before, hidden, orbit: states(), @FITS@};
 })()""".replace("@HELPERS@", HELPERS).replace("@PRESENCE@", PRESENCE_HELPERS).replace("@FITS@", FITS)
 PRESENCE_READ = """(async () => {@HELPERS@@PRESENCE@
