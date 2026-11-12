@@ -6,9 +6,11 @@ Args:
     --base: git ref the change starts from.
     --json: print the figures as JSON instead of the line.
 
-    accept --repo <root> --rule <rule_id> [--rule ...] --path <repo path> --sha1 <40 hex> --reason <one line>:
+    accept --repo <root> --rule <rule_id> [--rule ...] --path <repo path> --sha1 <40 hex> [--line <n>] --reason <one line>:
         record reviewed false positives of one line instead, a row per rule; --json
-        of a scan prints rule, path and sha1 of every finding.
+        of a scan prints rule, path, line and sha1 of every finding. --line binds
+        the row to that line's neighbourhood and is required when the line's text
+        occurs more than once in the file.
 
 Scan:
     The regular files `git diff <ref>` names plus untracked ones, symlinks left
@@ -20,13 +22,17 @@ Scan:
 
 Accepted:
     One JSON row per reviewed false positive (id, rule, path, sha1 of the stripped
-    source line, or of the whole file for a finding without a line, reason, repo,
-    date), appended by accept to
+    source line, or of the whole file for a finding without a line, context: the
+    sha1 of the stripped lines up to REACH above and below it when accept got
+    --line, reason, repo, date), appended by accept to
     <council root>/security-accepted.jsonl of the kvb-org-organize watch.py, whose
     hook keeps the rows in ~/.local/state/agents-council/security-accepted.jsonl;
-    a scan reads both. A finding with that rule, path and text is accepted and
-    leaves the score; an edit of the line, or of the file, brings it back. A row
-    without rule, path and sha1 is a usage error.
+    a scan reads both. A finding with that rule, path, text and context is
+    accepted and leaves the score; a row without context accepts it only while no
+    other finding of the scan shares its rule, path and text, so one acceptance
+    never hides an identical line elsewhere. An edit of the line, its
+    neighbourhood or the file brings it back. A row without rule, path and sha1
+    is a usage error.
 
 Output:
     `🛡️ security <n> % (medusa: <k> findings, <a> accepted in <m> files: <severity> <path>:<line>, ...)`,
@@ -55,11 +61,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 WEIGHTS = {"critical": 50, "high": 25, "medium": 10, "low": 2, "info": 0}
 SAFE = 100
 SHOWN = 5
+REACH = 2
 SHA1 = re.compile(r"[0-9a-f]{40}")
 WATCH = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "watch.py"
 HAND = (
@@ -115,17 +123,27 @@ def located(name: str, tree: Path) -> str:
         return name
 
 
-def fingerprint(tree: Path, path: str, line: int | None) -> str | None:
+def digest(text: str) -> str:
+    return hashlib.sha1(text.encode()).hexdigest()
+
+
+def fingerprint(tree: Path, path: str, line: int | None) -> tuple[str | None, str | None]:
+    """Returns:
+        (sha1 of the stripped line or of the whole file without a line, sha1 of
+        the stripped lines up to REACH around the line or None), (None, None) for
+        an unreadable file or a line outside it.
+    """
     try:
         text = (tree / path).read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return None
+        return None, None
     if line is None:
-        return hashlib.sha1(text.encode()).hexdigest()
+        return digest(text), None
     rows = text.splitlines()
     if not 1 <= line <= len(rows):
-        return None
-    return hashlib.sha1(rows[line - 1].strip().encode()).hexdigest()
+        return None, None
+    around = rows[max(0, line - 1 - REACH):line + REACH]
+    return digest(rows[line - 1].strip()), digest("\n".join(row.strip() for row in around))
 
 
 def watch():
@@ -137,7 +155,7 @@ def watch():
     return loaded
 
 
-def accepted(listings: tuple[Path, ...]) -> set[tuple[str, str, str]]:
+def accepted(listings: tuple[Path, ...]) -> set[tuple[str, str, str, str | None]]:
     entries = set()
     for listing in listings:
         if not listing.is_file():
@@ -147,10 +165,15 @@ def accepted(listings: tuple[Path, ...]) -> set[tuple[str, str, str]]:
                 continue
             try:
                 row = json.loads(line)
-                entries.add((row["rule"], row["path"], row["sha1"]))
-            except (ValueError, KeyError, TypeError):
+                entries.add((row["rule"], row["path"], row["sha1"], row.get("context")))
+            except (ValueError, KeyError, TypeError, AttributeError):
                 fail(f"{listing}:{number}: want a JSON row with rule, path and sha1")
     return entries
+
+
+def covered(finding: dict, reviewed: set[tuple[str, str, str, str | None]], shared: Counter) -> bool:
+    key = (finding["rule"], finding["path"], finding["sha1"])
+    return (*key, finding["context"]) in reviewed or (shared[key] == 1 and (*key, None) in reviewed)
 
 
 def accept(argv: list[str]) -> int:
@@ -158,17 +181,32 @@ def accept(argv: list[str]) -> int:
     for flag in ("--repo", "--path", "--sha1", "--reason"):
         parser.add_argument(flag, required=True)
     parser.add_argument("--rule", action="append", required=True)
+    parser.add_argument("--line", type=int)
     args = parser.parse_args(argv)
     if not SHA1.fullmatch(args.sha1):
         parser.error("--sha1 must be 40 lowercase hex digits")
     if not args.reason.strip() or "\n" in args.reason:
         parser.error("--reason must be one non-empty line")
     root = git(Path(args.repo), "rev-parse", "--show-toplevel").strip()
+    context = None
+    if args.line is not None:
+        sha1, context = fingerprint(Path(root), args.path, args.line)
+        if sha1 != args.sha1:
+            parser.error(f"--sha1 is not the sha1 of line {args.line} of {args.path}")
+    else:
+        try:
+            rows = (Path(root) / args.path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            rows = []
+        twins = sum(digest(row.strip()) == args.sha1 for row in rows)
+        if twins > 1:
+            parser.error(f"the line occurs {twins} times in {args.path}; name the reviewed one with --line")
     date = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
     rows = [
         {
-            "id": hashlib.sha1(f"{rule}\t{args.path}\t{args.sha1}".encode()).hexdigest(), "rule": rule,
-            "path": args.path, "sha1": args.sha1, "reason": args.reason, "repo": root, "date": date,
+            "id": digest("\t".join([rule, args.path, args.sha1, *([context] if context else [])])), "rule": rule,
+            "path": args.path, "sha1": args.sha1, **({"context": context} if context else {}),
+            "reason": args.reason, "repo": root, "date": date,
         }
         for rule in args.rule
     ]
@@ -199,12 +237,14 @@ def findings(reports: Path, tree: Path) -> list[dict]:
             raise Unreadable(f"{files[-1].name}: a finding without a known severity")
         line = entry.get("line") if isinstance(entry.get("line"), int) else None
         path = located(str(entry.get("file") or "?"), tree)
+        sha1, context = fingerprint(tree, path, line)
         found.append({
             "severity": severity,
             "rule": entry.get("rule_id") if isinstance(entry.get("rule_id"), str) else None,
             "path": path,
             "line": line,
-            "sha1": fingerprint(tree, path, line),
+            "sha1": sha1,
+            "context": context,
         })
     rank = list(WEIGHTS)
     return sorted(found, key=lambda f: (rank.index(f["severity"]), f["path"], f["line"] or 0))
@@ -266,7 +306,8 @@ def main() -> int:
             print(f"🛡️ security – ({problem}: {HAND})")
         return 4
 
-    passed = [f for f in every if (f["rule"], f["path"], f["sha1"]) in reviewed]
+    shared = Counter((f["rule"], f["path"], f["sha1"]) for f in every)
+    passed = [f for f in every if covered(f, reviewed, shared)]
     found = [f for f in every if f not in passed]
     counts = {severity: sum(f["severity"] == severity for f in found) for severity in WEIGHTS}
     value = max(0, SAFE - sum(WEIGHTS[s] * n for s, n in counts.items()))
