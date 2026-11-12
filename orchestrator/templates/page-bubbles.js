@@ -23,12 +23,36 @@
     return box.width > 0 && box.height > 0 && box.left + box.width > 0 && box.top + box.height > 0 && box.left < window.innerWidth && box.top < window.innerHeight;
   }
 
+  function clipped(box, frame) {
+    const left = Math.max(box.left, frame.left);
+    const top = Math.max(box.top, frame.top);
+    return {left, top, width: Math.min(box.left + box.width, frame.left + frame.width) - left, height: Math.min(box.top + box.height, frame.top + frame.height) - top};
+  }
+
+  function clipsOf(node) {
+    const frames = [];
+    for (let at = node; at.parentElement && at.parentElement !== document.body && getComputedStyle(at).position !== "fixed"; at = at.parentElement) {
+      const style = getComputedStyle(at.parentElement);
+      if (style.display !== "contents" && style.display !== "inline" && (style.overflowX !== "visible" || style.overflowY !== "visible")) {
+        frames.push(at.parentElement.getBoundingClientRect());
+      }
+    }
+    return frames;
+  }
+
   function anchorOf(key) {
     const projected = g3.tab === "agents" ? anchor3d(key)() : null;
     if (projected && inView(projected)) {
       return projected;
     }
-    return [...document.querySelectorAll(`[data-face="${CSS.escape(key)}"]`)].map((node) => node.getBoundingClientRect()).find(inView) || null;
+    for (const node of document.querySelectorAll(`[data-face="${CSS.escape(key)}"]`)) {
+      const box = node.getBoundingClientRect();
+      const shown = inView(box) ? clipsOf(node).reduce(clipped, box) : null;
+      if (shown && inView(shown)) {
+        return shown;
+      }
+    }
+    return null;
   }
 
   function bubbleNode(item) {

@@ -6,6 +6,7 @@
 .speech-bubble::before { margin-left: -9px; border-width: 12px 9px 0; border-top-color: var(--text); }
 .speech-bubble::after { margin-left: -6px; border-width: 8px 6px 0; border-top-color: var(--panel); }
 .speech-bubble.leaving { opacity: 0; }
+.speech-bubble[data-state="speaking"]:not(.leaving) { z-index: 1; }
 .bubble-words { display: block; max-height: calc(6 * 1.35em); overflow: hidden; overflow-wrap: anywhere; scroll-behavior: smooth; }
 .speech-bubble[data-state="waiting"] .bubble-words { letter-spacing: .12em; }
 .bubble-who { display: none; color: var(--muted); font: 650 var(--fs-xs)/1.2 var(--sans); }
