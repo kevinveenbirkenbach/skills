@@ -42,7 +42,9 @@ Every 20 s each waiting hold evaluates the queue under one lock:
    `exclusive_kinds` run only beside `light_kinds`.
 3. A job whose disk need would cut below the stop threshold, or whose
    footprint would push the running ones past `budget_percent`, reserves it
-   against the jobs behind it; a job alone always fits.
+   against the jobs behind it but `light_kinds`, which meet only running and
+   granted jobs, so a stream of light jobs can delay a heavy head; a job
+   alone always fits.
 4. An unblocked job counts as granted for the jobs behind it.
 5. Every job, alone too, needs CPU, and RAM used plus what it and the
    running jobs may still take, below `load_limits`.

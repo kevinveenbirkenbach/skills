@@ -72,7 +72,8 @@ yet) may sum to at most these percentage points, a job alone always fits;
 slot_limits {kind: N}, optional, caps the learned slot limit of a kind from
 above (history.slot_limits); exclusive_kinds [kind] and light_kinds [kind],
 optional: a job of an exclusive kind runs only beside jobs of light kinds, and
-no job of another kind starts beside it; queue_enforce (bool), optional, read by block
+no job of another kind starts beside it; a light job meets only the budget and
+disk of running and granted jobs, never a reservation; queue_enforce (bool), optional, read by block
 only. The watch.py keys disk, thresholds_gb (stop is the floor every grant
 leaves free), slot_need_gb (the disk seed per kind), load_limits (every grant
 also needs CPU busy below cpu_percent and RAM used plus the job's learned RAM
@@ -405,20 +406,24 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       An unblocked entry counts as granted for the entries after it, whoever
       holds it, so a lower entry never takes a higher entry's slot; one
       blocked by disk or budget reserves its need against the entries after it.
-      A hotfix entry that passes every check but the host load holds back
-      every entry after it, so lighter jobs cannot keep the load up. While no
-      queue job is active, any other entry the host load alone keeps out
-      reserves nothing and holds nothing back: that load lies outside the
-      queue, so holding the queue frees none of it. An
-      exclusive entry that only running jobs of other kinds keep out holds
-      back every entry after it but light ones, so none overtakes it. A waiting
-      entry whose holder has not polled for CLAIM_SECONDS reserves nothing and
-      comes last.
+      A light entry meets only the disk, RAM and CPU of running and granted
+      entries: reservations, a head the host load keeps out included, hold
+      back heavy kinds alone, so light jobs that keep coming can delay a heavy
+      head without bound. A hotfix entry that passes every check but the host
+      load holds back every entry after it, so lighter jobs cannot keep the
+      load up. While no queue job is active, any other entry the host load
+      alone keeps out reserves nothing and holds nothing back: that load lies
+      outside the queue, so holding the queue frees none of it. An exclusive
+      entry that only running jobs of other kinds keep out holds back every
+      entry after it but light ones, so none overtakes it. A waiting entry
+      whose holder has not polled for CLAIM_SECONDS reserves nothing and comes
+      last.
     """
     active = [e for e in entries if e["status"] == "active"]
     available = free_gb - sum(e["need_gb"] for e in active)
     used = {resource: sum(footprints[e["id"]][resource] for e in active) for resource in budget}
     taken = len(active)
+    granted = used, available, taken
     counts = Counter(e["kind"] for e in active)
     busy = {e["workdir"] for e in active}
     verdicts: dict[str, str | None] = {}
@@ -438,17 +443,20 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
             if reason is not None and kind in exclusive:
                 drain = entry["id"]
         if reason is None:
-            reason, after, left = resources(need, share, used, available, floor, budget, taken)
+            pool_used, pool_available, pool_taken = granted if kind in light else (used, available, taken)
+            reason, took, disk = resources(need, share, pool_used, pool_available, floor, budget, pool_taken)
             if reason is None and entry["id"] in loaded and (entry["hotfix"] or not active):
                 reason = loaded[entry["id"]]
                 if entry["hotfix"]:
                     held = entry["id"]
             else:
-                used, available = after, left
+                used, available = plus(used, took), available - disk
                 if reason is None:
                     taken += 1
                     counts[kind] += 1
                     busy.add(workdir)
+                    if entry["id"] not in loaded:
+                        granted = plus(granted[0], took), granted[1] - disk, granted[2] + 1
         verdicts[entry["id"]] = reason
     for entry in waiting:
         if silent(entry, now):
@@ -474,15 +482,15 @@ def plus(used: dict[str, float], share: dict[str, float]) -> dict[str, float]:
 def resources(need: float, share: dict[str, float], used: dict[str, float], available: float, floor: float,
               budget: dict[str, float], taken: int) -> tuple[str | None, dict[str, float], float]:
     """Returns:
-        (reason or None, RAM and CPU used or reserved, disk available) after
-        the job: one passing the budget beside other jobs reserves its share,
+        (reason or None, RAM and CPU share, disk GB) the job takes or
+        reserves: one passing the budget beside other jobs reserves its share,
         one cutting into the floor its disk, a granted one takes both.
     """
     if taken and (reason := over_budget(used, share, budget)) is not None:
-        return reason, plus(used, share), available
+        return reason, share, 0
     if available - need < floor:
-        return f"{need:g} GB would cut into the {floor:g} GB floor; reserved", used, available - need
-    return None, plus(used, share), available - need
+        return f"{need:g} GB would cut into the {floor:g} GB floor; reserved", dict.fromkeys(share, 0), need
+    return None, share, need
 
 
 def host_reason(stage: str, memory: str, silenced: bool, need: float) -> str | None:
