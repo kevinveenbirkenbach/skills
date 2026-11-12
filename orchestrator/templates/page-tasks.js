@@ -47,7 +47,8 @@
 
   function taskPlace(row) {
     if (row.kind === "queue") {
-      return h("span", {}, `${row.queue.kind} for ${row.queue.parent} · queued `, when(row.queue.enqueued));
+      const outcome = !row.ended ? null : row.queue.exit !== null ? ` · exit ${row.queue.exit}` : " · ended without an exit code";
+      return h("span", {}, `${row.queue.kind} for ${row.queue.parent} · queued `, when(row.queue.enqueued), outcome);
     }
     const place = row.worktree || (row.workdir !== "-" ? row.workdir : "");
     return place ? h("code", {title: row.repo || place}, place) : null;

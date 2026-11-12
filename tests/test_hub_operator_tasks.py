@@ -241,6 +241,10 @@ def rules_dir(root: Path) -> Path:
     return root / "rules"
 
 
+def client_calls(tree: ast.AST) -> list[ast.Call]:
+    return [node for node in ast.walk(tree) if isinstance(node, ast.Call) and "client_module" in (getattr(node.func, "id", ""), getattr(node.func, "attr", ""))]
+
+
 class TestDiffsModule(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -825,12 +829,18 @@ class TestSharedLimits(unittest.TestCase):
         self.assertLessEqual(len(json.dumps(patch, ensure_ascii=False).encode("utf-8")), hub_limits.DIFF_LIMIT)
         self.assertGreater(len(permission_hook.encoded({"diff": [{"patch": patch}]})), hub_limits.DIFF_BODY_LIMIT)
 
-    def test_the_hub_image_copies_every_client_module_signed_loads(self):
-        tree = ast.parse((HUB / "kvb_orchestrator" / "signed.py").read_text(encoding="utf-8"))
-        loaded = {f"{node.args[0].value}.py" for node in ast.walk(tree) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "client_module"}
+    def test_client_module_calls_are_found_bare_and_as_attributes(self):
+        found = client_calls(ast.parse('signed.client_module("a", {})\nclient_module("b", {})\nother("c")\nx.other("d")'))
+        self.assertEqual([node.args[0].value for node in found], ["a", "b"])
+
+    def test_the_hub_image_copies_every_client_module_the_hub_loads(self):
+        trees = [ast.parse(path.read_text(encoding="utf-8")) for path in sorted((HUB / "kvb_orchestrator").glob("*.py"))]
+        calls = [node for tree in trees for node in client_calls(tree)]
+        self.assertTrue(all(node.args and isinstance(node.args[0], ast.Constant) for node in calls))
+        loaded = {f"{node.args[0].value}.py" for node in calls}
         copies = [line.split()[1:] for line in (HUB / "Dockerfile").read_text(encoding="utf-8").splitlines() if line.startswith("COPY ")]
         copied = {Path(source).name for words in copies if words[-1] == "/app/client/" for source in words[:-1]}
-        self.assertIn("hub_limits.py", loaded)
+        self.assertLessEqual({"hub_limits.py", "queue_live.py"}, loaded)
         self.assertLessEqual(loaded, copied)
 
 

@@ -34,10 +34,14 @@ def read_regular(path: Path, limit: int | None) -> str:
     Returns:
         The file's text, UTF-8 decoded.
     """
-    with open(os.open(path, READ_FLAGS), "rb") as handle:
-        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+    fd = os.open(path, READ_FLAGS)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError(errno.EINVAL, "not a regular file", str(path))
-        data = handle.read() if limit is None else handle.read(limit + 1)
+        with open(fd, "rb", closefd=False) as handle:
+            data = handle.read() if limit is None else handle.read(limit + 1)
+    finally:
+        os.close(fd)
     if limit is not None and len(data) > limit:
         raise OSError(errno.EFBIG, f"larger than {limit} bytes", str(path))
     return data.decode("utf-8")

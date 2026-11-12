@@ -74,6 +74,7 @@ console.log(JSON.stringify({
   steps: {whole: stepsOf(70 * H, now), window: stepsOf(90 * H, 99 * H), burnt: P.steps(burnt, burnPoints, 0)},
   etas: {none: eta("none"), points: eta("points"), loop: [...P.etas(loop, looped, {now, estimation: "none"}).keys()].sort()},
   medians: P.medians(rows),
+  queueMedians: P.medians([...rows, row("queue/done", {kind: "queue", status: "done", ended: true, start: 0, end: 50 * H, points: 1})]),
   median: [P.median([]), P.median([3, 1, 2]), P.median([4, 1, 3, 2])],
   bars: {noneAlways: lay("none", "always"), pointsAlways: lay("points", "always"), pointsOnly: lay("points", "points"), noneOnly: lay("none", "points"), real: lay("points", "real")},
   loop: P.bars(loop, looped, {now, estimation: "none", forecast: "always"}).map((bar) => bar.task),
@@ -156,6 +157,9 @@ class TestPlanModule(unittest.TestCase):
     def test_medians_take_done_tasks_only_and_the_points_of_those_with_points(self):
         self.assertEqual(self.data["medians"], {"duration": 2 * HOUR, "perPoint": 1.5 * HOUR})
         self.assertEqual(self.data["median"], [None, 2, 2.5])
+
+    def test_a_done_queue_job_never_moves_the_medians(self):
+        self.assertEqual(self.data["queueMedians"], self.data["medians"])
 
     def test_without_estimate_a_forecast_is_as_long_as_the_median_duration_behind_its_predecessors(self):
         self.assertEqual(self.data["bars"]["noneAlways"], [

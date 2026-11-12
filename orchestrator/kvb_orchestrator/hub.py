@@ -13,6 +13,7 @@ from .asking import Asking
 from .batches import Pending
 from .choosing import Choosing
 from .cleanup import Cleaning, Spool
+from .crons import History, queue_live
 from .denying import Denying
 from .engines import Engines, Speech
 from .events import Log, Watch
@@ -103,6 +104,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     touched: Touched
     voice_notes: VoiceNotes
     replay: Path
+    history: History
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -142,6 +144,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         timers=places.timers,
         kept=places.kept,
         council=council,
+        history=History(council / queue_live.HISTORY),
         pages=pages,
         public_port=public_port,
         reviews=reviews,

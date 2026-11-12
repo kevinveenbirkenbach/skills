@@ -9,7 +9,7 @@ from .errors import ToolError
 from .fields import single
 from .lifetimes import edge_times, lifetime, session_gone, subagent_rows
 from .names import PSEUDO, SESSION_ID, Directory, title_sightings
-from .records import epoch, iso_epoch, read_jsonl
+from .records import epoch, iso_epoch
 from .register import REGISTER, read_register
 from .tree import assign
 
@@ -48,10 +48,10 @@ class Sources:
         tasks = read_register(self.council / REGISTER)
         reviews = self.reviews.listed()
         scan = assign(self.tree.get(), tasks, read_claims(self.council), reviews)
-        history = read_jsonl(self.council / "queue-history.jsonl")
+        history = self.history.rows()
         return {**enrich(scan, tasks, reviews, self.touched, history, self.jobs.listed()), "cleanups": self.cleanup_results(), "gates": self.gate_view(scan)}
 
     def schedules(self, claims: list[dict], now: float) -> list[dict]:
         beats = {claim["session"]: claim["beat"] for claim in claims if claim["beat"] is not None}
         rows = [cron_state(cron, beats, now) for cron in self.transcripts.schedules()]
-        return rows + timer_rows(self.timers) + queue_rows(self.council)
+        return rows + timer_rows(self.timers) + queue_rows(self.council, self.history.rows)

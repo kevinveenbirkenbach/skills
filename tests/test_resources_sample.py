@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import subprocess
@@ -108,9 +109,28 @@ class TestParsing(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             council = Path(tmp)
             self.assertEqual(sampler.queue(council), {"waiting": 0, "active": 0})
-            entries = [{"status": "waiting"}, {"status": "waiting"}, {"status": "active"}, {"status": "done"}, "junk"]
+            entries = [{"status": status, "enqueued": NOW} for status in ("waiting", "waiting", "active", "done")] + [{"status": "active"}, "junk"]
             (council / "queue.json").write_text(json.dumps({"entries": entries}), encoding="utf-8")
             self.assertEqual(sampler.queue(council), {"waiting": 2, "active": 1})
+
+    def test_the_queue_counts_only_live_entries_as_the_hub_settles_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            council = Path(tmp)
+            (council / "holds").mkdir()
+            handles = [(council / "holds" / f"7-{n}.lock").open("w", encoding="utf-8") for n in (1, 2, 3)]
+            for handle in handles:
+                self.addCleanup(handle.close)
+                fcntl.flock(handle, fcntl.LOCK_EX)
+            entries = [
+                {"id": "test-1", "status": "waiting", "lock": "7-1", "enqueued": NOW},
+                {"id": "test-2", "status": "active", "lock": "7-2", "enqueued": NOW},
+                {"id": "quality-high-3", "status": "active", "lock": "7-3", "enqueued": NOW},
+                {"id": "test-4", "status": "waiting", "lock": "7-4", "enqueued": NOW},
+                {"id": "test-5", "status": "active", "lock": "7-5", "enqueued": NOW},
+            ]
+            (council / "queue.json").write_text(json.dumps({"entries": entries}), encoding="utf-8")
+            (council / "queue-history.jsonl").write_text(json.dumps({"id": "quality-high-3-1794514233361361126", "start": NOW + 10, "end": NOW + 20, "exit": 2}) + "\n", encoding="utf-8")
+            self.assertEqual(sampler.queue(council), {"waiting": 1, "active": 1})
 
 
 class TestCpu(unittest.TestCase):
@@ -233,7 +253,7 @@ class TestSamplerInScratchHome(unittest.TestCase):
             (stubs / tool).chmod(0o755)
         self.sys = host_sys(base / "sys")
         self.log = base / "calls.jsonl"
-        (self.council / "queue.json").write_text(json.dumps({"entries": [{"status": "waiting"}, {"status": "active"}, {"status": "active"}]}), encoding="utf-8")
+        (self.council / "queue.json").write_text(json.dumps({"entries": [{"status": status, "enqueued": NOW} for status in ("waiting", "active", "active")]}), encoding="utf-8")
         self.env = {
             **os.environ, "HOME": str(self.home), "PATH": f"{stubs}:/usr/bin:/bin",
             "STUB_LOG": str(self.log), "STUB_DF": DF, "STUB_NVIDIA_SMI": NVIDIA_SMI.splitlines()[0] + "\n",

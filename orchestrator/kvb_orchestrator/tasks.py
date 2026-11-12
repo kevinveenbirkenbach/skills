@@ -4,6 +4,7 @@ import itertools
 import statistics
 
 from .council import HUMAN, agent
+from .crons import outcome_of
 from .records import epoch, iso_epoch, shown
 from .register import ENDED, OPERATOR, parties, register_row, status_of
 from .signed import signing
@@ -152,12 +153,21 @@ def task_row(task: str, row: dict, trees: list[dict]) -> dict:
     }
 
 
+def queue_status(entry: dict, found: dict | None) -> str:
+    if found is not None:
+        return "done" if found.get("state") == "ended" and found.get("exit") == 0 else "stopped"
+    return "running" if entry.get("status") == "active" else "awaiting"
+
+
 def queue_row(entry: dict, created: float, trees: list[dict]) -> dict:
     text = {name: shown(entry.get(name))[:TEXT_SHOWN] for name in ("id", "cmd", "kind", "task", "workdir")}
+    found = outcome_of(entry)
+    ended = found is not None
+    granted = entry.get("status") == "active" or ended
     return {
         "task": f"{QUEUE}{text['id']}",
         "title": text["cmd"],
-        "status": "running" if entry.get("status") == "active" else "awaiting",
+        "status": queue_status(entry, found),
         "worker": agent(entry.get("name"))[:TEXT_SHOWN] or "-",
         "responsible": "-",
         "accountable": "-",
@@ -167,7 +177,7 @@ def queue_row(entry: dict, created: float, trees: list[dict]) -> dict:
         "met": 0,
         "total": 0,
         "kind": "queue",
-        "ended": False,
+        "ended": ended,
         "editable": False,
         "movable": False,
         "prio": None,
@@ -175,13 +185,13 @@ def queue_row(entry: dict, created: float, trees: list[dict]) -> dict:
         "wsjf": None,
         "value": None,
         "points": None,
-        "start": (epoch(entry.get("granted")) or created) if entry.get("status") == "active" else None,
-        "end": None,
+        "start": (epoch(entry.get("granted")) or created) if granted else None,
+        "end": epoch(found.get("end")) if found is not None else None,
         "updated": None,
         "after": [],
         "base": "-",
         "roles": {},
-        "queue": {"kind": text["kind"], "parent": text["task"], "enqueued": created},
+        "queue": {"kind": text["kind"], "parent": text["task"], "enqueued": created, "exit": found.get("exit") if found is not None else None},
         **located(entry, trees, False),
     }
 
@@ -253,7 +263,7 @@ def queue_chain(queue: list[tuple[dict, float]], tasks: dict[str, dict], agents:
         holder = order[name] if isinstance(name, str) and name in order else len(order)
         return (not entry.get("hotfix"), place - hours, holder, seq if isinstance(seq, int) and not isinstance(seq, bool) else 0)
 
-    active = sorted((pair for pair in queue if pair[0].get("status") == "active"), key=lambda pair: epoch(pair[0].get("granted")) or pair[1])
+    active = sorted((pair for pair in queue if pair[0].get("status") == "active" and outcome_of(pair[0]) is None), key=lambda pair: epoch(pair[0].get("granted")) or pair[1])
     waiting = sorted((pair for pair in queue if pair[0].get("status") == "waiting"), key=waiting_key)
     return [(shown(entry.get("id"))[:TEXT_SHOWN], entry.get("status") == "waiting") for entry, _ in [*active, *waiting]]
 

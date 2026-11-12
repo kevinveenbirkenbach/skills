@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import fcntl
+import functools
 import importlib.util
 import json
 import os
@@ -12,13 +14,14 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import REPO_ROOT, iso, key, runner, signing, verifier
-from kvb_orchestrator import settings, skill_scripts, tasks, tree
+from kvb_orchestrator import crons, records, settings, skill_scripts, tasks, tree
 
 BROKEN = {"pull": [], "push": [], "source": "invalid"}
 FLOW = {"pull": ["origin/main", "store-i18n"], "push": ["main", "production"], "source": "file"}
 PRIO = ["set", "work/feature", "--prio", "3"]
 ESTIMATE = ["estimate", "work/feature", "Operator", "--value", "8", "--complexity", "3"]
 QUEUE_SCRIPT = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
+PROOF = "/home/me/worktrees/github.com/infinito-nexus/core/proof/karakalpak-archive-role"
 
 
 def change(argv: list, task: str = "work/feature") -> dict:
@@ -136,10 +139,197 @@ class TestHubTasks(HubCase):
         self.assertEqual((command["kind"], command["title"], command["editable"], command["open_work"]), ("command", "git push", False, ["task"]))
         gate, deploy = rows["queue/gate-7"], rows["queue/deploy-8"]
         self.assertEqual((gate["kind"], gate["status"], gate["title"], gate["worker"], gate["editable"], gate["flow"]), ("queue", "awaiting", "make test", "Stage", False, FLOW))
-        self.assertEqual(gate["queue"], {"kind": "gate", "parent": "work/feature", "enqueued": now - 60})
+        self.assertEqual(gate["queue"], {"kind": "gate", "parent": "work/feature", "enqueued": now - 60, "exit": None})
         self.assertEqual((deploy["status"], deploy["flow"], deploy["queue"]["parent"]), ("running", None, "work/pinned"))
         done = rows["work/done"]
         self.assertEqual((done["ended"], done["editable"], done["open_work"], done["worktree"]), (True, False, [], ""))
+
+    def held_lock(self, tag: str, mode: int = fcntl.LOCK_EX) -> None:
+        holds = self.council / "holds"
+        holds.mkdir(parents=True, exist_ok=True)
+        handle = (holds / f"{tag}.lock").open("w", encoding="utf-8")
+        self.addCleanup(handle.close)
+        fcntl.flock(handle, mode)
+
+    def queue_job(self, now: float, ident: str, status: str, task: str, lock: str, age: float) -> dict:
+        granted = now - age + 10 if status == "active" else None
+        return {"id": ident, "kind": ident.rpartition("-")[0], "task": task, "workdir": PROOF, "session": "s1", "name": "Production", "lock": lock, "pid": 7,
+                "status": status, "enqueued": now - age, "granted": granted, "cmd": "make quality-high"}
+
+    def test_a_queue_job_with_a_history_row_or_a_gone_holder_is_no_longer_running(self):
+        now = time.time()
+        for tag in ("7-1410", "7-1451", "7-5", "7-1387", "7-1500", "7-1501", "7-1502"):
+            self.held_lock(tag)
+        self.held_lock("7-1481", fcntl.LOCK_SH)
+        (self.council / "holds" / "7-1465.lock").write_text("", encoding="utf-8")
+        (self.council / "holds" / "7-1480.lock").symlink_to(self.council / "holds" / "7-1451.lock")
+        job = functools.partial(self.queue_job, now)
+        queue = {"seq": 1502, "entries": [
+            job("quality-high-1410", "active", "karakalpak-archive", "7-1410", 1200),
+            job("test-nostack-1464", "active", "karakalpak-archive", "7-1464", 300),
+            job("test-nostack-1465", "active", "iam/final-066-backchannel", "7-1465", 200),
+            job("test-nostack-1466", "active", "iam/final-066-backchannel", "7-1466", 100),
+            job("quality-high-1451", "active", "work/gitea-oidc-auto-link", "7-1451", 900),
+            job("test-nostack-1480", "active", "work/symlinked", "7-1480", 80),
+            job("test-nostack-1481", "active", "iam/final-066-backchannel", "7-1481", 70),
+            job("gate-5", "active", "work/reused", "7-5", 60),
+            job("test-1387", "waiting", "work/security-page-optimize", "7-1387", 50),
+            job("test-1388", "waiting", "work/security-page-optimize", "7-1388", 40),
+            job("test-nostack-1471", "waiting", "work/orchestrator-firewall", "../holds/7-1471", 30),
+            job("test-1500", "ended", "work/foreign", "7-1500", 25),
+            job("test-1501", "gone", "work/foreign", "7-1501", 24),
+            {**job("test-1502", "active", "work/foreign", "7-1502", 20), "hub_outcome": {"state": "ended", "exit": 9}, "exit": 9, "end": now},
+        ]}
+        history = [
+            {"end": now - 600, "exit": 1, "id": "quality-high-1410-1794513000000000000", "kind": "quality-high", "start": now - 1180, "workdir": PROOF},
+            {"concurrent": 2, "cpu_before": 53.9, "cpu_max": 100.0, "disk_gb": 1.91, "end": now - 5, "exit": 2, "free_before_gb": 113.12,
+             "id": "quality-high-1410-1794514233361361126", "kind": "quality-high", "mem_before": 43.2, "mem_max": 84.3, "min_free_gb": 111.21,
+             "minutes": 18.13, "signature": "infinito-nexus-core: make quality-high", "start": now - 1185, "workdir": PROOF},
+            {"end": now - 20, "exit": 0, "id": "test-nostack-1464-1794514708907109250", "kind": "test-nostack", "start": now - 290, "workdir": PROOF},
+            {"end": now - 3, "exit": 0, "id": "test-nostack-1466-retry", "kind": "test-nostack", "start": now - 90, "workdir": PROOF},
+            {"end": now - 7200, "exit": 1, "id": "gate-5-1794500000000000000", "kind": "gate", "start": now - 7300, "workdir": PROOF},
+            {"end": now - 1, "exit": 0, "id": "gate-5x-1794500000000000000", "kind": "gate", "start": now - 30, "workdir": PROOF},
+        ]
+        self.write_council({"queue.json": queue, "queue-history.jsonl": self.jsonl(history)})
+        state = self.snapshot()
+        rows = {row["task"]: row for row in state["tasks"] if row["kind"] == "queue"}
+
+        def seen(ident: str) -> tuple:
+            row = rows[f"queue/{ident}"]
+            return row["status"], row["ended"], row["end"], row["queue"].get("exit")
+
+        self.assertEqual(seen("quality-high-1410"), ("stopped", True, now - 5, 2))
+        self.assertEqual(rows["queue/quality-high-1410"]["start"], now - 1190)
+        self.assertEqual(seen("test-nostack-1464"), ("done", True, now - 20, 0))
+        self.assertEqual(seen("test-nostack-1465"), ("stopped", True, None, None))
+        self.assertEqual(seen("test-nostack-1466"), ("stopped", True, None, None))
+        self.assertEqual(seen("test-nostack-1481"), ("stopped", True, None, None))
+        self.assertEqual(seen("test-nostack-1480"), ("stopped", True, None, None))
+        live = ("quality-high-1451", "gate-5", "test-1502")
+        shown = ("quality-high-1410", "test-nostack-1464", "test-nostack-1465", "test-nostack-1466", "test-nostack-1480", "test-nostack-1481", "test-1387", "test-1500", "test-1501", *live)
+        self.assertEqual(sorted(rows), sorted(f"queue/{ident}" for ident in shown))
+        self.assertEqual([seen(ident) for ident in live], [("running", False, None, None)] * 3)
+        self.assertEqual([seen(ident) for ident in ("test-1387", "test-1500", "test-1501")], [("awaiting", False, None, None)] * 3)
+        self.assertEqual(state["queue_line"], ["work/gitea-oidc-auto-link", "work/reused", "work/foreign", "work/security-page-optimize"])
+        schedule = {row["job"]: (row["expression"], row["active"]) for row in crons.queue_rows(self.council, self.httpd.hub.history.rows)}
+        self.assertEqual(schedule["quality-high-1410"], ("quality-high · exit 2", False))
+        self.assertEqual(schedule["test-nostack-1465"], ("test-nostack · holder gone without an exit code", False))
+        self.assertEqual(schedule["quality-high-1451"], ("quality-high · running", True))
+        self.assertEqual(schedule["test-1500"], ("test · waiting", True))
+
+    def test_the_history_is_read_after_the_hold_locks_and_parsed_once_per_change(self):
+        now = time.time()
+        self.held_lock("7-1")
+        queue = {"seq": 2, "entries": [self.queue_job(now, "test-1", "active", "work/a", "7-1", 100), self.queue_job(now, "test-2", "active", "work/b", "7-2", 50)]}
+        self.write_council({"queue.json": queue, "queue-history.jsonl": self.jsonl([{"id": "other-9-1", "start": now - 500, "end": now - 400, "exit": 0}])})
+        probe, read = crons.queue_live.holder_gone, crons.queue_live.read_history
+        reads = []
+
+        def leaving(council: Path, tag: object) -> bool:
+            if tag == "7-2":
+                with (self.council / "queue-history.jsonl").open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps({"id": "test-2-1794514233361361126", "start": now - 40, "end": now - 1, "exit": 3}) + "\n")
+            return probe(council, tag)
+
+        def counted(path: Path) -> list[dict]:
+            reads.append(path.name)
+            return read(path)
+
+        with mock.patch.object(crons.queue_live, "holder_gone", leaving), mock.patch.object(crons.queue_live, "read_history", counted):
+            rows = {row["task"]: row for row in self.snapshot()["tasks"] if row["kind"] == "queue"}
+            self.assertEqual((rows["queue/test-2"]["status"], rows["queue/test-2"]["queue"]["exit"]), ("stopped", 3))
+            self.assertEqual(rows["queue/test-1"]["status"], "running")
+            self.assertEqual(len(reads), 2)
+            self.httpd.hub.history.rows()
+            self.assertEqual(len(reads), 2)
+
+    def test_the_whole_history_is_read_and_a_bad_byte_costs_its_line_only(self):
+        path = self.council / "queue-history.jsonl"
+        self.council.mkdir(parents=True, exist_ok=True)
+        rows = b"".join(json.dumps({"id": f"gate-{n}-1", "start": n, "pad": "x" * 1000}).encode() + b"\n" for n in range(6000))
+        path.write_bytes(b'{"id": "bad-\xff-1"}\n' + rows + b"[[[\n" + b'{"id": "last-1"}')
+        found = crons.queue_live.read_history(path)
+        self.assertGreater(path.stat().st_size, 1 << 22)
+        self.assertEqual((len(found), found[1]["id"], found[-2]["id"], found[-1]["id"]), (6002, "gate-0-1", "gate-5999-1", "last-1"))
+
+    def test_reading_a_directory_as_history_or_json_leaks_no_descriptor(self):
+        folder = self.council / "queue-history.jsonl"
+        folder.mkdir(parents=True)
+        before = len(os.listdir("/proc/self/fd"))
+        for _ in range(50):
+            self.assertEqual(crons.queue_live.read_history(folder), [])
+            self.assertIsNone(records.read_json(folder))
+            self.assertEqual(records.read_jsonl(folder), [])
+        self.assertLessEqual(len(os.listdir("/proc/self/fd")), before + 2)
+
+    def test_the_history_cache_reparses_on_a_new_inode_mtime_or_size_alone(self):
+        path = self.council / "queue-history.jsonl"
+        self.council.mkdir(parents=True, exist_ok=True)
+        history = crons.History(path)
+
+        def write(text: str, ns: int) -> None:
+            path.write_text(text, encoding="utf-8")
+            os.utime(path, ns=(ns, ns))
+
+        write('{"id": "a-1"}\n', 10**18)
+        self.assertEqual([row["id"] for row in history.rows()], ["a-1"])
+        replacement = self.council / "replacement"
+        replacement.write_text('{"id": "b-1"}\n', encoding="utf-8")
+        os.utime(replacement, ns=(10**18, 10**18))
+        os.replace(replacement, path)
+        self.assertEqual([row["id"] for row in history.rows()], ["b-1"])
+        write('{"id": "c-1"}\n', 10**18 + 1)
+        self.assertEqual([row["id"] for row in history.rows()], ["c-1"])
+        write('{"id": "c-1"}\n{"id": "d-1"}\n', 10**18 + 1)
+        self.assertEqual([row["id"] for row in history.rows()], ["c-1", "d-1"])
+
+    def test_a_hard_link_to_a_live_hold_lock_keeps_the_hold_alive(self):
+        self.held_lock("7-20")
+        holds = self.council / "holds"
+        os.link(holds / "7-20.lock", holds / "7-21.lock")
+        self.assertEqual((holds / "7-20.lock").stat().st_nlink, 2)
+        self.assertEqual([crons.queue_live.holder_gone(self.council, tag) for tag in ("7-20", "7-21")], [False, False])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a file of mode 0")
+    def test_a_failed_history_read_keeps_the_rows_before_and_retries_next_time(self):
+        path = self.council / "queue-history.jsonl"
+        self.write_council({"queue-history.jsonl": '{"id": "a-1"}\n'})
+        history = crons.History(path)
+        self.assertEqual([row["id"] for row in history.rows()], ["a-1"])
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write('{"id": "b-1"}\n')
+        path.chmod(0)
+        self.addCleanup(path.chmod, 0o600)
+        self.assertEqual([row["id"] for row in history.rows()], ["a-1"])
+        self.assertIsNone(crons.queue_live.read_history(path))
+        path.chmod(0o600)
+        self.assertEqual([row["id"] for row in history.rows()], ["a-1", "b-1"])
+
+    def test_the_hub_judges_every_hold_lock_as_queue_py_held_does(self):
+        queue_py = load_queue()
+        holds = self.council / "holds"
+        self.held_lock("7-1")
+        (holds / "7-2.lock").write_text("", encoding="utf-8")
+        (holds / "7-3.lock").symlink_to(holds / "7-1.lock")
+        (holds / "7-7.lock").write_text("", encoding="utf-8")
+        os.link(holds / "7-7.lock", holds / "7-6.lock")
+        decided = {"held": "7-1", "free": "7-2", "missing": "7-404", "malformed": "x-1", "traversal": "../holds/7-1", "none": None}
+        refused = {"symlink": "7-3", "hard link": "7-6"}
+        hub = {name: crons.queue_live.holder_gone(self.council, tag) for name, tag in {**decided, **refused}.items()}
+        with mock.patch.object(queue_py, "HOLDS", holds), mock.patch.object(queue_py.watch, "ROOT", self.council):
+            for name, tag in refused.items():
+                with self.subTest(refused=name), self.assertRaises(OSError):
+                    queue_py.held(tag)
+                with self.subTest(refused=name), self.assertRaises(OSError), queue_py.nofollow.locked(self.council, holds / f"{tag}.lock", 0o600, None):
+                    pass
+            verdicts = {name: queue_py.held(tag) for name, tag in decided.items()}
+        self.assertEqual({name: not hub[name] for name in decided}, verdicts)
+        self.assertEqual(verdicts, {"held": True, "free": False, "missing": False, "malformed": False, "traversal": False, "none": False})
+        self.assertEqual({name: hub[name] for name in refused}, {"symlink": True, "hard link": True})
+        if os.geteuid() != 0:
+            (holds / "7-9.lock").write_text("", encoding="utf-8")
+            (holds / "7-9.lock").chmod(0)
+            self.assertFalse(crons.queue_live.holder_gone(self.council, "7-9"))
 
     def test_only_the_newest_ended_tasks_are_listed(self):
         register = {f"work/old-{n:03d}": {"status": "done", "end": f"2026-11-{1 + n // 24:02d}T{n % 24:02d}:00:00+00:00"} for n in range(30)}
