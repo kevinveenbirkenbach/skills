@@ -108,6 +108,7 @@ class TestSecurity(unittest.TestCase):
             {
                 "severity": "high", "rule": "FAKE-HIGH", "path": "app.py", "line": 2,
                 "sha1": hashlib.sha1(f"token = '{PLACEHOLDER}'  # MARK-HIGH".encode()).hexdigest(),
+                "context": hashlib.sha1(f"print(1)\ntoken = '{PLACEHOLDER}'  # MARK-HIGH".encode()).hexdigest(),
             },
         )
         self.assertEqual(found["accepted"], [])
@@ -147,6 +148,35 @@ class TestSecurity(unittest.TestCase):
             (result.stdout, result.returncode),
             ("🛡️ security 50 % (medusa: 1 finding in 1 file: critical app.py:2)\n", 1),
         )
+
+    def test_one_acceptance_never_hides_an_identical_line_elsewhere(self):
+        twin = "x = fetch(url)  # MARK-HIGH"
+        self.write("app.py", f"print(1)\n{twin}\ny = 2\n{twin}\n")
+        sha1 = hashlib.sha1(twin.encode()).hexdigest()
+        both = ("🛡️ security 50 % (medusa: 2 findings in 1 file: high app.py:2, high app.py:4)\n", 3)
+        listing = self.base / "council" / "security-accepted.jsonl"
+        listing.parent.mkdir(parents=True)
+        listing.write_text(json.dumps({"rule": "FAKE-HIGH", "path": "app.py", "sha1": sha1}) + "\n", encoding="utf-8")
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), both)
+        listing.unlink()
+        refused = self.accept("--rule", "FAKE-HIGH", "--path", "app.py", "--sha1", sha1, "--reason", "fixture")
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("the line occurs 2 times in app.py; name the reviewed one with --line", refused.stderr)
+        self.assertFalse(listing.exists())
+        wrong = self.accept("--rule", "FAKE-HIGH", "--path", "app.py", "--sha1", sha1, "--line", "3", "--reason", "fixture")
+        self.assertEqual(wrong.returncode, 2)
+        self.assertIn("--sha1 is not the sha1 of line 3 of app.py", wrong.stderr)
+        named = self.accept("--rule", "FAKE-HIGH", "--path", "app.py", "--sha1", sha1, "--line", "4", "--reason", "fixture")
+        self.assertEqual(named.returncode, 0, named.stderr)
+        result = self.scan(env=self.env)
+        self.assertEqual(
+            (result.stdout, result.returncode),
+            ("🛡️ security 75 % (medusa: 1 finding, 1 accepted in 1 file: high app.py:2)\n", 3),
+        )
+        self.write("app.py", f"print(1)\n{twin}\ny = 3\n{twin}\n")
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), both)
 
     def test_kept_rows_count_and_broken_rows_stop(self):
         line = "y = other()  # MARK-HIGH"
