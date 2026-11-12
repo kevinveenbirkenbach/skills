@@ -28,6 +28,11 @@ FIBONACCI = ("1", "2", "3", "5", "8", "13", "21", "34", "55", "89")
 ESTIMATOR = "Operator"
 COMMANDS = "operator/"
 STATUSES = ("queued", "running", "blocked", "done", "stopped")
+GATE_LEVELS = ("none", "quick", "test", "quality-high", "e2e")
+GATE_ACTIONS = ("commit", "merge", "push", "pr")
+GATE_REPO = re.compile(r"/[^\x00-\x1f\x7f]{0,4095}")
+GATE_BRANCH = re.compile(r"(?![-/])(?!.*\.\.)(?!.*@\{)(?!.*//)[^\x00-\x20\x7f~^:?*\[\\]{1,255}(?<![/.])")
+TOKEN_FREE_MERGE = "ancestor"
 APPROVAL_KEYS = {"v", "kind", "items", "nonce", "expires"}
 RULE_KEYS = {"v", "kind", "id", "kinds", "tool", "pattern", "scope", "expires"}
 WARNINGS = (
@@ -199,6 +204,72 @@ def task_argv(task: object, argv: object) -> list[str]:
     if (argv[:2] == ["set", task] and board_flags(task, argv[2:])) or (argv[:3] == ["estimate", task, ESTIMATOR] and (estimated or rest == ["--drop"])):
         return argv
     raise Refused("the argv is no task priority, status, dependency or WSJF estimate change of this task")
+
+
+def gate_item(argv: list[str]) -> dict:
+    return {"kind": "gate", "argv": argv}
+
+
+def gate_argv(argv: object) -> list[str]:
+    """Args:
+        argv: the gates.py arguments, one of `rule set --repo R --branch B
+            --action A --level L`, `rule drop --repo R --branch B --action A`,
+            `parents add --repo R --branch B --parent P` (source operator) or
+            `parents drop --repo R --branch B --parent P`; R an absolute path,
+            B and P branch names, P not B.
+
+    Returns:
+        argv, the hub and the runner check it the same way.
+
+    Raises:
+        Refused for every other argv.
+    """
+    if not isinstance(argv, list) or not all(isinstance(part, str) for part in argv):
+        raise Refused("the argv is no list of texts")
+    head, values = argv[:2], dict(zip(argv[2::2], argv[3::2]))
+    names = {("rule", "set"): ("--repo", "--branch", "--action", "--level"), ("rule", "drop"): ("--repo", "--branch", "--action"), ("parents", "add"): ("--repo", "--branch", "--parent"), ("parents", "drop"): ("--repo", "--branch", "--parent")}.get(tuple(head))
+    if names is None or argv[2::2] != list(names) or len(argv) != 2 + 2 * len(names):
+        raise Refused("the argv is no gates.py rule set|drop or parents add|drop of one branch")
+    repo = values["--repo"]
+    if not GATE_REPO.fullmatch(repo) or "/../" in f"{repo}/" or "/./" in f"{repo}/":
+        raise Refused("the repository is no absolute path")
+    branches = [values[name] for name in ("--branch", "--parent") if name in values]
+    if not all(GATE_BRANCH.fullmatch(name) for name in branches) or len(set(branches)) != len(branches):
+        raise Refused("the branch or parent is no branch name, or the branch is its own parent")
+    if values.get("--action", GATE_ACTIONS[0]) not in GATE_ACTIONS or values.get("--level", GATE_LEVELS[0]) not in GATE_LEVELS:
+        raise Refused(f"the action must be one of {', '.join(GATE_ACTIONS)} and the level one of {', '.join(GATE_LEVELS)}")
+    return argv
+
+
+def names_default(ref: object, default: object) -> bool:
+    """Args:
+        ref: a ref as pkgmgr names it, bare such as main or behind one
+            remote such as origin/main, the remote-tracking ref it compares
+            against when the remote has a HEAD.
+        default: the repository's default branch as the tree file names it,
+            without the remote (pkgmgr tree.py strips it).
+
+    Returns:
+        True when ref is the default branch.
+    """
+    if not isinstance(ref, str) or not isinstance(default, str) or not default:
+        return False
+    remote, _, name = ref.partition("/")
+    return ref == default or (bool(remote) and name == default)
+
+
+def token_free(entry: dict, default: object) -> bool:
+    """Args:
+        entry: a pkgmgr tree or gc plan item with merged_by, merged_into and
+            remotes.
+        default: the repository's default branch as the tree file names it.
+
+    Returns:
+        True for a local branch merged by ancestry into the default branch
+        (names_default) that has no remote branch: deleting it needs no
+        GitHub token.
+    """
+    return entry.get("merged_by") == TOKEN_FREE_MERGE and names_default(entry.get("merged_into"), default) and not entry.get("remotes")
 
 
 def approval_payload(hashes: list[str], nonce: str, expires: int) -> dict:

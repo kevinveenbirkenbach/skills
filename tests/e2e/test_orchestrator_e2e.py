@@ -1818,7 +1818,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertIn(["twig", "true"], by_hash["#agents/tree"]["spawn"])
         self.assertIn(["twig", "false"], by_hash["#agents/tree"]["spawn"])
         artifacts = by_hash["#artifacts/tree"]
-        self.assertEqual(artifacts["deletes"], [["Delete all merged", True, "Delete all merged blocked: Secret Service locked"], ["Delete", True, "Delete blocked: Secret Service locked"]])
+        self.assertEqual(artifacts["deletes"], [["Delete all merged", True, "Delete all merged blocked: Secret Service locked"]])
         for state in ("merged by #12 into main", "upstream gone", "protected", "1 commits unpushed", "clean", "not committed: 0 staged, 0 changed, 1 new", "gc skips: ignored files beyond known caches: notes.txt"):
             with self.subTest(state=state):
                 self.assertIn(state, artifacts["states"])
@@ -2125,6 +2125,7 @@ class TestOrchestratorE2E(HubCase):
     def test_chromium_deletes_a_merged_branch_after_dry_run_and_signature(self):
         tree = json.loads(self.tree_file.read_text(encoding="utf-8"))
         tree["delete_ready"], tree["delete_reason"] = True, ""
+        next(item for item in tree["repos"][0]["items"] if item["branch"] == "feature/done").update(worktree=None, worktree_state=None, actions=["local-branch", "remote-branch"], compose_projects=[], images=[])
         self.tree_file.write_text(json.dumps(tree), encoding="utf-8")
         demo = f"{self.root}/repos/github.com/me/demo"
         Path(demo).mkdir(parents=True)
@@ -2132,8 +2133,7 @@ class TestOrchestratorE2E(HubCase):
         fake.parent.mkdir()
         fake.write_text(FAKE_PKGMGR.format(python=sys.executable), encoding="utf-8")
         fake.chmod(0o755)
-        worktree = f"{self.root}/worktrees/github.com/me/demo/feature-done"
-        (fake.parent / "plan.json").write_text(json.dumps([{"branch": "feature/done", "worktree": worktree, "local_sha": DONE_TIP, "head": DONE_TIP, "state": "merged-clean", "skip": None}]), encoding="utf-8")
+        (fake.parent / "plan.json").write_text(json.dumps([{"branch": "feature/done", "worktree": None, "local_sha": DONE_TIP, "head": DONE_TIP, "state": "merged-clean", "skip": None, "actions": ["local-branch"]}]), encoding="utf-8")
         following = json.loads(json.dumps(tree))
         following["repos"][0]["items"] = [item for item in following["repos"][0]["items"] if item["branch"] != "feature/done"]
         (fake.parent / "next-tree.json").write_text(json.dumps(following), encoding="utf-8")
@@ -2158,7 +2158,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(opened["title"], "Delete feature/done")
         self.assertEqual(len(opened["dry"]), 1)
         self.assertTrue(opened["dry"][0].startswith("feature/done @ 5b1e6fd3a7c0: merged-clean, merged by #12"), opened["dry"])
-        self.assertIn("stays: remote-branch (local only)", opened["dry"][0])
+        self.assertIn("stays: remote-branch (local only; the host refuses a plan that deletes it)", opened["dry"][0])
         self.assertEqual((confirmed["result"], confirmed["text"]), ("done", "feature/donedeleted"), confirmed)
         self.assertEqual(confirmed["toasts"], ["Delete: donefeature/done: deleted"])
         self.assertEqual(after["past"], ["done", "deleted"])
@@ -2167,8 +2167,8 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual([[(item["branch"], item["status"]) for item in result["items"]] for result in written], [[("feature/done", "done")]])
         calls = [json.loads(line)["argv"] for line in (fake.parent / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(calls, [
-            ["branch", "cleanup", "--json", "--local", "--branch", "feature/done"],
-            ["branch", "cleanup", "--apply", "--json", "--local", "--branch", "feature/done"],
+            ["branch", "cleanup", "--json", "--branch", "feature/done"],
+            ["branch", "cleanup", "--apply", "--json", "--branch", "feature/done"],
             ["branch", "tree", "--format", "json", "--output", str(self.tree_file)],
         ])
 

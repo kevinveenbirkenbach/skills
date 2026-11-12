@@ -18,6 +18,8 @@ FLOW_SOURCE = re.compile(r"[a-z][a-z0-9-]{0,31}")
 INVALID = "invalid"
 # renaming it silently stops the tree timer: kvb-orchestrator-tree.service tests this file's age
 TREE_HEARTBEAT = "tree-heartbeat"
+GC_SKILL = "kvb-git-branch-gc"
+GC_COMPOSE_DOWN = ("docker", "compose", "-p", "{project}", "down", "-v", "--remove-orphans")
 
 
 def flow(item: dict) -> dict | None:
@@ -66,34 +68,47 @@ def worktree(item: dict) -> dict:
     }
 
 
+def held_by(worktree: str) -> str:
+    return f"held by worktree {worktree}: pkgmgr branch cleanup skips it, use branch gc ({GC_SKILL}, pkgmgr gc)"
+
+
 def dry_run(item: dict) -> list[str]:
     """Returns:
-        The lines `pkgmgr branch cleanup --local` would act on for one tree
-        item, read from the gc plan the tree file carries; a remote branch
-        always stays.
+        What the runner's `pkgmgr branch cleanup` does for one tree item,
+        read from the gc plan the tree file carries: it deletes the local
+        branch and never touches a worktree, Compose stack or volume; a
+        remote branch stays, the runner refuses a plan that deletes one. A
+        branch held by a worktree it skips; its lines name what branch gc
+        would do instead, its `docker compose down -v` deleting the stack's
+        volumes.
     """
     tip = (item["local_sha"] or item["head"] or "")[:12]
     merged = f", merged by {item['merged_by']}" if item["merged_by"] else ""
     lines = [f"{item['branch']} @ {tip}: {item['state']}{merged}"]
+    if item["worktree"]:
+        lines.append(held_by(item["worktree"]))
+        lines.append(f"branch gc would remove the worktree {item['worktree']} and the local branch {item['branch']}")
+        lines += [f"branch gc would run {' '.join(GC_COMPOSE_DOWN).format(project=name)}, which deletes the volumes of {name}" for name in item["compose_projects"]]
+        lines += [f"branch gc would remove the image {name}" for name in item["images"]]
+        return lines
     for action in item["actions"]:
-        if action == "worktree":
-            lines.append(f"removes the worktree {item['worktree']}")
-        elif action == "local-branch":
+        if action == "local-branch":
             lines.append(f"deletes the local branch {item['branch']}")
         elif action.startswith("remote"):
-            lines.append(f"stays: {action} (local only)")
+            lines.append(f"stays: {action} (local only; the host refuses a plan that deletes it)")
         else:
             lines.append(action)
-    lines += [f"stops the Compose stack {name} without -v" for name in item["compose_projects"]]
-    lines += [f"removes the image {name}" for name in item["images"]]
     return lines
 
 
-def branch(item: dict, path: str) -> dict:
+def branch(item: dict, path: str, default: object) -> dict:
     remote = next(iter(item["remotes"].values()), "")
     head = item["local_sha"] or item["head"] or remote
-    open_to_delete = item["state"] == "merged-clean" and not item["skip"] and bool(item["local_sha"])
+    held = held_by(item["worktree"]) if item["worktree"] and item["state"] == "merged-clean" else ""
+    open_to_delete = item["state"] == "merged-clean" and not item["skip"] and bool(item["local_sha"]) and not item["worktree"]
     return {
+        "held": held,
+        "token_free": signing.token_free(item, default),
         "name": item["branch"],
         "head": head,
         "upstream": item["upstream"] or "",
@@ -116,13 +131,21 @@ def repo(entry: dict) -> dict:
     return {
         **{key: value for key, value in entry.items() if key != "items"},
         "name": "/".join(Path(entry["path"]).parts[-LABEL_PARTS:]),
-        "branches": [branch(item, entry["path"]) for item in items if item["branch"]],
+        "branches": [branch(item, entry["path"], entry.get("default")) for item in items if item["branch"]],
         "detached": [worktree(item) for item in items if item["detached"]],
     }
 
 
-def offered(scan: dict) -> list[dict]:
-    return [entry["cleanup"] for repository in scan["repos"] for entry in repository["branches"] if entry["cleanup"] is not None]
+def offered(scan: dict, ready: bool) -> list[dict]:
+    """Args:
+        scan: the tree.
+        ready: whether pkgmgr holds the GitHub token.
+
+    Returns:
+        The cleanup items deletable now: every one with the token, without
+        it only those of token-free branches.
+    """
+    return [entry["cleanup"] for repository in scan["repos"] for entry in repository["branches"] if entry["cleanup"] is not None and (ready or entry["token_free"])]
 
 
 def read_tree(path: Path) -> dict:

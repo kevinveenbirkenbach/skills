@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .records import epoch, iso_epoch, read_json, shown
 from .register import ENDED, status_of
+from .signed import signing
 from .tree import inside, owns
 
 PUSH = re.compile(r"\b(?:push|gipsn|git-sign-push)\b")
@@ -105,7 +106,8 @@ def enrich(scan: dict, tasks: dict[str, dict], reviews: list[dict], touched: Tou
             shared = sorted(files[a] & files[b])
             if shared:
                 overlaps.append({"a": a, "b": b, "count": len(shared), "files": shared[:SHARED_SHOWN]})
-        merges = [{"from": item["name"], "into": item["merged_into"] or entry.get("default") or "", "by": item["merged_by"]} for item in entry["branches"] if item["merged_by"]]
+        default = entry.get("default") or ""
+        merges = [{"from": item["name"], "into": default if signing.names_default(item["merged_into"], default) else item["merged_into"] or default, "by": item["merged_by"]} for item in entry["branches"] if item["merged_by"]]
         repos.append({**entry, "branches": branches, "overlaps": overlaps, "merges": merges})
     loose = [{"task": task, "title": shown(row.get("title")), "status": status_of(row), "artefacts": artefacts_of(task, row)} for task, row in sorted(tasks.items()) if task not in placed and artefacts_of(task, row)]
     return {**scan, "repos": repos, "tasks": loose}

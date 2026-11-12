@@ -17,6 +17,8 @@ ESTIMATE = "kvb-org-queue-estimate/scripts/estimate.py"
 
 
 class Runner(Protocol):
+    skills: Path
+
     def run(self, script: str, args: list[str]) -> dict: ...
 
 

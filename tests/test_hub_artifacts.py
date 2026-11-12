@@ -69,6 +69,16 @@ class TestHubIcons(HubCase):
 
 
 class TestHubArtifacts(HubCase):
+    def test_a_merge_pkgmgr_names_into_the_remote_tracking_default_points_at_the_default_branch_node(self):
+        self.write_fixture("branch-tree-tokenless.json")
+        status, _, body = self.get("/api/tree")
+        self.assertEqual(status, 200, body)
+        merges = {repo["name"]: repo["merges"] for repo in json.loads(body)["repos"]}
+        self.assertEqual(merges, {
+            "github.com/anon/web": [{"from": "chore/ancestor-local", "into": "main", "by": "ancestor"}, {"from": "fix/remote-merged", "into": "main", "by": "ancestor"}],
+            "git.example.org/anon/notes": [{"from": "topic/ancestor-local", "into": "master", "by": "ancestor"}, {"from": "topic/patch-local", "into": "master", "by": "patch"}],
+        })
+
     def test_the_tree_carries_artefact_leaves_overlaps_merges_and_lanes(self):
         root = self.write_tree()
         demo = f"{root}/worktrees/github.com/me/demo"

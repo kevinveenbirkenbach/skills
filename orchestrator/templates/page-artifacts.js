@@ -224,7 +224,7 @@
       body.push(meta([["Path", data.path], ["Remote", data.remote], ["Default", data.default], ["Forge", data.forge], ["As of", data.scanned_at]]),
         h("p", {class: "muted"}, `${data.branches.length} Branches · ${data.branches.reduce((sum, entry) => sum + entry.worktrees.length, 0) + data.detached.length} Worktrees`));
     } else if (node.kind === "branch") {
-      body.push(h("div", {class: "states"}, branchStates(data)), meta([["Upstream", data.upstream], ["Head", data.head.slice(0, 12), data.head], ["Merged into", data.merged_into], ["Reason", data.reason]]),
+      body.push(h("div", {class: "states"}, branchStates(data), gateIcons(node.repo, data.name)), meta([["Upstream", data.upstream], ["Head", data.head.slice(0, 12), data.head], ["Merged into", data.merged_into], ["Reason", data.reason]]),
         data.worktrees.map((wt) => flowDetails(wt.flow, data.name)),
         h("h3", {}, "Dry run"), h("pre", {class: "notes"}, data.plan.join("\n")), h("div", {class: "actions"}, deleteButton(data)));
     } else if (node.kind === "worktree") {
@@ -256,13 +256,14 @@
       drawArtifacts();
     }}}) : null;
     const removeAll = view === "tree" ? h("span", {class: "delete-all"}) : null;
-    tree.dom = {view, picker, count, stage: stageBox, legend: legendBox, list, removeAll};
+    const apply = view === "tree" ? null : h("span", {class: "gate-staged"});
+    tree.dom = {view, picker, count, stage: stageBox, legend: legendBox, list, removeAll, apply};
     window.setTimeout(() => {
       drawArtifacts();
       fetchTree();
     }, 0);
     const controls = h("div", {class: "card controls"}, viewSwitch("artifacts"), view === "3d" ? layoutTools("artifacts") : view === "tree" ? null : picker,
-      h("div", {class: "toolbar", role: "toolbar", "aria-label": "Artifacts"}, search, reload, removeAll), count);
+      h("div", {class: "toolbar", role: "toolbar", "aria-label": "Artifacts"}, search, reload, removeAll, apply), count);
     const body = view === "tree" ? list : h("div", {class: "card stage-card"}, stageBox, legendBox);
     return h("div", {class: "graph"}, controls, body);
   }
@@ -296,6 +297,7 @@
       drawTree();
       return;
     }
+    tree.dom.apply.replaceChildren(gateApply() || "");
     const empty = !tree.data || tree.data.error;
     tree.dom.count.textContent = empty ? "" : `${tree.data.repos.length} repositories · as of ${clock.format(stampOf(tree.data.scanned))}`;
     if (empty) {
