@@ -5,9 +5,11 @@ Usage:
     watch.py watch     hook (UserPromptSubmit, PostToolUse): measure at most once
                        per interval machine-wide, act on the stage, show alerts,
                        and append the rows of <root>/queue-history.jsonl
-                       (kvb-org-queue) and <root>/security-accepted.jsonl
-                       (kvb-check-security) whose id it lacks to the same name
-                       under ~/.local/state/agents-council/
+                       (kvb-org-queue), <root>/security-accepted.jsonl
+                       (kvb-check-security), <root>/gate-receipts.jsonl and
+                       <root>/gate-parents.jsonl (kvb-check-gate) whose id it
+                       lacks to the same name under
+                       ~/.local/state/agents-council/
     watch.py block     hook (PreToolUse on Bash): exit 2 for a heavy job while the
                        disk stage is stop or critical, the memory stage is stop
                        or cannot be judged without memory_limits, or a
@@ -104,7 +106,13 @@ HISTORY = ROOT / "queue-history.jsonl"
 KEPT_HISTORY = KEPT / "queue-history.jsonl"
 ACCEPTED = ROOT / "security-accepted.jsonl"
 KEPT_ACCEPTED = KEPT / "security-accepted.jsonl"
-MIRRORED = ((HISTORY, KEPT_HISTORY), (ACCEPTED, KEPT_ACCEPTED))
+RECEIPTS = ROOT / "gate-receipts.jsonl"
+KEPT_RECEIPTS = KEPT / "gate-receipts.jsonl"
+PARENTS = ROOT / "gate-parents.jsonl"
+KEPT_PARENTS = KEPT / "gate-parents.jsonl"
+MIRRORED = (
+    (HISTORY, KEPT_HISTORY), (ACCEPTED, KEPT_ACCEPTED), (RECEIPTS, KEPT_RECEIPTS), (PARENTS, KEPT_PARENTS),
+)
 ALERT_TTL = 3600
 CLIP = 1000
 CLEANUP_LOCK = "cleanup.lock"

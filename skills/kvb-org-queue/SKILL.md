@@ -35,7 +35,8 @@ Light runs (no Docker, about a minute) self-admit with
 Every 20 s each waiting hold evaluates the queue under one lock:
 
 1. Hotfix jobs first, then the register rank (`rasci.py show`), one place
-   earlier per whole hour waited, then arrival.
+   earlier per whole hour waited, then arrival; an open `after` task holds a
+   job.
 2. In that order, a job is blocked at disk stage stop or critical, at warn
    when it needs disk, at memory stage stop, during a radio-silence mayday,
    while its kind's slots are taken, or while its workdir runs another job;
@@ -75,7 +76,7 @@ queue.py cancel <id>
 ```
 
 `list` shows each job's position, ETA and blocking reason, `history` the
-learned values, `cancel` removes your own waiting job (its hold exits 3).
+learned values, `cancel` removes your own waiting job.
 
 ## Rules
 

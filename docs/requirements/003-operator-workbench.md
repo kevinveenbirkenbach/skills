@@ -221,30 +221,69 @@ flowchart TD
 
 ### W5 Gates, receipts and hooks
 
-- [ ] `gates.py` keeps rules, parents and receipts in
-      `~/.local/state/agents-council/gates.db`.
-- [ ] `gates.py resolve --repo R --branch B --action A` prints the level and its
+- [x] `gates.py` keeps rules, parents and receipts in
+      `~/.local/state/agents-council/gates.db`. Amended by Experiment's
+      condition 3 below: rules and operator or derived parents live in
+      `gates.db`; receipts and the parents the post-checkout hook records are
+      written from the sandbox as rows of `gate-receipts.jsonl` and
+      `gate-parents.jsonl` in the council root, which the watch hook of
+      `kvb-org-organize` keeps in `~/.local/state/agents-council/` beside
+      `gates.db`; reads merge both, and a database row for an edge wins.
+- [x] `gates.py resolve --repo R --branch B --action A` prints the level and its
       source: the branch's own rule, else the strictest resolved level of all
       ancestors, else none.
-- [ ] The post-checkout hook records as parents every local branch whose tip
+- [x] The post-checkout hook records as parents every local branch whose tip
       equals the new branch's start commit; `gates.py parents derive` adds
       derived parents for the others.
-- [ ] A green queue gate writes a receipt: repo, tree sha of the tested content
+- [x] A green queue gate writes a receipt: repo, tree sha of the tested content
       (tracked, staged, unstaged, untracked, via a temporary index), level,
-      log, time.
-- [ ] `gates.py hooks install --repo R` installs pre-commit (quick checks of the
+      log, time. It also carries `INFINITO_TEST_GPU` as `gpu`; above quick only
+      `false` counts, and a run that changed the tree writes none.
+- [x] `gates.py hooks install --repo R` installs pre-commit (quick checks of the
       staged files, under 30 s on this repository), commit-msg,
       pre-merge-commit, pre-push and post-checkout.
-- [ ] commit-msg, pre-merge-commit and pre-push pass when a receipt for the
+- [x] commit-msg, pre-merge-commit and pre-push pass when a receipt for the
       resulting tree meets the resolved level, else refuse with the
       `queue.py hold` command that produces it; each check stays under 1 s.
-- [ ] `queue.py hold` for a task whose `after` tasks are not all done waits with
+      For the level quick the command is `gates.py quick`, which starts
+      nothing heavy (Main's condition 3). pre-push also needs the remote
+      branch's merge level, so a fast-forward or squash merge, which no merge
+      hook sees, cannot leave without its receipt; commit-msg warns on a
+      squash commit early; a detached HEAD takes the rebased branch, else the
+      default branch; `hooks install` changes no git config.
+- [x] `queue.py hold` for a task whose `after` tasks are not all done waits with
       `waits for <task>`; the register rank places a task after its `after`
       tasks.
-- [ ] The commit skills commit through the hooks; `--no-verify` only on the
-      operator's word for that commit.
-- [ ] Experiment's and Main's answer on core's hooks is recorded here; core's
+- ~~The commit skills commit through the hooks; `--no-verify` only on the
+  operator's word for that commit.~~ Rejected by the operator 2026-11-12:
+  agents keep --no-verify, hooks bind humans and CI (Main condition 2,
+  Experiment condition 4).
+- [x] Experiment's and Main's answer on core's hooks is recorded here; core's
       `.pre-commit-config.yaml` changes only in a core PR.
+  - Main (2026-11-12) agrees for the skills repo, four conditions: (1) the
+    receipt binds the exact tree id of the commit plus the resolved level; a
+    merge or amend without a fresh green gate on that tree fails it. (2)
+    Operator rules stay: commits and handed-over pushes run with
+    `--no-verify`, so the hooks are a second line, never the only gate check;
+    `kvb-git-push` still verifies quality-high on the exact commit, and an
+    explicit per-push waiver ("ohne gate") from the operator stays possible.
+    (3) pre-commit quick checks start nothing heavy: no make test, no Docker,
+    nothing that belongs in `queue.py hold`. (4) No oracle tests and GPU off
+    in the resolved level.
+  - Experiment (2026-11-12) agrees, no veto: (1) every core branch's level is
+    quality-high with GPU off; no lower per-branch level without the
+    operator's word. (2) A receipt binds the exact tree sha plus level plus
+    `INFINITO_TEST_GPU=false`; a run whose docs or autoformat step wrote
+    files, or one on another tree, never counts. (3)
+    `~/.local/state/agents-council` is outside the sandbox write scope, so
+    sandboxed gates write receipts to `/tmp/agents-council` (the council
+    root) and the watch hook of `kvb-org-organize` mirrors them to
+    `~/.local/state/agents-council`, as it does `security-accepted.jsonl`.
+    (4) Agents commit and push with `--no-verify` per operator rule, so the
+    hooks bind humans and CI; the push hand-over keeps its own green gate on
+    the exact commit.
+  - Core's hooks and `.pre-commit-config.yaml` stay untouched here; they
+    change only in a core PR agreed with Experiment and Main.
 
 ### W4 Resources
 
@@ -333,7 +372,7 @@ The work packages meet only through these interfaces:
 - Unit:
   - [ ] Board staging, lanes and refusals (cycle, open key result); forecast
         fixed, growing and never; stale; scope without `operator/*`.
-  - [ ] Gates resolve (own rule, strictest of several ancestors, none);
+  - [x] Gates resolve (own rule, strictest of several ancestors, none);
         parents derive; receipt tree sha with unstaged and untracked files;
         hook pass and refuse; queue wait on `after`.
   - [ ] Resources sample parsing on fixtures (df, meminfo, nvidia-smi, asleep
@@ -342,7 +381,7 @@ The work packages meet only through these interfaces:
   - [ ] Bubble schedule: scale per queue position, word reveal times from a
         duration, reading-pace duration, one bubble per agent.
 - Integration:
-  - [ ] A scratch repository with installed hooks refuses a commit without a
+  - [x] A scratch repository with installed hooks refuses a commit without a
         receipt and passes it after a queue gate; refuses a merge below the
         parent's level; post-checkout records parents.
   - [ ] The host executor applies a signed board batch to a scratch register

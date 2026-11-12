@@ -19,6 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 QUEUE = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
 HISTORY = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "history.py"
+GATES = REPO_ROOT / "skills" / "kvb-check-gate" / "scripts" / "gates.py"
 NOW = 1_800_000_000.0
 HOUR = 3600
 OPEN_MEMORY = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_swap_gb": 1e9}
@@ -820,6 +821,85 @@ class TestQueueCommands(unittest.TestCase):
             "| deploy | 5 | 10.0 | 20.0 | 5 | learned |\n"
             "| test | 2 | - | - | 0 | capped by config |\n"
         ))
+
+    def after_task(self, status: str) -> dict:
+        register = json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
+        register["work/x"] = {"roles": {}, "status": status}
+        register["work/a"]["after"] = ["work/done", "work/x"]
+        (self.root / "rasci.json").write_text(json.dumps(register), encoding="utf-8")
+        return register
+
+    def test_a_stopped_after_task_holds_nothing_back(self):
+        self.after_task("stopped")
+        result = self.run_queue("hold", "--kind", "deploy", "--task", "work/a", "--session", "s1", "--", "true")
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+
+    def test_a_hold_waits_for_an_after_task_until_it_is_done_or_stopped(self):
+        register = self.after_task("running")
+        hold, err = self.blocked_hold("true")
+        reason = (
+            "waits for work/x, an after task of work/a not yet done or stopped; "
+            "rasci.py set work/a --drop-after work/x lifts it"
+        )
+        self.assertEqual(self.run_queue("list").stdout.splitlines()[1].split("\t")[-1], reason)
+        hold.send_signal(signal.SIGTERM)
+        self.assertEqual(hold.wait(timeout=30), 128 + signal.SIGTERM)
+        self.assertEqual(err.read_text(encoding="utf-8"), f"queue: deploy-1 waits at position 1: {reason}\n")
+        for status in ("stopped", "done"):
+            register["work/x"]["status"] = status
+            (self.root / "rasci.json").write_text(json.dumps(register), encoding="utf-8")
+            result = self.run_queue("hold", "--kind", "deploy", "--task", "work/a", "--session", "s1", "--", "true")
+            self.assertEqual((result.returncode, result.stderr), (0, ""), status)
+
+    def test_hold_with_a_receipt_records_one_only_for_a_green_run_on_an_unchanged_tree(self):
+        repo = self.base / "repo"
+        repo.mkdir()
+
+        def git(*args: str) -> str:
+            return subprocess.run(
+                ["git", *args], cwd=repo, env=self.env, capture_output=True, text=True, check=True
+            ).stdout.strip()
+
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "t@example.org")
+        git("config", "user.name", "t")
+        (repo / "a").write_text("a", encoding="utf-8")
+        git("add", "a")
+        git("commit", "-q", "-m", "a")
+        (repo / "staged").write_text("s", encoding="utf-8")
+        git("add", "staged")
+        (repo / "untracked").write_text("u", encoding="utf-8")
+        log = self.base / "gate.log"
+        receipts = self.root / "gate-receipts.jsonl"
+
+        def hold(*command: str, receipt: tuple[str, ...] = ("--receipt", "test")) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [sys.executable, str(QUEUE), "hold", "--kind", "test", "--task", "work/a", "--session", "s1", *receipt,
+                 "--log", str(log), "--", *command],
+                cwd=repo, env={**self.env, "INFINITO_TEST_GPU": "false"}, capture_output=True, text=True, timeout=60,
+                check=False,
+            )
+
+        tree = subprocess.run(
+            [sys.executable, str(GATES), "tree", "--worktree", str(repo)], env=self.env, capture_output=True, text=True,
+            check=True,
+        ).stdout.strip()
+        self.assertNotEqual(tree, git("rev-parse", "HEAD^{tree}"))
+        green = hold(sys.executable, "-c", "print('ran')")
+        self.assertEqual((green.returncode, green.stderr), (0, f"queue: receipt test for tree {tree}\n"))
+        self.assertEqual(log.read_text(encoding="utf-8"), "ran\n")
+        [row] = [json.loads(line) for line in receipts.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(
+            [row[k] for k in ("repo", "tree", "level", "gpu", "log")], [str(repo), tree, "test", "false", str(log)]
+        )
+        self.assertEqual(hold("false").returncode, 1)
+        changed = hold("touch", str(repo / "made"))
+        self.assertEqual(changed.returncode, 0)
+        self.assertIn(f"queue: the command changed the tree from {tree} to ", changed.stderr)
+        self.assertEqual(len(receipts.read_text(encoding="utf-8").splitlines()), 1)
+        refused = hold("true", receipt=())
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("--log goes with --receipt", refused.stderr)
 
     def test_cancel_removes_only_the_callers_waiting_entry(self):
         queue = _load(QUEUE)
