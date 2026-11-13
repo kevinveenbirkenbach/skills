@@ -110,16 +110,41 @@ STARS = """(async () => {@HELPERS@@HOME@
   const CONTROLS = 'button, a[href], input, select, textarea, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"])';
   const shown = (node) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden" && !node.closest("details:not([open]) > :not(summary)");
   const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  const XHTML = "http://www.w3.org/1999/xhtml";
+  const clipped = (node) => {
+    const box = node.getBoundingClientRect();
+    const drawn = {left: box.left, top: box.top, right: box.right, bottom: box.bottom};
+    let position = getComputedStyle(node).position;
+    for (let at = node.parentElement; at && at !== document.body && position !== "fixed"; at = at.parentElement) {
+      const look = getComputedStyle(at);
+      if (at.namespaceURI !== XHTML || ["inline", "contents"].includes(look.display) || (position === "absolute" && look.position === "static")) {
+        continue;
+      }
+      position = look.position;
+      const edge = at.getBoundingClientRect();
+      const left = edge.left + at.clientLeft;
+      const top = edge.top + at.clientTop;
+      if (look.overflowX !== "visible") {
+        drawn.left = Math.max(drawn.left, left);
+        drawn.right = Math.min(drawn.right, left + at.clientWidth);
+      }
+      if (look.overflowY !== "visible") {
+        drawn.top = Math.max(drawn.top, top);
+        drawn.bottom = Math.min(drawn.bottom, top + at.clientHeight);
+      }
+    }
+    return drawn;
+  };
   const layer = (node) => node.closest("dialog[open]");
   const count = (where) => {
-    const owners = all("[data-panel], [data-item]").filter((node) => node.namespaceURI === "http://www.w3.org/1999/xhtml");
+    const owners = all("[data-panel], [data-item]").filter((node) => node.namespaceURI === XHTML);
     seen.push([where, owners.length]);
     missing.push(...owners.filter((node) => !ownStar(node)).map((node) => `${where}: ${node.outerHTML.slice(0, 120)}`));
     const controls = all(CONTROLS).filter(shown);
     for (const star of all(".star").filter(shown)) {
-      const box = star.getBoundingClientRect();
+      const box = clipped(star);
       for (const other of controls) {
-        if (other !== star && !other.contains(star) && !star.contains(other) && layer(other) === layer(star) && overlap(box, other.getBoundingClientRect()) > 1) {
+        if (other !== star && !other.contains(star) && !star.contains(other) && layer(other) === layer(star) && overlap(box, clipped(other)) > 1) {
           covered.push(`${where}: ${star.title} over ${other.outerHTML.slice(0, 100)}`);
         }
       }
