@@ -93,6 +93,24 @@ class TestHubReviews(HubCase):
         self.assertEqual(self.tool("review_list", {})["structuredContent"]["reviews"], [])
         self.assertEqual(list((self.state / "pages").iterdir()), [])
 
+    def test_a_review_with_a_look_alike_branch_title_or_path_is_refused_before_it_reaches_a_prompt(self):
+        source = self.page("bundle.html", PAGE)
+        plain = self.arguments("feat: x", "", source)
+        for name, value, code in (
+            ("branch", f"main{chr(0x3164)}", "U+3164"),
+            ("branch", f"main{chr(0x115F)}", "U+115F"),
+            ("title", f"feat:{chr(0xA0)}x", "U+00A0"),
+            ("title", f"feat: x{chr(0x34F)}", "U+034F"),
+            ("worktree", f"/repo/.worktrees/x{chr(0xFE0F)}", "U+FE0F"),
+            ("repo", f"/repo{chr(0xE0100)}/.git", "U+E0100"),
+        ):
+            with self.subTest(name=name, code=code):
+                result = self.tool("review_request", {**plain, name: value})
+                self.assertTrue(result["isError"], result)
+                self.assertIn(code, json.dumps(result, ensure_ascii=True))
+        self.assertEqual(self.tool("review_list", {})["structuredContent"]["reviews"], [])
+        self.assertFalse(self.tool("review_request", plain).get("isError"))
+
     def test_approve_flips_the_status_and_review_wait_returns_it(self):
         review_id = self.request("feat: approve me", "")
         results = []

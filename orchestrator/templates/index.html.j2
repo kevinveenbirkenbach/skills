@@ -432,6 +432,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "style-ancestry.css" %}
 
 {% include "style-home.css" %}
+
+{% include "style-firewall.css" %}
 </style>
 </head>
 <body>
@@ -467,6 +469,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <div class="bubbles" id="bubbles" aria-hidden="true" hidden><div class="bubble-bar"></div></div>
 <script nonce="{{ nonce }}" id="state" type="application/json">{{ state | tojson }}</script>
 <script nonce="{{ nonce }}" id="view" type="application/json">{{ view | tojson }}</script>
+<script nonce="{{ nonce }}" id="emoji-bases" type="application/json">{{ emoji_bases | tojson }}</script>
 <script nonce="{{ nonce }}">
 {% include "ambience.js" %}
 </script>
@@ -519,6 +522,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-constants.js" %}
 
 {% include "page-state.js" %}
+
+{% include "page-reveal.js" %}
 
 {% include "page-dom.js" %}
 
@@ -609,6 +614,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-home.js" %}
 
 {% include "page-rules.js" %}
+
+{% include "page-firewall.js" %}
 
 {% include "page-keyboard.js" %}
 

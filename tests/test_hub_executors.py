@@ -32,6 +32,24 @@ class TestHubExecutors(HubCase):
     def trust(self, name: str) -> verifier.Trust:
         return verifier.Trust(approvers=self.approvers, replay=self.replay / f"{name}.json", origin=self.origin)
 
+    def test_an_operator_row_with_an_invisible_format_character_is_never_offered_for_a_signature(self):
+        rows = {
+            "operator/bidi": (f"echo safe{chr(0x202E)} && rm -rf ~", str(self.outside)),
+            "operator/zero": (f"make{chr(0x200B)} test", str(self.outside)),
+            "operator/dir": ("make test", f"{self.outside}{chr(0x2066)}"),
+            "operator/plain": ("make test", str(self.outside)),
+        }
+        self.write_council({"rasci.json": {task: {"title": command, "workdir": workdir, "description": "run it", "check": "manual", "status": "queued", "roles": {}} for task, (command, workdir) in rows.items()}})
+        self.pin()
+        for task, code in (("operator/bidi", "U+202E"), ("operator/zero", "U+200B"), ("operator/dir", "U+2066")):
+            with self.subTest(task=task):
+                entry = self.entry("operator", task, "", hashlib.sha256(rows[task][0].encode()).hexdigest())
+                status, _, body = self.post_json("/api/sign", {"items": [entry]}, self.guard(self.host))
+                self.assertEqual(status, 400)
+                self.assertIn(code, body.decode("utf-8"))
+        plain = self.entry("operator", "operator/plain", "", hashlib.sha256(b"make test").hexdigest())
+        self.assertEqual(len(self.prepare([plain])["payload"]["items"]), 1)
+
     def test_the_runner_runs_only_signed_commands_once(self):
         command = "echo hello && echo world >&2"
         register = {

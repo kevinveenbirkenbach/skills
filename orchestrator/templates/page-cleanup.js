@@ -17,8 +17,8 @@
       const waits = locked.includes(item);
       const kept = held.includes(item);
       return h("li", {class: waits ? "dry-run locked" : kept ? "dry-run held" : "dry-run", "data-token": waits ? "needed" : null, "data-held": kept && entry ? entry.held : null},
-        h("div", {class: "row"}, h("strong", {}, repo ? repo.name : item.repository), h("code", {}, item.branch), waits ? chip("bi-key", "token needed", "warn") : kept ? chip("bi-folder-symlink", "held by a worktree: not deleted here", "neutral") : null),
-        h("pre", {}, (entry ? entry.plan : [`${item.branch} @ ${item.tip.slice(0, 12)}`]).join("\n")));
+        h("div", {class: "row"}, h("strong", {}, revealed(repo ? repo.name : item.repository)), h("code", {}, revealed(item.branch)), waits ? chip("bi-key", "token needed", "warn") : kept ? chip("bi-folder-symlink", "held by a worktree: not deleted here", "neutral") : null),
+        h("pre", {}, (entry ? entry.plan : [`${item.branch} @ ${item.tip.slice(0, 12)}`]).map(revealed).join("\n")));
     });
     const outcome = h("div", {class: "mini", "aria-live": "polite"});
     const confirm = h("button", {type: "button", class: "btn danger", ...named("Delete", "Delete: hand over to the host with your passkey signature")}, icon("bi-trash3"), "Delete");

@@ -747,13 +747,25 @@ flowchart TD
 
 ### Phase 6: Firewall (S6)
 
-- [ ] The tab is called Firewall and lists hub rules, allow and deny
+- [x] The tab is called Firewall and lists hub rules, allow and deny
       patterns and the settings permissions, grouped by tool and prefix as
       read from the settings files.
-- [ ] A rule or rule set applies to one agent, a named group or all agents.
-- [ ] A settings change is written only by the host executor after the
+- [x] A rule or rule set applies to one agent, a named group or all agents.
+- [x] A settings change is written only by the host executor after the
       passkey check, only to a listed file, with a backup beside it; a forged,
       replayed or unlisted-file job changes nothing (unit tests).
+
+Limit: a session id is not an authenticated identity; an agent that can run
+`claude --resume <other id>` inherits every rule aimed at that session. A
+decision names its agent in a free MCP argument: a rule aimed at sessions
+decides it only for the one session holding that name now, never through a
+name a session held before, and for none when several hold it.
+
+Widening needs a fresh passkey signature over exactly what takes effect:
+signing a rule shows its pattern, directory, end and every session id of its
+target, a group's or rule set's resolution at that moment, and turning a rule
+on again needs its own signature; groups, rule sets and turning off stay
+free, since they grant nothing by themselves.
 
 ### Phase 6: Resources (S7)
 

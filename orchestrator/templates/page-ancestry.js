@@ -101,7 +101,7 @@
         edges.push({child: item.branch, parent: item.parent, source: "staged"});
       }
     }
-    const plan = Ancestry.layout(repo.branches.map((entry) => ({id: entry.name, label: entry.name})), edges);
+    const plan = Ancestry.layout(repo.branches.map((entry) => ({id: entry.name, label: revealed(entry.name)})), edges);
     const dropping = (link) => staged.some((item) => item.drop && item.branch === link.child && item.parent === link.parent);
     return ancestryChart(plan, `Ancestry of ${repo.name}`, {
       item: `ancestry:${repo.path}`,
@@ -109,7 +109,7 @@
         class: ["ancestry-edge", link.derived ? "derived" : "", link.source === "staged" ? "pending" : "", dropping(link) ? "dropping" : ""].filter(Boolean).join(" "),
         d, "data-child": link.child, "data-parent": link.parent, "data-source": link.source,
         on: {click: () => stageParent(repo.path, link.child, link.parent, link.source !== "staged")},
-      }, s("title", {}, `${link.parent} → ${link.child} · ${link.source}`)),
+      }, s("title", {}, revealed(`${link.parent} → ${link.child} · ${link.source}`))),
       node: (node) => s("g", {
         class: "node a-branch ancestry-node", transform: `translate(${fixed(node.x)} ${fixed(node.y)})`, tabindex: 0, role: "button", "aria-label": node.label,
         "data-repo": repo.path, "data-branch": node.id, "data-generation": node.generation,

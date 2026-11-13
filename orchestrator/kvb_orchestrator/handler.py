@@ -64,8 +64,13 @@ SETTINGS_SIGN_ROUTE = "/api/settings/sign"
 CHOICES_ROUTE = "/api/choices"
 CHOICES_SIGN_ROUTE = "/api/choices/sign"
 DIFF_ROUTE = re.compile(r"/api/diffs/(review|ask)/([0-9a-f]{16})")
+FIREWALL_ROUTE = "/api/firewall"
+FIREWALL_POSTS = {"/api/firewall/preview": "settings_preview", "/api/firewall/settings": "change_settings", "/api/firewall/groups": "add_group", "/api/firewall/sets": "add_set"}
+FIREWALL_STATE = re.compile(r"/api/firewall/settings/([0-9a-f]{16})")
+FIREWALL_DROP = re.compile(r"/api/firewall/(groups|sets)/([0-9a-f]{16})/delete")
+FIREWALL_STATUS = {"settings_preview": HTTPStatus.OK, "change_settings": HTTPStatus.ACCEPTED, "add_group": HTTPStatus.CREATED, "add_set": HTTPStatus.CREATED}
 WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
-ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE)
+ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
 
 
 class Handler(Exchange):
@@ -93,10 +98,13 @@ class Handler(Exchange):
         office = OFFICE_STATE.fullmatch(path)
         voice = VOICE_ITEM.fullmatch(path)
         diff = DIFF_ROUTE.fullmatch(path)
+        firewall = self.firewall_reader(path)
         if self.host() is None:
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
         elif path == "/":
             self.index()
+        elif firewall:
+            self.answer(firewall, HTTPStatus.OK)
         elif diff:
             self.answer(lambda: hub.diff_of(diff.group(1), diff.group(2)), HTTPStatus.OK)
         elif vendored and vendored.group(1) in VENDOR:
@@ -197,7 +205,7 @@ class Handler(Exchange):
         if path == "/api/rules":
             return lambda body: self.answer(lambda: hub.add_rule(body), HTTPStatus.CREATED)
         if rule:
-            return lambda _body: self.answer(lambda: hub.rule_action(rule.group(1), rule.group(2)), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.rule_action(rule.group(1), rule.group(2), body), HTTPStatus.OK)
         if path == "/api/nl":
             return lambda body: self.answer(lambda: hub.nl(body), HTTPStatus.OK)
         if path == SETTINGS_ROUTE:
@@ -216,10 +224,28 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.sign_choices(body), HTTPStatus.OK)
         if path == CHOICES_ROUTE:
             return lambda body: self.answer(lambda: hub.request_choices(body), HTTPStatus.CREATED)
+        return self.firewall_action(path)
+
+    def firewall_reader(self, path: str) -> Callable[[], dict] | None:
+        hub = self.server.hub
+        job = FIREWALL_STATE.fullmatch(path)
+        if path == FIREWALL_ROUTE:
+            return hub.firewall
+        return (lambda: hub.settings_state(job.group(1))) if job else None
+
+    def firewall_action(self, path: str) -> Callable[[bytes], None] | None:
+        hub = self.server.hub
+        drop = FIREWALL_DROP.fullmatch(path)
+        if path in FIREWALL_POSTS:
+            method = getattr(hub, FIREWALL_POSTS[path])
+            return lambda body: self.answer(lambda: method(body), FIREWALL_STATUS[FIREWALL_POSTS[path]])
+        if drop:
+            remove = hub.drop_group if drop.group(1) == "groups" else hub.drop_set
+            return lambda _body: self.answer(lambda: remove(drop.group(2)), HTTPStatus.OK)
         return None
 
     def posted(self, path: str) -> bool:
-        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE))
+        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE, FIREWALL_DROP))
 
     def runner(self, path: str, body: bytes) -> None:
         hub = self.server.hub

@@ -30,9 +30,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -51,7 +51,6 @@ DENIED = "The operator denied this in the Agent Orchestrator."
 CHANGED = "staged tree changed since the preview"
 UNBOUND = "the staged tree cannot be read, so the allow is not bound to it"
 REASON_LIMIT = 2000
-CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 FAILURES = (OSError, ValueError, staged_diff.DiffError)
 
 
@@ -99,7 +98,26 @@ def commit_diff(ask: dict, rules: Path | None) -> tuple[str | None, dict]:
 
 
 def clean(text: str) -> str:
-    return CONTROL.sub("?", text.strip())[:REASON_LIMIT]
+    """Returns:
+        text on one line for the terminal and the agent: every character
+        signing.unseen() names, a C0 or C1 control, a bidi or zero-width
+        character among them, shown as ?, but a selector signing.presented()
+        accepts; cut at REASON_LIMIT.
+    """
+    stripped = text.strip()
+    return "".join("?" if signing.unseen(char) and not signing.presented(stripped, index) else char for index, char in enumerate(stripped))[:REASON_LIMIT]
+
+
+def refusal(error: urllib.error.HTTPError) -> str:
+    """Returns:
+        The reason the hub sent with an error status, on one line, or the
+        status text when its body cannot be read.
+    """
+    try:
+        body = error.read().decode("utf-8", "replace")
+    except OSError:
+        body = ""
+    return clean(body or str(error.reason))
 
 
 def bound(chosen: dict | None, ask: dict, pinned: str | None) -> dict | None:
@@ -194,6 +212,9 @@ def main() -> int:
         answer = {"status": "pending"}
         while answer["status"] == "pending" and (left := deadline - time.monotonic()) > 0:
             answer = status(base, ask_id, min(left, POLL))
+    except urllib.error.HTTPError as error:
+        print(f"kvb-orchestrator: the hub answered {error.code}, Claude Code asks instead: {refusal(error)}", file=sys.stderr)
+        return 0
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return 0
     chosen = bound(decision(answer, signing.ask_item(ask_id, ask["tool"], ask["command"], ask["cwd"], ask["session"]), trust), ask, pinned)

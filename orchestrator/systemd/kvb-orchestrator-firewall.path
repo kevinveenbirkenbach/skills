@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Orchestrator firewall: wake on a signed settings change the Agent Orchestrator wrote
+
+[Path]
+DirectoryNotEmpty=%h/.local/state/kvb-orchestrator/firewall/jobs
+MakeDirectory=true
+DirectoryMode=0700
+
+[Install]
+WantedBy=default.target

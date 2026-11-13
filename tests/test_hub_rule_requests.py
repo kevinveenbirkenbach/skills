@@ -48,9 +48,9 @@ class TestHubRuleRequests(HubCase):
                 self.assertTrue(self.tool("rule_request", self.ask_rule(**change))["isError"])
         for command, cwd in (("make test", "/repo"), ("make test-unit", "/repo/sub"), ("make deploy", "/repo"), ("make test && rm -rf /", "/repo"), ("make test", "/elsewhere")):
             self.create_ask({**ASK, "command": command, "cwd": cwd})
-        request_id = self.requested(self.ask_rule())
-        item = self.item(request_id)
         arguments = self.ask_rule()
+        request_id = self.requested(arguments)
+        item = self.item(request_id)
         self.assertEqual({name: item["rule"][name] for name in ("kind", "tool", "pattern", "scope")}, {name: arguments[name] for name in ("kind", "tool", "pattern", "scope")})
         self.assertEqual((item["agent"], item["detail"], item["green"], item["deniable"], item["dry_run"]), ("Skills", "the gate runs make test all day", False, True, {"matched": 2, "total": 5, "days": 7}))
         self.assertEqual(self.waited(request_id), {"id": request_id, "status": "pending", "rule": None, "reason": "", "decided": None})
@@ -86,6 +86,28 @@ class TestHubRuleRequests(HubCase):
         with mock.patch.object(batches, "UNDO", 0.05):
             matched = self.create_ask({**ASK, "command": "make test"})
             self.settle(lambda: self.ask_status(matched, "0") == "allowed")
+
+    def test_a_text_with_an_invisible_format_character_is_refused_before_it_reaches_a_prompt(self):
+        for change, code in (
+            ({"pattern": f"make test{chr(0x202E)}*"}, "U+202E"),
+            ({"pattern": f"make{chr(0x200B)} test*"}, "U+200B"),
+            ({"scope": f"/repo{chr(0x2066)}*"}, "U+2066"),
+            ({"tool": f"{chr(0xFEFF)}Bash"}, "U+FEFF"),
+            ({"agent": f"Skills{chr(0x200D)}"}, "U+200D"),
+        ):
+            with self.subTest(code=code):
+                result = self.tool("rule_request", self.ask_rule(**change))
+                self.assertTrue(result["isError"])
+                self.assertIn(code, json.dumps(result, ensure_ascii=True))
+                if "agent" not in change:
+                    form = {name: self.ask_rule(**change)[name] for name in ("kind", "tool", "pattern", "scope", "expires")}
+                    status, _, body = self.post_json("/api/rules/sign", form, self.guard(self.host))
+                    self.assertEqual(status, 400)
+                    self.assertIn(code, body.decode("utf-8"))
+        self.assertEqual([item for item in self.snapshot()["inbox"] if item["kind"] == "rule"], [])
+        self.assertEqual(self.httpd.hub.rule_requests.listed(), [])
+        request_id = self.requested(self.ask_rule())
+        self.assertEqual(self.item(request_id)["rule"]["pattern"], "make test*")
 
     def test_review_and_decision_requests_count_their_own_history(self):
         self.request("feat: green", "")

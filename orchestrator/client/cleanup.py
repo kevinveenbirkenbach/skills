@@ -80,7 +80,7 @@ def tree_facts(tree: Path) -> tuple[dict[str, str], bool]:
         data = json.loads(tree.read_text(encoding="utf-8"))
         known = {entry["path"]: entry.get("default") if isinstance(entry.get("default"), str) else "" for entry in data["repos"] if entry.get("known") is True and isinstance(entry.get("path"), str)}
         return known, data.get("delete_ready") is True
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except Exception:  # noqa: BLE001
         return {}, False
 
 

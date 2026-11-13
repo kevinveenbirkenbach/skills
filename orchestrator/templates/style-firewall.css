@@ -1,0 +1,14 @@
+.stack-tight { display: grid; gap: 10px; min-width: 0; }
+.fw-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
+.fw-form label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
+.fw-form .field { width: 100%; min-width: 0; }
+.fw-file { display: grid; gap: 8px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.fw-file > .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fw-path { overflow-wrap: anywhere; }
+.fw-group > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: pointer; }
+.fw-group code, .fw-patterns code { overflow-wrap: anywhere; }
+.fw-diff { max-height: 50vh; margin: 4px 0 0; padding: 8px; overflow: auto; border-radius: 8px; background: var(--sunken); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.fw-diff .add { color: var(--ok); }
+.fw-diff .del { color: var(--bad); }
+.rule-row select.field { width: auto; max-width: 100%; min-width: 0; }
+.passkey-prompt { position: fixed; top: 18px; left: 50%; z-index: 60; width: min(440px, calc(100vw - 36px)); transform: translateX(-50%); }

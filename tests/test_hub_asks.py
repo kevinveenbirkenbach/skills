@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import socket
 import subprocess
@@ -10,7 +11,7 @@ import unittest
 from collections.abc import Callable
 
 from hub_case import HubCase
-from hub_support import ASK, CLIENT, HOOK, OPTIONS, Key, key
+from hub_support import ASK, CLIENT, HOOK, OPTIONS, Key, key, signing
 
 
 class TestHubAsks(HubCase):
@@ -154,6 +155,64 @@ class TestHubAsks(HubCase):
             with self.subTest(tool=tool):
                 result = self.tool(tool, {"id": "0123456789abcdef", "timeout_seconds": -1})
                 self.assertEqual(result["content"][0]["text"], "timeout_seconds must be a finite number of seconds, 0 or more")
+
+    def test_an_ask_with_an_invisible_format_character_is_refused_before_it_reaches_a_prompt(self):
+        for name, value, code in (
+            ("command", f"git status{chr(0x202E)} && rm -rf ~", "U+202E"),
+            ("command", f"make{chr(0x200B)} test", "U+200B"),
+            ("command", f"rm{chr(0xA0)}-rf ~", "U+00A0"),
+            ("command", f"make{chr(0x3164)} test", "U+3164"),
+            ("command", f"make test{chr(0xFE0F)}", "U+FE0F"),
+            ("cwd", f"/repo{chr(0x2066)}", "U+2066"),
+            ("session", f"s1{chr(0x200D)}", "U+200D"),
+            ("tool", f"{chr(0xFEFF)}Bash", "U+FEFF"),
+        ):
+            with self.subTest(code=code):
+                status, _, body = self.post_json("/api/asks", {**ASK, name: value}, self.local())
+                self.assertEqual(status, 400)
+                self.assertIn(code, body.decode("utf-8"))
+        self.assertEqual(self.httpd.hub.asks.listed(), [])
+        self.assertEqual([item for item in self.snapshot()["inbox"] if item["kind"] == "ask"], [])
+        self.create_ask(ASK)
+
+    def test_a_score_block_with_emoji_presentation_reaches_the_prompt_and_a_stray_selector_does_not(self):
+        vs16 = chr(0xFE0F)
+        score = f"🎯 Fix: 93\n💥 Break: 4\n{chr(0x23F1)}{vs16} Time: 20\n{chr(0x1F6E1)}{vs16} Security: 100\n🏆 Score: 90"
+        ask_id = self.create_ask({**ASK, "command": f'git commit -m "fix: x" -m "{score}"'})
+        self.assertEqual(self.post_json("/api/sign", {"items": [self.entry("ask", ask_id, "", "")]}, self.guard(self.host))[0], 200)
+        result = self.tool("decision_request", {"question": f"Commit?\n{score}", "options": [{**OPTIONS[0], "description": score}, OPTIONS[1]], "agent": "Skills", "recommended": ""})
+        self.assertFalse(result["isError"], result)
+        for command in (f"make {chr(0x23F1)}{vs16}{vs16}", f"make{vs16}", f"{vs16}{chr(0x23F1)}"):
+            with self.subTest(command=command):
+                status, _, body = self.post_json("/api/asks", {**ASK, "command": command}, self.local())
+                self.assertEqual(status, 400)
+                self.assertIn("U+FE0F", body.decode("utf-8"))
+        self.assertIn(f'id="emoji-bases" type="application/json">{json.dumps(sorted(signing.EMOJI_BASES))}</script>', self.index())
+
+    def test_the_hook_names_the_reason_the_hub_refused_an_ask_on_one_line(self):
+        process = self.hook(self.port, "3", {**HOOK, "tool_input": {"command": f"rm{chr(0xA0)}-rf node_modules"}})
+        self.assertEqual(self.finish(process), (0, ""))
+        self.assertRegex(process.stderr.read(), r"\Akvb-orchestrator: the hub answered 400, Claude Code asks instead: command must hold no [^\n]*U\+00A0[^\n]*\n\Z")
+        self.assertEqual(self.httpd.hub.asks.listed(), [])
+
+    def test_the_hook_prints_no_control_or_bidi_character_of_a_reason(self):
+        hook = importlib.import_module("permission_hook")
+        reason = f" stop{chr(0x9B)}31m{chr(0x202E)}txt\nnext{chr(0x7F)}{chr(0x2066)} {chr(0x23F1)}{chr(0xFE0F)} 20 "
+        self.assertEqual(hook.clean(reason), f"stop?31m?txt?next?? {chr(0x23F1)}{chr(0xFE0F)} 20")
+
+    def test_a_decision_with_an_invisible_format_character_is_refused_before_it_reaches_a_prompt(self):
+        plain = {"question": "Merge the hub?", "options": OPTIONS, "agent": "Skills", "recommended": ""}
+        for change, code in (
+            ({"question": f"Merge{chr(0x202E)} the hub?"}, "U+202E"),
+            ({"options": [{**OPTIONS[0], "description": f"Gate{chr(0x200B)} is green"}, OPTIONS[1]]}, "U+200B"),
+            ({"options": [{**OPTIONS[0], "label": f"Merge now{chr(0x2067)}"}, OPTIONS[1]]}, "U+2067"),
+        ):
+            with self.subTest(code=code):
+                result = self.tool("decision_request", {**plain, **change})
+                self.assertTrue(result["isError"])
+                self.assertIn(code, json.dumps(result, ensure_ascii=True))
+        self.assertEqual(self.httpd.hub.decisions.listed(), [])
+        self.assertFalse(self.tool("decision_request", plain)["isError"])
 
     def test_decisions_are_requested_chosen_and_waited_for(self):
         for arguments in (

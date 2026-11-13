@@ -5,7 +5,7 @@
     const dry = item.dry_run;
     const pairs = [["Kind", RULE_KINDS[rule.kind]], rule.kind === "ask" ? ["Tool (glob)", rule.tool] : null, ["Pattern (glob)", rule.pattern], rule.kind === "decision" ? null : ["Directory (glob)", rule.scope], ["Expires on", absolute.format(stampOf(rule.expires))]];
     return h("div", {class: "rule-request"},
-      item.detail ? h("p", {class: "text"}, item.detail) : null,
+      item.detail ? h("p", {class: "text"}, revealed(item.detail)) : null,
       meta(pairs.filter(Boolean)),
       h("p", {class: "muted dry-run-count"}, "Dry run: the rule would have granted ", h("strong", {}, `${dry.matched} of ${dry.total}`), ` ${COUNTED[rule.kind]} from the last ${dry.days} days.`),
       h("p", {class: "muted"}, RULE_HINTS[rule.kind]));

@@ -48,7 +48,7 @@
   const status = (value) => pill((STATUS[value] || [value])[0], (STATUS[value] || [value, "neutral"])[1]);
   const klass = (value) => pill(CLASSES[value] || value, PILLS[value] || "neutral");
   const counter = (value) => h("span", {class: "count"}, String(value));
-  const meta = (pairs) => h("dl", {class: "meta"}, pairs.map(([label, value, title]) => h("div", {}, h("dt", {}, label), h("dd", {}, h("code", {title: title || null}, dash(value))))));
+  const meta = (pairs) => h("dl", {class: "meta"}, pairs.map(([label, value, title]) => h("div", {}, h("dt", {}, label), h("dd", {}, h("code", {title: title ? revealed(title) : null}, revealed(dash(value)))))));
   const emptyState = (title, text) => h("div", {class: "empty"}, h("div", {class: "empty-mark", "aria-hidden": "true"}), h("h2", {}, title), h("p", {}, text));
   const live = () => ui.preset !== -1 && ui.asOf === null;
   const alarmRows = () => state.radio.filter((row) => (row.class === "mayday" || row.class === "pan-pan") && row.ts >= state.alarm_since).reverse();
@@ -89,7 +89,7 @@
       s("title", {}, PRESENCE[value][0]), s("rect", {class: "presence-dot", x: fixed(-size * 0.65), y: fixed(-size * 0.65), width: fixed(size * 1.3), height: fixed(size * 1.3), rx: fixed(size * 0.65)}),
       s("g", {class: "glyph"}, s("use", {href: `#${PRESENCE[value][1]}`, x: fixed(-size / 2), y: fixed(-size / 2), width: fixed(size), height: fixed(size)}))) : null;
   };
-  const person = (name) => (name && name !== "-" && name !== "all" && name !== HUMAN ? h("button", {type: "button", class: "linkish", title: `Open ${name}`, on: {click: () => openAgent(name)}}, name) : dash(name));
+  const person = (name) => (name && name !== "-" && name !== "all" && name !== HUMAN ? h("button", {type: "button", class: "linkish", title: revealed(`Open ${name}`), on: {click: () => openAgent(name)}}, revealed(name)) : dash(name));
   const people = () => state.people || {};
   const labelOf = (key) => (people()[key] || {name: String(key).replace(/^name:/, "")}).name;
   const nameOf = (key) => (people()[key] || {now: String(key).replace(/^name:/, "")}).now;
@@ -147,8 +147,9 @@
 
   function openSheet(title, body, wide) {
     const sheet = document.getElementById("sheet");
-    sheet.replaceChildren(h("div", {class: `sheet-box${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": title},
-      h("div", {class: "sheet-head"}, h("h2", {class: "panel-title"}, title), h("span", {class: "spacer"}), iconBtn("bi-x-lg", "Close", "btn small ghost", closeSheet)),
+    const shown = revealed(title);
+    sheet.replaceChildren(h("div", {class: `sheet-box${wide ? " wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": shown},
+      h("div", {class: "sheet-head"}, h("h2", {class: "panel-title"}, shown), h("span", {class: "spacer"}), iconBtn("bi-x-lg", "Close", "btn small ghost", closeSheet)),
       h("div", {class: "sheet-body"}, body)));
     sheet.hidden = false;
   }

@@ -16,6 +16,8 @@
       toast(`${label}: not signed`, ["No passkey pinned: Settings → Register passkey"], false);
       return null;
     }
+    const prompt = h("div", {class: "toast wait passkey-prompt", id: "passkey-prompt", role: "status", "aria-live": "polite"}, h("strong", {}, "Passkey signs"), h("pre", {}, promptText(label, prepared)));
+    document.body.append(prompt);
     try {
       const credential = await navigator.credentials.get({publicKey: {
         challenge: unb64url(prepared.challenge),
@@ -29,6 +31,8 @@
     } catch (error) {
       toast(`${label}: not signed`, [`${(error && error.name) || error}: KeePassXC locked or canceled; nothing was sent.`], false);
       return null;
+    } finally {
+      prompt.remove();
     }
   }
 
