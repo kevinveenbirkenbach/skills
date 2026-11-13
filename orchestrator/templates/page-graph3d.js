@@ -17,8 +17,8 @@
   const layoutOf = (tab) => (layoutsOf(tab).some(([id]) => id === space.views.graph.axis) ? space.views.graph.axis : "none");
 
   function fit3d(ms) {
-    if (g3.graph) {
-      g3.graph.zoomToFit(ms, 40);
+    if (g3.graph && g3.graph.height() > 0) {
+      g3.graph.zoomToFit(ms, Math.min(40, g3.graph.height() / 4));
     }
   }
 

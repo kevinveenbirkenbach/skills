@@ -533,7 +533,7 @@ RADIO_STOP = """(async () => {@HELPERS@@MEDIA@
   }
   const button = [stop.getAttribute("aria-label"), stop.title, text(stop), Boolean(stop.querySelector('svg.bi use[href="#bi-stop-fill"]'))];
   stop.click();
-  const paused = Boolean(await until(() => sample() && sample().paused, 8000));
+  const paused = Boolean(await until(() => sample() && sample().paused && sample().src === null, 8000));
   const media = await advancing();
   const now = row();
   const action = now ? now.querySelector("button[data-action]") : null;
