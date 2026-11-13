@@ -69,7 +69,8 @@ flowchart TD
 - [ ] `score.py --message-block`, the line and the table print `Tokens` and
       `Velocity`, never `Cost` or `Time`.
 - [ ] `grep -rnE "💸 Cost|⏱️ Time" skills/ docs/` finds nothing outside the
-      aliases in `labels.json`.
+      aliases in `labels.json` and the requirement documents under
+      `docs/requirements/`, which describe the rename.
 - [ ] A test that changes a label in a temporary `labels.json` sees it in
       `score.py`'s output.
 

@@ -22,6 +22,7 @@ from score_fixture import git_env
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL = REPO_ROOT / "skills" / "kvb-check-score"
+REQUIREMENTS = REPO_ROOT / "docs" / "requirements"
 SCORE = SKILL / "scripts" / "score.py"
 EFFICIENCY = REPO_ROOT / "skills" / "kvb-check-efficiency" / "scripts"
 NOFOLLOW = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "nofollow.py"
@@ -116,7 +117,7 @@ class TestScoreLabels(ScoreCase):
             f"{path.relative_to(REPO_ROOT)}:{number}"
             for top in ("skills", "docs")
             for path in sorted((REPO_ROOT / top).rglob("*"))
-            if path.is_file() and path.suffix != ".pyc"
+            if path.is_file() and path.suffix != ".pyc" and REQUIREMENTS not in path.parents
             for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1)
             if FORMER.search(line)
         ]
