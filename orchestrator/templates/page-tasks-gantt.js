@@ -260,7 +260,7 @@
     const stale = h("span", {class: "pill burn-stale", "data-tone": "warn", "data-stale": String(picked.stale.length), role: "img", ...named(`Stale: ${picked.stale.length}`, `Stale: ${picked.stale.length} tasks without a register change for ${Plan.STALE_DAYS} days, counted apart`)}, icon("bi-hourglass-bottom"), String(picked.stale.length));
     const legend = h("div", {class: "legend"}, names.map((name) => h("span", {class: `burn-key k-${name}`, "data-series": name}, `${SERIES_WORDS[name]}: ${last[name]}`)),
       settings.trend.mode === "off" ? null : finishNotes(trend, finish), stale);
-    return h("div", {class: "burn-box", "data-panel": "burndown"}, svg, legend, overlays, h("p", {class: "muted"}, `${picked.rows.length} tasks in scope, counted in ${unit}`));
+    return h("div", {class: "burn-box"}, svg, legend, overlays, h("p", {class: "muted"}, `${picked.rows.length} tasks in scope, counted in ${unit}`));
   }
 
   async function chooseEstimation(id) {
