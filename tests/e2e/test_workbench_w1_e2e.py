@@ -24,7 +24,7 @@ DIFF = [
     {"path": "big.txt", "status": "M", "mode": "100644", "additions": 401, "deletions": 0, "patch": "@@ -0,0 +1,401 @@\n" + "\n".join(f"+line {n}" for n in range(401)), "note": ""},
     {"path": "key.txt", "status": "A", "mode": "100755", "additions": 3, "deletions": 0, "patch": "", "note": WITHHELD},
 ]
-OPERATOR = """(async () => {@HELPERS@
+OPERATOR = """(async () => {@HELPERS@@UNLABELLED@
   navigator.credentials.get = @SIGNS@ ? navigator.credentials.get.bind(navigator.credentials) : () => Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
   window.e2ePosted = [];
   const send = window.fetch.bind(window);
@@ -59,10 +59,13 @@ OPERATOR = """(async () => {@HELPERS@
   };
   ["@TAG@ review", "@TAG@ ship", "@TAG@ commit"].forEach((words) => mine(words).querySelector('input[type="checkbox"]').click());
   await sleep(300);
+  found.unlabelled = {main: unlabelled(document.getElementById("main"))};
   const grant = all("#main .inbox-actions button").find((button) => name(button).startsWith("Grant selection"));
   found.grant = name(grant);
   grant.click();
   await until(() => document.querySelector(".sheet-box .actions"), 4000);
+  const granting = document.querySelector("#sheet .sheet-box");
+  found.unlabelled.sheet = granting ? unlabelled(granting) : null;
   const confirm = all(".sheet-box .actions button").find((button) => text(button).startsWith("Grant "));
   found.confirm = text(confirm);
   found.listed = all(".sheet-box ul.mini > li").length;
@@ -72,7 +75,7 @@ OPERATOR = """(async () => {@HELPERS@
   found.posted = window.e2ePosted.filter(([path]) => ["/api/sign", "/api/inbox/approve"].includes(path)).map(([path, body]) => [path, body.items.map((item) => item.kind).sort()]);
   return found;
 })()"""
-FEEDBACK = """(async () => {@HELPERS@
+FEEDBACK = """(async () => {@HELPERS@@UNLABELLED@
   const card = await until(() => all("#main .inbox-list > li").find((li) => li.textContent.includes("@TAG@ second") && li.querySelector(".diff-file tr.add")), 10000);
   if (!card) {
     return {error: text(document.getElementById("main"))};
@@ -103,8 +106,11 @@ FEEDBACK = """(async () => {@HELPERS@
   rows[1].querySelector("td.code").dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true, clientX: box.left + 4, clientY: box.top + 4}));
   await sleep(200);
   const menu = floating && floating.getAttribute("role");
+  const labels = {float: floating ? unlabelled(floating) : null};
   floating.querySelector("button").click();
   const sheet = await until(() => document.querySelector(".sheet-box textarea"), 4000);
+  const writing = document.querySelector("#sheet .sheet-box");
+  labels.sheet = writing ? unlabelled(writing) : null;
   const title = text(document.querySelector(".sheet-head .panel-title"));
   const range = text(document.querySelector(".sheet-box .who code"));
   sheet.value = "right-click note";
@@ -126,12 +132,12 @@ FEEDBACK = """(async () => {@HELPERS@
   keyed.value = "key f note";
   all(".sheet-box button").find((button) => name(button) === "Send feedback").click();
   await sleep(1500);
-  return {nearby, menu, title, range, keyRange, shown: shown || "", posted: window.e2eFeedback, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
+  return {nearby, menu, title, range, keyRange, labels, shown: shown || "", posted: window.e2eFeedback, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
 })()"""
 
 
 def probe(template: str, tag: str, signs: bool) -> str:
-    return template.replace("@HELPERS@", base.HELPERS).replace("@TAG@", tag).replace("@SIGNS@", "true" if signs else "false")
+    return template.replace("@HELPERS@", base.HELPERS).replace("@UNLABELLED@", base.UNLABELLED).replace("@TAG@", tag).replace("@SIGNS@", "true" if signs else "false")
 
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
@@ -173,6 +179,11 @@ class TestWorkbenchOperatorTasks(HubCase):
         for width, _ in base.WIDTHS:
             tag = f"w{width}"
             tasks, feedback = next(results), next(results)
+            with self.subTest(browser=browser, width=width, part="unlabelled controls"):
+                self.assertNotIn("error", tasks, tasks)
+                self.assertNotIn("error", feedback, feedback)
+                self.assertEqual(tasks["unlabelled"], {"main": [], "sheet": []})
+                self.assertEqual(feedback["labels"], {"float": [], "sheet": []})
             with self.subTest(browser=browser, width=width):
                 self.assertNotIn("error", tasks, tasks)
                 self.assertEqual((tasks["hash"], tasks["tabs"], tasks["subs"], tasks["streamInbox"], tasks["current"]), ("#tasks/operator", base.TABS, ["Firewall"], False, ["Tasks"]))

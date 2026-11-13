@@ -437,8 +437,10 @@ MEDIA_LOG = """() => {
     }
   };
   const play = HTMLMediaElement.prototype.play;
+  window.e2eMedia = new Set();
   HTMLMediaElement.prototype.play = function () {
     window.e2eAudio = this;
+    window.e2eMedia.add(this);
     const src = this.getAttribute("src") || "";
     const result = play.call(this);
     result.then(() => keep({play: "ok", src}), (error) => keep({play: error.name, src}));
@@ -521,6 +523,26 @@ RADIO_CLICK = """(async () => {@HELPERS@@MEDIA@
   const media = await advancing();
   const now = document.querySelector('#radio-spot [data-station="0"]');
   return {clicked, state: now.dataset.state, note: text(now.querySelector(".station-note")), media, log: log()};
+})()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
+RADIO_STOP = """(async () => {@HELPERS@@MEDIA@
+  const row = () => document.querySelector('#radio-spot [data-station="0"]');
+  const stop = row() ? row().querySelector('button[data-action="stop"]') : null;
+  if (!stop) {
+    return {error: "no Stop button on the playing station", state: row() ? row().dataset.state : null, media: sample(), log: log()};
+  }
+  const button = [stop.getAttribute("aria-label"), stop.title, text(stop), Boolean(stop.querySelector('svg.bi use[href="#bi-stop-fill"]'))];
+  stop.click();
+  const paused = Boolean(await until(() => sample() && sample().paused, 8000));
+  const media = await advancing();
+  const now = row();
+  const action = now ? now.querySelector("button[data-action]") : null;
+  const elements = [...new Set([...(window.e2eMedia || []), ...all("audio, video")])];
+  return {
+    button, paused, media, tracked: (window.e2eMedia || new Set()).size,
+    state: now ? now.dataset.state : null, note: now ? text(now.querySelector(".station-note")) : null,
+    action: action ? [action.dataset.action, action.getAttribute("aria-label")] : null,
+    playing: elements.filter((element) => !element.paused).map((element) => element.getAttribute("src") || element.currentSrc || element.tagName),
+  };
 })()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
 SPEAKING = """
   const caption = () => {
@@ -804,7 +826,7 @@ RADIO_JUMP = """(async () => {@HELPERS@
   await sleep(200);
   const focused = document.activeElement === spot.querySelector("textarea");
   const tabs = [];
-  for (const hash of ["#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list"]) {
+  for (const hash of ["#home", "#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list", "#resources"]) {
     location.hash = hash;
     await sleep(500);
     const main = document.getElementById("main");
@@ -818,6 +840,19 @@ RADIO_JUMP = """(async () => {@HELPERS@
     header: all("header.top button").map((button) => [button.id, name(button), text(button)]), radioTab: Boolean(document.getElementById("tab-radio")),
   };
 })()""".replace("@HELPERS@", HELPERS)
+CANCELED = """() => {
+  window.e2ePasskeys = 0;
+  if (navigator.credentials) {
+    navigator.credentials.get = () => {
+      window.e2ePasskeys += 1;
+      return Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
+    };
+  }
+}"""
+JUMPED = {
+    "hash": "#stream", "focused": True, "tabs": [[tab, True, True] for tab in ("#home", "#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list", "#resources")], "closed": [True, "false"],
+    "header": [["radio-open", "Radio", ""], ["bubbles-toggle", "Speech bubbles", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
+}
 PRESENCE_HELPERS = """
   const states = () => all("#main .presence:not(label)").map((node) => node.dataset.state).sort();
   const statusMenu = () => {
@@ -1015,8 +1050,10 @@ class Station(http.server.BaseHTTPRequestHandler):
         return
 
 
-LABELS = """
-  const unlabelled = (root) => all("svg.bi", root).filter((svg) => !svg.closest(".sprite")).map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160));
+UNLABELLED = """
+  const unlabelled = (root, skip) => all("svg.bi", root).filter((svg) => !svg.closest(".sprite") && !(skip && skip.contains(svg))).map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160));
+"""
+LABELS = UNLABELLED + """
   const wide = () => document.documentElement.scrollWidth > window.innerWidth + 1;
   const rowOf = (words) => all("#main .inbox-list > li").find((li) => li.textContent.includes(words));
   const askOf = (command) => all("#main .inbox-list > li.k-ask").find((li) => text(li.querySelector(".command code")) === command);
@@ -1679,10 +1716,11 @@ class TestOrchestratorE2E(HubCase):
             first,
             {"width": 390, "height": 844, "url": None, "wait": 3000, "probe": RADIO_VIEW, "shot": str(OUT / f"{browser}-390-radio-station.png")},
             {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": RADIO_CLICK, "shot": str(OUT / f"{browser}-1366-radio-playing.png"), "gesture": True},
+            {"width": 1366, "height": 768, "url": None, "wait": 0, "probe": RADIO_STOP, "shot": str(OUT / f"{browser}-1366-radio-stopped.png")},
         ]
         data = self.drive(steps, self.authenticator() if signs else None, driver, binary, MEDIA_LOG)
         (OUT / f"{browser}-radio.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
-        saved, view, click = data["results"]
+        saved, view, click, stopped = data["results"]
         if signs:
             self.assertTrue(any(toast.startswith("New station") for toast in saved["toasts"]), saved)
         self.assertNotIn("error", view)
@@ -1699,6 +1737,15 @@ class TestOrchestratorE2E(HubCase):
         self.assertTrue(click["media"]["playing"], click)
         self.assertEqual(click["state"], "playing", click)
         self.assertEqual([entry for entry in click["log"] if entry.get("csp") == "media-src"], [])
+        with self.subTest(browser=browser, part="station stop"):
+            self.assertNotIn("error", stopped, stopped)
+            self.assertEqual(stopped["button"], ["Stop", f"Stop: pause {STATION_NAME}", "", True])
+            self.assertTrue(stopped["paused"], stopped)
+            self.assertFalse(stopped["media"]["playing"], stopped)
+            self.assertEqual((stopped["media"]["second"]["paused"], stopped["media"]["second"]["src"]), (True, None), stopped)
+            self.assertEqual((stopped["state"], stopped["note"], stopped["action"]), ("stopped", "stopped", ["play", "Play"]), stopped)
+            self.assertGreater(stopped["tracked"], 0, stopped)
+            self.assertEqual(stopped["playing"], [], "an audio element still plays after Stop")
         return data
 
     def popped(self, result: dict, title: str) -> None:
@@ -1986,7 +2033,7 @@ class TestOrchestratorE2E(HubCase):
     def test_chromium_sends_every_class_from_the_radio_spot_and_keeps_its_gear_settings_through_a_reload_at_three_widths(self):
         local = f"http://localhost:{self.port}/"
         values = {1920: ("0.35", "false", "true"), 1366: ("0.45", "true", "false"), 390: ("0.55", "false", "true")}
-        steps = [{"width": 1366, "height": 768, "url": f"{local}#stream/radio", "wait": 1200, "probe": RADIO_JUMP, "shot": self.shot("1366-radio-header-spot-every-tab")}]
+        steps = [{"width": width, "height": height, "url": f"{local}?{width}-jump#stream/radio", "wait": 1200, "probe": RADIO_JUMP, "shot": self.shot(f"{width}-radio-header-spot-every-tab")} for width, height in WIDTHS]
         for width, height in WIDTHS:
             squelch, tone, post = values[width]
             gear = GEAR_SAVE.replace("@SQUELCH@", squelch).replace("@TONE@", tone).replace("@POST@", post)
@@ -2000,11 +2047,10 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(data["errors"], [])
         labels = dict(zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True))
         mayday = "Send a mayday to all? All agents pause writing steps until you cancel it."
-        jump, *walked = data["results"]
-        self.assertEqual(jump, {
-            "hash": "#stream", "focused": True, "tabs": [[tab, True, True] for tab in ("#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list")], "closed": [True, "false"],
-            "header": [["radio-open", "Radio", ""], ["bubbles-toggle", "Speech bubbles", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
-        })
+        jumps, walked = data["results"][: len(WIDTHS)], data["results"][len(WIDTHS) :]
+        for jump, (width, _) in zip(jumps, WIDTHS, strict=True):
+            with self.subTest(width=width, part="radio spot on every tab"):
+                self.assertEqual(jump, JUMPED)
         for index, (width, _) in enumerate(WIDTHS):
             sent, saved, read = walked[3 * index : 3 * (index + 1)]
             squelch, tone, post = values[width]
@@ -2037,6 +2083,52 @@ class TestOrchestratorE2E(HubCase):
             with self.subTest(width=width, cls=cls):
                 self.assertTrue(args[-1].endswith(f"] spot {width} {cls}"), args)
         self.assertEqual(self.httpd.hub.settings.get()["speech"], {"threshold": 50})
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_opens_the_radio_spot_on_every_tab_and_asks_the_passkey_for_every_class_and_cancel_mayday_sending_nothing_unsigned_at_three_widths(self):
+        self.pin()
+        local = f"http://localhost:{self.port}/"
+        steps = []
+        for width, height in WIDTHS:
+            shot = str(OUT / f"firefox-{width}-radio-spot")
+            steps += [
+                {"width": width, "height": height, "url": f"{local}?{width}-jump#stream/radio", "wait": 1200, "probe": RADIO_JUMP, "shot": f"{shot}-every-tab.png"},
+                {"width": width, "height": height, "url": f"{local}?{width}#agents/orbit", "wait": 1200, "probe": SPOT_SEND.replace("@TEXT@", f"spot {width}"), "shot": f"{shot}-unsigned.png"},
+                {"width": width, "height": height, "url": f"{local}?{width}-mayday#agents/orbit", "wait": 1200, "probe": CLEAR_MAYDAY, "shot": f"{shot}-mayday-kept.png"},
+            ]
+        data = self.drive(steps, None, "bidi.mjs", os.environ.get("FIREFOX", "firefox"), CANCELED)
+        (OUT / "firefox-radio-spot.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
+        labels = dict(zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True))
+        mayday = "Send a mayday to all? All agents pause writing steps until you cancel it."
+        question = "Lift the radio silence of the active mayday?"
+        hint = "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"
+        results = iter(data["results"])
+        for width, _ in WIDTHS:
+            jump, sent, cleared = next(results), next(results), next(results)
+            with self.subTest(browser="firefox", width=width, part="radio spot on every tab"):
+                self.assertEqual(jump, JUMPED)
+            with self.subTest(browser="firefox", width=width, part="every class unsigned"):
+                self.assertNotIn("error", sent, sent)
+                self.assertEqual((sent["closed"], sent["open"], sent["inline"]), ([True, "false"], [False, "true", True], ["static", True, True]))
+                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
+                self.assertEqual(sent["heads"], [["Read aloud", "Read aloud: the classes and agents the radio sounds for"], ["Cancel mayday", hint]])
+                self.assertEqual((sent["tall"], sent["wide"]), (False, False))
+                self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
+                for run in sent["runs"]:
+                    direct = run["cls"] in ("post", "call")
+                    self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [mayday] if run["cls"] == "mayday" else [], f"spot {width} {run['cls']}"), run)
+                    self.assertTrue((run["toast"] or "").startswith(f"{labels[run['cls']]} to {'Stage' if direct else 'all'}: not signed"), run)
+                    self.assertIn("NotAllowedError", run["toast"], run)
+            with self.subTest(browser="firefox", width=width, part="icon-only cancel mayday unsigned"):
+                self.assertNotIn("error", cleared, cleared)
+                self.assertEqual(cleared["toolbar"], ["Priority", "Day/Night", "Drain", "Suspend", "Resume", "Status"])
+                self.assertEqual((cleared["title"], cleared["shown"]), (hint, ""))
+                self.assertEqual(cleared["declined"], {"question": [question], "posted": [], "toasts": []})
+                self.assertEqual(cleared["accepted"], {"question": [question], "posted": ["/api/board/sign"]})
+                self.assertTrue((cleared["done"] or "").startswith("Cancel mayday: not signed"), cleared)
+        self.assertEqual(self.scripts.calls, [])
+        self.assertTrue((self.council / "radio-silence.json").exists())
 
     def test_chromium_keeps_the_3d_camera_through_two_state_refreshes_at_three_widths(self):
         steps = [{"width": width, "height": height, "url": f"{self.base}?{width}#agents/3d", "wait": 900, "probe": CAMERA, "shot": self.shot(f"{width}-agents-3d-steady-camera")} for width, height in WIDTHS]
