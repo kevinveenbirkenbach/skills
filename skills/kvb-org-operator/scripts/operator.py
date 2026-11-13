@@ -4,8 +4,9 @@
 Environment:
     AGENTS_COUNCIL_ROOT: council directory of the kvb-org-rasci register, read
         by rasci.py; the rows are its tasks operator/<slug>.
-    CLAUDE_CODE_SESSION_ID: the adding session, recorded as A; other runtimes
-        pass --session.
+    CLAUDE_CODE_SESSION_ID: the calling session: add records it as A, list
+        and done leave it out of their messages; other runtimes pass
+        --session.
     NO_COLOR: when set and not empty, run prints without colors
         (https://no-color.org).
     PATH: searched by the binary check.
@@ -15,7 +16,8 @@ Environment:
 Args:
     add <slug> --dir <abs dir> --command "<cmd>" --reason "<why>"
         --check <kind>[:<arg>] [--session <id>]: record a command, or update
-        the row of that slug, as queued with Operator R and the adder A.
+        the row of that slug, as queued with Operator R and the adder A, its
+        session id under `sessions`.
         Kinds, never a shell command:
             pushed:<repo dir>  `git rev-list --count @{u}..HEAD` is 0 there;
                 no upstream counts as open.
@@ -32,8 +34,8 @@ Args:
         on PATH, a path to one or a shell builtin and holds no <placeholder>;
         an alias, a slash command or prose is refused, and an older row
         holding one stays in the table only.
-    list [--json]: run the check of every queued or blocked operator row and
-        set the passing ones done.
+    list [--json] [--session <id>]: run the check of every queued or blocked
+        operator row and set the passing ones done, with a message.
     run: walk the open rows that hold a directory and a command, in list
         order. Per row it prints a separator line with number and task, then
         directory, command, reason and check in a label column (control
@@ -44,17 +46,17 @@ Args:
         [s]kip / [c]ancel / [d]iff / [q]uit; d shows the full diff. A repo
         whose git config names filter commands gets no preview. c asks for a
         reason (empty: back to the question), sets the row as shown stopped
-        with it and posts it through `radio.py post` as Operator to every
-        agent holding A, the agent that added the row; a row changed since it
-        was shown is not cancelled. y runs the command in its directory,
+        with it and sends it as a message; a row changed since it was shown
+        is not cancelled. y runs the command in its directory,
         its stderr passed through and its last FAILED_LINES lines kept, then
         sets the row done when its check passes (manual: when the command
-        exits 0). A command that exits non-zero or cannot start leaves the
+        exits 0), else keeps it open, with a message either way. A command
+        that exits non-zero or cannot start leaves the
         queue the same way: the row is set stopped with the exit under
-        `failed`, posted to every agent holding A with the request to queue
+        `failed`, sent as a message with the request to queue
         the corrected command under the same slug; the stderr lines join it
         only when the operator answers y to sharing them. Exit 130 or a
-        signal is the operator's interrupt: the row stays open.
+        signal is the operator's interrupt: the row stays open, no message.
         A command
         the kvb-org-organize watch config calls heavy also shows the memory
         stage and the position, id, status, task and eta_min columns of
@@ -70,7 +72,22 @@ Args:
         the row's directory; a row no longer open with exactly that
         directory, check and command runs nothing, nor does a question left
         unanswered for GRANT_SECONDS.
-    done <slug>: mark a row done, whatever its check.
+    done <slug> [--session <id>]: mark a row done, whatever its check, with
+        a message unless it was done; a stale `failed` or `cancelled` goes
+        as in ran. Without a session the caller is Operator.
+    ran <slug> --command "<cmd>" --dir <dir>: the hub's report of a job
+        that exited 0: the row set done from every status but done and
+        whatever its check, which the hub cannot run without the host's
+        repos, PATH and installed dirs; a stale `failed` or `cancelled`
+        goes.
+    failed <slug> --why "<text>" --command "<cmd>" --dir <dir>: the hub's
+        report of a job that failed: the row set stopped with why and no
+        output lines under `failed`, sent as a message like a failure in run.
+        Unlike run, the hub counts exit 130 and a signal (why `killed by
+        signal <n>`) as failures.
+        ran and failed change a row only while it holds exactly that command
+        and directory, failed only while it is open; else nothing changes
+        and nobody is told.
 
 Output:
     list: the open rows as `| # | Directory | Command | Why | Check |`, rows
@@ -79,6 +96,19 @@ Output:
         each holding `cd <dir>` and the command, and a last block with the
         `run` invocation. `operator: nothing open` when none is. --json
         prints the same rows as a JSON list.
+    message: one line from Operator through `radio.py feedback send` to
+        every agent holding A but Operator and the caller, by the party name
+        and the session id `add` stored (--sid), never resolved again; a
+        party name the caller holds now is left out and the id alone, as
+        the --to label too, carries the message:
+            run and ran done: `Operator ran <row>: done`
+            run, check open: `Operator ran <row>; exit 0, but <check> does
+                not pass yet; the row stays open`
+            list: `<row> done: its check <check> passes`, and on stderr
+                `operator: <row> done; <how it went>`
+            done: `<row> marked done by <caller name>`
+            cancel, failure and failed: the reason or the error.
+        A row changed or closed since it was shown gets no message.
 
 Exit codes:
     0 done, 2 usage error. granted: the command's exit code, or 75
@@ -116,6 +146,7 @@ RASCI = SKILLS / "kvb-org-rasci" / "scripts" / "rasci.py"
 WATCH = SKILLS / "kvb-org-organize" / "scripts" / "watch.py"
 QUEUE = SKILLS / "kvb-org-queue" / "scripts" / "queue.py"
 RADIO = SKILLS / "kvb-org-radio" / "scripts" / "radio.py"
+COUNCIL = SKILLS / "kvb-org-organize" / "scripts" / "council.py"
 HOLD_KIND = "operator"
 HOLD_SESSION = "Operator"
 NOT_RUN = 75
@@ -135,6 +166,8 @@ NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 COMMIT = re.compile(r"\bcommit\b")
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SLOT = re.compile(r"<[A-Za-z][^<>]*>")
+SENT = re.compile(r"^sent (call|post) to (.+)$")
+WAKE = "wake: SendMessage to "
 BUILTINS = frozenset({".", ":", "cd", "exec", "exit", "export", "set", "source", "umask"})
 HEADER = "| # | Directory | Command | Why | Check |"
 GIT = ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "log.showSignature=false", "--no-pager", "--no-optional-locks"]
@@ -287,24 +320,40 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
         roles[rasci.OPERATOR] = rasci.letters_of(roles.get(rasci.OPERATOR, ""), "R")
         roles[party] = rasci.letters_of(roles.get(party, ""), "A")
         entry["roles"] = {p: v for p, v in roles.items() if v}
+        entry["sessions"] = {party: sid}
         rasci.apply_status(entry, "queued")
     print(f"added {task}")
     return 0
 
 
-def open_rows(rasci: ModuleType) -> list[dict]:
+def open_rows(rasci: ModuleType, caller: str | None) -> list[dict]:
+    """Args:
+        caller: the session left out of the messages for rows whose check
+            passes, None for the operator.
+
+    Returns:
+        The open operator rows in list order, once the passing ones are
+        set done.
+    """
     rows = {
         task: row for task, row in rasci.merged(include_done=False).items()
         if task.startswith(PREFIX) and row["status"] in OPEN
     }
     checks = {task: row.get("check") or "manual" for task, row in rows.items()}
     finished = {task for task, check in checks.items() if not problem(check) and passed(check)}
+    closed = {}
     if finished:
         with rasci.database() as tasks:
             for task in finished:
                 entry = tasks.get(task)
                 if entry and entry.get("check") == checks[task] and entry.get("status") in OPEN:
                     rasci.apply_status(entry, "done")
+                    closed[task] = accountable(rasci, entry)
+    for task, holders in sorted(closed.items()):
+        agents = addressees(holders, caller)
+        if agents:
+            text = f"{visible(task, '')} done: its check {visible(checks[task], '')} passes"
+            print(f"operator: {visible(task, '')} done; {told(agents, text, 'the result')}", file=sys.stderr)
 
     def rank(task: str) -> tuple:
         kind = "manual" if problem(checks[task]) else checks[task].partition(":")[0]
@@ -325,7 +374,7 @@ def open_rows(rasci: ModuleType) -> list[dict]:
 
 
 def cmd_list(rasci: ModuleType, args: argparse.Namespace) -> int:
-    listed = open_rows(rasci)
+    listed = open_rows(rasci, os.environ.get("CLAUDE_CODE_SESSION_ID") or args.session)
     if args.json:
         print(json.dumps(listed, indent=1))
         return 0
@@ -542,41 +591,148 @@ def decide(row: dict, holdable: bool, read: Callable[[str], str | None]) -> tupl
             return answer, reason
 
 
-def stop(rasci: ModuleType, row: dict, key: str, value: object) -> list[str] | None:
+def accountable(rasci: ModuleType, entry: dict) -> list[tuple[str, str | None]]:
     """Returns:
-        The agents holding A on the row, once the row as shown is set
-        stopped with value under key; None when it changed or closed since
-        it was shown, which leaves it as it is.
+        Every party but Operator holding A on the register entry, with the
+        session id `add` stored for it, None on a row from before that.
+    """
+    sessions = entry.get("sessions") if isinstance(entry.get("sessions"), dict) else {}
+    found = []
+    for party, letters in sorted(entry.get("roles", {}).items()):
+        sid = sessions.get(party)
+        if "A" in letters and party != rasci.OPERATOR:
+            found.append((party, sid if isinstance(sid, str) else None))
+    return found
+
+
+def addressees(holders: list[tuple[str, str | None]], caller: str | None) -> list[tuple[str, str | None]]:
+    """Args:
+        holders: the parties holding A and their stored session ids.
+        caller: the session running this script, None for the operator.
+
+    Returns:
+        Each holder's address as stored when the row was added, the name for
+        --to and the session id, without the caller's own parts: a holder
+        whose session is the caller is left out, a party name that is the
+        caller's current name gives way to the session id as the --to label.
+    """
+    live = module("council", COUNCIL).live_sessions()
+    me = {caller, live.get(caller) or caller} if caller else set()
+    return sorted((sid if party in me else party, sid) for party, sid in holders if sid not in me and (sid or party not in me))
+
+
+def as_operator() -> dict[str, str]:
+    """Returns:
+        This script's environment without CLAUDE_CODE_SESSION_ID, for the
+        children that act as Operator.
+    """
+    return {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
+
+
+def sent_to(name: str, sid: str | None, text: str) -> str:
+    """Returns:
+        How text went from Operator through the agent's radio feedback
+        channel: `<name> as a <class>`, or `<name> queued as a call;` and
+        the radio's wake lines when no listener takes the call.
+
+    Raises:
+        OSError: the radio did not start or failed.
+    """
+    sent = subprocess.run(
+        [sys.executable, str(RADIO), "feedback", "send", f"--to={name}", *([f"--sid={sid}"] if sid else []), f"--session={HOLD_SESSION}", text],
+        capture_output=True, text=True, env=as_operator(), check=False,
+    )
+    if sent.returncode != 0:
+        raise OSError(sent.stderr.strip())
+    lines = sent.stdout.splitlines()
+    found = next(filter(None, map(SENT.match, lines)), None)
+    how = found[1] if found else "post"
+    wakes = [visible(line, "") for line in lines if line.startswith(WAKE)]
+    if how == "call" and wakes:
+        return f"{visible(name, '')} queued as a call; " + "; ".join(wakes)
+    return f"{visible(name, '')} as a {how}"
+
+
+def told(agents: list[tuple[str, str | None]], text: str, what: str) -> str:
+    """Args:
+        agents: each agent's name and stored session id, None on a row from
+            before that field.
+
+    Returns:
+        How text went to the agents, named as what.
+    """
+    if not agents:
+        return "no agent holds A, so nothing was sent"
+    ways, errors = [], []
+    for name, sid in agents:
+        try:
+            ways.append(sent_to(name, sid, text))
+        except OSError as error:
+            errors.append(f"the message to {visible(name, '')} failed: {visible(str(error), '')}")
+    return "; ".join(([f"{what} went to {', '.join(ways)}"] if ways else []) + errors)
+
+
+def reported(agents: list[tuple[str, str | None]], text: str) -> str:
+    """Returns:
+        "; " and how text went to the agents, or "" when there is none.
+    """
+    return f"; {told(agents, text, 'the result')}" if agents else ""
+
+
+def finish(rasci: ModuleType, entry: dict) -> None:
+    rasci.apply_status(entry, "done")
+    entry.pop("failed", None)
+    entry.pop("cancelled", None)
+
+
+def settle(rasci: ModuleType, row: dict, status: str | None, fields: dict, statuses: tuple[str, ...]) -> list[tuple[str, str | None]] | None:
+    """Args:
+        status: the status the row gets, None to keep it.
+        fields: the keys the row gets besides.
+        statuses: the statuses the row may have to be settled.
+
+    Returns:
+        The agents holding A on the row once the row as shown is settled;
+        None when it changed or left statuses since it was shown, which
+        leaves it as it is.
     """
     with rasci.database() as tasks:
         entry = tasks.get(row["task"])
         shown = (row["command"], row["directory"], row["check"])
-        if not entry or entry.get("status") not in OPEN or (entry.get("title"), entry.get("workdir"), entry.get("check") or "manual") != shown:
+        if not entry or entry.get("status") not in statuses or (entry.get("title"), entry.get("workdir"), entry.get("check") or "manual") != shown:
             return None
-        rasci.apply_status(entry, "stopped")
-        entry[key] = value
-        return sorted(party for party, letters in entry.get("roles", {}).items() if "A" in letters and party != rasci.OPERATOR)
+        if status == "done":
+            finish(rasci, entry)
+        elif status:
+            rasci.apply_status(entry, status)
+        entry.update(fields)
+        holders = accountable(rasci, entry)
+    return addressees(holders, None)
 
 
-def told(agents: list[str], text: str, what: str) -> str:
-    """Returns:
-        How text went as a post from Operator through the radio to the
-        agents, named as what.
+def succeeded(rasci: ModuleType, row: dict, hub: bool) -> str:
+    """Args:
+        hub: the hub's report: the row closes whatever its check and from
+            every status but done; else only while open and once its check
+            passes (manual: at once).
+
+    Returns:
+        What an exit 0 did: the row as shown set done, or kept open while
+        its check does not pass, the agents holding A told either way; a
+        row changed or closed since it was shown stays as it is and nobody
+        is told.
     """
-    if not agents:
-        return "no agent holds A, so nothing was posted"
-    env = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
-    who = visible(", ".join(agents), "")
-    try:
-        sent = subprocess.run(
-            [sys.executable, str(RADIO), "post", *(f"--to={agent}" for agent in agents), f"--session={HOLD_SESSION}", text],
-            capture_output=True, text=True, env=env, check=False,
-        )
-    except OSError as error:
-        return f"the post to {who} failed: {visible(str(error), '')}"
-    if sent.returncode != 0:
-        return f"the post to {who} failed: {visible(sent.stderr.strip(), '')}"
-    return f"{what} went to {who} as a post"
+    name = visible(row["task"], "")
+    check = "manual" if problem(row["check"]) else row["check"]
+    complete = hub or check == "manual" or passed(check)
+    statuses = tuple(status for status in rasci.STATUSES if status != "done") if hub else OPEN
+    agents = settle(rasci, row, "done" if complete else None, {}, statuses)
+    if agents is None:
+        return f"ran {name}; it changed or closed meanwhile and stays as it is"
+    if complete:
+        return f"done {name}" + reported(agents, f"Operator ran {name}: done")
+    pending = f"{visible(check, '')} does not pass yet; the row stays open"
+    return f"ran {name}, but {pending}" + reported(agents, f"Operator ran {name}; exit 0, but {pending}")
 
 
 def shown_as(row: dict) -> str:
@@ -589,7 +745,7 @@ def cancel(rasci: ModuleType, row: dict, reason: str) -> str:
         reason posted through the radio to every agent holding A on it.
     """
     name = visible(row["task"], "")
-    agents = stop(rasci, row, "cancelled", reason)
+    agents = settle(rasci, row, "stopped", {"cancelled": reason}, OPEN)
     if agents is None:
         return f"{name} changed or closed since it was shown; nothing cancelled"
     return f"cancelled {name}; " + told(agents, f"Operator cancelled {shown_as(row)}: {visible(reason, '')}", "the reason")
@@ -608,8 +764,11 @@ def chunk_of(source: int) -> bytes | None:
         return b""
 
 
-def execute(argv: list[str], directory: str) -> tuple[int, list[str]]:
-    """Returns:
+def execute(argv: list[str], directory: str, env: dict[str, str] | None) -> tuple[int, list[str]]:
+    """Args:
+        env: the command's environment, None for this script's own.
+
+    Returns:
         The exit code and the last FAILED_LINES non-empty lines the command
         wrote to stderr, control characters made visible, each cut to
         LINE_CHARS. Stdin and stdout stay the terminal's; stderr reaches the
@@ -621,7 +780,7 @@ def execute(argv: list[str], directory: str) -> tuple[int, list[str]]:
     Raises:
         OSError: the command did not start.
     """
-    child = subprocess.Popen(argv, cwd=directory, stderr=subprocess.PIPE)
+    child = subprocess.Popen(argv, cwd=directory, env=env, stderr=subprocess.PIPE)
     kept = b""
     with child:
         source = child.stderr.fileno()
@@ -681,7 +840,7 @@ def failure(rasci: ModuleType, row: dict, why: str, lines: list[str]) -> str:
         marked as command output.
     """
     name = visible(row["task"], "")
-    agents = stop(rasci, row, "failed", {"why": why, "output": lines})
+    agents = settle(rasci, row, "stopped", {"failed": {"why": why, "output": lines}}, OPEN)
     if agents is None:
         return f"failed {name}: {why}; it changed or closed meanwhile and stays as it is"
     slug = visible(row["task"].removeprefix(PREFIX), "")
@@ -715,7 +874,7 @@ def review(row: dict, holdable: bool, read: Callable[[str], str | None]) -> str:
 def cmd_granted(rasci: ModuleType, args: argparse.Namespace) -> int:
     shell = os.environ.get("SHELL")
     approved = [
-        row for row in open_rows(rasci)
+        row for row in open_rows(rasci, None)
         if runnable(row) and (row["task"], row["directory"], row["check"]) == (args.task, args.dir, args.check)
         and args.argv == [shell, "-ic", row["command"]]
     ]
@@ -741,18 +900,11 @@ def cmd_granted(rasci: ModuleType, args: argparse.Namespace) -> int:
     return subprocess.run(args.argv, cwd=row["directory"], check=False).returncode
 
 
-def close(rasci: ModuleType, task: str) -> None:
-    with rasci.database() as tasks:
-        entry = tasks.get(task)
-        if entry and entry.get("status") in OPEN:
-            rasci.apply_status(entry, "done")
-
-
 def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
     shell = os.environ.get("SHELL")
     if not shell:
         fail("SHELL is not set; run executes each command in the operator's own shell")
-    steps = [row for row in open_rows(rasci) if runnable(row)]
+    steps = [row for row in open_rows(rasci, None) if runnable(row)]
     if not steps:
         print("operator: nothing to run")
         return 0
@@ -780,7 +932,7 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
             continue
         argv = held(row, shell) if answer == "h" else [shell, "-ic", row["command"]]
         try:
-            code, lines = execute(argv, row["directory"])
+            code, lines = execute(argv, row["directory"], as_operator() if answer == "h" else None)
         except OSError as error:
             print(failure(rasci, row, "no start", [visible(str(error), "")]))
             continue
@@ -790,21 +942,48 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
             print(f"interrupted {name}: exit {code}; the row stays open")
         elif code != 0:
             print(failure(rasci, row, f"exit {code}", shared(lines, typed)))
-        elif check == "manual" or passed(check):
-            close(rasci, row["task"])
-            print(f"done {name}")
         else:
-            print(f"ran {name}, but {visible(check, '')} does not pass yet; the row stays open")
+            print(succeeded(rasci, row, False))
     return 0
 
 
 def cmd_done(rasci: ModuleType, args: argparse.Namespace) -> int:
     task = task_of(rasci, args.slug)
+    caller = os.environ.get("CLAUDE_CODE_SESSION_ID") or args.session
     with rasci.database() as tasks:
         if task not in tasks:
             fail(f"{task}: not in the register")
-        rasci.apply_status(tasks[task], "done")
-    print(f"done {task}")
+        closing = tasks[task].get("status") != "done"
+        finish(rasci, tasks[task])
+        holders = accountable(rasci, tasks[task])
+    by = (module("council", COUNCIL).live_sessions().get(caller) or caller) if caller else HOLD_SESSION
+    agents = addressees(holders, caller) if closing else []
+    print(f"done {task}" + reported(agents, f"{visible(task, '')} marked done by {visible(by, '')}"))
+    return 0
+
+
+def ran_row(rasci: ModuleType, args: argparse.Namespace) -> dict:
+    """Returns:
+        The row as the hub's job ran it: slug, --command and --dir, with the
+        register's current check.
+    """
+    task = task_of(rasci, args.slug)
+    entry = rasci.load().get(task)
+    if entry is None:
+        fail(f"{task}: not in the register")
+    return {"task": task, "command": args.command, "directory": args.dir, "check": entry.get("check") or "manual"}
+
+
+def cmd_ran(rasci: ModuleType, args: argparse.Namespace) -> int:
+    print(succeeded(rasci, ran_row(rasci, args), True))
+    return 0
+
+
+def cmd_failed(rasci: ModuleType, args: argparse.Namespace) -> int:
+    why = visible(" ".join(args.why.split()), "")
+    if not why:
+        fail("--why must not be empty")
+    print(failure(rasci, ran_row(rasci, args), why, []))
     return 0
 
 
@@ -819,6 +998,7 @@ def main() -> int:
     p.set_defaults(func=cmd_add)
     p = sub.add_parser("list")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--session")
     p.set_defaults(func=cmd_list)
     p = sub.add_parser("run")
     p.set_defaults(func=cmd_run)
@@ -830,7 +1010,14 @@ def main() -> int:
     p.set_defaults(func=cmd_granted)
     p = sub.add_parser("done")
     p.add_argument("slug")
+    p.add_argument("--session")
     p.set_defaults(func=cmd_done)
+    for name, func, flags in (("ran", cmd_ran, ("--command", "--dir")), ("failed", cmd_failed, ("--why", "--command", "--dir"))):
+        p = sub.add_parser(name)
+        p.add_argument("slug")
+        for flag in flags:
+            p.add_argument(flag, required=True)
+        p.set_defaults(func=func)
     args = parser.parse_args()
     return args.func(module("rasci", RASCI), args)
 

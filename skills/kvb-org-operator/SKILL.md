@@ -12,9 +12,9 @@ so collecting them needs no messages.
 
 ```bash
 operator.py add <slug> --dir <abs dir> --command "<cmd>" --reason "<why>" --check <kind>[:<arg>]
-operator.py list [--json]
+operator.py list [--json] [--session <id>]
 operator.py run
-operator.py done <slug>
+operator.py done <slug> [--session <id>]
 ```
 
 ## What counts
@@ -52,10 +52,10 @@ order (commits, pushes, installs, binaries, removals, manual steps), one
 operator reports a `manual` step done, run `operator.py done <slug>`.
 
 `run` is the operator's script, never an agent's; `run.md` next to this
-file says what it shows and asks. A post from Operator that cancels your
-row, or reports its command failed, took the row out of the queue: fix the
-cause it names, then re-add the corrected command under the same slug or
-drop the step; never re-add it unchanged.
+file says what it shows and asks. Operator reports each outcome of your row
+through your `radio.py feedback` channel. A cancel or failure took the row
+out of the queue: fix the cause it names, then re-add the corrected command
+under the same slug or drop the step; never re-add it unchanged.
 
 Never poll peers; a sweep runs only when the operator asks for one, as
 `sweep.md` next to this file says.

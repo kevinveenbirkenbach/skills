@@ -649,6 +649,120 @@ class TestRadio(unittest.TestCase):
         self.assertEqual(quiet.returncode, 0)
         self.assertIn("council hooks stay off", quiet.stdout)
 
+    def test_feedback_is_a_post_unless_the_session_set_call(self):
+        self.assertEqual(self._send("s2", "feedback", "show"), ["post"])
+        self.assertEqual(self._send("s2", "feedback", "set", "call"), ["feedback: call"])
+        self.assertEqual(self._send("x9", "feedback", "set", "post"), ["feedback: post"])
+        self.assertEqual((self._send("s2", "feedback", "show"), self._send("s3", "feedback", "show")), (["call"], ["post"]))
+        self.assertEqual(self._send(None, "feedback", "show", "--session", "s2"), ["call"])
+        self.assertEqual(json.loads((self.root / "feedback.json").read_text(encoding="utf-8")), {"s2": "call", "x9": "post"})
+        for args in (("feedback", "set", "radio"), ("feedback", "send", "text"), ("feedback", "send", " ", "--to", "Two"), ("feedback",)):
+            with self.subTest(args=args):
+                self.assertEqual(self._cli("s1", *args).returncode, 2)
+
+    def test_a_pinned_row_reaches_its_session_under_any_name_and_whoever_holds_its_stored_name(self):
+        self._send("s2", "feedback", "set", "call")
+        hub_home = self.home.parent / "hub-home"
+        hub_home.mkdir()
+        hub = {**self._env(None), "HOME": str(hub_home)}
+
+        def send(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [sys.executable, str(RADIO), "feedback", "send", "ran x", *args, "--session", "Operator"],
+                capture_output=True, text=True, env=hub, check=False, timeout=30,
+            )
+
+        self.assertEqual(send("--to", "Two", "--sid", "s2").stdout.splitlines(), ["sent call to Two", "wake: SendMessage to Two (session s2)"])
+        self.assertEqual(send("--to", "Three", "--sid", "s3").stdout.splitlines(), ["sent post to Three"])
+        self.assertEqual(send("--to", "Two", "--to", "Three", "--sid", "s2").returncode, 2)
+        self.assertEqual([(row["class"], row["to"], row["to_sessions"]) for row in self._rows()], [("call", ["Two"], ["s2"]), ("post", ["Three"], ["s3"])])
+        sessions = self.home / ".claude" / "sessions"
+        for sid, name in (("s2", "Deux"), ("s3", "Two"), ("s4", "Deux")):
+            (sessions / f"{sid}.json").write_text(json.dumps({"sessionId": sid, "name": name}), encoding="utf-8")
+        self.assertEqual(self._send(None, "show", "--all")[0].split(" ", 3)[3], "Operator to Two: ran x")
+        self.assertEqual(self._prompt("s2"), ["CALL Operator to Two: ran x"])
+        self.assertEqual(self._prompt("s3"), ["CALL Operator to Two: ran x"])
+        self.assertEqual(self._mailbox("s3"), (2, ["POST Operator to Three: ran x"]))
+        self.assertEqual((self._prompt("s4"), self._mailbox("s4")), ([], (0, [])))
+        self.assertEqual((self._prompt("s1"), self._mailbox("s1")), ([], (0, [])))
+        self._send("s1", "post", "plain", "--to", "Two")
+        self.assertNotIn("to_sessions", self._rows()[-1])
+
+    def test_a_row_for_an_ended_adder_reaches_whoever_holds_its_stored_name_on_the_adders_channel(self):
+        sessions = self.home / ".claude" / "sessions"
+        self._send(None, "feedback", "set", "call", "--session", "s2")
+        self._send(None, "feedback", "set", "post", "--session", "s3")
+        (sessions / "s2.json").unlink()
+        (sessions / "s3.json").write_text(json.dumps({"sessionId": "s3", "name": "Two"}), encoding="utf-8")
+        self.assertEqual(self._send("s1", "feedback", "send", "ran x", "--to", "Two", "--sid", "s2"), ["sent call to Two", "wake: SendMessage to Two (session s2)"])
+        self._pidfile("s3").parent.mkdir(parents=True)
+        self._pidfile("s3").write_text(str(os.getpid()), encoding="utf-8")
+        self.assertEqual(self._send("s1", "feedback", "send", "ran y", "--to", "Two", "--sid", "s2"), ["sent call to Two"])
+        self.assertEqual(self._prompt("s3"), ["CALL One to Two: ran x", "CALL One to Two: ran y"])
+        self.assertEqual(self._prompt("s1"), [])
+
+    def test_a_row_pinned_to_a_codex_session_reaches_it_by_its_id(self):
+        self._send(None, "feedback", "set", "call", "--session", "codex-1")
+        self.assertEqual(
+            self._send("s1", "feedback", "send", "ran x", "--to", "Codex", "--sid", "codex-1"),
+            ["sent call to Codex", "wake: SendMessage to Codex (session codex-1)"],
+        )
+        self.assertEqual([strip(line) for line in self._send(None, "show", "--session", "codex-1")], ["CALL One to Codex: ran x"])
+        self.assertEqual(self._send(None, "show", "--session", "codex-2"), [])
+
+    def test_a_row_whose_session_ids_are_no_strings_falls_back_to_its_names(self):
+        self.root.mkdir(mode=0o700)
+        rows = [
+            {"from": "X", "to": ["Two"], "to_sessions": sessions, "text": f"t{n}", "class": "post", "v": 2, "ts": time.time() - 10 + n}
+            for n, sessions in enumerate(([1], [["x"]], None))
+        ]
+        (self.root / "news.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        (self.root / "news.jsonl").chmod(0o600)
+        self.assertEqual(self._mailbox("s2"), (2, ["POST X to Two: t0", "POST X to Two: t1", "POST X to Two: t2"]))
+        self.assertEqual(self._mailbox("s3"), (0, []))
+
+    def test_a_row_reaches_its_session_and_its_name_when_no_session_is_known_as_live(self):
+        self._send("s1", "feedback", "send", "ran x", "--to", "Two", "--sid", "s2")
+        hub_home = self.home.parent / "hub-home"
+        hub_home.mkdir()
+
+        def shown(session: str) -> list[str]:
+            done = subprocess.run(
+                [sys.executable, str(RADIO), "show", "--session", session], capture_output=True, text=True,
+                env={**self._env(None), "HOME": str(hub_home)}, check=False, timeout=30,
+            )
+            self.assertEqual(done.returncode, 0, done.stderr)
+            return [strip(line) for line in done.stdout.splitlines()]
+
+        self.assertEqual((shown("s2"), shown("Two"), shown("s3")), (["POST One to Two: ran x"], ["POST One to Two: ran x"], []))
+
+    def test_a_pinned_call_wakes_nobody_while_a_listener_of_its_session_or_its_name_runs(self):
+        self._pidfile("s2").parent.mkdir(parents=True)
+        self._pidfile("s2").write_text(str(os.getpid()), encoding="utf-8")
+        (self.home / ".claude" / "sessions" / "s9.json").write_text(json.dumps({"sessionId": "s9", "name": "Nine"}), encoding="utf-8")
+        self._send(None, "feedback", "set", "call", "--session", "s9")
+        self._send("s2", "feedback", "set", "call")
+        hub_home = self.home.parent / "hub-home"
+        hub_home.mkdir()
+        sent = subprocess.run(
+            [sys.executable, str(RADIO), "feedback", "send", "ran x", "--to", "Two", "--sid", "s2", "--session", "Operator"],
+            capture_output=True, text=True, env={**self._env(None), "HOME": str(hub_home)}, check=False, timeout=30,
+        )
+        self.assertEqual(sent.stdout.splitlines(), ["sent call to Two"], sent.stderr)
+        self.assertEqual(self._send("s1", "feedback", "send", "ran y", "--to", "Two", "--sid", "s9"), ["sent call to Two"])
+        self.assertEqual(self._send("s1", "feedback", "send", "ran z", "--to", "Nine", "--sid", "s9"), ["sent call to Nine", "wake: SendMessage to Nine (session s9)"])
+
+    def test_feedback_send_without_a_session_takes_the_channel_the_name_set(self):
+        self._send("s2", "feedback", "set", "call")
+        self._send(None, "feedback", "set", "call", "--session", "codex-1")
+        self.assertEqual(
+            self._send("s1", "feedback", "send", "ran x", "--to", "Two", "--to", "Gone", "--to", "codex-1"),
+            ["sent post to Two", "sent post to Gone", "sent call to codex-1", "wake: SendMessage to codex-1"],
+        )
+        self.assertEqual([strip(line) for line in self._send(None, "show", "--session", "codex-1")], ["CALL One to codex-1: ran x"])
+        self.assertEqual(self._mailbox("s2"), (2, ["POST One to Two: ran x"]))
+        self.assertNotIn("to_sessions", self._rows()[-1])
+
 
 if __name__ == "__main__":
     unittest.main()
