@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import datetime
+import errno
 import fcntl
 import json
 import os
-import tempfile
+import secrets
+import shutil
+import stat
+import sys
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import NamedTuple
 
@@ -17,6 +23,10 @@ from signing import (
     load_pinned,
     rule_allows,
 )
+
+FOLDER = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+FILE = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+READ_LIMIT = 1 << 20
 
 
 class Trust(NamedTuple):
@@ -32,18 +42,193 @@ def pinned(path: Path) -> list[dict]:
     return entries
 
 
-def write_private(path: Path, data: dict) -> None:
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-")
+def write_at(folder: int, name: str, data: dict) -> None:
+    """Args:
+        folder: the open directory the file goes into.
+        name: the file's name there; a link of that name is replaced, never
+            followed.
+        data: written as JSON with mode 0600, by rename.
+    """
+    temp = f".{name}-{secrets.token_hex(8)}"
+    descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=folder)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(data, handle, indent=1, sort_keys=True)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(name, path)
+        os.replace(temp, name, src_dir_fd=folder, dst_dir_fd=folder)
     except OSError:
-        Path(name).unlink(missing_ok=True)
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temp, dir_fd=folder)
         raise
+
+
+def write_private(path: Path, data: dict) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    folder = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        write_at(folder, path.name, data)
+    finally:
+        os.close(folder)
+
+
+def read_regular(name: str | Path, dir_fd: int | None) -> bytes:
+    """Args:
+        name: the file, relative to dir_fd or a path; a link, FIFO or other
+            non-regular file raises OSError, so does one over READ_LIMIT bytes.
+        dir_fd: the open directory name is relative to, or None.
+
+    Returns:
+        The file's bytes.
+    """
+    fd = os.open(name, FILE, dir_fd=dir_fd)
+    with open(fd, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", str(name))
+        data = handle.read(READ_LIMIT + 1)
+    if len(data) > READ_LIMIT:
+        raise OSError(errno.EFBIG, f"larger than {READ_LIMIT} bytes", str(name))
+    return data
+
+
+def descend(folder: int, part: str, create: bool, follow: bool) -> int:
+    """Args:
+        folder: an open directory, closed once part is open.
+        part: one name in it.
+        create: make a missing part with mode 0700.
+        follow: follow part when it is a link.
+
+    Returns:
+        The open directory part.
+    """
+    try:
+        child = os.open(part, FOLDER, dir_fd=folder)
+    except FileNotFoundError:
+        if not create:
+            raise
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(part, 0o700, dir_fd=folder)
+        child = os.open(part, FOLDER, dir_fd=folder)
+    except OSError as error:
+        if error.errno not in (errno.ELOOP, errno.ENOTDIR) or not follow:
+            raise
+        child = os.open(part, FOLDER & ~os.O_NOFOLLOW, dir_fd=folder)
+    os.close(folder)
+    return child
+
+
+@contextlib.contextmanager
+def private_dir(path: Path, create: bool) -> Iterator[int]:
+    """Args:
+        path: the directory, opened from / one name at a time by descend();
+            a link is followed only by a process other than root, and only
+            while every directory entered so far is root's and no one else
+            can write it.
+        create: make missing directories with mode 0700.
+
+    Returns:
+        The open directory, closed on exit.
+
+    Raises:
+        Refused unless it is a directory of this effective uid that no one
+        else can write, reached without a link descend() did not follow.
+    """
+    folder = os.open("/", FOLDER)
+    rooted = os.geteuid() != 0
+    try:
+        for part in path.absolute().parts[1:]:
+            held = os.fstat(folder)
+            rooted = rooted and held.st_uid == 0 and not held.st_mode & 0o022
+            folder = descend(folder, part, create, rooted)
+        found = os.fstat(folder)
+    except OSError as error:
+        os.close(folder)
+        raise Refused(f"{path}: {error.filename}: {error.strerror or error}") from error
+    if found.st_uid != os.geteuid() or found.st_mode & 0o022:
+        os.close(folder)
+        raise Refused(f"{path} is no directory of uid {os.geteuid()}, or others can write it")
+    try:
+        yield folder
+    finally:
+        os.close(folder)
+
+
+def remove_at(folder: int, name: str) -> None:
+    """Args:
+        folder: the open directory.
+        name: the entry to remove: a real directory with all below it through
+            shutil.rmtree, which refuses a link swapped in; anything else as
+            the name itself, never what a link names.
+    """
+    try:
+        if stat.S_ISDIR(os.lstat(name, dir_fd=folder).st_mode):
+            shutil.rmtree(name, dir_fd=folder)
+        else:
+            os.unlink(name, dir_fd=folder)
+    except FileNotFoundError:
+        return
+
+
+def unreported(folder: int, out: int, name: str, result: dict, error: OSError) -> None:
+    """Args:
+        folder: the open jobs directory.
+        out: the open results directory.
+        name: the job whose result could not be written; it moves to
+            .<id>.unreported in out, or is removed where that move fails, so
+            it never runs again.
+        result: its result, printed on stderr as one line.
+        error: why the result could not be written.
+    """
+    kept = f".{Path(name).stem}.unreported"
+    print(f"no result for {name}: {error}; the job is kept as {kept} beside the results: {json.dumps(result, sort_keys=True)}", file=sys.stderr)
+    try:
+        os.rename(name, kept, src_dir_fd=folder, dst_dir_fd=out)
+    except OSError:
+        try:
+            remove_at(folder, name)
+        except OSError as stuck:
+            print(f"kept {name}: {stuck}", file=sys.stderr)
+
+
+def drain(jobs: Path, results: Path, run: Callable[[int, str], dict | None]) -> int:
+    """Args:
+        jobs: the directory the hub writes jobs into.
+        results: the directory each result goes to under its job's name;
+            made when missing.
+        run: called with the open jobs directory and each entry's name, in
+            sorted order; returns the entry's result, or None for no job.
+
+    Returns:
+        The number of results written. Every entry is removed after its
+        result, each write and removal relative to the open directories; a
+        result that cannot be written goes to unreported(), a removal that
+        fails prints one line on stderr, and the cycle goes on; a refused
+        directory changes nothing and prints one line.
+    """
+    with contextlib.ExitStack() as stack:
+        try:
+            folder = stack.enter_context(private_dir(jobs, False))
+            out = stack.enter_context(private_dir(results, True))
+        except Refused as error:
+            print(f"refused, nothing done: {error}", file=sys.stderr)
+            return 0
+        with os.scandir(folder) as entries:
+            names = sorted(entry.name for entry in entries)
+        handled = 0
+        for name in names:
+            result = run(folder, name)
+            if result is not None:
+                try:
+                    write_at(out, name, result)
+                    handled += 1
+                except OSError as error:
+                    unreported(folder, out, name, result, error)
+                    continue
+            try:
+                remove_at(folder, name)
+            except OSError as error:
+                print(f"kept {name}: {error}", file=sys.stderr)
+        return handled
 
 
 def pin(path: Path, entry: dict, now: float) -> list[dict]:

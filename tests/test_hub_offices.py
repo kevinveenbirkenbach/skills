@@ -160,8 +160,8 @@ class TestHostOffices(unittest.TestCase):
         for sid, name in (("s1", "One"), ("s2", "Two")):
             (sessions / f"{sid}.json").write_text(json.dumps({"sessionId": sid, "name": name}), encoding="utf-8")
         self.jobs, self.results = base / "jobs", base / "results"
-        self.jobs.mkdir()
-        self.results.mkdir()
+        self.jobs.mkdir(mode=0o700)
+        self.results.mkdir(mode=0o700)
         self.approvers = base / "config" / "approvers.json"
         self.trust = verifier.Trust(approvers=self.approvers, replay=base / "replay" / "offices.json", origin=ORIGIN)
         self.signer = key(-7, "main")
@@ -271,7 +271,7 @@ class TestHostOffices(unittest.TestCase):
         planted.write_text(json.dumps({"v": 1, "id": linked, "created": "x", "items": [appoint], "proof": self.proof([appoint], self.signer)}), encoding="utf-8")
         (self.jobs / f"{linked}.json").symlink_to(planted)
         os.mkfifo(self.jobs / f"{fifo}.json", 0o600)
-        (self.jobs / f"{large}.json").write_text(" " * (host.READ_LIMIT + 1), encoding="utf-8")
+        (self.jobs / f"{large}.json").write_text(" " * (verifier.READ_LIMIT + 1), encoding="utf-8")
         self.assertEqual(host.cycle(self.jobs, self.results, self.runner), 3)
         for job_id in (linked, fifo, large):
             with self.subTest(job=job_id):
