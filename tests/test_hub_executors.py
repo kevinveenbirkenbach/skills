@@ -63,7 +63,7 @@ class TestHubExecutors(HubCase):
         job = self.snapshot()["jobs"][-1]
         self.assertEqual((job["status"], job["code"], job["output"]), ("done", 0, "hello\nworld\n"))
         self.assertNotIn("proof", job)
-        self.assertEqual(self.scripts.calls[-1], (skill_scripts.OPERATOR_SCRIPT, ["done", "greet"]))
+        self.assertEqual(self.scripts.calls[-1], (skill_scripts.OPERATOR_SCRIPT, ["ran", "greet", f"--command={command}", f"--dir={self.outside}"]))
         claim = {**self.client(), "Content-Type": "application/json"}
         self.assertEqual(self.call("POST", f"/api/runner/{job['id']}/claim", b"{}", claim)[0], 409)
         self.assertEqual(self.call("POST", f"/api/runner/{job['id']}/claim", b"{}", {**self.guard(self.host), "Content-Type": "application/json"})[0], 403)

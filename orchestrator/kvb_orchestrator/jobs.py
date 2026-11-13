@@ -14,6 +14,7 @@ CONSOLE = ("id", "status", "code", "output", "created_ts", "started", "finished"
 TASK_JOB = "task"
 GATE_JOB = "gate"
 CHANGES = (TASK_JOB, GATE_JOB)
+USAGE = 2
 
 
 def runner_job(job: dict) -> dict:
@@ -92,9 +93,27 @@ class Jobs:
         job, changed = self.jobs.transition(job_id, "running", {"status": status, "code": code, "output": output, "finished": time.time()})
         if not changed:
             raise Conflict({"id": job_id, "status": job["status"]})
-        command_done = status == "done" and job.get("kind") not in CHANGES
-        runs = [self.scripts.run(OPERATOR_SCRIPT, ["done", job["task"].removeprefix(OPERATOR)])] if command_done else []
+        runs = self.close_row(job, status, code)
         tail = "\n".join(output.splitlines()[-20:])
         self.log.add({"kind": "run", "title": f"{status}: {job['command'][:200]}", "text": tail, "ref": {"job": job_id, "task": job["task"], "code": code, "status": status}})
         told = self.tell_applied(job) if job.get("kind") == TASK_JOB else []
         return {"id": job_id, "status": status, "code": code, "runs": runs, "told": told}
+
+    def close_row(self, job: dict, status: str, code: int | None) -> list[dict]:
+        """Returns:
+            The operator.py runs that report the end of an operator command
+            job on its row: `ran` on exit 0, then an older operator.py's
+            `done` when `ran` is its usage error; `failed` on any other exit;
+            none for a refused job or a task or gate change.
+        """
+        if job.get("kind") in CHANGES or status not in ("done", "failed"):
+            return []
+        slug = job["task"].removeprefix(OPERATOR)
+        shown = [slug, f"--command={job['command']}", f"--dir={job['directory']}"]
+        if status == "failed":
+            why = f"killed by signal {-code}" if code < 0 else f"exit {code}"
+            return [self.scripts.run(OPERATOR_SCRIPT, ["failed", *shown, "--why", why])]
+        runs = [self.scripts.run(OPERATOR_SCRIPT, ["ran", *shown])]
+        if runs[0]["code"] == USAGE:
+            runs.append(self.scripts.run(OPERATOR_SCRIPT, ["done", slug]))
+        return runs

@@ -64,6 +64,14 @@ class TestPresence(unittest.TestCase):
         self.assertEqual(self.states({"later": record("later", "idle", FRESH, "Later")}, {}, "day", claims, news), {"later": "alive"})
         self.assertEqual(self.states({"later": record("later", "idle", OLD, "Later")}, {}, "day", claims, news), {"later": "unreachable"})
 
+    def test_a_call_to_a_session_id_is_answered_by_its_receipt_under_a_new_name_and_flags_only_that_session(self):
+        call = NOW - 700
+        sessions = {"s1": record("s1", "idle", OLD, "Uno"), "sB": record("sB", "idle", OLD, "One")}
+        taken = [{"ts": call, "from": "Operator", "to": ["One"], "to_sessions": ["s1"], "class": "call"}]
+        receipt = {"ts": call + 2, "from": "Uno", "to": ["Operator"], "class": "receipt", "call": call}
+        self.assertEqual(self.states(sessions, {}, "day", [], [*taken, receipt]), {"s1": "alive", "sB": "alive"})
+        self.assertEqual(self.states(sessions, {}, "day", [], taken), {"s1": "unreachable", "sB": "alive"})
+
     def test_a_record_without_running_true_is_dead(self):
         for value in (False, None, "yes", 1):
             with self.subTest(value=value):

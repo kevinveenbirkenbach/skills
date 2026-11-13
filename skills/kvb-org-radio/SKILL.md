@@ -47,6 +47,8 @@ clear another agent's mayday; `--force` only on the operator's order.
 ## Rules
 
 - Pick the lowest class that does the job; the post first.
+- `radio.py feedback set call|post` picks how outcomes of your queued operator
+  commands reach you, post unless set; `feedback show` prints it.
 - For an addressee no listener wakes yet, `send` prints `wake: SendMessage
   to <name>`: send that peer the same text once with your runtime's message
   tool.

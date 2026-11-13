@@ -125,6 +125,21 @@ class TestOperator(unittest.TestCase):
     def _register(self) -> dict[str, dict]:
         return json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
 
+    def _session(self, sid: str, name: str) -> None:
+        (self.home / ".claude" / "sessions" / f"{sid}.json").write_text(json.dumps({"sessionId": sid, "name": name}), encoding="utf-8")
+
+    def _as(self, sid: str | None, *args: str) -> subprocess.CompletedProcess:
+        env = {key: value for key, value in self.env.items() if key != "CLAUDE_CODE_SESSION_ID"}
+        return subprocess.run(
+            [sys.executable, str(OPERATOR), *args], capture_output=True, text=True,
+            env={**env, "CLAUDE_CODE_SESSION_ID": sid} if sid else env, cwd=self.tmp.name, check=False,
+        )
+
+    def _messages(self) -> list[tuple]:
+        news = self.root / "news.jsonl"
+        lines = news.read_text(encoding="utf-8").splitlines() if news.exists() else []
+        return [(row["class"], row["from"], row["to"], row["text"]) for row in map(json.loads, lines)]
+
     def test_checks_close_rows_once_their_condition_holds(self):
         for name in ("pipx", "git-sign-push"):
             (self.bin / name).write_text("#!/bin/sh\n", encoding="utf-8")
@@ -542,6 +557,37 @@ class TestOperator(unittest.TestCase):
         self.assertEqual(self._open(), ["operator/heavy"])
         self.assertFalse((self.root / "queue-history.jsonl").exists())
 
+    def test_hold_queues_the_command_as_operator_without_the_claude_session(self):
+        self._queue_config({"operator": 0})
+        work = self.base / "work"
+        work.mkdir()
+        self._add("heavy", work, "touch heavy", "build", "manual")
+        fake = self.base / "queue.py"
+        fake.write_text(
+            "import json, os, sys\n"
+            "with open(sys.argv[0] + '.calls', 'a', encoding='utf-8') as calls:\n"
+            "    calls.write(json.dumps([sys.argv[1:3], os.environ.get('CLAUDE_CODE_SESSION_ID')]) + '\\n')\n"
+            "sys.exit(75 if sys.argv[1] == 'hold' else 0)\n",
+            encoding="utf-8",
+        )
+        wrapper = (
+            "import importlib.util, sys\n"
+            "spec = importlib.util.spec_from_file_location('kvb_operator', sys.argv[1])\n"
+            "operator = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(operator)\n"
+            "operator.QUEUE = operator.Path(sys.argv[2])\n"
+            "sys.argv = [sys.argv[1], 'run']\n"
+            "sys.exit(operator.main())\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", wrapper, str(OPERATOR), str(fake)], input="h\n", capture_output=True, text=True,
+            env={**self.env, "SHELL": "/bin/sh"}, cwd=self.tmp.name, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not run operator/heavy", result.stdout)
+        calls = [json.loads(line) for line in (self.base / "queue.py.calls").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(calls, [[["list"], "s1"], [["hold", "--kind"], None]])
+
     def test_run_offers_no_hold_while_the_config_lacks_the_operator_kind(self):
         self._queue_config({"test": 0})
         work = self.base / "work"
@@ -591,6 +637,233 @@ class TestOperator(unittest.TestCase):
         self.assertIn("granted operator/heavy", ran.stdout)
         self.assertTrue((work / "heavy").exists())
         self.assertFalse((self.base / "heavy").exists() or (work / "other").exists())
+
+    def test_a_done_run_reaches_the_renamed_adder_by_its_stored_name_and_session_through_its_feedback_channel(self):
+        work = self.base / "work"
+        work.mkdir()
+        self._add("go", work, "true", "r", "manual")
+        self._add("later", work, "true", "r", "manual")
+        self.assertEqual(self._register()["operator/go"]["sessions"], {"One": "s1"})
+        self._session("s1", "Uno")
+        radio = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
+        chosen = subprocess.run([sys.executable, str(radio), "feedback", "set", "call"], capture_output=True, text=True, env=self.env, check=False)
+        self.assertEqual(chosen.returncode, 0, chosen.stderr)
+        listener = self.root / "radio-listen" / "s1.pid"
+        listener.parent.mkdir()
+        listener.write_text(str(os.getpid()), encoding="utf-8")
+        result = self._feed("y\ns\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("done operator/go; the result went to One as a call", result.stdout)
+        self.assertIn("skipped operator/later", result.stdout)
+        self.assertEqual(self._messages(), [("call", "Operator", ["One"], "Operator ran operator/go: done")])
+        radio = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
+        seen = subprocess.run([sys.executable, str(radio), "show"], capture_output=True, text=True, env=self.env, check=False)
+        self.assertEqual([line.split(" ", 3)[3] for line in seen.stdout.splitlines()], ["Operator to One: Operator ran operator/go: done"], seen.stderr)
+
+    def test_an_older_row_without_a_session_reaches_its_party_name_and_an_open_check_is_reported(self):
+        stale = self.base / "stale"
+        stale.write_text("x", encoding="utf-8")
+        self._add("old", self.base, "true", "r", f"absent:{stale}")
+        register = self._register()
+        register["operator/old"].pop("sessions")
+        (self.root / "rasci.json").write_text(json.dumps(register), encoding="utf-8")
+        self._session("s1", "Uno")
+        result = self._feed("y\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        pending = f"absent:{stale} does not pass yet; the row stays open"
+        self.assertIn(f"ran operator/old, but {pending}; the result went to One as a post", result.stdout)
+        self.assertEqual(self._messages(), [("post", "Operator", ["One"], f"Operator ran operator/old; exit 0, but {pending}")])
+        self.assertEqual(self._open(), ["operator/old"])
+
+    def test_list_and_done_tell_every_holder_but_the_caller(self):
+        self._session("s2", "Two")
+        stale = self.base / "stale"
+        stale.write_text("x", encoding="utf-8")
+        for slug in ("mine", "theirs"):
+            self._add(slug, self.base, "true", "r", f"absent:{stale}")
+        self._add("manual", self.base, "true", "r", "manual")
+        self._add("hub", self.base, "true", "r", "manual")
+        self._add("self", self.base, "true", "r", "manual")
+        stale.unlink()
+        self.assertEqual(self._out("list", "--json")[0], "[")
+        self._add("mine", self.base, "true", "r", f"absent:{self.base / 'gone'}")
+        self.assertEqual(self._as(None, "list", "--session", "s1").stderr, "")
+        self.assertEqual(self._messages(), [])
+        self._add("theirs", self.base, "true", "r", f"absent:{self.base / 'gone'}")
+        listed = self._as("s2", "list", "--json")
+        self.assertEqual((listed.returncode, listed.stderr), (0, "operator: operator/theirs done; the result went to One as a post\n"))
+        self.assertEqual([row["task"] for row in json.loads(listed.stdout)], ["operator/manual", "operator/hub", "operator/self"])
+        self.assertEqual(self._as("s2", "done", "manual").stdout, "done operator/manual; the result went to One as a post\n")
+        self.assertEqual(self._as("s2", "done", "manual").stdout, "done operator/manual\n")
+        self.assertEqual(self._as(None, "done", "hub").returncode, 0)
+        self.assertEqual(self._out("done", "self"), ["done operator/self"])
+        self.assertEqual(self._messages(), [
+            ("post", "Operator", ["One"], f"operator/theirs done: its check absent:{self.base / 'gone'} passes"),
+            ("post", "Operator", ["One"], "operator/manual marked done by Two"),
+            ("post", "Operator", ["One"], "operator/hub marked done by Operator"),
+        ])
+        self._add("flag", self.base, "true", "r", "manual")
+        self.assertEqual(self._as(None, "done", "flag", "--session", "s2").returncode, 0)
+        self.assertEqual(self._messages()[-1][-1], "operator/flag marked done by Two")
+        self._add("late", self.base, "true", "r", f"absent:{self.base / 'gone'}")
+        victim = self.base / "victim"
+        victim.write_text("keep", encoding="utf-8")
+        (self.root / "news.lock").unlink()
+        (self.root / "news.lock").symlink_to(victim)
+        unsent = self._as("s2", "list")
+        self.assertEqual(unsent.returncode, 0, unsent.stderr)
+        self.assertRegex(unsent.stderr, r"^operator: operator/late done; the message to One failed: .+\n$")
+        self.assertEqual(victim.read_text(encoding="utf-8"), "keep")
+
+    def test_failed_stops_only_the_row_the_hub_ran_and_tells_the_adder(self):
+        work = self.base / "work"
+        work.mkdir()
+        self._add("break", work, "false", "r", "manual")
+        self._add("moved", work, "true", "r", "manual")
+        shown = ("--command", "false", "--dir", str(work))
+        result = self._as(None, "failed", "break", "--why", "exit 3", *shown)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "failed operator/break: exit 3; removed from the queue, the error went to One as a post\n")
+        for args in (("--command", "true", "--dir", str(self.base)), ("--command", "echo evil", "--dir", str(work))):
+            with self.subTest(args=args):
+                stale = self._as(None, "failed", "moved", "--why", "exit 1", *args)
+                self.assertIn("it changed or closed meanwhile and stays as it is", stale.stdout)
+        register = self._register()
+        self.assertEqual((register["operator/break"]["status"], register["operator/break"]["failed"]), ("stopped", {"why": "exit 3", "output": []}))
+        self.assertEqual((register["operator/moved"]["status"], "failed" in register["operator/moved"]), ("queued", False))
+        self.assertEqual(self._messages(), [("post", "Operator", ["One"], (
+            f"Operator ran operator/break (false in {work}); it failed with exit 3 and left the operator queue. "
+            "The operator shared no stderr lines. Find the cause, then queue the corrected command with operator.py add break, or drop the step."
+        ))])
+        again = self._as(None, "failed", "break", "--why", "exit 3", *shown)
+        self.assertIn("it changed or closed meanwhile and stays as it is", again.stdout)
+        self.assertEqual(len(self._messages()), 1)
+        for args in (("failed", "missing", "--why", "exit 1", *shown), ("failed", "break", "--why", " ", *shown), ("failed", "break", "--why", "exit 1")):
+            with self.subTest(args=args):
+                self.assertEqual(self._as(None, *args).returncode, 2)
+
+    def test_ran_in_the_hub_container_closes_whatever_the_check_and_reaches_the_pinned_session_and_the_stored_name(self):
+        tool = self.bin / "kvb-host-only-tool"
+        tool.write_text("#!/bin/sh\n", encoding="utf-8")
+        tool.chmod(0o755)
+        self._add("go", self.base, "true", "r", "manual")
+        self._add("inst", self.base, "true", "r", "binary:kvb-host-only-tool")
+        self._add("other", self.base, "true", "r", "manual")
+        radio = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
+        chosen = subprocess.run([sys.executable, str(radio), "feedback", "set", "call"], capture_output=True, text=True, env=self.env, check=False)
+        self.assertEqual(chosen.returncode, 0, chosen.stderr)
+        self._session("s1", "Uno")
+        hub_home = self.base / "hub-home"
+        hub_home.mkdir()
+        hub = {"PATH": "/usr/bin:/bin", "HOME": str(hub_home), "AGENTS_COUNCIL_ROOT": str(self.root)}
+
+        def ran(*args: str) -> str:
+            result = subprocess.run([sys.executable, str(OPERATOR), "ran", *args], capture_output=True, text=True, env=hub, cwd=self.tmp.name, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout
+
+        shown = ("--command", "true", "--dir", str(self.base))
+        wake = "wake: SendMessage to One (session s1)"
+        self.assertEqual(ran("go", *shown), f"done operator/go; the result went to One queued as a call; {wake}\n")
+        self.assertEqual(ran("inst", *shown), f"done operator/inst; the result went to One queued as a call; {wake}\n")
+        self.assertEqual(ran("other", "--command", "true", "--dir", str(hub_home)), "ran operator/other; it changed or closed meanwhile and stays as it is\n")
+        self.assertEqual(self._open(), ["operator/other"])
+        self.assertEqual(self._messages(), [
+            ("call", "Operator", ["One"], "Operator ran operator/go: done"),
+            ("call", "Operator", ["One"], "Operator ran operator/inst: done"),
+        ])
+        rows = [json.loads(line) for line in (self.root / "news.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([row["to_sessions"] for row in rows], [["s1"], ["s1"]])
+        self._session("s2", "One")
+        self._session("s3", "Uno")
+        expected = ["Operator to One: Operator ran operator/go: done", "Operator to One: Operator ran operator/inst: done"]
+        for sid, seen in (("s1", expected), ("s2", expected), ("s3", [])):
+            with self.subTest(sid=sid):
+                read = subprocess.run([sys.executable, str(radio), "show"], capture_output=True, text=True, env={**self.env, "CLAUDE_CODE_SESSION_ID": sid}, check=False)
+                self.assertEqual([line.split(" ", 3)[3] for line in read.stdout.splitlines()], seen, read.stderr)
+        view = (
+            "import json, sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from kvb_orchestrator.council import radio_rows\n"
+            "rows = [json.loads(line) for line in open(sys.argv[2], encoding='utf-8')]\n"
+            "print(json.dumps([row['to'] for row in radio_rows(rows, 0, 1e12)]))\n"
+        )
+        hub_view = subprocess.run(
+            [sys.executable, "-c", view, str(REPO_ROOT / "orchestrator"), str(self.root / "news.jsonl")],
+            capture_output=True, text=True, env={**hub, "PYTHONDONTWRITEBYTECODE": "1"}, check=False,
+        )
+        self.assertEqual(json.loads(hub_view.stdout or "null"), [["One"], ["One"]], hub_view.stderr)
+        for args in (("ran", "missing", *shown), ("ran", "go", "--command", "true")):
+            with self.subTest(args=args):
+                self.assertEqual(self._as(None, *args).returncode, 2)
+
+    def test_done_leaves_out_the_caller_by_session_id_and_by_name_each_on_its_own(self):
+        self._add("by-sid", self.base, "true", "r", "manual")
+        self._add("by-name", self.base, "true", "r", "manual")
+        register = self._register()
+        register["operator/by-name"].pop("sessions")
+        (self.root / "rasci.json").write_text(json.dumps(register), encoding="utf-8")
+        hub_home = self.base / "hub-home"
+        hub_home.mkdir()
+        hub = {"PATH": "/usr/bin:/bin", "HOME": str(hub_home), "AGENTS_COUNCIL_ROOT": str(self.root)}
+        by_sid = subprocess.run([sys.executable, str(OPERATOR), "done", "by-sid", "--session", "s1"], capture_output=True, text=True, env=hub, check=False)
+        self.assertEqual((by_sid.returncode, by_sid.stdout), (0, "done operator/by-sid\n"), by_sid.stderr)
+        self.assertEqual(self._out("done", "by-name"), ["done operator/by-name"])
+        self.assertEqual(self._messages(), [])
+
+    def test_done_by_the_successor_holding_the_stored_name_reaches_the_renamed_adder_by_its_session_only(self):
+        self._add("go", self.base, "true", "r", "manual")
+        self._session("s1", "Uno")
+        self._session("s2", "One")
+        done = self._as("s2", "done", "go")
+        self.assertEqual((done.returncode, done.stdout), (0, "done operator/go; the result went to s1 as a post\n"), done.stderr)
+        self.assertEqual(self._messages(), [("post", "Operator", ["s1"], "operator/go marked done by One")])
+        radio = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
+        for sid, seen in (("s1", 1), ("s2", 0)):
+            with self.subTest(sid=sid):
+                read = subprocess.run([sys.executable, str(radio), "show"], capture_output=True, text=True, env={**self.env, "CLAUDE_CODE_SESSION_ID": sid}, check=False)
+                self.assertEqual(len(read.stdout.splitlines()), seen, read.stderr)
+        self._add("own", self.base, "true", "r", "manual")
+        self.assertEqual(self._as("s1", "done", "own").stdout, "done operator/own\n")
+        self.assertEqual(len(self._messages()), 1)
+
+    def test_ran_closes_a_stopped_or_running_row_the_hub_ran_and_tells_the_adder(self):
+        for slug in ("stopped", "running", "done"):
+            self._add(slug, self.base, "true", "r", "manual")
+        register = self._register()
+        for slug in ("stopped", "running", "done"):
+            register[f"operator/{slug}"]["status"] = slug
+        register["operator/stopped"].update(failed={"why": "exit 1", "output": []}, cancelled="wrong repo")
+        (self.root / "rasci.json").write_text(json.dumps(register), encoding="utf-8")
+        shown = ("--command", "true", "--dir", str(self.base))
+        for slug in ("stopped", "running"):
+            with self.subTest(slug=slug):
+                self.assertEqual(self._as(None, "ran", slug, *shown).stdout, f"done operator/{slug}; the result went to One as a post\n")
+                entry = self._register()[f"operator/{slug}"]
+                self.assertEqual((entry["status"], "failed" in entry, "cancelled" in entry), ("done", False, False))
+        self.assertEqual(self._as(None, "ran", "done", *shown).stdout, "ran operator/done; it changed or closed meanwhile and stays as it is\n")
+        self.assertEqual([message[3] for message in self._messages()], ["Operator ran operator/stopped: done", "Operator ran operator/running: done"])
+
+    def test_done_drops_the_stale_failure_of_a_stopped_row_like_ran(self):
+        self._add("go", self.base, "false", "r", "manual")
+        self.assertEqual(self._as(None, "failed", "go", "--why", "exit 1", "--command", "false", "--dir", str(self.base)).returncode, 0)
+        register = self._register()
+        register["operator/go"]["cancelled"] = "wrong repo"
+        (self.root / "rasci.json").write_text(json.dumps(register), encoding="utf-8")
+        self.assertEqual(self._out("done", "go"), ["done operator/go"])
+        entry = self._register()["operator/go"]
+        self.assertEqual((entry["status"], "failed" in entry, "cancelled" in entry), ("done", False, False))
+
+    def test_feedback_for_an_ended_adder_reaches_the_session_now_holding_its_name(self):
+        self._add("go", self.base, "true", "r", "manual")
+        sessions = self.home / ".claude" / "sessions"
+        (sessions / "s1.json").unlink()
+        self._session("s2", "One")
+        self.assertEqual(self._as(None, "failed", "go", "--why", "exit 1", "--command", "true", "--dir", str(self.base)).returncode, 0)
+        radio = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
+        seen = subprocess.run([sys.executable, str(radio), "show"], capture_output=True, text=True, env={**self.env, "CLAUDE_CODE_SESSION_ID": "s2"}, check=False)
+        self.assertEqual(len(seen.stdout.splitlines()), 1, seen.stderr)
+        self.assertIn("Operator to One: Operator ran operator/go (true in", seen.stdout)
 
     def test_run_needs_shell(self):
         self._add("x", self.base, "true", "r", "manual")

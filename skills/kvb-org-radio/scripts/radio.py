@@ -47,6 +47,16 @@ Args:
         The mayday's sender and its helpers pass. Never fails.
     show [--all] [--session <id>]: print the active silence and the
         undelivered rows, or every kept row, without delivering them.
+    feedback set post|call [--session <id>]: store how outcomes of the
+        session's queued operator commands reach it, in <root>/feedback.json;
+        post unless set.
+    feedback show [--session <id>]: print the session's channel.
+    feedback send "<text>" --to <name> ... [--sid <id>] [--session <id>]: send
+        text to each name as a call when the session --sid names, else the
+        name, set call, else as a post. --sid, with a single --to, pins that
+        session: the row keeps the name in `to` and the id in `to_sessions`
+        and reaches both, the session under any later name and whoever holds
+        the name, with no liveness check; its wake line adds `(session <id>)`.
 
     Delivering a call stores a receipt in the caller's post.
 
@@ -86,6 +96,7 @@ STATE = ROOT / "radio-seen"
 LISTEN = ROOT / "radio-listen"
 SILENCE = ROOT / "radio-silence.json"
 NOTIFIED = ROOT / "radio-notified"
+FEEDBACK = ROOT / "feedback.json"
 ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
 SELF = Path(__file__).resolve()
 RADIO = ("mayday", "pan-pan", "security", "call", "broadcast")
@@ -93,6 +104,7 @@ MAIL = ("post", "newsletter", "receipt")
 ALARMS = ("mayday", "pan-pan", "security")
 ADDRESSED = ("call", "post", "receipt")
 SEND = ("call", "broadcast", "security", "pan-pan", "mayday", "direct")
+FEEDBACKS = ("post", "call")
 VERSION = 2
 WRITERS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 SHELL = re.compile(r"[;&|`$()<>\n\r\\\"]")
@@ -202,8 +214,12 @@ def targets(row: dict) -> list:
     return row["to"] if isinstance(row.get("to"), list) else []
 
 
-def for_me(row: dict, name: str) -> bool:
-    return row.get("from") != name and (not targets(row) or name in targets(row))
+def sessions_of(row: dict) -> list[str]:
+    return listed(row.get("to_sessions"))
+
+
+def for_me(row: dict, name: str, sid: str) -> bool:
+    return row.get("from") != name and (not targets(row) or name in targets(row) or sid in sessions_of(row))
 
 
 def read_json(path: Path) -> dict:
@@ -318,13 +334,18 @@ def listening(sid: str) -> bool:
     return True
 
 
-def unreached(cls: str, to: list[str], sender: str) -> list[str]:
+def unreached(cls: str, to: list[str], sender: str, sessions: list[str]) -> list[str]:
+    """Returns:
+        Each addressee no live listener of its name or of the row's sessions
+        takes the row for, followed by `(session <id>)` when it has sessions.
+    """
     live = council().live_sessions()
     if cls in ADDRESSED:
-        targets = [(name, [sid for sid, label in live.items() if name in (label, sid)]) for name in to]
+        targets = [(name, [*sessions, *(sid for sid, label in live.items() if name in (label, sid))]) for name in to]
     else:
         targets = [(name or sid, [sid]) for sid, name in live.items() if sid != sender]
-    return [name for name, sids in targets if not any(map(listening, sids))]
+    pinned = f" (session {', '.join(sessions)})" if sessions else ""
+    return [f"{name}{pinned}" for name, sids in targets if not any(map(listening, sids))]
 
 
 def store(entries: list[dict]) -> float:
@@ -339,7 +360,11 @@ def store(entries: list[dict]) -> float:
     return entries[-1]["ts"]
 
 
-def transmit(cls: str, to: list[str], text: str, caller: str | None) -> int:
+def transmit(cls: str, to: list[str], text: str, caller: str | None, sessions: list[str]) -> int:
+    """Args:
+        sessions: the session ids of the addressees, kept under
+            `to_sessions` beside their names; none keeps the row as before.
+    """
     if cls in ADDRESSED and not to:
         fail(f"{cls} needs --to")
     if cls not in ADDRESSED and to:
@@ -351,7 +376,7 @@ def transmit(cls: str, to: list[str], text: str, caller: str | None) -> int:
     sender = name_of(sid)
     ROOT.mkdir(parents=True, exist_ok=True)
     with organize("nofollow").locked(ROOT, LOCK, 0o600, None):
-        ts = store([{"from": sender, "to": to, "text": text, "class": cls, "v": VERSION}])
+        ts = store([{"from": sender, "to": to, "text": text, "class": cls, "v": VERSION, **({"to_sessions": sessions} if sessions else {})}])
         if cls == "mayday":
             write_atomic(
                 SILENCE,
@@ -359,7 +384,7 @@ def transmit(cls: str, to: list[str], text: str, caller: str | None) -> int:
             )
     print(f"sent {cls} to {', '.join(to) or 'all'}")
     if cls in RADIO:
-        for name in unreached(cls, to, sid):
+        for name in unreached(cls, to, sid, sessions):
             print(f"wake: SendMessage to {clip(name)}")
     return 0
 
@@ -370,11 +395,11 @@ def cmd_send(args: argparse.Namespace) -> int:
         cls = "call" if args.wake else "post"
     elif args.wake:
         fail("--wake only with direct; a call always wakes")
-    return transmit(cls, args.to or [], args.text, args.session)
+    return transmit(cls, args.to or [], args.text, args.session, [])
 
 
 def cmd_post(args: argparse.Namespace) -> int:
-    return transmit("post" if args.to else "newsletter", args.to or [], args.text, args.session)
+    return transmit("post" if args.to else "newsletter", args.to or [], args.text, args.session, [])
 
 
 def cmd_clear(args: argparse.Namespace) -> int:
@@ -413,7 +438,7 @@ def cmd_assist(args: argparse.Namespace) -> int:
 
 def pending(sid: str, name: str, state: dict, family: str) -> list[dict]:
     floor = max(prompt_mark(sid), time.time() - WINDOW, mark(state, family))
-    return [row for row in items() if channel(row) == family and row["ts"] > floor and for_me(row, name)]
+    return [row for row in items() if channel(row) == family and row["ts"] > floor and for_me(row, name, sid)]
 
 
 def take(sid: str, family: str) -> list[dict]:
@@ -586,6 +611,36 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def feedback_of(chosen: dict, sid: str) -> str:
+    return "call" if chosen.get(sid) == "call" else "post"
+
+
+def cmd_feedback_set(args: argparse.Namespace) -> int:
+    sid, _ = council().caller(args.session)
+    ROOT.mkdir(parents=True, exist_ok=True)
+    with organize("nofollow").locked(ROOT, LOCK, 0o600, None):
+        chosen = read_json(FEEDBACK)
+        chosen[sid] = args.channel
+        write_atomic(FEEDBACK, json.dumps(chosen, sort_keys=True))
+    print(f"feedback: {args.channel}")
+    return 0
+
+
+def cmd_feedback_show(args: argparse.Namespace) -> int:
+    sid, _ = council().caller(args.session)
+    print(feedback_of(read_json(FEEDBACK), sid))
+    return 0
+
+
+def cmd_feedback_send(args: argparse.Namespace) -> int:
+    if args.sid and len(args.to) != 1:
+        fail("--sid takes a single --to")
+    chosen = read_json(FEEDBACK)
+    for name in args.to:
+        transmit(feedback_of(chosen, args.sid or name), [name], args.text, args.session, [args.sid] if args.sid else [])
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -620,6 +675,20 @@ def main() -> int:
     p.add_argument("--all", action="store_true")
     p.add_argument("--session")
     p.set_defaults(func=cmd_show)
+    feedback = sub.add_parser("feedback").add_subparsers(dest="action", required=True)
+    p = feedback.add_parser("set")
+    p.add_argument("channel", choices=FEEDBACKS)
+    p.add_argument("--session")
+    p.set_defaults(func=cmd_feedback_set)
+    p = feedback.add_parser("show")
+    p.add_argument("--session")
+    p.set_defaults(func=cmd_feedback_show)
+    p = feedback.add_parser("send")
+    p.add_argument("text")
+    p.add_argument("--to", action="append", required=True)
+    p.add_argument("--sid")
+    p.add_argument("--session")
+    p.set_defaults(func=cmd_feedback_send)
     args = parser.parse_args()
     os.environ["PATH"] = organize("hookpath").trusted(os.environ.get("PATH", ""))
     refused = organize("watch").guard_root(hook=args.command in ("hook", "tool", "mailbox", "listen", "block"))

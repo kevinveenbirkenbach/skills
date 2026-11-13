@@ -13,7 +13,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "orchestrator.sh"
-HOST_SCRIPTS = ("kvb-org-organize/scripts/council.py", "kvb-org-organize/scripts/nofollow.py", "kvb-org-rasci/scripts/rasci.py")
+HOST_SCRIPTS = (
+    "kvb-org-organize/scripts/council.py", "kvb-org-organize/scripts/nofollow.py", "kvb-org-rasci/scripts/rasci.py",
+    "kvb-org-operator/scripts/operator.py", "kvb-org-radio/scripts/radio.py",
+)
 OLD = "kvb-hub"
 NEW = "kvb-orchestrator"
 STUB = r'''#!/usr/bin/env python3

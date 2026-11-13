@@ -43,7 +43,7 @@ OFFICES_UNIT="${NAME}-offices"
 SESSIONS_UNIT="${NAME}-sessions"
 RESOURCES_UNIT="${NAME}-resources"
 INSTALLED_SKILLS="${HOME}/.claude/skills"
-HOST_SCRIPTS=(kvb-org-organize/scripts/council.py kvb-org-organize/scripts/nofollow.py kvb-org-rasci/scripts/rasci.py)
+HOST_SCRIPTS=(kvb-org-organize/scripts/council.py kvb-org-organize/scripts/nofollow.py kvb-org-rasci/scripts/rasci.py kvb-org-operator/scripts/operator.py kvb-org-radio/scripts/radio.py)
 TREE_DIR="${HOME}/.local/state/pkgmgr/tree"
 PKGMGR_REPO="${PKGMGR_REPO:-https://github.com/kevinveenbirkenbach/package-manager.git}"
 IMAGE="${NAME}:local"
@@ -271,7 +271,7 @@ offices_unit() {
 	fi
 	if ! skills_current; then
 		systemctl --user disable --now "${OFFICES_UNIT}.path" >/dev/null 2>&1 || true
-		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py or rasci.py than this tree; run 'make install' to enable ${OFFICES_UNIT}.path."
+		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py, rasci.py, operator.py or radio.py than this tree; run 'make install' to enable ${OFFICES_UNIT}.path."
 		return 0
 	fi
 	cp -f "${HUB}/systemd/${OFFICES_UNIT}.service" "${HUB}/systemd/${OFFICES_UNIT}.path" "${UNITS}/"
@@ -304,7 +304,7 @@ runner() {
 	fi
 	if ! skills_current; then
 		systemctl --user disable --now "${RUNNER}" >/dev/null 2>&1 || true
-		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py or rasci.py than this tree; run 'make install' to enable ${RUNNER}."
+		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py, rasci.py, operator.py or radio.py than this tree; run 'make install' to enable ${RUNNER}."
 		return 1
 	fi
 	cp -f "${HUB}/systemd/${RUNNER}" "${UNITS}/"

@@ -33,14 +33,20 @@ def read_snapshot(path: Path, now: float) -> dict[str, dict]:
 
 def unanswered(news: list[dict], now: float) -> list[tuple[str, float]]:
     """Returns:
-        (callee name, call time) of every call older than UNANSWERED that its
-        callee never receipted.
+        (callee, call time) of every call older than UNANSWERED without a
+        receipt: one per session id in `to_sessions`, answered by any
+        receipt of that call; else one per name in `to`.
     """
     receipts = {(agent(row.get("from")), round(epoch(row.get("call")) or 0, 3)) for row in news if row.get("class") == "receipt"}
+    answered = {call for _, call in receipts}
     late = []
     for row in news:
         ts = epoch(row.get("ts"))
         if row.get("class") != "call" or ts is None or now - ts < UNANSWERED or not isinstance(row.get("to"), list):
+            continue
+        sessions = [sid for sid in row["to_sessions"] if isinstance(sid, str)] if isinstance(row.get("to_sessions"), list) else []
+        if sessions:
+            late += [(sid, ts) for sid in sessions if round(ts, 3) not in answered]
             continue
         late += [(name, ts) for name in map(agent, row["to"]) if name and (name, round(ts, 3)) not in receipts]
     return late
@@ -75,7 +81,7 @@ def presence(sessions: dict[str, dict], parts: dict[str, str], mode: str, claims
         busy = record.get("status") == "busy"
         stamp = record.get("statusUpdatedAt")
         updated = (epoch(stamp / 1000) if isinstance(stamp, int | float) and not isinstance(stamp, bool) else None) or 0
-        called = names.get(sid, set()) | {agent(record.get("name"))}
+        called = names.get(sid, set()) | {agent(record.get("name")), sid}
         if (busy and now - updated > STALE) or any(name in called and ts > updated for name, ts in late):
             states[sid] = "unreachable"
             continue
