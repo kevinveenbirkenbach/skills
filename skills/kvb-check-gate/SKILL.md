@@ -6,7 +6,7 @@ description: >
 ---
 
 The gate rule, stated here and nowhere else: nothing is declared 90/5 (fix
-confidence ≥ 90 %, break risk ≤ 5 %, cost and time ≤ 100 % in
+confidence ≥ 90 %, break risk ≤ 5 %, tokens and velocity ≤ 100 % in
 `kvb-check-score`; over 100 %, ask the operator before the commit, naming
 the cause) before every `make test*` target of the project, each Makefile target named `test` or starting with
 `test-`, ran green on the exact head with a clean tracked tree. Until then

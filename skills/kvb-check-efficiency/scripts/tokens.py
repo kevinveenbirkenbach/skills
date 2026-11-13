@@ -15,8 +15,8 @@ Args:
         shipped change instead.
 
 Output:
-    Line 1: `💸 cost <p> % (skills <b>→<a> tokens; listing <b>→<a> words)`, p = after / before * 100,
-    or `💸 cost new (+<a> tokens; listing <b>→<a> words)` when the changed files hold no
+    Line 1: `💸 tokens <p> % (skills <b>→<a> tokens; listing <b>→<a> words)`, p = after / before * 100,
+    or `💸 tokens new (+<a> tokens; listing <b>→<a> words)` when the changed files hold no
     base tokens. Changed files are the *.md under skills/ that `git diff <ref>` names plus untracked
     ones; a file missing on a side counts 0. Tokens are an estimate: characters / 4. The listing
     is the sum of every skills/*/SKILL.md description word.
@@ -61,6 +61,41 @@ DAYS = 7
 ROUND_ABOVE = 10
 ALL_SKILLS = "all skills"
 CONTEXT = Path(__file__).resolve().parents[2] / "kvb-skill-silence" / "scripts" / "context.py"
+LABELS = Path(__file__).resolve().parents[2] / "kvb-check-score" / "labels.json"
+
+
+LABEL_ERRORS = (OSError, ValueError, LookupError, TypeError)
+
+
+def labelled(keys: tuple[str, ...]) -> dict[str, str]:
+    """Args:
+        keys: metric keys of kvb-check-score's labels.json.
+
+    Returns:
+        Per key `<emoji> <label>`, the label in lower case; one of LABEL_ERRORS
+        for a missing or malformed file.
+    """
+    metrics = json.loads(LABELS.read_text(encoding="utf-8"))["metrics"]
+    found = {key: (metrics[key]["emoji"], metrics[key]["label"]) for key in keys}
+    if not all(isinstance(part, str) for pair in found.values() for part in pair):
+        raise ValueError(f"needs a string emoji and label for {', '.join(keys)}")
+    return {key: f"{emoji} {label.lower()}" for key, (emoji, label) in found.items()}
+
+
+def headline(name: str, efficiency: int | None, before: int, after: int, listing: str) -> str:
+    """Args:
+        name: the tokens metric as labelled() gives it.
+        efficiency: after over before in percent, None without base tokens.
+        before: the base tokens of the changed files.
+        after: their tokens in the working tree.
+        listing: the listing words part.
+
+    Returns:
+        Line 1.
+    """
+    if efficiency is None:
+        return f"{name} new (+{after} tokens; {listing})"
+    return f"{name} {efficiency} % (skills {before}→{after} tokens; {listing})"
 
 
 def fail(message: str) -> None:
@@ -254,6 +289,10 @@ def measure(
 
 def check(argv: list[str]) -> int:
     args = parse(argv)
+    try:
+        names = labelled(("tokens",))
+    except LABEL_ERRORS as error:
+        fail(f"labels {LABELS}: {error!r}")
     repo = Path(args.repo).resolve()
     if not (repo / SKILLS).is_dir():
         fail(f"{repo} has no {SKILLS}/ directory")
@@ -296,11 +335,7 @@ def check(argv: list[str]) -> int:
             },
         }))
     else:
-        listing = f"listing {listing_before}→{listing_after} words"
-        if efficiency is None:
-            print(f"💸 cost new (+{after} tokens; {listing})")
-        else:
-            print(f"💸 cost {efficiency} % (skills {before}→{after} tokens; {listing})")
+        print(headline(names["tokens"], efficiency, before, after, f"listing {listing_before}→{listing_after} words"))
         print(money)
     return 3 if efficiency is None or efficiency > LIMIT else 0
 

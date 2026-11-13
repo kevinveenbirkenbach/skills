@@ -262,6 +262,44 @@ const Plan = (() => {
     return {fixed: reachable(fixed), growing: found.forecast};
   }
 
+  const branchOf = (row) => (row.branch !== "-" ? row.branch : row.worktree_branch);
+
+  /**
+   * @param rows - the burndown scope's task rows with branch ("-" for none) and worktree_branch ("" for none).
+   * @param journal - /api/scores rows {time, branch, values: {metric key: number or null}}.
+   * @param keys - the metric keys switched on, in the label file's order.
+   * @param span - {from, to} in epoch seconds.
+   * @returns one {key, points: [{t, value, branch}]} per key, in keys order: the journal rows of a branch of the
+   * scope's rows within span whose value for the key is a number, in time order.
+   */
+  function overlaySeries(rows, journal, keys, span) {
+    const branches = new Set(rows.map(branchOf).filter(Boolean));
+    const inside = journal.filter((entry) => branches.has(entry.branch) && entry.time >= span.from && entry.time <= span.to).sort((a, b) => a.time - b.time);
+    return keys.map((key) => ({
+      key, points: inside.filter((entry) => Number.isFinite(entry.values[key])).map((entry) => ({t: entry.time, value: entry.values[key], branch: entry.branch})),
+    }));
+  }
+
+  /**
+   * @param labels - the labels of /api/scores: {metrics: {key: {emoji, label}}}, or anything else.
+   * @returns {key: "<emoji> <label>"} in the file's order for the entries with a string emoji and label; null when
+   * none has both or labels is no such object.
+   */
+  function overlayLabels(labels) {
+    const metrics = labels && typeof labels === "object" ? labels.metrics : null;
+    if (!metrics || typeof metrics !== "object" || Array.isArray(metrics)) {
+      return null;
+    }
+    const kept = Object.entries(metrics).filter(([, metric]) => metric && typeof metric.emoji === "string" && typeof metric.label === "string");
+    return kept.length ? Object.fromEntries(kept.map(([key, metric]) => [key, `${metric.emoji} ${metric.label}`])) : null;
+  }
+
+  /**
+   * @param series - overlaySeries().
+   * @returns the top of the right axis: 100, or the largest value when one exceeds it.
+   */
+  const overlayTop = (series) => Math.max(100, ...series.flatMap((found) => found.points.map((point) => point.value)));
+
   const KEYS = {
     prio: () => null,
     wsjf: (row) => (row.wsjf ? row.wsjf.score : null),
@@ -294,7 +332,7 @@ const Plan = (() => {
     return keyed.map((entry) => entry.row);
   }
 
-  return {FORECASTS, ESTIMATIONS, TRENDS, SORTS, SERIES, TRENDED, STATUS_ORDER, STALE_DAYS, median, medians, forecastLength, bars, etas, stale, scoped, burn, steps, trend, finishes, lineAt, sortRows};
+  return {FORECASTS, ESTIMATIONS, TRENDS, SORTS, SERIES, TRENDED, STATUS_ORDER, STALE_DAYS, median, medians, forecastLength, bars, etas, stale, scoped, burn, steps, trend, finishes, lineAt, overlaySeries, overlayLabels, overlayTop, sortRows};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Plan;

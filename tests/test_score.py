@@ -12,11 +12,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCORE = REPO_ROOT / "skills" / "kvb-check-score" / "scripts" / "score.py"
-PASS = "✅ gate: 90/5, cost and time <= 100, security 100 %"
+PASS = "✅ gate: 90/5, tokens and velocity <= 100, security 100 %"
 BASE = {"fix": "95", "break": "2", "efficiency": "100", "speed": "100", "security": "100", "critical": "0"}
-HEADER = "| 🎯 Fix | 💥 Break | 💸 Cost | ⏱️ Time | 🛡️ Security | 🏆 Score | Gate |"
+HEADER = "| 🎯 Fix | 💥 Break | 💸 Tokens | ⏱️ Velocity | 🛡️ Security | 🏆 Score | Gate |"
 ASK = ": ask the operator before the commit"
-ENV = {"PATH": os.environ["PATH"]}
+COUNCIL = tempfile.TemporaryDirectory()
+ENV = {"PATH": os.environ["PATH"], "AGENTS_COUNCIL_ROOT": COUNCIL.name}
 
 
 def flags(values: dict[str, str]) -> list[str]:
@@ -37,12 +38,12 @@ class TestScore(unittest.TestCase):
     def test_formula_and_line_format(self):
         self.assertEqual(
             self._score(fix="95", **{"break": "4"}),
-            (["🎯 fix 95 % · 💥 break 4 % · 💸 cost 100 % · ⏱️ time 100 % · 🛡️ security 100 % · 🏆 score 91",
+            (["🎯 fix 95 % · 💥 break 4 % · 💸 tokens 100 % · ⏱️ velocity 100 % · 🛡️ security 100 % · 🏆 score 91",
               PASS], 0),
         )
         lines, code = self._score(efficiency="97", speed="-")
         self.assertEqual(
-            lines[0], "🎯 fix 95 % · 💥 break 2 % · 💸 cost 97 % · ⏱️ time – · 🛡️ security 100 % · 🏆 score 96"
+            lines[0], "🎯 fix 95 % · 💥 break 2 % · 💸 tokens 97 % · ⏱️ velocity – · 🛡️ security 100 % · 🏆 score 96"
         )
         self.assertEqual(code, 0)
         self.assertEqual(self._score(fix="92.5")[0][0].split(" · ")[0], "🎯 fix 92.5 %")
@@ -51,14 +52,14 @@ class TestScore(unittest.TestCase):
         lines, code = self._score(fix="92", efficiency="-", speed="-", **{"break": "3"})
         self.assertEqual(
             (lines, code),
-            (["🎯 fix 92 % · 💥 break 3 % · 💸 cost – · ⏱️ time – · 🛡️ security 100 % · 🏆 score 89", PASS], 0),
+            (["🎯 fix 92 % · 💥 break 3 % · 💸 tokens – · ⏱️ velocity – · 🛡️ security 100 % · 🏆 score 89", PASS], 0),
         )
 
     def test_security_multiplies_and_asks_below_100(self):
         lines, code = self._score(fix="100", efficiency="-", speed="-", security="75", **{"break": "0"})
         self.assertEqual(
             (lines, code),
-            (["🎯 fix 100 % · 💥 break 0 % · 💸 cost – · ⏱️ time – · 🛡️ security 75 % · 🏆 score 75",
+            (["🎯 fix 100 % · 💥 break 0 % · 💸 tokens – · ⏱️ velocity – · 🛡️ security 75 % · 🏆 score 75",
               f"⚠️ gate: security 75 % < 100{ASK}"], 3),
         )
         lines, code = self._score(security="~80")
@@ -94,7 +95,7 @@ class TestScore(unittest.TestCase):
             ({"fix": "80", "break": "10"}, "⛔ gate: fix 80 % < 90, break 10 % > 5"),
             (
                 {"fix": "85", "efficiency": "150", "speed": "new", "security": "50"},
-                f"⛔ gate: fix 85 % < 90; cost 150 % > 100, time new, security 50 % < 100{ASK}",
+                f"⛔ gate: fix 85 % < 90; tokens 150 % > 100, velocity new, security 50 % < 100{ASK}",
             ),
         ):
             with self.subTest(values=values):
@@ -103,13 +104,13 @@ class TestScore(unittest.TestCase):
 
     def test_costs_ask_the_operator_exit_3(self):
         for values, verdict in (
-            ({"efficiency": "120"}, f"⚠️ gate: cost 120 % > 100{ASK}"),
-            ({"efficiency": "-", "speed": "130"}, f"⚠️ gate: time 130 % > 100{ASK}"),
-            ({"efficiency": "100.5", "speed": "-"}, f"⚠️ gate: cost 100.5 % > 100{ASK}"),
-            ({"efficiency": "new", "speed": "-"}, f"⚠️ gate: cost new{ASK}"),
+            ({"efficiency": "120"}, f"⚠️ gate: tokens 120 % > 100{ASK}"),
+            ({"efficiency": "-", "speed": "130"}, f"⚠️ gate: velocity 130 % > 100{ASK}"),
+            ({"efficiency": "100.5", "speed": "-"}, f"⚠️ gate: tokens 100.5 % > 100{ASK}"),
+            ({"efficiency": "new", "speed": "-"}, f"⚠️ gate: tokens new{ASK}"),
             (
                 {"efficiency": "120", "speed": "130", "security": "90"},
-                f"⚠️ gate: cost 120 % > 100, time 130 % > 100, security 90 % < 100{ASK}",
+                f"⚠️ gate: tokens 120 % > 100, velocity 130 % > 100, security 90 % < 100{ASK}",
             ),
         ):
             with self.subTest(values=values):
@@ -128,7 +129,7 @@ class TestScore(unittest.TestCase):
     def test_new_counts_as_100_in_the_score(self):
         lines, _ = self._score(efficiency="new", speed="-", **{"break": "0"})
         self.assertEqual(
-            lines[0], "🎯 fix 95 % · 💥 break 0 % · 💸 cost new · ⏱️ time – · 🛡️ security 100 % · 🏆 score 95"
+            lines[0], "🎯 fix 95 % · 💥 break 0 % · 💸 tokens new · ⏱️ velocity – · 🛡️ security 100 % · 🏆 score 95"
         )
 
     def test_table(self):
@@ -138,7 +139,7 @@ class TestScore(unittest.TestCase):
             [
                 HEADER,
                 "| --- | --- | --- | --- | --- | --- | --- |",
-                "| 95 % | 2 % | 97 % | – | 100 % | 96 | ✅ 90/5, cost and time <= 100, security 100 % |",
+                "| 95 % | 2 % | 97 % | – | 100 % | 96 | ✅ 90/5, tokens and velocity <= 100, security 100 % |",
             ],
         )
         self.assertEqual(result.returncode, 0)
@@ -152,8 +153,8 @@ class TestScore(unittest.TestCase):
             (result.stdout.splitlines(), result.returncode),
             (
                 [
-                    "🎯 Fix: 95 %", "💥 Break: 2 %", "💸 Cost: 97 %", "⏱️ Time: –", "🛡️ Security: 100 %",
-                    "🏆 Score: 96", "🚦 Gate: ✅ 90/5, cost and time <= 100, security 100 %",
+                    "🎯 Fix: 95 %", "💥 Break: 2 %", "💸 Tokens: 97 %", "⏱️ Velocity: –", "🛡️ Security: 100 %",
+                    "🏆 Score: 96", "🚦 Gate: ✅ 90/5, tokens and velocity <= 100, security 100 %",
                 ],
                 0,
             ),
@@ -165,7 +166,7 @@ class TestScore(unittest.TestCase):
             (result.stdout.splitlines(), result.returncode),
             (
                 [
-                    "🎯 Fix: 95 %", "💥 Break: 2 %", "💸 Cost: 100 %", "⏱️ Time: 100 %", "🛡️ Security: ~80 %",
+                    "🎯 Fix: 95 %", "💥 Break: 2 %", "💸 Tokens: 100 %", "⏱️ Velocity: 100 %", "🛡️ Security: ~80 %",
                     "💰 Value: 1:20", "🏆 Score: 74", f"🚦 Gate: ⚠️ security ~80 % < 100{ASK}",
                 ],
                 3,
@@ -188,9 +189,9 @@ class TestScore(unittest.TestCase):
 
     def test_value_column_changes_neither_score_nor_gate(self):
         for value, verdict, code in (
-            ("1:20", "✅ 90/5, cost and time <= 100, security 100 %", 0),
-            ("4.1:1", "✅ 90/5, cost and time <= 100, security 100 %", 0),
-            ("?", "⚠️ cost 120 % > 100" + ASK, 3),
+            ("1:20", "✅ 90/5, tokens and velocity <= 100, security 100 %", 0),
+            ("4.1:1", "✅ 90/5, tokens and velocity <= 100, security 100 %", 0),
+            ("?", "⚠️ tokens 120 % > 100" + ASK, 3),
         ):
             with self.subTest(value=value):
                 efficiency = "97" if code == 0 else "120"
@@ -201,7 +202,7 @@ class TestScore(unittest.TestCase):
                 self.assertEqual(
                     result.stdout.splitlines(),
                     [
-                        HEADER.replace("💸 Cost |", "💸 Cost | 💰 Value |"),
+                        HEADER.replace("💸 Tokens |", "💸 Tokens | 💰 Value |"),
                         "|" + " --- |" * 8,
                         f"| 95 % | 2 % | {efficiency} % | {value} | – | 100 % | {score} | {verdict} |",
                     ],
@@ -236,7 +237,7 @@ class TestScore(unittest.TestCase):
         (repo / "b.txt").write_text("three\nfour\n", encoding="utf-8")
         git("add", "a.txt", "b.txt")
         head = ["🌿 Branch", "📊 Diff stat"]
-        score = "| 95 % | 2 % | 100 % | 100 % | 100 % | 93 | ✅ 90/5, cost and time <= 100, security 100 % |"
+        score = "| 95 % | 2 % | 100 % | 100 % | 100 % | 93 | ✅ 90/5, tokens and velocity <= 100, security 100 % |"
         worktree = ["", "📁 Worktree:", "", "```text", str(repo.resolve()), "```"]
 
         result = self._run(*flags(BASE), "--commit-table", str(repo), cwd=repo)
@@ -259,7 +260,7 @@ class TestScore(unittest.TestCase):
         result = self._run(*flags(BASE), "--commit-table", str(repo), "--commit", "HEAD", "--value", "?", cwd=repo)
         self.assertEqual(
             result.stdout.splitlines()[0],
-            "| " + " | ".join([*head, "🔖 Commit"]) + " " + HEADER.replace("💸 Cost |", "💸 Cost | 💰 Value |"),
+            "| " + " | ".join([*head, "🔖 Commit"]) + " " + HEADER.replace("💸 Tokens |", "💸 Tokens | 💰 Value |"),
         )
         self.assertEqual(
             result.stdout.splitlines()[2],

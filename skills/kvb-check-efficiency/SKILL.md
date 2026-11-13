@@ -4,7 +4,7 @@ description: >
   Token cost of skill edits, CPU and RAM of code edits.
 ---
 
-💸 Cost is the share of the base's resources a change uses: under 100 %
+💸 Tokens is the share of the base's resources a change uses: under 100 %
 it saves, over 100 % it costs more. Paste the script's lines, never a
 paragraph about them. `<ref>` is the commit the change
 starts from: `HEAD` for uncommitted work, the merge base with the default
@@ -20,7 +20,7 @@ It compares every changed `*.md` under `skills/`, untracked ones included,
 at `<ref>` with the working tree, and the always-loaded listing: all
 `description:` words, counted by the repository's `scripts/budget.py`.
 Tokens are an estimate, characters / 4. Changed files without any base text
-print `cost new`, which counts as over 100. Skills have no time.
+print `tokens new`, which counts as over 100. Skills have no velocity.
 
 A second line, `💰 value 1:<n>` (`<n>:1` when value < cost), weighs both
 per day and never changes the exit code; pass its quotient or `?` to

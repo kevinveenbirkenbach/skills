@@ -82,6 +82,15 @@ svg .burn-line.k-unestimated { stroke-dasharray: 6 4; }
 svg .burn-trend { fill: none; stroke: var(--c); stroke-width: 1.6; stroke-dasharray: 2 5; stroke-linecap: round; }
 svg .burn-point { fill: var(--c); stroke: transparent; stroke-width: 10; cursor: help; }
 svg .burn-point:hover { r: 6px; }
+svg .burn-overlay-line { fill: none; stroke: var(--c); stroke-width: 1.8; stroke-dasharray: 5 3; }
+svg .burn-overlay-point { fill: var(--c); stroke: transparent; stroke-width: 10; cursor: help; }
+svg.burn .overlay-axis { fill: var(--muted); }
+svg.burn .burn-overlay.k-fix, .burn-box .legend-chip.k-fix { --c: var(--ok); }
+svg.burn .burn-overlay.k-break, .burn-box .legend-chip.k-break { --c: var(--bad); }
+svg.burn .burn-overlay.k-tokens, .burn-box .legend-chip.k-tokens { --c: var(--warn); }
+svg.burn .burn-overlay.k-velocity, .burn-box .legend-chip.k-velocity { --c: var(--info); }
+svg.burn .burn-overlay.k-security, .burn-box .legend-chip.k-security { --c: var(--violet); }
+svg.burn .burn-overlay.k-score, .burn-box .legend-chip.k-score { --c: var(--accent); }
 svg .forecast-line { stroke: var(--ok); stroke-width: 1.4; stroke-dasharray: 4 3; }
 svg .forecast-label { fill: var(--ok); font-size: var(--fs-2xs); font-weight: 650; }
 .burn-forecast { display: inline-flex; align-items: center; gap: 6px; }

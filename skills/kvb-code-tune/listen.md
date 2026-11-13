@@ -16,6 +16,6 @@ checklist (multi-select) with suggestions, free text allowed:
    be changed (files, roles, services); whether new dependencies, toolchains
    or languages may be introduced; whether infrastructure or CI configuration
    may change; the merge bar (default: the `kvb-org-swarm` skill's bar of fix
-   confidence ≥ 90 %, break risk ≤ 5 %, cost and time ≤ 100 %, over
+   confidence ≥ 90 %, break risk ≤ 5 %, tokens and velocity ≤ 100 %, over
    100 % only after asking the operator, naming the cause); a time cap per
    delegated agent (default 60 minutes).
