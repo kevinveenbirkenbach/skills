@@ -541,7 +541,7 @@ flowchart TD
   - [x] Agents shows the agents with a heartbeat in the last 900 s.
   - [x] Artifacts shows the runner jobs that are queued or running.
   - [x] A badge at 0 is hidden.
-- [ ] A red Mayday banner with "cancel" exists if and only if a mayday is
+- [x] A red Mayday banner with "cancel" exists if and only if a mayday is
       active; "cancel" runs `radio.py clear`.
 - [ ] The Agents toolbar holds:
   - [ ] Radio to all, with the class choice Newsletter, Broadcast, Pan-Pan,
@@ -555,7 +555,7 @@ flowchart TD
 - [x] The Stream shows exactly four category chips For you, Radio, Work and
       Transcripts, and one search line that filters by `agent:`, `kind:` and
       `since:`.
-- [ ] "Filter ▾" holds the kind sub-filters, the transcript parts, the saved
+- [x] "Filter ▾" holds the kind sub-filters, the transcript parts, the saved
       views and the custom range.
 - [x] The time control reads "24 h ▾" and holds the replay.
 - [x] Transcripts are off by default.
@@ -626,7 +626,7 @@ flowchart TD
 
 ### Delete merged branches
 
-- [ ] The Artifacts Tree marks every branch and worktree with icons for
+- [x] The Artifacts Tree marks every branch and worktree with icons for
       merged (with what merged it), clean, uncommitted changes (with counts),
       unpushed commits, gone upstream, locked, stale and protected.
 - [x] A `merged-clean` item without a gc skip reason shows a delete button,
@@ -839,7 +839,7 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
       the choice survives a reload.
 - [x] The 3D view shows agent faces by default and spheres after unticking
       "Faces in 3D".
-- [ ] `make orchestrator-install` enables `kvb-orchestrator-sessions.timer`,
+- [x] `make orchestrator-install` enables `kvb-orchestrator-sessions.timer`,
       and `make orchestrator-check` reports it active.
 
 ### Phase 6: Day/Night per agent (S5.2)
@@ -895,7 +895,7 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
         entry points (JSON on stdin): the post appears only on the callee's
         Stop and the call at its next tool step with a receipt to the caller.
   - [x] A mayday blocks an Edit until `clear`.
-  - [ ] The orchestrator's `/api/tree` serves a pkgmgr-written file.
+  - [x] The orchestrator's `/api/tree` serves a pkgmgr-written file.
   - [ ] On a fixture repository with a file remote and a test token source, a
         signed job through the path unit removes the merged worktree, the
         local and the remote branch, and the rewritten tree no longer lists

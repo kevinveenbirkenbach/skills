@@ -70,6 +70,85 @@ async function failed(bubbles, item, cancel) {
   }));
 })();
 """
+STOP_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const Bubbles = require(process.argv[1]);
+const code = process.argv.slice(2).map((path) => fs.readFileSync(path, "utf8")).join("\\n");
+class Node {
+  constructor(attrs) {
+    Object.assign(this, {children: [], parentElement: null, dataset: {}, classes: new Set(), attrs: {}, textContent: "", hidden: false, offsetWidth: 120, offsetHeight: 40, scrollTop: 0, scrollHeight: 0});
+    this.style = {setProperty: () => null, removeProperty: () => null};
+    this.classList = {add: (name) => this.classes.add(name), contains: (name) => this.classes.has(name)};
+    for (const [key, value] of Object.entries(attrs || {})) {
+      if (key === "class") {
+        value.split(" ").forEach((name) => this.classes.add(name));
+      } else if (key.startsWith("data-")) {
+        this.dataset[key.slice(5)] = value;
+      } else {
+        this.attrs[key] = value;
+      }
+    }
+  }
+  append(...nodes) {
+    for (const node of nodes.filter((entry) => entry instanceof Node)) {
+      node.remove();
+      node.parentElement = this;
+      this.children.push(node);
+    }
+  }
+  remove() {
+    if (this.parentElement) {
+      this.parentElement.children = this.parentElement.children.filter((node) => node !== this);
+      this.parentElement = null;
+    }
+  }
+  setAttribute(key, value) {
+    this.attrs[key] = String(value);
+  }
+  querySelectorAll(selector) {
+    const below = (node) => node.children.flatMap((child) => [child, ...below(child)]);
+    return below(this).filter((node) => node.classes.has(selector.slice(1)));
+  }
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
+}
+function run(scenario) {
+  const layer = new Node({class: "bubbles"});
+  layer.append(new Node({class: "bubble-bar"}));
+  const toggle = new Node({});
+  const frames = [];
+  const context = {
+    Bubbles, layer, toggle, frames, out: null, stops: 0,
+    speech: {pending: [], busy: false, current: null, loading: null, timer: 0, warned: 0, source: null},
+    settings: {bubbles: true},
+    document: {getElementById: (id) => (id === "bubbles" ? layer : toggle), querySelectorAll: () => [], fonts: {add: () => null}},
+    window: {innerWidth: 1366, innerHeight: 768, requestAnimationFrame: (next) => frames.push(next), cancelAnimationFrame: () => null, setTimeout: () => 0, clearTimeout: () => null},
+    performance: {now: () => 2000}, CSS: {escape: (value) => value}, g3: {tab: "stream"}, anchor3d: () => () => null,
+    h: (tag, attrs, ...children) => {
+      const node = new Node(attrs);
+      node.append(...children);
+      return node;
+    },
+    nameOf: (key) => key, fixed: (value) => value.toFixed(1), fetch: async () => ({ok: false, status: 404}), FontFace: class {},
+    drawSpeaker: () => null, toast: () => null, saveSettings: () => null, context: () => null, Voice: {enqueue: (pending, next) => [...pending, next]}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0,
+  };
+  vm.runInNewContext(`${code}
+const playing = {who: "A", line: "Disk almost full", words: ["Disk", "almost", "full"], started: 1000, duration: 3};
+const next = {who: "B", line: "Gate green", words: ["Gate", "green"]};
+const quiet = {who: "C", line: "Docs green", words: ["Docs", "green"], silent: true};
+Object.assign(speech, {current: playing, busy: true, source: {stop: () => { stops += 1; }}, pending: [next, quiet]});
+drawBubbles();
+const before = layer.querySelectorAll(".speech-bubble").length;
+${scenario}
+frames.splice(0).forEach((frame) => frame());
+out = {before, after: layer.querySelectorAll(".speech-bubble").length, shown: bubbles.shown.size, stops, current: speech.current === playing, busy: speech.busy,
+  pending: speech.pending.map((item) => item.who), hidden: layer.hidden, pressed: toggle.attrs["aria-pressed"] || null};`, context);
+  return context.out;
+}
+console.log(JSON.stringify({stop: run("cancelSpeech();"), off: run("settings.bubbles = false;\\nsyncBubbles();")}));
+"""
 
 
 class TestBubbleSchedule(unittest.TestCase):
@@ -110,6 +189,19 @@ class TestSpeechFallback(unittest.TestCase):
         for case in ("off", "sample", "cancelled"):
             with self.subTest(case=case):
                 self.assertEqual(data[case], {"current": False, "busy": False, "timer": 0, "started": None, "duration": None, "shown": failed})
+
+
+class TestBubbleStop(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        done = subprocess.run(["node", "-e", STOP_PROBE, str(BUBBLES), str(SPEECH), str(LAYER)], capture_output=True, text=True, timeout=60, check=True)
+        cls.data = json.loads(done.stdout)
+
+    def test_stop_speaking_clears_every_bubble_at_once_and_stops_the_audio(self):
+        self.assertEqual(self.data["stop"], {"before": 3, "after": 0, "shown": 0, "stops": 1, "current": False, "busy": True, "pending": [], "hidden": False, "pressed": None})
+
+    def test_switching_the_bubbles_off_clears_the_layer_and_leaves_the_audible_item_playing(self):
+        self.assertEqual(self.data["off"], {"before": 3, "after": 0, "shown": 0, "stops": 0, "current": True, "busy": True, "pending": ["B"], "hidden": True, "pressed": "false"})
 
 
 class TestBubbleAssets(unittest.TestCase):
