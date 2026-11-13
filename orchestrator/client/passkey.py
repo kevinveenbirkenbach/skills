@@ -24,6 +24,8 @@ P256_PRIME = 2**256 - 2**224 + 2**192 + 2**96 - 1
 P256_B = 0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B
 ED_PREFIX = bytes.fromhex("302a300506032b6570032100")
 RSA_IDENTIFIER = bytes.fromhex("300d06092a864886f70d0101010500")
+RSA_MIN_BITS = 2048
+NOT_RSA = "the RS256 key is no RSA public key"
 B64URL = re.compile(r"[A-Za-z0-9_-]+")
 ASSERTION_KEYS = ("id", "clientDataJSON", "authenticatorData", "signature")
 CBOR_DEPTH = 16
@@ -99,6 +101,54 @@ def der_integer(value: bytes) -> bytes:
     return der(0x02, b"\x00" + digits if digits[0] & 0x80 else digits)
 
 
+def der_item(data: bytes, offset: int, tag: int) -> tuple[bytes, int]:
+    if offset + 2 > len(data) or data[offset] != tag:
+        raise Refused(NOT_RSA)
+    size, offset = data[offset + 1], offset + 2
+    if size & 0x80:
+        width = size & 0x7F
+        head = data[offset : offset + width]
+        size, offset = int.from_bytes(head, "big"), offset + width
+        if size < 0x80 or head[0] == 0:
+            raise Refused(NOT_RSA)
+    if not 0 < size <= len(data) - offset:
+        raise Refused(NOT_RSA)
+    return data[offset : offset + size], offset + size
+
+
+def der_whole(data: bytes, offset: int, tag: int) -> bytes:
+    body, end = der_item(data, offset, tag)
+    if end != len(data):
+        raise Refused(NOT_RSA)
+    return body
+
+
+def der_unsigned(data: bytes, offset: int) -> tuple[int, int]:
+    body, end = der_item(data, offset, 0x02)
+    if body[0] & 0x80 or (body[0] == 0 and len(body) > 1 and not body[1] & 0x80):
+        raise Refused(NOT_RSA)
+    return int.from_bytes(body, "big"), end
+
+
+def rsa_bits(spki: bytes) -> int:
+    outer = der_whole(spki, 0, 0x30)
+    if not outer.startswith(RSA_IDENTIFIER):
+        raise Refused(NOT_RSA)
+    bits = der_whole(outer, len(RSA_IDENTIFIER), 0x03)
+    if bits[0]:
+        raise Refused(NOT_RSA)
+    public = der_whole(bits, 1, 0x30)
+    modulus, offset = der_unsigned(public, 0)
+    if der_unsigned(public, offset)[1] != len(public):
+        raise Refused(NOT_RSA)
+    return modulus.bit_length()
+
+
+def refuse_weak(alg: object, spki: bytes) -> None:
+    if alg == -257 and rsa_bits(spki) < RSA_MIN_BITS:
+        raise Refused(f"the RS256 key has a modulus under {RSA_MIN_BITS} bits; register a new passkey")
+
+
 def octets(value: object, size: int) -> bool:
     return isinstance(value, bytes) and len(value) == size
 
@@ -172,6 +222,7 @@ def attested(credential: object, origin: str) -> dict:
         raise Refused("the attested credential id differs from the id")
     key, _ = cbor(data, 55 + size, 0)
     alg, spki = cose_key(key)
+    refuse_weak(alg, spki)
     return {"id": b64encode(raw_id), "alg": alg, "spki": b64encode(spki)}
 
 
@@ -182,7 +233,7 @@ def by_library(alg: int, spki: bytes, data: bytes, signature: bytes) -> bool:
             key.verify(signature, data, ec.ECDSA(hashes.SHA256()))
         elif alg == -8 and isinstance(key, ed25519.Ed25519PublicKey):
             key.verify(signature, data)
-        elif alg == -257 and isinstance(key, rsa.RSAPublicKey):
+        elif alg == -257 and isinstance(key, rsa.RSAPublicKey) and key.key_size >= RSA_MIN_BITS:
             key.verify(signature, data, padding.PKCS1v15(), hashes.SHA256())
         else:
             return False
@@ -196,7 +247,10 @@ def key_type(alg: int, spki: bytes) -> bool:
         return len(spki) == len(EC_PREFIX) + 65 and spki.startswith(EC_PREFIX)
     if alg == -8:
         return len(spki) == len(ED_PREFIX) + 32 and spki.startswith(ED_PREFIX)
-    return alg == -257 and RSA_IDENTIFIER in spki[:24]
+    try:
+        return alg == -257 and rsa_bits(spki) >= RSA_MIN_BITS
+    except Refused:
+        return False
 
 
 def by_openssl(alg: int, spki: bytes, data: bytes, signature: bytes) -> bool:
@@ -243,12 +297,14 @@ def verify_assertion(assertion: object, payload: dict, credentials: list[dict], 
     credential = next((entry for entry in credentials if entry["id"] == assertion["id"]), None)
     if credential is None:
         raise Refused("the signing key is not pinned")
+    spki = b64decode(credential["spki"], "spki")
+    refuse_weak(credential["alg"], spki)
     raw = b64decode(assertion["clientDataJSON"], "clientDataJSON")
     if client_data(raw, "webauthn.get", origin).get("challenge") != challenge(payload):
         raise Refused("the challenge is not the one of the payload")
     data = b64decode(assertion["authenticatorData"], "authenticatorData")
     rp_flags(data, 37)
     signed = data + hashlib.sha256(raw).digest()
-    if not verify_signature(credential["alg"], b64decode(credential["spki"], "spki"), signed, b64decode(assertion["signature"], "signature")):
+    if not verify_signature(credential["alg"], spki, signed, b64decode(assertion["signature"], "signature")):
         raise Refused("the signature does not verify with the pinned key")
     return int.from_bytes(data[33:37], "big")
