@@ -216,13 +216,14 @@
         h("span", {class: "radio-route"}, `${row.from} → ${targetsOf(row)}`),
         h("span", {class: "radio-line", title: first}, first)),
       h("pre", {class: "radio-full"}, row.text),
-      voiceReplay(message ? message.voice : null)));
+      voiceReplay(message ? message.voice : null)),
+    readerRow(row));
   }
 
   function drawLog() {
     const dom = radioDom.log;
     const entry = radioSet.log;
-    const sig = JSON.stringify([state.radio.length, state.radio.length ? state.radio[state.radio.length - 1].ts : 0, state.messages.length, entry, Math.floor(Date.now() / 60000)]);
+    const sig = JSON.stringify([state.radio.length, state.radio.length ? state.radio[state.radio.length - 1].ts : 0, state.messages.length, Receipts.signature(state.radio), Receipts.signature(state.messages), entry, Math.floor(Date.now() / 60000)]);
     if (sig === dom.sig) {
       return;
     }

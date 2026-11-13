@@ -81,17 +81,34 @@ class Directory:
         return found
 
 
+def valid_entry(entry: object) -> bool:
+    if not isinstance(entry, dict) or set(entry) != {"session", "name", "first_seen", "source"}:
+        return False
+    texts = all(isinstance(entry[key], str) and entry[key] for key in ("session", "name", "source"))
+    moment = entry["first_seen"]
+    return texts and isinstance(moment, int | float) and not isinstance(moment, bool) and math.isfinite(moment)
+
+
 class Names:
     def __init__(self, file: Path) -> None:
+        """Args:
+            file: the store; an entry or an observed name of the wrong shape
+                or type is left out.
+        """
         self.file = file
         self.lock = threading.Lock()
         self.titled = -math.inf
         data = read_json(file)
-        data = data if isinstance(data, dict) else {}
-        entries, observed = data.get("entries"), data.get("observed")
-        keys = {"session", "name", "first_seen", "source"}
-        self.entries = [entry for entry in entries if isinstance(entry, dict) and set(entry) == keys] if isinstance(entries, list) else []
-        self.observed: dict[str, str] = observed if isinstance(observed, dict) else {}
+        self.data = data if isinstance(data, dict) else {}
+        entries, observed = self.data.get("entries"), self.data.get("observed")
+        self.entries = [entry for entry in entries if valid_entry(entry)] if isinstance(entries, list) else []
+        self.observed: dict[str, str] = {key: name for key, name in observed.items() if isinstance(name, str)} if isinstance(observed, dict) else {}
+
+    def payload(self) -> dict:
+        return {"entries": self.entries, "observed": self.observed}
+
+    def save(self) -> None:
+        write_atomic(self.file, json.dumps(self.payload(), sort_keys=True).encode("utf-8"))
 
     def observe(self, sightings: list[tuple[str, str, float | None, str]], now: float) -> None:
         """Args:
@@ -120,7 +137,7 @@ class Names:
                 first = seen if seen is not None and seen > floor else max(now, floor)
                 self.entries.append({"session": session, "name": name, "first_seen": first, "source": source})
             if changed:
-                write_atomic(self.file, json.dumps({"entries": self.entries, "observed": self.observed}, sort_keys=True).encode("utf-8"))
+                self.save()
 
     def listed(self) -> list[dict]:
         with self.lock:

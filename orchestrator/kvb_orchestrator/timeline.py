@@ -3,12 +3,13 @@ from __future__ import annotations
 import time
 
 from .asking import ask_state
-from .council import MAYDAY_ACTIVE, NEWS, radio_rows, read_claims, sessions
+from .council import MAYDAY_ACTIVE, NEWS, message_rows, read_claims, sessions
 from .crons import cron_event
 from .errors import Missing, ToolError
 from .events import event, event_filters, wanted
 from .fields import instant, single, whole
 from .names import Directory
+from .receipts import read_of
 from .records import iso_epoch, read_jsonl
 from .register import REGISTER, operator_rows, read_register
 from .signed import signing
@@ -51,12 +52,14 @@ class Timeline:
 
     def timeline(self, begin: float, end: float, now: float, tasks: dict[str, dict], claims: list[dict], radio: list[dict], directory: Directory) -> list[dict]:
         rows = []
-        for index, row in enumerate(radio_rows(radio, begin, end)):
+        inlined = self.inlined(radio, (begin, end), now)
+        for index, row in enumerate(message_rows(radio, begin, end)):
             alarm = row["class"] in ("mayday", "pan-pan") and row["ts"] >= end - MAYDAY_ACTIVE
             title = f"{row['from'] or '?'} → {', '.join(row['to']) or 'all'}"
             source = directory.key(row["from"], row["ts"])
             who = {"agent": directory.at(source, row["ts"]) or row["from"], "now": directory.now(source), "session": source}
-            ref = {"to": row["to"], "class": row["class"], "targets": [directory.key(name, row["ts"]) for name in row["to"]]}
+            read = read_of(inlined, row["ts"])
+            ref = {"to": row["to"], "class": row["class"], "targets": [directory.key(name, row["ts"]) for name in row["to"]], **read}
             rows.append(event({"id": f"radio:{row['ts']}:{index}", "ts": row["ts"], "kind": "radio", "part": row["class"], **who, "title": title, "text": row["text"], "waiting": alarm, "ref": ref}))
         for review in self.reviews.listed():
             created = iso_epoch(review["created"]) or now

@@ -11,12 +11,27 @@ from typing import Protocol
 
 SCRIPT_TIMEOUT = 60
 OUTPUT_LIMIT = 4000
+FIRST_LINE_LIMIT = 200
+ELIDED = "..."
 SAFE_PATH = "/usr/local/bin:/usr/bin:/bin"
 RADIO = "kvb-org-radio/scripts/radio.py"
 RASCI = "kvb-org-rasci/scripts/rasci.py"
 NIGHT = "kvb-org-suspend/scripts/night.py"
 OPERATOR_SCRIPT = "kvb-org-operator/scripts/operator.py"
 ESTIMATE = "kvb-org-queue-estimate/scripts/estimate.py"
+
+
+def bounded(stdout: str) -> str:
+    """Returns:
+        stdout when it fits OUTPUT_LIMIT, else its first line, whole or not
+        at all once over FIRST_LINE_LIMIT, ELIDED and the last OUTPUT_LIMIT
+        characters of the rest: the first line a caller parses, like the ts
+        radio.py prints, outlives a long output.
+    """
+    if len(stdout) <= OUTPUT_LIMIT:
+        return stdout
+    first, _, rest = stdout.partition("\n")
+    return "\n".join([first if len(first) <= FIRST_LINE_LIMIT else "", ELIDED, rest[-OUTPUT_LIMIT:]])
 
 
 def script_module(script: Path) -> ModuleType | None:
@@ -70,6 +85,9 @@ class Scripts:
                 stdin=subprocess.DEVNULL,
                 check=False,
             )
-        except (OSError, subprocess.TimeoutExpired) as error:
+        except subprocess.TimeoutExpired as error:
+            partial = error.stdout.decode("utf-8", errors="replace") if isinstance(error.stdout, bytes) else error.stdout or ""
+            return {"command": command, "code": -1, "stdout": bounded(partial), "stderr": str(error)}
+        except OSError as error:
             return {"command": command, "code": -1, "stdout": "", "stderr": str(error)}
-        return {"command": command, "code": done.returncode, "stdout": done.stdout[-OUTPUT_LIMIT:], "stderr": done.stderr[-OUTPUT_LIMIT:]}
+        return {"command": command, "code": done.returncode, "stdout": bounded(done.stdout), "stderr": done.stderr[-OUTPUT_LIMIT:]}

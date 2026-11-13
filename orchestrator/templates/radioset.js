@@ -103,7 +103,7 @@ const RadioSet = (() => {
   }
 
   function sentRows(messages, human) {
-    return messages.map((message) => ({ts: message.created_ts, from: human, to: message.to === "*" ? [] : [message.to], class: message.class || "post", text: message.text, voice: message.voice, sent: true}));
+    return messages.map((message) => ({ts: message.created_ts, from: human, to: message.to === "*" ? [] : [message.to], class: message.class || "post", text: message.text, voice: message.voice, sent: true, readers: message.readers, acks: message.acks}));
   }
 
   function tabRows(rows, tab, human, messages) {

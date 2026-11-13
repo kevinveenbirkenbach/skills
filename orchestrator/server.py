@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import argparse
 import ssl
+import threading
 from pathlib import Path
 
 from kvb_orchestrator import NAME
@@ -69,7 +70,7 @@ from kvb_orchestrator.engines import Engines
 from kvb_orchestrator.errors import ToolError
 from kvb_orchestrator.exchange import HubServer
 from kvb_orchestrator.handler import Handler
-from kvb_orchestrator.hub import Places, open_hub
+from kvb_orchestrator.hub import Places, open_hub, sighting
 from kvb_orchestrator.language import Model, read_key
 from kvb_orchestrator.redirects import TIMEOUT, Redirects, dial
 from kvb_orchestrator.skill_scripts import Scripts
@@ -106,6 +107,7 @@ def main() -> int:
         parser.error(str(error))
     server = HubServer((args.bind, args.listen_port), Handler)
     server.hub = hub
+    sighting(hub, threading.Event())
     print(f"{NAME}: listening on {args.bind}:{args.listen_port}, public port {args.public_port}", flush=True)
     server.serve_forever()
     return 0

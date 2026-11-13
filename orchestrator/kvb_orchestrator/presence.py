@@ -12,23 +12,30 @@ SNAPSHOT = "agent-sessions.json"
 SNAPSHOT_STALE = 5 * 60
 
 
-def read_snapshot(path: Path, now: float) -> dict[str, dict]:
+def fresh_snapshot(path: Path, now: float) -> dict[str, dict] | None:
     """Args:
         path: the snapshot client/sessions.py writes on the host.
         now: the moment to judge at.
 
     Returns:
-        Its session records by session id; empty when it is missing,
+        Its session records by session id; None when it is missing,
         malformed, written more than SNAPSHOT_STALE ago or dated in the
         future.
     """
     data = read_json(path)
     if not isinstance(data, dict) or not isinstance(data.get("sessions"), dict):
-        return {}
+        return None
     written = data.get("written")
     if isinstance(written, bool) or not isinstance(written, int | float) or not 0 <= now - written <= SNAPSHOT_STALE:
-        return {}
+        return None
     return {sid: record for sid, record in data["sessions"].items() if isinstance(record, dict)}
+
+
+def read_snapshot(path: Path, now: float) -> dict[str, dict]:
+    """Returns:
+        fresh_snapshot(), empty in place of None.
+    """
+    return fresh_snapshot(path, now) or {}
 
 
 def unanswered(news: list[dict], now: float) -> list[tuple[str, float]]:

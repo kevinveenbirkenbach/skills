@@ -16,6 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RADIO = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
 LINE = re.compile(r"^(?:RADIO|MAIL) (CALL|BROADCAST|SECURITY|PAN-PAN|MAYDAY|POST|NEWSLETTER) \d\d:\d\d (.*)$", re.DOTALL)
+STORED = "ts: "
 LISTENER = (
     "import importlib.util, sys\n"
     "spec = importlib.util.spec_from_file_location('radio', sys.argv[1])\n"
@@ -30,6 +31,10 @@ LISTENER = (
 def strip(line: str) -> str:
     match = LINE.match(line)
     return f"{match[1]} {match[2]}" if match else line
+
+
+def said(stdout: str) -> list[str]:
+    return [line for line in stdout.splitlines() if not line.startswith(STORED)]
 
 
 class TestRadio(unittest.TestCase):
@@ -67,7 +72,7 @@ class TestRadio(unittest.TestCase):
     def _send(self, sid: str, *args: str) -> list[str]:
         result = self._cli(sid, *args)
         self.assertEqual(result.returncode, 0, result.stderr)
-        return result.stdout.splitlines()
+        return said(result.stdout)
 
     def _hook(self, command: str, sid: str, **extra: str) -> str:
         result = self._exec(None, json.dumps({"session_id": sid, **extra}), (command,))
@@ -161,6 +166,28 @@ class TestRadio(unittest.TestCase):
                 ("post", ["Two"], "old mail", 2, False),
                 ("call", ["Two"], "old wake", 2, False),
             ],
+        )
+
+    def test_send_and_post_print_the_stored_rows_ts_first(self):
+        for args in (("send", "call", "a", "--to", "Two"), ("post", "b", "--to", "Two"), ("post", "c"), ("send", "broadcast", "d")):
+            with self.subTest(args=args):
+                result = self._cli("s1", *args)
+                self.assertEqual((result.returncode, result.stdout.splitlines()[0]), (0, f"{STORED}{self._rows()[-1]['ts']!r}"), result.stderr)
+
+    def test_the_stored_rows_ts_is_out_and_flushed_before_a_failure_after_the_store(self):
+        self._send("s1", "post", "first")
+        (self.root / "radio-silence.json").mkdir()
+        failed = self._cli("s1", "send", "mayday", "disk full")
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual((self._rows()[-1]["text"], failed.stdout.splitlines()), ("disk full", [f"{STORED}{self._rows()[-1]['ts']!r}"]))
+
+    def test_an_address_with_a_line_break_stays_on_the_sent_line_and_prints_no_second_ts(self):
+        result = self._cli("s1", "send", "call", "x", "--to", "Two\nts: 1800000000.5")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual(
+            ([line for line in lines if line.startswith(STORED)], lines[1]),
+            ([f"{STORED}{self._rows()[-1]['ts']!r}"], "sent call to Two ts: 1800000000.5"),
         )
 
     def test_rows_without_the_version_mark_keep_their_old_meaning(self):
@@ -672,8 +699,8 @@ class TestRadio(unittest.TestCase):
                 capture_output=True, text=True, env=hub, check=False, timeout=30,
             )
 
-        self.assertEqual(send("--to", "Two", "--sid", "s2").stdout.splitlines(), ["sent call to Two", "wake: SendMessage to Two (session s2)"])
-        self.assertEqual(send("--to", "Three", "--sid", "s3").stdout.splitlines(), ["sent post to Three"])
+        self.assertEqual(said(send("--to", "Two", "--sid", "s2").stdout), ["sent call to Two", "wake: SendMessage to Two (session s2)"])
+        self.assertEqual(said(send("--to", "Three", "--sid", "s3").stdout), ["sent post to Three"])
         self.assertEqual(send("--to", "Two", "--to", "Three", "--sid", "s2").returncode, 2)
         self.assertEqual([(row["class"], row["to"], row["to_sessions"]) for row in self._rows()], [("call", ["Two"], ["s2"]), ("post", ["Three"], ["s3"])])
         sessions = self.home / ".claude" / "sessions"
@@ -748,7 +775,7 @@ class TestRadio(unittest.TestCase):
             [sys.executable, str(RADIO), "feedback", "send", "ran x", "--to", "Two", "--sid", "s2", "--session", "Operator"],
             capture_output=True, text=True, env={**self._env(None), "HOME": str(hub_home)}, check=False, timeout=30,
         )
-        self.assertEqual(sent.stdout.splitlines(), ["sent call to Two"], sent.stderr)
+        self.assertEqual(said(sent.stdout), ["sent call to Two"], sent.stderr)
         self.assertEqual(self._send("s1", "feedback", "send", "ran y", "--to", "Two", "--sid", "s9"), ["sent call to Two"])
         self.assertEqual(self._send("s1", "feedback", "send", "ran z", "--to", "Nine", "--sid", "s9"), ["sent call to Nine", "wake: SendMessage to Nine (session s9)"])
 

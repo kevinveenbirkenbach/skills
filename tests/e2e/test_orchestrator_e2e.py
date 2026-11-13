@@ -353,8 +353,9 @@ CALL = """(async () => {@HELPERS@
   field.value = "E2E call ping";
   field.dispatchEvent(new Event("input", {bubbles: true}));
   document.querySelector('#popup button[type="submit"]').click();
-  const entry = await until(() => all("#main .entry").find((row) => row.textContent.includes("Read") && row.textContent.includes("E2E call ping")), 20000);
-  return {to: text(someone), receipt: entry ? text(entry) : null, sent: all("#main .entry").filter((row) => row.textContent.includes("E2E call ping")).length};
+  const entry = await until(() => all("#main .entry").find((row) => row.textContent.includes("E2E call ping") && row.querySelector('.reader[data-acked="true"] .ack')), 20000);
+  const read = all("#main .entry .pill").filter((pill) => text(pill) === "Read").length;
+  return {to: text(someone), receipt: entry ? entry.querySelector('.reader[data-acked="true"]').title : null, read, sent: all("#main .entry").filter((row) => row.textContent.includes("E2E call ping")).length};
 })()""".replace("@HELPERS@", HELPERS)
 OPEN_DELETE = """(async () => {@HELPERS@
   const card = await until(() => all("#main details.repo").find((details) => details.textContent.includes("github.com/me/demo")), 8000);
@@ -1882,6 +1883,8 @@ class TestOrchestratorE2E(HubCase):
                 if script.endswith("radio.py") and args[:2] == ["send", "call"]:
                     to, text, now = args[args.index("--to") + 1], args[-1], time.time()
                     rows = [{"ts": now, "from": "Operator", "to": [to], "text": text, "class": "call", "v": 2}, {"ts": now + 0.5, "from": to, "to": ["Operator"], "text": text, "class": "receipt", "v": 2, "call": now}]
+                    self.write_council({"radio-seen/e2e-callee.json": {"radio": now + 0.5}})
+                    (self.state / "agent-sessions.json").write_text(json.dumps({"written": now, "sessions": {"e2e-callee": {"name": to, "running": True}}}), encoding="utf-8")
                     with (self.council / "news.jsonl").open("a", encoding="utf-8") as handle:
                         handle.write(self.jsonl(rows))
 
@@ -1892,7 +1895,8 @@ class TestOrchestratorE2E(HubCase):
         result = data["results"][0]
         self.assertNotIn("error", result)
         self.assertIsNotNone(result["receipt"], result)
-        self.assertIn("Read", result["receipt"])
+        self.assertTrue(" · read " in result["receipt"] and result["receipt"].endswith(" · acknowledged"), result)
+        self.assertEqual(result["read"], 0, result)
 
     def test_chromium_shows_who_speaks_while_a_message_is_read(self):
         self.speaks(("e2e-cue-1", "e2e-cue-2"))

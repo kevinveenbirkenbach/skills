@@ -53,7 +53,8 @@ class TestNews(unittest.TestCase):
         return [line.split(" ", 3)[3] for line in result.stderr.splitlines()]
 
     def test_every_session_sees_a_post_once_when_its_turn_ends_except_its_author(self):
-        self.assertEqual(self._cli("s1", "post", "core #1358   merged").stdout, "sent newsletter to all\n")
+        stamp, sent = self._cli("s1", "post", "core #1358   merged").stdout.splitlines()
+        self.assertEqual((stamp.startswith("ts: "), sent), (True, "sent newsletter to all"))
         self.assertEqual(self._hook("s2"), [])
         self.assertEqual(self._mailbox("s2"), ["One: core #1358 merged"])
         self.assertEqual(self._mailbox("s2"), [])

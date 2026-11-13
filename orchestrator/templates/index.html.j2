@@ -281,6 +281,11 @@ input[type="datetime-local"] { padding: 3px 6px; border: 1px solid var(--line-st
 .custom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .avatar { display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px; overflow: hidden; border-radius: 50%; background: var(--sunken); border: 1px solid var(--line); }
 .avatar.big { width: 52px; height: 52px; }
+.readers { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
+.reader { position: relative; display: inline-flex; }
+.reader .avatar { width: 22px; height: 22px; }
+.reader .ack { position: absolute; right: -4px; bottom: -3px; display: inline-grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; background: var(--ok); color: #fff; font-size: 9px; box-shadow: 0 0 0 1.5px var(--panel); }
+.readers-more { padding: 0 7px; border-radius: 999px; background: var(--neutral-soft); color: var(--muted); font-size: var(--fs-xs); font-weight: 650; line-height: 20px; cursor: default; }
 .avatar svg { display: block; width: 100%; height: 100%; }
 .linkish { padding: 0; border: 0; background: none; color: inherit; font-weight: 650; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .linkish:hover { color: var(--accent); text-decoration: underline; }
@@ -464,6 +469,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "voice.js" %}
 
 {% include "radioset.js" %}
+
+{% include "receipts.js" %}
 
 {% include "bubbles.js" %}
 
