@@ -195,12 +195,17 @@ class TestOrchestratorMigration(unittest.TestCase):
                 self.assertIn("Environment=PATH=/usr/bin:/bin", unit.read_text(encoding="utf-8").splitlines())
 
     def test_install_ships_no_bytecode_from_the_tree(self):
-        planted = REPO_ROOT / "orchestrator" / "client" / "__pycache__" / "planted.cpython-0.pyc"
-        planted.parent.mkdir(exist_ok=True)
-        planted.write_bytes(b"planted")
-        self.addCleanup(planted.unlink, True)
+        client = REPO_ROOT / "orchestrator" / "client"
+        if not (client / "__pycache__").exists():
+            (client / "__pycache__").mkdir()
+            self.addCleanup(shutil.rmtree, client / "__pycache__", True)
+        for planted in (client / "__pycache__" / "planted.cpython-0.pyc", client / "planted.pyc", client / "planted.pyo"):
+            planted.write_bytes(b"planted")
+            self.addCleanup(planted.unlink, True)
         self.install()
-        self.assertEqual(sorted((self.home / ".local" / "share" / NEW).rglob("__pycache__")), [])
+        hub = self.home / ".local" / "share" / NEW
+        self.assertEqual(sorted(path for path in hub.rglob("*") if path.name == "__pycache__" or path.suffix in (".pyc", ".pyo")), [])
+        self.assertTrue((hub / "client" / "permission_hook.py").is_file())
 
     def test_old_names_live_only_in_the_migration(self):
         done = subprocess.run(["git", "grep", "-niE", "kvb[-_]hub", "--", ".", ":!docs/requirements", f":!{Path(__file__).relative_to(REPO_ROOT)}"], cwd=REPO_ROOT, capture_output=True, text=True, check=False)

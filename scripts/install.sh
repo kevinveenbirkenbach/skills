@@ -43,8 +43,9 @@ for root in .agents/skills .claude/skills; do
 	dst="${TARGET}/${root}"
 	log "skills: copying -> ${dst}"
 	mkdir -p "${dst}"
-	find "${dst}" -mindepth 1 -delete
+	find -H "${dst}" -mindepth 1 -delete
 	cp -a "${src}/." "${dst}/"
+	find -H "${dst}" \( -name __pycache__ -o -name '*.py[co]' \) -prune -exec rm -rf {} +
 	if [[ ! "${TARGET}" -ef "${HOME}" ]]; then
 		log "skills: linking in ${dst} what ${HOME}/${root} already holds"
 		for skill in "${dst}"/*; do
