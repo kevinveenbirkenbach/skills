@@ -20,10 +20,36 @@ Scan:
     directory because medusa creates ~/.medusa on start, read from
     `<dir>/medusa-scan-*.json`: a `findings` list whose entries carry
     `severity` (critical, high, medium, low or info), `rule_id`, `file` and `line`.
+    Rules: medusa's own RULES, read without running medusa from the medusa
+    package that the interpreter of medusa's shebang (an `env` program looked
+    up on PATH) imports with medusa's environment: from core/parallel.py the
+    extensions of FILE_SCANNERS, the exact names, the name prefixes and
+    suffix, the top-level folders whose markdown it takes up and
+    MAX_SCAN_FILE_SIZE; from scanners/base.py MAX_RULE_SCAN_LINES; from
+    config.py the default exclude_paths and exclude_files. Without all of
+    them no file can be proven covered and a diff with files gets no score.
+    Not covered: a copied file of a type medusa never scans, or one its
+    exclusions drop (a path part equal to or matching a path pattern, a path
+    pattern anywhere inside the path, a file pattern), is named as such and
+    left out of the score and its proof; a diff of such files only gets no
+    score.
+    Coverage, checked before medusa runs: no scanned file over medusa's
+    MAX_SCAN_FILE_SIZE bytes (skipped) or MAX_RULE_SCAN_LINES lines, with CR,
+    CRLF and LF as breaks as its scanners read text (regex scan cut). Such a
+    file is never covered, on any run, so the scan stops there. After the run
+    its report must prove it: its `scan_summary` counts every scanned file in
+    `files_scanned` and, as medusa counts each file's LF bytes plus one and a
+    skipped file as 0, their sum in `lines_scanned`. The run is complete only when medusa also exits 0 and its
+    output names no FAULT (a scanner error or a timeout: a scanner over its
+    per-file timeout, as under a fully loaded CPU, adds nothing to the report;
+    a directory left unread, both printed by medusa's main process) and no
+    SKIP. A SKIP line is a second signal only: medusa runs with `python -E`,
+    so its pool workers print it into a buffer that dies with them.
 
 Cache:
-    The findings of a scan, keyed by the sha256 of this script, the resolved
-    medusa binary with its mtime and size, PATH, every MEDUSA_* variable and
+    The findings of a complete scan, keyed by the sha256 of this script, the
+    resolved medusa binary with its mtime and size, PATH, the files not covered,
+    every MEDUSA_* variable and
     the path, mode and content sha256 of every scanned file, in
     <council root>/security-cache/<key>.json for CACHE_SECONDS. A later scan
     with the same key reads them instead of running medusa; any edit of a
@@ -46,21 +72,25 @@ Accepted:
     is a usage error.
 
 Output:
-    `🛡️ security <n> % (medusa: <k> findings, <a> accepted in <m> files: <severity> <path>:<line>, ...)`,
+    `🛡️ security <n> % (medusa: <k> findings, <a> accepted in <m> files: <severity> <path>:<line>, ...; not covered: <path>, ...)`,
     `, <a> accepted` only when a is above 0, m the files scanned, the first 5
-    locations by severity and `+<rest> more`.
+    locations by severity and `+<rest> more`, the first 5 files not covered
+    and `+<rest> more` only when there are any.
     n = 100 - 50 * critical - 25 * high - 10 * medium - 2 * low, at least 0. Matched
     values are never printed. --json adds the counts per severity, every location
-    with its rule and sha1, and the accepted ones.
+    with its rule and sha1, the accepted ones and every file not covered.
 
 Exit codes:
     0 security 100, 1 a critical finding, 2 usage error, 3 under 100 without a
-    critical finding, 4 medusa missing or its report unreadable: review the diff by hand.
+    critical finding, 4 medusa missing, its report or RULES unreadable, its
+    run incomplete (rerun once the host is idle), a scanned file it never
+    covers or a diff of files not covered only: review the diff by hand.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime
 import fcntl
 import hashlib
@@ -75,7 +105,9 @@ import sys
 import tempfile
 import time
 from collections import Counter
-from pathlib import Path
+from fnmatch import fnmatchcase
+from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 
 WEIGHTS = {"critical": 50, "high": 25, "medium": 10, "low": 2, "info": 0}
 SAFE = 100
@@ -90,6 +122,22 @@ SHAPE = {
     "sha1": (str, NOTHING), "context": (str, NOTHING),
 }
 SHA1 = re.compile(r"[0-9a-f]{40}")
+FAULT = re.compile(r"scanner error\(s\)/timeout\(s\) during scan|could not be read and were skipped")
+SKIP = re.compile(r"Skipped .+ exceeds .+ limit")
+RULES = {
+    "core/parallel.py": {
+        "FILE_SCANNERS": dict, "special_exact_names": set, "special_prefixes": tuple, "env_suffix": str,
+        "ai_context_dir_names": set, "MAX_SCAN_FILE_SIZE": int,
+    },
+    "scanners/base.py": {"MAX_RULE_SCAN_LINES": int},
+    "config.py": {"exclude_paths": list, "exclude_files": list},
+}
+WILD = re.compile(r"[*?\[]")
+LOCATE = (
+    "import importlib.util\n"
+    "spec = importlib.util.find_spec('medusa')\n"
+    "print(*(spec.submodule_search_locations or []) if spec else [], sep='\\n')\n"
+)
 WATCH = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "watch.py"
 HAND = (
     "review trust boundaries, secrets and injection in the diff by hand, "
@@ -99,6 +147,26 @@ HAND = (
 
 class Unreadable(Exception):
     pass
+
+
+class Incomplete(Exception):
+    pass
+
+
+class Uncovered(Exception):
+    pass
+
+
+class Rules(NamedTuple):
+    extensions: frozenset
+    names: frozenset
+    prefixes: tuple
+    suffix: str
+    folders: frozenset
+    file_limit: int
+    line_limit: int
+    paths: tuple
+    files: tuple
 
 
 def fail(message: str) -> None:
@@ -240,7 +308,10 @@ def accept(argv: list[str]) -> int:
     return 0
 
 
-def findings(reports: Path, tree: Path) -> list[dict]:
+def findings(reports: Path, tree: Path) -> tuple[list[dict], dict]:
+    """Returns:
+        the findings of medusa's report and its `scan_summary`.
+    """
     files = sorted(reports.glob("medusa-scan-*.json")) if reports.is_dir() else []
     if not files:
         raise Unreadable(f"no medusa-scan-*.json in {reports}")
@@ -251,6 +322,9 @@ def findings(reports: Path, tree: Path) -> list[dict]:
     entries = report.get("findings") if isinstance(report, dict) else None
     if not isinstance(entries, list):
         raise Unreadable(f"{files[-1].name} holds no findings list")
+    summary = report.get("scan_summary")
+    if not isinstance(summary, dict) or any(type(summary.get(k)) is not int for k in ("files_scanned", "lines_scanned")):
+        raise Unreadable(f"{files[-1].name} holds no files_scanned and lines_scanned counts")
     found = []
     for entry in entries:
         severity = str(entry.get("severity", "")).lower() if isinstance(entry, dict) else ""
@@ -268,14 +342,182 @@ def findings(reports: Path, tree: Path) -> list[dict]:
             "context": context,
         })
     rank = list(WEIGHTS)
-    return sorted(found, key=lambda f: (rank.index(f["severity"]), f["path"], f["line"] or 0))
+    return sorted(found, key=lambda f: (rank.index(f["severity"]), f["path"], f["line"] or 0)), summary
 
 
-def keyed(medusa: str, tree: Path) -> str:
+def interpreter(medusa: str) -> list[str] | None:
+    """Returns:
+        the interpreter command of the medusa script's shebang, its `env`
+        program looked up on PATH, else None.
+    """
+    try:
+        head = Path(medusa).resolve().read_bytes().split(b"\n", 1)[0].decode()
+    except (OSError, UnicodeDecodeError):
+        return None
+    words = head[2:].split() if head.startswith("#!") else []
+    if words and Path(words[0]).name == "env":
+        named = [word for word in words[1:] if not word.startswith("-") and "=" not in word]
+        program = shutil.which(named[0]) if named else None
+        words = [program, *words[words.index(named[0]) + 1:]] if program else []
+    return words or None
+
+
+def package(medusa: str, work: Path, env: dict[str, str]) -> Path | None:
+    """Returns:
+        the folder of the medusa package that medusa's own interpreter imports
+        with medusa's environment, else None.
+    """
+    command = interpreter(medusa)
+    if command is None:
+        return None
+    try:
+        result = subprocess.run(
+            [*command, "-c", LOCATE], cwd=work, stdin=subprocess.DEVNULL, capture_output=True, check=False,
+            env=env, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    folders = result.stdout.decode(errors="replace").splitlines() if result.returncode == 0 else []
+    return Path(folders[0]) if folders and folders[0] else None
+
+
+def literal(node: ast.expr | None) -> object:
+    """Returns:
+        the value of a literal, of an integer product, sum or difference, or of
+        a field's default_factory lambda; raises ValueError for anything else.
+    """
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Add, ast.Sub)):
+        left, right = literal(node.left), literal(node.right)
+        if type(left) is not int or type(right) is not int:
+            raise ValueError("not an integer")
+        return left * right if isinstance(node.op, ast.Mult) else left + right if isinstance(node.op, ast.Add) else left - right
+    factory = [k.value for k in node.keywords if k.arg == "default_factory"] if isinstance(node, ast.Call) else []
+    if factory and isinstance(factory[0], ast.Lambda):
+        return literal(factory[0].body)
+    if node is None:
+        raise ValueError("assigned more than once or not at all")
+    return ast.literal_eval(node)
+
+
+def assigned(path: Path, names: dict[str, type]) -> dict[str, object]:
+    """Returns:
+        the value of each name assigned exactly once in the module at path,
+        checked against its type; raises ValueError for any other.
+    """
+    found = {}
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        target = node.targets[0] if isinstance(node, ast.Assign) and len(node.targets) == 1 else None
+        target = node.target if isinstance(node, ast.AnnAssign) and node.value else target
+        if isinstance(target, ast.Name) and target.id in names:
+            found[target.id] = None if target.id in found else node.value
+    values = {name: literal(found.get(name)) for name in names}
+    if any(type(values[name]) is not kind or kind in (str, int) and not values[name] for name, kind in names.items()):
+        raise ValueError("a rule of an unexpected shape")
+    return values
+
+
+def rules(folder: Path | None) -> Rules | None:
+    """Returns:
+        medusa's RULES from its package folder, else None when one is missing.
+    """
+    try:
+        values = {name: value for file, names in RULES.items() for name, value in assigned(folder / file, names).items()}
+    except (OSError, SyntaxError, ValueError, TypeError):
+        return None
+    strings = (*values["FILE_SCANNERS"], *values["special_exact_names"], *values["special_prefixes"],
+               *values["ai_context_dir_names"], *values["exclude_paths"], *values["exclude_files"])
+    if not all(isinstance(item, str) and item for item in strings):
+        return None
+    return Rules(
+        frozenset(values["FILE_SCANNERS"]), frozenset(values["special_exact_names"]), values["special_prefixes"],
+        values["env_suffix"], frozenset(values["ai_context_dir_names"]), values["MAX_SCAN_FILE_SIZE"],
+        values["MAX_RULE_SCAN_LINES"], tuple(path.rstrip("/") for path in values["exclude_paths"]),
+        tuple(values["exclude_files"]),
+    )
+
+
+def taken(name: str, found: Rules) -> bool:
+    """Returns:
+        whether medusa's find_scannable_files takes up a file of this tree path:
+        a type it scans, and no exclusion that drops it.
+    """
+    path = PurePosixPath(name)
+    extension = os.path.splitext(path.name)[1].lower()
+    typed = (
+        extension in found.extensions or path.name in found.names or path.name.startswith(found.prefixes)
+        or path.name.endswith(found.suffix)
+        or (len(path.parts) == 2 and path.parts[0] in found.folders and extension == ".md")
+    )
+    dropped = (
+        any(part == pattern or WILD.search(pattern) and fnmatchcase(part, pattern)
+            for part in path.parts for pattern in found.paths)
+        or any(pattern in name or WILD.search(pattern) and fnmatchcase(name, f"*{pattern}*") for pattern in found.paths)
+        or any(fnmatchcase(path.name, pattern) for pattern in found.files)
+    )
+    return typed and not dropped
+
+
+def sized(tree: Path) -> dict[str, tuple[int, int, int]]:
+    """Returns:
+        of every file in the tree by its tree path: its bytes, its LF bytes
+        plus one as medusa's `lines_scanned` counts them, and its lines with
+        CR, CRLF and LF as breaks, as medusa's scanners read them in text mode.
+    """
+    sizes = {}
+    for path in sorted(p for p in tree.rglob("*") if p.is_file()):
+        data = path.read_bytes()
+        breaks = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n").count(b"\n")
+        sizes[path.relative_to(tree).as_posix()] = (len(data), data.count(b"\n") + 1, breaks + 1)
+    return sizes
+
+
+def oversized(sizes: dict[str, tuple[int, int, int]], found: Rules) -> str | None:
+    """Returns:
+        the first file over medusa's file or line limit with the limit it breaks, else None.
+    """
+    for name, (size, _, lines) in sizes.items():
+        if size > found.file_limit:
+            return f"{name} has {size} bytes, over medusa's {found.file_limit} byte file limit"
+        if lines > found.line_limit:
+            return f"{name} has {lines} lines, over medusa's {found.line_limit} line regex limit"
+    return None
+
+
+def uncovered(said: list[str], summary: dict, sizes: dict[str, tuple[int, int, int]]) -> str | None:
+    """Returns:
+        why medusa never covers the scanned files: its SKIP line, or the count
+        it took up when it is not every scanned one, else None.
+    """
+    for line in said:
+        if SKIP.search(line):
+            return line
+    if summary["files_scanned"] != len(sizes):
+        return f"medusa took up {summary['files_scanned']} of {plural(len(sizes), 'file')} its rules take up"
+    return None
+
+
+def cut(code: int, said: list[str], summary: dict, sizes: dict[str, tuple[int, int, int]]) -> str | None:
+    """Returns:
+        why this run fell short: a non-zero exit, its FAULT line or fewer
+        `lines_scanned` than the scanned files hold, else None.
+    """
+    if code:
+        return f"medusa exit {code}"
+    for line in said:
+        if FAULT.search(line):
+            return line
+    expected = sum(counted for _, counted, _ in sizes.values())
+    if summary["lines_scanned"] != expected:
+        return f"medusa counted {summary['lines_scanned']} of {expected} lines"
+    return None
+
+
+def keyed(medusa: str, tree: Path, missed: list[str]) -> str:
     binary = Path(medusa).resolve()
     info = binary.stat()
     key = hashlib.sha256(Path(__file__).read_bytes())
     key.update(f"\0{binary}\0{info.st_mtime_ns}\0{info.st_size}\0{os.environ.get('PATH', '')}\0".encode())
+    key.update("".join(f"{name}\0" for name in missed).encode() + b"\0")
     key.update("".join(f"{k}={v}\0" for k, v in sorted(os.environ.items()) if k.startswith("MEDUSA_")).encode())
     for path in sorted(p for p in tree.rglob("*") if p.is_file()):
         key.update(f"{path.relative_to(tree).as_posix()}\0{path.stat().st_mode & 0o777:o}\0".encode())
@@ -333,36 +575,63 @@ def remember(folder: Path, key: str, found: list[dict]) -> None:
         Path(name).unlink(missing_ok=True)
 
 
-def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, list[dict]]:
+def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, list[dict], list[str]]:
+    """Returns:
+        the count of scanned files, their findings and the copied files of a
+        type medusa never scans.
+    """
     with tempfile.TemporaryDirectory(prefix="kvb-security-") as scratch:
         work = Path(scratch)
         tree, reports, home = work / "tree", work / "reports", work / "home"
         tree.mkdir()
         home.mkdir()
-        scanned = copy(root, changed(root, base), tree)
+        copy(root, changed(root, base), tree)
+        env = {**os.environ, "HOME": str(home)}
+        sizes = sized(tree)
+        if not sizes:
+            return 0, [], []
+        known = rules(package(medusa, work, env))
+        if known is None:
+            raise Uncovered("medusa's own types, exclusions and limits are unreadable from its source")
+        missed = [name for name in sizes if not taken(name, known)]
+        sizes = {name: size for name, size in sizes.items() if name not in missed}
+        scanned = len(sizes)
         if not scanned:
-            return 0, []
-        key = keyed(medusa, tree)
+            raise Uncovered(f"medusa scans none of its files, not covered: {shown(missed)}")
+        over = oversized(sizes, known)
+        if over:
+            raise Uncovered(over)
+        key = keyed(medusa, tree, missed)
         hit = recalled(cache, key) if cache else None
         if hit is not None:
-            return scanned, hit
+            return scanned, hit, missed
         result = subprocess.run(
             [medusa, "scan", str(tree), "--format", "json", "-o", str(reports), "--no-cache",
              "--workers", str(min(scanned, WORKERS))],
-            cwd=work, stdin=subprocess.DEVNULL, capture_output=True, check=False,
-            env={**os.environ, "HOME": str(home)},
+            cwd=work, stdin=subprocess.DEVNULL, capture_output=True, check=False, env=env,
         )
         try:
-            found = findings(reports, tree)
+            found, summary = findings(reports, tree)
         except Unreadable as error:
             raise Unreadable(f"{error} (medusa exit {result.returncode})") from None
+        said = [line.replace(f"{tree}/", "").strip(" \t!⚠️") for line in result.stdout.decode(errors="replace").splitlines()]
+        never = uncovered(said, summary, sizes)
+        if never:
+            raise Uncovered(never)
+        short = cut(result.returncode, said, summary, sizes)
+        if short:
+            raise Incomplete(short)
         if cache:
             remember(cache, key, found)
-        return scanned, found
+        return scanned, found, missed
 
 
 def plural(n: int, noun: str) -> str:
     return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def shown(items: list[str]) -> str:
+    return ", ".join(items[:SHOWN]) + (f", +{len(items) - SHOWN} more" if len(items) > SHOWN else "")
 
 
 def main() -> int:
@@ -387,9 +656,13 @@ def main() -> int:
     problem = None if medusa else "medusa missing"
     if medusa:
         try:
-            scanned, every = scan(medusa, root, args.base, shelf(council.ROOT))
+            scanned, every, missed = scan(medusa, root, args.base, shelf(council.ROOT))
         except Unreadable as error:
             problem = f"medusa report unreadable: {error}"
+        except Incomplete as error:
+            problem = f"medusa run incomplete, nothing cached, rerun once the host is idle: {error}"
+        except Uncovered as error:
+            problem = f"medusa never covers this diff, nothing cached: {error}"
     if problem:
         if args.json:
             print(json.dumps({"security": None, "problem": problem}))
@@ -403,15 +676,17 @@ def main() -> int:
     counts = {severity: sum(f["severity"] == severity for f in found) for severity in WEIGHTS}
     value = max(0, SAFE - sum(WEIGHTS[s] * n for s, n in counts.items()))
     if args.json:
-        print(json.dumps({"security": value, "files": scanned, **counts, "findings": found, "accepted": passed}))
+        print(json.dumps({
+            "security": value, "files": scanned, **counts, "findings": found, "accepted": passed, "not_covered": missed,
+        }))
     else:
         places = [f"{f['severity']} {f['path']}:{f['line'] if f['line'] is not None else '?'}" for f in found]
-        listed = ", ".join(places[:SHOWN]) + (f", +{len(places) - SHOWN} more" if len(places) > SHOWN else "")
-        detail = f": {listed}" if places else ""
+        detail = f": {shown(places)}" if places else ""
         waived = f", {len(passed)} accepted" if passed else ""
+        rest = f"; not covered: {shown(missed)}" if missed else ""
         print(
             f"🛡️ security {value} % (medusa: {plural(len(found), 'finding')}{waived} "
-            f"in {plural(scanned, 'file')}{detail})"
+            f"in {plural(scanned, 'file')}{detail}{rest})"
         )
     if counts["critical"]:
         return 1
