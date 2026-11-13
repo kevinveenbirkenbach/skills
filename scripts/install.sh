@@ -62,6 +62,9 @@ settings="${TARGET}/.claude/settings.local.json"
 if command -v node &>/dev/null; then
 	log "skills: auto-enabling caveman + ponytail plugins in ${settings}"
 	node "${REPO_ROOT}/scripts/enable-plugins.js" "${settings}"
+	if [[ "${TARGET}" -ef "${HOME}" ]]; then
+		node "${REPO_ROOT}/scripts/council-deny.js" "${HOME}/.claude/settings.json"
+	fi
 else
 	warn "skills: node not found; skipped auto-enabling caveman/ponytail plugins."
 fi

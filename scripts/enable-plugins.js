@@ -62,9 +62,7 @@ data.env = data.env || {};
 if (!data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "500000";
 const PYTHON = "/usr/bin/python3 -I";
 const ABSOLUTE = { python3: PYTHON, bash: "/usr/bin/bash" };
-const COUNCIL_CONFIG_DENY = "Edit(~/.claude/agents-council/**)";
-data.permissions = data.permissions || {};
-data.permissions.deny = [...new Set([...(data.permissions.deny || []), COUNCIL_CONFIG_DENY])];
+require("./council-deny").withCouncilDeny(data);
 
 const pluginRepos = new Set(Object.values(MARKETPLACES).map((entry) => entry.source.repo));
 const lock = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "skills-lock.json"), "utf8"));
