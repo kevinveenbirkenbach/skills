@@ -17,6 +17,8 @@ NOTIFY = DREAM / "hooks" / "notify.sh"
 TIMER = DREAM / "systemd" / "kvb-dream-notify.timer"
 SERVICE = DREAM / "systemd" / "kvb-dream-notify.service"
 PATCHER = REPO_ROOT / "scripts" / "enable-plugins.js"
+COUNCIL_DENY = REPO_ROOT / "scripts" / "council-deny.js"
+DENIED = ["Edit(~/.claude/agents-council/**)", "Edit(~/.local/state/agents-council/**)"]
 
 
 class TestDreamSkill(unittest.TestCase):
@@ -278,12 +280,47 @@ class TestSettingsRegistration(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(command.startswith("/usr/bin/bash "))
 
-    def test_council_config_deny_is_added_once_next_to_existing_rules(self):
+    def test_council_config_and_state_denies_are_added_once_next_to_existing_rules(self):
         self.settings.write_text(json.dumps({"permissions": {"deny": ["Bash(rm -rf:*)"]}}), encoding="utf-8")
         self._patch()
+        self.assertEqual(self._patch()["permissions"]["deny"], ["Bash(rm -rf:*)", *DENIED])
+
+    def _deny(self, path: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(["node", str(COUNCIL_DENY), str(path)], capture_output=True, text=True, check=False)
+
+    def test_the_user_settings_get_the_council_denies_once_and_keep_everything_else(self):
+        real = Path(self.tmp.name) / "dotfiles" / "settings.json"
+        real.parent.mkdir()
+        real.write_text(json.dumps({"model": "opus", "permissions": {"deny": ["Bash(rm -rf:*)"], "ask": ["Bash(git push:*)"]}}), encoding="utf-8")
+        real.chmod(0o640)
+        self.settings.symlink_to(real)
+        for _ in range(2):
+            self.assertEqual(self._deny(self.settings).returncode, 0)
+        self.assertTrue(self.settings.is_symlink())
+        self.assertEqual(real.stat().st_mode & 0o777, 0o640)
         self.assertEqual(
-            self._patch()["permissions"]["deny"], ["Bash(rm -rf:*)", "Edit(~/.claude/agents-council/**)"]
+            json.loads(real.read_text(encoding="utf-8")),
+            {"model": "opus", "permissions": {"deny": ["Bash(rm -rf:*)", *DENIED], "ask": ["Bash(git push:*)"]}},
         )
+
+    def test_a_dangling_settings_link_keeps_its_link_and_gets_its_file(self):
+        real = Path(self.tmp.name) / "dotfiles" / "settings.json"
+        real.parent.mkdir()
+        self.settings.symlink_to(real)
+        self.assertEqual(self._deny(self.settings).returncode, 0)
+        self.assertTrue(self.settings.is_symlink())
+        self.assertEqual(real.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(json.loads(real.read_text(encoding="utf-8")), {"permissions": {"deny": DENIED}})
+        self.assertEqual(sorted(p.name for p in real.parent.iterdir()), ["settings.json"])
+
+    def test_user_settings_that_are_no_json_object_stay_untouched_and_fail_the_install(self):
+        for content in ("{not json", "[]"):
+            with self.subTest(content=content):
+                self.settings.write_text(content, encoding="utf-8")
+                done = self._deny(self.settings)
+                self.assertEqual(done.returncode, 1)
+                self.assertIn("leaving it untouched", done.stderr)
+                self.assertEqual(self.settings.read_text(encoding="utf-8"), content)
 
     def test_plugin_skills_are_not_copied_twice(self):
         skills = Path(self.tmp.name) / "skills"
