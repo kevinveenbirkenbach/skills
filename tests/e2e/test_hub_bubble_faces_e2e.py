@@ -6,6 +6,7 @@ import shutil
 import sys
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -21,6 +22,13 @@ WIDTH, HEIGHT = 1366, 768
 CUE = "front"
 SPEAKERS = ("Skills session", "Stage", "Docs")
 SAID = "disk almost full on the build host so rotate the logs and retry the gate before the next push"
+SILENT = """() => {
+  try {
+    localStorage.setItem("kvb-orchestrator.radio", JSON.stringify({mode: "silence", classes: ["mayday", "security"], muted: []}));
+  } catch (error) {
+    return;
+  }
+}"""
 SPAWN = """
   const agentChart = () => document.querySelector('#main svg.ancestry[aria-label="Ancestry: operator, chair, sessions, subagents"]');
   const agentNodes = () => all("g.ancestry-node", agentChart()).map((node) => {
@@ -166,9 +174,9 @@ class TestHubBubbleFrontAndSpawnFaces(HubCase):
         })
         self.subagents(now)
         hub = self.httpd.hub
-        hub.settings.put({**hub.settings.get(), "bubbles": True, "speech": {"on": False, "classes": ["mayday", "security"], "muted": []}}, hub.settings.get())
+        hub.settings.put({**hub.settings.get(), "bubbles": True}, hub.settings.get())
 
-        def synthesize(body: bytes) -> bytes:
+        def synthesize(body: bytes, admit: Callable[[str], None]) -> bytes:
             if json.loads(body)["text"] == CUE:
                 rows = [{"ts": time.time(), "from": name, "to": [], "text": f"{name}: {SAID}, {SAID}", "class": "security", "v": 2} for name in SPEAKERS]
                 with (self.council / "news.jsonl").open("a", encoding="utf-8") as handle:
@@ -222,7 +230,7 @@ class TestHubBubbleFrontAndSpawnFaces(HubCase):
         self.assertNotEqual(following["speaker"], following["first"])
 
     def test_chromium_keeps_the_speaking_bubble_in_front_and_draws_faces_in_the_spawn_ancestry(self):
-        data = self.drive(self.steps(), None)
+        data = self.drive(self.steps(), None, init=SILENT)
         (OUT / "chromium-bubble-faces.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])
         self.check(data)
