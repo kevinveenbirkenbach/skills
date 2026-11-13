@@ -175,8 +175,8 @@ class TestHostCleanup(unittest.TestCase):
         self.repo = base / "repos" / "demo"
         self.repo.mkdir(parents=True)
         self.jobs, self.results = base / "jobs", base / "results"
-        self.jobs.mkdir()
-        self.results.mkdir()
+        self.jobs.mkdir(mode=0o700)
+        self.results.mkdir(mode=0o700)
         self.fake = base / "bin" / "pkgmgr"
         self.fake.parent.mkdir()
         self.fake.write_text(FAKE_PKGMGR.format(python=sys.executable), encoding="utf-8")

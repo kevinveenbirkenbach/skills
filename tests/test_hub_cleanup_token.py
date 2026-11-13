@@ -180,8 +180,8 @@ class TestHostCleanupWithoutToken(unittest.TestCase):
         self.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
         self.git("update-ref", "refs/remotes/origin/remote-merged", self.tip("remote-merged"))
         self.jobs, self.results = base / "jobs", base / "results"
-        self.jobs.mkdir()
-        self.results.mkdir()
+        self.jobs.mkdir(mode=0o700)
+        self.results.mkdir(mode=0o700)
         self.fake = base / "bin" / "pkgmgr"
         self.fake.parent.mkdir()
         self.fake.write_text(SCRATCH_PKGMGR.format(python=sys.executable), encoding="utf-8")

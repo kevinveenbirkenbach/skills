@@ -29,7 +29,6 @@ Returns:
 from __future__ import annotations
 
 import argparse
-import errno
 import json
 import os
 import re
@@ -47,30 +46,9 @@ JOB = re.compile(r"[0-9a-f]{16}\.json")
 SAFE_PATH = "/usr/local/bin:/usr/bin:/bin"
 CLAIM = "claim.json"
 CLAIM_SHAPE = (("session", str), ("runtime", str), ("beat", (int, float)))
-DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-FILE = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
-READ_LIMIT = 1 << 20
+DIRECTORY = verifier.FOLDER
 OUTPUT_LIMIT = 4000
 TIMEOUT = 120
-
-
-def read_regular(name: str | Path, dir_fd: int | None) -> bytes:
-    """Args:
-        name: the file, relative to dir_fd or a path; a link, FIFO or other
-            non-regular file raises OSError, so does one over READ_LIMIT bytes.
-        dir_fd: the open directory name is relative to, or None.
-
-    Returns:
-        The file's bytes.
-    """
-    fd = os.open(name, FILE, dir_fd=dir_fd)
-    with open(fd, "rb") as handle:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise OSError(errno.EINVAL, "not a regular file", str(name))
-        data = handle.read(READ_LIMIT + 1)
-    if len(data) > READ_LIMIT:
-        raise OSError(errno.EFBIG, f"larger than {READ_LIMIT} bytes", str(name))
-    return data
 
 
 def claim_in(office_fd: int) -> dict | None:
@@ -79,7 +57,7 @@ def claim_in(office_fd: int) -> dict | None:
         reads, or None.
     """
     try:
-        claim = json.loads(read_regular(CLAIM, office_fd))
+        claim = json.loads(verifier.read_regular(CLAIM, office_fd))
     except (OSError, ValueError, RecursionError):
         return None
     shaped = isinstance(claim, dict) and all(isinstance(claim.get(key), kind) for key, kind in CLAIM_SHAPE)
@@ -268,9 +246,9 @@ class Offices:
         vacant = "; the office is vacant now" if item["action"] == "takeover" else ""
         return ended("failed", f"{output.strip()[-500:]}{vacant}", done.returncode, output)
 
-    def job(self, path: Path, now: float) -> dict:
+    def job(self, folder: int, path: Path, now: float) -> dict:
         try:
-            job = json.loads(read_regular(path, None))
+            job = json.loads(verifier.read_regular(path, folder))
         except (OSError, ValueError, RecursionError) as error:
             return {"id": path.stem, "finished": now, "items": [], "error": f"unreadable job: {error}"}
         items = job.get("items") if isinstance(job, dict) else None
@@ -281,16 +259,10 @@ class Offices:
 
 
 def cycle(jobs: Path, results: Path, offices: Offices) -> int:
-    handled = 0
-    for path in sorted(jobs.iterdir()):
-        if JOB.fullmatch(path.name):
-            verifier.write_private(results / path.name, offices.job(path, time.time()))
-            handled += 1
-        if path.is_dir() and not path.is_symlink():
-            shutil.rmtree(path)
-        else:
-            path.unlink(missing_ok=True)
-    return handled
+    def run(folder: int, name: str) -> dict | None:
+        return offices.job(folder, Path(name), time.time()) if JOB.fullmatch(name) else None
+
+    return verifier.drain(jobs, results, run)
 
 
 def main() -> int:
@@ -300,7 +272,6 @@ def main() -> int:
         parser.add_argument(name, type=Path, required=True)
     args = parser.parse_args()
     trust = verifier.Trust(approvers=args.approvers, replay=args.replay, origin=signing.origin_of(args.port))
-    args.results.mkdir(mode=0o700, parents=True, exist_ok=True)
     cycle(args.jobs, args.results, Offices(trust, args.council, args.script, Path.home()))
     return 0
 
