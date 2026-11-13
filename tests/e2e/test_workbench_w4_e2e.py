@@ -65,7 +65,7 @@ CHARTS = """(async () => {@HELPERS@
   };
 })()"""
 KEY = """(async () => {@HELPERS@
-  document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "5", bubbles: true}));
+  document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "6", bubbles: true}));
   const opened = Boolean(await until(() => location.hash === "#resources" && document.querySelector("#main svg.res-chart"), 8000));
   return {opened, current: document.getElementById("tab-resources").getAttribute("aria-current")};
 })()"""
