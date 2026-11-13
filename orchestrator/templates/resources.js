@@ -5,6 +5,7 @@ const Resources = (() => {
   const CALM = 50;
   const GAP = 1800;
   const STEP = 60;
+  const HOUR = 3600;
   const COUNTS = ["input", "output", "cache_read", "cache_write"];
   const ZONES = [{kind: "idle", from: 0, to: IDLE}, {kind: "saturated", from: SATURATED, to: 100}];
   const finite = (value) => typeof value === "number" && Number.isFinite(value);
@@ -32,6 +33,15 @@ const Resources = (() => {
       host: series(samples, (row) => [["CPU", "host", row.cpu], ["RAM", "host", row.ram], ["Swap", "host", row.swap]]),
       gpu: series(samples, (row) => listOf(row, "gpus").flatMap((gpu) => [[gpu.name, "util", gpu.asleep ? null : gpu.util], [gpu.name, "vram", gpu.asleep ? null : share(gpu.vram_used, gpu.vram_total)]])),
     };
+  }
+
+  /**
+   * @param samples - sampler rows.
+   * @returns every percent line of lines() on one axis: the disks, then CPU, RAM and swap, then each GPU and its VRAM.
+   */
+  function hardware(samples) {
+    const found = lines(samples);
+    return [...found.disks, ...found.host, ...found.gpu];
   }
 
   function segments(points) {
@@ -137,7 +147,38 @@ const Resources = (() => {
     return {agents, totals: Object.fromEntries(totals), bars, top: Math.max(0, ...bars.map((bar) => bar.total))};
   }
 
-  return {IDLE, SATURATED, CALM, GAP, COUNTS, ZONES, lines, segments, spans, waits, asleep, unknown, stack};
+  /**
+   * @param tokens - token rows as stack() takes them.
+   * @returns {agents, lines: [{agent, points: [[t, sum]]}], top}: per agent its running sum, 0 at the first hour's
+   * start and then at the end of every hour any agent spent in, so a line never decreases; top is the largest sum.
+   */
+  function accumulate(tokens) {
+    const {agents, bars} = stack(tokens);
+    const sums = new Map(agents.map((agent) => [agent, 0]));
+    const found = new Map(agents.map((agent) => [agent, bars.length ? [[bars[0].t, 0]] : []]));
+    for (const bar of bars) {
+      for (const part of bar.parts) {
+        sums.set(part.agent, sums.get(part.agent) + part.total);
+      }
+      for (const agent of agents) {
+        found.get(agent).push([bar.t + HOUR, sums.get(agent)]);
+      }
+    }
+    return {agents, lines: agents.map((agent) => ({agent, points: found.get(agent)})), top: Math.max(0, ...sums.values())};
+  }
+
+  /**
+   * @param points - Plan.burn() points of the window.
+   * @returns {top, done, scope}: the largest scope in the window and the done and scope series as [t, percent of
+   * that scope]; both stay 0 while the scope is empty.
+   */
+  function burnup(points) {
+    const top = Math.max(0, ...points.map((point) => point.scope));
+    const percent = (value) => (top > 0 ? (100 * value) / top : 0);
+    return {top, done: points.map((point) => [point.t, percent(point.done)]), scope: points.map((point) => [point.t, percent(point.scope)])};
+  }
+
+  return {IDLE, SATURATED, CALM, GAP, HOUR, COUNTS, ZONES, lines, hardware, segments, spans, waits, asleep, unknown, stack, accumulate, burnup};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Resources;

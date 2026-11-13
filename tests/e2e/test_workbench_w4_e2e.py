@@ -20,14 +20,14 @@ ROWS = 360
 WAITED = (120, 180)
 ASLEEP = 180
 UNREAD = (300, 320)
-PANELS = {"disks": "Disks", "host": "CPU, RAM and swap", "gpu": "GPU and VRAM", "tokens": "Tokens per agent"}
+PANELS = {"resources-hardware": "Hardware: disks, CPU, RAM, swap, GPU and VRAM", "resources-tokens": "Tokens per agent"}
 GUARD = """() => {
   window.e2eViolations = [];
   document.addEventListener("securitypolicyviolation", (event) => window.e2eViolations.push(`${event.violatedDirective} ${event.blockedURI}`));
 }"""
 CHARTS = """(async () => {@HELPERS@
   const counted = () => text(document.querySelector('#main [aria-label="Samples"]'));
-  if (!(await until(() => all("#main svg.res-chart").length === 4 && counted() === "@ROWS@", 15000))) {
+  if (!(await until(() => all("#main svg.res-chart").length === 2 && counted() === "@ROWS@", 15000))) {
     return {error: text(document.getElementById("main")), count: counted()};
   }
   await sleep(300);
@@ -41,24 +41,24 @@ CHARTS = """(async () => {@HELPERS@
   const piles = Object.values(stacks).map((parts) => parts.sort((a, b) => b.y - a.y));
   const labelled = (node) => (node ? [node.getAttribute("title"), node.getAttribute("aria-label")] : null);
   return {
-    panels: all("#main .res-panel").map((panel) => panel.dataset.panel),
+    panels: all("#main .res-panel:not([hidden])").map((panel) => panel.dataset.panel),
     axes: [...new Set(charts.map((chart) => `${chart.dataset.from}|${chart.dataset.to}`))],
     since: number(charts[0], "from"),
-    bands: charts.filter((chart) => chart.dataset.panel !== "tokens").map((chart) => {
+    bands: charts.filter((chart) => chart.dataset.chart === "hardware").map((chart) => {
       const [idle, saturated] = [chart.querySelector("rect.band.idle"), chart.querySelector("rect.band.saturated")];
-      return [chart.dataset.panel, attr(idle, "height") / attr(saturated, "height"), attr(idle, "y") > attr(saturated, "y")];
+      return [chart.dataset.chart, attr(idle, "height") / attr(saturated, "height"), attr(idle, "y") > attr(saturated, "y")];
     }),
-    series: charts.map((chart) => [chart.dataset.panel, [...new Set(all("path.res-line", chart).map((path) => `${path.dataset.series}|${path.dataset.kind}`))]]),
+    series: charts.map((chart) => [chart.dataset.chart, [...new Set(all("path.res-line", chart).map((path) => `${path.dataset.series}|${path.dataset.kind}`))]]),
     waits: all("#main rect.res-mark.wait").map((rect) => [number(rect, "from"), number(rect, "to"), number(rect, "peak")]),
     asleep: all("#main rect.res-mark.asleep").map((rect) => [number(rect, "from"), number(rect, "to")]),
     unknown: all("#main rect.res-mark.unknown").map((rect) => [number(rect, "from"), number(rect, "to")]),
     agents: [...new Set(all("#main rect.res-bar").map((rect) => rect.dataset.agent))].sort(),
     bottoms: [...new Set(piles.map((parts) => parts[0].agent))],
     stacked: piles.every((parts) => parts.every((part, index) => !index || Math.abs(part.y + part.height - parts[index - 1].y) < 0.2)),
-    legend: all("#main .res-host .res-key").map(text),
-    labels: {tab: labelled(document.getElementById("tab-resources")), reload: labelled(document.querySelector('#main [aria-label="Reload"]')), titles: all("#main .res-title").map(labelled)},
+    legend: all("#main .res-hardware .legend-chip.k-host").map(text),
+    labels: {tab: labelled(document.getElementById("tab-resources")), reload: labelled(document.querySelector('#main [aria-label="Reload"]')), titles: all("#main .res-panel:not([hidden]) .res-title").map(labelled)},
     unlabelled: all("#main svg.bi").map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).length,
-    plots: all("#main .res-plot").map((plot) => plot.getBoundingClientRect().height > 20),
+    plots: all("#main .res-panel:not([hidden]) .res-plot").map((plot) => plot.getBoundingClientRect().height > 20),
     tall: document.documentElement.scrollHeight > innerHeight,
     wide: document.documentElement.scrollWidth > innerWidth + 1,
     violations: window.e2eViolations || null,
@@ -119,17 +119,17 @@ class TestWorkbenchResources(HubCase):
                 self.assertEqual(found["panels"], list(PANELS))
                 self.assertEqual(len(found["axes"]), 1, found["axes"])
                 self.assertLess(abs(found["since"] - (time.time() - 86400)), 600)
-                self.assertEqual([(panel, lower) for panel, _, lower in found["bands"]], [("disks", True), ("host", True), ("gpu", True)])
+                self.assertEqual([(panel, lower) for panel, _, lower in found["bands"]], [("hardware", True)])
                 for panel, ratio, _ in found["bands"]:
                     self.assertAlmostEqual(ratio, 3, delta=0.2, msg=panel)
-                self.assertEqual(found["series"], [["disks", ["/|disk", "/boot/efi|disk"]], ["host", ["CPU|host", "RAM|host", "Swap|host"]], ["gpu", [f"{GPU}|util", f"{GPU}|vram"]], ["tokens", []]])
+                self.assertEqual(found["series"], [["hardware", ["/|disk", "/boot/efi|disk", "CPU|host", "RAM|host", "Swap|host", f"{GPU}|util", f"{GPU}|vram"]], ["tokens", []]])
                 self.assertEqual(found["waits"], [[self.start + WAITED[0] * 60, self.start + WAITED[1] * 60, 2]])
                 self.assertEqual(found["asleep"], [[self.start, self.start + ASLEEP * 60]])
                 self.assertEqual(found["unknown"], [[self.start + UNREAD[0] * 60, self.start + UNREAD[1] * 60]])
                 self.assertEqual((found["agents"], found["bottoms"], found["stacked"]), (["Skills", "Stage"], ["Skills"], True))
                 self.assertEqual(found["legend"], ["CPU 60 %", "RAM 55 %", "Swap 5 %"])
                 self.assertEqual(found["labels"], {"tab": ["Resources (key 5)", "Resources"], "reload": ["Reload: read the sampler files again", "Reload"], "titles": [[name, name] for name in PANELS.values()]})
-                self.assertEqual((found["unlabelled"], found["plots"]), (0, [True] * 4))
+                self.assertEqual((found["unlabelled"], found["plots"]), (0, [True] * 2))
                 self.assertEqual((found["tall"], found["wide"]), (False, False), "the page scrolls")
                 self.assertEqual(quiet(found["violations"]), [])
         self.assertEqual(results[len(base.WIDTHS)], {"opened": True, "current": "page"})

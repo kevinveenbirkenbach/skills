@@ -1,0 +1,7 @@
+.legend-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.legend-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 260px; padding: 1px 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--text); font: inherit; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.legend-chip::before { content: ""; flex: none; width: 12px; height: 3px; border-radius: 2px; background: var(--c, var(--muted)); }
+.legend-chip.k-vram::before, .legend-chip.k-scope::before { background: repeating-linear-gradient(90deg, var(--c) 0 4px, transparent 4px 6px); }
+.legend-chip:hover { border-color: var(--line-strong); }
+.legend-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.legend-chip[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; opacity: 0.5; }

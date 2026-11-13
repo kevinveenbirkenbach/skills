@@ -410,6 +410,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 
 {% include "style-resources.css" %}
 
+{% include "style-legend-chips.css" %}
+
 {% include "style-inbox.css" %}
 
 {% include "style-ui.css" %}
@@ -457,6 +459,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <div class="sky-panel" id="sky-panel" role="group" aria-label="View of the sky" hidden></div>
 <div class="bubbles" id="bubbles" aria-hidden="true" hidden><div class="bubble-bar"></div></div>
 <script nonce="{{ nonce }}" id="state" type="application/json">{{ state | tojson }}</script>
+<script nonce="{{ nonce }}" id="view" type="application/json">{{ view | tojson }}</script>
 <script nonce="{{ nonce }}">
 {% include "ambience.js" %}
 </script>
@@ -468,6 +471,10 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "bubbles.js" %}
 
 {% include "diffs.js" %}
+
+{% include "view-store.js" %}
+
+{% include "legend-chips.js" %}
 
 {% include "resources.js" %}
 

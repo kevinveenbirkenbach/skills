@@ -1,27 +1,32 @@
 body.fit .graph.resources > .res-panels { flex: 1; }
 .res-panels { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .res-panel { display: flex; flex: 1 1 0; flex-direction: column; gap: 2px; min-height: 72px; padding: 6px 10px; overflow: hidden; }
-.res-head { display: flex; align-items: center; gap: 4px 12px; min-width: 0; overflow: hidden; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.res-panel[hidden] { display: none; }
+.res-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; color: var(--muted); font-size: var(--fs-xs); }
 .res-title { display: inline-flex; color: var(--text); font-size: var(--fs-md); }
-.res-legend { display: flex; gap: 4px 12px; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
-.res-key { display: inline-flex; align-items: center; gap: 5px; }
-.res-key::before { content: ""; width: 12px; height: 3px; border-radius: 2px; background: var(--c); }
-.res-key.k-vram::before { background: repeating-linear-gradient(90deg, var(--c) 0 4px, transparent 4px 6px); }
+.res-legend { display: flex; flex: 1; min-width: 0; font-variant-numeric: tabular-nums; }
+.res-switch[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .res-plot { position: relative; flex: 1; min-height: 0; }
 .res-plot > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 svg .band.idle { fill: var(--ok-soft); }
 svg .band.saturated { fill: var(--bad-soft); }
 svg .res-line { fill: none; stroke: var(--c); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 svg .res-line.k-vram { stroke-dasharray: 5 3; }
+svg .res-sum { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; }
+svg .res-burn { fill: none; stroke: var(--c); stroke-width: 2.4; stroke-linejoin: round; }
+svg .res-burn.k-scope { stroke-dasharray: 7 4; }
 svg .res-mark.wait { fill: var(--warn-soft); stroke: var(--warn); stroke-dasharray: 3 3; }
 svg .res-mark.asleep { fill: var(--neutral-soft); }
 svg .res-mark.unknown { fill: var(--neutral-soft); stroke: var(--muted); stroke-dasharray: 2 3; }
 svg .res-icon.wait { fill: var(--warn); }
 svg .res-icon.asleep, svg .res-icon.unknown { fill: var(--muted); }
 svg .res-bar { fill: var(--c); }
+svg .res-bar.faint { opacity: 0.35; }
 .res-c0 { --c: var(--info); }
 .res-c1 { --c: var(--ok); }
 .res-c2 { --c: var(--accent); }
 .res-c3 { --c: var(--warn); }
 .res-c4 { --c: var(--violet); }
 .res-c5 { --c: var(--bad); }
+.res-burn.k-done { --c: var(--ok); }
+.res-burn.k-scope { --c: var(--text); }
