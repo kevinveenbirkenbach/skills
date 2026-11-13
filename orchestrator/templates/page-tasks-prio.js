@@ -51,9 +51,9 @@
     const setValue = h("button", {type: "button", class: "btn small primary", ...named("Set business value", "Set the business value as Operator, signed with the passkey; WSJF uses it instead of the median")}, icon("bi-gem"), "Set business value");
     const sync = () => {
       pin.disabled = !prioText(prio.value);
-      pinCode.textContent = pin.disabled ? `Enter a priority from 1 to ${PRIO_MAX}` : shownArgv(prioArgv());
-      estimateCode.textContent = shownArgv(estimateArgv());
-      valueCode.textContent = shownArgv(valueArgv());
+      pinCode.textContent = pin.disabled ? `Enter a priority from 1 to ${PRIO_MAX}` : revealed(shownArgv(prioArgv()));
+      estimateCode.textContent = revealed(shownArgv(estimateArgv()));
+      valueCode.textContent = revealed(shownArgv(valueArgv()));
     };
     for (const field of [prio, value, complexity, alone]) {
       field.addEventListener("input", sync);
@@ -96,7 +96,7 @@
   function taskJobs(row) {
     const jobs = state.jobs.filter((job) => job.kind === "task" && job.task === row.task).slice(-5).reverse();
     return jobs.length ? [h("h3", {}, "Signed changes", counter(jobs.length)), h("ul", {class: "mini"}, jobs.map((job) => h("li", {"data-job": job.status},
-      h("div", {class: "row"}, h("code", {}, job.command), status(job.status)),
+      h("div", {class: "row"}, h("code", {}, revealed(job.command)), status(job.status)),
       job.status === "refused" || job.status === "failed" ? h("pre", {class: "notes"}, job.output) : null)))] : null;
   }
 

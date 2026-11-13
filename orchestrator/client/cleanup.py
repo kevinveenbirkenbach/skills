@@ -80,7 +80,7 @@ def tree_facts(tree: Path) -> tuple[dict[str, str], bool]:
         data = json.loads(tree.read_text(encoding="utf-8"))
         known = {entry["path"]: entry.get("default") if isinstance(entry.get("default"), str) else "" for entry in data["repos"] if entry.get("known") is True and isinstance(entry.get("path"), str)}
         return known, data.get("delete_ready") is True
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except Exception:  # noqa: BLE001
         return {}, False
 
 
@@ -196,9 +196,9 @@ class Cleanup:
         reason = outcome if isinstance(outcome, str) and outcome else stderr.strip()[-500:] or f"pkgmgr reported no result for {item['branch']}"
         return {**item, "status": "failed", "reason": reason[:500], "code": code, "applied": applied}
 
-    def job(self, path: Path, now: float) -> dict:
+    def job(self, folder: int, path: Path, now: float) -> dict:
         try:
-            job = json.loads(path.read_text(encoding="utf-8"))
+            job = json.loads(verifier.read_regular(path, folder))
         except (OSError, ValueError) as error:
             return {"id": path.stem, "finished": now, "items": [], "error": f"unreadable job: {error}"}
         items = job.get("items") if isinstance(job, dict) else None
@@ -214,15 +214,10 @@ class Cleanup:
 
 
 def cycle(jobs: Path, results: Path, cleanup: Cleanup) -> int:
-    handled = 0
-    for path in sorted(jobs.iterdir()):
-        if not JOB.fullmatch(path.name) or not path.is_file():
-            path.unlink(missing_ok=True)
-            continue
-        verifier.write_private(results / path.name, cleanup.job(path, time.time()))
-        path.unlink(missing_ok=True)
-        handled += 1
-    return handled
+    def run(folder: int, name: str) -> dict | None:
+        return cleanup.job(folder, Path(name), time.time()) if JOB.fullmatch(name) else None
+
+    return verifier.drain(jobs, results, run)
 
 
 def main() -> int:
@@ -232,7 +227,6 @@ def main() -> int:
         parser.add_argument(name, type=Path, required=True)
     args = parser.parse_args()
     trust = verifier.Trust(approvers=args.approvers, replay=args.replay, origin=signing.origin_of(args.port))
-    args.results.mkdir(mode=0o700, parents=True, exist_ok=True)
     cycle(args.jobs, args.results, Cleanup(trust, args.tree, args.pkgmgr))
     return 0
 

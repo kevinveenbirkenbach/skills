@@ -24,7 +24,7 @@ hub_limits = importlib.import_module("hub_limits")
 approval = importlib.import_module("approval")
 TEMPLATES = HUB / "templates"
 DIFFS = TEMPLATES / "diffs.js"
-PAGE_MODULES = ["page-constants.js", "page-dom.js", "page-diff.js", "page-inbox.js", "page-stream.js", "page-screens.js", "page-keyboard.js"]
+PAGE_MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-diff.js", "page-inbox.js", "page-stream.js", "page-screens.js", "page-keyboard.js"]
 SECRET = 'api_key = "plain-example-words"'
 ARMOURED = "before\n-----BEGIN EXAMPLE-----\nplain words only\n-----END EXAMPLE-----\nafter\n"
 WITHHELD = "content withheld"
@@ -96,7 +96,8 @@ const document = {
   querySelectorAll: () => [],
 };
 document.activeElement = document.body;
-const all = (node) => (typeof node === "string" ? [] : [node, ...node.children.flatMap(all)]);
+document.getElementById("emoji-bases").textContent = "[]";
+const all =(node) => (typeof node === "string" ? [] : [node, ...node.children.flatMap(all)]);
 const classes = (node) => String(node.className || node.attrs.class || "").split(" ").filter(Boolean);
 const labels = (node) => all(node).filter((el) => el.tag === "button").map((el) => el.getAttribute("aria-label") || el.textContent);
 const calls = {proofs: [], posts: [], sheets: [], radio: []};

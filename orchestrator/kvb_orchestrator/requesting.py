@@ -6,7 +6,7 @@ from .denying import request_status, request_words, requester_of
 from .errors import Conflict, Missing, ToolError
 from .fields import WAIT_CAP, bounded, decode, expect, field, seconds
 from .records import iso_epoch
-from .rules import rule_fields, rule_matches, signed_fields, subject_of
+from .rules import EVERY_AGENT, rule_fields, rule_matches, signed_fields, subject_of
 from .signed import signing
 
 # Trip-wire: MCP carries no caller identity, so an agent may name itself anew for each request; AGENT_CAP only spreads the queue, TOTAL_CAP is the bound.
@@ -33,7 +33,7 @@ class Requesting:
     def rule_request(self, arguments: dict) -> dict:
         expect(arguments, (*RULE_FIELDS, "agent", "why"))
         now = time.time()
-        fields = rule_fields(arguments, now)
+        fields = {name: value for name, value in rule_fields(arguments, EVERY_AGENT, now).items() if name in RULE_FIELDS}
         if fields["kind"] == "decision" and fields["scope"] != "*":
             raise ToolError("a decision rule takes scope *, as the rules form does")
         name = field(arguments, "agent").strip()
@@ -71,7 +71,7 @@ class Requesting:
         rule = {**{key: record[key] for key in RULE_FIELDS}, "enabled": True, "proof": {"payload": payload, "assertion": None}}
         ledger = {"ask": self.asks, "review": self.reviews, "decision": self.decisions}[kind_name]
         since = now - RECENT_DAYS * 86400
-        subjects = [subject_of(kind_name, entry) for entry in ledger.listed() if created_of(entry) >= since]
+        subjects = [subject_of(kind_name, entry, self.deciders(kind_name, entry)) for entry in ledger.listed() if created_of(entry) >= since]
         return {"matched": sum(rule_matches(rule, kind_name, subject, now) for subject in subjects), "total": len(subjects), "days": RECENT_DAYS}
 
     def request_items(self, base: dict, now: float, claims: list[dict]) -> list[dict]:
@@ -95,7 +95,7 @@ class Requesting:
 
     def sign_request(self, request_id: str) -> dict:
         record = self.pending_request(request_id)
-        return {**self.rule_offer(rule_fields(record, time.time())), "sign": True}
+        return {**self.rule_offer(rule_fields(record, EVERY_AGENT, time.time())), "sign": True}
 
     def accept_request(self, request_id: str, body: bytes) -> dict:
         payload = decode(body)
@@ -106,9 +106,8 @@ class Requesting:
         fields = signed_fields(rule, now)
         if [fields[key] for key in RULE_FIELDS] != [record[key] for key in RULE_FIELDS]:
             raise ToolError("the signed rule must be exactly the requested one")
-        if self.rules.get(rule["id"]) is not None:
-            raise Conflict({"id": rule["id"], "status": "exists"})
         proof = self.proven_rule(rule, payload["assertion"])
+        self.offered(rule, now)
         decided, changed = self.rule_requests.decide(request_id, {"status": "accepted", "rule": rule["id"]})
         if not changed:
             raise Conflict(request_state(decided, now))

@@ -75,11 +75,11 @@
       return;
     }
     const rows = usable.map((item) => h("li", {},
-      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.kind === "decision" && !deny ? h("span", {class: "muted"}, `→ ${item.recommended}`) : null),
-      h("strong", {}, item.title),
-      item.kind === "operator" ? h("div", {class: "command"}, h("code", {}, item.command)) : null,
-      item.kind === "operator" ? h("span", {class: "muted"}, `in ${item.directory}`) : null,
-      item.kind === "ask" ? h("div", {class: "command"}, h("code", {}, item.command)) : null));
+      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.kind === "decision" && !deny ? h("span", {class: "muted"}, revealed(`→ ${item.recommended}`)) : null),
+      h("strong", {}, revealed(item.title)),
+      item.kind === "operator" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null,
+      item.kind === "operator" ? h("span", {class: "muted"}, revealed(`in ${item.directory}`)) : null,
+      item.kind === "ask" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null));
     const confirm = h("button", {type: "button", class: deny ? "btn danger" : "btn primary"}, `${deny ? "Deny" : "Grant"} ${usable.length}`);
     confirm.addEventListener("click", () => {
       closeSheet();
@@ -135,7 +135,7 @@
     } else if (item.kind === "ask") {
       buttons.push(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "decision" && item.recommended) {
-      buttons.push(h("button", {type: "button", class: "btn small primary", ...named(`Recommendation: ${item.recommended}`), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), item.recommended));
+      buttons.push(h("button", {type: "button", class: "btn small primary", ...named(revealed(`Recommendation: ${item.recommended}`)), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), revealed(item.recommended)));
     } else if (item.kind === "operator" && item.runnable) {
       buttons.push(iconBtn("bi-play-fill", "Run", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "rule") {
@@ -166,18 +166,18 @@
         item.until ? pill(`until ${absolute.format(stampOf(item.until))}`, "neutral") : null),
       h("div", {class: "entry-body"},
         h("div", {class: "route"},
-          h("button", {type: "button", class: "linkish headline", title: "Open", on: {click: () => openItem(item)}}, item.kind === "operator" ? item.id : item.kind === "ask" ? item.title.split(": ")[0] : item.title),
+          h("button", {type: "button", class: "linkish headline", title: "Open", on: {click: () => openItem(item)}}, revealed(item.kind === "operator" ? item.id : item.kind === "ask" ? item.title.split(": ")[0] : item.title)),
           item.agent ? [face(item.agent, false), person(item.agent)] : null),
-        item.kind === "review" ? h("div", {class: "muted"}, item.detail, item.score ? ` · ${item.score}` : "") : null,
-        commanded ? h("div", {class: "command", "data-path": item.directory || "-"}, h("code", {}, item.command), copyButton(item.command)) : null,
-        commanded ? h("span", {class: "muted"}, `in ${dash(item.directory)}`) : null,
-        item.kind === "operator" && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, item.detail) : null,
+        item.kind === "review" ? h("div", {class: "muted"}, revealed(item.detail), item.score ? revealed(` · ${item.score}`) : "") : null,
+        commanded ? h("div", {class: "command", "data-path": item.directory || "-"}, h("code", {}, revealed(item.command)), copyButton(item.command)) : null,
+        commanded ? h("span", {class: "muted"}, revealed(`in ${dash(item.directory)}`)) : null,
+        item.kind === "operator" && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, revealed(item.detail)) : null,
         diffBlocks(item),
         item.job ? consoleOf(item.job) : null,
         item.kind === "rule" ? ruleRequestBody(item) : null,
         item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
-          type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, title: `${option.label}: your passkey signs this answer, a post to ${item.agent}`, disabled: item.held, on: {click: () => chooseOne(item, option.label)},
-        }, h("strong", {}, option.label), option.description ? h("span", {}, option.description) : null))) : null,
+          type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, title: revealed(`${option.label}: your passkey signs this answer, a post to ${item.agent}`), disabled: item.held, on: {click: () => chooseOne(item, option.label)},
+        }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null))) : null,
         feedbackList(keyOf(item))),
       h("div", {class: "item-actions line-actions"},
         actionsFor(item),
@@ -246,8 +246,8 @@
     }
     const body = [
       h("div", {class: "who"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? face(item.agent, false) : null, item.agent ? person(item.agent) : null, when(item.ts)),
-      h("p", {class: "text"}, item.title),
-      item.command ? h("div", {class: "command"}, h("code", {}, item.command), copyButton(item.command)) : null,
+      h("p", {class: "text"}, revealed(item.title)),
+      item.command ? h("div", {class: "command"}, h("code", {}, revealed(item.command)), copyButton(item.command)) : null,
       item.kind === "rule" ? ruleRequestBody(item) : null,
       meta([["Directory", item.directory], ["Warnings", item.warnings.join(", ")], ["Id", item.id]]),
       item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
@@ -255,7 +255,7 @@
           closeSheet();
           chooseOne(item, option.label);
         }},
-      }, h("strong", {}, option.label), option.description ? h("span", {}, option.description) : null))) : null,
+      }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null))) : null,
       h("div", {class: "actions"}, h("span", {class: "spacer"}), actionsFor(item).map((node) => {
         node.addEventListener("click", closeSheet);
         return node;

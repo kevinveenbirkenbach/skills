@@ -25,7 +25,7 @@ const sendJson = async () => {
 const toast = (title) => toasts.push(title);
 const bytes = new Uint8Array([1]).buffer;
 const credential = {rawId: bytes, response: {clientDataJSON: bytes, authenticatorData: bytes, signature: bytes}};
-const P = new Function("window", "navigator", "sendJson", "toast", "fail", "h", `${source}\\nreturn {signedProof};`)(window, navigator, sendJson, toast, () => [], () => null);
+const P = new Function("window", "navigator", "sendJson", "toast", "fail", "h", "promptText", "document", `${source}\\nreturn {signedProof};`)(window, navigator, sendJson, toast, () => [], () => ({remove: () => {}}), (label) => label, {body: {append: () => {}}});
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const nonce = (signed) => (signed ? signed.proof.payload.nonce : null);
 (async () => {

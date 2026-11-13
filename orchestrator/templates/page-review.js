@@ -44,7 +44,7 @@
     const head = h("article", {class: "card"},
       h("div", {class: "card-head"}, h("div", {}, h("p", {class: "muted"}, "submitted ", when(review.created_ts))), h("div", {class: "who"}, status(review.status || "pending"), review.gate ? pill(review.gate === "pass" ? "Gate green" : "Gate red", review.gate === "pass" ? "ok" : "bad") : null)),
       meta([["Repo", review.worktree], ["Branch", review.branch], ["Tree", (review.tree || "").slice(0, 12), review.tree], ["Score", review.score]]),
-      review.notes ? h("pre", {class: "notes"}, review.notes) : null,
+      review.notes ? h("pre", {class: "notes"}, revealedLines(review.notes)) : null,
       h("div", {class: "actions"},
         h("a", {class: "btn ghost icon-only", href: `/reviews/${encodeURIComponent(review.id)}/page`, target: "_blank", rel: "noopener noreferrer", ...named("Open full page", "Open full page (new tab)")}, icon("bi-box-arrow-up-right")),
         h("span", {class: "spacer"}),

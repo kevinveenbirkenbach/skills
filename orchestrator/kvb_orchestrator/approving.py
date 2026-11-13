@@ -8,12 +8,13 @@ from .choosing import answer_signed
 from .cleanup import cleanup_request
 from .denying import DENIABLE, DENY_KEYS, denial_note, request_status, request_words
 from .errors import Conflict, Missing, ToolError
-from .fields import decode, expect, field
+from .fields import decode, expect, field, visible
+from .firewall import settings_request
 from .gating import gate_request
 from .offices import office_request
 from .records import digest, shown
 from .register import REGISTER, adder, operator_rows, read_register, runnable
-from .rules import rule_matches, subject_of
+from .rules import enable_request, rule_matches, subject_of
 from .signed import (
     ask_signed,
     operator_signed,
@@ -63,7 +64,12 @@ class Approving:
         """Returns:
             The approval payload over the items, its WebAuthn challenge and the
             pinned credential ids; payload and challenge are None for no item.
+
+        Raises:
+            ToolError from visible() for an item holding a text no prompt
+            shows as signed, whatever source missed it.
         """
+        visible(items)
         credentials = [key["id"] for key in self.keys()]
         if not items:
             return {"payload": None, "challenge": None, "credentials": credentials}
@@ -131,7 +137,7 @@ class Approving:
 
     def automate(self, kind_name: str, record: dict) -> None:
         now = time.time()
-        subject = subject_of(kind_name, record)
+        subject = subject_of(kind_name, record, self.deciders(kind_name, record))
         rule = next((rule for rule in self.rules.listed() if rule_matches(rule, kind_name, subject, now)), None)
         if rule is None:
             return
@@ -189,6 +195,27 @@ class Approving:
             raise Conflict({"id": raw["id"], "status": "recipient changed", "to": name})
         return name
 
+    def operator_entry(self, raw: dict, tasks: dict[str, dict]) -> dict:
+        """Args:
+            raw: a checked inbox entry of kind operator.
+            tasks: the register.
+
+        Returns:
+            The signed item of the operator row raw names, once its task,
+            command and directory pass visible().
+        """
+        row = next((row for row in operator_rows(tasks) if row["task"] == raw["id"]), None)
+        if row is None:
+            raise Missing(str(raw["id"]))
+        visible({name: row[name] for name in ("task", "command", "directory")})
+        if raw["verb"] == "approve" and not runnable(row):
+            raise ToolError("an operator row is approved only when it holds a directory and a command")
+        if digest(row["command"]) != raw["sha256"]:
+            raise Conflict({"id": row["task"], "status": "changed"})
+        if row["task"] in self.open_jobs():
+            raise Conflict({"id": row["task"], "status": "queued"})
+        return inbox_item(raw, "", row["command"], "", operator_signed(row), self.requester(raw, adder(tasks[row["task"]])))
+
     def item_of(self, raw: object, tasks: dict[str, dict]) -> dict:
         if not isinstance(raw, dict):
             raise ToolError("every item must be an object with kind, id, verb, label and sha256, and a denial also channel, reason and to")
@@ -197,16 +224,7 @@ class Approving:
         if kind_name not in INBOX_KINDS or verb not in VERBS or not isinstance(raw["label"], str) or not isinstance(raw["sha256"], str):
             raise ToolError(f"kind must be one of {', '.join(INBOX_KINDS)}, verb approve or reject, label and sha256 text")
         if kind_name == "operator":
-            row = next((row for row in operator_rows(tasks) if row["task"] == raw["id"]), None)
-            if row is None:
-                raise Missing(str(raw["id"]))
-            if verb == "approve" and not runnable(row):
-                raise ToolError("an operator row is approved only when it holds a directory and a command")
-            if digest(row["command"]) != raw["sha256"]:
-                raise Conflict({"id": row["task"], "status": "changed"})
-            if row["task"] in self.open_jobs():
-                raise Conflict({"id": row["task"], "status": "queued"})
-            return inbox_item(raw, "", row["command"], "", operator_signed(row), self.requester(raw, adder(tasks[row["task"]])))
+            return self.operator_entry(raw, tasks)
         if kind_name == "rule" and verb == "approve":
             raise ToolError("a rule request is accepted in its row, with the passkey signature over the rule itself")
         item_id = field(raw, "id")
@@ -253,6 +271,11 @@ class Approving:
             signed = self.task_changes(raw)
         elif gate_request(raw):
             signed = self.gate_changes(raw)
+        elif settings_request(raw):
+            signed = self.settings_changes(raw)
+        elif enable_request(raw):
+            signed = self.enable_items(raw)
+            return {**self.challenge_for(signed), "enables": signed[0]["rule"]}
         else:
             signed = [item["signed"] for item in self.checked(raw) if item["signed"] is not None]
         return self.challenge_for(signed)

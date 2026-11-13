@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Orchestrator firewall settings view a minute after its last run
+
+[Timer]
+OnActiveSec=5s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

@@ -16,6 +16,7 @@ from .cleanup import Cleaning, Spool
 from .denying import Denying
 from .engines import Engines, Speech
 from .events import Log, Watch
+from .firewall import Firewall
 from .gating import Gating
 from .icons import sheet
 from .inbox import Inbox
@@ -30,7 +31,7 @@ from .presence import SNAPSHOT
 from .redirects import Redirects
 from .requesting import Requesting
 from .reviewing import Reviewing
-from .rules import Rules
+from .rules import Offers, Rules
 from .settings import Settings
 from .signed import signing
 from .skill_scripts import Runner
@@ -66,7 +67,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Firewall, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -81,6 +82,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     scripts: Runner
     templates: jinja2.Environment
     rules: Ledger
+    offers: Offers
     jobs: Ledger
     marks: Marks
     log: Log
@@ -100,6 +102,9 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     icons: Markup
     spool: Spool
     office_spool: Spool
+    firewall_spool: Spool
+    groups: Ledger
+    rule_sets: Ledger
     touched: Touched
     voice_notes: VoiceNotes
     replay: Path
@@ -122,12 +127,16 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         icons=sheet(places.vendor, templates),
         spool=Spool(places.cleanup).ready(),
         office_spool=Spool(places.offices).ready(),
+        firewall_spool=Spool(state / "firewall").ready(),
+        groups=Ledger(state / "groups.json"),
+        rule_sets=Ledger(state / "rule-sets.json"),
         touched=Touched(reviews.stored),
         approvers=approvers,
         speech=speech,
         voice_notes=VoiceNotes(state / "voice", host_state / "voice", speech, lambda: {message["voice"] for message in messages.listed() if message.get("voice")}),
         replay=state / "replay" / "messages.json",
         rules=Ledger(state / "rules.json"),
+        offers=Offers(),
         jobs=Ledger(state / "jobs.json"),
         marks=Marks(state / "marks.json"),
         log=Log(state / "log.jsonl"),

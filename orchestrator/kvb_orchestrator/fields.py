@@ -5,7 +5,7 @@ import math
 import re
 
 from .errors import ToolError
-from .signed import limits
+from .signed import limits, signing
 
 WAIT_CAP = 300
 TEXT_LIMIT = 20_000
@@ -43,7 +43,23 @@ def field(arguments: dict, name: str) -> str:
     value = arguments[name]
     if not isinstance(value, str) or not pattern.fullmatch(value):
         raise ToolError(f"{name} must be {hint}")
+    visible({name: value})
     return value
+
+
+def visible(value: object) -> None:
+    """Args:
+        value: an object of named texts, or a list of them, that reaches a
+            signed payload or the approval prompt.
+
+    Raises:
+        ToolError with the reason signing.hidden_problem() gives for the
+        first text holding an invisible, format, control or look-alike
+        character.
+    """
+    hidden = signing.hidden_problem(value, "value")
+    if hidden:
+        raise ToolError(hidden)
 
 
 def bounded(arguments: dict, name: str, limit: int) -> str:

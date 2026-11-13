@@ -132,7 +132,7 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.assertIn(f"{share / NEW}/client/permission_hook.py", hooks[1]["hooks"][0]["command"])
         self.assertEqual(settings.stat().st_mode & 0o777, 0o640)
         self.assertIn(f"{OLD}/client", (self.home / ".claude" / f"settings.json.before-{NEW}-migration").read_text(encoding="utf-8"))
-        self.assertEqual((first["images"], first["mcp"], first["enabled"]), ([f"{NEW}:local"], {NEW: "http://127.0.0.1:8737/mcp"}, [f"{NEW}-offices.path", f"{NEW}-resources.timer", f"{NEW}-runner.service", f"{NEW}-sessions.timer"]))
+        self.assertEqual((first["images"], first["mcp"], first["enabled"]), ([f"{NEW}:local"], {NEW: "http://127.0.0.1:8737/mcp"}, [f"{NEW}-firewall.path", f"{NEW}-firewall.timer", f"{NEW}-offices.path", f"{NEW}-resources.timer", f"{NEW}-runner.service", f"{NEW}-sessions.timer"]))
         self.assertIn(["docker", "compose", "--file", str(share / OLD / "compose.yml"), "down", "--remove-orphans"], first["calls"])
 
         before = snapshot(self.home)

@@ -16,6 +16,7 @@ from .fields import (
     instant,
     message_text,
     seconds,
+    visible,
 )
 from .signed import ask_signed
 
@@ -55,7 +56,9 @@ def option_of(option: object) -> dict:
         raise ToolError("every option must be an object with label and description")
     expect(option, ("label", "description"))
     label = field(option, "label").strip()
-    return {"label": label, "description": bounded(option, "description", DESCRIPTION_LIMIT).strip()}
+    description = bounded(option, "description", DESCRIPTION_LIMIT).strip()
+    visible({"description": description})
+    return {"label": label, "description": description}
 
 
 class Asking:
@@ -64,6 +67,7 @@ class Asking:
         diff = valid_diff(payload.pop("diff")) if "diff" in payload else None
         expect(payload, ("tool", *ASK_TEXTS, "timeout"))
         values = {name: bounded(payload, name, limit) for name, limit in ASK_TEXTS.items()}
+        visible(values)
         lifetime = seconds(payload, "timeout", ASK_LIFETIME)
         created = time.time()
         fields = {**values, "tool": field(payload, "tool").strip(), "status": "pending", "decided": None, "proof": None, "diff_files": None if diff is None else len(diff)}
@@ -104,6 +108,7 @@ class Asking:
     def decision_request(self, arguments: dict) -> dict:
         expect(arguments, ("question", "options", "agent", "recommended"))
         question = message_text(arguments, "question")
+        visible({"question": question})
         options = arguments["options"]
         if not isinstance(options, list) or not 1 <= len(options) <= OPTION_LIMIT:
             raise ToolError(f"options must be a list of 1 to {OPTION_LIMIT} objects")

@@ -87,6 +87,14 @@ class TestHubGates(HubCase):
         self.assertEqual(sorted((job["kind"], job["argv"], job["command"].split()[0]) for job in jobs), sorted(("gate", item["argv"], "gates.py") for item in items))
         self.assertEqual(self.get("/api/gates")[0], 405)
 
+    def test_a_branch_or_repo_with_a_hidden_character_is_never_offered_for_a_signature(self):
+        for name, argv, code in (("bidi branch", rule("commit", "test", branch=f"feature/x{chr(0x202E)}"), "U+202E"), ("zero-width repo", rule("commit", "test", repo=f"{REPO}{chr(0x200B)}"), "U+200B"), ("Hangul filler branch", rule("commit", "test", branch=f"main{chr(0x3164)}"), "U+3164"), ("no-break space repo", rule("commit", "test", repo=f"{REPO}{chr(0xA0)}"), "U+00A0")):
+            with self.subTest(name=name):
+                self.assertEqual(signing.gate_argv(argv), argv)
+                status, _, body = self.post_json("/api/sign", {"items": self.stage([argv])}, self.guard(self.host))
+                self.assertEqual(status, 400)
+                self.assertIn(code, body.decode("utf-8"))
+
     def test_the_hub_refuses_a_malformed_or_forged_gate_change_before_it_queues(self):
         for name, items in (("receipt", self.stage([["receipt", "add", "--repo", REPO, "--tree", "a" * 40, "--level", "e2e", "--log", "/x"]])), ("own parent", self.stage([parent("feature/x")])), ("twice", self.stage([parent("main"), parent("main")])), ("extra key", [{"kind": "gate", "argv": parent("main"), "id": "x"}])):
             with self.subTest(name=name):

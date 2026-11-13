@@ -24,15 +24,15 @@
   function patchRow(row) {
     const number = row.new || row.old || null;
     if (row.kind === "hunk") {
-      return h("tr", {class: "hunk"}, h("td", {colspan: 3}), h("td", {class: "code"}, row.text));
+      return h("tr", {class: "hunk"}, h("td", {colspan: 3}), h("td", {class: "code"}, revealed(row.text)));
     }
     return h("tr", {class: row.kind, "data-line": number},
-      h("td", {class: "num"}, row.old), h("td", {class: "num"}, row.new), h("td", {class: "sign"}, SIGNS[row.kind] || " "), h("td", {class: "code"}, row.text));
+      h("td", {class: "num"}, row.old), h("td", {class: "num"}, row.new), h("td", {class: "sign"}, SIGNS[row.kind] || " "), h("td", {class: "code"}, revealed(row.text)));
   }
 
   function diffBlock(file) {
     const tone = DIFF_TONES[file.status] || "neutral";
-    const head = [h("span", {class: "letter", "data-tone": tone}, file.status), h("code", {class: "path"}, file.path),
+    const head = [h("span", {class: "letter", "data-tone": tone}, file.status), h("code", {class: "path"}, revealed(file.path)),
       file.mode && file.mode !== "100644" ? h("code", {class: "mode", title: `mode: ${file.mode}`}, file.mode) : null, h("span", {class: "spacer"}),
       file.note ? h("span", {class: "note", title: file.note}, icon("bi-eye-slash"), file.note) : null,
       file.status === "B" ? icon("bi-file-earmark-binary") : h("span", {class: "stat"}, h("span", {class: "add"}, `+${file.additions}`), h("span", {class: "del"}, `-${file.deletions}`))];
