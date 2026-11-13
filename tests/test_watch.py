@@ -7,12 +7,15 @@ import importlib.util
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WATCH = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "watch.py"
@@ -21,6 +24,76 @@ OPEN_MEMORY = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_sw
 SHUT_MEMORY = {"available": 101, "swap_free": 101, "psi_full": 0, "container_swap_gb": 0}
 MEMINFO = "MemTotal: 1000 kB\nMemAvailable: 120 kB\nSwapTotal: 2000 kB\nSwapFree: 300 kB\n"
 PSI = "some avg10=30.00 avg60=1.00 avg300=0.50 total=1\nfull avg10=12.50 avg60=0.80 avg300=0.10 total=1\n"
+LISTED = ["images", "--filter", "dangling=true", "--format", "{{.ID}} {{.Repository}} {{.Digest}}"]
+LISTING = (
+    "aaaaaaaaaaaa <none> <none>\n"
+    f"bbbbbbbbbbbb ghcr.io/infinito-nexus/core/debian sha256:110c8487{'0' * 56}\n"
+    f"cccccccccccc quay.io/oauth2-proxy/oauth2-proxy sha256:{'c' * 64}\n"
+    "eeeeeeeeeeee quay.io/oauth2-proxy/oauth2-proxy \n"
+    "dddddddddddd <none> <none>\n"
+)
+REMOVED = [LISTED, ["rmi", "aaaaaaaaaaaa"], ["rmi", "dddddddddddd"]]
+LEFTOVER_IDS = {"aaaaaaaaaaaa", "dddddddddddd"}
+FORBIDDEN = (["image", "prune"], ["images", "prune"], ["system", "prune"], ["image", "rm"], ["image", "remove"])
+GUARDED = (
+    "docker image pr\\\nune -f", "docker image \\\nprune -f", "docker image $'prune' -f", "docker image $'\\x70rune' -f",
+    "P=prune; docker image $P -f", "docker image ${X:-prune} -f", "docker image {prune,} -f",
+    "docker image remove $(docker image ls -qf dangling=true)",
+    "docker rmi $(docker images | grep '<none>' | awk '{print $3}')",
+    "docker images | awk '/<none>/ {print $3}' | xargs -r docker rmi",
+    "docker images -qf dangling=true | xargs -r docker image remove", "clean-images",
+    "echo ZG9ja2VyIGltYWdlIHBydW5lIC1m | base64 -d | sh", "docker IMAGE PRUNE -f", "docker images prune -f",
+    "docker image  prune -f", "docker image prune -f # nightly", "docker image prune -f > /dev/null 2>&1",
+    "docker image prune -af --filter until=24h", 'docker image prune --filter "$(docker system prune -af)" -f',
+    "docker image prune -f --filter", "docker image prune --force=true", 'echo "$(docker image prune -f)"',
+    "echo `docker image prune -f`", "eval 'docker image prune -f'", "sh -c 'docker image prune -f'",
+    "docker image prune -f; docker builder prune -f", "docker system prune -af",
+    "docker rmi $(docker images -qf dangling=true)", "docker images -q --filter dangling=true | xargs docker rmi",
+    "docker image prune -f '", "docker compose -p stack-a exec -T infinito docker image prune -f",
+    "docker container prune -f --filter label=image-prune", "docker container prune -f --filter 'label=image prune'",
+)
+UNGUARDED = (
+    "/usr/bin/docker image prune -f", "D=/usr/bin; $D/docker image prune -f", "sudo docker image prune -f",
+    "doas docker image prune -f", "su -c 'docker image prune -f'", "pkexec docker image prune -f",
+    "run0 docker image prune -f", "systemd-run docker image prune -f", "PATH=/usr/bin docker image prune -f",
+    "env -i docker image prune -f", "command -p docker image prune -f",
+)
+GLOBALS = {"-H", "--host", "-c", "--context"}
+TOOLS = ("sh", "grep", "awk", "xargs", "base64", "env", "rm")
+FAKE_DOCKER = """#!{python}
+import json
+import os
+import sys
+from pathlib import Path
+
+base = Path({base!r})
+with (base / "calls.jsonl").open("a", encoding="utf-8") as calls:
+    calls.write(json.dumps(sys.argv[1:]) + "\\n")
+with (base / "hosts.jsonl").open("a", encoding="utf-8") as hosts:
+    hosts.write(json.dumps(os.environ.get("DOCKER_HOST", "")) + "\\n")
+args = sys.argv[1:]
+if "docker" in args:
+    args = args[args.index("docker") + 1 :]
+while args and args[0].startswith("-"):
+    args = args[2:] if args[0] in {globals!r} else args[1:]
+
+
+def listed(name):
+    return (base / name).exists() and args[1] in (base / name).read_text(encoding="utf-8").split()
+
+
+if args[:1] == ["images"]:
+    if not (base / "images.txt").exists():
+        sys.exit("Cannot connect to the Docker daemon")
+    sys.stdout.write((base / "images.txt").read_text(encoding="utf-8"))
+elif args[:1] == ["rmi"] and listed("in-use.txt"):
+    sys.exit(
+        f"Error response from daemon: conflict: unable to delete {{args[1]}} (must be forced) - "
+        "image is being used by stopped container 0123456789ab"
+    )
+elif args[:1] == ["rmi"] and listed("gone.txt"):
+    sys.exit(f"Error response from daemon: No such image: {{args[1]}}")
+"""
 
 
 def _load():
@@ -696,6 +769,250 @@ class TestWatchCommands(unittest.TestCase):
         self.config.unlink()
         result = self._run("status")
         self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+
+class TestImagePrune(unittest.TestCase):
+    def setUp(self):
+        self.watch = _load()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name)
+        self.bin = self.base / "bin"
+        self.bin.mkdir()
+        fake = self.bin / "docker"
+        for name in ("docker", "docker-compose"):
+            fake = self.bin / name
+            fake.write_text(FAKE_DOCKER.format(python=sys.executable, base=str(self.base), globals=GLOBALS), encoding="utf-8")
+            fake.chmod(0o755)
+        for tool in TOOLS:
+            (self.bin / tool).symlink_to(shutil.which(tool, path="/usr/bin:/bin"))
+        script = self.bin / "clean-images"
+        script.write_text("#!/bin/sh\ndocker image prune -f\n", encoding="utf-8")
+        script.chmod(0o755)
+        (self.base / "images.txt").write_text(LISTING, encoding="utf-8")
+        path = mock.patch.dict(os.environ, {"PATH": str(self.bin)})
+        path.start()
+        self.addCleanup(path.stop)
+
+    def _cleanup(self, *commands: str, worktree: list[list[str]] | None = None, stacks: str = "true") -> list[str]:
+        for name in ("calls.jsonl", "hosts.jsonl"):
+            (self.base / name).unlink(missing_ok=True)
+        cfg = {
+            "cleanup": list(commands), "worktree_cleanup": worktree or [], "worktrees_command": stacks,
+            "worktree_marker": "Makefile", "busy_processes": [],
+        }
+        return self.watch.run_cleanup(cfg)
+
+    def _read(self, name: str) -> list:
+        path = self.base / name
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+
+    def _calls(self) -> list[list[str]]:
+        return self._read("calls.jsonl")
+
+    def _removals(self) -> list[list[str]]:
+        found = []
+        for call in self._calls():
+            args = call[call.index("docker") + 1 :] if "docker" in call else call
+            while args and args[0].startswith("-"):
+                args = args[2:] if args[0] in GLOBALS else args[1:]
+            leftover = args[:1] == ["rmi"] and len(args) == 2 and args[1] in LEFTOVER_IDS
+            if args[:2] in FORBIDDEN or (args[:1] == ["rmi"] and not leftover):
+                found.append(call)
+        return found
+
+    def test_full_cleanup_removes_build_leftovers_and_keeps_digest_pinned_images(self):
+        results = self._cleanup("docker builder prune -f", "docker image prune -f", "docker image prune -a -f")
+        self.assertEqual(self._calls(), [["builder", "prune", "-f"], *REMOVED])
+        self.assertEqual(results, [
+            "ok: docker builder prune -f", f"ok: {shlex.join(['docker', *LISTED])}",
+            "ok: docker rmi aaaaaaaaaaaa", "ok: docker rmi dddddddddddd",
+        ])
+
+    def test_only_a_plain_image_prune_maps_to_the_leftover_step(self):
+        for command in (
+            "docker image prune -f", "docker image prune -a", "docker image prune --all --force --filter until=24h",
+            "docker images prune -af", "  docker   image  prune  -f --filter=label=x", "docker 'image' prune -f",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.watch.prune_verdict(command), "prune")
+                self._cleanup(command)
+                self.assertEqual(self._calls(), REMOVED)
+        for command in (
+            "docker builder prune -f", "docker container prune -f --filter until=1h", "docker images",
+            "docker rmi abcdef123456",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.watch.prune_verdict(command), "run")
+
+    def test_no_shell_line_gets_a_prune_or_removal_past_the_guard(self):
+        for command in GUARDED:
+            with self.subTest(command=command):
+                self._cleanup(command)
+                self.assertEqual(self._removals(), [])
+        results = self._cleanup("P=prune; docker image $P -f")
+        self.assertEqual(self._calls(), REMOVED)
+        self.assertEqual(results, [
+            "ok: P=prune; docker image $P -f", f"ok: {shlex.join(['docker', *LISTED])}",
+            "ok: docker rmi aaaaaaaaaaaa", "ok: docker rmi dddddddddddd",
+        ])
+        results = self._cleanup("docker system prune -af")
+        self.assertEqual(results, [
+            f"failed ({self.watch.GUARD_REFUSED}): docker system prune -af",
+            f"refused ({self.watch.REMOVALS[('system', 'prune')]}): docker system prune -af",
+        ])
+        self.assertEqual(self._calls(), [])
+
+    def test_a_line_the_guard_cannot_see_is_refused_and_none_of_it_runs(self):
+        for command in (*UNGUARDED, f"{self.bin}/docker image prune -f"):
+            with self.subTest(command=command):
+                self.assertEqual(self.watch.prune_verdict(command), "unguarded")
+        command = f"{self.bin}/docker image prune -f"
+        self.assertEqual(self._cleanup(command), [f"refused ({self.watch.REFUSALS['unguarded']}): {command}"])
+        self.assertEqual(self._calls(), [])
+
+    def test_a_compose_down_with_rmi_is_refused_and_a_plain_down_runs(self):
+        for command in (
+            "docker compose -p x down --rmi all", "docker compose -p x down --rmi local",
+            "docker compose -p x down --rmi=all", "docker-compose -p x down --rmi all",
+            "R=all; docker compose -p x down --rmi $R",
+        ):
+            with self.subTest(command=command):
+                results = self._cleanup(command)
+                self.assertEqual(self._calls(), [])
+                self.assertTrue(results[1].startswith(f"refused ({self.watch.COMPOSE_RMI}): "), results)
+        for command, call in (
+            ("docker compose -p x down", ["compose", "-p", "x", "down"]), ("docker-compose -p x down", ["-p", "x", "down"]),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self._cleanup(command), [f"ok: {command}"])
+                self.assertEqual(self._calls(), [call])
+        tree = self.base / "tree"
+        tree.mkdir()
+        (tree / "Makefile").write_text("", encoding="utf-8")
+        down = ["docker", "compose", "-p", "{project}", "down", "--rmi", "all"]
+        results = self._cleanup(worktree=[down], stacks=f"printf '%s\\t%s\\n' {tree} stack-a")
+        self.assertEqual(results, [f"refused ({self.watch.REFUSALS['nested']}): docker compose -p stack-a down --rmi all"])
+        self.assertEqual(self._calls(), [])
+
+    def test_only_a_docker_run_by_path_counts_as_unguarded(self):
+        leftover = self.base / "var" / "lib" / "docker" / "tmp" / "x"
+        leftover.mkdir(parents=True)
+        command = f"rm -rf {leftover}"
+        self.assertEqual(self._cleanup(command), [f"ok: {command}"])
+        self.assertFalse(leftover.exists())
+        for command, verdict in (
+            ("du -sh /var/lib/docker", "run"), ("ls /usr/bin/docker", "run"),
+            ("curl --unix-socket /var/run/docker.sock http://localhost/images/json", "run"),
+            ("/usr/bin/docker image prune -f", "unguarded"), ("D=/usr/bin; $D/docker image prune -f", "unguarded"),
+            ("xargs /usr/bin/docker rmi", "unguarded"), ("sh -c '/usr/bin/docker image prune -f'", "unguarded"),
+            ("echo $(/usr/bin/docker image prune -f)", "unguarded"), ("env FOO=1 /usr/bin/docker image prune -f", "unguarded"),
+            ("/usr/local/bin/docker-compose -p x down --rmi all", "unguarded"),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.watch.prune_verdict(command), verdict)
+
+    def test_a_host_or_context_prune_runs_the_leftover_step_on_that_daemon(self):
+        for command, options in (
+            ("docker -H tcp://other:2375 image prune -f", ["-H", "tcp://other:2375"]),
+            ("docker --context remote image prune -af", ["--context", "remote"]),
+            ("env DOCKER_HOST=tcp://other:2375 docker image prune -f", []),
+        ):
+            with self.subTest(command=command):
+                self._cleanup(command)
+                self.assertEqual(self._calls(), [[*options, *call] for call in REMOVED])
+        self.assertEqual(self._read("hosts.jsonl"), ["tcp://other:2375"] * 3)
+
+    def test_the_live_worktree_entries_prune_leftovers_and_run_the_builder_prune_unchanged(self):
+        tree = self.base / "tree"
+        tree.mkdir()
+        (tree / "Makefile").write_text("", encoding="utf-8")
+        exec_prefix = ["docker", "compose", "-p", "{project}", "exec", "-T", "infinito", "docker"]
+        live = [
+            [*exec_prefix, "image", "prune", "-f"],
+            [*exec_prefix, "builder", "prune", "-f", "--filter", "until=24h"],
+        ]
+        results = self._cleanup(worktree=live, stacks=f"printf '%s\\t%s\\n' {tree} stack-a")
+        prefix = ["compose", "-p", "stack-a", "exec", "-T", "infinito", "docker"]
+        builder = [*prefix, "builder", "prune", "-f", "--filter", "until=24h"]
+        self.assertEqual(self._calls(), [*([*prefix, *call] for call in REMOVED), builder])
+        self.assertEqual(results, [
+            *(f"ok: {shlex.join(['docker', *prefix, *call])}" for call in REMOVED), f"ok: {shlex.join(['docker', *builder])}",
+        ])
+
+    def test_the_live_worktree_prune_runs_the_leftover_step_inside_that_daemon(self):
+        tree = self.base / "tree"
+        tree.mkdir()
+        (tree / "Makefile").write_text("", encoding="utf-8")
+        live = ["docker", "compose", "-p", "{project}", "exec", "-T", "infinito", "docker", "image", "prune", "-f"]
+        inner = ["docker", "compose", "-p", "{project}", "exec", "-T", "infinito", "sh", "-c", "docker rmi abc"]
+        results = self._cleanup(worktree=[live, inner], stacks=f"printf '%s\\t%s\\n' {tree} stack-a")
+        prefix = ["compose", "-p", "stack-a", "exec", "-T", "infinito", "docker"]
+        self.assertEqual(self._calls(), [[*prefix, *call] for call in REMOVED])
+        self.assertEqual(results, [
+            f"ok: {shlex.join(['docker', *prefix, *LISTED])}", f"ok: {shlex.join(['docker', *prefix, *REMOVED[1]])}",
+            f"ok: {shlex.join(['docker', *prefix, *REMOVED[2]])}",
+            f"refused ({self.watch.REFUSALS['nested']}): {shlex.join([arg.format(project='stack-a') for arg in inner])}",
+        ])
+
+    def test_the_live_cleanup_entries_prune_leftovers_and_run_the_others_unchanged(self):
+        repo = self.base / "repo"
+        images = repo / "state" / "e2e" / "store-images"
+        images.mkdir(parents=True)
+        for name in ("store-api.tar", "store-web.tar"):
+            (images / name).write_bytes(b"x")
+        live = [
+            "docker image prune -f",
+            "docker container prune -f --filter until=1h",
+            (
+                'if [ -z "$(docker ps -q --filter label=com.docker.compose.project=infinito-nexus-gui)" ]; then rm -f '
+                f"{repo}/state/e2e/store-images/store-api.tar {repo}/state/e2e/store-images/store-web.tar; fi"
+            ),
+        ]
+        self.assertEqual([self.watch.prune_verdict(command) for command in live], ["prune", "run", "run"])
+        results = self._cleanup(*live)
+        self.assertEqual(self._calls(), [
+            *REMOVED, ["container", "prune", "-f", "--filter", "until=1h"],
+            ["ps", "-q", "--filter", "label=com.docker.compose.project=infinito-nexus-gui"],
+        ])
+        self.assertEqual(results, [
+            f"ok: {shlex.join(['docker', *LISTED])}", "ok: docker rmi aaaaaaaaaaaa", "ok: docker rmi dddddddddddd",
+            f"ok: {live[1]}", f"ok: {live[2]}",
+        ])
+        self.assertEqual(os.listdir(images), [])
+
+    def test_an_image_a_container_uses_is_kept_and_stays_out_of_the_alert(self):
+        (self.base / "in-use.txt").write_text("aaaaaaaaaaaa\n", encoding="utf-8")
+        (self.base / "gone.txt").write_text("dddddddddddd\n", encoding="utf-8")
+        results = self._cleanup("docker image prune -f", "docker builder prune -f")
+        self.assertEqual(results[1:], [
+            "kept (in use): docker rmi aaaaaaaaaaaa", "failed (1): docker rmi dddddddddddd", "ok: docker builder prune -f",
+        ])
+        self.assertEqual(self.watch.cleanup_failures(results), ["failed (1): docker rmi dddddddddddd"])
+        held = "Error response from daemon: conflict: unable to delete f18bae17841e"
+        for err, in_use in (
+            (f"{held} (must be forced) - image is being used by stopped container 3c9a\n", True),
+            (f"{held} (cannot be forced) - image is being used by running container 3c9a\n", True),
+            (f"{held} (cannot be forced) - image has dependent child images\n", False),
+            (f"{held} (must be forced) - image is referenced in multiple repositories\n", False),
+            (f"WARNING: runtime\n{held} (cannot be forced) - image has dependent child images\n", False),
+            (f"{held}: container store is locked\n", False),
+            ("Error response from daemon: No such image: f18bae17841e\n", False),
+        ):
+            with self.subTest(err=err):
+                self.assertEqual(self.watch.IN_USE.search(err) is not None, in_use)
+
+    def test_an_unreachable_daemon_is_reported_and_removes_nothing(self):
+        (self.base / "images.txt").unlink()
+        results = self._cleanup("docker image prune -f", "docker builder prune -f")
+        self.assertEqual(results, [f"failed (1): {shlex.join(['docker', *LISTED])}", "ok: docker builder prune -f"])
+        self.assertEqual(self._calls(), [LISTED, ["builder", "prune", "-f"]])
+
+    def test_a_missing_docker_binary_is_reported_not_raised(self):
+        (self.bin / "docker").unlink()
+        results = self._cleanup("docker image prune -f")
+        self.assertEqual(len(results), 1, results)
+        self.assertRegex(results[0], rf"^failed \(.+\): {re.escape(shlex.join(['docker', *LISTED]))}$")
 
 
 if __name__ == "__main__":

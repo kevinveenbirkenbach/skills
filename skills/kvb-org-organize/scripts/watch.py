@@ -24,6 +24,13 @@ Usage:
                        configured low-risk cleanup commands
     watch.py status    print the stage computed from the live free space and the
                        stored samples, and the stored measurement's age in seconds
+    watch.py guard REAL REPORT ARGS...
+                       the docker and docker-compose shim of the cleanup shell
+                       lines: an image prune becomes the leftover step on the
+                       same daemon, a system prune, rmi, image rm, image
+                       remove or compose --rmi is refused with exit 3,
+                       anything else execs REAL; result lines are appended to
+                       REPORT
 
 Environment:
     AGENTS_COUNCIL_ROOT: shared state directory; /tmp/agents-council unless set,
@@ -42,8 +49,22 @@ Environment:
 
 Config keys, all required: disk, thresholds_gb {warn, stop, critical},
 projection_minutes, interval_seconds, cache_interval_seconds, heavy_commands,
-never_block (regexes), cleanup (shell commands), worktree_cleanup (argv lists
-with {project}, run without a shell in /, so no worktree file is read),
+never_block (regexes), cleanup (shell commands; a plain `docker image prune`
+with nothing but -a, -f, --all, --force or --filter X never runs: the first
+stands for the built-in step that lists the dangling images and removes,
+without force, each whose repository and digest are both <none>, so tagged
+images, pulls by digest and images a container uses stay; every other line
+runs with the guard shims of docker and docker-compose first on PATH, which
+turn each image prune into that step on the same daemon and refuse system
+prune, rmi, image rm, image remove and compose --rmi; a line that would reach
+docker past the shims, by a path in command position, a PATH reset or a
+privilege switch, is refused and none of it runs; this guards operator-written
+lines against accidents, and a computed docker path, a script resetting PATH
+or the docker API socket are out of its scope),
+worktree_cleanup (argv lists with {project}, run without a shell in /, so no
+worktree file is read; `docker compose -p {project} exec -T <service> docker
+image prune` with prune flags runs the leftover step inside that daemon, any
+other entry naming an image removal is refused),
 worktrees_command (shell command printing per running stack its worktree path
 and compose project, tab-separated, one per line; a project that is not a
 compose project name is skipped), worktree_marker (path relative
@@ -74,9 +95,11 @@ import math
 import os
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from types import ModuleType
@@ -134,6 +157,46 @@ COMPOSE_VALUES = frozenset({
     "--progress",
 })
 BUILDING = frozenset({"up", "run", "create"})
+LEFTOVERS = ["images", "--filter", "dangling=true", "--format", "{{.ID}} {{.Repository}} {{.Digest}}"]
+IMAGE_ID = re.compile(r"(?:sha256:)?[0-9a-f]{12,64}")
+NONE = "<none>"
+PRUNE_COMMANDS = (["image", "prune"], ["images", "prune"])
+PRUNE_FLAG = re.compile(r"-[af]+|--force|--all|--filter=.+", re.DOTALL)
+DOCKER_GLOBALS = frozenset({
+    "-H", "--host", "-c", "--context", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey",
+})
+SPARING = "a plain docker image prune removes the build leftovers and keeps them"
+REMOVALS = {
+    ("system", "prune"): f"docker system prune also removes digest-pinned images; {SPARING}",
+    ("rmi",): f"docker rmi can remove digest-pinned images; {SPARING}",
+    ("image", "rm"): f"docker image rm can remove digest-pinned images; {SPARING}",
+    ("image", "remove"): f"docker image remove can remove digest-pinned images; {SPARING}",
+}
+COMPOSE_RMI = f"compose down --rmi removes the services' images, digest-pinned ones included; {SPARING}"
+GUARDED_BINARIES = ("docker", "docker-compose")
+INNER_REMOVAL = re.compile(r"\bdocker\b.*\b(?:images? (?:prune|rm|remove)|system prune|rmi)\b", re.DOTALL)
+WORKTREE_REMOVAL = re.compile(r"\b(?:images? (?:prune|rm|remove)|system prune|rmi)\b")
+QUOTING = re.compile(r"[\"'`\\]")
+UNGUARDED = re.compile(r"\bPATH=|\bcommand\s+-p\b|\benv\b[^;&|\n]*\s(?:-i|--ignore-environment)\b")
+PRIVILEGED = re.compile(r"\b(?:sudo|doas|su|pkexec|run0|systemd-run)\b")
+IN_USE = re.compile(
+    r"^Error response from daemon: conflict: unable to delete \S+ \((?:must|cannot) be forced\) - "
+    r"image is being used by (?:running|stopped) container \S+$",
+    re.MULTILINE,
+)
+OK, KEPT = "ok: ", "kept (in use): "
+GUARD_REFUSED = 3
+SHIM = '#!/bin/sh\nexec {python} -I {watch} guard {real} {report} "$@"\n'
+REFUSALS = {
+    "unguarded": (
+        "docker run by a path, PATH=, env -i, command -p, sudo, doas, su, pkexec, run0 or systemd-run would "
+        "bypass the docker guard; call docker by name"
+    ),
+    "nested": (
+        "it would remove images in the worktree's daemon; only docker compose -p {project} exec -T <service> "
+        "docker image prune [-a|--all] [-f|--force] [--filter X] is supported"
+    ),
+}
 SEPARATOR = re.compile(r"[();<>|&\n]+")
 PUNCTUATION = "();<>|&\n"
 WORD_BREAK = " \t\n;&|()<>"
@@ -1200,20 +1263,251 @@ def busy(tree: str, names: list[str]) -> bool:
     return False
 
 
+def prune_flags(words: list[str]) -> bool:
+    flags = iter(words)
+    return all(PRUNE_FLAG.fullmatch(word) or (word == "--filter" and next(flags, None) is not None) for word in flags)
+
+
+def plain_prune(command: str) -> bool:
+    """Returns:
+        Whether the line parses to exactly `docker image prune` or `docker
+        images prune` followed by nothing but -a, -f, --all, --force and
+        --filter X.
+    """
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    return words[:1] == ["docker"] and words[1:3] in PRUNE_COMMANDS and prune_flags(words[3:])
+
+
+def prune_verdict(command: str) -> str:
+    """Returns:
+        "prune" for a plain_prune() line, run in process; "unguarded" for a
+        line whose text, with whitespace collapsed and with or without its
+        quotes, backslashes and backticks, would reach docker past the guard
+        shim (an absolute docker path, a PATH reset, or docker with a
+        privilege switch); else "run", through the shell with the shim first
+        on PATH.
+    """
+    if plain_prune(command):
+        return "prune"
+    texts = {" ".join(text.split()) for text in (command, QUOTING.sub("", command))}
+    if absolute_docker(command) or any(
+        UNGUARDED.search(text) or ("docker" in text and PRIVILEGED.search(text)) for text in texts
+    ):
+        return "unguarded"
+    return "run"
+
+
+def absolute_docker(command: str) -> bool:
+    """Returns:
+        Whether a simple command of the line, or of a shell's -c code in it,
+        runs a program named by a path ending in /docker or /docker-compose;
+        a path in an argument, such as /var/lib/docker, does not count.
+    """
+    try:
+        parts = segments(command)
+    except ValueError:
+        return False
+    for part in parts:
+        run = program(part)
+        code = inline_code(run)
+        if code is not None and absolute_docker(code):
+            return True
+        if run and run[0].endswith(tuple(f"/{name}" for name in GUARDED_BINARIES)):
+            return True
+    return False
+
+
+def docker_split(args: list[str]) -> tuple[list[str], list[str]]:
+    """Returns:
+        docker's global options with their values, and the subcommand with
+        its arguments.
+    """
+    at = 0
+    while at < len(args) and args[at].startswith("-"):
+        at += 2 if args[at] in DOCKER_GLOBALS else 1
+    return args[:at], args[at:]
+
+
+def guard_verdict(rest: list[str]) -> str | None:
+    """Returns:
+        "prune" for an image prune, the reason a removal is refused, or None
+        for a command docker runs as asked.
+    """
+    if rest[:2] in PRUNE_COMMANDS:
+        return "prune"
+    for words, reason in REMOVALS.items():
+        if tuple(rest[: len(words)]) == words:
+            return reason
+    if rest[:1] == ["compose"] and any(arg == "--rmi" or arg.startswith("--rmi=") for arg in rest):
+        return COMPOSE_RMI
+    if INNER_REMOVAL.search(" ".join(rest[1:])):
+        return REFUSALS["nested"]
+    return None
+
+
+def cmd_guard(real: str, report: str, args: list[str]) -> int:
+    """Args:
+        real: the docker or docker-compose binary the shim stands in for.
+        report: the file the result lines are appended to.
+        args: its arguments as the shell expanded them.
+
+    Returns:
+        0 after a clean leftover step, 1 after one with failures,
+        GUARD_REFUSED for a refused removal; any other command replaces this
+        process with the real binary.
+    """
+    name = os.path.basename(real)
+    options, rest = docker_split(args) if name == "docker" else ([], ["compose", *args])
+    verdict = guard_verdict(rest)
+    if verdict is None:
+        os.execv(real, [real, *args])
+    if verdict == "prune":
+        lines = remove_leftovers([real, *options])
+    else:
+        lines = [f"refused ({verdict}): {shlex.join([name, *args])}".replace("\n", " ")]
+        print(f"docker guard: {lines[0]}", file=sys.stderr)
+    with open(report, "a", encoding="utf-8") as handle:
+        handle.writelines(f"{line}\n" for line in lines)
+    if verdict != "prune":
+        return GUARD_REFUSED
+    return 1 if cleanup_failures(lines) else 0
+
+
+def run_step(command: str | list[str], shell: bool, env: dict[str, str] | None = None) -> tuple[int | str, bytes, bytes]:
+    """Returns:
+        The exit code, or "timeout" or the OS error that kept the command from
+        running, and its standard output and standard error.
+    """
+    try:
+        done = subprocess.run(command, shell=shell, cwd="/", env=env, capture_output=True, timeout=900, check=False)
+    except subprocess.TimeoutExpired:
+        return "timeout", b"", b""
+    except OSError as error:
+        return error.strerror or type(error).__name__, b"", b""
+    return done.returncode, done.stdout, done.stderr
+
+
+def result_line(code: int | str, shown: str) -> str:
+    return f"{OK if code == 0 else f'failed ({code}): '}{shown}"
+
+
+def shown(prefix: list[str], args: list[str]) -> str:
+    return shlex.join([os.path.basename(prefix[0]), *prefix[1:], *args])
+
+
+def remove_leftovers(prefix: list[str]) -> list[str]:
+    """Args:
+        prefix: the argv that reaches the daemon, up to and including its
+            docker binary and global options.
+
+    Returns:
+        The result lines of listing the dangling images and of removing each
+        one, without force, whose repository and digest are both <none>; a
+        pull by digest keeps both and stays, an image a container uses is
+        `kept (in use)`.
+    """
+    code, out, _ = run_step([*prefix, *LEFTOVERS], False)
+    lines = [result_line(code, shown(prefix, LEFTOVERS))]
+    rows = (row.split() for row in out.decode(errors="replace").splitlines()) if code == 0 else ()
+    for image in dict.fromkeys(fields[0] for fields in rows if fields[1:] == [NONE, NONE] and IMAGE_ID.fullmatch(fields[0])):
+        code, _, err = run_step([*prefix, "rmi", image], False)
+        in_use = code != 0 and IN_USE.search(err.decode(errors="replace")) is not None
+        lines.append(KEPT + shown(prefix, ["rmi", image]) if in_use else result_line(code, shown(prefix, ["rmi", image])))
+    return lines
+
+
+def cleanup_failures(results: list[str]) -> list[str]:
+    return [line for line in results if not line.startswith((OK, KEPT))]
+
+
+def guard_env(directory: Path, report: Path, binaries: dict[str, str | None]) -> dict[str, str]:
+    """Args:
+        binaries: the real path of each of GUARDED_BINARIES, None when absent.
+
+    Returns:
+        The environment of the cleanup shell lines: per binary found, a shim
+        of its name in the private directory, first on PATH, that hands every
+        call to `watch.py guard`.
+    """
+    env = dict(os.environ)
+    found = {name: real for name, real in binaries.items() if real is not None}
+    for name, real in found.items():
+        shim = directory / name
+        quoted = {key: shlex.quote(value) for key, value in (
+            ("python", sys.executable), ("watch", str(Path(__file__).resolve())), ("real", real),
+            ("report", str(report)),
+        )}
+        shim.write_text(SHIM.format(**quoted), encoding="utf-8")
+        shim.chmod(0o700)
+    if found:
+        env["PATH"] = os.pathsep.join(filter(None, (str(directory), env.get("PATH", ""))))
+    return env
+
+
+def guarded(command: str, env: dict[str, str], report: Path) -> list[str]:
+    report.unlink(missing_ok=True)
+    code = run_step(command, True, env)[0]
+    return [result_line(code, command), *(report.read_text(encoding="utf-8").splitlines() if report.exists() else ())]
+
+
+def worktree_prune(argv: list[str]) -> bool:
+    return (
+        argv[:3] == ["docker", "compose", "-p"] and argv[4:6] == ["exec", "-T"] and len(argv) > 9
+        and not argv[6].startswith("-") and argv[7] == "docker" and argv[8:10] in PRUNE_COMMANDS
+        and prune_flags(argv[10:])
+    )
+
+
+def worktree_step(argv: list[str]) -> list[str]:
+    """Returns:
+        The result lines of one worktree command: the leftover step inside the
+        worktree's daemon for the exact `docker compose -p <project> exec -T
+        <service> docker image prune` form, a refusal for any other command
+        naming an image removal, else its own result.
+    """
+    if worktree_prune(argv):
+        return remove_leftovers(argv[:8])
+    text = " ".join(argv)
+    if WORKTREE_REMOVAL.search(text) or WORKTREE_REMOVAL.search(QUOTING.sub("", text)):
+        return [f"refused ({REFUSALS['nested']}): {shlex.join(argv)}"]
+    return [result_line(run_step(argv, False)[0], shlex.join(argv))]
+
+
 def run_cleanup(cfg: dict) -> list[str]:
-    commands = [(command, True) for command in cfg["cleanup"]]
-    for tree, project in running_worktrees(cfg):
-        if busy(tree, cfg["busy_processes"]):
-            continue
-        commands += [([arg.format(project=project) for arg in argv], False) for argv in cfg["worktree_cleanup"]]
-    results = []
-    for command, shell in commands:
-        try:
-            code = subprocess.run(command, shell=shell, cwd="/", capture_output=True, timeout=900, check=False).returncode
-        except subprocess.TimeoutExpired:
-            code = "timeout"
-        results.append(f"{'ok' if code == 0 else f'failed ({code})'}: {command if shell else shlex.join(command)}")
-    return results
+    """Returns:
+        The result lines of the configured cleanup commands, every plain
+        `docker image prune` among them replaced by one remove_leftovers() in
+        the first one's place, every line prune_verdict() refuses reported as
+        `refused (<reason>): <command>` with none of it run and every other
+        line followed by the lines its guarded docker calls reported, then
+        those of the worktree commands.
+    """
+    worktree_commands = [
+        [arg.format(project=project) for arg in argv]
+        for tree, project in running_worktrees(cfg)
+        if not busy(tree, cfg["busy_processes"])
+        for argv in cfg["worktree_cleanup"]
+    ]
+    binaries = {name: shutil.which(name) for name in GUARDED_BINARIES}
+    real = binaries["docker"]
+    results: list[str] = []
+    pruned = False
+    with tempfile.TemporaryDirectory(prefix="kvb-docker-guard-") as directory:
+        report = Path(directory) / "report"
+        env = guard_env(Path(directory), report, binaries)
+        for command in cfg["cleanup"]:
+            verdict = prune_verdict(command)
+            if verdict == "run":
+                results += guarded(command, env, report)
+            elif verdict in REFUSALS:
+                results.append(f"refused ({REFUSALS[verdict]}): {command}")
+            elif not pruned:
+                pruned = True
+                results += remove_leftovers([real or "docker"])
+    return results + [line for argv in worktree_commands for line in worktree_step(argv)]
 
 
 def cmd_cleanup(cfg: dict, args: argparse.Namespace) -> int:
@@ -1231,7 +1525,7 @@ def cmd_cleanup(cfg: dict, args: argparse.Namespace) -> int:
             results = run_cleanup(cfg) if args.full else []
             cache_gb = trim_caches(cfg)
             after, _ = disk(cfg)
-            failed = [r for r in results if not r.startswith("ok")]
+            failed = cleanup_failures(results)
             if args.full or cache_gb:
                 alert(
                     "cleanup",
@@ -1261,6 +1555,8 @@ def cmd_status(cfg: dict) -> int:
 
 
 def main() -> int:
+    if sys.argv[1:2] == ["guard"] and len(sys.argv) > 3:
+        return cmd_guard(sys.argv[2], sys.argv[3], sys.argv[4:])
     parser = argparse.ArgumentParser(prog="watch")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("watch")
