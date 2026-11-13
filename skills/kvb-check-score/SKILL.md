@@ -58,46 +58,13 @@ The second line is the verdict, first match wins:
 
 ## Tables and message block
 
-Each flag replaces the two lines; values, gate and exit code stay:
-
-- `--table`: one markdown table, `| 🎯 Fix | 💥 Break | 💸 Tokens |
-  ⏱️ Velocity | 🛡️ Security | 🏆 Score | Gate |`.
-- `--commit-table <repo>`: that table led by `🌿 Branch | 📊 Diff stat`
-  from git, 📁 worktree path below, alone in a code block. Every commit
-  block is this table; after the commit, `--commit <sha>` shows that commit's diff stat
-  and a `🔖 Commit` column.
-- `--message-block`: one value per line, `🎯 Fix: <f> %` through
-  `🏆 Score: <n>` and `🚦 Gate: <verdict>`. Every commit message carries it
-  as its own paragraph right before the `Co-Authored-By` line, passed as one
-  `-m` argument, so the approval prompt and git history show the values.
-
-On a skill change add `--value <n:n|?>`, the quotient of the 💰 line (`?`
-while it has no value): a `💰 Value` column after `💸 Tokens`, or line
-after `🛡️ Security`. It changes neither score nor gate; alone it is a usage
-error.
+Every commit block is the `--commit-table` and every commit message carries
+the `--message-block` paragraph right before the `Co-Authored-By` line.
+Read `tables.md` next to this file before using `--table`,
+`--commit-table`, `--message-block` or `--value`.
 
 ## Journal
 
-Each `--message-block` render appends one row to
-`${AGENTS_COUNCIL_ROOT:-/tmp/agents-council}/scores.jsonl`: time, origin
-remote, top level path, branch, `sha` null, the six values and the block's
-digest. The hub's burndown draws it as overlays; no gate reads it. A failed
-append prints one stderr line and keeps the exit code; a linked council
-root or a link, FIFO or other non-regular file at the journal fails it
-without blocking, through `nofollow.py` of `kvb-org-organize`; when that
-helper is missing or unusable, the line names it. A new council root gets mode
-0700, a new journal 0600.
-
-The journal lives in `/tmp`, so a reboot or another PC starts empty. Refill
-it from the blocks in git history, without a model:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/backfill.py --repo <dir>... [--since <rev>] [--labels <file>]
-```
-
-It reads every local and origin branch, takes the last block of each commit
-message, old labels included, and adds one row per commit not yet keyed by
-(remote, sha), so a second run or another clone adds nothing. The branch is
-the one whose first-parent line holds the commit, the default branch first,
-else the one a merge subject names. An unknown label is reported once and
-skipped.
+Each `--message-block` render appends a row to the score journal the hub's
+burndown draws; no gate reads it. Read `journal.md` next to this file
+before reading or refilling it.

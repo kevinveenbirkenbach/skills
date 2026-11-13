@@ -48,7 +48,7 @@ LAYOUTS = ((), ("--table",), ("--message-block",))
 OLD = re.compile(r"cost|time", re.IGNORECASE)
 JOURNAL_NAME = "scores.jsonl"
 READERS = {
-    "skills/kvb-check-score/SKILL.md",
+    "skills/kvb-check-score/journal.md",
     "skills/kvb-check-score/scripts/journal.py",
     "orchestrator/kvb_orchestrator/scores.py",
 }
