@@ -66,15 +66,17 @@ else
 fi
 
 if [[ "${TARGET}" == "${HOME}" ]]; then
+	install -d -m 0700 "${HOME}/.local/state/agents-council"
 	if command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; then
-		log "skills: enabling the daily kvb-dream notification timer"
+		log "skills: enabling the daily kvb-dream notification timer and the kvb-org-queue-cleanup rounds at 00:00, 12:00 and on request"
 		units="${HOME}/.config/systemd/user"
 		mkdir -p "${units}"
 		cp -f "${REPO_ROOT}/skills/kvb-dream/systemd/kvb-dream-notify.service" "${REPO_ROOT}/skills/kvb-dream/systemd/kvb-dream-notify.timer" "${units}/"
+		cp -f "${REPO_ROOT}/skills/kvb-org-queue-cleanup/systemd/kvb-org-queue-cleanup."{service,timer,path} "${units}/"
 		systemctl --user daemon-reload
-		systemctl --user enable --now kvb-dream-notify.timer
+		systemctl --user enable --now kvb-dream-notify.timer kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.path
 	else
-		warn "skills: no systemd user session; skipped the kvb-dream notification timer."
+		warn "skills: no systemd user session; skipped the kvb-dream notification timer and the kvb-org-queue-cleanup rounds."
 	fi
 	if command -v docker &>/dev/null; then
 		bash "${REPO_ROOT}/scripts/orchestrator.sh" install

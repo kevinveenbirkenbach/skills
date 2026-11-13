@@ -1,0 +1,7 @@
+[Unit]
+Description=One kvb-org-queue-cleanup round: pan-pan, security, delete the jobs no living process holds
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I %h/.claude/skills/kvb-org-queue-cleanup/scripts/cleanup.py run --window 900
+TimeoutStartSec=2400

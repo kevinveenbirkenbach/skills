@@ -140,7 +140,7 @@ def items() -> list[dict]:
     for line in lines:
         try:
             row = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if isinstance(row, dict) and isinstance(row.get("ts"), int | float):
             rows.append(row)
@@ -209,7 +209,7 @@ def for_me(row: dict, name: str) -> bool:
 def read_json(path: Path) -> dict:
     try:
         data = json.loads(organize("nofollow").read_text(ROOT, path))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return {}
     return data if isinstance(data, dict) else {}
 

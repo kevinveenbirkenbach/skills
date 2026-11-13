@@ -34,6 +34,8 @@ rules forbidding raw commands.
   build temp dirs.
 - **Register**: `council.py list --long`; `rasci.py artifacts` (`kvb-org-artefacts`,
   `--ended` for candidates).
+- **Queue**: `${CLAUDE_SKILL_DIR}/../kvb-org-queue-cleanup/scripts/cleanup.py
+  request`; go on meanwhile.
 - **Live use**: `fuser`, `lsof`, `ps -o pid,etime,comm`, never full command
   lines or environments (credentials). Sandboxed, an empty result proves
   nothing.

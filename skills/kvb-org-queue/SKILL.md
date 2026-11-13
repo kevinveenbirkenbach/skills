@@ -1,8 +1,8 @@
 ---
 name: kvb-org-queue
 description: >
-  Run every heavy job (gate, deploy, build, swarm) through a deterministic
-  queue instead of asking the chair: hotfix first, then register rank.
+  Queue every heavy job (gate, deploy, build, swarm), never ask the chair:
+  hotfix first, then rank.
 ---
 
 `${CLAUDE_SKILL_DIR}/scripts/queue.py` replaces asking the chair for heavy
@@ -74,7 +74,8 @@ learned values, `cancel` removes your own waiting job.
   only exceptions such as a stuck queue or a hung job (`capacity.md` of
   `kvb-org-organize`).
 - A running job is never cut short for the queue; only the operator orders
-  one down, and `kvb-git-hotfix` may void a gate.
+  one down, and `kvb-git-hotfix` may void a gate. A `kvb-org-queue-cleanup`
+  round deletes only entries whose lock no living process holds.
 - With `queue_enforce: true`, the `block` hook (PreToolUse on Bash) refuses
   `heavy_commands`, image builds, `make install|verify-*`, tests beyond one
   file and `gate.py run|hold` outside `queue.py hold`.
