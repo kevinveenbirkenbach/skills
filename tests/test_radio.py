@@ -752,6 +752,23 @@ class TestRadio(unittest.TestCase):
         self.assertEqual(self._send("s1", "feedback", "send", "ran y", "--to", "Two", "--sid", "s9"), ["sent call to Two"])
         self.assertEqual(self._send("s1", "feedback", "send", "ran z", "--to", "Nine", "--sid", "s9"), ["sent call to Nine", "wake: SendMessage to Nine (session s9)"])
 
+    def test_send_pins_a_call_to_its_session_whatever_its_feedback_channel_and_only_a_call(self):
+        self._send("s2", "feedback", "set", "post")
+        self.assertEqual(self._send("s1", "send", "call", "ran x", "--to", "Two", "--sid", "s2"), ["sent call to Two", "wake: SendMessage to Two (session s2)"])
+        self.assertEqual(self._send("s1", "send", "direct", "ran y", "--to", "Two", "--wake", "--sid", "s2"), ["sent call to Two", "wake: SendMessage to Two (session s2)"])
+        for args in (
+            ("send", "call", "t", "--to", "Two", "--to", "Three", "--sid", "s2"),
+            ("send", "direct", "t", "--to", "Two", "--sid", "s2"),
+            ("send", "broadcast", "t", "--sid", "s2"),
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(self._cli("s1", *args).returncode, 2)
+        self.assertEqual([(row["class"], row["to"], row["to_sessions"]) for row in self._rows()], [("call", ["Two"], ["s2"])] * 2)
+        (self.home / ".claude" / "sessions" / "s2.json").write_text(json.dumps({"sessionId": "s2", "name": "Deux"}), encoding="utf-8")
+        self.assertEqual(self._prompt("s2"), ["CALL One to Two: ran x", "CALL One to Two: ran y"])
+        self._send("s1", "send", "call", "plain", "--to", "Two")
+        self.assertNotIn("to_sessions", self._rows()[-1])
+
     def test_feedback_send_without_a_session_takes_the_channel_the_name_set(self):
         self._send("s2", "feedback", "set", "call")
         self._send(None, "feedback", "set", "call", "--session", "codex-1")
