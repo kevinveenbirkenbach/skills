@@ -247,7 +247,7 @@ class TestWorkbenchBubbles(HubCase):
             word = json.loads(body)["text"]
             if word == f"{CUE}-long":
                 with (self.council / "news.jsonl").open("a", encoding="utf-8") as handle:
-                    handle.write(self.jsonl([{"ts": time.time(), "from": "Stage", "to": [], "text": LONG, "class": "security", "v": 2}]))
+                    handle.write(self.jsonl([{"ts": time.time(), "from": "Stage", "to": [], "text": LONG, "class": "broadcast", "v": 2}]))
             elif word.startswith(CUE):
                 now = time.time()
                 rows = [
