@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SECURITY = REPO_ROOT / "skills" / "kvb-check-security" / "scripts" / "security.py"
 GIT_DIR = os.path.dirname(shutil.which("git"))
 PLACEHOLDER = "placeholder-value-never-shown"
-FAKE = """#!{python}
+FAKE = """#!{shebang}
 import json, os, pathlib, sys
 args = sys.argv[1:]
 pathlib.Path(__file__).with_name("argv.json").write_text(json.dumps(args))
@@ -24,12 +24,19 @@ pathlib.Path(__file__).with_name("home.txt").write_text(os.environ["HOME"])
 pathlib.Path(os.environ["HOME"], ".medusa").mkdir()
 target, out = pathlib.Path(args[1]), pathlib.Path(args[args.index("-o") + 1])
 out.mkdir(parents=True)
-scannable = sorted(p for p in target.rglob("*") if p.is_file() and p.suffix.lower() not in (".mjs", ".cjs"))
-if not scannable:
-    sys.exit(0)
-findings = []
-for path in scannable:
-    for number, text in enumerate(path.read_text().splitlines(), 1):
+limit = int(os.environ.get("FAKE_MEDUSA_FILE_LIMIT", str(2 * 1024 * 1024)))
+findings, taken, counted = [], 0, 0
+for path in sorted(p for p in target.rglob("*") if p.is_file()):
+    if path.suffix.lower() not in (".py", ".json", ".js") and not path.name.startswith("Dockerfile"):
+        continue
+    if path.name == os.environ.get("FAKE_MEDUSA_LOSE") or any(p in str(path.relative_to(target)) for p in ("build", "env")):
+        continue
+    taken += 1
+    if path.stat().st_size > limit:
+        continue
+    counted += path.read_bytes().count(b"\\n") + 1
+    cut = int(os.environ.get("FAKE_MEDUSA_LINE_LIMIT", "50000"))
+    for number, text in enumerate(path.read_text().split("\\n")[:cut], 1):
         for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
             if "MARK-" + severity in text:
                 findings.append({{
@@ -38,8 +45,35 @@ for path in scannable:
                 }})
         if "MARK-FILE" in text:
             findings.append({{"severity": "MEDIUM", "rule_id": "FAKE-FILE", "file": str(path), "line": None}})
-report = {{"issues": findings}} if os.environ.get("FAKE_MEDUSA_SHAPE") == "other" else {{"findings": findings}}
+if not taken:
+    print("No files found to scan")
+    sys.exit(0)
+report = {{"findings": findings, "scan_summary": {{"files_scanned": taken, "lines_scanned": counted}}}}
+if os.environ.get("FAKE_MEDUSA_SHAPE") == "other":
+    report = {{"issues": findings}}
+if os.environ.get("FAKE_MEDUSA_SHAPE") == "nocounts":
+    report = {{"findings": findings, "scan_summary": {{"files_scanned": taken}}}}
 (out / "medusa-scan-20261104-120000.json").write_text(json.dumps(report))
+sys.stdout.write(os.environ.get("FAKE_MEDUSA_STDOUT", "").replace("TREE", str(target)))
+sys.exit(int(os.environ.get("FAKE_MEDUSA_EXIT", "0")))
+"""
+BASE = "class RuleBasedScanner:\n    MAX_RULE_SCAN_LINES = {lines}\n"
+CONFIG = """@dataclass
+class MedusaConfig:
+    exclude_paths: List[str] = field(default_factory=lambda: ["build/", "env/"])
+    exclude_files: List[str] = field(default_factory=lambda: ["*.min.js"])
+"""
+PARALLEL = """MAX_SCAN_FILE_SIZE = {size}
+
+
+class MedusaParallelScanner:
+    FILE_SCANNERS = {{".py": "python", ".json": "json", ".js": "javascript"}}
+
+    def find_scannable_files(self):
+        special_exact_names: Set[str] = {{"mcp.json"}}
+        special_prefixes = ("Dockerfile", ".env")
+        env_suffix = ".env"
+        ai_context_dir_names: Set[str] = {{".claude"}}
 """
 HAND = "review trust boundaries, secrets and injection in the diff by hand, then pass --security '~<n>' to kvb-check-score"
 
@@ -49,10 +83,20 @@ class TestSecurity(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.base = Path(tmp.name)
-        self.bin = self.base / "bin"
-        self.bin.mkdir()
-        medusa = self.bin / "medusa"
-        medusa.write_text(FAKE.format(python=sys.executable), encoding="utf-8")
+        venv = self.base / "venv"
+        self.bin = venv / "bin"
+        self.bin.mkdir(parents=True)
+        real = Path(sys.executable).resolve()
+        (self.bin / "python").symlink_to(real)
+        (venv / "pyvenv.cfg").write_text(f"home = {real.parent}\ninclude-system-site-packages = false\n", encoding="utf-8")
+        version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        self.package = venv / "lib" / version / "site-packages" / "medusa"
+        self.limits()
+        (self.package / "__init__.py").write_text("", encoding="utf-8")
+        (self.package / "config.py").write_text(CONFIG, encoding="utf-8")
+        self.medusa = self.bin / "medusa"
+        self.medusa.write_text(FAKE.format(shebang=f"{self.bin / 'python'} -E"), encoding="utf-8")
+        medusa = self.medusa
         medusa.chmod(0o755)
         self.repo = self.base / "repo"
         self.repo.mkdir()
@@ -72,6 +116,11 @@ class TestSecurity(unittest.TestCase):
         self.write("gone.py", "y = 2  # MARK-HIGH\n")
         self.git("add", "-A")
         self.git("commit", "-qm", "base")
+
+    def limits(self, size: str = "2 * 1024 * 1024", lines: str = "50_000") -> None:
+        for name, text in (("core/parallel.py", PARALLEL.format(size=size)), ("scanners/base.py", BASE.format(lines=lines))):
+            (self.package / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.package / name).write_text(text, encoding="utf-8")
 
     def git(self, *args: str) -> None:
         subprocess.run(["git", *args], cwd=self.repo, env=self.env, capture_output=True, check=True)
@@ -278,6 +327,34 @@ class TestSecurity(unittest.TestCase):
         found = json.loads(self.scan("--json", env=self.env).stdout)
         self.assertEqual((found["files"], [(f["path"], f["line"]) for f in found["findings"]]), (1, [(name, 1)]))
 
+    def test_an_mjs_only_diff_scores_from_a_real_scan_and_only_a_complete_run_is_cached(self):
+        argv = self.bin / "argv.json"
+        folder = self.base / "council" / "security-cache"
+        self.write("tool.mjs", "a  // MARK-HIGH\n")
+        rerun = "medusa run incomplete, nothing cached, rerun once the host is idle"
+        timeout = "1 scanner error(s)/timeout(s) during scan: JavaScriptScanner (1)"
+        cases = (
+            ({"FAKE_MEDUSA_STDOUT": f"⚠️  {timeout}\n"}, f"{rerun}: {timeout}"),
+            ({"FAKE_MEDUSA_FILE_LIMIT": "4"}, f"{rerun}: medusa counted 0 of 2 lines"),
+        )
+        for extra, problem in cases:
+            with self.subTest(problem=problem):
+                argv.unlink(missing_ok=True)
+                result = self.scan(env={**self.env, **extra})
+                self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({problem}: {HAND})\n", 4))
+                self.assertTrue(argv.exists())
+                self.assertEqual(list(folder.glob("*.json")), [])
+        scored = ("🛡️ security 75 % (medusa: 1 finding in 1 file: high tool.mjs:1)\n", 3)
+        argv.unlink()
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), scored)
+        self.assertTrue(argv.exists())
+        self.assertEqual(len(list(folder.glob("*.json"))), 1)
+        argv.unlink()
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), scored)
+        self.assertFalse(argv.exists())
+
     def test_critical_exits_1_and_floors_at_0(self):
         self.write("app.py", "a  # MARK-CRITICAL\nb  # MARK-CRITICAL\nc  # MARK-CRITICAL\n")
         result = self.scan(env=self.env)
@@ -367,6 +444,133 @@ class TestSecurity(unittest.TestCase):
         self.scan(env=self.env)
         self.assertTrue(argv.exists())
         self.assertEqual(list(folder.glob("*.json")), [])
+
+    def test_an_incomplete_run_is_never_cached_and_never_scored(self):
+        self.write("app.py", "print(2)\n")
+        argv = self.bin / "argv.json"
+        folder = self.base / "council" / "security-cache"
+        warn = "⚠️  "
+        rerun = "medusa run incomplete, nothing cached, rerun once the host is idle"
+        cases = (
+            ({"FAKE_MEDUSA_STDOUT": f"Found 1 scannable files\n{warn}1 scanner error(s)/timeout(s) during scan: "
+              "OWASPLLMScanner (1)\n"}, f"{rerun}: 1 scanner error(s)/timeout(s) during scan: OWASPLLMScanner (1)"),
+            ({"FAKE_MEDUSA_STDOUT": f"{warn}1 director(ies) could not be read and were skipped (e.g. TREE/locked)\n"},
+             f"{rerun}: 1 director(ies) could not be read and were skipped (e.g. locked)"),
+            ({"FAKE_MEDUSA_EXIT": "3"}, f"{rerun}: medusa exit 3"),
+            ({"FAKE_MEDUSA_FILE_LIMIT": "4"}, f"{rerun}: medusa counted 0 of 2 lines"),
+            ({"FAKE_MEDUSA_SHAPE": "nocounts"},
+             ("medusa report unreadable: medusa-scan-20261104-120000.json holds no files_scanned and lines_scanned "
+              "counts (medusa exit 0)")),
+        )
+        for extra, problem in cases:
+            with self.subTest(problem=problem):
+                result = self.scan(env={**self.env, **extra})
+                self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({problem}: {HAND})\n", 4))
+                self.assertEqual(list(folder.glob("*.json")), [])
+        result = self.scan("--json", env={**self.env, "FAKE_MEDUSA_EXIT": "3"})
+        self.assertEqual(json.loads(result.stdout), {"security": None, "problem": f"{rerun}: medusa exit 3"})
+        argv.unlink()
+        complete = self.scan(env=self.env)
+        self.assertEqual((complete.stdout, complete.returncode), ("🛡️ security 100 % (medusa: 0 findings in 1 file)\n", 0))
+        self.assertTrue(argv.exists())
+        self.assertEqual(len(list(folder.glob("*.json"))), 1)
+        argv.unlink()
+        again = self.scan(env=self.env)
+        self.assertEqual((again.stdout, again.returncode), (complete.stdout, complete.returncode))
+        self.assertFalse(argv.exists())
+
+    def test_a_file_medusa_never_covers_is_named_with_its_limit_and_never_cached(self):
+        argv = self.bin / "argv.json"
+        folder = self.base / "council" / "security-cache"
+        never = "medusa never covers this diff, nothing cached"
+        big = "x = 1  # MARK-CRITICAL\n" + "#" * (2 * 1024 * 1024) + "\n"
+        cases = (
+            ({"big.json": big}, {}, f"{never}: big.json has {len(big)} bytes, over medusa's 2097152 byte file limit", False),
+            ({"long.py": "x\n" * 50_000 + "y = 1  # MARK-CRITICAL\n"}, {},
+             f"{never}: long.py has 50002 lines, over medusa's 50000 line regex limit", False),
+            ({"cr.py": "x\r" * 50_000 + "y = 1  # MARK-CRITICAL\r"}, {},
+             f"{never}: cr.py has 50002 lines, over medusa's 50000 line regex limit", False),
+            ({"new.py": "x = 1  # MARK-CRITICAL\n"}, {"FAKE_MEDUSA_LOSE": "new.py"},
+             f"{never}: medusa took up 1 of 2 files its rules take up", True),
+            ({}, {"FAKE_MEDUSA_STDOUT": "⚠️  Skipped TREE/app.py (3 MB exceeds 2 MB limit)\n"},
+             f"{never}: Skipped app.py (3 MB exceeds 2 MB limit)", True),
+        )
+        self.write("app.py", "print(2)\n")
+        for files, extra, problem, ran in cases:
+            with self.subTest(problem=problem):
+                argv.unlink(missing_ok=True)
+                for name, text in files.items():
+                    self.write(name, text)
+                result = self.scan(env={**self.env, **extra})
+                self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({problem}: {HAND})\n", 4))
+                self.assertEqual(argv.exists(), ran)
+                self.assertEqual(list(folder.glob("*.json")), [])
+                for name in files:
+                    (self.repo / name).unlink()
+
+    def test_a_type_medusa_never_scans_is_listed_and_the_rest_scored(self):
+        argv = self.bin / "argv.json"
+        self.write("tpl.conf.j2", "token  # MARK-CRITICAL\n")
+        never = "medusa never covers this diff, nothing cached"
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), (
+            f"🛡️ security – ({never}: medusa scans none of its files, not covered: tpl.conf.j2: {HAND})\n", 4,
+        ))
+        self.assertFalse(argv.exists())
+        self.write("app.py", "print(1)\nx = 1  # MARK-HIGH\n")
+        scored = ("🛡️ security 75 % (medusa: 1 finding in 1 file: high app.py:2; not covered: tpl.conf.j2)\n", 3)
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), scored)
+        argv.unlink()
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), scored)
+        self.assertFalse(argv.exists())
+        found = json.loads(self.scan("--json", env=self.env).stdout)
+        self.assertEqual((found["files"], found["not_covered"]), (1, ["tpl.conf.j2"]))
+        self.medusa.write_text(FAKE.format(shebang="/usr/bin/env -S python -E"), encoding="utf-8")
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), scored)
+        self.assertTrue(argv.exists())
+        (self.package / "scanners" / "base.py").unlink()
+        result = self.scan(env=self.env)
+        unread = f"{never}: medusa's own types, exclusions and limits are unreadable from its source: {HAND}"
+        self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({unread})\n", 4))
+
+    def test_a_path_medusa_excludes_is_listed_and_the_rest_scored(self):
+        self.write("app.py", "print(1)\nx = 1  # MARK-HIGH\n")
+        (self.repo / "cli" / "build").mkdir(parents=True)
+        self.write("cli/build/run.py", "y = 1  # MARK-CRITICAL\n")
+        self.write("environ.py", "z = 1  # MARK-CRITICAL\n")
+        result = self.scan(env=self.env)
+        self.assertEqual((result.stdout, result.returncode), (
+            "🛡️ security 75 % (medusa: 1 finding in 1 file: high app.py:2; not covered: cli/build/run.py, environ.py)\n",
+            3,
+        ))
+        self.write("app.py", "print(1)\n")
+        result = self.scan(env=self.env)
+        never = "medusa never covers this diff, nothing cached"
+        none = f"{never}: medusa scans none of its files, not covered: cli/build/run.py, environ.py: {HAND}"
+        self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({none})\n", 4))
+
+    def test_medusa_limits_come_from_its_source(self):
+        mark = "y = 1  # MARK-CRITICAL\n"
+        cases = (
+            (("64", "50_000"), ("64", "50000"), "wide.py", "#" * 70 + "\n" + mark,
+             "wide.py has 94 bytes, over medusa's 64 byte file limit"),
+            (("2 * 1024", "100"), ("2048", "100"), "tall.py", "\n" * 120 + mark,
+             "tall.py has 122 lines, over medusa's 100 line regex limit"),
+        )
+        for (size, lines), (fake_size, fake_lines), name, text, problem in cases:
+            with self.subTest(problem=problem):
+                self.limits(size=size, lines=lines)
+                self.write(name, text)
+                fake = {"FAKE_MEDUSA_FILE_LIMIT": fake_size, "FAKE_MEDUSA_LINE_LIMIT": fake_lines}
+                result = self.scan(env={**self.env, **fake})
+                self.assertEqual(
+                    (result.stdout, result.returncode),
+                    (f"🛡️ security – (medusa never covers this diff, nothing cached: {problem}: {HAND})\n", 4),
+                )
+                (self.repo / name).unlink()
 
     def test_usage_errors_exit_2(self):
         result = subprocess.run(

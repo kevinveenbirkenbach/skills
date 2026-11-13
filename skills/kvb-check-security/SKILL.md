@@ -10,7 +10,7 @@ MEDUSA is a defensive AI-first security scanner (40,000+ patterns: CVEs, prompt 
 ## Setup
 
 Check availability with `medusa --version`.
-The skills repository's `make install` installs it with pipx; if it is still missing, `pipx install medusa-security` (fallback: `pip install --user medusa-security`) is the operator's step.
+The skills repository's `make install` installs it with pipx; if it is still missing, `pipx install medusa-security` is the operator's step.
 
 ## Commands
 
@@ -23,38 +23,24 @@ The skills repository's `make install` installs it with pipx; if it is still mis
 
 ## Security value of a change
 
-The 🛡️ value of the `kvb-check-score` block, 100 % meaning safe:
+The 🛡️ value of the `kvb-check-score` block:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/security.py --repo <root> --base <ref>
 ```
 
-It copies the files changed since `<ref>`, untracked ones included and
-symlinks left out, to a temporary tree, scans it once with
-`medusa scan <tree> --format json -o <dir> --no-cache --workers <w>` (w at
-most `WORKERS` of the script) and prints one line:
-`🛡️ security <n> % (medusa: <k> findings in <m> files: <severity> <path>:<line>, ...)`.
-`<n>` is 100 minus 50 per critical, 25 per high, 10 per medium and 2 per low
-finding, at least 0. It shows locations and counts only, never a matched
-value. Pass `<n>` as `--security` and the critical count as `--critical`
-(`--json` holds it) to `score.py`. A rescan of byte-identical files with the
-same medusa reuses the findings in `<council root>/security-cache/` for
-`CACHE_SECONDS` instead of running medusa again.
+It scans the files changed since `<ref>`, untracked ones included, once and
+prints one line: 100 % is safe, each critical, high, medium and low finding
+costs 50, 25, 10 and 2. Pass the value as `--security` and the critical count
+(`--json`) as `--critical` to `score.py`. A complete run is cached.
 
-- Exit 0: 100 %. Exit 3: below 100 without a critical finding; the score
-  gate asks the operator. Exit 1: a critical finding; the score gate forbids
-  the commit.
-- Exit 4: medusa is missing or its report unreadable. Review trust
-  boundaries, secrets and injection in the diff by hand, then pass
-  `--security '~<n>'` (quoted: zsh expands a bare `~100` as a user's home) and the critical findings you found as `--critical`.
-- Exit 2: usage error.
-- **Accepted false positives**: `security.py accept --repo <root> --rule
-  <id> [--rule <id> ...] --path <path> --sha1 <sha1> --line <n> --reason "<one line>"`
-  (from `--json`) appends a row per rule to the council root, which the
-  `kvb-org-organize` watch hook mirrors to `~/.local/state/agents-council/`.
-  A match leaves the score as `<a> accepted` until the line or its
-  neighbourhood changes; `--line` is required when the same text occurs on
-  several lines, so one acceptance never hides an identical line. Accept
+- Exit 0: 100 %. Exit 3: below 100 without a critical; the score gate asks
+  the operator. Exit 1: a critical; the gate forbids the commit. Exit 2: usage.
+- A `not covered` list or exit 4: read `coverage.md` next to this file first.
+- **Accepted false positives**: `security.py accept --repo <root> --rule <id>
+  [--rule <id> ...] --path <path> --sha1 <sha1> --line <n> --reason "<one line>"`
+  (values from `--json`) keeps a finding out of the score until its line or
+  neighbourhood changes; `--line` is required when the text recurs. Accept
   only after `kvb-think-criticize` judged it a false positive or by design;
   name each acceptance in the commit message.
 
