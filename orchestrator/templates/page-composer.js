@@ -144,7 +144,7 @@
     const hint = h("p", {class: "muted"});
     const status = h("span", {class: "muted composer-status", "aria-live": "polite"});
     const record = h("button", {type: "button", class: "btn small", "aria-pressed": "false", title: "Record: one click starts, another stops; the hub transcribes, you check the text before sending"});
-    const submit = h("button", {type: "submit", class: "btn primary"}, icon("bi-send"), "Send");
+    const submit = h("button", {type: "submit", class: "btn primary ptt", title: "PTT: push to transmit the message; your passkey signs it"}, icon("bi-broadcast-pin"), "PTT");
     const attach = h("input", {type: "checkbox", title: "Attach recording: the agents get the path of the sound file; otherwise only the checked text goes out"});
     const parts = {record, status, text, replay, attach};
     recordLabel(parts, false);

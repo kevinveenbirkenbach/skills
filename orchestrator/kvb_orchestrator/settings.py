@@ -4,11 +4,9 @@ import copy
 import json
 import re
 import threading
-from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .council import CLASSES
 from .errors import ToolError
 from .fields import FIELDS, NAME_LIMIT, expect
 from .records import read_json, write_atomic
@@ -17,7 +15,9 @@ THEMES = ("sky", "light", "dark", "custom")
 ESTIMATIONS = ("none", "points")
 TRENDS = ("off", "regression", "velocity")
 TREND_DAYS = (1, 365)
-TONES = ("mayday", "review", "direct", "radio")
+THRESHOLDS = tuple(range(30, 91, 10))
+RADIO_MOVED = ("sounds", "squelch")
+SPEECH_MOVED = ("on", "classes", "muted")
 COLOR = re.compile(r"#[0-9a-f]{6}")
 CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
 MIDNIGHT = "24:00"
@@ -33,16 +33,9 @@ SETTINGS = {
     "theme": "sky",
     "colors": {"top": "#0b1020", "bottom": "#2b3a67", "accent": "#8fadff"},
     "music": {"on": False, "volume": 0.4},
-    "sounds": {
-        "mayday": {"on": True, "volume": 0.9},
-        "review": {"on": True, "volume": 0.6},
-        "direct": {"on": True, "volume": 0.5},
-        "radio": {"on": False, "volume": 0.25},
-    },
-    "squelch": 1.0,
     "notify": True,
     "streams": [],
-    "speech": {"on": False, "classes": ["mayday", "pan-pan", "security"], "muted": []},
+    "speech": {"threshold": 50},
     "space": {
         "graph": {"axis": "none", "yaw": 30.0, "pitch": 20.0, "zoom": 1.0, "pan_x": 0.0, "pan_y": 0.0},
         "sky": {"azimuth": 180.0, "altitude": 0.0, "fov": 180.0},
@@ -56,8 +49,6 @@ SPACE_LIMITS = {
     "graph": {"yaw": (-180.0, 180.0), "pitch": (-90.0, 90.0), "zoom": (0.25, 4.0), "pan_x": (-2000.0, 2000.0), "pan_y": (-2000.0, 2000.0)},
     "sky": {"azimuth": (0.0, 360.0), "altitude": (-30.0, 85.0), "fov": (20.0, 240.0)},
 }
-MUTED_LIMIT = 200
-LEGACY_CLASSES = {"direct": ("post", "call")}
 
 
 def section(value: object, name: str, keys: tuple[str, ...]) -> dict:
@@ -152,27 +143,12 @@ def stream_entry(raw: object, index: int) -> dict:
     }
 
 
-def tone_setting(raw: object, kind_name: str) -> dict:
-    entry = section(raw, f"sounds.{kind_name}", ("on", "volume"))
-    return {"on": flag(entry["on"], f"sounds.{kind_name}.on"), "volume": number_in(entry["volume"], f"sounds.{kind_name}.volume", 0.0, 1.0)}
-
-
-def distinct_texts(value: object, valid: Callable[[str], bool], limit: int) -> bool:
-    if not isinstance(value, list) or len(value) > limit or not all(isinstance(item, str) and valid(item) for item in value):
-        return False
-    return len(set(value)) == len(value)
-
-
 def speech_setting(raw: object) -> dict:
-    entry = section(raw, "speech", ("on", "classes", "muted"))
-    classes, muted = entry["classes"], entry["muted"]
-    if not distinct_texts(classes, lambda name: name in CLASSES, len(CLASSES)):
-        raise ToolError(f"speech.classes must list distinct classes of {', '.join(CLASSES)}")
-    if "mayday" not in classes:
-        raise ToolError("speech.classes must include mayday: a MAYDAY is never quieter than anything else")
-    if not distinct_texts(muted, FIELDS["agent"][0].fullmatch, MUTED_LIMIT):
-        raise ToolError(f"speech.muted must list at most {MUTED_LIMIT} distinct agent keys, each one line of 1 to 200 characters")
-    return {"on": flag(entry["on"], "speech.on"), "classes": [name for name in CLASSES if name in classes], "muted": sorted(muted)}
+    entry = section(raw, "speech", tuple(SETTINGS["speech"]))
+    threshold = entry["threshold"]
+    if isinstance(threshold, bool) or not isinstance(threshold, int) or threshold not in THRESHOLDS:
+        raise ToolError(f"speech.threshold must be one of {', '.join(map(str, THRESHOLDS))} percent")
+    return {"threshold": threshold}
 
 
 def space_setting(raw: object) -> dict:
@@ -200,7 +176,6 @@ def valid_settings(raw: object) -> dict:
     data = section(raw, "settings", tuple(SETTINGS))
     colors = section(data["colors"], "colors", tuple(SETTINGS["colors"]))
     music = section(data["music"], "music", ("on", "volume"))
-    sounds = section(data["sounds"], "sounds", TONES)
     if not isinstance(data["theme"], str) or data["theme"] not in THEMES:
         raise ToolError(f"theme must be one of {', '.join(THEMES)}")
     if not isinstance(data["streams"], list) or len(data["streams"]) > STREAMS_LIMIT:
@@ -213,8 +188,6 @@ def valid_settings(raw: object) -> dict:
         "theme": data["theme"],
         "colors": {key: color(colors[key], f"colors.{key}") for key in SETTINGS["colors"]},
         "music": {"on": flag(music["on"], "music.on"), "volume": number_in(music["volume"], "music.volume", 0.0, 1.0)},
-        "sounds": {kind_name: tone_setting(sounds[kind_name], kind_name) for kind_name in TONES},
-        "squelch": number_in(data["squelch"], "squelch", 0.0, 1.0),
         "notify": flag(data["notify"], "notify"),
         "streams": [stream_entry(entry, index) for index, entry in enumerate(data["streams"])],
         "speech": speech_setting(data["speech"]),
@@ -225,23 +198,32 @@ def valid_settings(raw: object) -> dict:
     }
 
 
-def speech_renamed(stored: object) -> object:
-    speech = stored.get("speech") if isinstance(stored, dict) else None
-    classes = speech.get("classes") if isinstance(speech, dict) else None
-    if not isinstance(classes, list) or not any(name in LEGACY_CLASSES for name in classes):
+def radio_moved(stored: object) -> object:
+    """Returns:
+        The stored settings without the tones, the squelch and the read-aloud
+        filters, which each browser keeps for itself since requirement 004;
+        a speech section left empty is dropped so the default threshold
+        fills it.
+    """
+    if not isinstance(stored, dict):
         return stored
-    renamed = [new for name in classes for new in LEGACY_CLASSES.get(name, (name,))]
-    return {**stored, "speech": {**speech, "classes": list(dict.fromkeys(renamed))}}
+    kept = {key: value for key, value in stored.items() if key not in RADIO_MOVED}
+    speech = stored.get("speech")
+    if not isinstance(speech, dict):
+        return kept
+    rest = {key: value for key, value in speech.items() if key not in SPEECH_MOVED}
+    others = {key: value for key, value in kept.items() if key != "speech"}
+    return {**others, "speech": rest} if rest else others
 
 
 def migrated(stored: object) -> object:
     """Returns:
-        The stored settings in the current shape: legacy speech classes
-        renamed, and a stream saved before redirect resolution with via []:
+        The stored settings in the current shape: the radio set moved to the
+        browser, and a stream saved before redirect resolution with via []:
         it may have been saved without the passkey, so the hub never dials
         it unsigned; re-adding it with the passkey resolves its redirects.
     """
-    stored = speech_renamed(stored)
+    stored = radio_moved(stored)
     streams = stored.get("streams") if isinstance(stored, dict) else None
     if not isinstance(streams, list):
         return stored

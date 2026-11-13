@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 from . import NAME
-from .errors import Conflict, EngineError, Missing, ToolError, Unavailable
+from .errors import Conflict, EngineError, Held, Missing, ToolError, Unavailable
 from .hub import Hub
 
 GUARD = "X-Kvb-Orchestrator"
@@ -68,6 +68,8 @@ class Exchange(BaseHTTPRequestHandler):
             self.send_json(HTTPStatus.CONFLICT, error.payload)
         except Unavailable as error:
             self.send_text(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
+        except Held as error:
+            self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"reason": error.reason})
         except EngineError as error:
             self.send_text(HTTPStatus.BAD_GATEWAY, str(error))
         except OSError as error:

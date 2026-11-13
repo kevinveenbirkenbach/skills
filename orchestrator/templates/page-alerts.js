@@ -1,3 +1,12 @@
+  const beeps = new Set();
+
+  function silenceBeeps() {
+    for (const oscillator of beeps) {
+      oscillator.stop();
+    }
+    beeps.clear();
+  }
+
   function play(kind, volume) {
     const sound = context();
     if (!sound) {
@@ -15,6 +24,8 @@
       gain.gain.exponentialRampToValueAtTime(level, start + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + length);
       oscillator.connect(gain).connect(sound.destination);
+      oscillator.addEventListener("ended", () => beeps.delete(oscillator), {once: true});
+      beeps.add(oscillator);
       oscillator.start(start);
       oscillator.stop(start + length + 0.05);
     }
@@ -47,7 +58,7 @@
       const newRadio = state.radio.filter((row) => !known.radio.has(`${row.ts}|${row.from}|${row.text.slice(0, 40)}`));
       const direct = newRadio.filter((row) => row.to.includes(HUMAN));
       const present = {mayday: newAlarms.length > 0, review: fresh.some((item) => item.kind !== "operator"), direct: direct.length > 0, radio: newRadio.length > 0};
-      const kind = Voice.beep(present, settings, SOUND_KINDS.map(([id]) => id));
+      const kind = radioSet.mode === "silence" ? null : Voice.beep(present, tones(), SOUND_KINDS.map(([id]) => id));
       if (kind) {
         play(kind, loudness(kind));
       }

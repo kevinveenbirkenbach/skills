@@ -6,6 +6,7 @@ import shutil
 import sys
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -30,6 +31,11 @@ CALM = [{"name": "prefers-reduced-motion", "value": "reduce"}]
 GUARD = """() => {
   window.e2eViolations = [];
   document.addEventListener("securitypolicyviolation", (event) => window.e2eViolations.push(`${event.violatedDirective} ${event.blockedURI}`));
+  try {
+    localStorage.setItem("kvb-orchestrator.radio", JSON.stringify({mode: "silence", classes: ["broadcast"]}));
+  } catch (error) {
+    return;
+  }
 }"""
 HOOKED = f"() => {{\n  ({GUARD})();\n  ({base.GRAPH_HOOK})();\n}}"
 READ = """
@@ -160,13 +166,13 @@ class TestWorkbenchBubbles(HubCase):
         hub = self.httpd.hub
         spoken = base.tone(1, 8000)
 
-        def synthesize(body: bytes) -> bytes:
+        def synthesize(body: bytes, admit: Callable[[str], None]) -> bytes:
             word = json.loads(body)["text"]
             if word.startswith(CUE):
                 now = time.time()
                 rows = [
-                    {"ts": now - 0.01, "from": "Stage", "to": [], "text": FIRST, "class": "security", "v": 2},
-                    {"ts": now, "from": "Docs" if word.endswith("-docs") else "Skills session", "to": [], "text": SECOND, "class": "security", "v": 2},
+                    {"ts": now - 0.01, "from": "Stage", "to": [], "text": FIRST, "class": "broadcast", "v": 2},
+                    {"ts": now, "from": "Docs" if word.endswith("-docs") else "Skills session", "to": [], "text": SECOND, "class": "broadcast", "v": 2},
                 ]
                 with (self.council / "news.jsonl").open("a", encoding="utf-8") as handle:
                     handle.write(self.jsonl(rows))

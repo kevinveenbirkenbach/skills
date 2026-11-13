@@ -51,6 +51,8 @@
   const SPEECH_QUEUE = 20;
   const SPEECH_QUIET = 60000;
   const SPEECH_FRESH = 300;
+  const SOUND_SLACK = 2;
+  const STATE_TIMEOUT = 15000;
   const THEME_CHOICES = [["sky", "Sky (follows the light outside)"], ["light", "Always light"], ["dark", "Always dark"], ["custom", "Custom colors"]];
   const COLOR_FIELDS = [["top", "Sky at the top"], ["bottom", "Sky at the horizon"], ["accent", "Accent"]];
   const STAGE_LABELS = {night: "Night", astronomical: "Astronomical twilight", nautical: "Nautical twilight", civil: "Civil twilight", golden: "Golden hour", day: "Day"};

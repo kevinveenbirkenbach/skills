@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,12 +30,14 @@ from .offices import Offices
 from .presence import SNAPSHOT
 from .redirects import Redirects
 from .requesting import Requesting
+from .resources import RESOURCES, SAMPLES
 from .reviewing import Reviewing
 from .rules import Rules
 from .settings import Settings
 from .signed import signing
 from .skill_scripts import Runner
 from .sources import Sources
+from .speechgate import CpuGate
 from .tasking import Tasking
 from .timeline import Timeline
 from .transcripts import Transcripts
@@ -95,6 +98,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     settings: Settings
     redirects: Redirects
     speech: Speech
+    speech_gate: CpuGate
     approvers: Path
     vendor: Path
     icons: Markup
@@ -117,7 +121,9 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
     reviews = Reviews(state)
     speech = Speech(engines, state / "tts")
     messages = Ledger(state / "messages.json")
+    settings = Settings(state / "settings.json")
     return Hub(
+        speech_gate=CpuGate(samples=places.kept / RESOURCES / SAMPLES, threshold=lambda: settings.get()["speech"]["threshold"], clock=time.time),
         vendor=places.vendor,
         icons=sheet(places.vendor, templates),
         spool=Spool(places.cleanup).ready(),
@@ -133,7 +139,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         log=Log(state / "log.jsonl"),
         batches=Pending(),
         names=Names(state / "names.json"),
-        settings=Settings(state / "settings.json"),
+        settings=settings,
         redirects=redirects,
         watch=Watch(),
         tree=Tree(file=places.tree_file, heartbeat=state / TREE_HEARTBEAT, lock=threading.Lock(), cached=None, stamp=None),

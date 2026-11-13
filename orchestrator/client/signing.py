@@ -158,6 +158,10 @@ def stream_item(origins: list[str], urls: list[str]) -> dict:
     return {"kind": "streams", "origins": origins, "urls": urls}
 
 
+def threshold_item(threshold: int) -> dict:
+    return {"kind": "speech-threshold", "threshold": threshold}
+
+
 def task_item(task: str, argv: list[str]) -> dict:
     return {"kind": "task", "id": task, "argv": argv}
 

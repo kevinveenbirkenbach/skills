@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from hub_case import HubCase
 from hub_support import ASK
-from kvb_orchestrator import council, events, settings, skill_scripts, view
+from kvb_orchestrator import council, events, skill_scripts, view
 
 
 class TestHubSurface(HubCase):
@@ -62,15 +62,6 @@ class TestHubSurface(HubCase):
             "post", "call", "newsletter", "post", "mayday", "newsletter",
         ])
         self.assertEqual(council.CLASSES, ("post", "call", "newsletter", "broadcast", "mayday", "pan-pan", "security"))
-
-    def test_read_aloud_lists_the_seven_classes_and_migrates_old_choices(self):
-        self.assertEqual(settings.speech_setting({"on": True, "classes": ["security", "mayday", "post", "call", "newsletter", "broadcast", "pan-pan"], "muted": []})["classes"], list(council.CLASSES))
-        for classes in (["direct", "mayday"], ["post"], ["mayday", "receipt"]):
-            with self.subTest(classes=classes), self.assertRaises(settings.ToolError):
-                settings.speech_setting({"on": True, "classes": classes, "muted": []})
-        stored = self.state / "old-settings.json"
-        stored.write_text(json.dumps({**settings.SETTINGS, "speech": {"on": True, "classes": ["direct", "pan-pan", "mayday"], "muted": []}}), encoding="utf-8")
-        self.assertEqual(settings.Settings(stored).get()["speech"]["classes"], ["post", "call", "mayday", "pan-pan"])
 
     def test_funk_an_alle_sends_the_chosen_class_and_newsletter_goes_by_post(self):
         signer = self.pin()

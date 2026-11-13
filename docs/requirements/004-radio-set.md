@@ -21,8 +21,8 @@ that someone transmits without the speech engine loading a busy host.
    0.6 s, at the tone's volume and squelch); no server request. Rejected: a
    recorded sound file.
 3. **Modes**: Auto (speech below the threshold, otherwise the burst), Quiet
-   (the burst only, never speech), Silence (no sound; bubbles and log only).
-   Default Auto.
+   (the burst only, never speech), Silence (no sound except the procedure
+   word of decision 4; bubbles and log only). Default Auto.
 4. **Procedure words**: for MAYDAY, PAN-PAN and SÉCURITÉ the procedure word,
    spoken three times in the sender's voice, always sounds, in every mode and
    under load; under load or in Quiet the burst replaces the rest of the
@@ -47,6 +47,12 @@ that someone transmits without the speech engine loading a busy host.
    (high effort, no gain).
 9. **Order**: builds on W4's resource feed; implementation starts once W4 is
    on master.
+10. **Silence scope** (operator-confirmed 2026-11-13): Silence mutes only the
+    radio set (speech, bursts, alert beeps); the procedure word of decision 4
+    still sounds, and music and the internet station keep playing. Rejected:
+    Silence also pauses music and the station (not part of 004's scope);
+    Silence also mutes the procedure word (an emergency call could go
+    unheard).
 
 ## Approach
 
@@ -91,54 +97,54 @@ flowchart TD
 
 ### Server gate
 
-- [ ] `POST /api/tts` with an uncached line answers 503 `{"reason": "busy"}`
+- [x] `POST /api/tts` with an uncached line answers 503 `{"reason": "busy"}`
       while the latest `samples.jsonl` row has `cpu` >= the threshold, and the
       fake Piper records no call.
-- [ ] Without a sample younger than 120 s it answers 503
+- [x] Without a sample younger than 120 s it answers 503
       `{"reason": "unknown"}`, and the fake Piper records no call.
-- [ ] A cached line answers 200 whatever the CPU.
-- [ ] Below the threshold an uncached line renders as before.
-- [ ] `GET /api/state` carries `speech.gate` with `threshold`, `cpu` and
+- [x] A cached line answers 200 whatever the CPU.
+- [x] Below the threshold an uncached line renders as before.
+- [x] `GET /api/state` carries `speech.gate` with `threshold`, `cpu` and
       `open`.
-- [ ] `speech.threshold` accepts only 30 to 90 in steps of 10, default 50,
+- [x] `speech.threshold` accepts only 30 to 90 in steps of 10, default 50,
       and changes only with a valid passkey signature.
 
 ### Sound
 
-- [ ] Auto below the threshold: the page plays the spoken line; on a 503 it
+- [x] Auto below the threshold: the page plays the spoken line; on a 503 it
       plays the burst once and does not retry that row.
-- [ ] Quiet: the page sends no `/api/tts` request except for procedure-word
+- [x] Quiet: the page sends no `/api/tts` request except for procedure-word
       lines, and every row plays the burst.
-- [ ] Silence: no audio node starts except for a procedure-word line.
-- [ ] The burst is WebAudio noise of 0.4 to 0.8 s at the tone's volume times
+- [x] Silence: no audio node starts except for a procedure-word line.
+- [x] The burst is WebAudio noise of 0.4 to 0.8 s at the tone's volume times
       the squelch, and it sends no network request.
-- [ ] A MAYDAY, PAN-PAN or SÉCURITÉ row requests its procedure-word line
+- [x] A MAYDAY, PAN-PAN or SÉCURITÉ row requests its procedure-word line
       first, in every mode; the second such line for the same voice is a
       cache hit with no Piper call.
 
 ### Panel
 
-- [ ] The display line shows class, mode, CPU % and a TX/RX lamp that is lit
+- [x] The display line shows class, mode, CPU % and a TX/RX lamp that is lit
       while sound plays.
-- [ ] Auto, Quiet and Silence form one button group (`aria-pressed`); a press
+- [x] Auto, Quiet and Silence form one button group (`aria-pressed`); a press
       changes the mode without a passkey and survives a reload.
-- [ ] Volume per tone, squelch, the read-aloud filters for classes and
+- [x] Volume per tone, squelch, the read-aloud filters for classes and
       agents, and the internet station sit in the panel; the settings dialog
       has no radio section.
-- [ ] The threshold control asks for the passkey once per change and shows
+- [x] The threshold control asks for the passkey once per change and shows
       the server's value.
-- [ ] At 1920, 1366 and 390 px the panel has no horizontal scroll, in the
+- [x] At 1920, 1366 and 390 px the panel has no horizontal scroll, in the
       light and the dark palette.
 
 ### Log
 
-- [ ] Tabs Sent, Received and All show their counts; Received holds exactly
+- [x] Tabs Sent, Received and All show their counts; Received holds exactly
       the rows addressed to the operator or to all.
-- [ ] The chips class, sender, recipient and agent and the text search
+- [x] The chips class, sender, recipient and agent and the text search
       combine with AND; one control clears them all.
-- [ ] Rows run newest first with time, direction, class badge,
+- [x] Rows run newest first with time, direction, class badge,
       sender → recipient and text; a click opens the full message.
-- [ ] Tab, chips and search survive a reload in the same browser.
+- [x] Tab, chips and search survive a reload in the same browser.
 
 ### Tests
 

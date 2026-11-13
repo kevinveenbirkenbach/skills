@@ -22,7 +22,7 @@ from .graph import graph
 from .jobs import JOB_OPEN
 from .messaging import message_row
 from .orbits import TRACK_STEPS, track
-from .phrasing import phrase
+from .phrasing import joined, phrase_parts
 from .presence import presence, read_snapshot
 from .records import epoch, iso_epoch, read_jsonl
 from .register import (
@@ -94,7 +94,8 @@ class View:
             source = directory.key(row["from"], row["ts"])
             targets = [directory.key(name, row["ts"]) for name in row["to"]]
             called = [directory.at(key, row["ts"]) or name for key, name in zip(targets, row["to"], strict=True)]
-            spoken = {"speech": phrase(row["class"], directory.at(source, row["ts"]) or row["from"], called, row["text"]), "voice": self.speech.voice_of(source)}
+            word, rest = phrase_parts(row["class"], directory.at(source, row["ts"]) or row["from"], called, row["text"])
+            spoken = {"speech": joined((word, rest)), "word": word, "rest": rest, "voice": self.speech.voice_of(source)}
             radio.append({**row, "source": source, "targets": targets, "now": directory.now(source), **spoken})
         grant_rows = [{**grant, "target": directory.key(grant["to"], grant["ts"])} for grant in grants(history, (begin, end), claims, tasks)]
         self.watch.see(tasks, now)
@@ -112,7 +113,7 @@ class View:
         return {
             "settings": settings,
             "media": media_origins(settings),
-            "speech": self.speech.describe(),
+            "speech": {**self.speech.describe(), "gate": self.speech_gate.state()},
             "people": people,
             "inbox": inbox,
             "badges": badges(inbox, claims, self.jobs.listed(), now),
@@ -148,19 +149,23 @@ class View:
             "graph": drawn,
         }
 
-    def stream_change(self, settings: dict, saved: dict) -> dict | None:
+    def signed_changes(self, settings: dict, saved: dict) -> list[dict]:
         """Args:
             settings: valid settings the page wants to save.
             saved: the settings saved now.
 
         Returns:
-            The item the operator's passkey signs when the settings name a
-            stream url the saved ones do not, else None: the station origins
-            and those urls. The hub dials no url before it is signed, and
-            resolves its redirect targets only after the signature.
+            The items the operator's passkey signs for this save: the station
+            origins and the new urls when the settings name a stream url the
+            saved ones do not, and the speech threshold when it differs from
+            the saved one, since the hub's speech gate enforces it. The hub
+            dials no url before it is signed, and resolves its redirect
+            targets only after the signature.
         """
         urls = sorted({stream["url"] for stream in settings["streams"]} - {stream["url"] for stream in saved["streams"]})
-        return signing.stream_item(station_origins(settings), urls) if urls else None
+        threshold = settings["speech"]["threshold"]
+        streams = [signing.stream_item(station_origins(settings), urls)] if urls else []
+        return streams + ([signing.threshold_item(threshold)] if threshold != saved["speech"]["threshold"] else [])
 
     def resolved(self, settings: dict, saved: dict) -> tuple[dict, list[str]]:
         """Args:
@@ -188,8 +193,7 @@ class View:
         return {**settings, "streams": streams}, problems
 
     def sign_settings(self, body: bytes) -> dict:
-        change = self.stream_change(valid_settings(decode(body)), self.settings.get())
-        return self.challenge_for([] if change is None else [change])
+        return self.challenge_for(self.signed_changes(valid_settings(decode(body)), self.settings.get()))
 
     def save_settings(self, body: bytes) -> dict:
         """Returns:
@@ -201,8 +205,7 @@ class View:
         proof = payload.pop("proof", None)
         settings = valid_settings(payload)
         saved = self.settings.get()
-        change = self.stream_change(settings, saved)
-        if change is not None:
+        for change in self.signed_changes(settings, saved):
             self.operator_proven(proof, change)
         resolved, problems = self.resolved(settings, saved)
         return {"settings": self.settings.put(resolved, saved), "problems": problems}

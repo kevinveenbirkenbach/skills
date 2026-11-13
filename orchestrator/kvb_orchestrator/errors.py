@@ -25,5 +25,14 @@ class Unavailable(Exception):
     pass
 
 
+class Held(Exception):
+    def __init__(self, reason: str) -> None:
+        """Args:
+            reason: why the hub holds the request back, sent as {"reason"}.
+        """
+        super().__init__(reason)
+        self.reason = reason
+
+
 class EngineError(Exception):
     pass

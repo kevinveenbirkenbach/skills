@@ -1,5 +1,37 @@
+  function tones() {
+    return {sounds: radioSet.sounds, squelch: radioSet.squelch, music: settings.music};
+  }
+
   function loudness(kind) {
-    return Voice.loudness(kind, settings);
+    return Voice.loudness(kind, tones());
+  }
+
+  function keepRadio(change) {
+    const before = radioSet.mode;
+    radioSet = RadioSet.valid({...radioSet, ...change});
+    keep(RadioSet.KEY, radioSet);
+    hush(before !== radioSet.mode);
+    drawRadioSet();
+  }
+
+  function hush(switched) {
+    const {item, source} = speech;
+    if (source && item && item.row && !allows(rendered(item, item.at), item.playing)) {
+      item.cut = true;
+      source.stop();
+    }
+    if (switched && radioSet.mode === "silence") {
+      silenceBeeps();
+    }
+  }
+
+  /**
+   * @param {object|undefined} step the step the radio set plans now at the index that plays.
+   * @param {string} kind word, speech or burst: what plays or is about to play there.
+   * @returns {boolean} whether that sound may play: the planned kind, or the burst standing in for a planned speech line.
+   */
+  function allows(step, kind) {
+    return Boolean(step) && (step.kind === kind || (kind === "burst" && step.kind === "speech"));
   }
 
   function speechFailed(lines) {
@@ -40,18 +72,142 @@
     }
   }
 
+  function sounded(item, source, seconds) {
+    return new Promise((resolve) => {
+      let timer = 0;
+      const ended = () => {
+        window.clearTimeout(timer);
+        if (speech.source === source) {
+          Object.assign(speech, {current: null, source: null});
+          drawSpeaker();
+        }
+        resolve();
+      };
+      source.addEventListener("ended", ended, {once: true});
+      timer = window.setTimeout(() => {
+        source.stop();
+        ended();
+      }, (seconds + SOUND_SLACK) * 1000);
+      duck(seconds);
+      Object.assign(item, {started: performance.now(), duration: seconds});
+      Object.assign(speech, {current: item, source});
+      drawSpeaker();
+    });
+  }
+
+  function burst(sound, item) {
+    const shape = RadioSet.burst(loudness(item.tone));
+    if (shape.gain <= 0) {
+      return Promise.resolve();
+    }
+    const frames = Math.ceil(sound.sampleRate * shape.seconds);
+    const buffer = sound.createBuffer(1, frames, sound.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < frames; index += 1) {
+      data[index] = Math.random() * 2 - 1;
+    }
+    const source = sound.createBufferSource();
+    const filter = sound.createBiquadFilter();
+    const gain = sound.createGain();
+    const start = sound.currentTime;
+    filter.type = "bandpass";
+    filter.frequency.value = shape.frequency;
+    filter.Q.value = shape.q;
+    gain.gain.setValueAtTime(shape.gain, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + shape.seconds);
+    source.buffer = buffer;
+    source.connect(filter).connect(gain).connect(sound.destination);
+    const ended = sounded(item, source, shape.seconds);
+    source.start(start);
+    source.stop(start + shape.seconds);
+    return ended;
+  }
+
+  async function spoken(sound, item, step, done) {
+    speech.loading = item;
+    drawBubbles();
+    try {
+      const response = await fetch("/api/tts", {method: "POST", headers: {"X-Kvb-Orchestrator": "1", "Content-Type": "application/json"}, body: JSON.stringify({text: step.text, voice: item.voice}), cache: "no-store"});
+      const held = response.status === 503 && (response.headers.get("Content-Type") || "").startsWith("application/json");
+      if (!response.ok) {
+        return held ? "held" : `${response.status} ${(await response.text()).trim()}`;
+      }
+      const buffer = await sound.decodeAudioData(await response.arrayBuffer());
+      if (speech.item !== item) {
+        return "";
+      }
+      if (!allows(rendered(item, done), step.kind)) {
+        return "dropped";
+      }
+      const source = sound.createBufferSource();
+      const gain = sound.createGain();
+      gain.gain.value = loudness(item.tone);
+      source.buffer = buffer;
+      source.connect(gain).connect(sound.destination);
+      const ended = sounded(item, source, buffer.duration);
+      source.start();
+      await ended;
+      return speech.item === item && item.cut ? "dropped" : "";
+    } catch (error) {
+      return String(error.message || error);
+    } finally {
+      if (speech.loading === item) {
+        speech.loading = null;
+      }
+    }
+  }
+
+  function liveSpeech() {
+    return {tts: state.speech.tts, open: state.speech.gate.open};
+  }
+
+  function stepOf(item, done, live) {
+    return (item.row ? RadioSet.plan(item.row, radioSet, live || liveSpeech()) : item.steps)[done];
+  }
+
+  function rendered(item, done) {
+    return item.row ? stepOf(item, done, {...liveSpeech(), open: true}) : item.steps[done];
+  }
+
+  async function transmit(item, audio) {
+    let voiced = false;
+    for (let done = 0; ; done += 1) {
+      const step = stepOf(item, done);
+      if (!step || speech.item !== item) {
+        return voiced;
+      }
+      Object.assign(item, {at: done, playing: step.kind, cut: false});
+      if (step.kind === "burst") {
+        await burst(audio, item);
+        continue;
+      }
+      const failed = await spoken(audio, item, step, done);
+      if (failed === "dropped") {
+        done -= 1;
+        continue;
+      }
+      voiced = voiced || (!failed && step.kind === "speech");
+      if (failed && failed !== "held") {
+        speechFailed([failed]);
+      }
+      if (failed && step.kind === "speech" && speech.item === item && allows(stepOf(item, done), "burst")) {
+        item.playing = "burst";
+        await burst(audio, item);
+      }
+    }
+  }
+
   async function pump() {
     if (speech.busy || !speech.pending.length) {
       return;
     }
     const [item, ...rest] = speech.pending;
-    const sound = item.silent ? null : context();
-    if (!item.silent && !sound) {
+    const audio = item.silent ? null : context();
+    if (!item.silent && !audio) {
       speech.pending = [];
       return;
     }
-    speech.pending = rest;
-    speech.busy = true;
+    Object.assign(speech, {pending: rest, busy: true, item});
     const next = () => {
       speech.busy = false;
       pump();
@@ -60,67 +216,39 @@
       readSilently(item, next);
       return;
     }
-    speech.loading = item;
-    drawBubbles();
-    try {
-      const response = await fetch("/api/tts", {method: "POST", headers: {"X-Kvb-Orchestrator": "1", "Content-Type": "application/json"}, body: JSON.stringify({text: item.text, voice: item.voice}), cache: "no-store"});
-      if (!response.ok) {
-        throw new Error(`${response.status} ${(await response.text()).trim()}`);
-      }
-      const buffer = await sound.decodeAudioData(await response.arrayBuffer());
-      if (speech.loading !== item) {
-        next();
-        return;
-      }
-      const source = sound.createBufferSource();
-      const gain = sound.createGain();
-      gain.gain.value = loudness(item.tone);
-      source.buffer = buffer;
-      source.connect(gain).connect(sound.destination);
-      source.addEventListener("ended", () => {
-        Object.assign(speech, {current: null, source: null});
-        drawSpeaker();
-        next();
-      }, {once: true});
-      duck(buffer.duration);
-      Object.assign(item, {started: performance.now(), duration: buffer.duration});
-      Object.assign(speech, {current: item, source, loading: null});
-      drawSpeaker();
-      source.start();
-    } catch (error) {
-      const kept = speech.loading === item;
-      speech.loading = null;
-      speechFailed([String(error.message || error)]);
-      if (kept && settings.bubbles && item.words) {
-        readSilently(item, next);
-        return;
-      }
+    const voiced = await transmit(item, audio);
+    if (speech.item !== item) {
       next();
+      return;
     }
+    Object.assign(speech, {current: null, source: null, item: null});
+    drawSpeaker();
+    if (!voiced && settings.bubbles && item.words) {
+      readSilently(item, next);
+      return;
+    }
+    next();
   }
 
   function cancelSpeech() {
     if (speech.timer) {
       endSilent();
     }
-    Object.assign(speech, {pending: [], current: null, loading: null});
-    if (speech.source) {
-      speech.source.stop();
+    const playing = speech.source;
+    Object.assign(speech, {pending: [], current: null, loading: null, source: null, item: null});
+    if (playing) {
+      playing.stop();
     }
     clearBubbles();
     drawSpeaker();
   }
 
   function speakRows(rows) {
-    const voiced = settings.speech.on && state.speech.tts;
-    if (!voiced && !settings.bubbles) {
-      return;
-    }
     for (const row of rows.filter((entry) => entry.ts >= state.now - SPEECH_FRESH)) {
-      const audible = voiced && Voice.speakable(row, settings.speech);
-      if (audible || (settings.bubbles && Bubbles.picked(row, settings.speech))) {
+      const steps = RadioSet.plan(row, radioSet, liveSpeech());
+      if (steps.length || (settings.bubbles && Bubbles.picked(row, radioSet))) {
         const line = row.text.split("\n").map((part) => part.trim()).find(Boolean) || "";
-        say({text: row.speech, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, line: short(line), words: Bubbles.words(row.text), silent: !audible});
+        say({row, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, sent: Boolean(RadioSet.ledgerOf(row, state.messages)), line: short(line), words: Bubbles.words(row.text), silent: !steps.length});
       }
     }
   }

@@ -33,6 +33,7 @@ from hub_support import (
     server,
     signing,
 )
+from kvb_orchestrator import engines
 
 
 class HubCase(unittest.TestCase):
@@ -245,6 +246,29 @@ class HubCase(unittest.TestCase):
 
     def jsonl(self, rows: list[dict]) -> str:
         return "".join(json.dumps(row) + "\n" for row in rows)
+
+    def host_cpu(self, cpu: float | None, age: float) -> None:
+        """Args:
+            cpu: the host CPU percent of the newest W4 sample, None unknown.
+            age: how many seconds before now the sampler wrote it.
+        """
+        folder = self.kept / "resources"
+        folder.mkdir(exist_ok=True)
+        now = time.time()
+        rows = [{"t": now - age - 60, "cpu": 5.0, "ram": 20.0}, {"t": now - age, "cpu": cpu, "ram": 20.0}]
+        written = folder / f".samples-{threading.get_ident()}.jsonl"
+        written.write_text(self.jsonl(rows), encoding="utf-8")
+        os.replace(written, folder / "samples.jsonl")
+
+    def hand_out(self, voice: str) -> None:
+        """Args:
+            voice: an installed voice the hub then hands out to a speaker, so
+                /api/tts accepts it.
+        """
+        speech = self.httpd.hub.speech
+        keys = [f"s{number}" for number in range(1000)]
+        key = next((key for key in keys if engines.voice_of(key, speech.pool, speech.operator) == voice), "Operator")
+        self.assertEqual(speech.voice_of(key), voice)
 
     def post_json(self, path: str, payload: object, headers: dict[str, str]) -> tuple[int, dict, bytes]:
         return self.call("POST", path, json.dumps(payload).encode(), {**headers, "Content-Type": "application/json"})

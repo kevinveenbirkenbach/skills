@@ -41,16 +41,16 @@ const code = fs.readFileSync(process.argv[2], "utf8");
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 async function failed(bubbles, item, cancel) {
   const shown = [];
-  const speech = {pending: [], busy: false, current: null, loading: null, timer: 0, warned: 0};
+  const speech = {pending: [], busy: false, current: null, loading: null, item: null, timer: 0, warned: 0};
   const fetch = async () => {
     if (cancel) {
-      speech.loading = null;
+      speech.item = null;
     }
-    return {ok: false, status: 503, text: async () => "tts down "};
+    return {ok: false, status: 503, headers: {get: () => "text/plain"}, text: async () => "tts down "};
   };
   vm.runInNewContext(`${code}\\nsay(item);`, {
-    Bubbles, speech, fetch, item, Date, settings: {bubbles}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0,
-    Voice: {enqueue: (pending, next) => [...pending, next]},
+    Bubbles, speech, fetch, item, Date, settings: {bubbles}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0, radioSet: {},
+    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 0}, RadioSet: {burst: (gain) => ({gain})},
     toast: (title, lines) => shown.push(`${title}: ${lines.join(" ")}`),
     context: () => ({}), drawBubbles: () => {}, drawSpeaker: () => {},
     performance: {now: () => 1000}, window: {setTimeout: () => 7, clearTimeout: () => {}},
@@ -61,12 +61,14 @@ async function failed(bubbles, item, cancel) {
   return {current: speech.current === item, busy: speech.busy, timer: speech.timer, started: item.started ?? null, duration: item.duration ?? null, shown};
 }
 (async () => {
-  const row = () => ({text: "t", who: "A", line: "Disk almost full", words: ["Disk", "almost", "full"]});
+  const row = () => ({steps: [{kind: "speech", text: "t"}], who: "A", line: "Disk almost full", words: ["Disk", "almost", "full"]});
   console.log(JSON.stringify({
     fallback: await failed(true, row(), false),
     off: await failed(false, row(), false),
-    sample: await failed(true, {text: "t", who: "Operator", line: "radio check"}, false),
+    sample: await failed(true, {steps: [{kind: "speech", text: "t"}], who: "Operator", line: "radio check"}, false),
     cancelled: await failed(true, row(), true),
+    burst: await failed(true, {...row(), steps: [{kind: "burst"}]}, false),
+    unread: await failed(false, {...row(), steps: [{kind: "burst"}]}, false),
   }));
 })();
 """
@@ -110,6 +112,12 @@ class TestSpeechFallback(unittest.TestCase):
         for case in ("off", "sample", "cancelled"):
             with self.subTest(case=case):
                 self.assertEqual(data[case], {"current": False, "busy": False, "timer": 0, "started": None, "duration": None, "shown": failed})
+
+    def test_a_row_the_burst_stands_in_for_reads_at_reading_pace_only_while_bubbles_are_on(self):
+        done = subprocess.run(["node", "-e", SPEECH_PROBE, str(BUBBLES), str(SPEECH)], capture_output=True, text=True, timeout=60, check=True)
+        data = json.loads(done.stdout)
+        self.assertEqual(data["burst"], {"current": True, "busy": True, "timer": 7, "started": 1000, "duration": 1.5, "shown": []})
+        self.assertEqual(data["unread"], {"current": False, "busy": False, "timer": 0, "started": None, "duration": None, "shown": []})
 
 
 class TestBubbleAssets(unittest.TestCase):

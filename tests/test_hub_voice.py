@@ -8,8 +8,10 @@ import subprocess
 import unittest
 import wave
 
-from hub_support import VOICE
+from hub_support import HUB, VOICE
 from kvb_orchestrator import engines, settings
+
+RADIOSET = HUB / "templates" / "radioset.js"
 
 VOICE_PROBE = """
 const V = require(process.argv[1]);
@@ -23,19 +25,12 @@ const rows = [
   {class: "broadcast", to: [], source: "s3", speech: "b", voice: "v"},
   {class: "broadcast", to: [], source: "s3", speech: "", voice: "v"},
 ];
-const filters = [
-  {on: false, classes: ["broadcast", "direct", "security", "pan-pan", "mayday"], muted: []},
-  {on: true, classes: ["mayday"], muted: ["s1"]},
-  {on: true, classes: ["direct", "mayday"], muted: ["s2"]},
-  {on: true, classes: ["broadcast", "direct", "security", "pan-pan", "mayday"], muted: []},
-];
 let pending = [];
 for (const cls of ["broadcast", "direct", "security", "mayday", "broadcast", "pan-pan", "mayday", "direct"]) {
   pending = V.enqueue(pending, {cls, text: `${cls}-${pending.length}`}, 6);
 }
 console.log(JSON.stringify({
   tones: rows.map((row) => V.toneOf(row, "Operator")),
-  spoken: filters.map((filter) => rows.map((row) => V.speakable(row, filter))),
   queue: pending.map((item) => item.cls),
   loud: settings.map((one) => Object.fromEntries(["mayday", "review", "direct", "radio"].map((tone) => [tone, V.loudness(tone, one)]))),
   beeps: settings.map((one) => V.beep({mayday: true, review: true, direct: true, radio: true}, one, ["mayday", "review", "direct", "radio"])),
@@ -48,12 +43,15 @@ console.log(JSON.stringify({
 class TestVoiceModule(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        quiet = {name: {"on": False, "volume": 0.1} for name in settings.TONES}
+        defaults = json.loads(subprocess.run(["node", "-e", "console.log(JSON.stringify(require(process.argv[1]).DEFAULTS))", str(RADIOSET)], capture_output=True, text=True, timeout=60, check=True).stdout)
+        tones = list(defaults["sounds"])
+        base = {"sounds": defaults["sounds"], "squelch": defaults["squelch"], "music": settings.SETTINGS["music"]}
+        quiet = {name: {"on": False, "volume": 0.1} for name in tones}
         cls.settings = [
-            settings.SETTINGS,
-            {**settings.SETTINGS, "music": {"on": True, "volume": 1.0}, "sounds": quiet},
-            {**settings.SETTINGS, "sounds": {**settings.SETTINGS["sounds"], "mayday": {"on": True, "volume": 0.0}, "radio": {"on": True, "volume": 0.8}}},
-            *({**settings.SETTINGS, "squelch": 0.0, "music": {"on": music, "volume": 1.0}, "sounds": {name: {"on": True, "volume": 1.0} for name in settings.TONES}} for music in (True, False)),
+            base,
+            {**base, "music": {"on": True, "volume": 1.0}, "sounds": quiet},
+            {**base, "sounds": {**base["sounds"], "mayday": {"on": True, "volume": 0.0}, "radio": {"on": True, "volume": 0.8}}},
+            *({**base, "squelch": 0.0, "music": {"on": music, "volume": 1.0}, "sounds": {name: {"on": True, "volume": 1.0} for name in tones}} for music in (True, False)),
         ]
         command = ["node", "-e", VOICE_PROBE, str(VOICE), json.dumps(cls.settings)]
         done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=True)
@@ -70,14 +68,6 @@ class TestVoiceModule(unittest.TestCase):
     def test_squelch_at_zero_plays_no_tone_with_music_on_or_off(self):
         self.assertEqual(self.data["beeps"], ["mayday", None, "mayday", None, None])
         self.assertEqual([set(loud.values()) for loud in self.data["loud"][3:]], [{0.0}, {0.0}])
-
-    def test_the_radio_filter_picks_classes_and_stations(self):
-        self.assertEqual(self.data["spoken"], [
-            [False] * 7,
-            [True, False, False, False, False, False, False],
-            [True, False, False, False, True, False, False],
-            [True, True, True, True, True, True, False],
-        ])
 
     def test_the_queue_puts_alarms_first_and_drops_routine_traffic(self):
         self.assertEqual(self.data["queue"], ["mayday", "mayday", "pan-pan", "security", "broadcast", "direct"])
