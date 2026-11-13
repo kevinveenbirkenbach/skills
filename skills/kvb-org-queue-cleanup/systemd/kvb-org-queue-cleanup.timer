@@ -1,0 +1,9 @@
+[Unit]
+Description=kvb-org-queue-cleanup round at 00:00 and 12:00 local time
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target
