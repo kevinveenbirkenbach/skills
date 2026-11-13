@@ -29,14 +29,30 @@
     }
   }
 
+  function refuseInjectedStyles(tag) {
+    const head = document.head;
+    const append = head.appendChild;
+    head.appendChild = function (node) {
+      return document.currentScript === tag && node instanceof HTMLStyleElement ? node : append.call(this, node);
+    };
+    return () => delete head.appendChild;
+  }
+
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const tag = document.createElement("script");
+      const restore = refuseInjectedStyles(tag);
       tag.src = src;
       tag.nonce = NONCE;
       tag.async = true;
-      tag.addEventListener("load", resolve);
-      tag.addEventListener("error", () => reject(new Error(`${src} not loaded`)));
+      tag.addEventListener("load", () => {
+        restore();
+        resolve();
+      });
+      tag.addEventListener("error", () => {
+        restore();
+        reject(new Error(`${src} not loaded`));
+      });
       document.head.append(tag);
     });
   }
