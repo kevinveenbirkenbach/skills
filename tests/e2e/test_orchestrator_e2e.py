@@ -262,7 +262,9 @@ POPUPS = """
     };
   };
   const away = async (pick) => {
-    const outside = document.elementFromPoint(2, innerHeight - 2);
+    const rect = box.getBoundingClientRect();
+    const [, x, y] = [[rect.left, rect.left / 2, innerHeight / 2], [innerWidth - rect.right, (rect.right + innerWidth) / 2, innerHeight / 2], [rect.top, innerWidth / 2, rect.top / 2], [innerHeight - rect.bottom, innerWidth / 2, (rect.bottom + innerHeight) / 2]].sort((a, b) => b[0] - a[0])[0];
+    const outside = (await until(() => document.elementFromPoint(x, y) === dialog && dialog, 3000)) || document.elementFromPoint(x, y);
     click(outside);
     await sleep(250);
     return {...look(pick()), open: dialog.open, outside: outside === dialog};
