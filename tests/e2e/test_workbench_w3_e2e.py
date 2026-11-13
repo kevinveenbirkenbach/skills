@@ -52,6 +52,11 @@ ANCESTRY = """(async () => {@HELPERS@
 })()"""
 STAGE = """(async () => {@HELPERS@
   const svg = await until(() => document.querySelector("#main svg.ancestry"), 8000);
+  const repo = svg.closest("details.repo");
+  if (!repo.open) {
+    repo.querySelector("summary").click();
+    await sleep(300);
+  }
   svg.scrollIntoView({block: "center", inline: "center"});
   await sleep(200);
   const center = (branch) => {
@@ -126,7 +131,7 @@ class TestWorkbenchArtifacts(HubCase):
             "chair/claim.json": {"office": "chair", "session": "s1", "runtime": "claude", "name": "Skills session", "since": iso(now - 7200), "beat": now, "work": "allocate"},
         })
         self.subagents(now)
-        self.base = f"http://{self.host}/"
+        self.base = f"http://localhost:{self.port}/"
 
     def steps(self, browser: str) -> list[dict]:
         steps = []
