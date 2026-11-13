@@ -361,7 +361,7 @@ class TestReceipts(unittest.TestCase):
             (6, "def seen(row, name, sid, prompt, state, since):\n    return True\n", True),
         ):
             (fake / "radio.py").write_text(text, encoding="utf-8")
-            os.utime(fake / "radio.py", ns=(1, version))
+            os.utime(fake / "radio.py", (1, version))
             with self.subTest(text=text):
                 self.assertEqual(receipts.radio_module(self.base / "skills") is not None, loads)
         self.assertEqual(tuple(receipts.inspect.signature(self.radio.seen).parameters), receipts.SEEN_PARAMETERS)
