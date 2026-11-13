@@ -40,6 +40,7 @@ from .timeline import Timeline
 from .transcripts import Transcripts
 from .tree import TREE_HEARTBEAT, Tree
 from .view import View
+from .viewstore import ViewStore
 from .voicenotes import VoiceNotes
 
 
@@ -103,6 +104,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     touched: Touched
     voice_notes: VoiceNotes
     replay: Path
+    view_store: ViewStore
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -127,6 +129,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         speech=speech,
         voice_notes=VoiceNotes(state / "voice", host_state / "voice", speech, lambda: {message["voice"] for message in messages.listed() if message.get("voice")}),
         replay=state / "replay" / "messages.json",
+        view_store=ViewStore(state / "view.json"),
         rules=Ledger(state / "rules.json"),
         jobs=Ledger(state / "jobs.json"),
         marks=Marks(state / "marks.json"),

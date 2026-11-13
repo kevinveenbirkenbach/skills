@@ -45,6 +45,7 @@ OFFICE_STATE = re.compile(r"/api/offices/([0-9a-f]{16})")
 TASKS_ROUTE = "/api/tasks"
 GATES_ROUTE = "/api/gates"
 TOKEN_ROUTE = "/api/cleanup/token"
+VIEW_ROUTE = "/api/view"
 VENDOR_ROUTE = re.compile(r"/vendor/([a-z0-9.-]{1,64})")
 SCRIPT_TYPE = "text/javascript; charset=utf-8"
 FONT_TYPE = "font/woff2"
@@ -118,6 +119,8 @@ class Handler(Exchange):
             self.answer(hub.repositories, HTTPStatus.OK)
         elif path == "/api/resources":
             self.answer(lambda: sampled(hub.kept / RESOURCES, hub.span(self.query(), time.time())), HTTPStatus.OK)
+        elif path == VIEW_ROUTE:
+            self.answer(hub.view_store.get, HTTPStatus.OK)
         elif path == "/api/subagents":
             self.answer(lambda: hub.subagents(self.query()), HTTPStatus.OK)
         elif path == "/api/runner/jobs":
@@ -262,6 +265,21 @@ class Handler(Exchange):
         receive = self.receiver(path, host)
         if receive is not None:
             receive(self.rfile.read(length))
+
+    def do_PATCH(self) -> None:
+        path = urlsplit(self.path).path
+        host = self.host()
+        if host is None:
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
+        elif path != VIEW_ROUTE:
+            self.send_text(HTTPStatus.NOT_FOUND, "not found")
+        elif not self.guarded(host):
+            self.send_text(HTTPStatus.FORBIDDEN, "forbidden: same-origin PATCH with the X-Kvb-Orchestrator header only")
+        else:
+            length = self.body_length(BODY_LIMIT)
+            if length is not None:
+                body = self.rfile.read(length)
+                self.answer(lambda: self.server.hub.view_store.patch(body), HTTPStatus.OK)
 
     def index(self) -> None:
         nonce = secrets.token_urlsafe(18)

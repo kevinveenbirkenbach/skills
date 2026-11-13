@@ -210,5 +210,5 @@ class View:
     def render(self, nonce: str) -> tuple[str, str]:
         now = time.time()
         state = self.state(now - RADIO_WINDOW, now, now, 0)
-        page = self.templates.get_template("index.html.j2").render(nonce=nonce, state=state, icons=self.icons)
+        page = self.templates.get_template("index.html.j2").render(nonce=nonce, state=state, view=self.view_store.get(), icons=self.icons)
         return page, INDEX_CSP.format(nonce, " ".join(["'self'", *state["media"]]))
