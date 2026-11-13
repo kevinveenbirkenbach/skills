@@ -49,7 +49,8 @@ elif tool == "systemctl":
     elif verb == "enable":
         state["enabled"] = sorted({*state["enabled"], unit})
     elif verb == "is-active":
-        print("active")
+        print("active" if unit in state["enabled"] else "inactive")
+        code = 0 if unit in state["enabled"] else 3
 file.write_text(json.dumps(state))
 sys.exit(code)
 '''
@@ -141,6 +142,19 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.assertEqual({key: second[key] for key in ("images", "mcp", "enabled")}, {key: first[key] for key in ("images", "mcp", "enabled")})
         legacy_calls = [call for call in second["calls"][len(first["calls"]) :] if any(OLD in arg for arg in call)]
         self.assertEqual(legacy_calls, [["docker", "image", "inspect", f"{OLD}:local"], ["claude", "mcp", "get", OLD]])
+
+    def test_check_reports_the_sessions_timer_the_install_enabled_as_active(self):
+        for tool in ("curl", "journalctl"):
+            (self.root / "bin" / tool).symlink_to("stub")
+        timer = f"{NEW}-sessions.timer"
+        self.assertIn(timer, self.install()["enabled"])
+        checked = subprocess.run(["bash", str(SCRIPT), "check"], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+        self.assertIn(f"ok    {timer} active\n", checked.stdout, checked.stderr)
+        state = json.loads(self.state.read_text(encoding="utf-8"))
+        self.state.write_text(json.dumps({**state, "enabled": [unit for unit in state["enabled"] if unit != timer]}), encoding="utf-8")
+        stopped = subprocess.run(["bash", str(SCRIPT), "check"], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+        self.assertIn(f"todo  {timer} off: agent states wait for make orchestrator-install\n", stopped.stdout, stopped.stderr)
+        self.assertNotIn(f"{timer} active", stopped.stdout)
 
     def test_the_offices_unit_waits_for_the_installed_skill_scripts_of_this_tree(self):
         self.install()

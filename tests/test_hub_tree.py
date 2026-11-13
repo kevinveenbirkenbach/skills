@@ -4,12 +4,17 @@ import ast
 import datetime
 import json
 import os
+import shutil
+import subprocess
 import unittest
+from pathlib import Path
 
 from hub_case import HubCase
-from hub_support import HUB, PAGE
+from hub_support import GIT_ENV, HUB, PAGE
 
 GENERATED = datetime.datetime(2026, 11, 6, 12, tzinfo=datetime.UTC).timestamp()
+PKGMGR = shutil.which("pkgmgr")
+FIXTURE = Path(__file__).parent / "branch-tree.json"
 
 
 def starts_git(path) -> list[int]:
@@ -39,6 +44,54 @@ class TestHubTree(HubCase):
         trees = [(tree["path"], tree["dirty"], tree["untracked"], tree["workers"], tree["review"]) for tree in main["worktrees"] + branches["feature"]["worktrees"]]
         self.assertEqual(trees, [(demo, False, 0, [], None), (feature, True, 1, ["Skills"], {"status": "pending", "gate": "pass", "title": "feat: tree"})])
         self.assertEqual([(tree["path"], tree["workers"]) for tree in repos[demo]["detached"]], [(f"{root}/worktrees/github.com/me/demo/detached", [])])
+
+    @unittest.skipUnless(PKGMGR, "pkgmgr is not on PATH: the check that /api/tree serves a file pkgmgr branch tree wrote cannot run, install package-manager to cover 001 S12")
+    def test_tree_serves_the_file_pkgmgr_branch_tree_wrote_for_a_fixture_repository_in_the_fields_of_the_fixture(self):
+        root = Path(os.path.realpath(self.outside)) / "pkgmgr"
+        home, origin, repo = root / "home", root / "origin.git", root / "repos" / "github.com" / "me" / "demo"
+        repo.mkdir(parents=True)
+        self.git(root, "init", "--bare", "-b", "main", str(origin))
+        self.git(repo, "init", "-b", "main")
+        self.git(repo, "remote", "add", "origin", str(origin))
+        (repo / ".git" / "info" / "exclude").write_text(".worktrees/\n", encoding="utf-8")
+        (repo / "init.txt").write_text("init\n", encoding="utf-8")
+        self.git(repo, "add", "init.txt")
+        self.git(repo, "commit", "-m", "init")
+        self.git(repo, "switch", "-c", "feature/done")
+        (repo / "done.txt").write_text("done\n", encoding="utf-8")
+        self.git(repo, "add", "done.txt")
+        self.git(repo, "commit", "-m", "done")
+        self.git(repo, "switch", "main")
+        self.git(repo, "merge", "--no-ff", "-m", "merge feature/done", "feature/done")
+        self.git(repo, "push", "-u", "origin", "main")
+        opened = repo / ".worktrees" / "feature" / "open"
+        self.git(repo, "worktree", "add", "-b", "feature/open", str(opened), "main")
+        (opened / "loose.txt").write_text("new\n", encoding="utf-8")
+        config = home / ".config" / "pkgmgr" / "fixture.yml"
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({"directories": {"repositories": str(root / "repos")}, "repositories": [{"provider": "github.com", "account": "me", "repository": "demo", "directory": str(repo)}]}), encoding="utf-8")
+        env = {
+            "PATH": os.environ["PATH"], "HOME": str(home), "LANG": "C.UTF-8", **GIT_ENV, "DBUS_SESSION_BUS_ADDRESS": f"unix:path={root / 'no-bus'}",
+            "XDG_CACHE_HOME": str(home / ".cache"), "XDG_STATE_HOME": str(home / ".local" / "state"), "PKGMGR_TREE_FILE": str(self.tree_file),
+        }
+        done = subprocess.run([PKGMGR, "branch", "tree", "--format", "json", "--output", str(self.tree_file)], cwd=root, env=env, capture_output=True, text=True, timeout=300, check=False)
+        self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+        written = json.loads(self.tree_file.read_text(encoding="utf-8"))
+        status, _, body = self.get("/api/tree")
+        self.assertEqual(status, 200, body)
+        data = json.loads(body)
+        self.assertNotIn("error", data, data)
+        self.assertEqual(data["scanned"], datetime.datetime.fromisoformat(written["generated_at"]).timestamp())
+        self.assertEqual([(entry["path"], entry["name"], entry["known"]) for entry in data["repos"]], [(str(repo), "github.com/me/demo", True)])
+        branches = {entry["name"]: entry for entry in data["repos"][0]["branches"]}
+        self.assertEqual(sorted(branches), ["feature/done", "feature/open", "main"])
+        self.assertEqual((branches["main"]["state"], branches["feature/done"]["state"], branches["feature/done"]["merged_by"]), ("protected", "merged-clean", "ancestor"))
+        trees = [(tree["path"], tree["dirty"], tree["untracked"]) for tree in branches["feature/open"]["worktrees"]]
+        self.assertEqual(trees, [(str(opened), True, 1)])
+        fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        self.assertLessEqual(set(fixture), set(written))
+        self.assertLessEqual({key for entry in fixture["repos"] for key in entry}, set(written["repos"][0]))
+        self.assertLessEqual({key for entry in fixture["repos"] for item in entry["items"] for key in item}, {key for item in written["repos"][0]["items"] for key in item})
 
     def test_tree_reads_the_file_again_once_it_changes(self):
         self.write_tree()

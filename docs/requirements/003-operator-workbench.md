@@ -213,7 +213,7 @@ flowchart TD
 - [ ] The burn chart draws, in distinct colours with a legend, the finish at
       fixed scope and the finish at growing scope, each ending at its date; a
       line never reached shows ∞.
-- [ ] Scope excludes `operator/*`; a task without a register change for 3 days
+- [x] Scope excludes `operator/*`; a task without a register change for 3 days
       carries a Stale label, is counted apart and can be stopped from the
       board.
 
@@ -312,7 +312,7 @@ flowchart TD
       byte offset; no sampler or parser calls an LLM.
 - [x] Rows older than 7 days fold into 15-minute means; means older than 90
       days are dropped.
-- [ ] The Resources entry shows on one time axis disks, CPU, RAM, swap, GPU,
+- [x] The Resources entry shows on one time axis disks, CPU, RAM, swap, GPU,
       VRAM and stacked tokens per agent; bands mark idle (< 30 %) and
       saturated (> 90 %); a marker flags spans where jobs waited while CPU and
       RAM stayed under 50 %; the view reads only the sampler files.
@@ -370,13 +370,13 @@ The work packages meet only through these interfaces:
       bubble at the size of its earliest.
 - [ ] With speech off, TTS unavailable or muted, the same rows run through the
       same queue timed at 180 words per minute, at least 1.5 s each.
-- [ ] Bubble text uses Comic Neue as a vendored woff2 with its SIL OFL 1.1
+- [x] Bubble text uses Comic Neue as a vendored woff2 with its SIL OFL 1.1
       text in `orchestrator/vendor/`, stack `"Comic Neue", "Comic Sans MS",
       cursive`; no external font request, the CSP stays unchanged.
-- [ ] Stop speaking clears every bubble at once; switching the bubbles off
+- [x] Stop speaking clears every bubble at once; switching the bubbles off
       leaves speech playback unchanged; `prefers-reduced-motion` drops the
       scaling and scrolling animation.
-- [ ] Bubble text is set as text content, never as HTML.
+- [x] Bubble text is set as text content, never as HTML.
 
 ### Simplicity
 
@@ -391,20 +391,20 @@ The work packages meet only through these interfaces:
   - [x] Gates resolve (own rule, strictest of several ancestors, none);
         parents derive; receipt tree sha with unstaged and untracked files;
         hook pass and refuse; queue wait on `after`.
-  - [ ] Resources sample parsing on fixtures (df, meminfo, nvidia-smi, asleep
+  - [x] Resources sample parsing on fixtures (df, meminfo, nvidia-smi, asleep
         GPU); token offsets; retention fold; diff cap and masking; feedback
         payload.
   - [x] W4 part of the item above: sample parsing on fixtures (df, meminfo,
         CPU ticks between runs, nvidia-smi, asleep and unread GPU); token
         offsets, a message counted once across fork transcripts; retention
         fold.
-  - [ ] Bubble schedule: scale per queue position, word reveal times from a
+  - [x] Bubble schedule: scale per queue position, word reveal times from a
         duration, reading-pace duration, one bubble per agent.
 - Integration:
   - [x] A scratch repository with installed hooks refuses a commit without a
         receipt and passes it after a queue gate; refuses a merge below the
         parent's level; post-checkout records parents.
-  - [ ] The host executor applies a signed board batch to a scratch register
+  - [x] The host executor applies a signed board batch to a scratch register
         and refuses a forged one; deletes a local merged branch without a
         token and refuses a remote one.
   - [x] The sampler writes rows in a scratch HOME.

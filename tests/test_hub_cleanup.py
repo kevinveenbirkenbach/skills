@@ -4,6 +4,7 @@ import ast
 import importlib.util
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -125,6 +126,15 @@ class TestHubCleanup(HubCase):
         self.assertIn('if (entry.held) {\n      return h("span", {class: "hint held", title: entry.held}, chip("bi-folder-symlink", entry.held, "neutral"));', page)
         self.assertIn("deleteDialog(items, locked, held)", page)
         self.assertIn("held by a worktree: not deleted here", (HUB / "templates" / "page-cleanup.js").read_text(encoding="utf-8"))
+
+    def test_the_delete_sheet_renders_the_dry_run_note_as_visible_text(self):
+        dialog = (HUB / "templates" / "page-cleanup.js").read_text(encoding="utf-8")
+        sheet = dialog[dialog.index("openSheet("):]
+        note = re.search(r'\[\n\s*h\("p", \{class: "muted"\}, "([^"]+)"\),\n', sheet)
+        self.assertIsNotNone(note, sheet[:400])
+        for part in ("it deletes the local branch", "never touches a worktree, Compose stack or volume", "A branch held by a worktree is not deleted here", "its docker compose down -v deletes the stack's volumes", "the host refuses an entry whose plan deletes one", "refuses every entry whose state has changed since"):
+            self.assertIn(part, note.group(1))
+        self.assertEqual(dialog.count(note.group(1)), 1)
 
     @unittest.skipUnless(INSTALLED_PKGMGR, "no pkgmgr installed")
     def test_every_volume_text_states_the_compose_down_argv_of_the_installed_pkgmgr(self):
