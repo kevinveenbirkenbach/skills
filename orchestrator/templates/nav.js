@@ -1,13 +1,13 @@
 const Nav = (() => {
   "use strict";
-  const TABS = [["stream", "Stream"], ["agents", "Agents"], ["artifacts", "Artifacts"], ["tasks", "Tasks"], ["resources", "Resources"]];
+  const TABS = [["home", "Home"], ["stream", "Stream"], ["agents", "Agents"], ["artifacts", "Artifacts"], ["tasks", "Tasks"], ["resources", "Resources"]];
   const SUBS = {stream: [["rules", "Firewall"]]};
   const PANES = {inbox: ["tasks", "operator"]};
   const VIEWS = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]];
   const TASK_VIEWS = [["list", "List"], ["board", "Board"], ["rasci", "RASCI"], ["gantt", "Gantt"], ["burn", "Burndown and burnup"], ["3d", "3D"]];
   const OWN = {agents: [["hierarchy", "Hierarchy"]]};
   const ICONS = {
-    stream: "bi-activity", inbox: "bi-inbox", rules: "bi-card-checklist", agents: "bi-people", artifacts: "bi-git", tasks: "bi-list-check",
+    home: "bi-house-door", stream: "bi-activity", inbox: "bi-inbox", rules: "bi-card-checklist", agents: "bi-people", artifacts: "bi-git", tasks: "bi-list-check",
     orbit: "bi-globe2", chord: "bi-bezier2", swimlane: "bi-bar-chart-steps", tree: "bi-diagram-3", "3d": "bi-badge-3d", hierarchy: "bi-diagram-2",
     list: "bi-list-task", board: "bi-kanban", rasci: "bi-grid-3x3", gantt: "bi-calendar-range", burn: "bi-graph-down-arrow",
     resources: "bi-speedometer2",
@@ -27,8 +27,15 @@ const Nav = (() => {
     return tabOf(screen) === screen ? (view ? `#${screen}/${view}` : `#${screen}`) : `#${tabOf(screen)}/${screen}`;
   }
 
-  function route(hash) {
+  /**
+   * @param hash - the location hash.
+   * @param pinned - how many pins Home holds; an empty hash opens Home once it holds one, else Stream.
+   */
+  function route(hash, pinned) {
     const [head, sub] = decodeURIComponent(String(hash).replace(/^#/, "")).split("/");
+    if (!head && pinned > 0) {
+      return {screen: "home", view: null, redirect: "#home"};
+    }
     if (head === "stream" && sub === "radio") {
       return {screen: "stream", view: null, redirect: "#stream", spot: true};
     }

@@ -3,7 +3,7 @@
   const OFFICE_GROUPS = [["cluster", "Organizers", "Organizer"], ["work", "Presidents", "President"], ["other", "Other offices", "Office"]];
 
   function hierarchyScreen() {
-    hier.chart = h("section", {class: "card org-chart", "aria-labelledby": "org-title"});
+    hier.chart = h("section", {class: "card org-chart", "data-panel": "agents/hierarchy", "aria-labelledby": "org-title"});
     orderDom.box = h("section", {class: "card agent-order", id: "agent-order", "aria-labelledby": "agent-order-title"});
     hier.sig = "";
     return h("div", {class: "hierarchy-body"}, hier.chart, orderDom.box);
@@ -120,7 +120,7 @@
     hier.ids = 0;
     const count = state.claims.length;
     hier.chart.replaceChildren(
-      h("div", {class: "inbox-head"}, h("h2", {class: "group-title", id: "org-title"}, "Hierarchy", counter(count)),
+      h("div", {class: "inbox-head", "data-star-slot": ""}, h("h2", {class: "group-title", id: "org-title"}, "Hierarchy", counter(count)),
         h("span", {class: "muted"}, "Formal offices from the council: Operator → Chair → dimensions → lines, plus organizers and presidents"),
         h("span", {class: "spacer"}),
         h("button", {type: "button", class: "btn small soft", "data-focus": "appoint:new", ...named("New office", "New office: give a free office to a session, with a passkey signature"), on: {click: () => officeSheet("appoint", null)}}, icon("bi-person-plus"), "New office")),

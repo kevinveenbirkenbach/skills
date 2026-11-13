@@ -25,7 +25,7 @@
   }
 
   function apply() {
-    const route = Nav.route(window.location.hash);
+    const route = Nav.route(window.location.hash, homePins().length);
     if (route.redirect) {
       window.history.replaceState(null, "", route.redirect);
     }
@@ -55,7 +55,7 @@
   }
 
   function screenOf() {
-    return {stream: streamScreen, inbox: tasksScreen, rules: rulesScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen, resources: resourcesScreen}[ui.screen]();
+    return {home: homeScreen, stream: streamScreen, inbox: tasksScreen, rules: rulesScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen, resources: resourcesScreen}[ui.screen]();
   }
 
   function render(force) {
@@ -82,6 +82,7 @@
     }
     stage();
     drawSpawn();
+    drawHome();
     drawHierarchy(force);
     drawToolbar();
     drawInbox();

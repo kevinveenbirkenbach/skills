@@ -237,7 +237,7 @@
     } else {
       body.push(meta([["Title", data.title], ["Status", data.status]]));
     }
-    return [popupHead(icon(kindIcon), node.label, h("span", {class: "muted"}, kindName)), h("div", {class: "popup-body"}, body)];
+    return [popupHead(icon(kindIcon), node.label, h("span", {class: "muted"}, kindName)), h("div", {class: "popup-body", "data-item": `artifact:${node.id}`}, body)];
   }
 
   function artifactsScreen() {
@@ -264,7 +264,7 @@
     }, 0);
     const controls = h("div", {class: "card controls"}, viewSwitch("artifacts"), view === "3d" ? layoutTools("artifacts") : view === "tree" ? null : picker,
       h("div", {class: "toolbar", role: "toolbar", "aria-label": "Artifacts"}, search, reload, removeAll, apply), count);
-    const body = view === "tree" ? list : h("div", {class: "card stage-card"}, stageBox, legendBox);
+    const body = view === "tree" ? list : h("div", {class: "card stage-card", "data-panel": `artifacts/${view}`}, stageBox, legendBox);
     return h("div", {class: "graph"}, controls, body);
   }
 

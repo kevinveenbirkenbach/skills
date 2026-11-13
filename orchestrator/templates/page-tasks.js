@@ -69,8 +69,8 @@
   function taskItem(row, eta) {
     const classes = ["task-row", row.open_work.length ? "open-work" : "", row.ended ? "ended" : ""].filter(Boolean).join(" ");
     const pick = row.editable ? h("input", {type: "checkbox", class: "task-pick", "aria-label": `Select ${row.task}`, title: `Select ${row.task} for a bulk business value`, checked: taskView.picked.has(row.task), on: {change: (event) => pickTask(row.task, event.target.checked)}}) : null;
-    return h("li", {class: classes, "data-task": row.task, "data-kind": row.kind, "data-status": row.status},
-      h("div", {class: "head-row"}, pick, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}), etaMark(eta),
+    return h("li", {class: classes, "data-task": row.task, "data-item": `task:${row.task}`, "data-kind": row.kind, "data-status": row.status},
+      h("div", {class: "head-row", "data-star-slot": ""}, pick, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}), etaMark(eta),
         row.editable ? iconBtn("bi-sort-numeric-down", "Priority", "btn small soft", () => taskSheet(row.task), `Priority and WSJF of ${row.task}: pin or estimate, signed with the passkey`) : null),
       opener(row),
       row.objective !== "-" ? h("div", {class: "muted"}, `Objective: ${row.objective}`) : null,
@@ -165,7 +165,7 @@
       drawTasks();
     }}});
     const stage = !inbox && view === "3d" ? h("div", {class: "stage"}) : null;
-    const body = inbox ? inboxScreen() : stage ? h("div", {class: "card stage-card tasks-body"}, layoutTools("tasks"), stage) : h("div", {class: "tasks-body"});
+    const body = inbox ? inboxScreen() : stage ? h("div", {class: "card stage-card tasks-body", "data-panel": "tasks/3d"}, layoutTools("tasks"), stage) : h("div", {class: "tasks-body", "data-panel": `tasks/${view}`});
     taskView.dom = {chips, count, body, inbox, view, stage};
     taskView.sig = "";
     taskView.plan = null;
