@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import functools
-import importlib.util
 import sqlite3
 import time
 from contextlib import closing
@@ -12,6 +10,7 @@ from .errors import ToolError
 from .fields import decode, expect
 from .jobs import GATE_JOB
 from .signed import signing
+from .skill_scripts import script_module
 
 GATES_SCRIPT = "kvb-check-gate/scripts/gates.py"
 GATES_DB = "gates.db"
@@ -35,24 +34,7 @@ def gates_module(script: Path) -> ModuleType | None:
         loaded again after an install changed it, None when it is missing or
         does not load.
     """
-    try:
-        changed = script.stat().st_mtime_ns
-    except OSError:
-        return None
-    return loaded(script, changed)
-
-
-@functools.cache
-def loaded(script: Path, changed: int) -> ModuleType | None:
-    spec = importlib.util.spec_from_file_location(f"kvb_orchestrator_gates_{changed}", script)
-    if spec is None:
-        return None
-    module = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(module)
-    except (OSError, ImportError, RuntimeError, SyntaxError):
-        return None
-    return module
+    return script_module(script)
 
 
 def branch_gates(gates: ModuleType, db: sqlite3.Connection, repo: str, branch: str) -> dict:

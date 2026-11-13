@@ -411,9 +411,26 @@ def cmd_assist(args: argparse.Namespace) -> int:
     return 0
 
 
+def seen(row: dict, name: str, prompt: float, state: dict, since: float) -> bool:
+    """Args:
+        row: a news.jsonl row with a numeric ts.
+        name: the session's name, as name_of() gives it.
+        prompt: the session's prompt mark, as prompt_mark() gives it.
+        state: the session's radio-seen state; the mark of the row's channel
+            holds the ts of the newest row the session took on it.
+        since: rows at or before it count as taken; the hooks pass the start
+            of WINDOW, a reader of the marks alone NEVER.
+
+    Returns:
+        Whether the session has taken the row: it is for the session and its
+        ts is not after the prompt mark, since or the mark of its channel.
+    """
+    return for_me(row, name) and not row["ts"] > max(prompt, since, mark(state, channel(row)))
+
+
 def pending(sid: str, name: str, state: dict, family: str) -> list[dict]:
-    floor = max(prompt_mark(sid), time.time() - WINDOW, mark(state, family))
-    return [row for row in items() if channel(row) == family and row["ts"] > floor and for_me(row, name)]
+    prompt, since = prompt_mark(sid), time.time() - WINDOW
+    return [row for row in items() if channel(row) == family and for_me(row, name) and not seen(row, name, prompt, state, since)]
 
 
 def take(sid: str, family: str) -> list[dict]:
