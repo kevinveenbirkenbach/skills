@@ -11,18 +11,22 @@ from pathlib import Path
 
 INSTALL = Path(__file__).resolve().parents[1] / "scripts" / "install.sh"
 NPX = "#!/bin/sh\nmkdir -p .agents/skills/locked\necho locked > .agents/skills/locked/SKILL.md\n"
+BYTECODE = ("__pycache__/radio.cpython-312.pyc", "json.pyc", "legacy.pyo")
 
 
 class TestInstall(unittest.TestCase):
-    def install(self, root: Path, target: Path) -> None:
+    def install(self, root: Path, target: Path, npx: str = NPX, planted: tuple[str, ...] = ()) -> None:
         repo, stubs = root / "repo", root / "bin"
         (repo / "scripts").mkdir(parents=True)
         shutil.copy(INSTALL, repo / "scripts" / "install.sh")
         (repo / "scripts" / "enable-plugins.js").write_text("", encoding="utf-8")
         (repo / "skills" / "own").mkdir(parents=True)
         (repo / "skills" / "own" / "SKILL.md").write_text("own", encoding="utf-8")
+        for name in planted:
+            (repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (repo / name).write_bytes(b"planted")
         stubs.mkdir()
-        (stubs / "npx").write_text(NPX, encoding="utf-8")
+        (stubs / "npx").write_text(npx, encoding="utf-8")
         (stubs / "npx").chmod(0o755)
         env = {**os.environ, "PATH": f"{stubs}:/usr/bin:/bin", "TARGET": str(target), "HOME": str(root / "home")}
         done = subprocess.run(["bash", str(repo / "scripts" / "install.sh")], env=env, capture_output=True, text=True, check=False)
@@ -54,6 +58,26 @@ class TestInstall(unittest.TestCase):
                 installed = {path.name: path.readlink() if path.is_symlink() else None for path in (target / folder).iterdir()}
                 expected = {name: root / "home" / folder / name if f"{folder}/{name}" in linked else None for name in ("locked", "own")}
                 self.assertEqual(installed, expected)
+
+    def test_no_python_bytecode_reaches_the_installed_skills(self):
+        locked = "".join(f"echo planted > .agents/skills/locked/scripts/{name}\n" for name in BYTECODE)
+        npx = f"{NPX}mkdir -p .agents/skills/locked/scripts/__pycache__\n{locked}"
+        for linked in (False, True):
+            with self.subTest(linked=linked), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                target = root / "target"
+                (target / ".agents" / "skills").mkdir(parents=True)
+                if linked:
+                    (target / ".claude").mkdir()
+                    (target / ".claude" / "skills").symlink_to(Path("..") / ".agents" / "skills")
+                self.install(root, target, npx, (*(f"skills/own/scripts/{name}" for name in BYTECODE), "skills/own/scripts/radio.py"))
+                for folder in (".agents/skills", ".claude/skills"):
+                    installed = target / folder
+                    with self.subTest(folder=folder):
+                        bytecode = [str(path.relative_to(installed)) for path in sorted(installed.rglob("*")) if path.name == "__pycache__" or path.suffix in (".pyc", ".pyo")]
+                        self.assertEqual(bytecode, [])
+                        self.assertTrue((installed / "own" / "scripts" / "radio.py").is_file())
+                        self.assertTrue((installed / "locked" / "SKILL.md").is_file())
 
 
 if __name__ == "__main__":
