@@ -86,7 +86,7 @@
     const own = (event) => !event.target.closest("button, summary, details, select, .kanban-handle");
     const after = () => kanban.dragging && kanban.dragging.mode === "after" && kanban.dragging.task !== row.task;
     return h("li", {
-      class: ["task-card", "kanban-card", row.pending ? "pending" : ""].filter(Boolean).join(" "), "data-task": row.task, "data-lane": lane, "data-column": column, tabindex: 0,
+      class: ["task-card", "kanban-card", row.pending ? "pending" : ""].filter(Boolean).join(" "), "data-task": row.task, "data-item": `task:${row.task}`, "data-lane": lane, "data-column": column, tabindex: 0,
       "data-pending": row.pending ? row.pending.map((argv) => argv.join(" ")).join("\n") : null, draggable: row.movable ? "true" : null,
       on: {
         click: (event) => own(event) && open(),
@@ -112,7 +112,7 @@
         },
       },
     },
-    h("div", {class: "head-row"}, h("code", {class: "task-id"}, row.task), cardLabels(row), h("span", {class: "spacer"}),
+    h("div", {class: "head-row", "data-star-slot": ""}, h("code", {class: "task-id"}, row.task), cardLabels(row), h("span", {class: "spacer"}),
       row.pending ? h("span", {class: "kanban-pending", role: "img", ...named("Staged", row.pending.map(shownArgv).join("\n"))}, icon("bi-pencil")) : null,
       openJobs(row.task).length ? h("span", {class: "kanban-wait", role: "img", ...named("At the runner", `${row.task}: a signed change waits for the runner`)}, icon("bi-hourglass-split")) : null,
       row.editable ? h("span", {class: "kanban-handle", role: "img", draggable: "true", ...named("Follows", `Drag onto the card that waits for ${row.task}`), on: {dragstart: dragFrom(row.task, "after"), dragend: () => {

@@ -118,7 +118,7 @@
     const former = (people()[key] || {names: []}).names.filter((entry) => entry !== name);
     openPopup(name, [
       popupHead(face(name, true), name, h("span", {class: "muted"}, former.length ? `Agent · formerly ${former.join(", ")}` : "Agent"), " ", life),
-      h("div", {class: "popup-body"}, nightRow, info, h("h3", {}, "Subagents"), subs, h("h3", {}, "History"), log),
+      h("div", {class: "popup-body", "data-item": `agent:${key}`}, nightRow, info, h("h3", {}, "Subagents"), subs, h("h3", {}, "History"), log),
       form,
     ], anchor, () => {
       agentDom = null;

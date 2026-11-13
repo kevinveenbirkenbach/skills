@@ -134,10 +134,10 @@
     const renamed = entry.now && entry.now !== entry.agent ? h("span", {title: `now: ${entry.now}`}, person(entry.agent)) : person(entry.agent);
     const who = entry.agent ? [face(entry.agent, false), renamed] : entry.session ? h("strong", {title: entry.session}, entry.session.slice(0, 8)) : null;
     const headline = entry.kind === "transcript" || entry.kind === "ask" || entry.kind === "operator" ? null : h("span", {class: "headline"}, entry.title);
-    return h("li", {class: `entry k-${entry.kind}${entry.waiting ? " waiting" : ""}${alarm ? " alarm" : ""}`, "data-ref": item ? keyOf(item) : null, "data-to": item && item.to ? item.to : null},
+    return h("li", {class: `entry k-${entry.kind}${entry.waiting ? " waiting" : ""}${alarm ? " alarm" : ""}`, "data-ref": item ? keyOf(item) : null, "data-item": `message:${entry.ts}/${entry.id}`, "data-to": item && item.to ? item.to : null},
       h("div", {class: "msg-meta"}, when(entry.ts), kindPill(entry), extras(entry)),
       h("div", {},
-        h("div", {class: "route"}, who, entry.sub ? h("button", {type: "button", class: "linkish muted", on: {click: () => focusSub(entry.session, entry.sub)}}, `› Subagent ${entry.sub.slice(0, 12)}`) : null, entry.kind === "ask" ? h("strong", {}, entry.title) : null, headline),
+        h("div", {class: "route", "data-star-slot": ""}, who, entry.sub ? h("button", {type: "button", class: "linkish muted", on: {click: () => focusSub(entry.session, entry.sub)}}, `› Subagent ${entry.sub.slice(0, 12)}`) : null, entry.kind === "ask" ? h("strong", {}, entry.title) : null, headline),
         body(entry),
         item ? diffBlocks(item) : null,
         item ? feedbackList(keyOf(item)) : null,
@@ -175,7 +175,7 @@
     const parts = h("div", {class: "chips", role: "group", "aria-label": "Transcript parts"});
     const saved = h("div", {class: "chips", role: "group", "aria-label": "Saved views"});
     const focus = h("div", {class: "chips"});
-    const list = h("div", {});
+    const list = h("div", {"data-panel": "stream"});
     const more = h("details", {class: "menu"}, h("summary", named("Filter", "Filter: kinds, transcript parts, saved views, custom time range"), icon("bi-funnel"), caret()), h("div", {class: "menu-box end"},
       h("h3", {}, "Kinds"), kinds, h("h3", {}, "Transcript parts"), parts, h("h3", {}, "Saved views"), saved, h("h3", {}, "Custom time range"), customRange()));
     stream.dom = {search, count, categories, kinds, parts, saved, focus, list};

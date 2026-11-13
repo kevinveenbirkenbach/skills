@@ -128,7 +128,7 @@ class TestWorkbenchResources(HubCase):
                 self.assertEqual(found["unknown"], [[self.start + UNREAD[0] * 60, self.start + UNREAD[1] * 60]])
                 self.assertEqual((found["agents"], found["bottoms"], found["stacked"]), (["Skills", "Stage"], ["Skills"], True))
                 self.assertEqual(found["legend"], ["CPU 60 %", "RAM 55 %", "Swap 5 %"])
-                self.assertEqual(found["labels"], {"tab": ["Resources (key 5)", "Resources"], "reload": ["Reload: read the sampler files again", "Reload"], "titles": [[name, name] for name in PANELS.values()]})
+                self.assertEqual(found["labels"], {"tab": ["Resources (key 6)", "Resources"], "reload": ["Reload: read the sampler files again", "Reload"], "titles": [[name, name] for name in PANELS.values()]})
                 self.assertEqual((found["unlabelled"], found["plots"]), (0, [True] * 2))
                 self.assertEqual((found["tall"], found["wide"]), (False, False), "the page scrolls")
                 self.assertEqual(quiet(found["violations"]), [])

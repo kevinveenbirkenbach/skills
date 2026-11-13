@@ -48,6 +48,7 @@
   notifyLabel();
   announce();
   measure();
+  homeBoot();
   apply();
   drawTime();
   motion.asOf = ui.asOf;

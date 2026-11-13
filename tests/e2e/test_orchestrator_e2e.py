@@ -37,7 +37,7 @@ VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
 TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn", "3d")
 SCREENS = ["stream", "tasks/operator", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS), "resources"]
 SUBS = ["Firewall"]
-TABS = ["Stream", "Agents", "Artifacts", "Tasks", "Resources"]
+TABS = ["Home", "Stream", "Agents", "Artifacts", "Tasks", "Resources"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const until = async (check, ms) => {

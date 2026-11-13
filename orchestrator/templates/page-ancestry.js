@@ -82,7 +82,7 @@
     const svg = s("svg", {viewBox: `0 0 ${width} ${plan.height}`, width, height: plan.height, class: "chart ancestry", role: "group", "aria-label": label});
     const curve = (link) => `M${fixed(link.x1)},${fixed(link.y1)} C${fixed(link.x1)},${fixed((link.y1 + link.y2) / 2)} ${fixed(link.x2)},${fixed((link.y1 + link.y2) / 2)} ${fixed(link.x2)},${fixed(link.y2)}`;
     svg.append(s("g", {}, plan.links.map((link) => mark.edge(link, curve(link)))), s("g", {}, plan.nodes.map((node) => mark.node(node))));
-    return h("div", {class: "ancestry-frame"}, svg);
+    return h("div", {class: "ancestry-frame", "data-item": mark.item || null}, svg);
   }
 
   function branchAncestry(repo) {
@@ -104,6 +104,7 @@
     const plan = Ancestry.layout(repo.branches.map((entry) => ({id: entry.name, label: entry.name})), edges);
     const dropping = (link) => staged.some((item) => item.drop && item.branch === link.child && item.parent === link.parent);
     return ancestryChart(plan, `Ancestry of ${repo.name}`, {
+      item: `ancestry:${repo.path}`,
       edge: (link, d) => s("path", {
         class: ["ancestry-edge", link.derived ? "derived" : "", link.source === "staged" ? "pending" : "", dropping(link) ? "dropping" : ""].filter(Boolean).join(" "),
         d, "data-child": link.child, "data-parent": link.parent, "data-source": link.source,
