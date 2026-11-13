@@ -1,7 +1,7 @@
   function history(key) {
     const known = (people()[key] || {names: [nameOf(key)]}).names;
-    const radio = state.radio.filter((row) => row.source === key || row.targets.includes(key)).map((row) => ({ts: row.ts, mine: row.from === HUMAN, who: row.from, text: row.text}));
-    const sent = state.messages.filter((message) => known.includes(message.to) || message.to === "*").map((message) => ({ts: message.created_ts, mine: true, who: HUMAN, text: message.upload ? `${message.text}\n📎 ${message.upload}` : message.text, id: message.id, voice: message.voice}));
+    const radio = state.radio.filter((row) => row.source === key || row.targets.includes(key)).map((row) => ({ts: row.ts, mine: row.from === HUMAN, who: row.from, text: row.text, readers: row.readers, acks: row.acks}));
+    const sent = state.messages.filter((message) => known.includes(message.to) || message.to === "*").map((message) => ({ts: message.created_ts, mine: true, who: HUMAN, text: message.upload ? `${message.text}\n📎 ${message.upload}` : message.text, id: message.id, voice: message.voice, readers: message.readers, acks: message.acks}));
     const hubIds = new Set(sent.map((entry) => entry.id));
     const relayed = radio.filter((entry) => !(entry.who === HUMAN && [...hubIds].some((id) => entry.text.includes(`[kvb-orchestrator msg ${id}]`))));
     return [...relayed, ...sent].sort((a, b) => a.ts - b.ts).slice(-80);
@@ -31,7 +31,7 @@
         h("span", {class: "muted"}, `${dash(claim.runtime)} · since ${dash(claim.since)}`)))) : h("p", {class: "muted"}, "No claims."));
     const rows = history(ui.agent);
     agentDom.history.replaceChildren(rows.length
-      ? h("div", {}, rows.map((row) => h("div", {class: `bubble ${row.mine ? "mine" : "theirs"}`}, h("span", {class: "muted"}, `${row.who} · `, when(row.ts)), row.text, voiceReplay(row.voice))))
+      ? h("div", {}, rows.map((row) => h("div", {class: `bubble ${row.mine ? "mine" : "theirs"}`}, h("span", {class: "muted"}, `${row.who} · `, when(row.ts)), row.text, voiceReplay(row.voice), readerRow(row))))
       : h("p", {class: "muted"}, "No history in the chosen time range."));
     placePopup();
   }

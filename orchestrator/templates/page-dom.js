@@ -95,6 +95,14 @@
   const nameOf = (key) => (people()[key] || {now: String(key).replace(/^name:/, "")}).now;
   const agentKey = (who) => (people()[who] ? who : (Object.entries(people()).find(([, entry]) => entry.now === who || entry.names.includes(who)) || [who])[0]);
   const chairKey = () => (state.graph.nodes.find((node) => node.kind === "chair") || {id: HUMAN}).id;
+  const readLabel = (reader) => Receipts.label(reader, (ts) => absolute.format(stampOf(ts)));
+  const readerRow = (row) => {
+    const {shown, hidden} = Receipts.strip(row);
+    const avatar = (reader) => h("span", {class: "reader", "data-session": reader.session, "data-acked": String(reader.acked), role: "img", ...named(readLabel(reader))},
+      face(people()[reader.session] ? reader.session : reader.name, false), reader.acked ? h("span", {class: "ack", "aria-hidden": "true"}, icon("bi-check2-all")) : null);
+    const more = hidden.length ? h("span", {class: "readers-more", role: "img", ...named(`${hidden.length} more readers`, [...shown, ...hidden].map(readLabel).join("\n"))}, `+${hidden.length}`) : null;
+    return shown.length ? h("div", {class: "readers", role: "group", "aria-label": `Read by ${shown.length + hidden.length}`}, shown.map(avatar), more) : null;
+  };
   const stamp = (life) => [life.born ? `🐣 ${life.born}` : "", life.died ? `🪦 ${life.died}` : ""].filter(Boolean).join(" · ");
 
   function toast(title, lines, good) {

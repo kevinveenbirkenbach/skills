@@ -55,14 +55,14 @@ flowchart TD
 
 ### Server
 
-- [ ] Each radio row the hub serves carries `readers` (session id, name, read
+- [x] Each radio row the hub serves carries `readers` (session id, name, read
       time) and `acks` (session ids), computed by the function `radio.py`
       uses for its own seen check; a unit test covers every class.
-- [ ] A receipt counts for its call when the call is served, even if the
+- [x] A receipt counts for its call when the call is served, even if the
       receipt row lies outside the served window.
-- [ ] A missing, malformed, unreadable or future-dated seen mark counts as
+- [x] A missing, malformed, unreadable or future-dated seen mark counts as
       not read.
-- [ ] Receipt rows are absent from the rows served to the Stream, the radio
+- [x] Receipt rows are absent from the rows served to the Stream, the radio
       log and agent pages; count badges count messages without receipts.
 
 ### Page
@@ -78,9 +78,9 @@ flowchart TD
 
 ### Tests
 
-- [ ] Unit: readers and acks per class; malformed marks; receipt to call
+- [x] Unit: readers and acks per class; malformed marks; receipt to call
       matching by call time; the header renders the sender once.
-- [ ] Integration: the hub state endpoint over a council fixture (posts,
+- [x] Integration: the hub state endpoint over a council fixture (posts,
       calls, broadcasts, receipts, seen marks) returns readers and acks and
       no receipt rows.
 - [ ] E2E: Chromium and Firefox at 1920, 1366 and 390: a call with two

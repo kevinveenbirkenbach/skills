@@ -7,9 +7,9 @@ from .council import (
     MAYDAY_ACTIVE,
     NEWS,
     grants,
+    message_rows,
     night_mode,
     night_parts,
-    radio_rows,
     read_claims,
     sessions,
     silence_of,
@@ -24,6 +24,7 @@ from .messaging import message_row
 from .orbits import TRACK_STEPS, track
 from .phrasing import joined, phrase_parts
 from .presence import presence, read_snapshot
+from .receipts import inline, read_of
 from .records import epoch, iso_epoch, read_jsonl
 from .register import (
     AGENT_ORDER,
@@ -76,6 +77,16 @@ class View:
         self.tree.beat()
         return self.state(begin, end, now, TRACK_STEPS if sampled else 0)
 
+    def inlined(self, news: list[dict], window: tuple[float, float], now: float) -> dict[float, dict]:
+        """Returns:
+            inline() of the rows; empty when it fails, so the state builds
+            without readers.
+        """
+        try:
+            return inline(self.scripts.skills, self.council, self.receipt_names, self.receipt_reads, self.agent_sessions, news, window, now)
+        except Exception:  # noqa: BLE001
+            return {}
+
     def first(self, news: list[dict], history: list[dict], claims: list[dict], now: float) -> float:
         moments = [epoch(row.get("ts")) for row in news] + [epoch(row.get("start")) for row in history]
         moments += [iso_epoch(claim["since"]) for claim in claims] + [self.transcripts.first()]
@@ -90,13 +101,15 @@ class View:
         names = sessions(claims)
         directory = self.directory(claims, news, now)
         radio = []
-        for row in radio_rows(news, begin, end):
+        inlined = self.inlined(news, (begin, end), now)
+        for row in message_rows(news, begin, end):
             source = directory.key(row["from"], row["ts"])
             targets = [directory.key(name, row["ts"]) for name in row["to"]]
             called = [directory.at(key, row["ts"]) or name for key, name in zip(targets, row["to"], strict=True)]
             word, rest = phrase_parts(row["class"], directory.at(source, row["ts"]) or row["from"], called, row["text"])
             spoken = {"speech": joined((word, rest)), "word": word, "rest": rest, "voice": self.speech.voice_of(source)}
-            radio.append({**row, "source": source, "targets": targets, "now": directory.now(source), **spoken})
+            read = read_of(inlined, row["ts"])
+            radio.append({**row, "source": source, "targets": targets, "now": directory.now(source), **spoken, **read})
         grant_rows = [{**grant, "target": directory.key(grant["to"], grant["ts"])} for grant in grants(history, (begin, end), claims, tasks)]
         self.watch.see(tasks, now)
         jobs = [{**{key: value for key, value in job.items() if key != "proof"}, "output": job["output"][-OUTPUT_LIMIT:]} for job in self.jobs.listed()[-JOBS_SHOWN:]]
@@ -132,7 +145,7 @@ class View:
             "reviews": [row for row in map(review_row, self.reviews.pending()) if row["created_ts"] <= end],
             "asks": [ask_row(ask, names) for ask in self.asks.pending() if ask["expires"] > now and ask["created_ts"] <= end],
             "decisions": [decision_row(decision) for decision in self.decisions.pending() if decision["created_ts"] <= end],
-            "messages": [message_row(message) for message in self.messages.listed() if begin <= message["created_ts"] <= end],
+            "messages": [{**message_row(message), **read_of(inlined, epoch(message.get("relay_ts")))} for message in self.messages.listed() if begin <= message["created_ts"] <= end],
             "operator": operator_rows(tasks),
             "register": register_rows(tasks),
             "tasks": rows,

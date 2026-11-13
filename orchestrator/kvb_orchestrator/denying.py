@@ -3,12 +3,12 @@ from __future__ import annotations
 import time
 
 from .asking import ASK_LIFETIME, ask_state
-from .council import HUMAN, read_claims
+from .council import read_claims
 from .errors import ToolError
 from .messaging import DIRECT, EVERYONE, TO_ALL
 from .register import REGISTER, adder, operator_rows, read_register
 from .signed import operator_signed, signing
-from .skill_scripts import RADIO, RASCI
+from .skill_scripts import RASCI
 
 DENIABLE = ("ask", "operator", "rule")
 DENY_KEYS = ("channel", "reason", "to")
@@ -125,6 +125,5 @@ class Denying:
         where = f"{channel} to {address}" if direct else f"{channel} to all"
         fields = {"to": note["to"], "address": address, "text": text, "upload": None, "voice": None, "voice_sha256": "", "class": channel}
         record = self.messages.add({**fields, "denial": item["signed"], "proof": proof, "created_ts": time.time()})
-        targets = ["--to", address] if direct else []
-        run = self.scripts.run(RADIO, [*DENY_CHANNELS[channel], *targets, "--session", HUMAN, f"[kvb-orchestrator msg {record['id']}] {' '.join(text.split())}"])
+        run = self.radioed(record, DENY_CHANNELS[channel])
         return where if run["code"] == 0 else f"{where} failed ({run['code']})"

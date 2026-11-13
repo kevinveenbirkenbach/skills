@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import re
 import secrets
 import time
 
-from .council import HUMAN, agent, ordered, read_claims
+from .council import HUMAN, NEWS, agent, ordered, read_claims
 from .errors import Conflict, Missing, ToolError
 from .fields import NAME_LIMIT, ORDER_NAME, decode, expect, field, message_text, single
-from .records import write_atomic
+from .records import epoch, read_jsonl, write_atomic
 from .register import REGISTER, agent_order, read_register
 from .signed import message_signed, signing
 from .skill_scripts import ESTIMATE, NIGHT, RADIO, RASCI
@@ -22,6 +23,7 @@ UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 DIRECT = {"post": ["post"], "call": ["send", "call"]}
 TO_ALL = {"newsletter": ["post"], **{cls: ["send", cls] for cls in ("broadcast", "pan-pan", "security", "mayday")}}
 EVERYONE = "*"
+STORED = re.compile(r"ts: ([0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?)")
 DENIED = "Denied by the operator."
 MESSAGE_KEYS = ("to", "text", "upload", "class", "voice")
 SIGNED_BOARD = ("clear-mayday", *NIGHTS, "estimates")
@@ -55,6 +57,20 @@ def chosen(payload: dict, choices: dict[str, list[str]]) -> list[str]:
     if not isinstance(cls, str) or cls not in choices:
         raise ToolError(f"class must be one of {', '.join(choices)}")
     return choices[cls]
+
+
+def stored_ts(stdout: str) -> float | None:
+    """Returns:
+        The ts of the STORED line radio.py prints first, right after it
+        stored its row; None when the first line is none or holds a ts
+        epoch() refuses. No later line, an address or a cut tail, counts.
+    """
+    match = STORED.fullmatch(stdout.partition("\n")[0])
+    return epoch(float(match[1])) if match else None
+
+
+def relay_targets(record: dict) -> list[str]:
+    return [] if EVERYONE in (record["to"], record["address"]) else [record["address"]]
 
 
 def message_row(message: dict) -> dict:
@@ -112,7 +128,7 @@ class Messaging:
         }
 
     def relayed(self, record: dict) -> str:
-        upload, voice = record["upload"], record["voice"]
+        upload, voice = record.get("upload"), record.get("voice")
         notes = ("" if upload is None else f" file: {upload['path']}") + ("" if voice is None else f" voice: {self.voice_notes.host_path(voice)}")
         return f"{' '.join(record['text'].split())}{notes}"
 
@@ -182,9 +198,42 @@ class Messaging:
         fields = {"to": target, "address": address, "text": item["text"], "upload": upload, "voice": item["voice"] or None, "voice_sha256": item["voice_sha256"], "class": item["class"]}
         return self.messages.add({**fields, "proof": proof, "created_ts": time.time()})
 
+    def relay_text(self, record: dict) -> str:
+        return f"[kvb-orchestrator msg {record['id']}] {self.relayed(record)}"
+
+    def relay_ts(self, record: dict, news: list[dict], stored: float | None) -> float | None:
+        """Args:
+            record: a message of the hub's ledger radioed() just relayed.
+            news: the news.jsonl rows after the run.
+            stored: stored_ts() of the run's stdout.
+
+        Returns:
+            stored when a row of that ts was sent by HUMAN to
+            relay_targets(), with the relay text and no to_sessions; else
+            None.
+        """
+        text = " ".join(self.relay_text(record).split())
+        found = stored is not None and any(
+            epoch(row.get("ts")) == stored and row.get("from") == HUMAN and row.get("to") == relay_targets(record)
+            and "to_sessions" not in row and isinstance(row.get("text"), str) and " ".join(row["text"].split()) == text
+            for row in news
+        )
+        return stored if found else None
+
     def radioed(self, record: dict, command: list[str]) -> dict:
-        targets = [] if record["to"] == EVERYONE else ["--to", record["address"]]
-        return self.scripts.run(RADIO, [*command, *targets, "--session", HUMAN, f"[kvb-orchestrator msg {record['id']}] {self.relayed(record)}"])
+        """Returns:
+            The radio.py run; whatever its exit code, timeout included, the
+            record keeps the ts radio.py printed for its row as relay_ts once
+            relay_ts() confirms it, the one row whose readers and acks the
+            message shows.
+        """
+        targets = [part for address in relay_targets(record) for part in ("--to", address)]
+        run = self.scripts.run(RADIO, [*command, *targets, "--session", HUMAN, self.relay_text(record)])
+        relay = self.relay_ts(record, read_jsonl(self.council / NEWS), stored_ts(run["stdout"]))
+        if relay is not None:
+            with contextlib.suppress(OSError):
+                self.messages.change(record["id"], {"relay_ts": relay})
+        return run
 
     def relay(self, payload: dict, choices: dict[str, list[str]]) -> dict:
         with self.voice_notes.held(payload["voice"]):

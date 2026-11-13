@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import threading
 import time
 from dataclasses import dataclass
@@ -29,6 +30,15 @@ from .messaging import Messaging
 from .names import Names
 from .offices import Offices
 from .presence import SNAPSHOT
+from .receipts import (
+    NAMES,
+    READS,
+    SIGHTING,
+    ReceiptNames,
+    ReceiptReads,
+    sight,
+    sighting_pass,
+)
 from .redirects import Redirects
 from .requesting import Requesting
 from .resources import RESOURCES, SAMPLES
@@ -43,7 +53,7 @@ from .tasking import Tasking
 from .timeline import Timeline
 from .transcripts import Transcripts
 from .tree import TREE_HEARTBEAT, Tree
-from .view import View
+from .view import RADIO_WINDOW, View
 from .viewstore import ViewStore
 from .voicenotes import VoiceNotes
 
@@ -91,6 +101,8 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     log: Log
     batches: Pending
     names: Names
+    receipt_names: ReceiptNames
+    receipt_reads: ReceiptReads
     watch: Watch
     tree: Tree
     agent_sessions: Path
@@ -119,6 +131,22 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
         return f"{signing.origin_of(self.public_port)}/"
 
 
+def sighting(hub: Hub, stop: threading.Event) -> threading.Thread:
+    """Args:
+        hub: the hub whose receipt stores record the host snapshot's names
+            and the first sighting of each read row.
+        stop: ends the thread once set.
+
+    Returns:
+        The started daemon thread that runs sighting_pass() every SIGHTING
+        seconds, whether or not a page builds the state.
+    """
+    step = functools.partial(sighting_pass, hub.scripts.skills, hub.council, hub.receipt_names, hub.receipt_reads, hub.agent_sessions, RADIO_WINDOW)
+    thread = threading.Thread(target=sight, args=(step, hub.receipt_reads, stop, SIGHTING), name="receipt names", daemon=True)
+    thread.start()
+    return thread
+
+
 def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_state: Path, transcripts: Path, scripts: Runner, templates: Path, places: Places, model: Model, engines: Engines, approvers: Path, redirects: Redirects) -> Hub:
     uploads = state / "uploads"
     uploads.mkdir(exist_ok=True)
@@ -144,6 +172,8 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         log=Log(state / "log.jsonl"),
         batches=Pending(),
         names=Names(state / "names.json"),
+        receipt_names=ReceiptNames(state / NAMES),
+        receipt_reads=ReceiptReads(state / READS),
         settings=settings,
         redirects=redirects,
         watch=Watch(),

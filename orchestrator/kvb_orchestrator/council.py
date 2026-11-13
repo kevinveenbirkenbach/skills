@@ -79,6 +79,14 @@ def radio_rows(rows: list[dict], begin: float, end: float) -> list[dict]:
     return sorted(found, key=lambda row: row["ts"])[-RADIO_LIMIT:]
 
 
+def message_rows(rows: list[dict], begin: float, end: float) -> list[dict]:
+    """Returns:
+        radio_rows() without the receipts, which only feed the acks of their
+        call.
+    """
+    return [row for row in radio_rows(rows, begin, end) if row["class"] != RECEIPT]
+
+
 def office_kind(office: str) -> tuple[str, str, str]:
     """Args:
         office: an office of one or two segments.

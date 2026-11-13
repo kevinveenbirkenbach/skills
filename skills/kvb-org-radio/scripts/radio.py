@@ -21,12 +21,14 @@ Args:
         call needs --to; broadcast, security, pan-pan and mayday go to all
         and take no --to. direct is the old alias: with --wake a call,
         without it a post. mayday also sets radio silence
-        (<root>/radio-silence.json) for two hours. Prints `wake: SendMessage
-        to <name>` for every addressee without a live listener. --sid pins
-        a call with a single --to to that session as in feedback send.
+        (<root>/radio-silence.json) for two hours. Prints `ts: <ts>`, the
+        stored row's ts, flushed right after it is stored, then `sent ...`
+        and `wake: SendMessage to <name>` for every addressee without a live
+        listener. --sid pins a call with a single --to to that session as in
+        feedback send.
     post "<text>" [--to <name> ...] [--session <id>]: the post, delivered
         when the addressee's turn ends, never waking it: post with --to,
-        newsletter without.
+        newsletter without; prints `ts: <ts>` as send does.
     clear [--force] [--session <id>]: end radio silence; its sender may,
         anyone else only with --force.
     assist [--session <id>]: join the active mayday as a helper, whom the
@@ -108,6 +110,7 @@ ADDRESSED = ("call", "post", "receipt")
 SEND = ("call", "broadcast", "security", "pan-pan", "mayday", "direct")
 FEEDBACKS = ("post", "call")
 VERSION = 2
+STORED = "ts: "
 WRITERS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 SHELL = re.compile(r"[;&|`$()<>\n\r\\\"]")
 SINGLE_QUOTED = re.compile(r"'[^']*'")
@@ -379,12 +382,13 @@ def transmit(cls: str, to: list[str], text: str, caller: str | None, sessions: l
     ROOT.mkdir(parents=True, exist_ok=True)
     with organize("nofollow").locked(ROOT, LOCK, 0o600, None):
         ts = store([{"from": sender, "to": to, "text": text, "class": cls, "v": VERSION, **({"to_sessions": sessions} if sessions else {})}])
+        print(f"{STORED}{ts!r}", flush=True)
         if cls == "mayday":
             write_atomic(
                 SILENCE,
                 json.dumps({"since": ts, "until": ts + SILENCE_SECONDS, "by": sender, "text": text}),
             )
-    print(f"sent {cls} to {', '.join(to) or 'all'}")
+    print(f"sent {cls} to {', '.join(clip(name) for name in to) or 'all'}")
     if cls in RADIO:
         for name in unreached(cls, to, sid, sessions):
             print(f"wake: SendMessage to {clip(name)}")
