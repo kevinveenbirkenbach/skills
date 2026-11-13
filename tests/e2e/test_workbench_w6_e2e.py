@@ -200,17 +200,21 @@ BUBBLES_3D = """(async () => {@HELPERS@@READ@
   const graph = document.querySelector("#main .graph3d").getBoundingClientRect();
   return {canvas, first, later, graph: {left: graph.left, top: graph.top, right: graph.right, bottom: graph.bottom}, mode: text(document.querySelector("#main .space-note"))};
 })()"""
-BUBBLES_KEPT = """(async () => {@HELPERS@@READ@
+BUBBLES_KEPT = """(async () => {@HELPERS@@READ@@UNLABELLED@
   await sleep(300);
   const kept = [toggle.getAttribute("aria-pressed"), layer.hidden, toggle.title, toggle.getAttribute("aria-label")];
+  const control = [Boolean(toggle.querySelector('svg.bi use[href="#bi-chat-quote"]')), text(toggle)];
+  const head = document.querySelector("header.top");
+  const labels = {header: head ? unlabelled(head) : null, layer: unlabelled(layer)};
   toggle.click();
   const off = Boolean(await until(() => toggle.getAttribute("aria-pressed") === "false" && layer.hidden, 8000));
-  return {kept, off, display: getComputedStyle(layer).display, bubbles: layer.querySelectorAll(".speech-bubble").length, violations: window.e2eViolations || null};
+  return {kept, control, labels, off, display: getComputedStyle(layer).display, bubbles: layer.querySelectorAll(".speech-bubble").length, violations: window.e2eViolations || null};
 })()"""
+SWITCHED = {"kept": ["true", False, "Speech bubbles", "Speech bubbles"], "control": [True, ""], "labels": {"header": [], "layer": []}, "off": True, "display": "none", "bubbles": 0, "violations": []}
 
 
 def probe(template: str, cue: str = CUE) -> str:
-    return template.replace("@HELPERS@", base.HELPERS).replace("@READ@", READ).replace("@CUE@", cue).replace("@FADE@", str(FADE_MS))
+    return template.replace("@HELPERS@", base.HELPERS).replace("@READ@", READ).replace("@UNLABELLED@", base.UNLABELLED).replace("@CUE@", cue).replace("@FADE@", str(FADE_MS))
 
 
 def quiet(found: dict) -> dict:
@@ -300,6 +304,9 @@ class TestWorkbenchBubbles(HubCase):
             kept = next(results)
             stream = [next(results), next(results), next(results)] if width == 1366 else None
             first_key, second_key = self.keys["Stage"], self.keys[SECOND_FROM[width]]
+            with self.subTest(browser=browser, width=width, part="unlabelled controls"):
+                self.assertNotIn("error", kept, kept)
+                self.assertEqual((kept["control"], kept["labels"]), (SWITCHED["control"], SWITCHED["labels"]), kept)
             with self.subTest(browser=browser, width=width, part="anchor"):
                 self.assertNotIn("error", on, on)
                 self.assertEqual(on["layer"]["position"], "fixed")
@@ -330,7 +337,7 @@ class TestWorkbenchBubbles(HubCase):
                         else:
                             self.aimed(found)
                     self.assertTrue(quiet(cleared)["cleared"], cleared)
-                    self.assertEqual(quiet(switched), {"kept": ["true", False, "Speech bubbles", "Speech bubbles"], "off": True, "display": "none", "bubbles": 0, "violations": []})
+                    self.assertEqual(quiet(switched), SWITCHED)
             with self.subTest(browser=browser, width=width):
                 self.assertNotIn("error", on, on)
                 self.assertEqual((on["before"], on["on"]), (["false", True], True))
@@ -353,7 +360,7 @@ class TestWorkbenchBubbles(HubCase):
                 self.assertEqual((grown["who"], grown["scale"], grown["rendered"], grown["state"]), (second_key, 1, 1, "speaking"), grown)
                 self.assertEqual(grown["text"], " ".join(SECOND.split()[: grown["words"]]))
                 self.assertEqual(quiet(done), {"cleared": True, "faces": ["loaded"], "hidden": False, "violations": []})
-                self.assertEqual(quiet(kept), {"kept": ["true", False, "Speech bubbles", "Speech bubbles"], "off": True, "display": "none", "bubbles": 0, "violations": []})
+                self.assertEqual(quiet(kept), SWITCHED)
             if long is not None:
                 with self.subTest(browser=browser, width=width, bubble="long"):
                     self.assertNotIn("error", long, long)

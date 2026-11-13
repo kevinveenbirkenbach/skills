@@ -21,7 +21,7 @@ GATES_SPEC = importlib.util.spec_from_file_location("kvb_gates_for_e2e", REPO_RO
 gates = importlib.util.module_from_spec(GATES_SPEC)
 GATES_SPEC.loader.exec_module(gates)
 KEPT_TIP = "0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d"
-CLEAN_ALL = """(async () => {@HELPERS@
+CLEAN_ALL = """(async () => {@HELPERS@@UNLABELLED@
   const every = await until(() => document.querySelector('#main button[aria-label="Delete all merged"]'), 8000);
   await until(() => document.querySelector("#main svg.ancestry"), 8000);
   const token = all("#main .delete-all span.state").map(name);
@@ -30,14 +30,17 @@ CLEAN_ALL = """(async () => {@HELPERS@
   every.click();
   const sheet = await until(() => document.querySelector("#sheet:not([hidden]) li.dry-run") && document.getElementById("sheet"), 8000);
   const rows = all("li.dry-run", sheet).map((row) => [text(row.querySelector("code")), row.dataset.token || (row.dataset.held ? "held" : null), text(row.querySelector("pre")).split("\\n")[0]]);
+  const dry = sheet.querySelector('ul[aria-label="Dry run"]');
+  const note = dry ? dry.previousElementSibling : null;
+  const labels = {sheet: unlabelled(sheet), note: note ? [note.tagName.toLowerCase(), note.className, text(note).startsWith("Dry run of pkgmgr branch cleanup")] : null};
   const confirm = all("#sheet button").find((button) => name(button) === "Delete");
   confirm.click();
   const outcome = await until(() => sheet.querySelector("[data-cleanup]") || all("#sheet p.muted").find((node) => text(node).startsWith("Not signed")), 15000);
   const tokenClick = store ? (store.click(), await until(() => all("#toasts .toast").map(text).find((line) => line.startsWith("Token")), 8000)) : null;
-  return {before, token, store: store ? [store.title, store.getAttribute("aria-label")] : null, rows, outcome: outcome ? (outcome.dataset.cleanup ? "queued" : "unsigned") : null, tokenClick,
+  return {before, token, store: store ? [store.title, store.getAttribute("aria-label")] : null, rows, outcome: outcome ? (outcome.dataset.cleanup ? "queued" : "unsigned") : null, tokenClick, labels,
     wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
 })()"""
-ANCESTRY = """(async () => {@HELPERS@
+ANCESTRY = """(async () => {@HELPERS@@UNLABELLED@
   const svg = await until(() => document.querySelector('#main svg.ancestry[aria-label="Ancestry of github.com/me/demo"]'), 8000);
   if (!svg) {
     return {error: "no ancestry"};
@@ -48,7 +51,7 @@ ANCESTRY = """(async () => {@HELPERS@
     const row = all("#main .branch-row").find((entry) => text(entry.querySelector(".branch-name strong")) === branch);
     return row ? all(".gate-mark", row).map((button) => [button.dataset.action, button.dataset.level, button.classList.contains("inherited"), button.title, Number(getComputedStyle(button).opacity) < 1]) : null;
   };
-  return {nodes, edges, done: marks("feature/done"), main: marks("main"), wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
+  return {nodes, edges, done: marks("feature/done"), main: marks("main"), unlabelled: unlabelled(document.getElementById("main")), wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
 })()"""
 STAGE = """(async () => {@HELPERS@
   const svg = await until(() => document.querySelector("#main svg.ancestry"), 8000);
@@ -89,7 +92,7 @@ TOKENLESS = """(async () => {@HELPERS@
   const rows = all("#main .branch-row").map((row) => [text(row.querySelector(".branch-name strong")), Boolean(row.querySelector('span.state[aria-label="token needed"]')), Boolean(row.querySelector('button[aria-label="Delete"]'))]);
   return {every: [every.disabled, every.title], token: all("#main .delete-all span.state").map(name), store: store ? store.getAttribute("aria-label") : null, rows};
 })()"""
-AGENTS = """(async () => {@HELPERS@
+AGENTS = """(async () => {@HELPERS@@UNLABELLED@
   const svg = await until(() => document.querySelector('#main svg.ancestry[aria-label="Ancestry: operator, chair, sessions, subagents"]'), 8000);
   if (!svg) {
     return {error: "no agent ancestry"};
@@ -97,12 +100,62 @@ AGENTS = """(async () => {@HELPERS@
   await until(() => svg.querySelector('g.ancestry-node[data-kind="twig"]') || document.querySelector('#main svg.ancestry g[data-kind="twig"]'), 8000);
   const fresh = document.querySelector("#main svg.ancestry");
   const nodes = all("g.ancestry-node", fresh).map((node) => [node.dataset.kind, Number(node.dataset.generation), node.getBoundingClientRect().top]);
-  return {nodes, edges: all("path.ancestry-edge", fresh).length, list: all("#main .spawn-tree li").length, wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
+  return {nodes, edges: all("path.ancestry-edge", fresh).length, list: all("#main .spawn-tree li").length, unlabelled: unlabelled(document.getElementById("main")), wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
+})()"""
+POPUP_GATES = """(async () => {@HELPERS@@UNLABELLED@
+  const id = `branch:${@REPO@}\\u0000feature/done`;
+  const dialog = document.getElementById("popup");
+  const marks = (group) => all(".gate-mark", group).map((button) => [button.dataset.action, button.dataset.level, button.classList.contains("inherited"), button.title, Number(getComputedStyle(button).opacity) < 1]);
+  const shut = async () => {
+    (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    await until(() => !dialog.open, 4000);
+  };
+  const read = async (view) => {
+    const group = await until(() => dialog.open && dialog.querySelector(".popup-box .gates"), 6000);
+    const found = group ? {view, title: text(dialog.querySelector(".popup-box .panel-title")), group: group.getAttribute("aria-label"), marks: marks(group), unlabelled: unlabelled(group)} : {view, error: "no gate marks in the popup", open: dialog.open};
+    await shut();
+    return found;
+  };
+  const shown = [];
+  for (const view of ["orbit", "chord", "swimlane"]) {
+    location.hash = `#artifacts/${view}`;
+    await screenShown(8000);
+    const picker = await until(() => document.querySelector('#main select[aria-label="Repository"]'), 8000);
+    if (picker && picker.value !== @REPO@) {
+      picker.value = @REPO@;
+      picker.dispatchEvent(new Event("change", {bubbles: true}));
+    }
+    const target = await until(() => all("#main svg [data-pick]").find((node) => node.dataset.pick === id), 8000);
+    if (!target) {
+      shown.push({view, error: text(document.getElementById("main"))});
+      continue;
+    }
+    target.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true}));
+    shown.push(await read(view));
+  }
+  if (@THREE@) {
+    location.hash = "#artifacts/3d";
+    await screenShown(8000);
+    const field = await until(() => document.querySelector('#main input[aria-label="Find a node"]'), 8000);
+    await until(() => document.querySelector("#main .graph3d canvas") && !text(document.querySelector("#main .space-note")).startsWith("Loading"), 8000);
+    if (field) {
+      field.value = "feature/done";
+      field.dispatchEvent(new Event("input", {bubbles: true}));
+    }
+    const chip = await until(() => all("#main .hits .chip").find((node) => node.dataset.hit === id), 4000);
+    if (chip) {
+      chip.click();
+      shown.push(await read("3d"));
+    } else {
+      shown.push({view: "3d", error: "no hit chip", hits: all("#main .hits .chip").map((node) => node.dataset.hit)});
+    }
+  }
+  return {shown, wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
 })()"""
 
 
 def probe(template: str) -> str:
-    return template.replace("@HELPERS@", base.HELPERS)
+    return template.replace("@HELPERS@", base.HELPERS).replace("@UNLABELLED@", base.UNLABELLED)
 
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
@@ -142,13 +195,29 @@ class TestWorkbenchArtifacts(HubCase):
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(STAGE), "shot": f"{shot}-staged.png"},
                 {"width": width, "height": height, "url": f"{self.base}?{width}-clean#artifacts/tree", "wait": 1200, "probe": probe(CLEAN_ALL), "shot": f"{shot}-clean-all.png"},
                 {"width": width, "height": height, "url": f"{self.base}?{width}#agents/tree", "wait": 1200, "probe": probe(AGENTS), "shot": f"{shot}-agents-ancestry.png"},
+                {"width": width, "height": height, "url": f"{self.base}?{width}-popups#artifacts/orbit", "wait": 1200, "probe": probe(POPUP_GATES).replace("@REPO@", json.dumps(self.repo)).replace("@THREE@", "true" if width == 1366 else "false"), "shot": f"{shot}-popup-gates.png"},
             ]
         return steps
 
     def check(self, data: dict, browser: str, signs: bool) -> None:
         results = iter(data["results"])
         for width, _ in base.WIDTHS:
-            ancestry, staged, clean, agents = next(results), next(results), next(results), next(results)
+            ancestry, staged, clean, agents, popups = next(results), next(results), next(results), next(results), next(results)
+            with self.subTest(browser=browser, width=width, part="popup gate marks"):
+                self.assertNotIn("error", popups, popups)
+                views = ["orbit", "chord", "swimlane", *(["3d"] if width == 1366 else [])]
+                self.assertEqual([found["view"] for found in popups["shown"]], views)
+                for found in popups["shown"]:
+                    self.assertNotIn("error", found, found)
+                    self.assertEqual((found["title"], found["group"], found["unlabelled"]), ("feature/done", "Gates of feature/done", []), found)
+                    self.assertEqual([mark[:3] for mark in found["marks"]], [["commit", "test", True], ["merge", "none", True], ["push", "none", True], ["pr", "e2e", False]], found)
+                    self.assertEqual(found["marks"][0][3], "commit: test · from main", found)
+                    self.assertEqual([mark[4] for mark in found["marks"]], [True, True, True, False], found)
+                    self.assertEqual(found["marks"], ancestry["done"], "a popup shows other gate levels than the Tree row")
+                self.assertFalse(popups["wide"])
+            with self.subTest(browser=browser, width=width, part="unlabelled controls"):
+                self.assertEqual((ancestry["unlabelled"], agents["unlabelled"]), ([], []))
+                self.assertEqual(clean["labels"], {"sheet": [], "note": ["p", "muted", True]})
             with self.subTest(browser=browser, width=width):
                 for found in (ancestry, agents):
                     self.assertNotIn("error", found, found)
