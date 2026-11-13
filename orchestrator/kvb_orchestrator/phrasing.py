@@ -10,6 +10,7 @@ SPOKEN_TEXT = 500
 SPOKEN_NAME = 60
 SPOKEN_GROUP = 120
 ALARM_WORDS = {"pan-pan": "PAN-PAN", "security": "say-cure-ee-tay"}
+PROCEDURE = {"mayday": "MAYDAY", **ALARM_WORDS}
 ADDRESSED = ("post", "call", "receipt")
 CALLS = re.compile(r"^(?:(?:MAYDAY|PAN[ -]?PAN|SECURIT[EÉY])\b[\s:,.;!-]*)+", re.IGNORECASE)
 HUB_MARK = re.compile(r"\[kvb-orchestrator msg [0-9a-f]{16}\]")
@@ -122,10 +123,55 @@ def spoken_text(cls: str, text: str) -> str:
     body = HUB_MARK.sub("", text)
     if body != text:
         body = HUB_FILE.sub("", body)
-    if cls in ("mayday", *ALARM_WORDS):
+    if cls in PROCEDURE:
         body = CALLS.sub("", body.strip())
     body = clip(body, SPOKEN_TEXT)
     return "" if body == "-" else body
+
+
+def procedure(cls: str) -> str:
+    """Args:
+        cls: the radio class of the row.
+
+    Returns:
+        The procedure word of a MAYDAY, PAN-PAN or SÉCURITÉ row spoken three
+        times, the same line for every row of the class; "" for any other
+        class.
+    """
+    word = PROCEDURE.get(cls)
+    return f"{word} {word} {word}" if word else ""
+
+
+PROCEDURE_LINES = frozenset(procedure(cls) for cls in PROCEDURE)
+
+
+def phrase_parts(cls: str, sender: str, called: list[str], text: str) -> tuple[str, str]:
+    """Args:
+        cls: the radio class of the row, one of council.CLASSES or receipt.
+        sender: the sender's name valid at the row's time.
+        called: the names of the called stations valid at the row's time.
+        text: the radio text.
+
+    Returns:
+        (word, rest): the procedure word line of the row, "" for a routine
+        class, and the rest of the row in maritime radio phraseology (SMCP
+        style).
+    """
+    station = clip(sender, SPOKEN_NAME) or "unknown station"
+    if cls == "mayday":
+        head, end = f"this is {station} {station} {station}", "over"
+    elif cls in ALARM_WORDS:
+        head, end = f"all stations, this is {station}", "over"
+    elif cls in ADDRESSED and called:
+        group = clip(" and ".join(clip(name, SPOKEN_NAME) for name in called), SPOKEN_GROUP)
+        head, end = f"{group}, {group}, this is {station}", "over"
+    else:
+        head, end = f"all stations, this is {station}", "out"
+    return procedure(cls), joined((head, spoken_text(cls, text), end))
+
+
+def joined(parts: tuple[str, ...]) -> str:
+    return ", ".join(part for part in parts if part)
 
 
 def phrase(cls: str, sender: str, called: list[str], text: str) -> str:
@@ -136,18 +182,7 @@ def phrase(cls: str, sender: str, called: list[str], text: str) -> str:
         text: the radio text.
 
     Returns:
-        The row in maritime radio phraseology (SMCP style), one line of at
-        most SPEECH_LIMIT characters.
+        The row in maritime radio phraseology (SMCP style), its procedure
+        word line first, one line of at most SPEECH_LIMIT characters.
     """
-    station = clip(sender, SPOKEN_NAME) or "unknown station"
-    if cls == "mayday":
-        head, end = f"MAYDAY MAYDAY MAYDAY, this is {station} {station} {station}", "over"
-    elif cls in ALARM_WORDS:
-        word = ALARM_WORDS[cls]
-        head, end = f"{word} {word} {word}, all stations, this is {station}", "over"
-    elif cls in ADDRESSED and called:
-        group = clip(" and ".join(clip(name, SPOKEN_NAME) for name in called), SPOKEN_GROUP)
-        head, end = f"{group}, {group}, this is {station}", "over"
-    else:
-        head, end = f"all stations, this is {station}", "out"
-    return ", ".join(part for part in (head, spoken_text(cls, text), end) if part)
+    return joined(phrase_parts(cls, sender, called, text))

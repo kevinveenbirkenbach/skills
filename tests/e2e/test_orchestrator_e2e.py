@@ -222,7 +222,7 @@ ACTIONS = """(async () => {@HELPERS@
   await sleep(300);
   found.ambience = all(".sheet-box form > section:first-child button").map((button) => button.id);
   found.sections = all(".sheet-box form.settings > section > h3").map(text);
-  found.radioFields = all('.sheet-box [aria-label="Squelch"], .sheet-box [aria-label="Classes"], .sheet-box [aria-label="Speakers"], .sheet-box .sound-row').length;
+  found.radioFields = all('.sheet-box [aria-label="Squelch"], .sheet-box [aria-label="Classes"], .sheet-box [aria-label="Speakers"], .sheet-box [aria-label="Mode"], .sheet-box .sound-row, .sheet-box .stream-row').length;
   found.settingsUnlabelled = all(".sheet-box svg.bi").map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).length;
   document.querySelector(".sheet-head button").click();
   document.getElementById("palette-open").click();
@@ -418,7 +418,6 @@ RULES_OVERLAP = """(async () => {@HELPERS@@CLASHES@
 SETTINGS_OVERLAP = """(async () => {@HELPERS@@CLASHES@
   document.getElementById("settings-open").click();
   const settings = await until(() => document.querySelector(".sheet-box form.settings"), 8000);
-  all("button", settings).find((button) => text(button) === "+ Station").click();
   const theme = all("select", settings).find((select) => [...select.options].some((option) => option.value === "custom"));
   theme.value = "custom";
   theme.dispatchEvent(new Event("change", {bubbles: true}));
@@ -459,8 +458,10 @@ MEDIA = """
 """
 ADD_STATION = """(async () => {@HELPERS@
   const clock = (date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  document.getElementById("settings-open").click();
-  const form = await until(() => document.querySelector(".sheet-box form.settings"), 8000);
+  location.hash = "#stream/radio";
+  const edit = await until(() => all("#radio-spot button").find((button) => text(button) === "Edit stations" && button.getClientRects().length), 8000);
+  edit.click();
+  const form = await until(() => document.querySelector('.sheet-box form[aria-label="Stations"]'), 8000);
   all("button", form).find((button) => text(button) === "+ Station").click();
   await sleep(200);
   const row = all(".stream-row", form).pop();
@@ -876,48 +877,56 @@ PRESENCE_READ = """(async () => {@HELPERS@@PRESENCE@
 })()""".replace("@HELPERS@", HELPERS).replace("@PRESENCE@", PRESENCE_HELPERS)
 GEAR_SAVE = """(async () => {@HELPERS@@CLASHES@
   const spot = document.getElementById("radio-spot");
-  const gear = all(".spot-head button", spot).find((button) => name(button) === "Radio settings");
+  const face = spot.querySelector(".radio-face");
+  const gear = all(".spot-head button", spot).find((button) => name(button) === "Read aloud");
   gear.click();
-  const form = await until(() => spot.querySelector("form.radio-settings"), 4000);
-  if (!form) {
-    return {error: "no radio settings behind the gear"};
+  const box = await until(() => spot.querySelector("#radio-gear .radio-read"), 4000);
+  if (!box) {
+    return {error: "no read-aloud filters behind the gear"};
   }
-  const classes = () => all('[aria-label="Classes"] input', form);
+  const chips = () => all('#radio-gear [aria-label="Classes"] button', spot);
+  const post = () => chips().find((chip) => text(chip) === "Post");
   const found = {
     expanded: gear.getAttribute("aria-expanded"),
-    sections: all("section > h3", form).map(text),
-    tones: all(".sound-row strong", form).map(text),
-    classes: classes().map((input) => [input.parentElement.textContent.trim(), input.checked, input.disabled]),
-    clashes: clashes(form),
+    tones: all(".radio-knobs .knob-label", face).map(text),
+    classes: chips().map((chip) => [text(chip), chip.getAttribute("aria-pressed"), chip.disabled]),
+    clashes: [clashes(face), clashes(spot.querySelector("#radio-gear"))],
     @FITS@,
   };
-  const squelch = form.querySelector('input[aria-label="Squelch"]');
+  const squelch = face.querySelector('input[aria-label="Squelch"]');
   squelch.value = "@SQUELCH@";
   squelch.dispatchEvent(new Event("input", {bubbles: true}));
-  form.querySelector('input[aria-label="All radio on"]').checked = @TONE@;
-  classes().find((input) => input.parentElement.textContent.trim() === "Post").checked = @POST@;
-  const before = new Set(all("#toasts .toast"));
-  all("button", form).find((button) => button.type === "submit").click();
-  found.toast = await until(() => all("#toasts .toast").filter((node) => !before.has(node)).map(text).find((entry) => entry.includes("ettings")), 15000);
-  await sleep(300);
-  found.after = [gear.getAttribute("aria-expanded"), Boolean(spot.querySelector("form.radio-settings"))];
+  const tone = face.querySelector('button[aria-label="All radio tone"]');
+  if (tone.getAttribute("aria-pressed") !== "@TONE@") {
+    tone.click();
+  }
+  if (post().getAttribute("aria-pressed") !== "@POST@") {
+    post().click();
+  }
+  await sleep(200);
+  const kept = JSON.parse(localStorage.getItem("kvb-orchestrator.radio"));
+  found.kept = [kept.squelch, kept.sounds.radio.on, kept.classes.includes("post")];
+  gear.click();
+  await sleep(200);
+  found.after = [gear.getAttribute("aria-expanded"), Boolean(spot.querySelector("#radio-gear .radio-read"))];
   document.getElementById("settings-open").click();
   const sheet = await until(() => document.querySelector(".sheet-box form.settings"), 4000);
-  found.general = {sections: all("section > h3", sheet).map(text), radio: all('[aria-label="Squelch"], [aria-label="Classes"], [aria-label="Speakers"], .sound-row', sheet).length};
+  found.general = {sections: all("section > h3", sheet).map(text), radio: all('[aria-label="Squelch"], [aria-label="Classes"], [aria-label="Speakers"], [aria-label="Mode"], .sound-row, .stream-row', sheet).length};
   document.querySelector(".sheet-head button").click();
   return found;
 })()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP).replace("@FITS@", FITS)
 GEAR_READ = """(async () => {@HELPERS@@SPOT_OPEN@
-  const gear = spot ? all(".spot-head button", spot).find((button) => name(button) === "Radio settings") : null;
+  const gear = spot ? all(".spot-head button", spot).find((button) => name(button) === "Read aloud") : null;
   if (!gear) {
     return {error: text(document.getElementById("main"))};
   }
   gear.click();
-  const form = await until(() => spot.querySelector("form.radio-settings"), 4000);
+  await until(() => spot.querySelector("#radio-gear .radio-read"), 4000);
+  const face = spot.querySelector(".radio-face");
   return {
-    squelch: Number(form.querySelector('input[aria-label="Squelch"]').value),
-    tone: form.querySelector('input[aria-label="All radio on"]').checked,
-    post: all('[aria-label="Classes"] input', form).find((input) => input.parentElement.textContent.trim() === "Post").checked,
+    squelch: Number(face.querySelector('input[aria-label="Squelch"]').value),
+    tone: face.querySelector('button[aria-label="All radio tone"]').getAttribute("aria-pressed") === "true",
+    post: all('#radio-gear [aria-label="Classes"] button', spot).find((chip) => text(chip) === "Post").getAttribute("aria-pressed") === "true",
     @FITS@,
   };
 })()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN).replace("@FITS@", FITS)
@@ -1579,10 +1588,9 @@ class TestOrchestratorE2E(HubCase):
 
     def speaks(self, cues: tuple[str, ...]) -> None:
         hub = self.httpd.hub
-        hub.settings.put({**hub.settings.get(), "speech": {"on": True, "classes": ["mayday", "pan-pan", "security"], "muted": []}}, hub.settings.get())
         spoken = tone(6, 8000)
 
-        def synthesize(body: bytes) -> bytes:
+        def synthesize(body: bytes, admit: Callable[[str], None]) -> bytes:
             word = json.loads(body)["text"]
             if word in cues:
                 row = {"ts": time.time(), "from": "Stage", "to": [], "text": f"Disk almost full ({word})\nsecond line", "class": "security", "v": 2}
@@ -1853,7 +1861,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/3d", "#stream"])
         self.assertEqual(actions["ambience"], ["sky-look", "music-toggle", "leitstand", "notify"])
         self.assertEqual((actions["settingsUnlabelled"], actions["popupUnlabelled"]), (0, 0))
-        self.assertEqual((actions["sections"], actions["radioFields"]), (["Ambience", "Location", "Appearance", "Music", "Notifications", "Internet radio", "Passkey"], 0))
+        self.assertEqual((actions["sections"], actions["radioFields"]), (["Ambience", "Location", "Appearance", "Music", "Notifications", "Passkey"], 0))
         for tool in ("Radio …", "Cancel mayday", "Priority …", "Drain", "Suspend", "Resume", "Firewall …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
             with self.subTest(tool=tool):
                 self.assertTrue(any(tool in entry for entry in actions["palette"]), actions["palette"])
@@ -2006,19 +2014,19 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual((sent["closed"], sent["open"]), ([True, "false"], [False, "true", True]))
                 self.assertEqual(sent["inline"], ["static", True, True])
                 self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
-                self.assertEqual(sent["heads"], [["Radio settings", "Radio settings: tones, squelch and read aloud"], ["Cancel mayday", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"]])
+                self.assertEqual(sent["heads"], [["Read aloud", "Read aloud: the classes and agents the radio sounds for"], ["Cancel mayday", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"]])
                 self.assertEqual((sent["tall"], sent["wide"]), (False, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
                 for run in sent["runs"]:
                     direct = run["cls"] in ("post", "call")
                     self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [mayday] if run["cls"] == "mayday" else [], ""), run)
                     self.assertTrue((run["toast"] or "").startswith(f"{labels[run['cls']]} to {'Stage' if direct else 'all'}: sent"), run)
-                self.assertEqual((saved["expanded"], saved["sections"], saved["clashes"]), ("true", ["Tones", "Read radio aloud"], {"found": [], "outside": []}))
-                self.assertEqual(saved["tones"], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio"])
+                self.assertEqual((saved["expanded"], saved["clashes"]), ("true", [{"found": [], "outside": []}] * 2))
+                self.assertEqual(saved["tones"], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio", "Squelch", "Threshold"])
                 self.assertEqual([entry[0] for entry in saved["classes"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
-                self.assertEqual([entry[1:] for entry in saved["classes"] if entry[0] == "MAYDAY"], [[True, True]])
-                self.assertEqual((saved["toast"], saved["after"]), ("Radio settings saved", ["false", False]))
-                self.assertEqual(saved["general"], {"sections": ["Ambience", "Location", "Appearance", "Music", "Notifications", "Internet radio", "Passkey"], "radio": 0})
+                self.assertEqual([entry[1:] for entry in saved["classes"] if entry[0] == "MAYDAY"], [["true", True]])
+                self.assertEqual((saved["kept"], saved["after"]), ([float(squelch), tone == "true", post == "true"], ["false", False]))
+                self.assertEqual(saved["general"], {"sections": ["Ambience", "Location", "Appearance", "Music", "Notifications", "Passkey"], "radio": 0})
                 self.assertEqual((saved["tall"], saved["wide"]), (False, False))
                 self.assertEqual(read, {"squelch": float(squelch), "tone": tone == "true", "post": post == "true", "tall": False, "wide": False})
         heads = {"post": ["post", "--to", "Stage"], "call": ["send", "call", "--to", "Stage"], "newsletter": ["post"]}
@@ -2028,8 +2036,7 @@ class TestOrchestratorE2E(HubCase):
         for args, (width, cls) in zip(radio, sends, strict=True):
             with self.subTest(width=width, cls=cls):
                 self.assertTrue(args[-1].endswith(f"] spot {width} {cls}"), args)
-        stored = self.httpd.hub.settings.get()
-        self.assertEqual((stored["squelch"], stored["sounds"]["radio"]["on"], "post" in stored["speech"]["classes"]), (0.55, False, True))
+        self.assertEqual(self.httpd.hub.settings.get()["speech"], {"threshold": 50})
 
     def test_chromium_keeps_the_3d_camera_through_two_state_refreshes_at_three_widths(self):
         steps = [{"width": width, "height": height, "url": f"{self.base}?{width}#agents/3d", "wait": 900, "probe": CAMERA, "shot": self.shot(f"{width}-agents-3d-steady-camera")} for width, height in WIDTHS]

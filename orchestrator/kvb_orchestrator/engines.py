@@ -8,13 +8,14 @@ import subprocess
 import threading
 import time
 import wave
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from .council import HUMAN
 from .errors import EngineError, ToolError, Unavailable
 from .fields import TEXT_LIMIT, bounded, decode, expect
-from .phrasing import SPEECH_LIMIT, SPOKEN_LINE, phrase
+from .phrasing import PROCEDURE_LINES, SPEECH_LIMIT, SPOKEN_LINE, phrase
 from .records import digest, read_json
 from .skill_scripts import SAFE_PATH
 
@@ -22,6 +23,7 @@ MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 SPEAKER_LIMIT = 10000
 TTS_TIMEOUT = 120
 TTS_KEEP = 200
+WORD_CACHE = "word-"
 STT_RATE = 16000
 STT_SECONDS = 120
 STT_LIMIT = 44 + STT_RATE * 2 * STT_SECONDS
@@ -141,6 +143,7 @@ class Speech:
             raise ToolError(f"the operator voice {engines.operator_voice!r} is not installed in {engines.voices}")
         self.operator = engines.operator_voice if self.voices else ""
         self.pool = [voice for voice in self.voices if voice != self.operator]
+        self.handed = {self.operator} if self.operator else set()
         self.speaking = threading.Lock()
         self.hearing = threading.Lock()
         self.metering = threading.Lock()
@@ -174,7 +177,15 @@ class Speech:
         return gap or ("" if os.path.isfile(model) else f"the whisper.cpp model {model} is not a file")
 
     def voice_of(self, key: str) -> str:
-        return voice_of(key, self.pool, self.operator)
+        """Args:
+            key: the speaker's session id or directory key.
+
+        Returns:
+            The speaker's voice, which /api/tts accepts from then on.
+        """
+        voice = voice_of(key, self.pool, self.operator)
+        self.handed.add(voice)
+        return voice
 
     def describe(self) -> dict:
         operator = self.voice_of(HUMAN)
@@ -185,7 +196,15 @@ class Speech:
             "limit": SPEECH_LIMIT, "rate": STT_RATE, "seconds": STT_SECONDS,
         }
 
-    def synthesize(self, body: bytes) -> bytes:
+    def synthesize(self, body: bytes, admit: Callable[[str], None]) -> bytes:
+        """Args:
+            body: {"text", "voice"} as JSON.
+            admit: called with a line before it renders and not for a cached
+                one; it raises to hold the render back.
+
+        Returns:
+            The WAV of the line, from the cache when rendered before.
+        """
         gap = self.output_gap()
         if gap:
             raise Unavailable(f"speech output is off: {gap}")
@@ -194,13 +213,16 @@ class Speech:
         voice = payload["voice"]
         if not isinstance(voice, str) or voice not in self.voices:
             raise ToolError("voice must be one of the installed voices")
+        if voice not in self.handed:
+            raise ToolError("voice must be one the hub hands out to a speaker")
         line = " ".join(bounded(payload, "text", SPEECH_LIMIT).split())
         if not SPOKEN_LINE.fullmatch(line):
             raise ToolError(f"text must be 1 to {SPEECH_LIMIT} printable characters")
         key = digest(f"{voice}\n{line}")
-        target = self.cache / f"{key}.wav"
+        target = self.cache / f"{WORD_CACHE if line in PROCEDURE_LINES else ''}{key}.wav"
         with self.speaking:
             if not target.is_file():
+                admit(line)
                 self.render(voice, line, target)
                 self.trim()
             os.utime(target)
@@ -235,7 +257,8 @@ class Speech:
             partial.unlink(missing_ok=True)
 
     def trim(self) -> None:
-        kept = sorted(self.cache.glob("*.wav"), key=lambda path: path.stat().st_mtime, reverse=True)
+        spoken = (path for path in self.cache.glob("*.wav") if not path.name.startswith(WORD_CACHE))
+        kept = sorted(spoken, key=lambda path: path.stat().st_mtime, reverse=True)
         for path in kept[TTS_KEEP:]:
             path.unlink(missing_ok=True)
 

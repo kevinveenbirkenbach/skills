@@ -86,52 +86,23 @@
     return section;
   }
 
-  function radioSettings(close) {
-    const tones = SOUND_KINDS.map(([id, label]) => {
-      const on = h("input", {type: "checkbox", checked: settings.sounds[id].on, "aria-label": `${label} on`});
-      const level = h("input", {type: "range", min: 0, max: 1, step: 0.05, value: settings.sounds[id].volume, "aria-label": `${label} volume`});
-      const loudest = () => Math.max(...tones.map((tone) => Number(tone.level.value)), settings.music.volume);
-      return {id, on, level, row: h("div", {class: "sound-row"}, h("strong", {}, label), h("label", {class: "check"}, on, "on"), level, btn("Test", "btn small ghost", () => play(id, id === "mayday" ? loudest() : Number(level.value))))};
-    });
-    const squelch = h("input", {type: "range", min: 0, max: 1, step: 0.05, value: settings.squelch, "aria-label": "Squelch"});
-    const speechOn = h("input", {type: "checkbox", checked: settings.speech.on, disabled: !state.speech.tts});
-    const spoken = SPEECH_CLASSES.map(([id, label]) => ({id, label, box: h("input", {type: "checkbox", checked: id === "mayday" || settings.speech.classes.includes(id), disabled: id === "mayday", title: id === "mayday" ? "MAYDAY is always read aloud" : null})}));
-    const stations = Object.entries(people()).sort(([, a], [, b]) => a.now.localeCompare(b.now))
-      .map(([key, entry]) => ({key, label: entry.now, box: h("input", {type: "checkbox", checked: !settings.speech.muted.includes(key), "aria-label": `Read ${entry.now} aloud`})}));
-    const absent = settings.speech.muted.filter((key) => !people()[key]);
-    const sample = btn("Test", "btn small ghost", () => say({text: state.speech.sample, voice: state.speech.operator, tone: "direct", cls: "newsletter", who: HUMAN, line: "radio check"}));
-    sample.disabled = !state.speech.tts;
-    const form = h("form", {class: "settings radio-settings", "aria-label": "Radio settings"},
-      h("section", {}, h("h3", {}, "Tones"), h("p", {class: "muted"}, "MAYDAY and PAN-PAN are always loudest. With several new events only the most urgent one plays."),
-        tones.map((tone) => tone.row), h("label", {}, "Squelch: scales every tone, 0 plays none", squelch)),
-      h("section", {}, h("h3", {}, "Read radio aloud"),
-        h("p", {class: "muted"}, state.speech.tts
-          ? "New radio is read aloud in maritime radio style (SMCP), one message after another, each speaker with its own voice; music and internet radio go quieter meanwhile. The volume follows the tones above; MAYDAY is always spoken, and loudest."
-          : `The radio stays silent: ${state.speech.tts_off}.`),
-        h("div", {class: "days"}, h("label", {class: "check"}, speechOn, "Read radio aloud"), sample),
-        h("div", {class: "days", role: "group", "aria-label": "Classes"}, spoken.map((entry) => h("label", {class: "check"}, entry.box, entry.label))),
-        stations.length ? h("div", {class: "days", role: "group", "aria-label": "Speakers"}, stations.map((entry) => h("label", {class: "check"}, entry.box, entry.label))) : null),
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", close), h("button", {type: "submit", class: "btn primary"}, "Save")));
+  function stationsSheet() {
+    const list = h("div", {class: "mini"});
+    const rows = [];
+    settings.streams.forEach((stream) => streamRow(stream, rows, list));
+    const form = h("form", {class: "settings", "aria-label": "Stations"},
+      h("section", {}, h("h3", {}, "Internet radio"), h("p", {class: "muted"}, "Internet radio at fixed times with a 3 s fade in and out; the music pauses meanwhile. A new station plays around the clock until you change its times; in the radio panel you start and stop it by hand. The page may load sound only from these addresses; your passkey signs a new address. If a signed station redirects, the server resolves the redirect when you save a new station or a changed address and releases its target; the note after saving names it."),
+        list, h("div", {}, btn("+ Station", "btn small soft", () => streamRow({name: "", url: "", from: "00:00", to: "24:00", days: [0, 1, 2, 3, 4, 5, 6], on: true, via: []}, rows, list)))),
+      h("div", {class: "sheet-foot"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), h("button", {type: "submit", class: "btn primary"}, "Save")));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       context();
-      const next = {
-        ...settings,
-        space: savedSpace(),
-        sounds: Object.fromEntries(tones.map((tone) => [tone.id, {on: tone.on.checked, volume: Number(tone.level.value)}])),
-        squelch: Number(squelch.value),
-        speech: {
-          on: speechOn.checked,
-          classes: spoken.filter((entry) => entry.box.checked).map((entry) => entry.id),
-          muted: [...absent, ...stations.filter((entry) => !entry.box.checked).map((entry) => entry.key)],
-        },
-      };
-      if (await saveSettings(next)) {
-        close();
-        toast("Radio settings saved", [], true);
+      if (await saveSettings({...settings, space: savedSpace(), streams: rows.map((entry) => entry.read())})) {
+        closeSheet();
+        toast("Stations saved", [], true);
       }
     });
-    return form;
+    openSheet("Stations", [form], false);
   }
 
   function settingsSheet() {
@@ -155,9 +126,6 @@
     const musicOn = h("input", {type: "checkbox", checked: settings.music.on});
     const volume = h("input", {type: "range", min: 0, max: 1, step: 0.05, value: settings.music.volume, "aria-label": "Overall volume"});
     const notify = h("input", {type: "checkbox", checked: settings.notify});
-    const list = h("div", {class: "mini"});
-    const rows = [];
-    settings.streams.forEach((stream) => streamRow(stream, rows, list));
     const form = h("form", {class: "settings"},
       ambience(),
       h("section", {}, h("h3", {}, "Location"), h("p", {class: "muted"}, "Sun, moon and stars stand where you see them from here, looking south; under 🔭 Sky (key h) you turn the view. Decimal degrees, north and east positive."),
@@ -165,10 +133,8 @@
       h("section", {}, h("h3", {}, "Appearance"), h("label", {}, "Colors", theme), custom, verdict),
       h("section", {}, h("h3", {}, "Music"), h("p", {class: "muted"}, "Generative ambient music, made offline: calm with an empty inbox, a little tenser when something waits, quieter under messages."),
         h("div", {class: "grid"}, h("label", {class: "check"}, musicOn, "Music on"), h("label", {}, "Overall volume (music and radio)", volume))),
-      h("section", {}, h("h3", {}, "Notifications"), h("p", {class: "muted"}, "Tones, squelch and reading radio aloud sit behind the gear of the radio spot in the Agents toolbar."),
+      h("section", {}, h("h3", {}, "Notifications"), h("p", {class: "muted"}, "Mode, tones, squelch, the speech threshold, reading aloud and the stations sit in the radio panel behind the radio button in the header."),
         h("label", {class: "check"}, notify, "Show desktop notifications when the browser allows them")),
-      h("section", {}, h("h3", {}, "Internet radio"), h("p", {class: "muted"}, "Internet radio at fixed times with a 3 s fade in and out; the music pauses meanwhile. A new station plays around the clock until you change its times; under Stream → Radio you start and stop it by hand. The page may load sound only from these addresses; your passkey signs a new address. If a signed station redirects, the server resolves the redirect when you save a new station or a changed address and releases its target; the note after saving names it."),
-        list, h("div", {}, btn("+ Station", "btn small soft", () => streamRow({name: "", url: "", from: "00:00", to: "24:00", days: [0, 1, 2, 3, 4, 5, 6], on: true, via: []}, rows, list)))),
       passkeySection(),
       h("div", {class: "sheet-foot"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), h("button", {type: "submit", class: "btn primary"}, "Save")));
     form.addEventListener("submit", async (event) => {
@@ -180,10 +146,8 @@
         theme: theme.value,
         colors: Object.fromEntries(COLOR_FIELDS.map(([id]) => [id, colors[id].value])),
         music: {on: musicOn.checked, volume: Number(volume.value)},
-        sounds: settings.sounds,
-        squelch: settings.squelch,
         notify: notify.checked,
-        streams: rows.map((entry) => entry.read()),
+        streams: settings.streams,
         speech: settings.speech,
         space: savedSpace(),
         estimation: settings.estimation,

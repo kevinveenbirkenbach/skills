@@ -20,13 +20,6 @@ const Voice = (() => {
     return kinds.find((kind) => present[kind] && settings.sounds[kind].on && loudness(kind, settings) > 0) || null;
   }
 
-  function speakable(row, speech) {
-    if (!speech.on || !row.speech || !row.voice) {
-      return false;
-    }
-    return row.class === "mayday" || (speech.classes.includes(row.class) && !speech.muted.includes(row.source));
-  }
-
   function rank(item) {
     return Object.hasOwn(RANKS, item.cls) ? RANKS[item.cls] : ROUTINE;
   }
@@ -66,7 +59,7 @@ const Voice = (() => {
     return buffer;
   }
 
-  return {toneOf, loudness, beep, speakable, enqueue, frames, wav};
+  return {toneOf, loudness, beep, enqueue, frames, wav};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Voice;

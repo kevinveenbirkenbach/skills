@@ -52,7 +52,7 @@
   drawTime();
   motion.asOf = ui.asOf;
   relayout(0);
-  window.setInterval(refresh, 10000);
+  window.setInterval(poll, 10000);
   window.setInterval(follow, 3000);
   window.setInterval(() => relayout(MOVE), RELAYOUT);
   window.setInterval(() => live() && drawSky(), 30000);

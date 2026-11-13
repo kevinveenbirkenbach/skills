@@ -85,7 +85,7 @@
 
   function toggleGear() {
     const open = spotDom.gearBox.hidden;
-    spotDom.gearBox.replaceChildren(...(open ? [radioSettings(toggleGear)] : []));
+    spotDom.gearBox.replaceChildren(...(open ? [radioFilters()] : []));
     spotDom.gearBox.hidden = !open;
     spotDom.gear.setAttribute("aria-expanded", String(open));
     window.requestAnimationFrame(refresh3d);
@@ -94,13 +94,15 @@
   function radioSpot() {
     const {form, recipient, text} = composerForm();
     const gearBox = h("div", {class: "radio-gear", id: "radio-gear", hidden: true});
-    const gear = iconBtn("bi-gear", "Radio settings", "btn small ghost spot-toggle", toggleGear, "Radio settings: tones, squelch and read aloud");
+    const gear = iconBtn("bi-funnel", "Read aloud", "btn small ghost spot-toggle", toggleGear, "Read aloud: the classes and agents the radio sounds for");
     gear.setAttribute("aria-expanded", "false");
     gear.setAttribute("aria-controls", "radio-gear");
     const [, label, , hint] = actionOf("clear-mayday");
     const clear = iconBtn("bi-life-preserver", label, "btn small danger", () => confirmAct("clear-mayday", []), hint);
+    const {face, log, station} = radioSide();
     const panel = h("section", {class: "card radio-spot", id: "radio-spot", "aria-label": "Radio", hidden: !ui.spot},
-      h("div", {class: "spot-head"}, h("h3", {class: "group-title"}, "Radio"), h("span", {class: "spacer"}), gear, clear), h("div", {class: "spot-body"}, form, radioSide(), gearBox));
+      h("div", {class: "spot-head"}, h("h3", {class: "group-title"}, "Radio"), h("span", {class: "spacer"}), gear, clear), face, gearBox,
+      h("div", {class: "spot-body"}, h("div", {class: "radio-side"}, form, station), log));
     const toggle = document.getElementById("radio-open");
     toggle.setAttribute("aria-expanded", String(ui.spot));
     toggle.addEventListener("click", () => openSpot(!ui.spot));

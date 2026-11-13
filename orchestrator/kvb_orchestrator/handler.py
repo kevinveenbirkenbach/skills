@@ -69,7 +69,8 @@ ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, S
 class Handler(Exchange):
     def speak(self, body: bytes) -> None:
         headers = {"Content-Security-Policy": PLAIN_CSP}
-        self.attempt(lambda: self.server.hub.speech.synthesize(body), lambda wav: self.send(HTTPStatus.OK, WAV_TYPE, wav, headers))
+        hub = self.server.hub
+        self.attempt(lambda: hub.speech.synthesize(body, hub.speech_gate.admit), lambda wav: self.send(HTTPStatus.OK, WAV_TYPE, wav, headers))
 
     def hear(self, body: bytes) -> None:
         self.answer(lambda: self.server.hub.speech.transcribe(body), HTTPStatus.OK)

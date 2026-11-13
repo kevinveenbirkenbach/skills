@@ -75,15 +75,19 @@ class TestHubSpeech(HubCase):
         self.assertEqual((status, body.decode()), (503, f"speech output is off: the voice directory {voices} is missing or not searchable\n"))
 
     def test_speech_output_is_guarded_whitelisted_capped_and_cached(self):
+        self.host_cpu(10.0, 5)
         good = self.guard(self.host)
         calls = self.engines.scratch / "piper.jsonl"
         cache = self.state / "tts"
         request = {"text": "all stations, this is Docs, board, out", "voice": "en_US-test-high:2"}
+        self.hand_out(request["voice"])
+        self.hand_out("de_DE-solo-medium:0")
         for headers in ({k: v for k, v in good.items() if k != "X-Kvb-Orchestrator"}, {k: v for k, v in good.items() if k != "Origin"}, {**good, "Origin": "http://evil.example"}):
             with self.subTest(headers=headers):
                 self.assertEqual(self.post_json("/api/tts", request, headers)[0], 403)
         for broken in (
             {**request, "voice": "en_US-test-high:4"},
+            {**request, "voice": "en_US-test-high:3"},
             {**request, "voice": "zero:0"},
             {**request, "voice": "bad name!:0"},
             {**request, "voice": "broken:0"},

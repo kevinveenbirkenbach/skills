@@ -1,10 +1,23 @@
+  let loadTicket = 0;
+  let appliedTicket = 0;
+  let loadsInFlight = 0;
+
   async function load() {
+    loadTicket += 1;
+    const ticket = loadTicket;
+    loadsInFlight += 1;
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => abort.abort(), STATE_TIMEOUT);
     try {
-      const response = await fetch(`/api/state?${windowQuery()}`, {cache: "no-store"});
+      const response = await fetch(`/api/state?${windowQuery()}`, {cache: "no-store", signal: abort.signal});
       if (!response.ok) {
         throw new Error(String(response.status));
       }
       const next = await response.json();
+      if (ticket < appliedTicket) {
+        return;
+      }
+      appliedTicket = ticket;
       const previous = state.now;
       state = next;
       ui.offline = false;
@@ -25,8 +38,19 @@
       }
       pulses(state.radio.filter((row) => row.ts > previous));
     } catch {
-      ui.offline = true;
-      tick();
+      if (ticket > appliedTicket) {
+        ui.offline = true;
+        tick();
+      }
+    } finally {
+      window.clearTimeout(timer);
+      loadsInFlight -= 1;
+    }
+  }
+
+  function poll() {
+    if (!loadsInFlight) {
+      refresh();
     }
   }
 

@@ -11,10 +11,9 @@ from kvb_orchestrator import settings
 class TestHubSettings(HubCase):
     def settings_payload(self, streams: list[dict]) -> dict:
         colors = {"top": "#101820", "bottom": "#405060", "accent": "#ffaa00"}
-        speech = {"on": True, "classes": ["call", "mayday", "pan-pan"], "muted": ["name:Docs", "s1"]}
         space = {"graph": {"axis": "time", "yaw": -45.5, "pitch": 12.25, "zoom": 1.5, "pan_x": -30.0, "pan_y": 12.0}, "sky": {"azimuth": 225.0, "altitude": 20.0, "fov": 120.0}}
         return {
-            **settings.SETTINGS, "latitude": 52.52, "longitude": 13.405, "theme": "custom", "colors": colors, "music": {"on": True, "volume": 0.3}, "streams": streams, "speech": speech,
+            **settings.SETTINGS, "latitude": 52.52, "longitude": 13.405, "theme": "custom", "colors": colors, "music": {"on": True, "volume": 0.3}, "streams": streams,
             "space": space,
         }
 
@@ -91,21 +90,16 @@ class TestHubSettings(HubCase):
             {**payload, "streams": [{**stream, "from": "09:00", "to": "09:00"}]},
             {**payload, "streams": [{**stream, "to": "25:00"}]},
             *({**payload, "speech": {**payload["speech"], **change}} for change in (
-                {"on": "yes"},
-                {"classes": ["call", "pan-pan"]},
-                {"classes": ["mayday", "shout"]},
-                {"classes": ["mayday", "mayday"]},
-                {"classes": "mayday"},
-                {"muted": "s1"},
-                {"muted": ["s1", "s1"]},
-                {"muted": ["two\nlines"]},
-                {"muted": [""]},
-                {"muted": [7]},
-                {"muted": [f"s{n}" for n in range(settings.MUTED_LIMIT + 1)]},
+                {"threshold": 55},
+                {"threshold": "50"},
+                {"threshold": None},
+                {"on": True},
                 {"extra": 1},
             )),
-            {**payload, "speech": {"on": True, "classes": ["mayday"]}},
+            {**payload, "speech": {}},
             {name: value for name, value in payload.items() if name != "speech"},
+            {**payload, "squelch": 1.0},
+            {**payload, "sounds": {}},
             *({**payload, "space": change} for change in (
                 "flat",
                 {"graph": payload["space"]["graph"]},
@@ -145,27 +139,21 @@ class TestHubSettings(HubCase):
         self.assertEqual(self.snapshot()["settings"], unresolved)
         self.assertEqual(settings.Settings(self.state / "settings.json").get(), unresolved)
         self.assertEqual(self.get("/api/settings")[0], 405)
-        shuffled = {**payload, "speech": {"on": False, "classes": ["mayday", "broadcast", "security"], "muted": ["s1", "Operator", "name:Docs"]}}
-        status, _, body = self.post_json("/api/settings", shuffled, good)
-        self.assertEqual(status, 200, body)
-        self.assertEqual(json.loads(body)["settings"]["speech"], {"on": False, "classes": ["broadcast", "mayday", "security"], "muted": ["Operator", "name:Docs", "s1"]})
 
-    def test_the_radio_gear_stores_tones_squelch_and_read_aloud_without_a_passkey_and_keeps_every_other_setting(self):
+    def test_the_hub_keeps_no_tones_squelch_or_read_aloud_filters_since_each_browser_keeps_its_radio_set(self):
         current = self.snapshot()["settings"]
-        gear = {
-            **current, "sounds": {**current["sounds"], "radio": {"on": False, "volume": 0.4}}, "squelch": 0.35,
-            "speech": {"on": True, "classes": ["post", "mayday"], "muted": ["s1"]},
-        }
-        self.assertIsNone(self.prepared(gear)["payload"])
-        status, _, body = self.post_json("/api/settings", {**gear, "proof": None}, self.guard(self.host))
-        self.assertEqual(status, 200, body)
-        self.assertEqual(json.loads(body)["settings"], gear)
-        self.assertEqual(settings.Settings(self.state / "settings.json").get(), gear)
-        self.assertEqual(self.snapshot()["settings"], gear)
-        for broken in ({**gear, "squelch": 1.5}, {**gear, "sounds": {**gear["sounds"], "radio": {"on": "no", "volume": 0.4}}}, {**gear, "speech": {**gear["speech"], "classes": ["post"]}}):
-            with self.subTest(broken=broken):
+        self.assertFalse({"sounds", "squelch"} & set(current))
+        self.assertEqual(current["speech"], {"threshold": 50})
+        legacy = (
+            {**current, "squelch": 0.35},
+            {**current, "sounds": {"radio": {"on": False, "volume": 0.4}}},
+            {**current, "speech": {"threshold": 50, "on": True, "classes": ["post", "mayday"], "muted": ["s1"]}},
+        )
+        for broken in legacy:
+            with self.subTest(broken=sorted(broken)):
                 self.assertEqual(self.post_json("/api/settings", broken, self.guard(self.host))[0], 400)
-        self.assertEqual(self.snapshot()["settings"], gear)
+        self.assertFalse((self.state / "settings.json").exists())
+        self.assertIsNone(self.prepared({**current, "music": {"on": True, "volume": 0.2}})["payload"])
 
     def test_the_estimation_mode_defaults_to_no_estimate_is_stored_and_survives_a_reload(self):
         self.assertEqual((settings.SETTINGS["estimation"], self.snapshot()["settings"]["estimation"]), ("none", "none"))
