@@ -1010,6 +1010,7 @@ LABELS = """
   const unlabelled = (root) => all("svg.bi", root).filter((svg) => !svg.closest(".sprite")).map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160));
   const wide = () => document.documentElement.scrollWidth > window.innerWidth + 1;
   const rowOf = (words) => all("#main .inbox-list > li").find((li) => li.textContent.includes(words));
+  const askOf = (command) => all("#main .inbox-list > li.k-ask").find((li) => text(li.querySelector(".command code")) === command);
   const press = (root, label) => all("button", root).find((button) => name(button) === label).click();
   const out = () => document.querySelector("#main .console .console-out");
   const atEnd = () => out().scrollTop + out().clientHeight >= out().scrollHeight - 12;
@@ -1112,7 +1113,10 @@ DENY_SHEET = """(async () => {@HELPERS@@LABELS@
   };
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 DENY = """(async () => {@HELPERS@@LABELS@
-  const row = await until(() => rowOf("Bash: make deploy"), 8000);
+  const row = await until(() => askOf("make deploy"), 8000);
+  if (!row) {
+    return {error: text(document.getElementById("main"))};
+  }
   press(row, "Deny via …");
   const box = await until(() => document.querySelector(".sheet-box"), 4000);
   box.querySelector('input[value="call"]').click();
@@ -1122,7 +1126,7 @@ DENY = """(async () => {@HELPERS@@LABELS@
   return {undo: text(undo), sheet: !document.getElementById("sheet").hidden};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 DENIED = """(async () => {@HELPERS@@LABELS@
-  return {gone: Boolean(await until(() => !rowOf("Bash: make deploy"), 20000))};
+  return {gone: Boolean(await until(() => !askOf("make deploy"), 20000))};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 ACCEPT = """(async () => {@HELPERS@@LABELS@
   press(rowOf("Rule request"), "Accept");
@@ -2279,6 +2283,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual(sheet["hints"][:3], ["to Skills, when its turn ends", "to Skills, at once, wakes it", "to all, when their turn ends"])
                 self.assertEqual((sheet["reason"], sheet["unlabelled"], sheet["wide"]), (True, [], False))
         denied, gone, accepted = rest[6:]
+        self.assertNotIn("error", denied, denied)
         self.assertTrue(denied["undo"].startswith("Denial (Call): Bash: make deploy"), denied)
         self.assertFalse(denied["sheet"])
         self.assertTrue(gone["gone"])

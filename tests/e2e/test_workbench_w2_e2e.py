@@ -197,7 +197,7 @@ class TestWorkbenchKanban(HubCase):
                 "work/b": {"title": "Bravo", "status": "running", "worker": "Docs", "prio": 2, "start": iso(now - 3.9 * DAY), "after": ["work/a"], "updated": fresh},
                 "work/blocked": {"title": "Blocked one", "status": "blocked", "worker": "Stage", "prio": 3, "updated": fresh},
                 "work/p5": {"title": "Five", "status": "queued", "worker": "Stage", "prio": 5, "updated": fresh},
-                "work/c": {"title": "Charlie", "status": "queued", "worker": "Stage", "estimates": {"Stage": {"value": 4, "complexity": 2}}, "updated": fresh},
+                "work/c": {"title": "Charlie", "status": "queued", "worker": "Stage", "estimates": {"Stage": {"value": 3, "complexity": 2}}, "updated": fresh},
                 "work/d": {"title": "Delta", "status": "queued", "worker": "Skills", "estimates": {"Skills": {"value": 5, "complexity": 1}}, "updated": fresh},
                 "work/stale": {"title": "Stale one", "status": "running", "worker": "Stage", "start": iso(now - 5 * DAY), "updated": iso(now - 4 * DAY)},
                 "work/stopped": {"title": "Stopped one", "status": "stopped", "worker": "Stage", "start": iso(now - 3.7 * DAY), "end": iso(now - 3600)},

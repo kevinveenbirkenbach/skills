@@ -57,7 +57,7 @@ OPERATOR = """(async () => {@HELPERS@
     operator: operator ? {command: text(operator.querySelector(".command code")), place: operator.querySelector(".command").dataset.path, text: text(operator), buttons: all("button", operator).map(name)} : null,
     files, wide: document.documentElement.scrollWidth > window.innerWidth + 1,
   };
-  cards.forEach((card) => card.querySelector('input[type="checkbox"]').click());
+  ["@TAG@ review", "@TAG@ ship", "@TAG@ commit"].forEach((words) => mine(words).querySelector('input[type="checkbox"]').click());
   await sleep(300);
   const grant = all("#main .inbox-actions button").find((button) => name(button).startsWith("Grant selection"));
   found.grant = name(grant);
@@ -86,11 +86,11 @@ FEEDBACK = """(async () => {@HELPERS@
     selection.addRange(range);
     return range.getBoundingClientRect();
   };
-  window.e2ePosted = [];
+  window.e2eFeedback = [];
   const send = window.fetch.bind(window);
   window.fetch = (path, init) => {
     if (String(path).startsWith("/api/messages")) {
-      window.e2ePosted.push([String(path), JSON.parse(init.body).text]);
+      window.e2eFeedback.push([String(path), JSON.parse(init.body).text]);
     }
     return send(path, init);
   };
@@ -109,7 +109,7 @@ FEEDBACK = """(async () => {@HELPERS@
   const range = text(document.querySelector(".sheet-box .who code"));
   sheet.value = "right-click note";
   all(".sheet-box button").find((button) => name(button) === "Send feedback").click();
-  await until(() => window.e2ePosted.length >= (@SIGNS@ ? 2 : 1), 8000);
+  await until(() => window.e2eFeedback.length >= (@SIGNS@ ? 2 : 1), 8000);
   await sleep(600);
   const fresh = () => all("#main .inbox-list > li").find((li) => li.textContent.includes("@TAG@ second"));
   const shown = @SIGNS@ ? await until(() => fresh() && all(".feedback-list li", fresh()).map(text).find((entry) => entry.includes("right-click note")), 15000) : null;
@@ -126,7 +126,7 @@ FEEDBACK = """(async () => {@HELPERS@
   keyed.value = "key f note";
   all(".sheet-box button").find((button) => name(button) === "Send feedback").click();
   await sleep(1500);
-  return {nearby, menu, title, range, keyRange, shown: shown || "", posted: window.e2ePosted, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
+  return {nearby, menu, title, range, keyRange, shown: shown || "", posted: window.e2eFeedback, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
 })()"""
 
 
@@ -202,7 +202,7 @@ class TestWorkbenchOperatorTasks(HubCase):
                     self.assertTrue(any(text and text.endswith(" key f note") for _, text in feedback["posted"]), feedback["posted"])
                 self.assertFalse(feedback["wide"])
         radio = [" ".join(args) for script, args in self.scripts.calls if script == skill_scripts.RADIO]
-        reached = [entry for entry in radio if "Feedback on review:" in entry]
+        reached = [entry for entry in radio if "] Feedback on review:" in entry or "] Feedback on ask:" in entry]
         self.assertEqual(len(reached), 2 * len(base.WIDTHS) if signs else 0, radio)
 
     def test_chromium_shows_operator_tasks_with_a_badge_diffs_bulk_grants_and_sends_feedback_at_three_widths(self):
