@@ -103,10 +103,16 @@ ORIGIN = "http://localhost:8737"
 PRESENT = 0x05
 REGISTERED = 0x45
 ZERO_LED_TRIES = 4096
+
+
+def rsa_spec(bits: int) -> list[str]:
+    return ["-algorithm", "RSA", "-pkeyopt", f"rsa_keygen_bits:{bits}"]
+
+
 KEY_SPECS = {
     -7: ["-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"],
     -8: ["-algorithm", "ED25519"],
-    -257: ["-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
+    -257: rsa_spec(2048),
 }
 
 
@@ -139,10 +145,10 @@ def cbor_encode(value: object) -> bytes:
 
 
 class Key:
-    def __init__(self, alg: int, name: str) -> None:
+    def __init__(self, alg: int, name: str, spec: list[str]) -> None:
         self.alg = alg
         self.pem = Path(KEYS.name) / f"{name}{alg}.pem"
-        openssl(["genpkey", *KEY_SPECS[alg], "-out", str(self.pem)], b"")
+        openssl(["genpkey", *spec, "-out", str(self.pem)], b"")
         self.spki = openssl(["pkey", "-in", str(self.pem), "-pubout", "-outform", "DER"], b"")
         self.raw_id = os.urandom(16)
         self.id = b64(self.raw_id)
@@ -188,7 +194,12 @@ class Key:
 
 @functools.cache
 def key(alg: int, name: str) -> Key:
-    return Key(alg, name)
+    return Key(alg, name, KEY_SPECS[alg])
+
+
+@functools.cache
+def rsa_key(bits: int) -> Key:
+    return Key(-257, f"rsa{bits}", rsa_spec(bits))
 
 
 @functools.cache
@@ -202,7 +213,7 @@ def zero_led(label: int) -> Key:
     """
     with concurrent.futures.ThreadPoolExecutor() as pool:
         for start in range(0, ZERO_LED_TRIES, 64):
-            for signer in pool.map(lambda attempt: Key(-7, f"zero{label}-{attempt}"), range(start, start + 64)):
+            for signer in pool.map(lambda attempt: Key(-7, f"zero{label}-{attempt}", KEY_SPECS[-7]), range(start, start + 64)):
                 if signer.cose()[label][0] == 0:
                     return signer
     raise AssertionError(f"no P-256 key with a zero-led coordinate {label} in {ZERO_LED_TRIES} tries")

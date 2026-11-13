@@ -29,12 +29,14 @@ from hub_support import (
     hub_api,
     key,
     passkey,
+    rsa_key,
     signing,
     verifier,
     zero_led,
 )
 
 PASSKEY_PAGE = HUB / "templates" / "page-passkey.js"
+BACKENDS = [passkey.by_openssl] if passkey.serialization is None else [passkey.by_openssl, passkey.by_library]
 PASSKEY_PROBE = """
 const fs = require("fs");
 const vm = require("vm");
@@ -87,6 +89,30 @@ class TestApproval(unittest.TestCase):
                 signer.pin(self.approvers, ORIGIN)
                 verifier.check(signer.proof(self.payload([self.item], int(self.now) + 60), ORIGIN), self.item, "", self.trust, self.now)
         self.assertEqual([entry["alg"] for entry in verifier.pinned(self.approvers)], [-7, -8, -257])
+
+    def test_an_rs256_key_under_2048_bits_is_refused_at_registration_and_at_every_verification(self):
+        payloads = {
+            "approval": self.payload([self.item], int(self.now) + 60),
+            "rule": signing.rule_payload("fedcba9876543210", ["ask"], "Bash", "make *", "/repo*", int(self.now) + 3600),
+        }
+        for bits in (1024, 2047):
+            signer = rsa_key(bits)
+            self.assertEqual(int.from_bytes(signer.cose()[-1], "big").bit_length(), bits)
+            with self.subTest(bits=bits, at="registration"), self.assertRaisesRegex(signing.Refused, "modulus under 2048 bits"):
+                passkey.attested(signer.credential(ORIGIN, "localhost", REGISTERED), ORIGIN)
+            weak = verifier.Trust(approvers=self.base / f"weak-{bits}.json", replay=self.base / f"weak-{bits}-replay.json", origin=ORIGIN)
+            verifier.pin(weak.approvers, {"id": signer.id, "alg": -257, "spki": b64(signer.spki)}, self.now)
+            for name, payload in payloads.items():
+                with self.subTest(bits=bits, at=name), self.assertRaisesRegex(signing.Refused, "modulus under 2048 bits"):
+                    verifier.check(signer.proof(payload, ORIGIN), self.item, "", weak, self.now)
+        signer = rsa_key(2048)
+        self.assertEqual(passkey.attested(signer.credential(ORIGIN, "localhost", REGISTERED), ORIGIN)["spki"], b64(signer.spki))
+        signer.pin(self.approvers, ORIGIN)
+        for payload in payloads.values():
+            verifier.check(signer.proof(payload, ORIGIN), self.item, "", self.trust, self.now)
+        mislabelled = key(-7, "main")
+        verifier.pin(self.approvers, {"id": mislabelled.id, "alg": -257, "spki": b64(mislabelled.spki)}, self.now)
+        self.refused(mislabelled.proof(payloads["approval"], ORIGIN), self.item, "", "no RSA public key")
 
     def test_every_broken_part_of_a_signature_is_refused(self):
         signer = key(-7, "main")
@@ -279,12 +305,11 @@ class TestApproval(unittest.TestCase):
                 passkey.cbor(data, 0, 0)
 
     def test_both_backends_verify_and_reject_the_same(self):
-        backends = [passkey.by_openssl] if passkey.serialization is None else [passkey.by_openssl, passkey.by_library]
         for alg in (-7, -8, -257):
             signer = key(alg, "main")
             data = os.urandom(64)
             signature = signer.sign(data)
-            for backend in backends:
+            for backend in BACKENDS:
                 with self.subTest(alg=alg, backend=backend.__name__):
                     self.assertTrue(backend(alg, signer.spki, data, signature))
                     self.assertFalse(backend(alg, signer.spki, data + b"x", signature))
@@ -295,6 +320,44 @@ class TestApproval(unittest.TestCase):
         signer.pin(self.approvers, ORIGIN)
         with mock.patch.object(passkey, "serialization", None):
             verifier.check(signer.proof(self.payload([self.item], int(self.now) + 60), ORIGIN), self.item, "", self.trust, self.now)
+
+    def test_both_backends_refuse_a_valid_signature_of_an_rs256_key_under_2048_bits(self):
+        data = os.urandom(64)
+        for bits in (1024, 2047):
+            signer = rsa_key(bits)
+            signature = signer.sign(data)
+            for backend in BACKENDS:
+                with self.subTest(bits=bits, backend=backend.__name__):
+                    self.assertFalse(backend(-257, signer.spki, data, signature))
+                    with mock.patch.object(passkey, "RSA_MIN_BITS", 1024):
+                        self.assertTrue(backend(-257, signer.spki, data, signature))
+
+    def test_the_rsa_key_parser_reads_strict_der_only(self):
+        signer = rsa_key(2048)
+        modulus = signer.cose()[-1]
+        exponent = passkey.der_integer((65537).to_bytes(3, "big"))
+
+        def wrapped(integers: bytes, unused: int) -> bytes:
+            return passkey.der(0x30, passkey.RSA_IDENTIFIER + passkey.der(0x03, bytes([unused]) + passkey.der(0x30, integers)))
+
+        valid = wrapped(passkey.der_integer(modulus) + exponent, 0)
+        self.assertEqual(valid, signer.spki)
+        self.assertEqual((passkey.rsa_bits(valid), passkey.key_type(-257, valid)), (2048, True))
+        for name, given in (
+            ("negative modulus", wrapped(passkey.der(0x02, b"\xff" * 256) + exponent, 0)),
+            ("superfluous leading zero", wrapped(passkey.der(0x02, b"\x00\x00" + modulus) + exponent, 0)),
+            ("short length in long form", wrapped(passkey.der_integer(modulus) + b"\x02\x81\x03\x01\x00\x01", 0)),
+            ("zero-led long length", wrapped(b"\x02\x83\x00\x01\x01\x00" + modulus + exponent, 0)),
+            ("nonzero unused bits", wrapped(passkey.der_integer(modulus) + exponent, 1)),
+            ("trailing data in the key", wrapped(passkey.der_integer(modulus) + exponent + b"\x05\x00", 0)),
+            ("trailing data after the key", valid + b"\x00"),
+            ("shifted identifier", passkey.der(0x30, b"\x05\x00" + valid[4:])),
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(signing.Refused, "no RSA public key"):
+                    passkey.rsa_bits(given)
+                self.assertFalse(passkey.key_type(-257, given))
+        self.assertEqual((passkey.rsa_bits(rsa_key(2047).spki), passkey.key_type(-257, rsa_key(2047).spki)), (2047, False))
 
     def test_openssl_without_a_temporary_directory_refuses_cleanly(self):
         signer = key(-7, "main")
