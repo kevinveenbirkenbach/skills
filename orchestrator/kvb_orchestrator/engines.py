@@ -4,6 +4,7 @@ import io
 import os
 import re
 import secrets
+import struct
 import subprocess
 import threading
 import time
@@ -18,6 +19,7 @@ from .fields import TEXT_LIMIT, bounded, decode, expect
 from .phrasing import PROCEDURE_LINES, SPEECH_LIMIT, SPOKEN_LINE, phrase
 from .records import digest, read_json
 from .skill_scripts import SAFE_PATH
+from .speechservice import Service
 
 MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 SPEAKER_LIMIT = 10000
@@ -33,6 +35,7 @@ HEARING_RATE = 6
 HEARING_HOUR = 3600
 HEARING_BUDGET = 5 * STT_SECONDS
 NOISE = re.compile(r"\[[^\]\n]{0,40}\]")
+PLACEHOLDERS = frozenset({0, 0xFFFFFFFF})
 
 
 def voice_models(folder: Path) -> list[Path]:
@@ -111,6 +114,36 @@ def wav_seconds(body: bytes) -> float:
     return frames / STT_RATE
 
 
+def whole_wav(body: bytes) -> bytes | None:
+    """Returns:
+        body if it is a RIFF WAVE whose RIFF size matches the bytes received
+        and whose chunks, a non-empty data chunk among them, all end within
+        those bytes; a streamed WAVE, whose RIFF size is a placeholder in
+        PLACEHOLDERS, only if its data chunk is the last chunk and runs to the
+        end of the body, returned with both sizes set to the bytes received;
+        None for every other body.
+    """
+    if len(body) < 12 or body[:4] != b"RIFF" or body[8:12] != b"WAVE":
+        return None
+    riff = struct.unpack_from("<I", body, 4)[0]
+    streamed = riff in PLACEHOLDERS
+    if not streamed and riff + 8 != len(body):
+        return None
+    offset, data = 12, False
+    while offset + 8 <= len(body):
+        name, size = body[offset : offset + 4], struct.unpack_from("<I", body, offset + 4)[0]
+        start = offset + 8
+        if streamed and name == b"data":
+            if start == len(body) or (size not in PLACEHOLDERS and start + size != len(body)):
+                return None
+            return b"RIFF" + struct.pack("<I", len(body) - 8) + body[8 : offset + 4] + struct.pack("<I", len(body) - start) + body[start:]
+        if start + size > len(body):
+            return None
+        data = data or (name == b"data" and size > 0)
+        offset = start + size + (size & 1)
+    return body if data and not streamed and offset in (len(body), len(body) + 1) else None
+
+
 def playable(path: Path) -> bool:
     try:
         with wave.open(str(path), "rb") as reader:
@@ -131,6 +164,7 @@ class Engines:
     whisper: Path
     whisper_model: Path
     scratch: Path
+    service: Service
 
 
 class Speech:
@@ -156,10 +190,13 @@ class Speech:
     def output_gap(self) -> str:
         """Returns:
             "" when speech output works, otherwise why not, naming the Piper
-            executable, the voice directory or a voice config with its path.
+            executable, the voice directory or a voice config with its path;
+            with the speech service the voices still come from the voice
+            directory, and no Piper runs here.
         """
         folder = self.engines.voices
-        gap = unreachable(self.engines.piper, "the Piper executable", os.X_OK, "executable") or unreachable(folder, "the voice directory", os.R_OK | os.X_OK, "searchable")
+        piper = "" if self.engines.service.enabled() else unreachable(self.engines.piper, "the Piper executable", os.X_OK, "executable")
+        gap = piper or unreachable(folder, "the voice directory", os.R_OK | os.X_OK, "searchable")
         if gap or self.voices:
             return gap
         models = voice_models(folder)
@@ -170,8 +207,11 @@ class Speech:
     def input_gap(self) -> str:
         """Returns:
             "" when speech input works, otherwise why not, naming the
-            whisper.cpp executable or model with its path.
+            whisper.cpp executable or model with its path; always "" with the
+            speech service.
         """
+        if self.engines.service.enabled():
+            return ""
         model = self.engines.whisper_model
         gap = unreachable(self.engines.whisper, "the whisper.cpp executable", os.X_OK, "executable") or unreachable(model, "the whisper.cpp model", os.R_OK, "readable")
         return gap or ("" if os.path.isfile(model) else f"the whisper.cpp model {model} is not a file")
@@ -229,9 +269,24 @@ class Speech:
             return target.read_bytes()
 
     def render(self, voice: str, line: str, target: Path) -> None:
+        partial = self.cache / f".{target.stem}-{secrets.token_hex(4)}.wav"
+        try:
+            if self.engines.service.enabled():
+                spoken = whole_wav(self.engines.service.speak(voice, line))
+                if spoken is None:
+                    raise EngineError("the speech service answered no complete WAV")
+                partial.write_bytes(spoken)
+                if not playable(partial):
+                    raise EngineError("the speech service answered no playable WAV")
+            else:
+                self.piper(voice, line, partial)
+            os.replace(partial, target)
+        finally:
+            partial.unlink(missing_ok=True)
+
+    def piper(self, voice: str, line: str, partial: Path) -> None:
         model, speaker = self.voices[voice]
         onnx = self.engines.voices / f"{model}.onnx"
-        partial = self.cache / f".{target.stem}-{secrets.token_hex(4)}.wav"
         command = [str(self.engines.piper), "--model", str(onnx), "--config", f"{onnx}.json", "--output-file", str(partial)]
         command += [] if speaker is None else ["--speaker", str(speaker)]
         try:
@@ -246,15 +301,12 @@ class Speech:
                 cwd=self.engines.scratch,
                 check=False,
             )
-            if done.returncode != 0 or not playable(partial):
-                raise EngineError(f"piper failed with exit code {done.returncode}: {done.stderr.strip()[-300:]}")
-            os.replace(partial, target)
         except subprocess.TimeoutExpired:
             raise EngineError(f"piper took longer than {TTS_TIMEOUT} seconds") from None
         except OSError as error:
             raise EngineError(f"piper did not start: {error.strerror}") from None
-        finally:
-            partial.unlink(missing_ok=True)
+        if done.returncode != 0 or not playable(partial):
+            raise EngineError(f"piper failed with exit code {done.returncode}: {done.stderr.strip()[-300:]}")
 
     def trim(self) -> None:
         spoken = (path for path in self.cache.glob("*.wav") if not path.name.startswith(WORD_CACHE))
@@ -285,6 +337,9 @@ class Speech:
         return self.whisper(body)
 
     def whisper(self, body: bytes) -> dict:
+        if self.engines.service.enabled():
+            with self.hearing:
+                return {"text": heard(self.engines.service.hear(body))}
         command = [str(self.engines.whisper), "--model", str(self.engines.whisper_model), "--file", "-", "--output-txt", "--language", "auto", "--no-prints", "--suppress-nst"]
         with self.hearing:
             try:

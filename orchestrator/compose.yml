@@ -2,7 +2,10 @@ name: kvb-orchestrator
 
 services:
   hub:
-    build: .
+    build:
+      context: .
+      args:
+        - INFINITO_ARTEFACT_BASE
     image: kvb-orchestrator:local
     restart: unless-stopped
     init: true
@@ -76,6 +79,10 @@ services:
       - /opt/whisper/ggml-base-q8_0.bin
       - --scratch
       - /scratch
+      - --speech-url
+      - "${KVB_ORCHESTRATOR_SPEECH_URL}"
+      - --speech-key-file
+      - /run/kvb-orchestrator/speech.key
       - --approvers
       - /approvers/approvers.json
     tmpfs:
@@ -136,6 +143,12 @@ services:
         # /dev/null is an empty key file, which server.py --llm-key-file reads as no key
         source: "${KVB_ORCHESTRATOR_LLM_KEY_FILE:-/dev/null}"
         target: /run/kvb-orchestrator/llm.key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${KVB_ORCHESTRATOR_SPEECH_KEY_FILE:-/dev/null}"
+        target: /run/kvb-orchestrator/speech.key
         read_only: true
         bind:
           create_host_path: false

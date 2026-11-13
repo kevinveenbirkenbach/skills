@@ -55,7 +55,7 @@ def write_engines(base: Path) -> server.Engines:
     (voices / "broken.onnx").write_bytes(b"onnx")
     model = base / "ggml-base.bin"
     model.write_bytes(b"ggml")
-    return server.Engines(piper=bin_dir / "piper", voices=voices, operator_voice=OPERATOR_VOICE, whisper=bin_dir / "whisper-cli", whisper_model=model, scratch=scratch)
+    return server.Engines(piper=bin_dir / "piper", voices=voices, operator_voice=OPERATOR_VOICE, whisper=bin_dir / "whisper-cli", whisper_model=model, scratch=scratch, service=server.Service(url="", key=""))
 
 
 def wav_bytes(channels: int, width: int, rate: int, frames: bytes) -> bytes:

@@ -33,7 +33,6 @@ from hub_support import (
     verifier,
     zero_led,
 )
-from kvb_orchestrator import language
 
 PASSKEY_PAGE = HUB / "templates" / "page-passkey.js"
 PASSKEY_PROBE = """
@@ -198,11 +197,10 @@ class TestApproval(unittest.TestCase):
         self.addCleanup(server.server_close)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.shutdown)
-        for name, opener in (("client", hub_api.OPENER), ("llm", language.LLM_OPENER)):
-            request = urllib.request.Request(f"{hub_api.base_url(server.server_address[1])}/api/asks")
-            with self.subTest(name=name), self.assertRaises(urllib.error.HTTPError) as caught:
-                opener.open(request, timeout=5)
-            self.assertEqual(caught.exception.code, 302)
+        request = urllib.request.Request(f"{hub_api.base_url(server.server_address[1])}/api/asks")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            hub_api.OPENER.open(request, timeout=5)
+        self.assertEqual(caught.exception.code, 302)
 
     def test_attestation_parsing_yields_the_pinned_key_of_each_algorithm(self):
         for alg in (-7, -8, -257):

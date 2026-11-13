@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import json
 import time
-import urllib.request
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 
+from . import transport
 from .council import NEWS, ordered, read_claims
 from .denying import DENIABLE
 from .errors import ToolError
 from .events import VIEWS
 from .fields import bounded, decode, expect, message_text
+from .keys import bearer, sealed
 from .records import read_jsonl
 from .register import REGISTER, agent_order, read_register
 
@@ -18,14 +18,6 @@ NL_LIMIT = 2000
 NL_ACTION_LIMIT = 20
 LLM_TIMEOUT = 60
 LLM_REPLY = 1 << 20
-
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
-LLM_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
 SCREENS = ("stream", "inbox", "rules", "agents", "artifacts", "tasks")
 IDS = {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Ids from items."}
 NL_ACTIONS = [
@@ -139,9 +131,23 @@ def nl_actions(reply: str, items: list[dict], agents: list[str]) -> dict:
 
 @dataclass(frozen=True)
 class Model:
+    """Args:
+        url: base URL of an OpenAI-compatible chat endpoint; empty turns the
+            natural-language command line off.
+        model: the model name sent to it.
+        key: the bearer key it expects; empty sends none. It never shows in
+            the repr or in any message.
+    """
+
     url: str
     model: str
-    key: str
+    key: str = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if self.key and not bearer(self.key):
+            raise ToolError("the model endpoint key must be printable ASCII without whitespace: check KVB_ORCHESTRATOR_LLM_KEY_FILE")
+        if self.url and self.key and not sealed(self.url):
+            raise ToolError("the model endpoint key travels only over https or to 127.0.0.1, localhost or ::1: set an https KVB_ORCHESTRATOR_LLM_URL or empty KVB_ORCHESTRATOR_LLM_KEY_FILE")
 
     def enabled(self) -> bool:
         return bool(self.url and self.model)
@@ -153,23 +159,17 @@ class Model:
         if self.key:
             headers["Authorization"] = f"Bearer {self.key}"
         body = json.dumps({"model": self.model, "messages": messages, "temperature": 0, "response_format": {"type": "json_object"}}).encode()
-        request = urllib.request.Request(target, data=body, headers=headers, method="POST")
         try:
-            with LLM_OPENER.open(request, timeout=LLM_TIMEOUT) as response:
-                data = json.loads(response.read(LLM_REPLY))
-            content = data["choices"][0]["message"]["content"]
-        except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
-            raise ToolError(f"the model endpoint failed: {error}") from None
+            reply = transport.post(target, body, headers, LLM_REPLY, LLM_TIMEOUT)
+        except transport.Failure as failure:
+            raise ToolError(f"the model endpoint {failure}") from None
+        try:
+            content = json.loads(reply)["choices"][0]["message"]["content"]
+        except (ValueError, RecursionError, KeyError, IndexError, TypeError) as error:
+            raise ToolError(f"the model endpoint failed: {type(error).__name__}") from None
         if not isinstance(content, str):
             raise ToolError("the model endpoint answered no text")
         return content
-
-
-def read_key(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except (OSError, ValueError):
-        return ""
 
 
 class Language:
