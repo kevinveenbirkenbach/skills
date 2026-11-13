@@ -20,6 +20,13 @@ Scan:
     directory because medusa creates ~/.medusa on start, read from
     `<dir>/medusa-scan-*.json`: a `findings` list whose entries carry
     `severity` (critical, high, medium, low or info), `rule_id`, `file` and `line`.
+    medusa skips the SKIPPED suffixes (.mjs, .cjs, any case), so such a file is
+    copied under its name with ALIAS (.js) appended, again while a path or
+    folder of the change holds that name, or under the sha1 of its path with
+    ALIAS when that file name would pass NAME_MAX bytes; its findings are
+    fingerprinted from that copy and reported and accepted at its repository
+    path. Rules, coverage and not covered judge the tree path medusa scans and
+    name the repository path.
     Rules: medusa's own RULES, read without running medusa from the medusa
     package that the interpreter of medusa's shebang (an `env` program looked
     up on PATH) imports with medusa's environment: from core/parallel.py the
@@ -49,8 +56,8 @@ Scan:
 Cache:
     The findings of a complete scan, keyed by the sha256 of this script, the
     resolved medusa binary with its mtime and size, PATH, the files not covered,
-    every MEDUSA_* variable and
-    the path, mode and content sha256 of every scanned file, in
+    every MEDUSA_* variable and the tree path, repository path, mode and
+    content sha256 of every copied file, in
     <council root>/security-cache/<key>.json for CACHE_SECONDS. A later scan
     with the same key reads them instead of running medusa; any edit of a
     scanned file, of medusa or of this script misses. The folder is used only
@@ -114,6 +121,9 @@ SAFE = 100
 SHOWN = 5
 REACH = 2
 WORKERS = 4
+SKIPPED = (".mjs", ".cjs")
+ALIAS = ".js"
+NAME_MAX = 255
 CACHE = "security-cache"
 CACHE_SECONDS = 24 * 3600
 NOTHING = type(None)
@@ -188,18 +198,42 @@ def changed(root: Path, base: str) -> list[str]:
     return sorted({p for p in listed.split("\0") if p})
 
 
-def copy(root: Path, paths: list[str], tree: Path) -> int:
-    copied = 0
+def alias(name: str, taken: set[str]) -> str:
+    """Returns:
+        the tree path of name, whose suffix medusa skips: its file name with
+        ALIAS appended, again while taken holds that path, or the sha1 of name
+        treated the same way when that file name would pass NAME_MAX bytes.
+    """
+    folder = Path(name).parent
+    for stem in (Path(name).name, digest(name)):
+        scratch = stem + ALIAS
+        while (folder / scratch).as_posix() in taken:
+            scratch += ALIAS
+        if len(os.fsencode(scratch)) <= NAME_MAX:
+            break
+    return (folder / scratch).as_posix()
+
+
+def copy(root: Path, paths: list[str], tree: Path) -> dict[str, str]:
+    """Returns:
+        the tree path of every copied file mapped to its repository path.
+    """
+    names = {}
+    taken = set(paths) | {parent.as_posix() for name in paths for parent in Path(name).parents}
     for name in paths:
         source = root / name
         # Trip-wire: a symlink's target may lie outside the repository; even a copied link lets the scan read it.
         if source.is_symlink() or not source.is_file():
             continue
-        target = tree / name
+        scratch = name
+        if Path(name).suffix.lower() in SKIPPED:
+            scratch = alias(name, taken)
+            taken.add(scratch)
+        target = tree / scratch
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-        copied += 1
-    return copied
+        names[scratch] = name
+    return names
 
 
 def located(name: str, tree: Path) -> str:
@@ -308,9 +342,9 @@ def accept(argv: list[str]) -> int:
     return 0
 
 
-def findings(reports: Path, tree: Path) -> tuple[list[dict], dict]:
+def findings(reports: Path, tree: Path, names: dict[str, str]) -> tuple[list[dict], dict]:
     """Returns:
-        the findings of medusa's report and its `scan_summary`.
+        the findings of medusa's report at their repository paths and its `scan_summary`.
     """
     files = sorted(reports.glob("medusa-scan-*.json")) if reports.is_dir() else []
     if not files:
@@ -331,12 +365,12 @@ def findings(reports: Path, tree: Path) -> tuple[list[dict], dict]:
         if severity not in WEIGHTS:
             raise Unreadable(f"{files[-1].name}: a finding without a known severity")
         line = entry.get("line") if isinstance(entry.get("line"), int) else None
-        path = located(str(entry.get("file") or "?"), tree)
-        sha1, context = fingerprint(tree, path, line)
+        scratch = located(str(entry.get("file") or "?"), tree)
+        sha1, context = fingerprint(tree, scratch, line)
         found.append({
             "severity": severity,
             "rule": entry.get("rule_id") if isinstance(entry.get("rule_id"), str) else None,
-            "path": path,
+            "path": names.get(scratch, scratch),
             "line": line,
             "sha1": sha1,
             "context": context,
@@ -512,15 +546,16 @@ def cut(code: int, said: list[str], summary: dict, sizes: dict[str, tuple[int, i
     return None
 
 
-def keyed(medusa: str, tree: Path, missed: list[str]) -> str:
+def keyed(medusa: str, tree: Path, names: dict[str, str], missed: list[str]) -> str:
     binary = Path(medusa).resolve()
     info = binary.stat()
     key = hashlib.sha256(Path(__file__).read_bytes())
     key.update(f"\0{binary}\0{info.st_mtime_ns}\0{info.st_size}\0{os.environ.get('PATH', '')}\0".encode())
     key.update("".join(f"{name}\0" for name in missed).encode() + b"\0")
     key.update("".join(f"{k}={v}\0" for k, v in sorted(os.environ.items()) if k.startswith("MEDUSA_")).encode())
-    for path in sorted(p for p in tree.rglob("*") if p.is_file()):
-        key.update(f"{path.relative_to(tree).as_posix()}\0{path.stat().st_mode & 0o777:o}\0".encode())
+    for scratch, name in sorted(names.items()):
+        path = tree / scratch
+        key.update(f"{scratch}\0{name}\0{path.stat().st_mode & 0o777:o}\0".encode())
         key.update(hashlib.sha256(path.read_bytes()).digest())
     return key.hexdigest()
 
@@ -577,31 +612,30 @@ def remember(folder: Path, key: str, found: list[dict]) -> None:
 
 def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, list[dict], list[str]]:
     """Returns:
-        the count of scanned files, their findings and the copied files of a
-        type medusa never scans.
+        the count of scanned files, their findings and the repository paths
+        of the copied files medusa never takes up.
     """
     with tempfile.TemporaryDirectory(prefix="kvb-security-") as scratch:
         work = Path(scratch)
         tree, reports, home = work / "tree", work / "reports", work / "home"
         tree.mkdir()
         home.mkdir()
-        copy(root, changed(root, base), tree)
-        env = {**os.environ, "HOME": str(home)}
-        sizes = sized(tree)
-        if not sizes:
+        names = copy(root, changed(root, base), tree)
+        if not names:
             return 0, [], []
+        env = {**os.environ, "HOME": str(home)}
         known = rules(package(medusa, work, env))
         if known is None:
             raise Uncovered("medusa's own types, exclusions and limits are unreadable from its source")
-        missed = [name for name in sizes if not taken(name, known)]
-        sizes = {name: size for name, size in sizes.items() if name not in missed}
+        sizes = {names[scratch]: size for scratch, size in sized(tree).items() if taken(scratch, known)}
+        missed = sorted(set(names.values()) - sizes.keys())
         scanned = len(sizes)
         if not scanned:
             raise Uncovered(f"medusa scans none of its files, not covered: {shown(missed)}")
         over = oversized(sizes, known)
         if over:
             raise Uncovered(over)
-        key = keyed(medusa, tree, missed)
+        key = keyed(medusa, tree, names, missed)
         hit = recalled(cache, key) if cache else None
         if hit is not None:
             return scanned, hit, missed
@@ -611,7 +645,7 @@ def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, l
             cwd=work, stdin=subprocess.DEVNULL, capture_output=True, check=False, env=env,
         )
         try:
-            found, summary = findings(reports, tree)
+            found, summary = findings(reports, tree, names)
         except Unreadable as error:
             raise Unreadable(f"{error} (medusa exit {result.returncode})") from None
         said = [line.replace(f"{tree}/", "").strip(" \t!⚠️") for line in result.stdout.decode(errors="replace").splitlines()]
