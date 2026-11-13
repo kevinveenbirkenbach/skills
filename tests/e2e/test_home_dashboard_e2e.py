@@ -6,6 +6,7 @@ import shutil
 import sys
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -107,8 +108,9 @@ STARS = """(async () => {@HELPERS@@HOME@
   const missing = [];
   const covered = [];
   const CONTROLS = 'button, a[href], input, select, textarea, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"])';
-  const shown = (node) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden";
+  const shown = (node) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden" && !node.closest("details:not([open]) > :not(summary)");
   const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  const layer = (node) => node.closest("dialog[open]");
   const count = (where) => {
     const owners = all("[data-panel], [data-item]").filter((node) => node.namespaceURI === "http://www.w3.org/1999/xhtml");
     seen.push([where, owners.length]);
@@ -117,7 +119,7 @@ STARS = """(async () => {@HELPERS@@HOME@
     for (const star of all(".star").filter(shown)) {
       const box = star.getBoundingClientRect();
       for (const other of controls) {
-        if (other !== star && !other.contains(star) && !star.contains(other) && overlap(box, other.getBoundingClientRect()) > 1) {
+        if (other !== star && !other.contains(star) && !star.contains(other) && layer(other) === layer(star) && overlap(box, other.getBoundingClientRect()) > 1) {
           covered.push(`${where}: ${star.title} over ${other.outerHTML.slice(0, 100)}`);
         }
       }
@@ -182,7 +184,8 @@ RESIZE = """(async () => {@HELPERS@@HOME@
   }
   const keyed = sizeOf(key);
   await dragBy(handle(), column * 5, row * 3);
-  const span = getComputedStyle(tile(key)).gridColumnEnd;
+  const look = getComputedStyle(tile(key));
+  const span = [look.gridColumnStart, look.gridColumnEnd];
   return {before, grown, most, wide, least, keyed, final: sizeOf(key), span, stored: (ViewStore.get("home.pins") || []).find((pin) => pin.id === "tasks/gantt")};
 })()"""
 REORDER = """(async () => {@HELPERS@@HOME@
@@ -259,15 +262,19 @@ def probe(template: str) -> str:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestHomeDashboard(HubCase):
-    setUp = base.TestOrchestratorE2E.setUp
+    seed = base.TestOrchestratorE2E.seed
     subagents = base.TestOrchestratorE2E.subagents
     drive = base.TestOrchestratorE2E.drive
+
+    def setUp(self):
+        super().setUp()
+        self.seed()
 
     def cue(self) -> None:
         hub = self.httpd.hub
         spoken = base.tone(1, 8000)
 
-        def synthesize(body: bytes) -> bytes:
+        def synthesize(body: bytes, admit: Callable[[str], None]) -> bytes:
             if json.loads(body)["text"] == CUE:
                 path = self.council / "rasci.json"
                 register = json.loads(path.read_text(encoding="utf-8"))
@@ -296,7 +303,7 @@ class TestHomeDashboard(HubCase):
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(REORDER), "shot": f"{shot}-reordered.png"},
                 {"width": width, "height": height, "url": f"{page}-reloaded", "wait": 1500, "probe": probe(RELOADED), "shot": f"{shot}-reloaded.png"},
             ]
-            if index == 0:
+            if index == len(base.WIDTHS) - 1:
                 steps += [
                     {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(CHANGE), "shot": f"{shot}-gone.png"},
                     {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(GONE_UNPIN), "shot": None},
@@ -328,7 +335,7 @@ class TestHomeDashboard(HubCase):
                 resized = next(results)
                 self.assertEqual((resized["before"], resized["grown"], resized["most"], resized["least"], resized["keyed"], resized["final"]), ([6, 4], [9, 6], [12, 12], [1, 1], [3, 2], [8, 5]), resized)
                 self.assertEqual(resized["wide"][0], resized["wide"][1], resized)
-                self.assertEqual(resized["span"], "-1" if width == 390 else "span 8", resized)
+                self.assertEqual(resized["span"], ["1", "-1"] if width == 390 else ["span 8", "auto"], resized)
                 self.assertEqual((resized["stored"]["w"], resized["stored"]["h"]), (8, 5))
                 order = next(results)
                 start = ["task:work/feature", "task:work/docs", "panel:stream", "panel:tasks/gantt"]
@@ -344,7 +351,7 @@ class TestHomeDashboard(HubCase):
                     self.assertEqual(reloaded["widths"], [reloaded["grid"]], reloaded)
                 else:
                     self.assertGreater(len(reloaded["widths"]), 1, reloaded)
-                if index == 0:
+                if index == len(base.WIDTHS) - 1:
                     change = next(results)
                     self.assertTrue(change["grown"], change)
                     self.assertNotIn("work/new", change["before"])

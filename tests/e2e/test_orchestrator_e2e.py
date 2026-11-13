@@ -35,7 +35,7 @@ OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
 TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn", "3d")
-SCREENS = ["stream", "tasks/operator", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS), "resources"]
+SCREENS = ["home", "stream", "tasks/operator", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS), "resources"]
 SUBS = ["Firewall"]
 TABS = ["Home", "Stream", "Agents", "Artifacts", "Tasks", "Resources"]
 HELPERS = """
@@ -217,7 +217,7 @@ ACTIONS = """(async () => {@HELPERS@
     await sleep(300);
     return location.hash;
   };
-  const found = {keys: [await press("2"), await press("3"), await press("4"), await press("1")]};
+  const found = {keys: [await press("3"), await press("4"), await press("5"), await press("1"), await press("2")]};
   document.getElementById("settings-open").click();
   await sleep(300);
   found.ambience = all(".sheet-box form > section:first-child button").map((button) => button.id);
@@ -1551,6 +1551,9 @@ class TestOrchestratorE2E(HubCase):
     def setUp(self):
         super().setUp()
         OUT.mkdir(parents=True, exist_ok=True)
+        self.seed()
+
+    def seed(self) -> None:
         now = time.time()
         self.root = self.write_tree()
         feature = f"{self.root}/worktrees/github.com/me/demo/feature"
@@ -1845,7 +1848,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual((probe["title"], probe["h1"]), ("(2) Agent Orchestrator", "Agent Orchestrator"))
                 self.assertEqual(probe["header"], ["radio-open", "bubbles-toggle", "palette-open", "settings-open"])
                 self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
-                self.assertEqual(probe["badges"], {"tab-stream": None, "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": "2", "tab-resources": None})
+                self.assertEqual(probe["badges"], {"tab-home": None, "tab-stream": None, "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": "2", "tab-resources": None})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")
                 self.assertFalse(probe["rail"])
                 self.assertEqual((probe["time"], probe["replay"]), ("24 h ▾", True))
@@ -1906,7 +1909,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual([probe["hash"] for probe in extra[:3]], ["#agents/orbit", "#agents/chord", "#artifacts/tree"])
         actions = extra[3]
         self.assertNotIn("error", actions)
-        self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/3d", "#stream"])
+        self.assertEqual(actions["keys"], ["#agents/chord", "#artifacts/tree", "#tasks/3d", "#home", "#stream"])
         self.assertEqual(actions["ambience"], ["sky-look", "music-toggle", "leitstand", "notify"])
         self.assertEqual((actions["settingsUnlabelled"], actions["popupUnlabelled"]), (0, 0))
         self.assertEqual((actions["sections"], actions["radioFields"]), (["Ambience", "Location", "Appearance", "Music", "Notifications", "Passkey"], 0))
