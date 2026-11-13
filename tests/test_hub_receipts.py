@@ -66,7 +66,7 @@ const find = (node, test, out = []) => {
   return out;
 };
 const sandbox = {
-  Receipts, RadioSet, Node, NS: "svg", HUMAN: "Operator", DAY: 86400, WEEKDAYS: [],
+  Receipts, RadioSet, Node, NS: "svg", HUMAN: "Operator", DAY: 86400, WEEKDAYS: [], revealed: String,
   document: {createElement: (tag) => new Node(tag), createElementNS: (ns, tag) => new Node(tag)},
   relative: {format: () => "ago"}, absolute: {format: (date) => `at ${date.getTime() / 1000}`},
   Faces: {of: () => ({parts: []}), SIZE: 10}, speech: {current: null}, look: {hidden: new Set()}, PRESENCE: {}, STATUS: {},

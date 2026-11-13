@@ -184,7 +184,7 @@ IN_USE = re.compile(
     r"image is being used by (?:running|stopped) container \S+$",
     re.MULTILINE,
 )
-OK, KEPT = "ok: ", "kept (in use): "
+OK, KEPT_LINE = "ok: ", "kept (in use): "
 GUARD_REFUSED = 3
 SHIM = '#!/bin/sh\nexec {python} -I {watch} guard {real} {report} "$@"\n'
 REFUSALS = {
@@ -1415,12 +1415,12 @@ def remove_leftovers(prefix: list[str]) -> list[str]:
     for image in dict.fromkeys(fields[0] for fields in rows if fields[1:] == [NONE, NONE] and IMAGE_ID.fullmatch(fields[0])):
         code, _, err = run_step([*prefix, "rmi", image], False)
         in_use = code != 0 and IN_USE.search(err.decode(errors="replace")) is not None
-        lines.append(KEPT + shown(prefix, ["rmi", image]) if in_use else result_line(code, shown(prefix, ["rmi", image])))
+        lines.append(KEPT_LINE + shown(prefix, ["rmi", image]) if in_use else result_line(code, shown(prefix, ["rmi", image])))
     return lines
 
 
 def cleanup_failures(results: list[str]) -> list[str]:
-    return [line for line in results if not line.startswith((OK, KEPT))]
+    return [line for line in results if not line.startswith((OK, KEPT_LINE))]
 
 
 def guard_env(directory: Path, report: Path, binaries: dict[str, str | None]) -> dict[str, str]:

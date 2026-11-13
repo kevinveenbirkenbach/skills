@@ -161,7 +161,7 @@ const caught = (run) => {
   const long = "x".repeat(300);
   console.log(JSON.stringify({
     unknown, wide, listSet, local, stored, combined, adopted, rebased, merged, churned, gaveUp, refused, during, kept, beforeLeave, atLeave, landed, sent, server: left, hooks: hooks.pagehide, error: V.error(), notRestored, restored,
-    ids: [V.id("host", "CPU"), V.id("disk", "/"), V.id("util", "0000:01:00.0"), V.id("agent", "Stage (this session) [5d88e9]"), V.id("a:b", "c"), V.id("a", "b:c"), V.id("a_3a_b"), V.id("agent", long), V.id("agent", `${long}y`), V.id("agent", "Ärger 🦫")],
+    ids: [V.id("host", "CPU"), V.id("disk", "/"), V.id("util", "0000:01:00.0"), V.id("agent", "Stage (this session) [5d88e9]"), V.id("a:b", "c"), V.id("a", "b:c"), V.id("a_3a_b"), V.id("agent", long), V.id("agent", `${long}y`), V.id("agent", "Çelik 🦫")],
   }));
 })();
 """.replace("@PIN@", json.dumps(PIN)).replace("@PIN_ID@", PIN["id"])

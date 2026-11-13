@@ -285,7 +285,7 @@ class TestOperatorPage(unittest.TestCase):
 
     def test_the_tasks_entry_carries_the_waiting_count_hidden_at_zero_and_no_inbox_entry_exists(self):
         status = self.data["status"]
-        self.assertEqual(status["keys"], ["stream", "rules", "agents", "artifacts", "tasks", "resources"])
+        self.assertEqual(status["keys"], ["home", "stream", "rules", "agents", "artifacts", "tasks", "resources"])
         self.assertEqual((status["text"], status["hidden"], status["urgent"], status["title"]), ("3", False, "badge urgent", "(3) Agent Orchestrator"))
         self.assertEqual(status["zero"], [True, "Agent Orchestrator"])
 
