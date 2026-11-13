@@ -120,6 +120,11 @@ from three views down to any agent, branch or artefact.
       directory; a systemd user path unit runs `pkgmgr branch cleanup --apply
       --local` for exactly those items and writes the result back. Rejected: an
       `operator.py` row (not direct).
+    - **Amended by the operator 2026-11-13**: the signed delete removes only
+      the local branch (`pkgmgr branch cleanup --apply --local`); a branch a
+      worktree holds is skipped and left to `kvb-git-gc`, and no worktree,
+      Compose stack or volume is touched. Rejected: per Scope, also removing
+      the worktree and running `compose down` without `-v`.
 22. **Organisation update**: a new skill `kvb-org-update` tells every agent
     and client which skills changed and how to use them, as one
     `newsletter` per update; phase 1 announces the radio change through it.
@@ -313,6 +318,10 @@ from three views down to any agent, branch or artefact.
     old `#stream/radio` link opens the Stream with the spot open. Rejected:
     keeping the Radio tab, the speaker chips (every Agents view already marks
     the speaker).
+    - **Amended by the operator 2026-11-13**: the spot shows the 004 radio
+      log with its Sent tab (004 decision 7) instead of the last five sent
+      messages. Rejected: only a note on the spot box, leaving this decision
+      unchanged.
 60. **Radio numbers and paths** (operator 2026-11-10): only the spoken line
     changes, the displayed text stays as written. Digits are spoken in ICAO
     words in Title Case, Ze-ro, One, Two, Tree, Fow-er, Fife, Six, Seven,
@@ -509,8 +518,9 @@ flowchart TD
       that names each changed skill and tells every agent to re-read its
       `SKILL.md` before the next use, then records `HEAD` as announced; a
       second run without new commits sends nothing.
-- [ ] The radio change of phase 1 is announced through it.
-      Obsolete (operator 2026-11-12): a past event no record proves any more.
+- ~~The radio change of phase 1 is announced through it.~~ Superseded by the
+  operator note of 2026-11-12 (struck 2026-11-13): a past event no record
+  proves any more.
 
 ### Orchestrator surface and rename
 
@@ -522,9 +532,10 @@ flowchart TD
       settings hook entries, the systemd unit and the container to the
       `kvb-orchestrator` names. A second run changes nothing (scratch-HOME
       test).
-- [ ] The navigation has exactly three top-level entries Stream, Agents and
-      Artifacts; Stream has the sub-items Inbox and Firewall.
-      Obsolete: decision 23 adds Tasks, 003 decision 2 removes Inbox.
+- ~~The navigation has exactly three top-level entries Stream, Agents and
+  Artifacts; Stream has the sub-items Inbox and Firewall.~~ Superseded by
+  decision 23, which adds Tasks, and 003 decision 2, which removes Inbox
+  (struck 2026-11-13).
 - [x] Every agent appears once under its current name: a register worker
       such as "Stage (this session)" or "infinito-nexus-core-c8 (Production)"
       maps to the agent named before the bracket.
@@ -534,8 +545,9 @@ flowchart TD
       redirect to their successors.
 - [x] Agents and Artifacts show a switch with Orbit, Chord, Swimlane, Tree and
       3D in this order, and each view has its own hash.
-- [ ] The header holds exactly the title, the ⌘K button and the ⚙ button.
-      Obsolete: decision 59 adds Radio, 003 decision 17 the bubbles switch.
+- ~~The header holds exactly the title, the ⌘K button and the ⚙ button.~~
+  Superseded by decision 59, which adds Radio, and 003 decision 17, which
+  adds the bubbles switch (struck 2026-11-13).
 - [x] Badges:
   - [x] Inbox shows the waiting items that are not snoozed.
   - [x] Agents shows the agents with a heartbeat in the last 900 s.
@@ -543,12 +555,12 @@ flowchart TD
   - [x] A badge at 0 is hidden.
 - [x] A red Mayday banner with "cancel" exists if and only if a mayday is
       active; "cancel" runs `radio.py clear`.
-- [ ] The Agents toolbar holds:
-  - [ ] Radio to all, with the class choice Newsletter, Broadcast, Pan-Pan,
-        Security, Mayday and Newsletter preselected.
-  - [ ] Cancel mayday, Priority and Day/Night.
-  Obsolete: decisions 52 and 59 move the composer and Cancel mayday into
-  the header radio spot; Priority and Day/Night ship.
+- ~~The Agents toolbar holds:~~ Superseded by decisions 52 and 59, which move
+  the composer and Cancel mayday into the header radio spot; Priority and
+  Day/Night ship (struck 2026-11-13).
+  - ~~Radio to all, with the class choice Newsletter, Broadcast, Pan-Pan,
+    Security, Mayday and Newsletter preselected.~~
+  - ~~Cancel mayday, Priority and Day/Night.~~
 - [x] The agent panel sends with the choice Post (preselected) or Call.
 - [x] ⚙ "Ambience" holds Sky, Music, Control room and Notifications;
       ⌘K lists every former header tool.
@@ -638,10 +650,11 @@ flowchart TD
       and tip sha per item, no command) into a host-mounted job directory and
       holds no git, token or key.
 - [ ] A systemd user path unit verifies the signature on the host and runs
-      `pkgmgr branch cleanup --apply --local` for exactly the signed items,
-      matched exactly, never as a pattern; `--local` removes the worktree, the local
-      branch, the compose stack without `-v` and its images, never a remote
-      branch, and needs no SSH key.
+      `pkgmgr branch cleanup --apply --local` (the `--local` release is
+      pending in pkgmgr) for exactly the signed items, matched exactly, never
+      as a pattern; it removes the local branch, never a remote branch, a
+      worktree, a Compose stack or a volume, and needs no SSH key; a branch a
+      worktree holds is skipped and left to `kvb-git-gc`.
 - [x] The unit refuses, and changes nothing for, an item whose tip or state
       differs from the signed one, an unknown repository, a non-`merged-clean`
       item and a job with a bad or missing signature, and reports why.
@@ -746,11 +759,13 @@ flowchart TD
 
 Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
 
-- [ ] The tab shows tokens per agent and accumulated, and CPU, RAM, disk and
-      load, on the shared time axis, several values per chart.
-- [ ] Token counts equal the sum of the transcript usage fields of a fixture
-      (unit test); host samples come from the host unit's file, not from the
-      container.
+- ~~The tab shows tokens per agent and accumulated, and CPU, RAM, disk and
+  load, on the shared time axis, several values per chart.~~ Superseded by
+  003 decision 14, which replaces 001 S7 (struck 2026-11-13).
+- ~~Token counts equal the sum of the transcript usage fields of a fixture
+  (unit test); host samples come from the host unit's file, not from the
+  container.~~ Superseded by 003 decision 14, which replaces 001 S7 (struck
+  2026-11-13).
 
 ### Phase 6: shared cache (S8)
 
@@ -826,8 +841,8 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
       and the message field focused.
 - [x] Cancel mayday shows only its icon, keeps its tooltip, its confirmation
       and its passkey signature.
-- [ ] The spot shows the speaking caption, the last five sent messages and
-      the stations with play and stop.
+- [ ] The spot shows the speaking caption, the 004 radio log with its Sent
+      tab (004 decision 7) and the stations with play and stop.
 
 ### Phase 6: agent states and 3D faces (S5.3)
 
@@ -896,10 +911,11 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
         Stop and the call at its next tool step with a receipt to the caller.
   - [x] A mayday blocks an Edit until `clear`.
   - [x] The orchestrator's `/api/tree` serves a pkgmgr-written file.
-  - [ ] On a fixture repository with a file remote and a test token source, a
-        signed job through the path unit removes the merged worktree, the
-        local and the remote branch, and the rewritten tree no longer lists
-        them. Obsolete: contradicts decision 21; 003 decision 10 replaces it.
+  - ~~On a fixture repository with a file remote and a test token source, a
+    signed job through the path unit removes the merged worktree, the local
+    and the remote branch, and the rewritten tree no longer lists them.~~
+    Superseded by decision 21 (local only) and 003 decision 10, which
+    replaces it (struck 2026-11-13).
   - [ ] `make test` green on the HEAD that carries every phase (operator
         2026-11-12).
 - **E2E**

@@ -381,7 +381,9 @@ The work packages meet only through these interfaces:
 ### Simplicity
 
 - [ ] Every new control is a Bootstrap Icon with `title` and `aria-label`; no new
-      visible text beyond counts and names.
+      visible text beyond counts and names. A safety note on a destructive
+      confirmation sheet (the cleanup sheet's dry-run note) is allowed visible
+      text and not a control label.
 
 ### Tests
 
