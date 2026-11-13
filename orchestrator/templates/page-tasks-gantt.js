@@ -1,5 +1,7 @@
   const GANTT = {label: 240, right: 28, top: 34, lane: 30, width: 1180, bar: 16, ticks: 4};
-  const BURN = {width: 900, height: 340, left: 52, right: 24, top: 20, bottom: 40};
+  const BURN = {width: 900, height: 340, left: 52, right: 24, axis: 56, top: 20, bottom: 40};
+  const OVERLAY_PATH = "burn.overlays";
+  const scoreView = {key: "", rows: [], labels: null, busy: false, bound: false};
   const EDGE_WORDS = {after: "Follows (rasci.py set --after)", base: "Branches from (base branch)", queue: "Waits behind (queue order)"};
   const SERIES_WORDS = {scope: "Scope (burnup)", done: "Done (burnup)", remaining: "Remaining (burndown)", unestimated: "Unestimated tasks"};
   const STEP_WORDS = [["started", "Started"], ["ended", "Ended"], ["joined", "Joined the scope"]];
@@ -80,11 +82,11 @@
     return h("div", {class: "gantt-box"}, h("div", {class: "gantt-scroll"}, svg), legend);
   }
 
-  function burnAxis(svg, from, to, top) {
-    const x = (t) => BURN.left + ((t - from) / Math.max(to - from, 1)) * (BURN.width - BURN.left - BURN.right);
+  function burnAxis(svg, from, to, top, right) {
+    const x = (t) => BURN.left + ((t - from) / Math.max(to - from, 1)) * (BURN.width - BURN.left - right);
     const y = (value) => BURN.top + (1 - value / top) * (BURN.height - BURN.top - BURN.bottom);
     for (const value of [0, top / 2, top]) {
-      svg.append(s("line", {class: "grid", x1: BURN.left, x2: BURN.width - BURN.right, y1: fixed(y(value)), y2: fixed(y(value))}));
+      svg.append(s("line", {class: "grid", x1: BURN.left, x2: BURN.width - right, y1: fixed(y(value)), y2: fixed(y(value))}));
       svg.append(s("text", {class: "axis", x: BURN.left - 8, y: fixed(y(value)), dy: "0.35em", "text-anchor": "end"}, String(Math.round(value * 10) / 10)));
     }
     for (const [index, t] of [from, (from + to) / 2, to].entries()) {
@@ -165,6 +167,68 @@
     return {reach, end: forecast === null ? picked.to : Math.min(forecast, reach)};
   }
 
+  const overlaysReady = () => typeof ViewStore === "object" && typeof LegendChips === "object";
+
+  async function fetchScores(key, from, to) {
+    scoreView.busy = true;
+    scoreView.key = key;
+    try {
+      const response = await fetch(`/api/scores?from=${Math.floor(from)}&to=${Math.ceil(to)}`, {cache: "no-store"});
+      if (response.ok) {
+        const found = await response.json();
+        scoreView.rows = Array.isArray(found.rows) ? found.rows.filter((row) => row && row.values && typeof row.values === "object") : [];
+        scoreView.labels = Plan.overlayLabels(found.labels);
+      }
+    } catch {
+      ui.offline = true;
+    }
+    scoreView.busy = false;
+    taskView.sig = "";
+    drawTasks();
+  }
+
+  function overlayKeys() {
+    const kept = ViewStore.get(OVERLAY_PATH);
+    return Array.isArray(kept) && scoreView.labels ? Object.keys(scoreView.labels).filter((key) => kept.includes(key)) : [];
+  }
+
+  const burnRight = () => (overlaysReady() && overlayKeys().length ? BURN.axis : BURN.right);
+
+  function burnOverlays(svg, picked, x, right) {
+    const key = `${Math.floor(picked.from)}:${Math.floor(picked.to / 60)}`;
+    if (key !== scoreView.key && !scoreView.busy) {
+      fetchScores(key, picked.from, picked.to);
+    }
+    if (!scoreView.bound) {
+      scoreView.bound = true;
+      ViewStore.on(OVERLAY_PATH, () => {
+        taskView.sig = "";
+        drawTasks();
+      });
+    }
+    if (!scoreView.labels) {
+      return null;
+    }
+    const series = Plan.overlaySeries(picked.rows, scoreView.rows, overlayKeys(), picked);
+    const top = Plan.overlayTop(series);
+    const y = (value) => BURN.top + (1 - value / top) * (BURN.height - BURN.top - BURN.bottom);
+    if (series.length) {
+      for (const value of [0, top / 2, top]) {
+        svg.append(s("text", {class: "axis overlay-axis", x: BURN.width - right + 6, y: fixed(y(value)), dy: "0.35em", "text-anchor": "start"}, `${Math.round(value)} %`));
+      }
+    }
+    for (const {key: name, points} of series) {
+      const d = points.map((point, index) => `${index ? "L" : "M"}${fixed(x(point.t))},${fixed(y(point.value))}`).join(" ");
+      const group = s("g", {class: `burn-overlay k-${name}`, "data-overlay": name, "data-points": String(points.length)}, d ? s("path", {class: "burn-overlay-line", d}) : null);
+      for (const point of points) {
+        group.append(s("circle", {class: "burn-overlay-point", cx: fixed(x(point.t)), cy: fixed(y(point.value)), r: 3, "data-t": point.t, "data-value": point.value},
+          s("title", {}, `${absolute.format(stampOf(point.t))} · ${scoreView.labels[name]}: ${point.value} % · ${point.branch}`)));
+      }
+      svg.append(group);
+    }
+    return LegendChips.render(Object.entries(scoreView.labels).map(([key, label]) => ({id: key, label, tone: `k-${key}`})), OVERLAY_PATH, "shown");
+  }
+
   function burnChart(rows, shown) {
     const picked = Plan.scoped(rows, taskView.scope, {filtered: shown, since: state.since, until: state.until, now: state.now, holders: lineHolders()});
     const series = Plan.burn(picked.rows, {estimation: estimation(), from: picked.from, to: picked.to}).points;
@@ -177,7 +241,8 @@
     const top = Math.max(1, ...series.flatMap((point) => names.map((name) => point[name])), ...ends);
     const unit = estimation() === "points" ? "story points; unestimated tasks as a line of their own" : "tasks";
     const svg = s("svg", {class: "chart burn", viewBox: `0 0 ${BURN.width} ${BURN.height}`, role: "img", "aria-label": `Burndown and burnup in ${unit}; hover a point for the work packages of its step`});
-    const {x, y} = burnAxis(svg, picked.from, reach, top);
+    const right = burnRight();
+    const {x, y} = burnAxis(svg, picked.from, reach, top, right);
     const last = series[series.length - 1];
     if (reach > picked.to) {
       svg.append(s("line", {class: "now", x1: fixed(x(picked.to)), x2: fixed(x(picked.to)), y1: BURN.top, y2: BURN.height - BURN.bottom}));
@@ -191,10 +256,11 @@
       burnFinish(svg, segments, x, y);
     }
     svg.append(burnPoints(series, Plan.steps(picked.rows, series, picked.from), names, x, y));
+    const overlays = overlaysReady() ? burnOverlays(svg, picked, x, right) : null;
     const stale = h("span", {class: "pill burn-stale", "data-tone": "warn", "data-stale": String(picked.stale.length), role: "img", ...named(`Stale: ${picked.stale.length}`, `Stale: ${picked.stale.length} tasks without a register change for ${Plan.STALE_DAYS} days, counted apart`)}, icon("bi-hourglass-bottom"), String(picked.stale.length));
     const legend = h("div", {class: "legend"}, names.map((name) => h("span", {class: `burn-key k-${name}`, "data-series": name}, `${SERIES_WORDS[name]}: ${last[name]}`)),
       settings.trend.mode === "off" ? null : finishNotes(trend, finish), stale);
-    return h("div", {class: "burn-box"}, svg, legend, h("p", {class: "muted"}, `${picked.rows.length} tasks in scope, counted in ${unit}`));
+    return h("div", {class: "burn-box", "data-panel": "burndown"}, svg, legend, overlays, h("p", {class: "muted"}, `${picked.rows.length} tasks in scope, counted in ${unit}`));
   }
 
   async function chooseEstimation(id) {

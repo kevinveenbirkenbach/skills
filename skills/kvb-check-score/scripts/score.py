@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Fold fix confidence, break risk, cost, time and security into one score and one gate verdict.
+"""Fold fix confidence, break risk, tokens, velocity and security into one score and one gate verdict.
 
 Args:
     --fix: fix confidence in percent, 0 to 100.
     --break: break risk in percent, 0 to 100.
-    --efficiency: cost in percent above 0, from kvb-check-efficiency; `-` when not
+    --efficiency: tokens in percent above 0, from kvb-check-efficiency; `-` when not
         measured or not relevant, `new` when the change has no base. Both count as 100
         in the score.
-    --speed: time in percent above 0, from kvb-check-speed; `-` or `new` as for
+    --speed: velocity in percent above 0, from kvb-check-speed; `-` or `new` as for
         --efficiency.
     --security: security in percent, 0 to 100, from security.py of kvb-check-security;
         `~<n>` for a value from a review by hand.
@@ -19,24 +19,30 @@ Args:
     --commit <sha>: with --commit-table, the diff stat of that commit instead of
         the staged one, plus a commit column.
     --message-block: print the commit message block instead of the two lines, one
-        value per line: `🎯 Fix: <f> %`, `💥 Break: <b> %`, `💸 Cost: <c>`,
-        `⏱️ Time: <t>`, `🛡️ Security: <n> %`, `💰 Value: <n:n>` with --value only,
-        `🏆 Score: <n>`, `🚦 Gate: <verdict>`; values and markers as in line 1.
+        value per line: `🎯 Fix: <f> %`, `💥 Break: <b> %`, `💸 Tokens: <c>`,
+        `⏱️ Velocity: <t>`, `🛡️ Security: <n> %`, `💰 Value: <n:n>` with --value only,
+        `🏆 Score: <n>`, `🚦 Gate: <verdict>`; values and markers as in line 1. Each
+        render appends one row to the score journal of journal.py; a failed append
+        prints one stderr line and keeps the exit code.
     --value <n:n|?>: with --table, --commit-table or --message-block, a value after
-        the cost one (--message-block: after security): the cost:value quotient of
+        the tokens one (--message-block: after security): the cost:value quotient of
         tokens.py of kvb-check-efficiency, `?` when unknown. It changes neither score nor gate.
 
+Labels and emojis come from ../labels.json.
+
 Output:
-    Line 1: `🎯 fix <f> % · 💥 break <b> % · 💸 cost <c> % · ⏱️ time <t> % ·
+    Line 1: `🎯 fix <f> % · 💥 break <b> % · 💸 tokens <c> % · ⏱️ velocity <t> % ·
         🛡️ security <n> % · 🏆 score <n>`, `–` in place of `<x> %` for `-`, `new` for `new`.
-        Score is fix * (100 - break) / 100 * 100 / cost * 100 / time * security / 100,
+        Score is fix * (100 - break) / 100 * 100 / tokens * 100 / velocity * security / 100,
         capped to 0..100, rounded half up.
     Line 2: the gate verdict, `✅ gate: ...`, `⛔ gate: ...` or `⚠️ gate: ...`.
 
 Exit codes:
-    0 gate passed, 1 fix under 90 or break over 5, 2 usage error,
-    3 cost or time over 100 or new, or security under 100: ask the operator
-    before the commit, 4 a critical security finding: do not commit.
+    0 gate passed, 1 fix under 90 or break over 5, 2 usage error, a malformed
+    labels.json or a --commit-table repository git cannot read, one stderr line
+    and nothing on stdout (4 still wins with a critical finding), 3 tokens or
+    velocity over 100 or new, or security under 100: ask the operator before the
+    commit, 4 a critical security finding: do not commit.
 """
 
 from __future__ import annotations
@@ -44,8 +50,20 @@ from __future__ import annotations
 import argparse
 import math
 import re
-import subprocess
 import sys
+import time
+from pathlib import Path
+
+from journal import (
+    LABELS,
+    append,
+    entry,
+    git,
+    git_read,
+    journal_path,
+    load_labels,
+    origin,
+)
 
 FIX_MIN = 90
 BREAK_MAX = 5
@@ -54,12 +72,10 @@ SAFE = 100
 DASH = "-"
 NEW = "new"
 ESTIMATE = "~"
-SCORE_HEADER = ("🎯 Fix", "💥 Break", "💸 Cost", "⏱️ Time", "🛡️ Security", "🏆 Score", "Gate")
 COMMIT_HEADER = ("🌿 Branch", "📊 Diff stat")
 WORKTREE = "📁 Worktree:"
-VALUE_HEADER = "💰 Value"
-VALUE_AT = SCORE_HEADER.index("💸 Cost") + 1
 UNKNOWN = "?"
+LABEL_ERRORS = (OSError, ValueError, LookupError, TypeError, AttributeError)
 QUOTIENT = re.compile(r"\d+(?:\.\d+)?:\d+(?:\.\d+)?")
 SHORTSTAT = re.compile(
     r"(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?"
@@ -137,35 +153,42 @@ def over(name: str, value: float | str) -> str | None:
     return None
 
 
-def gate(args: argparse.Namespace) -> tuple[str, str, int]:
+def labels(keys: set[str]) -> tuple[dict, dict]:
+    """Args:
+        keys: the metric keys score.py measures.
+
+    Returns:
+        (metrics, extras) of labels.json; ValueError when it lacks one of the
+        keys, holds another or an entry has no string emoji and label.
+    """
+    found = load_labels(LABELS)
+    metrics, extras = found["metrics"], found["extras"]
+    named = [*metrics.values(), extras["value"], extras["gate"]]
+    if set(metrics) != keys or not all(isinstance(item["emoji"], str) and isinstance(item["label"], str) for item in named):
+        raise ValueError(f"needs a string emoji and label for {', '.join(sorted(keys))}, value and gate")
+    return metrics, extras
+
+
+def gate(args: argparse.Namespace, metrics: dict) -> tuple[str, str, int]:
+    def word(key: str) -> str:
+        return metrics[key]["label"].lower()
+
     if args.critical > 0:
-        return "⛔", "critical security finding: do not commit", 4
+        return "⛔", f"critical {word('security')} finding: do not commit", 4
     failed = []
     if args.fix < FIX_MIN:
-        failed.append(f"fix {number(args.fix)} % < {FIX_MIN}")
+        failed.append(f"{word('fix')} {number(args.fix)} % < {FIX_MIN}")
     if args.risk > BREAK_MAX:
-        failed.append(f"break {number(args.risk)} % > {BREAK_MAX}")
+        failed.append(f"{word('break')} {number(args.risk)} % > {BREAK_MAX}")
     value, mark = args.security
-    unsafe = f"security {mark}{number(value)} % < {SAFE}" if value < SAFE else None
-    asks = [text for text in (over("cost", args.efficiency), over("time", args.speed), unsafe) if text]
+    unsafe = f"{word('security')} {mark}{number(value)} % < {SAFE}" if value < SAFE else None
+    asks = [text for text in (over(word("tokens"), args.efficiency), over(word("velocity"), args.speed), unsafe) if text]
     ask = f"{', '.join(asks)}: ask the operator before the commit" if asks else ""
     if failed:
         return "⛔", "; ".join(part for part in (", ".join(failed), ask) if part), 1
     if asks:
         return "⚠️", ask, 3
-    return "✅", f"{FIX_MIN}/{BREAK_MAX}, cost and time <= {COST_MAX}, security {SAFE} %", 0
-
-
-def git(repo: str, *args: str) -> str:
-    try:
-        result = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=False)
-    except OSError as error:
-        print(f"score: git {args[0]} in {repo}: {error}", file=sys.stderr)
-        sys.exit(2)
-    if result.returncode != 0:
-        print(f"score: git {args[0]} in {repo}: {result.stderr.strip()}", file=sys.stderr)
-        sys.exit(2)
-    return result.stdout.strip()
+    return "✅", f"{FIX_MIN}/{BREAK_MAX}, {word('tokens')} and {word('velocity')} <= {COST_MAX}, {word('security')} {SAFE} %", 0
 
 
 def diffstat(shortstat: str) -> str:
@@ -217,37 +240,66 @@ def main() -> int:
         parser.error("--value needs --table, --commit-table or --message-block")
 
     total = score(args)
-    emoji, verdict, code = gate(args)
     value, mark = args.security
-    values = [
-        f"{number(args.fix)} %", f"{number(args.risk)} %", shown(args.efficiency), shown(args.speed),
-        f"{mark}{number(value)} %", str(total), f"{emoji} {verdict}",
-    ]
-    header, row = list(SCORE_HEADER), list(values)
+    measured = {
+        "fix": f"{number(args.fix)} %", "break": f"{number(args.risk)} %", "tokens": shown(args.efficiency),
+        "velocity": shown(args.speed), "security": f"{mark}{number(value)} %", "score": str(total),
+    }
+    try:
+        metrics, extras = labels(set(measured))
+    except LABEL_ERRORS as error:
+        print(f"score: labels {LABELS}: {error!r}", file=sys.stderr)
+        return 4 if args.critical > 0 else 2
+    emoji, verdict, code = gate(args, metrics)
+    verdict_cell = f"{emoji} {verdict}"
+    value_header = f"{extras['value']['emoji']} {extras['value']['label']}"
+    header = [*(f"{metric['emoji']} {metric['label']}" for metric in metrics.values()), extras["gate"]["label"]]
+    row = [*(measured[key] for key in metrics), verdict_cell]
     if args.value:
-        header.insert(VALUE_AT, VALUE_HEADER)
-        row.insert(VALUE_AT, args.value)
+        header.insert(list(metrics).index("tokens") + 1, value_header)
+        row.insert(list(metrics).index("tokens") + 1, args.value)
     if args.commit_table:
-        lead, cells = commit_cells(args.commit_table, args.commit)
-        top = git(args.commit_table, "rev-parse", "--show-toplevel")
+        try:
+            lead, cells = commit_cells(args.commit_table, args.commit)
+            top = git(args.commit_table, "rev-parse", "--show-toplevel")
+        except LookupError as error:
+            print(f"score: {error}", file=sys.stderr)
+            return 4 if code == 4 else 2
         print(table([*lead, *header], [*cells, *row]))
         print(f"\n{WORKTREE}\n\n```text\n{top}\n```")
     elif args.table:
         print(table(header, row))
     elif args.message_block:
-        worth_line = [f"💰 Value: {args.value}"] if args.value else []
-        print("\n".join((
-            f"🎯 Fix: {values[0]}", f"💥 Break: {values[1]}", f"💸 Cost: {values[2]}",
-            f"⏱️ Time: {values[3]}", f"🛡️ Security: {values[4]}", *worth_line,
-            f"🏆 Score: {total}", f"🚦 Gate: {values[6]}",
-        )))
+        lines = [f"{metric['emoji']} {metric['label']}: {measured[key]}" for key, metric in metrics.items()]
+        if args.value:
+            lines.insert(list(metrics).index("score"), f"{value_header}: {args.value}")
+        gate_label = extras["gate"]
+        block = "\n".join((*lines, f"{gate_label['emoji']} {gate_label['label']}: {verdict_cell}"))
+        print(block, flush=True)
+        journal(args, total, block)
     else:
-        print(
-            f"🎯 fix {values[0]} · 💥 break {values[1]} · 💸 cost {values[2]} · "
-            f"⏱️ time {values[3]} · 🛡️ security {values[4]} · 🏆 score {total}"
-        )
+        print(" · ".join(f"{metric['emoji']} {metric['label'].lower()} {measured[key]}" for key, metric in metrics.items()))
         print(f"{emoji} gate: {verdict}")
     return code
+
+
+def plain(value: float | str) -> float | int | None:
+    if not isinstance(value, float):
+        return None
+    return int(value) if value.is_integer() else value
+
+
+def journal(args: argparse.Namespace, total: int, block: str) -> None:
+    values = {
+        "fix": plain(args.fix), "break": plain(args.risk), "tokens": plain(args.efficiency),
+        "velocity": plain(args.speed), "security": plain(args.security[0]), "score": total,
+    }
+    path = journal_path()
+    try:
+        here = Path.cwd()
+        append(path, [entry(int(time.time()), origin(here), git_read(here, "branch", "--show-current") or None, None, values, block)])
+    except (OSError, ValueError) as error:
+        print(f"score: journal {path}: {getattr(error, 'strerror', None) or error}", file=sys.stderr)
 
 
 if __name__ == "__main__":

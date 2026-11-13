@@ -24,9 +24,9 @@ confirms it.
    branch fixes, each verified as the `kvb-git-issue-close` skill does.
 5. **Confirm** with one `AskUserQuestion`: title (Conventional Commits),
    base, state and labels. The state follows the bar of the `kvb-org-swarm`
-   skill (fix confidence ≥ 90 %, break risk ≤ 5 %, cost and time
+   skill (fix confidence ≥ 90 %, break risk ≤ 5 %, tokens and velocity
    ≤ 100 %): ready at or above it, a draft with the residuals in the body
-   below it. A cost or time over 100 % goes into this question with
+   below it. A tokens or velocity value over 100 % goes into this question with
    its cause.
 6. **Create**: `gh pr create --base <default> --head <branch> --title
    "<title>" --body-file <file>`, plus `--draft` below the bar.

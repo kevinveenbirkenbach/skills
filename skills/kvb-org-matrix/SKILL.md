@@ -38,8 +38,8 @@ One table, most-blocking first, one row per item:
 - **State**: `open`, `running`, `blocked`, `done`. `done` means verified (a
   passing run, a green check, a reproduction that now succeeds); work that
   merely looks finished is `open`.
-- **Score**: the `kvb-check-score` line (🎯 fix, 💥 break, 💸 cost,
-  ⏱️ time, 🏆 score) per the `kvb-check-confidence` skill, only for rows
+- **Score**: the `kvb-check-score` line (🎯 fix, 💥 break, 💸 tokens,
+  ⏱️ velocity, 🏆 score) per the `kvb-check-confidence` skill, only for rows
   that changed something; `-` for pure observation rows.
 - **Evidence / next step**: for `done` the strongest proof line (what ran,
   what it returned), otherwise the single next action.

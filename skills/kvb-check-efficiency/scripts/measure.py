@@ -9,26 +9,26 @@ Args:
         relative to each tree's root; its output is discarded.
 
 Runs:
-    One run per tree, base first. When cost and time are both at most 100 that
+    One run per tree, base first. When tokens and velocity are both at most 100 that
     is the result; otherwise 4 more runs per tree, alternating, and the arithmetic mean
     of all 5 per tree counts.
 
 Other load:
     A 1 s /proc/stat sample of system CPU busy before and after the runs, and per run
     the busy jiffies minus the command's own CPU time, as a share of all jiffies. When
-    any share exceeds 30 % or cannot be read, the result is an estimate: time comes
+    any share exceeds 30 % or cannot be read, the result is an estimate: velocity comes
     from the CPU-time ratio instead of wall time.
 
 Output:
-    `💸 cost <p> % (cpu <b>→<a> s, ram <b>→<a> MB) · ⏱️ time <p> % (wall <b>→<a> s)`,
+    `💸 tokens <p> % (cpu <b>→<a> s, ram <b>→<a> MB) · ⏱️ velocity <p> % (wall <b>→<a> s)`,
     then ` · mean of 5` after the extra runs. An estimate marks both values with `~`,
-    shows `(cpu <b>→<a> s)` for time and ends in `(estimated: other load <x> %)`, or
-    `unknown` for <x>. Cost is the mean of the CPU ratio (user plus system seconds
+    shows `(cpu <b>→<a> s)` for velocity and ends in `(estimated: other load <x> %)`, or
+    `unknown` for <x>. Tokens is the mean of the CPU ratio (user plus system seconds
     of the command and its waited-for children) and the peak RSS ratio; each ratio is
     working tree over base, times 100.
 
 Exit codes:
-    0 cost and time at most 100, 2 usage error or a failing command
+    0 tokens and velocity at most 100, 2 usage error or a failing command
     (its tree, exit code and last stderr line on stderr), 3 either over 100.
 """
 
@@ -56,6 +56,23 @@ CLOCK_TICKS = os.sysconf("SC_CLK_TCK")
 # Trip-wire: ru_maxrss counts kilobytes on Linux but bytes on macOS.
 RSS_UNIT = 1 if sys.platform == "darwin" else 1024
 USAGE = "usage: measure.py --base <ref> [--json] -- <command...>"
+LABELS = Path(__file__).resolve().parents[2] / "kvb-check-score" / "labels.json"
+LABEL_ERRORS = (OSError, ValueError, LookupError, TypeError)
+
+
+def labelled(keys: tuple[str, ...]) -> dict[str, str]:
+    """Args:
+        keys: metric keys of kvb-check-score's labels.json.
+
+    Returns:
+        Per key `<emoji> <label>`, the label in lower case; one of LABEL_ERRORS
+        for a missing or malformed file.
+    """
+    metrics = json.loads(LABELS.read_text(encoding="utf-8"))["metrics"]
+    found = {key: (metrics[key]["emoji"], metrics[key]["label"]) for key in keys}
+    if not all(isinstance(part, str) for pair in found.values() for part in pair):
+        raise ValueError(f"needs a string emoji and label for {', '.join(keys)}")
+    return {key: f"{emoji} {label.lower()}" for key, (emoji, label) in found.items()}
 
 
 def fail(message: str) -> None:
@@ -139,14 +156,14 @@ def figures(runs: dict[str, list[dict]], loads: list[float | None]) -> dict:
     }
 
 
-def line(found: dict) -> str:
+def line(found: dict, names: dict[str, str]) -> str:
     mark = "~" if found["estimated"] else ""
     basis = "cpu" if found["estimated"] else "wall"
     before, after = found["base"], found["head"]
     text = (
-        f"💸 cost {mark}{found['efficiency']} % (cpu {before['cpu']:.2f}→{after['cpu']:.2f} s, "
+        f"{names['tokens']} {mark}{found['efficiency']} % (cpu {before['cpu']:.2f}→{after['cpu']:.2f} s, "
         f"ram {before['ram']:.1f}→{after['ram']:.1f} MB) · "
-        f"⏱️ time {mark}{found['speed']} % ({basis} {before[basis]:.2f}→{after[basis]:.2f} s)"
+        f"{names['velocity']} {mark}{found['speed']} % ({basis} {before[basis]:.2f}→{after[basis]:.2f} s)"
     )
     if found["runs"] > 1:
         text += f" · mean of {found['runs']}"
@@ -175,6 +192,10 @@ def main(argv: list[str]) -> int:
     command = argv[split + 1:]
     if not command:
         fail("no command after --")
+    try:
+        names = {} if args.json else labelled(("tokens", "velocity"))
+    except LABEL_ERRORS as error:
+        fail(f"labels {LABELS}: {error!r}")
 
     here = Path.cwd().resolve()
     root = Path(git(here, "rev-parse", "--show-toplevel")).resolve()
@@ -206,7 +227,7 @@ def main(argv: list[str]) -> int:
         shutil.rmtree(parent, ignore_errors=True)
 
     found = figures(runs, loads + run_loads(runs))
-    print(json.dumps(found) if args.json else line(found))
+    print(json.dumps(found) if args.json else line(found, names))
     return 3 if costly(found) else 0
 
 

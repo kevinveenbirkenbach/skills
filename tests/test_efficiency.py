@@ -33,8 +33,8 @@ NEW_B = "💰 value ?:? (cost 0/day; pass --value with evidence; kvb-b new: all 
 CHEAP = "print('cheap')\n"
 COSTLY = "data = list(range(2_000_000))\nprint(sum(data))\n"
 LINE = re.compile(
-    r"^💸 cost (?P<mark>~?)(?P<efficiency>\d+) % \(cpu \d+\.\d\d→\d+\.\d\d s, ram \d+\.\d→\d+\.\d MB\) · "
-    r"⏱️ time (?P<speed_mark>~?)(?P<speed>\d+) % \((?P<basis>wall|cpu) \d+\.\d\d→\d+\.\d\d s\)(?P<tail>.*)$"
+    r"^💸 tokens (?P<mark>~?)(?P<efficiency>\d+) % \(cpu \d+\.\d\d→\d+\.\d\d s, ram \d+\.\d→\d+\.\d MB\) · "
+    r"⏱️ velocity (?P<speed_mark>~?)(?P<speed>\d+) % \((?P<basis>wall|cpu) \d+\.\d\d→\d+\.\d\d s\)(?P<tail>.*)$"
 )
 
 
@@ -121,7 +121,7 @@ class TestTokens(GitRepo):
         self.write("skills/kvb-a/scripts/tool.py", "print(1)\n" * 50)
         result = self.tokens()
         self.assertEqual(
-            result.stdout.splitlines(), ["💸 cost 50 % (skills 100→50 tokens; listing 3→3 words)", NO_VALUE]
+            result.stdout.splitlines(), ["💸 tokens 50 % (skills 100→50 tokens; listing 3→3 words)", NO_VALUE]
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -130,7 +130,7 @@ class TestTokens(GitRepo):
         self.write("skills/kvb-b/SKILL.md", SKILL_B.ljust(200, "y"))
         result = self.tokens()
         self.assertEqual(
-            result.stdout.splitlines(), ["💸 cost 200 % (skills 100→200 tokens; listing 3→5 words)", NEW_B]
+            result.stdout.splitlines(), ["💸 tokens 200 % (skills 100→200 tokens; listing 3→5 words)", NEW_B]
         )
         self.assertEqual(result.returncode, 3)
         result = self.tokens("--json")
@@ -157,7 +157,7 @@ class TestTokens(GitRepo):
     def test_only_new_files_print_new(self):
         self.write("skills/kvb-b/SKILL.md", SKILL_B.ljust(200, "y"))
         result = self.tokens()
-        self.assertEqual(result.stdout.splitlines(), ["💸 cost new (+50 tokens; listing 3→5 words)", NEW_B])
+        self.assertEqual(result.stdout.splitlines(), ["💸 tokens new (+50 tokens; listing 3→5 words)", NEW_B])
         self.assertEqual(result.returncode, 3)
         self.assertIsNone(json.loads(self.tokens("--json").stdout)["efficiency"])
 
@@ -165,14 +165,14 @@ class TestTokens(GitRepo):
         self.git("mv", "skills/kvb-a/notes.md", "skills/kvb-a/moved.md")
         result = self.tokens()
         self.assertEqual(
-            result.stdout.splitlines(), ["💸 cost 100 % (skills 100→100 tokens; listing 3→3 words)", NO_VALUE]
+            result.stdout.splitlines(), ["💸 tokens 100 % (skills 100→100 tokens; listing 3→3 words)", NO_VALUE]
         )
         self.assertEqual(result.returncode, 0)
 
     def test_no_change_is_100(self):
         result = self.tokens()
         self.assertEqual(
-            result.stdout.splitlines(), ["💸 cost 100 % (skills 0→0 tokens; listing 3→3 words)", NO_VALUE]
+            result.stdout.splitlines(), ["💸 tokens 100 % (skills 0→0 tokens; listing 3→3 words)", NO_VALUE]
         )
         self.assertEqual(result.returncode, 0)
 
@@ -193,7 +193,7 @@ class TestTokens(GitRepo):
         self.assertEqual(
             result.stdout.splitlines(),
             [
-                "💸 cost 869 % (skills 13→113 tokens; listing 3→5 words)",
+                "💸 tokens 869 % (skills 13→113 tokens; listing 3→5 words)",
                 "💰 value ?:? (cost 203/day; pass --value with evidence)",
             ],
         )
@@ -234,6 +234,22 @@ class TestTokens(GitRepo):
             "💰 value ?:? (cost 202/day; pass --value with evidence; kvb-c-new new: kvb-c median 2 invocations/day)",
         )
         self.assertEqual(result.returncode, 3)
+
+    def test_a_malformed_label_file_exits_2_with_one_stderr_line(self):
+        for text in ("{broken", json.dumps({"metrics": {"tokens": {"emoji": 1, "label": "Tokens"}}}), "[]"):
+            with self.subTest(labels=text):
+                labels = self.base / "labels.json"
+                labels.write_text(text, encoding="utf-8")
+                out, err = io.StringIO(), io.StringIO()
+                argv = ["--repo", str(self.repo), "--base", "HEAD", "--transcripts", str(self.base / "projects")]
+                with mock.patch.object(skill_tokens, "LABELS", labels), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    try:
+                        code = skill_tokens.main(argv)
+                    except SystemExit as stop:
+                        code = stop.code
+                self.assertEqual((code, out.getvalue()), (2, ""))
+                self.assertEqual(len(err.getvalue().splitlines()), 1, err.getvalue())
+                self.assertTrue(err.getvalue().startswith(f"tokens: labels {labels}: "), err.getvalue())
 
     def test_usage_errors_exit_2(self):
         self.assertEqual(self.tokens("--value", "5").returncode, 2)
@@ -380,6 +396,15 @@ class TestMeasure(GitRepo):
         trees = [line for line in self.git("worktree", "list", "--porcelain").splitlines() if line.startswith("worktree ")]
         self.assertEqual(trees, [f"worktree {self.repo.resolve()}"])
         self.assertLessEqual(set(Path("/tmp").glob("kvb-measure-*")), self.leftovers)
+
+    def test_a_malformed_label_file_exits_2_before_any_run(self):
+        labels = self.base / "labels.json"
+        labels.write_text(json.dumps({"metrics": {"tokens": {"emoji": "💸", "label": "Tokens"}}}), encoding="utf-8")
+        with mock.patch.object(measure, "LABELS", labels):
+            code, out, err, samples = self.measured("--base", "HEAD", "--", sys.executable, "work.py")
+        self.assertEqual((code, out, samples), (2, "", 0))
+        self.assertEqual(len(err.splitlines()), 1, err)
+        self.assertTrue(err.startswith(f"measure: labels {labels}: "), err)
 
     def test_cheaper_head_stops_after_one_run_each(self):
         self.write("pkg/work.py", CHEAP)

@@ -1,0 +1,14 @@
+{
+  "metrics": {
+    "fix": {"emoji": "🎯", "label": "Fix", "former": []},
+    "break": {"emoji": "💥", "label": "Break", "former": []},
+    "tokens": {"emoji": "💸", "label": "Tokens", "former": ["Cost", "Efficiency"]},
+    "velocity": {"emoji": "⏱️", "label": "Velocity", "former": ["Time", "Speed"]},
+    "security": {"emoji": "🛡️", "label": "Security", "former": []},
+    "score": {"emoji": "🏆", "label": "Score", "former": []}
+  },
+  "extras": {
+    "value": {"emoji": "💰", "label": "Value", "former": []},
+    "gate": {"emoji": "🚦", "label": "Gate", "former": []}
+  }
+}

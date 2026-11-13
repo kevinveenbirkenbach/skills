@@ -24,7 +24,7 @@ skill's Rules apply here too.
    --task <register task> -- <command>`, which waits for the rule-based
    grant and releases on exit. The fix enters the main line only
    at the funnel's bar (the `kvb-org-swarm` skill's: fix confidence ≥ 90 %,
-   break risk ≤ 5 %, cost and time ≤ 100 % in the `kvb-check-score`
+   break risk ≤ 5 %, tokens and velocity ≤ 100 % in the `kvb-check-score`
    block; over 100 %, ask the operator before the commit, naming the cause)
    after its independent review; below the bar the cluster ends as a
    proposal for the operator, never as a merge. Never mask a failure: no
