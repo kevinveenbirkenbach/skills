@@ -54,9 +54,16 @@ flowchart TD
 
 ### View store
 
-- [ ] A GET and PUT of `/api/view` round-trip; a malformed body, an unknown
-      key or more than 64 KiB answers 400 and stores nothing.
-- [ ] A PUT needs no passkey and leaves the signed settings file
+- [ ] A GET and a PATCH of `/api/view` round-trip; a PATCH sets only the
+      paths it names, each against the value the page last saw there (409
+      when another browser changed it meanwhile); a malformed body, an
+      unknown key, a body over 129 KiB (both values of a path at the cap
+      plus 1 KiB) or a document that would grow past 64 KiB answers 400 and
+      stores nothing, while a list at the cap can still shrink. Lists change
+      only by a function re-run on the stored value, scalars by replacement.
+      A page restored from the back-forward cache fetches the view again; a
+      change sent while leaving the page is dropped when it meets a 409.
+- [ ] A PATCH needs no passkey and leaves the signed settings file
       byte-identical.
 - [ ] The store is written atomically with mode 0600 and survives a hub
       restart.

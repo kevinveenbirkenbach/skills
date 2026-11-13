@@ -87,7 +87,8 @@ flowchart TD
 
 - [ ] Unit: registry lookup, layout validation, reorder math.
 - [ ] Integration: `/api/view` accepts the pins schema and refuses an
-      oversize or malformed one.
+      oversize or malformed one; a PATCH whose `expect` no longer matches
+      the stored pins gets 409, so two tabs never overwrite each other.
 - [ ] E2E: Chromium and Firefox at 1920, 1366 and 390: star and unstar,
       resize, reorder by drag and keyboard, the gone tile, the start tab;
       screenshots for the checkpoint.
