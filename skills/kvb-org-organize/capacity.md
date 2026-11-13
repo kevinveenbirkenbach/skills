@@ -51,7 +51,10 @@ and stays silent below the thresholds.
   plans a cleanup and grants no large slot.
 - **Stop**: new heavy jobs are blocked in every session (teardown commands
   never), and the hook runs the configured low-risk cleanup by itself; it
-  skips every worktree where a gate or deploy process still runs.
+  skips every worktree where a gate or deploy process still runs. Its
+  `docker image prune` removes only images whose repository and digest are
+  both `<none>`, so pulls by digest stay; `system prune`, `rmi`, `image rm`
+  and `compose down --rmi` are refused. An accident guard, not a sandbox.
 - **Critical**: additionally a desktop alarm to the operator. Running jobs and
   their stacks still keep running; only the operator can make an exception.
 - A measured fall that would reach the critical threshold within the
