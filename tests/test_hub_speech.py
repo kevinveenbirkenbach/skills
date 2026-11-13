@@ -183,13 +183,14 @@ class TestHubSpeech(HubCase):
             "--llm-key-file": os.devnull, "--llm-url": "", "--llm-model": "",
             "--piper": str(self.engines.piper), "--voices": str(self.engines.voices), "--operator-voice": "en_US-test-high:9", "--whisper": str(self.engines.whisper),
             "--whisper-model": str(self.engines.whisper_model), "--scratch": str(self.engines.scratch), "--approvers": str(self.approvers),
+            "--speech-url": "", "--speech-key-file": os.devnull,
         }
 
         def run(given: dict[str, str]) -> subprocess.CompletedProcess:
             argv = [part for pair in given.items() for part in pair]
             return subprocess.run([sys.executable, str(HUB / "server.py"), *argv], capture_output=True, text=True, timeout=60, check=False)
 
-        for name in ("--piper", "--voices", "--operator-voice", "--whisper", "--whisper-model", "--scratch", "--approvers", "--vendor", "--cleanup", "--offices"):
+        for name in ("--piper", "--voices", "--operator-voice", "--whisper", "--whisper-model", "--scratch", "--approvers", "--vendor", "--cleanup", "--offices", "--speech-url", "--speech-key-file"):
             with self.subTest(name=name):
                 done = run({key: value for key, value in args.items() if key != name})
                 self.assertEqual(done.returncode, 2, done.stderr)
@@ -197,6 +198,34 @@ class TestHubSpeech(HubCase):
         done = run(args)
         self.assertEqual(done.returncode, 2, done.stderr)
         self.assertIn("the operator voice 'en_US-test-high:9' is not installed", done.stderr)
+        secret = "op:hunter2"
+        done = run({**args, "--operator-voice": OPERATOR_VOICE, "--speech-url": f"https://{secret}@speech.example/v1"})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("the speech service URL must be http or https with a host and without userinfo", done.stderr)
+        self.assertNotIn(secret, done.stderr + done.stdout)
+        key_file = self.outside / "speech.key"
+        key_file.write_text("sk-plain-http-0123456789\n", encoding="utf-8")
+        done = run({**args, "--operator-voice": OPERATOR_VOICE, "--speech-url": "http://svc-ai-speech:8000/v1", "--speech-key-file": str(key_file)})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("the speech service key travels only over https or to 127.0.0.1, localhost or ::1", done.stderr)
+        self.assertNotIn("sk-plain-http", done.stderr + done.stdout)
+        done = run({**args, "--operator-voice": OPERATOR_VOICE, "--llm-url": "http://host.docker.internal:4000/v1", "--llm-model": "m", "--llm-key-file": str(key_file)})
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIn("the model endpoint key travels only over https or to 127.0.0.1, localhost or ::1", done.stderr)
+        self.assertNotIn("sk-plain-http", done.stderr + done.stdout)
+        key_file.write_text("sk-SECRET-0123\n# rotated 2026-11-13\n", encoding="utf-8")
+        for key_path, message in ((key_file, "the speech service key must be printable ASCII without whitespace"), (self.outside, f"the speech service key file {self.outside} is unreadable")):
+            with self.subTest(key_path=key_path):
+                done = run({**args, "--operator-voice": OPERATOR_VOICE, "--speech-url": "https://speech.example/v1", "--speech-key-file": str(key_path)})
+                self.assertEqual(done.returncode, 2, done.stderr)
+                self.assertIn(message, done.stderr)
+                self.assertNotIn("SECRET", done.stderr + done.stdout)
+        for key_path, message in ((key_file, "the model endpoint key must be printable ASCII without whitespace"), (self.outside, f"the model endpoint key file {self.outside} is unreadable")):
+            with self.subTest(llm_key_path=key_path):
+                done = run({**args, "--operator-voice": OPERATOR_VOICE, "--llm-url": "https://llm.example/v1", "--llm-model": "m", "--llm-key-file": str(key_path)})
+                self.assertEqual(done.returncode, 2, done.stderr)
+                self.assertIn(message, done.stderr)
+                self.assertNotIn("SECRET", done.stderr + done.stdout)
 
 
 class TestSpeechImage(unittest.TestCase):

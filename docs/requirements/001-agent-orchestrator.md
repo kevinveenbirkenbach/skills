@@ -754,10 +754,15 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
 
 ### Phase 6: shared cache (S8)
 
-- [ ] With `INFINITO_ARTEFACT_BASE` set, every `ADD` and clone of the image
+- [x] With `INFINITO_ARTEFACT_BASE` set, every `ADD` and clone of the image
       build uses `<base>/<host>/<path>` and the unchanged sha256 pins; unset,
       the build uses the upstream URLs (test over the rendered Dockerfile).
-- [ ] With a configured `svc-ai-speech` URL the hub sends STT and TTS there;
+      With the base set, the whisper.cpp clone becomes the source archive
+      `codeload.github.com/ggml-org/whisper.cpp/tar.gz/d1be6fde11ac6e0407606b4e42fe72d34add8037`
+      (tag v1.9.5). Its pin `645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4`
+      was taken on 2026-11-13 by `curl -fsSL` of that upstream URL into
+      `sha256sum`; a changed GitHub archive fails the build on the checksum.
+- [x] With a configured `svc-ai-speech` URL the hub sends STT and TTS there;
       without it the in-container engines answer (unit test with a stub).
 - [ ] `make orchestrator-install` succeeds in a scratch HOME without any core
       stack.

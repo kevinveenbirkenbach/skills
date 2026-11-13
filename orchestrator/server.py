@@ -39,8 +39,8 @@
     --llm-url: base URL of an OpenAI-compatible chat endpoint; empty turns the
         natural-language command line off.
     --llm-model: model name sent to that endpoint; empty turns it off.
-    --llm-key-file: file holding the endpoint's bearer key; empty file or
-        unreadable means no key.
+    --llm-key-file: file holding the endpoint's bearer key; an empty file
+        means no key, an unreadable one stops the start.
     --piper: the Piper executable, run as a separate process; missing turns
         speech output off.
     --voices: directory holding the Piper voices as <model>.onnx with
@@ -51,6 +51,12 @@
         input off.
     --whisper-model: the ggml model whisper.cpp loads.
     --scratch: writable directory the engines use as HOME and TMPDIR.
+    --speech-url: base URL with /v1 of an OpenAI-compatible audio API such as
+        the core role svc-ai-speech; /api/tts and /api/stt then render there
+        instead of in Piper and whisper.cpp, behind the same CPU gate and
+        transcription limits. Empty keeps the in-container engines.
+    --speech-key-file: file holding that service's bearer key; an empty file
+        means no key, an unreadable one stops the start.
     --approvers: the pinned passkeys, mounted read-only; the hub lists their
         ids and algorithms for the page, never pins, and verifies a signature
         only for the operator messages, denials and rules it acts on itself,
@@ -70,9 +76,11 @@ from kvb_orchestrator.errors import ToolError
 from kvb_orchestrator.exchange import HubServer
 from kvb_orchestrator.handler import Handler
 from kvb_orchestrator.hub import Places, open_hub
-from kvb_orchestrator.language import Model, read_key
+from kvb_orchestrator.keys import key_from
+from kvb_orchestrator.language import Model
 from kvb_orchestrator.redirects import TIMEOUT, Redirects, dial
 from kvb_orchestrator.skill_scripts import Scripts
+from kvb_orchestrator.speechservice import Service
 
 
 def main() -> int:
@@ -81,9 +89,9 @@ def main() -> int:
     for name in ("--listen-port", "--public-port"):
         parser.add_argument(name, type=int, required=True)
     paths = ("--council", "--pages", "--state", "--host-state", "--skills", "--transcripts", "--templates", "--tree-file", "--timers", "--kept", "--vendor", "--cleanup", "--offices", "--llm-key-file", "--approvers")
-    for name in (*paths, "--piper", "--voices", "--whisper", "--whisper-model", "--scratch"):
+    for name in (*paths, "--piper", "--voices", "--whisper", "--whisper-model", "--scratch", "--speech-key-file"):
         parser.add_argument(name, type=Path, required=True)
-    for name in ("--llm-url", "--llm-model", "--operator-voice"):
+    for name in ("--llm-url", "--llm-model", "--operator-voice", "--speech-url"):
         parser.add_argument(name, required=True)
     args = parser.parse_args()
     try:
@@ -97,8 +105,16 @@ def main() -> int:
             scripts=Scripts(skills=args.skills, council=args.council, home=args.state),
             templates=args.templates,
             places=Places(tree_file=args.tree_file, timers=args.timers, vendor=args.vendor, cleanup=args.cleanup, offices=args.offices, kept=args.kept),
-            model=Model(url=args.llm_url.strip(), model=args.llm_model.strip(), key=read_key(args.llm_key_file)),
-            engines=Engines(piper=args.piper, voices=args.voices, operator_voice=args.operator_voice, whisper=args.whisper, whisper_model=args.whisper_model, scratch=args.scratch),
+            model=Model(url=args.llm_url.strip(), model=args.llm_model.strip(), key=key_from(args.llm_key_file, "model endpoint")),
+            engines=Engines(
+                piper=args.piper,
+                voices=args.voices,
+                operator_voice=args.operator_voice,
+                whisper=args.whisper,
+                whisper_model=args.whisper_model,
+                scratch=args.scratch,
+                service=Service(url=args.speech_url.strip(), key=key_from(args.speech_key_file, "speech service")),
+            ),
             approvers=args.approvers,
             redirects=Redirects(tls=ssl.create_default_context(), dial=dial, timeout=TIMEOUT),
         )
