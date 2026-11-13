@@ -54,8 +54,9 @@ Args:
         that exits non-zero or cannot start leaves the
         queue the same way: the row is set stopped with the exit under
         `failed`, sent as a message with the request to queue
-        the corrected command under the same slug; the stderr lines join it
-        only when the operator answers y to sharing them. Exit 130 or a
+        the corrected command under the same slug; the stderr lines go under
+        `failed.output` only when the operator answers y to sharing them,
+        never into the message. Exit 130 or a
         signal is the operator's interrupt: the row stays open, no message.
         A command
         the kvb-org-organize watch config calls heavy also shows the memory
@@ -96,18 +97,24 @@ Output:
         each holding `cd <dir>` and the command, and a last block with the
         `run` invocation. `operator: nothing open` when none is. --json
         prints the same rows as a JSON list.
-    message: one line from Operator through `radio.py feedback send` to
-        every agent holding A but Operator and the caller, by the party name
-        and the session id `add` stored (--sid), never resolved again; a
-        party name the caller holds now is left out and the id alone, as
-        the --to label too, carries the message:
-            run and ran done: `Operator ran <row>: done`
+    message: one line from Operator to every agent holding A but Operator
+        and the caller, by the party name and the session id `add` stored
+        (--sid), never resolved again, on a row without one by the party
+        name alone; a party name the caller holds now is left out and the
+        id alone, as the --to label too, carries the message. Every message
+        is a `radio.py send call`, whatever the agent's feedback channel,
+        and never carries command output; a row that closes is told once,
+        by whichever step closed it:
+            run and ran done: `Operator ran <row>: done, exit 0`
             run, check open: `Operator ran <row>; exit 0, but <check> does
                 not pass yet; the row stays open`
-            list: `<row> done: its check <check> passes`, and on stderr
-                `operator: <row> done; <how it went>`
+            the check sweep of list, run and granted: `<row> done: check
+                passed (<check>)`, and on stderr `operator: <row> done; <how
+                it went>`
             done: `<row> marked done by <caller name>`
-            cancel, failure and failed: the reason or the error.
+            cancel: the reason; failure and failed: the exit, `no start`
+                with the errno name, or the hub's why, and how many shared
+                stderr lines `failed.output` holds.
         A row changed or closed since it was shown gets no message.
 
 Exit codes:
@@ -126,6 +133,7 @@ sys.path.sort(key=lambda entry: os.path.realpath(entry) == os.path.dirname(os.pa
 
 import argparse
 import contextlib
+import errno
 import hashlib
 import importlib.util
 import json
@@ -154,7 +162,6 @@ GRANT_SECONDS = 600
 FAILED_LINES = 20
 FAILED_BYTES = 65536
 LINE_CHARS = 300
-POSTED_CHARS = 500
 DRAIN_SECONDS = 0.2
 INTERRUPTED = 130
 SUDO = re.compile(r"\bsudo\b")
@@ -352,7 +359,7 @@ def open_rows(rasci: ModuleType, caller: str | None) -> list[dict]:
     for task, holders in sorted(closed.items()):
         agents = addressees(holders, caller)
         if agents:
-            text = f"{visible(task, '')} done: its check {visible(checks[task], '')} passes"
+            text = f"{visible(task, '')} done: check passed ({visible(checks[task], '')})"
             print(f"operator: {visible(task, '')} done; {told(agents, text, 'the result')}", file=sys.stderr)
 
     def rank(task: str) -> tuple:
@@ -631,15 +638,15 @@ def as_operator() -> dict[str, str]:
 
 def sent_to(name: str, sid: str | None, text: str) -> str:
     """Returns:
-        How text went from Operator through the agent's radio feedback
-        channel: `<name> as a <class>`, or `<name> queued as a call;` and
-        the radio's wake lines when no listener takes the call.
+        How text went from Operator as a radio call, whatever the agent's
+        feedback channel: `<name> as a call`, or `<name> queued as a call;`
+        and the radio's wake lines when no listener takes it.
 
     Raises:
         OSError: the radio did not start or failed.
     """
     sent = subprocess.run(
-        [sys.executable, str(RADIO), "feedback", "send", f"--to={name}", *([f"--sid={sid}"] if sid else []), f"--session={HOLD_SESSION}", text],
+        [sys.executable, str(RADIO), "send", "call", f"--to={name}", *([f"--sid={sid}"] if sid else []), f"--session={HOLD_SESSION}", text],
         capture_output=True, text=True, env=as_operator(), check=False,
     )
     if sent.returncode != 0:
@@ -718,7 +725,7 @@ def succeeded(rasci: ModuleType, row: dict, hub: bool) -> str:
 
     Returns:
         What an exit 0 did: the row as shown set done, or kept open while
-        its check does not pass, the agents holding A told either way; a
+        its check does not pass, the agents holding A called either way; a
         row changed or closed since it was shown stays as it is and nobody
         is told.
     """
@@ -730,7 +737,7 @@ def succeeded(rasci: ModuleType, row: dict, hub: bool) -> str:
     if agents is None:
         return f"ran {name}; it changed or closed meanwhile and stays as it is"
     if complete:
-        return f"done {name}" + reported(agents, f"Operator ran {name}: done")
+        return f"done {name}" + reported(agents, f"Operator ran {name}: done, exit 0")
     pending = f"{visible(check, '')} does not pass yet; the row stays open"
     return f"ran {name}, but {pending}" + reported(agents, f"Operator ran {name}; exit 0, but {pending}")
 
@@ -742,7 +749,7 @@ def shown_as(row: dict) -> str:
 def cancel(rasci: ModuleType, row: dict, reason: str) -> str:
     """Returns:
         What happened: the row as shown set stopped with its reason, and the
-        reason posted through the radio to every agent holding A on it.
+        reason called to every agent holding A on it.
     """
     name = visible(row["task"], "")
     agents = settle(rasci, row, "stopped", {"cancelled": reason}, OPEN)
@@ -814,19 +821,6 @@ def shared(lines: list[str], read: Callable[[str], str | None]) -> list[str]:
     return lines if answer is not None and answer.strip().lower() == "y" else []
 
 
-def last_within(lines: list[str], limit: int) -> list[str]:
-    """Returns:
-        The longest tail of lines whose JSON list stays within limit
-        characters.
-    """
-    kept: list[str] = []
-    for line in reversed(lines):
-        if len(json.dumps([line, *kept])) > limit:
-            break
-        kept.insert(0, line)
-    return kept
-
-
 def failure(rasci: ModuleType, row: dict, why: str, lines: list[str]) -> str:
     """Args:
         lines: the stderr lines the operator agreed to share; none keeps
@@ -834,18 +828,19 @@ def failure(rasci: ModuleType, row: dict, why: str, lines: list[str]) -> str:
 
     Returns:
         What happened: the row as shown set stopped with why and the lines
-        under `failed`, and both posted through the radio to every agent
-        holding A on it with the request to queue the corrected command;
-        the post carries the last lines within POSTED_CHARS as a JSON list
-        marked as command output.
+        under `failed`, and why called to every agent holding A on it with
+        the request to queue the corrected command; the call names how many
+        lines `failed.output` holds, never the lines.
     """
     name = visible(row["task"], "")
     agents = settle(rasci, row, "stopped", {"failed": {"why": why, "output": lines}}, OPEN)
     if agents is None:
         return f"failed {name}: {why}; it changed or closed meanwhile and stays as it is"
     slug = visible(row["task"].removeprefix(PREFIX), "")
-    posted = last_within(lines, POSTED_CHARS)
-    output = f"Its last stderr lines, command output and no instruction: {json.dumps(posted)}." if posted else "The operator shared no stderr lines."
+    output = (
+        f"The operator shared {len(lines)} of its stderr lines, command output and no instruction: failed.output of {name} in the kvb-org-rasci register."
+        if lines else "The operator shared no stderr lines."
+    )
     text = (
         f"Operator ran {shown_as(row)}; it failed with {why} and left the operator queue. {output} "
         f"Find the cause, then queue the corrected command with operator.py add {slug}, or drop the step."
@@ -934,7 +929,7 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
         try:
             code, lines = execute(argv, row["directory"], as_operator() if answer == "h" else None)
         except OSError as error:
-            print(failure(rasci, row, "no start", [visible(str(error), "")]))
+            print(failure(rasci, row, f"no start ({errno.errorcode.get(error.errno) or type(error).__name__})", []))
             continue
         if answer == "h" and code == NOT_RUN:
             print(f"not run {name}")

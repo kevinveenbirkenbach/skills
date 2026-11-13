@@ -52,10 +52,11 @@ order (commits, pushes, installs, binaries, removals, manual steps), one
 operator reports a `manual` step done, run `operator.py done <slug>`.
 
 `run` is the operator's script, never an agent's; `run.md` next to this
-file says what it shows and asks. Operator reports each outcome of your row
-through your `radio.py feedback` channel. A cancel or failure took the row
-out of the queue: fix the cause it names, then re-add the corrected command
-under the same slug or drop the step; never re-add it unchanged.
+file says what it shows and asks. Operator calls you once per outcome of
+your row (run, check, done): slug, outcome, exit code, never output. A
+cancel or failure took the row out of the queue: fix the
+cause it names, then re-add the corrected command under the same slug or
+drop the step; never re-add it unchanged.
 
 Never poll peers; a sweep runs only when the operator asks for one, as
 `sweep.md` next to this file says.

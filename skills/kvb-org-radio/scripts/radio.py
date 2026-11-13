@@ -15,13 +15,15 @@ Environment:
         trusts before the notify argv runs.
 
 Args:
-    send <class> "<text>" [--to <name> ...] [--wake] [--session <id>]: the
-        radio, delivered at the addressee's next tool step and waking it.
+    send <class> "<text>" [--to <name> ...] [--wake] [--sid <id>]
+        [--session <id>]: the radio, delivered at the addressee's next tool
+        step and waking it.
         call needs --to; broadcast, security, pan-pan and mayday go to all
         and take no --to. direct is the old alias: with --wake a call,
         without it a post. mayday also sets radio silence
         (<root>/radio-silence.json) for two hours. Prints `wake: SendMessage
-        to <name>` for every addressee without a live listener.
+        to <name>` for every addressee without a live listener. --sid pins
+        a call with a single --to to that session as in feedback send.
     post "<text>" [--to <name> ...] [--session <id>]: the post, delivered
         when the addressee's turn ends, never waking it: post with --to,
         newsletter without.
@@ -47,9 +49,9 @@ Args:
         The mayday's sender and its helpers pass. Never fails.
     show [--all] [--session <id>]: print the active silence and the
         undelivered rows, or every kept row, without delivering them.
-    feedback set post|call [--session <id>]: store how outcomes of the
-        session's queued operator commands reach it, in <root>/feedback.json;
-        post unless set.
+    feedback set post|call [--session <id>]: store the channel feedback
+        send uses for the session, in <root>/feedback.json; post unless set.
+        operator.py does not use it: it always calls.
     feedback show [--session <id>]: print the session's channel.
     feedback send "<text>" --to <name> ... [--sid <id>] [--session <id>]: send
         text to each name as a call when the session --sid names, else the
@@ -395,7 +397,9 @@ def cmd_send(args: argparse.Namespace) -> int:
         cls = "call" if args.wake else "post"
     elif args.wake:
         fail("--wake only with direct; a call always wakes")
-    return transmit(cls, args.to or [], args.text, args.session, [])
+    if args.sid and (cls != "call" or len(args.to or []) != 1):
+        fail("--sid takes a call with a single --to")
+    return transmit(cls, args.to or [], args.text, args.session, [args.sid] if args.sid else [])
 
 
 def cmd_post(args: argparse.Namespace) -> int:
@@ -668,6 +672,7 @@ def main() -> int:
     p.add_argument("text")
     p.add_argument("--to", action="append")
     p.add_argument("--wake", action="store_true")
+    p.add_argument("--sid")
     p.add_argument("--session")
     p.set_defaults(func=cmd_send)
     p = sub.add_parser("post")
