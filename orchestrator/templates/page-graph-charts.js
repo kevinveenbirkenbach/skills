@@ -158,7 +158,7 @@
   }
 
   function legend() {
-    return h("div", {class: "legend"}, LEGEND.map(([name, label]) => h("span", {}, h("i", {class: `swatch t-${name}`}), label)),
+    return h("div", {class: "legend", "data-star-slot": ""}, LEGEND.map(([name, label]) => h("span", {}, h("i", {class: `swatch t-${name}`}), label)),
       h("span", {class: "muted"}, "Line width = count · closeness = recent collaboration"));
   }
 

@@ -20,4 +20,6 @@
 .home-agent { display: grid; gap: var(--sp-2); }
 @media (max-width: 640px) {
   .home-tile { grid-column: 1 / -1; }
+  .legend[data-star-slot] > .star { order: 1; }
+  .legend[data-star-slot] > .muted { order: 2; }
 }
