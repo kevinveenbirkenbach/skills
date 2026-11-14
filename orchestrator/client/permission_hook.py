@@ -16,14 +16,17 @@ Returns:
         reason only when a pinned passkey signed it. Nothing on timeout,
         error, a missing or invalid signature, a value longer than the hub
         takes or a hub that is down, so Claude Code shows its own dialog.
-        The exit code is 0. An ask for a Bash git commit carries the diff
-        staged_diff.py builds of the tree its directory stages (of the
-        working tree against HEAD with -a or --all), content withheld per
-        the MEDUSA rules of the pipx install; none when it cannot be built
-        or the body would pass DIFF_BODY_LIMIT. An allow of such an ask
-        turns into a deny with CHANGED when what the commit records
+        The exit code is 0. An ask for a Bash git commit of exactly the
+        staged index (staged_diff.commit_of) carries the diff staged_diff.py
+        builds of the tree its directory stages, content withheld per the
+        MEDUSA rules of the pipx install; none when it cannot be built or
+        the body would pass DIFF_BODY_LIMIT. An allow of such an ask turns
+        into a deny with CHANGED when what the commit records
         (staged_diff.binding) differs right before answering from the
-        preview's, and with UNBOUND when either cannot be read.
+        preview's, and with UNBOUND when either cannot be read. Any other
+        Bash command that may run git commit (-a, --all, -i, -o, -p, a
+        pathspec, a chain, a wrapper) is not approvable: no ask reaches the
+        hub, stderr gets WORKTREE and Claude Code shows its own dialog.
 """
 
 from __future__ import annotations
@@ -50,6 +53,8 @@ LIMITS = {"tool": NAME_LIMIT, "command": COMMAND_LIMIT, "cwd": PATH_LIMIT, "sess
 DENIED = "The operator denied this in the Agent Orchestrator."
 CHANGED = "staged tree changed since the preview"
 UNBOUND = "the staged tree cannot be read, so the allow is not bound to it"
+WORKTREE = "commit reads the working tree; stage the files and commit the index"
+ALLOW = {"behavior": "allow"}
 REASON_LIMIT = 2000
 FAILURES = (OSError, ValueError, staged_diff.DiffError)
 
@@ -72,8 +77,12 @@ def facts(hook: dict) -> dict:
     }
 
 
-def commit_target(ask: dict) -> tuple[Path, bool] | None:
+def commit_target(ask: dict) -> Path | None:
     return staged_diff.commit_of(ask["command"], ask["cwd"]) if ask["tool"] == "Bash" and ask["cwd"] else None
+
+
+def unapprovable(ask: dict) -> bool:
+    return ask["tool"] == "Bash" and staged_diff.names_commit(ask["command"]) and commit_target(ask) is None
 
 
 def commit_diff(ask: dict, rules: Path | None) -> tuple[str | None, dict]:
@@ -86,12 +95,12 @@ def commit_diff(ask: dict, rules: Path | None) -> tuple[str | None, dict]:
     if target is None:
         return None, {}
     try:
-        pinned = staged_diff.binding(*target)
+        pinned = staged_diff.binding(target)
     except FAILURES as error:
         print(f"kvb-orchestrator: the ask goes without its diff and an allow of it turns into a deny: {error}", file=sys.stderr)
         return None, {}
     try:
-        return pinned, {"diff": staged_diff.bound_diff(*target, pinned, rules)}
+        return pinned, {"diff": staged_diff.bound_diff(target, pinned, rules)}
     except FAILURES as error:
         print(f"kvb-orchestrator: the ask goes without its diff: {error}", file=sys.stderr)
         return pinned, {}
@@ -128,12 +137,17 @@ def bound(chosen: dict | None, ask: dict, pinned: str | None) -> dict | None:
     Returns:
         chosen, or for an allow of a commit ask a deny with CHANGED when
         what it records now differs from pinned, with UNBOUND and the error
-        when either cannot be read.
+        when either cannot be read; None for an allow of an unapprovable ask.
     """
-    if chosen != {"behavior": "allow"} or commit_target(ask) is None:
+    if chosen != ALLOW:
+        return chosen
+    if unapprovable(ask):
+        return None
+    target = commit_target(ask)
+    if target is None:
         return chosen
     try:
-        now = staged_diff.binding(*commit_target(ask))
+        now = staged_diff.binding(target)
     except FAILURES as error:
         return {"behavior": "deny", "message": f"{UNBOUND}: {clean(str(error))}"}
     if pinned is None:
@@ -206,6 +220,9 @@ def main() -> int:
         too_long = [name for name, limit in LIMITS.items() if len(ask[name]) > limit]
         if too_long:
             print(f"kvb-orchestrator: {', '.join(too_long)} too long to sign in full, Claude Code asks instead", file=sys.stderr)
+            return 0
+        if unapprovable(ask):
+            print(f"kvb-orchestrator: {WORKTREE}", file=sys.stderr)
             return 0
         pinned, shown = commit_diff(ask, staged_diff.rules_root())
         ask_id = create(base, ask, args.timeout, shown)

@@ -447,7 +447,7 @@ pin() {
 
 hook() {
 	local command
-	command="python3 \"${HUB}/client/permission_hook.py\" --port $(port_of "${HUB}/.env") --timeout ${HOOK_TIMEOUT} --approvers \"${APPROVERS}/approvers.json\" --replay \"${APPROVALS}/hook.json\""
+	command="/usr/bin/python3 -E -s \"${HUB}/client/permission_hook.py\" --port $(port_of "${HUB}/.env") --timeout ${HOOK_TIMEOUT} --approvers \"${APPROVERS}/approvers.json\" --replay \"${APPROVALS}/hook.json\""
 	[[ -f "${SETTINGS}" ]] && cp -p "${SETTINGS}" "${SETTINGS}.before-${NAME}-hook"
 	rewrite_hooks "${SETTINGS}" "${NAME}/client/permission_hook.py" "${command}" "$((HOOK_TIMEOUT + 10))"
 	log "skills: registered the PermissionRequest hook in ${SETTINGS} (copy before: ${SETTINGS}.before-${NAME}-hook); restart Claude Code to load it"

@@ -1,48 +1,47 @@
 """Args:
     cwd: the working directory whose repository the diff is taken of.
-    everything: False for the staged tree against HEAD (git diff --cached),
-        True for what git commit -a records (every index path as it lies in
-        the working tree) against HEAD.
     tree: for tree_diff, the tree object (git write-tree) diffed against
         HEAD instead of the live index.
     rules: the MEDUSA rules directory, None when MEDUSA is not installed.
-    pinned: for bound_diff, what binding returned for the same cwd and everything.
+    pinned: for bound_diff, what binding returned for the same cwd.
 
 Returns:
-    review_diff, tree_diff, bound_diff: the review diff of requirement 003,
-        one {path, status, mode, additions, deletions, patch, note} per
-        changed path, sorted by path, status A, M, D or B (binary); path is
-        the file name with bytes that are no UTF-8 written as backslash
-        escapes; mode the git file mode, "old => new" when it changed (with
-        everything, the executable bit on disk). patch holds the unified
+    review_diff, tree_diff, bound_diff: the review diff of requirement 003
+        of the staged tree against HEAD (git diff --cached), one {path,
+        status, mode, additions, deletions, patch, note} per changed path,
+        sorted by path, status A, M, D or B (binary); path is the file name
+        with bytes that are no UTF-8 written as backslash escapes; mode the
+        git file mode, "old => new" when it changed. patch holds the unified
         hunks; it is empty for a binary file, a gitlink, a side over
         BLOB_LIMIT bytes (counted 0/0), a path sandbox_paths denies (its
         FLOOR and the settings' deny lists) and every file past DIFF_LIMIT
         bytes of JSON-encoded patch text. A file whose old or new content
         holds an ARMOUR line or matches a MEDUSA secret rule for its name,
         and every file when no secret rule pattern loads, ships no patch,
-        only its counts and the note WITHHELD. With everything, a working
-        tree file over BLOB_LIMIT or under a denied path is not read and so
-        always counts as changed. The diff fails when more than FILE_CAP
-        paths changed or one is longer than PATH_LIMIT, a settings file
-        sandbox_paths reads is unreadable, the working tree lies under a
-        denied path, HEAD exists but its tree cannot be listed, HEAD is
-        neither a commit nor unborn, or for bound_diff, the working tree
-        changed while it was read.
+        only its counts and the note WITHHELD. The diff fails when more
+        than FILE_CAP paths changed or one is longer than PATH_LIMIT, a
+        settings file sandbox_paths reads is unreadable, the working tree
+        lies under a denied path, HEAD exists but its tree cannot be listed,
+        HEAD is neither a commit nor unborn, or for bound_diff, the index no
+        longer matches pinned.
     binding: what a commit records, for the permission hook to bind an
-        allow to: the tree git write-tree prints; with everything, joined by
-        the digest of every index path's mode and content id as it lies in
-        the working tree, a file not read by its size, inode and times.
-    commit_of: the directory and -a mode of a single git commit whose
-        preview matches what it records, None for any other command.
+        allow to: the sha256 of staged() (the mode, object id and name of
+        every index entry git write-tree records, so no intent-to-add one;
+        an index with unmerged paths fails).
+    commit_of: the directory of a single git commit that records exactly
+        the staged index, None for any other command.
+    names_commit: whether a command may run git commit anywhere in it.
 
-Only git plumbing runs (rev-parse, symbolic-ref, ls-tree, ls-files, cat-file,
-write-tree) with core.fsmonitor and lazy fetching off, and the diff itself is computed here:
+Every git call runs GIT with core.fsmonitor, core.hooksPath, lazy fetching,
+the system and the global config off, and an environment of only PASSED_ENV
+and FIXED_ENV (PATH set to TRUSTED_PATH). The permission hook path
+(binding, bound_diff, commit_of) runs only plumbing that writes nothing
+(rev-parse, symbolic-ref, ls-tree, ls-files, cat-file); only approval.py, run
+inside the sandbox, adds git write-tree. The diff itself is computed here:
 the permission hook calls this outside the sandbox in a directory the agent
-chose, where a planted repository config, filter, diff driver or promisor
-remote must start no program, and a working tree path must not lead the read
-through a symlinked directory, out of the working tree or into a path the
-sandbox denies reading.
+chose, where a planted repository config, hook, filter, diff driver, promisor
+remote or program on PATH must start nothing, and nothing in the working tree
+is read.
 """
 
 from __future__ import annotations
@@ -54,7 +53,6 @@ import json
 import os
 import re
 import shlex
-import stat
 import subprocess
 from pathlib import Path
 
@@ -70,15 +68,21 @@ BINARY_PROBE = 8000
 CONTEXT = 3
 GIT_TIMEOUT = 30
 GITLINK = "160000"
-SYMLINK = "120000"
-REGULAR = "100644"
-EXECUTABLE = "100755"
 SECRET_CWE = re.compile(r"CWE-(?:259|321|540|798)\b")
 RULES_HOME = Path.home() / ".local" / "pipx" / "venvs" / "medusa-security" / "lib"
 RULES_TAIL = "python3*/site-packages/medusa/rules"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "kvb-orchestrator" / "secret-rules.json"
-UNREAD = "unread"
-SAFE = ("git", "--no-pager", "--no-lazy-fetch", "-c", "core.fsmonitor=false")
+GIT = "/usr/bin/git"
+TRUSTED_PATH = "/usr/bin:/bin"
+SAFE = (GIT, "--no-pager", "--no-lazy-fetch", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
+PASSED_ENV = ("HOME", "LANG", "LC_ALL", "LC_CTYPE")
+FIXED_ENV = {"GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "PATH": TRUSTED_PATH}
+INTENT_TO_ADD = 0x20000000
+DEBUG_LINES = 5
+NAMES_COMMIT = re.compile(r"(?<![\w.-])git(?![\w.-]).*(?<![\w-])commit(?![\w-])", re.DOTALL)
+LAYOUT = "unexpected ls-files --debug layout"
+RECORD = re.compile(rb"[0-7]{6} (?:[0-9a-f]{40}|[0-9a-f]{64}) [0-3]\t.+", re.DOTALL)
+FLAGS_LINE = re.compile(rb"  size: [0-9]+\tflags: ([0-9a-f]+)")
 COMMIT_LONGS = {
     "quiet", "verbose", "file", "author", "date", "message", "reedit-message", "reuse-message", "fixup", "squash", "reset-author", "trailer", "signoff",
     "template", "edit", "cleanup", "status", "gpg-sign", "all", "include", "interactive", "patch", "unified", "inter-hunk-context", "only", "no-verify",
@@ -91,6 +95,7 @@ COMMIT_LONGS = {
 }
 LONG_ARGS = {"message", "file", "reuse-message", "reedit-message", "template", "author", "date", "cleanup", "fixup", "squash", "trailer", "unified", "inter-hunk-context"}
 NARROWING = {"only", "include", "interactive", "patch", "pathspec-from-file", "no-all"}
+REWRITING = {"amend"}
 SHORT_ARGS = set("mFcCtuSU")
 KEPT_VARS = {"GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "GIT_PAGER", "GIT_TERMINAL_PROMPT", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE"}
 ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=.*")
@@ -105,7 +110,8 @@ class DiffError(Exception):
 
 def git(cwd: Path, args: list[str], data: bytes | None) -> bytes:
     try:
-        done = subprocess.run([*SAFE, *args], cwd=cwd, input=data, capture_output=True, timeout=GIT_TIMEOUT, check=False, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1"})
+        env = {**{key: os.environ[key] for key in PASSED_ENV if key in os.environ}, **FIXED_ENV}
+        done = subprocess.run([*SAFE, *args], cwd=cwd, input=data, capture_output=True, timeout=GIT_TIMEOUT, check=False, env=env)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise DiffError(f"git {args[0]} failed to start: {error}") from error
     if done.returncode != 0:
@@ -147,112 +153,69 @@ def blobs(cwd: Path, oids: set[str]) -> dict[str, bytes]:
     return found
 
 
-def worktree(top: Path, path: str, mode: str, algorithm: str, roots: list[str]) -> tuple[str, str, bytes | None] | None:
-    """Args:
-        top: the working tree, resolved through symlinks.
-        roots: the paths the sandbox denies reading (sandbox_paths.denied_roots).
-
-    Returns:
-        The mode (for a regular file its executable bit on disk), blob id and
-        content of an index path as it lies in the working tree; for a file
-        over BLOB_LIMIT or under one of roots, which is not read, content
-        None and in place of the blob id UNREAD with its size, inode and
-        times; None when it is gone, lies behind a symlinked directory or is
-        neither a regular file nor a symlink.
-
-    Raises:
-        DiffError: for a path with an empty, . or .. component.
-    """
-    parts = path.split("/")
-    if any(part in ("", ".", "..") for part in parts):
-        raise DiffError(f"index path {path!r} leaves the working tree")
-    try:
-        if sandbox_paths.denied(os.path.join(top, *parts), roots):
-            return mode, unread(os.lstat(os.path.join(top, *parts))), None
-        found = on_disk(top, parts)
-    except OSError:
-        return None
-    if found is None:
-        return None
-    mode, data, info = found
-    if data is None:
-        return mode, unread(info), None
-    return mode, hashlib.new(algorithm, b"blob %d\0" % len(data) + data).hexdigest(), data
-
-
-def unread(info: os.stat_result) -> str:
-    return f"{UNREAD}:{info.st_size}:{info.st_ino}:{info.st_mtime_ns}:{info.st_ctime_ns}"
-
-
-def on_disk(top: Path, parts: list[str]) -> tuple[str, bytes | None, os.stat_result] | None:
-    """Returns:
-        The mode, content (None past BLOB_LIMIT) and status of top/parts,
-        every folder from / on opened without following a symlink, None for
-        an entry that is neither a regular file nor a symlink.
-    """
-    folder = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        for part in [*top.parts[1:], *parts[:-1]]:
-            inner = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=folder)
-            os.close(folder)
-            folder = inner
-        return leaf(folder, parts[-1])
-    finally:
-        os.close(folder)
-
-
-def leaf(folder: int, name: str) -> tuple[str, bytes | None, os.stat_result] | None:
-    info = os.stat(name, dir_fd=folder, follow_symlinks=False)
-    if stat.S_ISLNK(info.st_mode):
-        return SYMLINK, os.readlink(name, dir_fd=folder).encode("utf-8", "surrogateescape"), info
-    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
-    try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode):
-            return None
-        mode = EXECUTABLE if info.st_mode & stat.S_IXUSR else REGULAR
-        if info.st_size > BLOB_LIMIT:
-            return mode, None, info
-        with open(fd, "rb", closefd=False) as handle:
-            data = handle.read(BLOB_LIMIT + 1)
-        return mode, data if len(data) <= BLOB_LIMIT else None, info
-    finally:
-        os.close(fd)
-
-
 def toplevel(cwd: Path) -> Path:
     return Path(os.path.realpath(git(cwd, ["rev-parse", "--show-toplevel"], None).decode("utf-8", "surrogateescape").strip()))
 
 
-def binding(cwd: Path, everything: bool) -> str:
-    top = toplevel(cwd)
-    tree = git(top, ["write-tree"], None).decode("ascii").strip()
-    if not everything:
-        return tree
-    new, _ = working_side(top, denied_roots(top))
-    return f"{tree} {hashlib.sha256(json.dumps(sorted(new.items())).encode('utf-8', 'surrogateescape')).hexdigest()}"
+def flagged(raw: bytes) -> list[tuple[bytes, int]]:
+    """Args:
+        raw: what git ls-files -s -z --debug prints.
+
+    Returns:
+        Per index entry its -s -z record without the NUL and its flags.
+
+    Raises:
+        DiffError: with LAYOUT when a record is no RECORD or is not followed
+            by DEBUG_LINES debug lines ending in a FLAGS_LINE.
+    """
+    chunks = raw.split(b"\0")
+    found, record = [], chunks[0]
+    for chunk in chunks[1:]:
+        lines = chunk.split(b"\n", DEBUG_LINES)
+        flags = FLAGS_LINE.fullmatch(lines[-2]) if len(lines) == DEBUG_LINES + 1 else None
+        if flags is None or not RECORD.fullmatch(record):
+            raise DiffError(LAYOUT)
+        found.append((record, int(flags.group(1), 16)))
+        record = lines[-1]
+    if record:
+        raise DiffError(LAYOUT)
+    return found
 
 
-def bound_diff(cwd: Path, everything: bool, pinned: str, rules: Path | None) -> list[dict]:
-    if not everything:
-        return tree_diff(cwd, pinned, rules)
-    diff = review_diff(cwd, True, rules)
-    if binding(cwd, True) != pinned:
-        raise DiffError("the working tree changed while its preview was read")
-    return diff
+def staged(top: Path) -> bytes:
+    """Returns:
+        The git ls-files -s -z records of the entries git write-tree and git
+        commit record: every index entry but an intent-to-add one.
+
+    Raises:
+        DiffError: for an index with unmerged paths, as git write-tree.
+    """
+    found = flagged(git(top, ["ls-files", "-s", "-z", "--debug"], None))
+    if any(record.partition(b"\t")[0].split()[2:] != [b"0"] for record, _ in found):
+        raise DiffError("the index holds unmerged paths")
+    return b"".join(record + b"\0" for record, flags in found if not flags & INTENT_TO_ADD)
 
 
-def sides(cwd: Path, everything: bool, tree: str | None) -> tuple[dict, dict, dict[str, bytes | None]]:
+def binding(cwd: Path) -> str:
+    return hashlib.sha256(staged(toplevel(cwd))).hexdigest()
+
+
+def bound_diff(cwd: Path, pinned: str, rules: Path | None) -> list[dict]:
+    index = staged(toplevel(cwd))
+    if hashlib.sha256(index).hexdigest() != pinned:
+        raise DiffError("the staged tree changed while its preview was read")
+    return built(cwd, sides(cwd, None, index), rules)
+
+
+def sides(cwd: Path, tree: str | None, index: bytes | None) -> tuple[dict, dict, dict[str, bytes | None]]:
     top = toplevel(cwd)
     roots = denied_roots(top)
     old = head_tree(top)
     if tree is not None:
-        new, contents = listed(git(top, ["ls-tree", "-r", "-z", "--full-tree", tree], None), 2), {}
-    elif everything:
-        new, contents = working_side(top, roots)
+        new = listed(git(top, ["ls-tree", "-r", "-z", "--full-tree", tree], None), 2)
     else:
-        new, contents = listed(git(top, ["ls-files", "-s", "-z"], None), 1), {}
-    contents.update(dict.fromkeys(side[path][1] for side in (old, new) for path in side if sandbox_paths.denied(os.path.join(top, path), roots)))
+        new = listed(index if index is not None else staged(top), 1)
+    contents: dict[str, bytes | None] = dict.fromkeys(side[path][1] for side in (old, new) for path in side if sandbox_paths.denied(os.path.join(top, path), roots))
     return old, new, contents
 
 
@@ -281,17 +244,6 @@ def head_tree(top: Path) -> dict[str, tuple[str, str]]:
         git(top, ["symbolic-ref", "-q", "HEAD"], None)
         return {}
     return listed(git(top, ["ls-tree", "-r", "-z", "--full-tree", "HEAD"], None), 2)
-
-
-def working_side(top: Path, roots: list[str]) -> tuple[dict, dict[str, bytes | None]]:
-    algorithm = git(top, ["rev-parse", "--show-object-format"], None).decode("ascii").strip()
-    new, contents = {}, {}
-    for path, (mode, oid) in listed(git(top, ["ls-files", "-s", "-z"], None), 1).items():
-        found = (mode, oid, None) if mode == GITLINK else worktree(top, path, mode, algorithm, roots)
-        if found is not None:
-            new[path] = found[:2]
-            contents[found[1]] = found[2]
-    return new, contents
 
 
 def text_lines(text: str) -> list[str]:
@@ -407,12 +359,12 @@ def content_of(side: tuple[str, str] | None, gitlink: bool, contents: dict[str, 
     return None if gitlink else contents.get(side[1])
 
 
-def review_diff(cwd: Path, everything: bool, rules: Path | None) -> list[dict]:
-    return built(cwd, sides(cwd, everything, None), rules)
+def review_diff(cwd: Path, rules: Path | None) -> list[dict]:
+    return built(cwd, sides(cwd, None, None), rules)
 
 
 def tree_diff(cwd: Path, tree: str, rules: Path | None) -> list[dict]:
-    return built(cwd, sides(cwd, False, tree), rules)
+    return built(cwd, sides(cwd, tree, None), rules)
 
 
 def fetched(cwd: Path, old: dict, new: dict, changed: list[str], contents: dict[str, bytes | None]) -> None:
@@ -459,14 +411,18 @@ def built(cwd: Path, found_sides: tuple[dict, dict, dict[str, bytes | None]], ru
     return diff
 
 
-def commit_of(command: str, cwd: str) -> tuple[Path, bool] | None:
+def names_commit(command: str) -> bool:
+    return NAMES_COMMIT.search(command) is not None
+
+
+def commit_of(command: str, cwd: str) -> Path | None:
     """Returns:
-        The directory git commit runs in and whether it records every
-        tracked change (-a or --all), for a command that is one git commit,
-        optionally behind variable assignments, env -C and git -C; None for
-        any other command and for one whose commit the preview would not
-        match (a pathspec, -o, -i, -p, --no-all, an unknown or ambiguous long
-        option, git -c, or a GIT_ variable outside KEPT_VARS).
+        The directory git commit runs in, for a command that is one git
+        commit of exactly the staged index, optionally behind variable
+        assignments, env -C and git -C; None for any other command and for a
+        commit that reads the working tree or that the preview would not
+        match (-a, --all, --amend, a pathspec, -o, -i, -p, --no-all, an unknown or
+        ambiguous long option, git -c, or a GIT_ variable outside KEPT_VARS).
     """
     try:
         words = shlex.split(command)
@@ -478,8 +434,7 @@ def commit_of(command: str, cwd: str) -> tuple[Path, bool] | None:
     if not words or Path(words[0]).name != "git":
         return None
     place, rest = past_git_options(place, words[1:])
-    mode = commit_mode(rest[1:]) if rest else None
-    return None if mode is None else (place, mode)
+    return place if rest and index_only(rest[1:]) else None
 
 
 def launched(place: Path, words: list[str]) -> tuple[Path, list[str]]:
@@ -526,23 +481,25 @@ def past_git_options(place: Path, rest: list[str]) -> tuple[Path, list[str]]:
     return place, rest
 
 
-def commit_mode(words: list[str]) -> bool | None:
+def index_only(words: list[str]) -> bool:
     """Returns:
-        True for -a or --all, False for the staged tree, None when the
-        commit records something else (NARROWING, -o, -i, -p or a pathspec).
+        True when git commit with these words records exactly the staged
+        index on top of HEAD: every word an option() it knows or that
+        option's argument, none -a or --all, NARROWING, REWRITING, -o, -i,
+        -p, and no pathspec.
     """
-    skip, everything = False, False
+    skip = False
     for at, word in enumerate(words):
         if skip:
             skip = False
             continue
         if word == "--":
-            return None if words[at + 1 :] else everything
+            return not words[at + 1 :]
         found = option(word)
-        if found is None:
-            return None
-        everything, skip = everything or found[0], found[1]
-    return everything
+        if found is None or found[0]:
+            return False
+        skip = found[1]
+    return True
 
 
 def option(word: str) -> tuple[bool, bool] | None:
@@ -550,12 +507,12 @@ def option(word: str) -> tuple[bool, bool] | None:
         Whether a git commit option word is -a or --all and whether the next
         word is its argument, a long option named in full or by a prefix of
         exactly one of COMMIT_LONGS (what git 2.56 lists for git commit
-        --git-completion-helper-all); None for NARROWING, -o, -i, -p, a
-        pathspec and a long option it names no single one of.
+        --git-completion-helper-all); None for NARROWING, REWRITING, -o,
+        -i, -p, a pathspec and a long option it names no single one of.
     """
     if word.startswith("--"):
         name = long_option(word[2:].partition("=")[0])
-        return None if name is None or name in NARROWING else (name == "all", name in LONG_ARGS and "=" not in word)
+        return None if name is None or name in NARROWING | REWRITING else (name == "all", name in LONG_ARGS and "=" not in word)
     if word.startswith("-") and word != "-":
         return cluster(word[1:])
     return None
