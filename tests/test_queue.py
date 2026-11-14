@@ -23,7 +23,9 @@ HISTORY = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "history.py"
 GATES = REPO_ROOT / "skills" / "kvb-check-gate" / "scripts" / "gates.py"
 NOW = 1_800_000_000.0
 HOUR = 3600
-OPEN_MEMORY = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_swap_gb": 1e9}
+OPEN_MEMORY = {
+    "available": -1, "swap_free": -1, "psi_some": 1000, "psi_full": 1000, "swap_out_mb_min": 1e9, "container_swap_gb": 1e9,
+}
 BASE = {
     "free_gb": 100.0,
     "floor": 10.0,
@@ -141,11 +143,38 @@ class TestEvaluate(unittest.TestCase):
         young = {**job(1, kind="a", status="active", granted=NOW - 60), **cmd, "cmd": "a"}
         overshooting = {**job(5, kind="c", status="active", granted=NOW - 120), **cmd, "cmd": "c"}
         old = {**job(4, kind="c", status="active", granted=NOW - self.queue.RAMP_SECONDS), **cmd, "cmd": "c"}
-        self.assertEqual(self.queue.pending_ram([young, overshooting, old, fresh], "j2", NOW, signatures, kinds), 30 + 10 + 25)
+        pending = self.queue.pending_ram
+        self.assertEqual(pending([young, overshooting, old, fresh], "j2", NOW, signatures, kinds, 50, 0), 30 + 10 + 25)
         undated = {k: v for k, v in old.items() if k != "granted"}
-        self.assertEqual(self.queue.pending_ram([undated, fresh], "j2", NOW, signatures, kinds), 10 + 25)
+        self.assertEqual(pending([undated, fresh], "j2", NOW, signatures, kinds, 50, 0), 10 + 25)
         unknown = {**job(3, kind="new"), **cmd, "cmd": "new"}
-        self.assertEqual(self.queue.pending_ram([unknown], "j3", NOW, signatures, kinds), 30)
+        self.assertEqual(pending([unknown], "j3", NOW, signatures, kinds, 50, 0), 30)
+        self.assertEqual(pending([fresh], "j2", NOW, signatures, kinds, 50, 12), 25 + 12)
+
+    def test_a_young_job_counts_only_what_it_has_not_added_since_its_grant(self):
+        history = _load(HISTORY)
+        rows = [history_row(n, kind="b", signature="w: b", mem_before=20, mem_max=45) for n in range(5)]
+        signatures, kinds = history.learn(rows, NOW, {"load_limits": {"mem_percent": 90, "cpu_percent": 90}})
+        fresh = {**job(2, kind="b"), "workdir": "/w", "cmd": "b"}
+
+        def gate(seq: int, ram: float, granted_mem: float) -> dict:
+            return {**job(seq, kind="g", status="active", granted=NOW - 60), "workdir": "/w", "cmd": "g",
+                    "footprint": {"ram": ram, "cpu": 1}, "granted_mem": granted_mem}
+
+        pending = self.queue.pending_ram
+        self.assertEqual(pending([gate(1, 40, 10), fresh], "j2", NOW, signatures, kinds, 10, 0), 25 + 40)
+        self.assertEqual(pending([gate(1, 40, 10), fresh], "j2", NOW, signatures, kinds, 45, 0), 25 + 5)
+        self.assertEqual(pending([gate(1, 40, 10), fresh], "j2", NOW, signatures, kinds, 60, 0), 25)
+        self.assertEqual(pending([gate(1, 40, 10), gate(3, 20, 30), fresh], "j2", NOW, signatures, kinds, 45, 0), 25 + 25)
+        undated = {k: v for k, v in gate(1, 40, 10).items() if k != "granted_mem"}
+        self.assertEqual(pending([undated, fresh], "j2", NOW, signatures, kinds, 60, 0), 25 + 40)
+        ramp = self.queue.ramping_ram
+        for mem in (70, 40, 20):
+            with self.subTest(mem=mem):
+                self.assertEqual(ramp([gate(1, 40, 70)], NOW, signatures, kinds, mem), 40)
+        self.assertEqual(ramp([gate(1, 40, 70), {**undated, "id": "j3"}], NOW, signatures, kinds, 20), 80)
+        self.assertEqual(self.queue.admitted_ram({"admits": [{"ram": 7, "expires": NOW + 1}, {"ram": 9, "expires": NOW}]}, NOW), 7)
+        self.assertEqual(self.queue.admitted_ram({"entries": []}, NOW), 0)
 
     def test_a_signature_names_the_repository_every_worktree_shares(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -251,7 +280,7 @@ class TestEvaluate(unittest.TestCase):
         self.assertEqual(self.queue.footprint(waiting, signatures, kinds), {"ram": 50, "cpu": 80})
         older = {k: v for k, v in running.items() if k != "footprint"}
         self.assertEqual(self.queue.footprint(older, signatures, kinds), {"ram": 50, "cpu": 80})
-        self.assertEqual(self.queue.pending_ram([running], "j1", NOW, signatures, kinds), 12 + 12)
+        self.assertEqual(self.queue.pending_ram([running], "j1", NOW, signatures, kinds, 50, 0), 12 + 12)
 
     def test_an_active_entry_an_older_queue_granted_never_books_less_than_that_queue_did(self):
         history = _load(HISTORY)
@@ -754,6 +783,7 @@ class TestQueueCommands(unittest.TestCase):
         )
         signature = f"{self.base.name}: {Path(sys.executable).name} -c"
         self.assertEqual((entry["aliases"], entry["footprint"]), ([signature], None))
+        self.assertTrue(0 < entry["granted_mem"] < 100, entry)
         self.assertEqual(self.entries(), [])
         [row] = [json.loads(line) for line in self.history_file.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(
@@ -1111,6 +1141,52 @@ class TestQueueCommands(unittest.TestCase):
         self.write_config()
         self.assertEqual(self.bash("make compose-deploy"), 0)
 
+    def test_list_and_hold_on_a_broken_config_warn_and_use_the_shipped_default(self):
+        self.config.write_text(json.dumps(self.cfg)[:-1] + ",}", encoding="utf-8")
+        listing = self.run_queue("list")
+        self.assertEqual(listing.returncode, 0, listing.stderr)
+        self.assertIn("built-in defaults", listing.stderr)
+        held = self.run_queue("hold", "--kind", "nosuch", "--task", "work/a", "--session", "s1", "--", "true")
+        self.assertEqual(held.returncode, 2, held.stderr)
+        self.assertIn("built-in defaults", held.stderr)
+        self.assertIn("'nosuch' is not in slot_need_gb", held.stderr)
+        for done in (listing, held):
+            self.assertNotIn("Traceback", done.stderr)
+
+    def test_a_broken_config_falls_back_to_defaults_so_light_commands_pass_and_heavy_ones_stay_refused(self):
+        self.cfg["queue_enforce"] = True
+        good = json.dumps(self.cfg)
+
+        def text(content: str) -> Callable[[], None]:
+            return lambda: self.config.write_text(content, encoding="utf-8")
+
+        shapes = {
+            "comma": text(good[:-1] + ",}"), "empty": text(""), "list": text("[]"),
+            "string enforce": text(json.dumps({**self.cfg, "queue_enforce": "yes"})),
+            "empty-matching heavy": text(json.dumps({**self.cfg, "heavy_commands": [""]})),
+            "dot heavy": text(json.dumps({**self.cfg, "heavy_commands": ["."]})),
+            "word-boundary heavy": text(json.dumps({**self.cfg, "heavy_commands": [r"\b"]})),
+            "dot never_block": text(json.dumps({**self.cfg, "never_block": ["."]})),
+            "dangling link": lambda: self.config.symlink_to(self.base / "absent.json"),
+            "link loop": lambda: self.config.symlink_to(self.config),
+            "directory": lambda: self.config.mkdir(),
+        }
+        for name, make in shapes.items():
+            with self.subTest(config=name):
+                if self.config.is_dir() and not self.config.is_symlink():
+                    self.config.rmdir()
+                self.config.unlink(missing_ok=True)
+                make()
+                passed = self.hook(json.dumps({"tool_input": {"command": "ls -la"}}))
+                self.assertEqual(passed.returncode, 0, passed.stderr)
+                self.assertIn(str(self.config), passed.stderr)
+                self.assertIn("built-in defaults", passed.stderr)
+                self.assertEqual(self.bash("make test"), 2)
+                live = ("make compose-deploy ROLE=x", "docker build .", "docker pull nginx", "make swarm-deploy", "make roundtrip",
+                        "make worktree-up")
+                for command in live if name in ("comma", "directory") else live[:1]:
+                    self.assertEqual(self.bash(command), 2, command)
+
     def test_block_with_queue_enforce_refuses_heavy_commands_outside_the_queue(self):
         self.cfg["queue_enforce"] = True
         self.write_config()
@@ -1129,7 +1205,12 @@ class TestQueueCommands(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertEqual(self.bash(command), 0)
-        self.assertEqual(self.hook("not json").returncode, 0)
+        for payload in ("not json", json.dumps({"tool_input": ["make test"]})):
+            with self.subTest(payload=payload):
+                crashed = self.hook(payload)
+                self.assertEqual(crashed.returncode, 2, crashed.stderr)
+                self.assertIn("counts as heavy", crashed.stderr)
+        self.assertEqual(self.bash("CARGO_BUILD_JOBS=² cargo build ; make test"), 2)
         self.config.unlink()
         self.assertEqual(self.bash("make compose-deploy"), 0)
 
@@ -1289,6 +1370,40 @@ class TestQueueCommands(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.bash(command), 2)
         self.assertEqual(self.bash("docker compose ps"), 0)
+
+    def test_a_queue_grant_counts_a_live_admit_record_and_ignores_an_expired_one(self):
+        def admitted(expires: float) -> None:
+            (self.root / "queue.json").write_text(
+                json.dumps({"seq": 0, "entries": [], "admits": [{"ram": 300, "expires": expires}]}), encoding="utf-8"
+            )
+
+        admitted(time.time() + 300)
+        _, err = self.blocked_hold("true")
+        self.assertRegex(err.read_text(encoding="utf-8"), r"RAM \d+ % used \+ 300 % still to come reach the limit 101 %")
+        admitted(time.time() - 1)
+        result = self.run_queue("hold", "--kind", "deploy", "--task", "work/a", "--session", "s2", "--", "true")
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+
+    def test_a_light_kind_refuses_a_heavy_command_names_the_test_kind_and_enqueues_nothing(self):
+        self.cfg["slot_need_gb"] |= {"test-nostack": 0, "quick": 0}
+        self.cfg["light_kinds"] = ["quick"]
+        self.write_config()
+        (self.base / "tests" / "e2e").mkdir(parents=True)
+        (self.base / "tests" / "e2e" / "test_orchestrator_e2e.py").write_text("", encoding="utf-8")
+        for kind, command, shown in (
+            ("test-nostack", ("python", "-m", "unittest"), "python -m unittest"),
+            ("test-nostack", ("pytest", "tests/e2e/test_orchestrator_e2e.py"), "pytest tests/e2e/test_orchestrator_e2e.py"),
+            ("quick", ("bash", "-c", "make test"), "bash -c 'make test'"),
+            ("quick", ("python3", "gate.py", "run", "--target", "test-unit"), "python3 gate.py run --target test-unit"),
+        ):
+            with self.subTest(kind=kind, command=command):
+                result = self.run_queue("hold", "--kind", kind, "--task", "work/a", "--session", "s1", "--", *command)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(f"the light kind {kind} skips every reservation", result.stderr)
+                self.assertIn(f"run `queue.py hold --kind test --task <register task> -- {shown}`", result.stderr)
+                self.assertFalse((self.root / "queue.json").exists())
+        light = self.run_queue("hold", "--kind", "test-nostack", "--task", "work/a", "--session", "s1", "--", "true")
+        self.assertEqual((light.returncode, light.stderr), (0, ""))
 
     def test_hold_refuses_a_config_without_the_budget_or_the_memory_limits(self):
         for key, cfg in (

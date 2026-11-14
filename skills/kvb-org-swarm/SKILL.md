@@ -30,10 +30,9 @@ sidetree or leaves as a proposal.
    - code explored through the codebase-memory-mcp graph first
      (`search_graph`, `trace_path`, `get_architecture`, `detect_changes`; the
      `kvb-agent-optimize` skill sets it up), grep and read after;
-   - light runs (no Docker, about a minute) self-admit with
-     `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
-     test-nostack`; `make test`, gates, deploys and anything with Docker only
-     through `queue.py hold` (`kvb-org-queue`);
+   - light runs self-admit (`kvb-org-organize` Capacity); `make test`, gates,
+     deploys and anything with Docker only through `queue.py hold`
+     (`kvb-org-queue`);
    - status that asks nothing goes to
      `${CLAUDE_SKILL_DIR}/../kvb-org-radio/scripts/radio.py post "<text>"`,
      never into a wake.

@@ -52,9 +52,8 @@ or diff.
 - Read every script whole before carrying it; clean it the way the
   `kvb-code-clean` skill does.
 - A carried script gets a unit test in the repository's `tests/` with a
-  negative control, run once `watch.py admit --kind test-nostack` (the
-  `kvb-org-organize` skill) prints `grant`; `make test` runs through
-  `queue.py hold` (`kvb-org-queue`).
+  negative control, run as a light run (`kvb-org-organize` Capacity);
+  `make test` runs through `queue.py hold` (`kvb-org-queue`).
 - `transcend.py mark` every offered candidate with its verdict.
 - Leave the result uncommitted; committing is the `kvb-git-commit-next`
   skill's job.

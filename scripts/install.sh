@@ -23,6 +23,12 @@ if [[ ! -d "${TARGET}" ]]; then
 	exit 2
 fi
 
+watch="${REPO_ROOT}/skills/kvb-org-organize/scripts/watch.py"
+if [[ -f "${watch}" ]] && ! python3 -I "${watch}" preflight; then
+	warn "skills: add the keys above to the agents council config first; the new hooks and queue.py refuse to run without them"
+	exit 2
+fi
+
 cd "${REPO_ROOT}"
 src="${REPO_ROOT}/.agents/skills"
 rm -rf "${src}"
@@ -57,6 +63,17 @@ for root in .agents/skills .claude/skills; do
 		done
 	fi
 done
+
+config="${AGENTS_COUNCIL_CONFIG:-${HOME}/.claude/agents-council/config.json}"
+shipped="${REPO_ROOT}/skills/kvb-org-organize/config.default.json"
+if [[ -f "${shipped}" && ! -e "${config}" && ! -L "${config}" ]]; then
+	[[ -d "$(dirname -- "${config}")" ]] || install -d -m 0700 "$(dirname -- "${config}")"
+	if (umask 077 && set -o noclobber && cat -- "${shipped}" >"${config}") 2>/dev/null; then
+		log "skills: wrote the shipped agents council config to ${config}"
+	else
+		warn "skills: kept ${config}, which appeared while the install wrote the shipped default"
+	fi
+fi
 
 settings="${TARGET}/.claude/settings.local.json"
 if command -v node &>/dev/null; then

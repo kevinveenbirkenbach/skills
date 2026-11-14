@@ -2,12 +2,17 @@
 """Args:
     sample: append one row to <state>/samples.jsonl: {t, disks: [{mount,
         used, total}], cpu, ram, swap, load, gpus: [{name, util, vram_used,
-        vram_total} | {name, asleep: true}], queue: {waiting, active}}; t in
-        epoch seconds, used, total and vram in bytes, cpu, ram, swap and util
-        in percent, load the 1-minute load average, a GPU named by its PCI
-        address. cpu is the busy share of the /proc/stat ticks since those
-        the run before kept in <state>/cpu.json as [t, idle, total], None on
-        the first run and after a gap of more than 15 minutes. An NVIDIA GPU
+        vram_total} | {name, asleep: true}], queue: {waiting, active},
+        psi_some, psi_full, swap_out_mb_min}; t in epoch seconds, used, total
+        and vram in bytes, cpu, ram, swap and util in percent, load the
+        1-minute load average, a GPU named by its PCI address. cpu is the
+        busy share of the /proc/stat ticks since those the run before kept in
+        <state>/cpu.json as [t, idle, total], None on the first run and after
+        a gap of more than 15 minutes. psi_some and psi_full are the avg10 of
+        /proc/pressure/memory, None without PSI; swap_out_mb_min the MB per
+        minute swapped out (pswpout of /proc/vmstat) since the count the run
+        before kept in <state>/swap.json as [t, pswpout], None like cpu and
+        after a counter reset. An NVIDIA GPU
         whose PCI runtime_status is not active is recorded asleep, and
         nvidia-smi is not run for it; an awake one nvidia-smi gives no
         reading for (no driver, a driver mismatch) keeps its name with util
@@ -75,12 +80,15 @@ NVIDIA_QUERY = "pci.bus_id,utilization.gpu,memory.used,memory.total"
 UNREAD = {"util": None, "vram_used": None, "vram_total": None}
 COUNTS = (("input", "input_tokens"), ("output", "output_tokens"), ("cache_read", "cache_read_input_tokens"), ("cache_write", "cache_creation_input_tokens"))
 NAMES = tuple(name for name, _ in COUNTS)
-HOST_DIGITS = (("cpu", 1), ("ram", 1), ("swap", 1), ("load", 2))
+HOST_DIGITS = (("cpu", 1), ("ram", 1), ("swap", 1), ("load", 2), ("psi_some", 2), ("psi_full", 2), ("swap_out_mb_min", 1))
 CLAIMS = ("*/claim.json", "*/*/claim.json")
 SAMPLES = "samples.jsonl"
 TOKENS = "tokens.jsonl"
 OFFSETS = "offsets.json"
 TICKS = "cpu.json"
+SWAPPED = "swap.json"
+PAGE_BYTES = os.sysconf("SC_PAGE_SIZE")
+MB = 1_000_000
 
 
 def read_text(path: Path) -> str:
@@ -263,9 +271,43 @@ def cpu_since(proc: Path, state: Path, t: int) -> float | None:
     return cpu_percent(before, ticks)
 
 
+def psi_avg10(text: str, kind: str) -> float | None:
+    for line in text.splitlines():
+        fields = line.split()
+        if fields[:1] == [kind]:
+            values = dict(field.split("=", 1) for field in fields[1:] if "=" in field)
+            return number(values.get("avg10", ""))
+    return None
+
+
+def swapped_pages(text: str) -> int | None:
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0] == "pswpout" and fields[1].isdigit():
+            return int(fields[1])
+    return None
+
+
+def swap_out_since(proc: Path, state: Path, t: int) -> float | None:
+    """Returns:
+        The MB per minute swapped out since the pswpout count the run before
+        kept in <state>/swap.json at most BUCKET seconds before t, else None,
+        also after a counter reset; this run's count replaces it.
+    """
+    pages = swapped_pages(read_text(proc / "vmstat"))
+    if pages is None:
+        return None
+    stored = read_json(state / SWAPPED)
+    replace(state / SWAPPED, json.dumps([t, pages]))
+    if not integers(stored, 2) or not t - BUCKET <= stored[0] < t or stored[1] > pages:
+        return None
+    return round((pages - stored[1]) * PAGE_BYTES / MB * 60 / (t - stored[0]), 1)
+
+
 def sample(proc: Path, sys_root: Path, council: Path, run: Callable[[list[str]], str | None], state: Path) -> dict:
     t = int(time.time())
     ram, swap = memory(parse_meminfo(read_text(proc / "meminfo")))
+    pressure = read_text(proc / "pressure" / "memory")
     return {
         "t": t,
         "disks": parse_df(run(["df", "-P", "-k", "-l"]) or ""),
@@ -275,6 +317,9 @@ def sample(proc: Path, sys_root: Path, council: Path, run: Callable[[list[str]],
         "load": parse_loadavg(read_text(proc / "loadavg")),
         "gpus": gpus(sys_root, run),
         "queue": queue(council),
+        "psi_some": psi_avg10(pressure, "some"),
+        "psi_full": psi_avg10(pressure, "full"),
+        "swap_out_mb_min": swap_out_since(proc, state, t),
     }
 
 

@@ -60,12 +60,11 @@ It also measures wall time for `kvb-check-speed`.
 - **Command**: the targeted tests of the change or a CLI call of the
   changed code, runnable on a clean checkout: the base worktree holds no
   untracked build output, virtualenv or dependency directory.
-- **Heavy commands** (Docker, deploys, whole suites) run only inside
+- **Every run** goes inside
   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold --kind <kind>
   --task <register task> -- python3 <measure.py> ...`, in the background,
   by the `kvb-org-queue` skill; a cancelled wait there also exits 3, but
-  prints no 💸 line. A light one self-admits with
-  `watch.py admit --kind test-nostack` of `kvb-org-organize`.
+  prints no 💸 line.
 - Report the run you made; never rerun to pick the best result.
 
 ## Exit codes

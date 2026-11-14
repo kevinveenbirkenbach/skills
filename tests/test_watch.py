@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import importlib.util
+import io
+import itertools
 import json
 import os
 import re
@@ -14,14 +17,40 @@ import sys
 import tempfile
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WATCH = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "watch.py"
-LIMITS = {"warn": 40, "stop": 15, "critical": 12}
-OPEN_MEMORY = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_swap_gb": 1e9}
-SHUT_MEMORY = {"available": 101, "swap_free": 101, "psi_full": 0, "container_swap_gb": 0}
+SHIPPED = REPO_ROOT / "skills" / "kvb-org-organize" / "config.default.json"
+DEFAULT = json.loads(SHIPPED.read_text(encoding="utf-8"))
+LIMITS = DEFAULT["thresholds_gb"]
+OPEN_MEMORY = {
+    "available": -1, "swap_free": -1, "psi_some": 1000, "psi_full": 1000, "swap_out_mb_min": 1e9, "container_swap_gb": 1e9,
+}
+SHUT_MEMORY = {"available": 101, "swap_free": 101, "psi_some": 0, "psi_full": 0, "swap_out_mb_min": 0, "container_swap_gb": 0}
+LIVE_MEMORY = DEFAULT["memory_limits"]
+BROWSER_IMPORTS = {
+    "seleniumbase": "from seleniumbase import BaseCase", "nodriver": "import nodriver",
+    "DrissionPage": "from DrissionPage import ChromiumPage", "splinter": "from splinter import Browser",
+    "helium": "from helium import start_chrome", "camoufox": "from camoufox.sync_api import Camoufox",
+}
+PACKAGE_SCRIPTS = {
+    "e2e": "playwright test", "test:e2e": "cypress run", "lint": "eslint .", "build": "vite build", "dev": "vite",
+    "cy:run": "cypress run", "cy": "start-server-and-test dev http://localhost:3000 cy:run",
+    "both": 'concurrently "npm:dev" "cypress run"', "pree2e2": "cypress run", "e2e2": "echo ok", "loop": "yarn loop",
+}
+HEAVY_LIVE = ("make compose-deploy ROLE=x", "docker build .", "docker pull nginx", "make swarm-deploy", "make roundtrip", "make worktree-up")
+OLD_MEMORY = {
+    "warn": {"available": 15, "swap_free": 40, "psi_full": 5, "container_swap_gb": 4},
+    "stop": {"available": 8, "swap_free": 10, "psi_full": 10, "container_swap_gb": 16},
+}
+CALM = {
+    "available": 50.0, "swap_free": 80.0, "psi_some": 1.0, "psi_full": 0.0, "swap_out_mb_min": None, "container_swap_gb": 0.0,
+}
+PAGE = 4096
+GB_PER_MINUTE_PAGES = 1_400_000_000 // PAGE
 MEMINFO = "MemTotal: 1000 kB\nMemAvailable: 120 kB\nSwapTotal: 2000 kB\nSwapFree: 300 kB\n"
 PSI = "some avg10=30.00 avg60=1.00 avg300=0.50 total=1\nfull avg10=12.50 avg60=0.80 avg300=0.10 total=1\n"
 LISTED = ["images", "--filter", "dangling=true", "--format", "{{.ID}} {{.Repository}} {{.Digest}}"]
@@ -120,18 +149,21 @@ class TestStage(unittest.TestCase):
 
     def test_memory_sample_reads_available_swap_and_psi_and_tolerates_their_absence(self):
         self.assertEqual(
-            self.watch.memory_sample(MEMINFO, PSI, 2.5),
-            {"available": 12.0, "swap_free": 15.0, "psi_full": 12.5, "container_swap_gb": 2.5},
+            self.watch.memory_sample(MEMINFO, PSI, 2.5, 70.0),
+            {"available": 12.0, "swap_free": 15.0, "psi_some": 30.0, "psi_full": 12.5, "swap_out_mb_min": 70.0,
+             "container_swap_gb": 2.5},
         )
         bare = "MemTotal: 1000 kB\nMemAvailable: 500 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n"
         self.assertEqual(
-            self.watch.memory_sample(bare, None, 0.0),
-            {"available": 50.0, "swap_free": None, "psi_full": None, "container_swap_gb": 0.0},
+            self.watch.memory_sample(bare, None, 0.0, None),
+            {"available": 50.0, "swap_free": None, "psi_some": None, "psi_full": None, "swap_out_mb_min": None,
+             "container_swap_gb": 0.0},
         )
 
     def test_memory_takes_the_swap_of_the_container_holding_the_most_nested_groups_included(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
+            self.watch.ROOT, self.watch.SWAP_OUT = base, base / "swap-out.json"
             for name, swap in ((f"docker-{'a' * 64}.scope", 3_000_000_000), (f"docker-{'b' * 64}.scope", 18_000_000_000),
                                ("other.scope", 90_000_000_000)):
                 (base / name).mkdir()
@@ -143,18 +175,20 @@ class TestStage(unittest.TestCase):
 
     def test_memory_stage_takes_the_first_bound_crossed_stop_before_warn(self):
         cfg = {"memory_limits": {
-            "warn": {"available": 15, "swap_free": 25, "psi_full": 5, "container_swap_gb": 4},
-            "stop": {"available": 8, "swap_free": 10, "psi_full": 10, "container_swap_gb": 16},
+            "warn": {"available": 15, "swap_free": 25, "psi_some": 10, "psi_full": 5, "swap_out_mb_min": 64,
+                     "container_swap_gb": 4},
+            "stop": {"available": 8, "swap_free": 10, "psi_full": 10, "swap_out_mb_min": 256, "container_swap_gb": 16},
         }}
         stage = self.watch.memory_stage
-        healthy = {"available": 40.0, "swap_free": 80.0, "psi_full": 0.0, "container_swap_gb": 3.9}
+        healthy = {"available": 40.0, "swap_free": 80.0, "psi_some": 9.9, "psi_full": 0.0, "swap_out_mb_min": 63.9,
+                   "container_swap_gb": 3.9}
         self.assertEqual(stage(healthy, cfg), "ok")
         for change, expected in (
             ({"available": 14.0}, "warn"), ({"swap_free": 24.0}, "warn"), ({"psi_full": 5.0}, "warn"),
-            ({"container_swap_gb": 4.0}, "warn"),
+            ({"container_swap_gb": 4.0}, "warn"), ({"psi_some": 10.0}, "warn"), ({"swap_out_mb_min": 64.0}, "warn"),
             ({"available": 7.0}, "stop"), ({"swap_free": 9.0}, "stop"), ({"psi_full": 10.0}, "stop"),
-            ({"container_swap_gb": 16.0}, "stop"),
-            ({"swap_free": None, "psi_full": None}, "ok"),
+            ({"container_swap_gb": 16.0}, "stop"), ({"psi_some": 90.0}, "warn"), ({"swap_out_mb_min": 256.0}, "stop"),
+            ({"swap_free": None, "psi_some": None, "psi_full": None, "swap_out_mb_min": None}, "ok"),
         ):
             with self.subTest(change=change):
                 self.assertEqual(stage(healthy | change, cfg), expected)
@@ -182,6 +216,619 @@ class TestStage(unittest.TestCase):
         now = time.time()
         self.assertEqual(self.watch.stage_for(32, [[now - 600, 48]], self.cfg, now), "stop")
         self.assertEqual(self.watch.stage_for(32, [[now - 600, 32.1]], self.cfg, now), "warn")
+
+
+class TestPressure(unittest.TestCase):
+    def setUp(self):
+        self.watch = _load()
+        self.cfg = {"memory_limits": LIVE_MEMORY}
+        self.now = 1_800_000_000.0
+
+    def test_the_hang_inputs_stop_and_a_light_swap_out_with_low_psi_stays_ok(self):
+        rate = self.watch.swap_out_rate([self.now, 1000], [self.now + 60, 1000 + GB_PER_MINUTE_PAGES], PAGE)
+        self.assertAlmostEqual(rate, 1400.0, delta=0.01)
+        self.assertEqual(self.watch.memory_stage(CALM | {"swap_out_mb_min": rate}, self.cfg), "stop")
+        self.assertEqual(self.watch.memory_stage(CALM | {"available": 21.0, "psi_full": 6.0}, self.cfg), "stop")
+        self.assertEqual(self.watch.memory_stage(CALM | {"swap_out_mb_min": 40.0}, self.cfg), "ok")
+        self.assertEqual(self.watch.memory_stage(CALM | {"swap_out_mb_min": 64.0}, self.cfg), "warn")
+        self.assertEqual(self.watch.memory_stage(CALM | {"psi_some": 10.0}, self.cfg), "warn")
+
+    def test_a_rate_needs_an_earlier_reading_inside_the_span_and_a_counter_reset_gives_none(self):
+        rate, now = self.watch.swap_out_rate, self.now
+        self.assertIsNone(rate(None, [now, 5], PAGE))
+        self.assertIsNone(rate([now, 9000], [now + 60, 10], PAGE))
+        self.assertIsNone(rate([now, 0], [now + 4, 10_000], PAGE))
+        self.assertIsNone(rate([now - 901, 0], [now, 10], PAGE))
+        self.assertEqual(rate([now, 7], [now + 60, 7], PAGE), 0.0)
+
+    def test_the_readings_keep_a_baseline_at_least_the_minimum_span_old_and_drop_a_reset(self):
+        readings, t = self.watch.swap_readings, self.now
+        self.assertEqual(readings([], [t, 10]), (None, [[t, 10]]))
+        self.assertEqual(readings([[t, 10]], [t + 2, 12]), (None, [[t, 10]]))
+        self.assertEqual(readings([[t, 10]], [t + 6, 16]), ([t, 10], [[t, 10], [t + 6, 16]]))
+        self.assertEqual(readings([[t, 10], [t + 6, 16]], [t + 8, 18]), ([t, 10], [[t, 10], [t + 6, 16]]))
+        self.assertEqual(readings([[t, 10], [t + 6, 16]], [t + 12, 30]), ([t + 6, 16], [[t + 6, 16], [t + 12, 30]]))
+        self.assertEqual(readings([[t, 10], [t + 6, 16]], [t + 20, 3]), (None, [[t + 20, 3]]))
+        self.assertEqual(readings([[t + 99, 1]], [t, 3]), (None, [[t, 3]]))
+
+    def test_the_sampler_reads_pswpout_and_both_psi_lines_and_none_without_them(self):
+        self.assertEqual(self.watch.swap_pages("pgpgin 1\npswpin 2\npswpout 345\n"), 345)
+        self.assertIsNone(self.watch.swap_pages("pgpgin 1\n"))
+        self.assertEqual((self.watch.psi_avg10(PSI, "some"), self.watch.psi_avg10(PSI, "full")), (30.0, 12.5))
+        self.assertIsNone(self.watch.psi_avg10(PSI.splitlines()[0], "full"))
+
+    def test_swap_out_keeps_its_readings_below_the_council_root_and_rates_from_the_second(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            watch = self.watch
+            watch.ROOT, watch.SWAP_OUT, watch.VMSTAT, watch.PAGE_BYTES = base, base / "swap-out.json", base / "vmstat", PAGE
+            self.assertIsNone(watch.swap_out())
+            self.assertFalse(watch.SWAP_OUT.exists())
+            watch.VMSTAT.write_text("pswpout 1000\n", encoding="utf-8")
+            with mock.patch.object(watch.time, "time", return_value=self.now):
+                self.assertIsNone(watch.swap_out())
+            watch.VMSTAT.write_text(f"pswpout {1000 + GB_PER_MINUTE_PAGES}\n", encoding="utf-8")
+            with mock.patch.object(watch.time, "time", return_value=self.now + 60):
+                self.assertAlmostEqual(watch.swap_out(), 1400.0, delta=0.01)
+            kept = json.loads(watch.SWAP_OUT.read_text(encoding="utf-8"))["readings"]
+            self.assertEqual(kept, [[self.now, 1000], [self.now + 60, 1000 + GB_PER_MINUTE_PAGES]])
+            watch.SWAP_OUT.write_text('{"readings": [["x", 1], [1, 2, 3], true]}', encoding="utf-8")
+            with mock.patch.object(watch.time, "time", return_value=self.now + 120):
+                self.assertIsNone(watch.swap_out())
+
+    def test_admit_reads_swap_out_before_its_load_window_so_the_first_check_after_idle_has_a_rate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            watch = self.watch
+            watch.ROOT, watch.SWAP_OUT, watch.VMSTAT, watch.PAGE_BYTES = base, base / "swap-out.json", base / "vmstat", PAGE
+            watch.SWAP_OUT.write_text(json.dumps({"readings": [[self.now - 1000, 1000]]}), encoding="utf-8")
+            watch.VMSTAT.write_text(f"pswpout {1000 + 7_000_000_000 // PAGE}\n", encoding="utf-8")
+            clock = [self.now]
+
+            def window(cfg: dict) -> tuple[float, float]:
+                clock[0] += 5
+                watch.VMSTAT.write_text(f"pswpout {1000 + 7_300_000_000 // PAGE}\n", encoding="utf-8")
+                return 10.0, 50.0
+
+            with mock.patch.object(watch.time, "time", side_effect=lambda: clock[0]), mock.patch.object(watch, "load", side_effect=window):
+                cpu, mem, sample = watch.admit_sample({})
+        self.assertEqual((cpu, mem), (10.0, 50.0))
+        self.assertAlmostEqual(sample["swap_out_mb_min"], 3600.0, delta=0.5)
+        self.assertEqual(watch.memory_stage(sample | {"available": 50.0, "swap_free": 80.0}, self.cfg), "stop")
+
+    def test_only_the_warn_stage_has_a_psi_some_bound_and_a_stop_one_is_ignored(self):
+        self.assertIn("memory_limits.warn.psi_some", self.watch.MEMORY_KEYS)
+        self.assertNotIn("memory_limits.stop.psi_some", self.watch.MEMORY_KEYS)
+        stray = {"memory_limits": {**LIVE_MEMORY, "stop": {**LIVE_MEMORY["stop"], "psi_some": 50}}}
+        self.assertEqual(self.watch.memory_stage(CALM | {"psi_some": 60.0}, stray), "warn")
+
+    def test_the_pressure_bounds_are_required_config_and_the_text_names_them(self):
+        self.assertIsNone(self.watch.missing(self.cfg, self.watch.MEMORY_KEYS))
+        for stage, bound in (("warn", "psi_some"), ("warn", "swap_out_mb_min"), ("stop", "swap_out_mb_min")):
+            with self.subTest(stage=stage, bound=bound):
+                limits = {**LIVE_MEMORY, stage: {k: v for k, v in LIVE_MEMORY[stage].items() if k != bound}}
+                problem = self.watch.missing({"memory_limits": limits}, self.watch.MEMORY_KEYS)
+                self.assertIn(f"lacks memory_limits.{stage}.{bound};", problem)
+        problem = self.watch.missing({"memory_limits": OLD_MEMORY}, self.watch.MEMORY_KEYS)
+        self.assertIn("lacks memory_limits.warn.psi_some, memory_limits.warn.swap_out_mb_min, memory_limits.stop.swap_out_mb_min;", problem)
+        text = self.watch.memory_text(CALM | {"swap_out_mb_min": 1400.0})
+        self.assertIn("PSI avg10 some 1.0 full 0.0, swap-out 1400.0 MB/min", text)
+        self.assertIn("swap-out unmeasured", self.watch.memory_text(CALM))
+
+
+class TestHeavy(unittest.TestCase):
+    def setUp(self):
+        self.watch = _load()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name)
+        for name, text in (
+            ("tests/e2e/test_orchestrator_e2e.py", "import unittest\n"),
+            ("tests/test_watch.py", "import unittest\n"),
+            ("tests/test_page.py", "import json\nfrom playwright.sync_api import sync_playwright\n"),
+            ("tests/e2e/cdp.mjs", "export {};\n"),
+            ("tools/shot.py", "from playwright.sync_api import sync_playwright\n"),
+            ("tools/shot.mjs", "import { chromium } from 'playwright';\n"),
+            ("tools/plain.py", "print(1)\n"),
+            ("tools/plain.mjs", "console.log(1);\n"),
+        ):
+            (self.base / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.base / name).write_text(text, encoding="utf-8")
+        (self.base / "tests" / "fifo.py").parent.mkdir(exist_ok=True)
+        os.mkfifo(self.base / "tests" / "fifo.py")
+
+    def heavy(self, command: str, cwd: Path | None) -> bool:
+        return self.watch.heavy(command, {"heavy_commands": []}, (), None if cwd is None else str(cwd))
+
+    def test_the_hang_inputs_are_heavy_and_a_single_unit_file_stays_light(self):
+        for command in (
+            "python -m unittest",
+            "python3 -m unittest -v",
+            "python3 -m unittest discover -s tests",
+            "pytest tests/e2e/test_orchestrator_e2e.py",
+            "python3 -m pytest tests/e2e/test_orchestrator_e2e.py::TestHub::test_home -q",
+            "python3 -m unittest tests.e2e.test_orchestrator_e2e",
+            "python3 -m unittest tests/e2e/test_orchestrator_e2e.py",
+            "python3 -m unittest discover -s tests/e2e -p test_orchestrator_e2e.py",
+            "pytest tests/test_page.py",
+            "python3 -m unittest tests.test_page",
+            "make test",
+            "make -C core test-lint",
+            "make quality-high",
+            "env -C tests pytest e2e/test_orchestrator_e2e.py",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.heavy(command, self.base))
+        for command in (
+            "pytest tests/test_watch.py",
+            "python3 -m unittest tests.test_watch",
+            "python3 -m unittest tests/test_watch.py",
+            "python3 -m unittest discover -s tests -p test_watch.py",
+            "pytest tests/test_page.py --collect-only",
+            "pytest tests/fifo.py",
+            "make install-skills",
+            "make -n test",
+            "ruff check skills tests",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.heavy(command, self.base))
+
+    def test_scripts_modules_browser_runners_and_suite_runners_are_heavy_beside_light_plain_ones(self):
+        for command in (
+            "python3 tests/e2e/test_orchestrator_e2e.py",
+            "python3 -m tests.e2e.test_orchestrator_e2e",
+            "sh -c 'exec python3 tests/e2e/test_orchestrator_e2e.py'",
+            "python3 tools/shot.py",
+            "python3 -m playwright install chromium",
+            "node tests/e2e/cdp.mjs",
+            "node tools/shot.mjs",
+            "deno run -A tests/e2e/cdp.mjs",
+            "npx playwright test",
+            "npx --yes @playwright/test test",
+            "playwright test",
+            "cd tests ; python3 -m pytest e2e/test_orchestrator_e2e.py",
+            "bash -c 'cd tests && python3 -m unittest e2e/test_orchestrator_e2e.py'",
+            "tox",
+            "nox -s tests",
+            "hatch test",
+            "make",
+            "make VAR=1 -j4",
+            "gmake test",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.heavy(command, self.base))
+        for command in (
+            "python3 tests/test_watch.py",
+            "python3 -m tests.test_watch",
+            "python3 tools/plain.py",
+            "python3 -c 'import json'",
+            "node tools/plain.mjs",
+            "npx prettier --check .",
+            "playwright --version",
+            "tox --version",
+            "hatch fmt",
+            "make -n",
+            "gmake install-skills",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.heavy(command, self.base))
+
+    def light(self, command: str, cwd: Path | None) -> bool:
+        return self.watch.light(command, None if cwd is None else str(cwd))
+
+    def test_only_recognised_small_forms_are_light_and_everything_else_queues(self):
+        for command in (
+            "ruff check skills tests",
+            "shellcheck scripts/install.sh",
+            "markdownlint-cli2 '**/*.md'",
+            "lizard -w -C 10 tools/plain.py",
+            "jq . config.json",
+            "python3 -m py_compile tools/plain.py",
+            "python3 -m pytest tests/test_watch.py",
+            "pytest tests/test_watch.py::TestA -q",
+            "python3 -m unittest tests.test_watch",
+            "python3 -m unittest tests.test_watch.TestA.test_a",
+            "python3 -m unittest tests/test_watch.py",
+            "env -C tests python3 -m pytest test_watch.py",
+            "cd tests && python3 -m pytest test_watch.py",
+            "timeout 900 nice -n 5 env LANG=C python3 -m unittest tests.test_watch",
+            "python3 -m pytest tests/test_watch.py 2>&1 | tee /tmp/log | tail -n 5",
+            "bash -c 'python3 -m pytest tests/test_watch.py'",
+            "true",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.light(command, self.base))
+        for command in (
+            "python3 -m unittest discover -s tests -p test_watch.py",
+            "python3 -m unittest tests",
+            "python3 -m unittest tests.test_watch tests.test_page",
+            "pytest tests/",
+            "pytest tests/test_missing.py",
+            "pytest tests/test_page.py",
+            "pytest -n 4 tests/test_watch.py",
+            "python3 -m unittest tests.e2e.test_orchestrator_e2e",
+            "systemd-run --user --scope python3 -m pytest tests/test_watch.py",
+            "taskset -c 0 ruff check .",
+            "xvfb-run -a python3 -m pytest tests/test_watch.py",
+            "uv run pytest tests/test_watch.py",
+            "sudo ruff check .",
+            "npx -y playwright@1.48.0 test",
+            "npm run test:e2e",
+            "cargo test",
+            "docker run --rm img ruff check .",
+            "make",
+            "make lint",
+            "python3 tools/plain.py",
+            "python3 -c 'import json'",
+            "ruff check $(cat list)",
+            "cd $(mktemp -d) && python3 -m pytest test_watch.py",
+            "cd tests ; python3 -m pytest test_page.py",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.light(command, self.base))
+        self.assertFalse(self.light("python3 -m pytest tests/test_watch.py", None))
+
+    def test_a_playwright_import_counts_only_as_an_import_statement_never_inside_a_string_or_comment(self):
+        files = {
+            "string.py": "FIXTURE = \"from playwright.sync_api import sync_playwright\"\n",
+            "string.mjs": (
+                "const s = \"import { chromium } from 'playwright'\";\n// import x from 'playwright'\n"
+                "/* require('playwright') */\nconst t = `\nimport { chromium } from 'playwright'\n`;\n"
+            ),
+            "nested.py": "def f():\n    from playwright.sync_api import sync_playwright\n",
+            "aliased.py": "import os, playwright as pw\n",
+            "required.cjs": "const { test } = require(\"@playwright/test\");\n",
+            "dynamic.mjs": "const core = await import('playwright-core');\n",
+            "side.ts": "import 'playwright';\n",
+            "broken.py": "def (:\n",
+        }
+        folder = self.base / "imports"
+        folder.mkdir()
+        for name, text in files.items():
+            (folder / name).write_text(text, encoding="utf-8")
+        found = {name: self.watch.playwright_file(str(folder / name)) for name in files}
+        self.assertEqual(found, {
+            "string.py": False, "string.mjs": False, "nested.py": True, "aliased.py": True, "required.cjs": True,
+            "dynamic.mjs": True, "side.ts": True, "broken.py": None,
+        })
+        self.assertIsNone(self.watch.playwright_file(str(folder / "missing.py")))
+        self.assertTrue(self.light("python3 -m unittest tests.test_watch", REPO_ROOT))
+        self.assertFalse(self.heavy("python3 -m unittest tests.test_watch", REPO_ROOT))
+
+    def test_an_unknown_program_in_front_of_a_runner_never_hides_it_from_the_hook(self):
+        for command in (
+            "systemd-run --user --scope -p MemoryMax=8G python3 -m unittest discover -s tests",
+            "taskset -c 0-3 python3 -m unittest discover -s tests",
+            "flock /tmp/lane.lock python3 -m unittest discover -s tests",
+            "xvfb-run -a python3 -m unittest tests.e2e.test_orchestrator_e2e",
+            "chrt -i 0 python3 -m unittest tests.e2e.test_orchestrator_e2e",
+            "npx -y playwright@1.48.0 test",
+            "npx @playwright/test@1.48.0 test",
+            "pnpm exec playwright test",
+            "pnpm dlx playwright test",
+            "yarn playwright test",
+            "npm exec -- playwright test",
+            "npm run test:e2e",
+            "docker run --rm -v /w:/w img python3 -m unittest discover -s /w/tests",
+            "cargo test",
+            "node --test",
+            "deno test",
+            "watch -n 5 pytest",
+            "cd tests && python3 -m pytest test_page.py",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.heavy(command, self.base))
+        for command in (
+            "grep -rn pytest tests/",
+            "which pytest",
+            "pip install pytest playwright",
+            "uv pip install pytest",
+            "npm install playwright",
+            "pkill pytest",
+            "git commit -m x",
+            "make lint",
+            "make -C . help",
+            "docker ps",
+            "ruff check skills tests",
+            "python3 -m unittest tests.test_watch",
+            "python3 tools/plain.py",
+            "xvfb-run python3 tools/plain.py",
+            "cd tests && python3 -m pytest test_watch.py",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.heavy(command, self.base))
+
+    def _repo(self) -> Path:
+        repo = self.base / "repo"
+        (repo / ".git").mkdir(parents=True)
+        for name, text in (
+            ("tests/__init__.py", ""),
+            ("tests/test_unit.py", "import unittest\n"),
+            ("tests/helper.py", "from playwright.sync_api import sync_playwright\n"),
+            ("tests/test_indirect.py", "from tests import helper\n"),
+            ("tests/test_relative.py", "from .helper import sync_playwright\n"),
+            ("tests/test_beside.py", "import helper\n"),
+            ("tests/test_fixture.py", "def test_home(page):\n    page.goto('/')\n"),
+            ("tests/test_dynamic.py", "import importlib\nimportlib.import_module('playwright.sync_api')\n"),
+            ("tests/test_dunder.py", "__import__('playwright')\n"),
+            ("tests/test_suite_runner.py", "def load_tests(loader, tests, pattern):\n    return loader.discover('.')\n"),
+            ("tests/test_chain.py", "import deep.a\n"),
+            ("tests/test_cyclic.py", "import loop.a\n"),
+            ("deep/__init__.py", ""),
+            ("deep/a.py", "from deep import b\n"),
+            ("deep/b.py", "import playwright\n"),
+            ("loop/__init__.py", ""),
+            ("loop/a.py", "from loop import b\n"),
+            ("loop/b.py", "from loop import a\n"),
+            ("tests/fx/conftest.py", (
+                "import pytest\n\n\n@pytest.fixture\ndef logged_in(page):\n    return page\n\n\n"
+                "@pytest.fixture\ndef admin(logged_in):\n    return logged_in\n"
+            )),
+            ("tests/fx/test_admin.py", "def test_panel(admin):\n    assert admin\n"),
+            ("tests/local_fixture.py", (
+                "import pytest\n\n\n@pytest.fixture\ndef shop(page):\n    return page\n\n\ndef test_cart(shop):\n    assert shop\n"
+            )),
+            ("tests/test_selenium.py", "from selenium import webdriver\n"),
+            ("tests/test_named.py", "import playwright_report\n"),
+            ("playwright_report.py", "VALUE = 1\n"),
+            ("web/conftest.py", "pytest_plugins = ['pytest_playwright']\n"),
+            ("web/test_plain.py", "import unittest\n"),
+            ("workers/pytest.ini", "[pytest]\naddopts = -n 4\n"),
+            ("workers/test_x.py", "import unittest\n"),
+            ("pyproject.toml", "[tool.pytest.ini_options]\npythonpath = [\n  'src',\n]\n"),
+            ("src/app/__init__.py", ""),
+            ("src/app/browser.py", "from playwright.sync_api import sync_playwright\n"),
+            ("tests/test_src_layout.py", "from app.browser import sync_playwright\n"),
+            ("tests/ui/conftest.py", (
+                "import pytest\n\n\n@pytest.fixture(autouse=True)\ndef _login(page):\n    page.goto('/login')\n"
+            )),
+            ("tests/ui/test_autouse.py", "def test_home():\n    assert True\n"),
+            ("tests/pl/conftest.py", "pytest_plugins = ['fixtures_browser']\n"),
+            ("tests/pl/fixtures_browser.py", (
+                "import pytest\nfrom playwright.sync_api import sync_playwright\n\n\n@pytest.fixture\ndef shop():\n"
+                "    return sync_playwright().start()\n"
+            )),
+            ("tests/pl/test_plugin.py", "def test_x(shop):\n    assert shop\n"),
+            ("tests/uf/test_usefixtures.py", "import pytest\n\n\n@pytest.mark.usefixtures('page')\ndef test_x():\n    assert True\n"),
+            ("tests/rq/test_request.py", "def test_x(request):\n    request.getfixturevalue('page').goto('/')\n"),
+            ("tests/bm/test_bigmod.py", "import bigmod\n"),
+            ("tests/bm/bigmod.py", "x = 1\n" * 200_000 + "from playwright.sync_api import sync_playwright\n"),
+            ("tests/ct/test_ct.spec.ts", "import { test } from '@playwright/experimental-ct-react';\n"),
+            ("tests/rc/conftest.py", (
+                "import pytest\n\n\n@pytest.fixture(autouse=True)\ndef _login(request):\n"
+                "    request.getfixturevalue('page').goto('/')\n"
+            )),
+            ("tests/dy/conftest.py", (
+                "import pytest\n\n\n@pytest.fixture(autouse=True)\ndef _login(request):\n"
+                "    request.getfixturevalue('pa' + 'ge').goto('/')\n"
+            )),
+            ("tests/lb/conftest.py", (
+                "import pytest\n\n\n@pytest.fixture(autouse=True)\ndef _go(launch_browser):\n    launch_browser().new_page()\n"
+            )),
+            ("tests/pr/conftest.py", "pytest_plugins = ['req_plugin']\n"),
+            ("tests/pr/req_plugin.py", (
+                "import pytest\n\n\n@pytest.fixture(autouse=True)\ndef shop(request):\n"
+                "    return request.getfixturevalue('page')\n"
+            )),
+            *((f"tests/{folder}/test_x.py", "def test_x():\n    assert True\n") for folder in ("rc", "dy", "lb", "pr")),
+            ("tools/chromium.mjs", "const pw = require('playwright-chromium');\n"),
+            ("tools/pup.mjs", "import puppeteer from 'puppeteer-core';\n"),
+            ("tools/extra.mjs", "import puppeteer from 'puppeteer-extra';\n"),
+            ("tools/cy.mjs", "const cypress = require('cypress');\n"),
+            ("tests/test_pyppeteer.py", "import pyppeteer\n"),
+            ("tests/test_undetected.py", "import undetected_chromedriver as uc\n"),
+            *((f"tests/test_{name.lower()}.py", f"{line}\n") for name, line in BROWSER_IMPORTS.items()),
+            *((f"tools/{name}.js", f"const x = require('{name.replace('wdio', '@wdio/globals')}');\n")
+              for name in ("nightwatch", "testcafe", "wdio")),
+            ("package.json", json.dumps({"scripts": PACKAGE_SCRIPTS})),
+            ("web/package.json", json.dumps({"scripts": {"e2e": "cypress run", "lint": "eslint ."}})),
+        ):
+            (repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (repo / name).write_text(text, encoding="utf-8")
+        return repo
+
+    def test_playwright_reached_through_imports_conftest_fixtures_or_load_tests_is_never_light(self):
+        repo = self._repo()
+        transitive = [
+            "python3 -m pytest tests/test_indirect.py",
+            "python3 -m pytest tests/test_relative.py",
+            "python3 -m pytest tests/test_beside.py",
+            "python3 -m pytest tests/test_fixture.py",
+            "python3 -m pytest tests/test_dynamic.py",
+            "python3 -m pytest tests/test_dunder.py",
+            "python3 -m unittest tests.test_suite_runner",
+            "python3 -m pytest tests/test_chain.py",
+            "python3 -m pytest web/test_plain.py",
+            "python3 -m pytest workers/test_x.py",
+            "python3 -m pytest tests/fx/test_admin.py",
+            "python3 -m pytest tests/local_fixture.py",
+            "python3 -m pytest tests/test_selenium.py",
+            "python3 -m pytest tests/test_src_layout.py",
+            "python3 -m pytest tests/ui/test_autouse.py",
+            "python3 -m pytest tests/pl/test_plugin.py",
+            "python3 -m pytest tests/uf/test_usefixtures.py",
+            "python3 -m pytest tests/rq/test_request.py",
+            "python3 -m pytest tests/bm/test_bigmod.py",
+            "python3 -m pytest tests/rc/test_x.py",
+            "python3 -m pytest tests/dy/test_x.py",
+            "python3 -m pytest tests/lb/test_x.py",
+            "python3 -m pytest tests/pr/test_x.py",
+            "python3 -m pytest tests/test_pyppeteer.py",
+            "python3 -m pytest tests/test_undetected.py",
+            *(f"python3 -m pytest tests/test_{name.lower()}.py" for name in BROWSER_IMPORTS),
+        ]
+        for command in transitive:
+            with self.subTest(command=command):
+                self.assertFalse(self.light(command, repo))
+                self.assertTrue(self.heavy(command, repo))
+        for command in (
+            "node tests/ct/test_ct.spec.ts", "node tools/chromium.mjs", "node tools/pup.mjs", "node tools/extra.mjs",
+            "node tools/cy.mjs", "npx cypress run", "yarn cypress run", "pnpm cypress run", "yarn e2e", "pnpm test:e2e",
+            "npx nightwatch", "npx testcafe chrome tests/", "npx wdio run wdio.conf.js", "node tools/nightwatch.js",
+            "node tools/testcafe.js", "node tools/wdio.js",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.light(command, repo))
+                self.assertTrue(self.heavy(command, repo))
+        for command in (
+            "yarn --cwd web e2e", "yarn --cwd=web e2e", "pnpm -C web e2e", "pnpm --filter web e2e", "yarn workspace web e2e",
+            "npm --prefix web run e2e", "npm -w web run e2e", 'cd "$W" && yarn e2e', "yarn cy", "yarn both", "yarn e2e2",
+            "pnpm -r e2e", "yarn loop",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.heavy(command, repo))
+        for command in (
+            "yarn lint", "yarn build", "yarn add -D cypress", "yarn install", "yarn", "pnpm install", "yarn --cwd web lint",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.heavy(command, repo))
+        for name in (
+            "@playwright/experimental-ct-react", "playwright-chromium", "playwright-firefox", "playwright-webkit",
+            "playwright-core", "puppeteer", "puppeteer-core", "selenium-webdriver", "webdriverio", "pyppeteer",
+            "undetected_chromedriver", "puppeteer-extra", "cypress", *BROWSER_IMPORTS, "nightwatch", "testcafe", "@wdio/globals",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue(self.watch.browser_module(name))
+        plugin = {
+            "playwright", "browser_type", "browser_type_launch_args", "launch_browser", "browser", "browser_context_args",
+            "context", "new_context", "page", "browser_name", "browser_channel", "is_chromium", "is_firefox",
+            "is_webkit", "device", "connect_options", "output_path",
+        }
+        self.assertLessEqual(plugin, self.watch.FIXTURES)
+        for command in (
+            "python3 -m pytest tests/test_unit.py", "python3 -m unittest tests.test_cyclic", "python3 -m pytest tests/test_named.py",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.light(command, repo))
+                self.assertFalse(self.heavy(command, repo))
+
+    def _closure(self, modules: int) -> Path:
+        repo = self.base / f"closure{modules}"
+        (repo / ".git").mkdir(parents=True)
+        (repo / "pkg").mkdir()
+        (repo / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        for n in range(modules):
+            (repo / "pkg" / f"m{n}.py").write_text(f"from pkg import m{n + 1}\n" if n + 1 < modules else "", encoding="utf-8")
+        (repo / "test_wide.py").write_text("import pkg.m0\n", encoding="utf-8")
+        return repo
+
+    def test_a_large_import_closure_is_walked_and_one_past_the_bound_is_heavy_in_admit_and_hook(self):
+        command = "python3 -m pytest test_wide.py"
+        small = self._closure(1500)
+        large = self._closure(2500)
+        jumps = itertools.count(0, 3600)
+        with mock.patch.object(time, "monotonic", side_effect=lambda: next(jumps)):
+            self.assertTrue(self.light(command, small))
+            self.assertFalse(self.heavy(command, small))
+            self.assertFalse(self.light(command, large))
+            self.assertTrue(self.heavy(command, large))
+
+    def test_a_walk_past_the_byte_budget_is_heavy_in_admit_and_hook(self):
+        command = "python3 -m pytest test_wide.py"
+        self.assertEqual(self.watch.REACH_BYTES, 4 * 2**20)
+        within, past = self._closure(4), self._closure(5)
+        for repo, modules in ((within, 4), (past, 5)):
+            for n in range(modules):
+                with (repo / "pkg" / f"m{n}.py").open("a", encoding="utf-8") as module:
+                    module.write("# " + "x" * 900_000 + "\n")
+        self.assertTrue(self.light(command, within))
+        self.assertFalse(self.heavy(command, within))
+        self.assertFalse(self.light(command, past))
+        self.assertTrue(self.heavy(command, past))
+
+    def test_a_deep_dotted_import_stops_looking_at_the_first_missing_folder(self):
+        (self.base / "ns" / "deep").mkdir(parents=True)
+        (self.base / "ns" / "deep" / "mod.py").write_text("", encoding="utf-8")
+        looked: list[str] = []
+        isfile, isdir = os.path.isfile, os.path.isdir
+
+        def counted(check: Callable[[str], bool]) -> Callable[[str], bool]:
+            return lambda path: looked.append(path) or check(path)
+
+        with mock.patch.object(self.watch.os.path, "isfile", counted(isfile)), mock.patch.object(self.watch.os.path, "isdir", counted(isdir)):
+            self.assertEqual(self.watch.rooted_files(".".join(["absent"] + ["b"] * 97), (str(self.base),)), frozenset())
+        self.assertLessEqual(len(looked), 3)
+        self.assertEqual(self.watch.rooted_files("ns.deep.mod", (str(self.base),)), frozenset({str(self.base / "ns" / "deep" / "mod.py")}))
+
+    def test_deep_imports_through_existing_folders_look_at_each_folder_once(self):
+        repo = self.base / "tower"
+        chain = ["b"] * 98
+        os.makedirs(repo.joinpath(*chain))
+        (repo / ".git").mkdir()
+        imports = "".join(f"import {'.'.join(chain)}.x{k}\n" for k in range(2000))
+        (repo / "test_tower.py").write_text(imports + "def test_x():\n    assert True\n", encoding="utf-8")
+        looked: list[str] = []
+        isfile, isdir = os.path.isfile, os.path.isdir
+
+        def counted(check: Callable[[str], bool]) -> Callable[[str], bool]:
+            return lambda path: looked.append(path) or check(path)
+
+        start = time.perf_counter()
+        with mock.patch.object(self.watch.os.path, "isfile", counted(isfile)), mock.patch.object(self.watch.os.path, "isdir", counted(isdir)):
+            self.assertFalse(self.heavy("python3 -m pytest test_tower.py", repo))
+        self.assertLess(time.perf_counter() - start, 10)
+        self.assertLessEqual(len([path for path in looked if path.startswith(str(repo / "b"))]), 3 * (98 + 2000))
+
+    def test_env_that_changes_the_run_or_a_second_runner_makes_a_test_command_heavy(self):
+        repo = self._repo()
+        for command in (
+            "env LANG=C.UTF-8 TZ=UTC python3 -m pytest tests/test_unit.py",
+            "LC_ALL=C NO_COLOR=1 python3 -m unittest tests.test_unit",
+            "python3 -m pytest -q -x --tb=short -k unit tests/test_unit.py",
+            "python3 -m unittest -v tests.test_unit",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.light(command, repo))
+                self.assertFalse(self.heavy(command, repo))
+        for command in (
+            "env PYTEST_ADDOPTS='-n 14 tests' python3 -m pytest tests/test_unit.py",
+            "PYTEST_PLUGINS=xdist python3 -m pytest tests/test_unit.py",
+            "PYTHONPATH=evil python3 -m unittest tests.test_unit",
+            "export PYTEST_ADDOPTS=-n14; python3 -m pytest tests/test_unit.py",
+            "python3 -m pytest tests/test_unit.py | python3 -m pytest tests/test_unit.py",
+            "bash -c 'python3 -m pytest tests/test_unit.py & python3 -m pytest tests/test_unit.py'",
+            "python3 -m pytest tests/test_unit.py ; python3 -m unittest tests.test_unit",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.light(command, repo))
+                self.assertTrue(self.heavy(command, repo))
+        for command in (
+            "python3 -m pytest -p xdist tests/test_unit.py",
+            "python3 -m pytest -o addopts=-n4 tests/test_unit.py",
+            "python3 -m pytest -c other.ini tests/test_unit.py",
+            "env -S 'PYTEST_ADDOPTS=-n4 python3 -m pytest' tests/test_unit.py",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.light(command, repo))
+
+    def test_read_only_programs_never_hide_a_runner_and_capped_cargo_stays_light(self):
+        for command in (
+            "find / -name pytest", "man make", "readlink -f /usr/bin/make", "whereis cargo", "ps -C make",
+            "stat /usr/bin/pytest", "file /usr/bin/make", "cargo fmt --check", "cargo metadata --format-version 1",
+            "env CARGO_BUILD_JOBS=4 cargo build", "CARGO_BUILD_JOBS=2 cargo clippy", "FOO=1 git status",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(self.heavy(command, self.base))
+        for command in (
+            "find . -name '*.py' -exec pytest {} +", "cargo build", "env CARGO_BUILD_JOBS=8 cargo test",
+            "env CARGO_BUILD_JOBS=4 cargo build -j 14", "RUSTFLAGS=-g CARGO_BUILD_JOBS=4 cargo build", "npm run lint",
+            "CARGO_BUILD_JOBS=² cargo build", "CARGO_BUILD_JOBS=0 cargo check",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.heavy(command, self.base))
+                self.assertFalse(self.light(command, self.base))
+        for command in (
+            "find . -name '*.py'", "cargo fmt --check", "cargo metadata", "env CARGO_BUILD_JOBS=4 cargo build",
+            "CARGO_BUILD_JOBS=1 cargo test",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(self.light(command, self.base))
+
+    def test_without_a_start_directory_only_the_e2e_path_counts(self):
+        self.assertTrue(self.heavy("pytest tests/e2e/test_orchestrator_e2e.py", None))
+        self.assertTrue(self.heavy("python3 -m unittest tests.e2e.test_orchestrator_e2e", None))
+        self.assertFalse(self.heavy("pytest tests/test_page.py", None))
+        self.assertTrue(self.heavy(f"pytest {self.base / 'tests' / 'test_page.py'}", None))
 
 
 class TestWatchCommands(unittest.TestCase):
@@ -238,6 +885,187 @@ class TestWatchCommands(unittest.TestCase):
 
     def _bash(self, command: str) -> str:
         return json.dumps({"tool_input": {"command": command}})
+
+    def _broken_configs(self) -> list[tuple[str, Callable[[], None]]]:
+        good = json.dumps(self.cfg)
+
+        def text(content: str) -> Callable[[], None]:
+            return lambda: self.config.write_text(content, encoding="utf-8")
+
+        return [
+            ("comma", text(good[:-1] + ",}")), ("empty", text("")), ("list", text("[]")),
+            ("string never_block", text(json.dumps({**self.cfg, "never_block": "."}))),
+            ("broken regex", text(json.dumps({**self.cfg, "heavy_commands": ["("]}))),
+            ("empty-matching heavy", text(json.dumps({**self.cfg, "heavy_commands": [""]}))),
+            ("empty-matching never_block", text(json.dumps({**self.cfg, "never_block": ["x*"]}))),
+            ("dot heavy", text(json.dumps({**self.cfg, "heavy_commands": ["."]}))),
+            ("word-boundary heavy", text(json.dumps({**self.cfg, "heavy_commands": [r"\b"]}))),
+            ("dot never_block", text(json.dumps({**self.cfg, "never_block": ["."]}))),
+            ("dangling link", lambda: self.config.symlink_to(self.base / "absent.json")),
+            ("link loop", lambda: self.config.symlink_to(self.config)),
+            ("directory", lambda: self.config.mkdir()),
+        ]
+
+    def _reset_config(self) -> None:
+        if self.config.is_dir() and not self.config.is_symlink():
+            self.config.rmdir()
+        else:
+            self.config.unlink(missing_ok=True)
+
+    def test_a_broken_config_falls_back_to_defaults_so_light_commands_pass_and_heavy_ones_stay_refused(self):
+        self._stage("ok")
+        for name, make in self._broken_configs():
+            with self.subTest(config=name):
+                self._reset_config()
+                make()
+                passed = self._run("block", stdin=self._bash("ls -la"))
+                self.assertEqual(passed.returncode, 0, passed.stderr)
+                self.assertIn(str(self.config), passed.stderr)
+                self.assertIn("built-in defaults", passed.stderr)
+                self.assertEqual(self._run("block", stdin=self._bash("make test")).returncode, 2)
+                self.assertEqual(self._run("block", stdin=self._bash(HEAVY_LIVE[0])).returncode, 2)
+                watched = self._run("watch", stdin=json.dumps({"session_id": "s1", "hook_event_name": "UserPromptSubmit"}))
+                self.assertEqual(watched.returncode, 0, watched.stderr)
+                self.assertIn(str(self.config), watched.stdout)
+        self._reset_config()
+        self.assertEqual(self._run("block", stdin=self._bash("make test")).returncode, 0)
+
+    def test_a_broken_config_keeps_the_shipped_patterns_so_every_live_heavy_command_stays_refused(self):
+        self._stage("ok")
+        self._broken_configs()[0][1]()
+        for command in HEAVY_LIVE:
+            with self.subTest(command=command):
+                refused = self._run("block", stdin=self._bash(command))
+                self.assertEqual(refused.returncode, 2, refused.stderr)
+                self.assertIn(str(self.config), refused.stderr)
+
+    def test_a_pattern_matching_a_probe_command_is_refused(self):
+        watch = _load()
+        reproducers = {
+            "heavy_commands": (r"\.", "/", ".{11}", ".{34}", r"\bgrep\b", r"\becho\b", r"\bhead\b"),
+            "never_block": (r"\.", "compose", "quality", ".{20}", "swarm", "pull", "roundtrip", "act-"),
+        }
+        derived = {
+            "heavy_commands": [rf"\b{re.escape(tool)}\b" for tool in sorted(watch.LIGHT_TOOLS)],
+            "never_block": [rf"^{re.escape(tool)}\b" for tool in sorted(watch.HEAVY_TOOLS)],
+        }
+        for key, probes in watch.PATTERN_PROBES.items():
+            for pattern in (*map(re.escape, probes), *reproducers[key], *derived[key]):
+                with self.subTest(key=key, pattern=pattern), self.assertRaises(ValueError):
+                    watch.checked_config({"heavy_commands": [], "never_block": [], key: [pattern]})
+        self.assertEqual(watch.checked_config(self.cfg), self.cfg)
+        self.assertEqual(watch.checked_config(DEFAULT), DEFAULT)
+        for key, pattern in (("heavy_commands", r"\bhead\b"), ("never_block", "swarm")):
+            with self.subTest(preflight=pattern):
+                self.cfg[key] = [*self.cfg[key], pattern]
+                self._write_config()
+                refused = self._run("preflight")
+                self.assertEqual(refused.returncode, 2, refused.stderr)
+                self.assertIn(repr(pattern), refused.stderr)
+                self.cfg[key] = self.cfg[key][:-1]
+        self._write_config()
+        self.assertEqual(self._run("preflight").returncode, 0)
+
+    def test_the_refuse_everything_mode_never_promises_that_teardown_still_runs(self):
+        scripts = self.base / "skills" / "kvb-org-organize" / "scripts"
+        shutil.copytree(WATCH.parent, scripts, ignore=shutil.ignore_patterns("__pycache__"))
+        self._stage("ok")
+        self._broken_configs()[0][1]()
+        for command in ("make compose-down", "ls -la"):
+            with self.subTest(command=command):
+                refused = subprocess.run(
+                    [sys.executable, str(scripts / "watch.py"), "block"], capture_output=True, text=True, env=self._env(),
+                    input=self._bash(command), check=False,
+                )
+                self.assertEqual(refused.returncode, 2, refused.stderr)
+                self.assertIn("every command is refused", refused.stderr)
+                self.assertNotIn("Teardown commands still run", refused.stderr)
+
+    def test_the_shipped_default_is_safe_on_any_host(self):
+        text = SHIPPED.read_text(encoding="utf-8")
+        self.assertEqual((DEFAULT["cleanup"], DEFAULT["worktree_cleanup"]), ([], []))
+        self.assertNotIn("prune", text)
+        self.assertNotIn("infinito", text.lower())
+        self.assertFalse([folder for folder in DEFAULT["cache_dirs"] if "buildx" in folder])
+        self.assertTrue(DEFAULT["queue_enforce"])
+
+    def test_the_shipped_default_is_complete_and_samples_long_enough_for_a_swap_out_rate(self):
+        watch = _load()
+        self.assertIsNone(watch.missing(DEFAULT, watch.MEMORY_KEYS))
+        self.assertGreaterEqual(DEFAULT["load_limits"]["sample_seconds"], watch.SWAP_SPAN[0])
+        self.assertEqual(DEFAULT["memory_limits"]["stop"]["psi_full"], 5)
+        self.assertLessEqual(set(self.cfg), set(DEFAULT))
+        for command in HEAVY_LIVE:
+            with self.subTest(command=command):
+                self.assertTrue(watch.heavy(command, DEFAULT, tuple(DEFAULT["never_block"]), None))
+
+    def test_a_broken_config_uses_the_shipped_file_and_an_unreadable_one_refuses_every_command(self):
+        watch = _load()
+        watch.CONFIG = self.config
+        self.config.write_text("{", encoding="utf-8")
+        cfg, warning = watch.settled_config()
+        self.assertEqual(cfg, DEFAULT)
+        self.assertIn(str(SHIPPED), warning)
+        watch.SHIPPED = self.base / "absent.json"
+        cfg, warning = watch.settled_config()
+        self.assertIn(str(watch.SHIPPED), warning)
+        for command in ("ls -la", *HEAVY_LIVE):
+            with self.subTest(command=command):
+                self.assertTrue(watch.heavy(command, cfg, tuple(cfg["never_block"]), None))
+
+    def test_admit_under_the_shipped_default_denies_at_psi_full_5_and_rates_swap_out_after_idle(self):
+        watch = _load()
+        watch.ROOT, watch.SWAP_OUT, watch.VMSTAT, watch.PAGE_BYTES = self.base, self.base / "swap-out.json", self.base / "vmstat", PAGE
+        watch.CONFIG = self.config
+        self.config.write_text("{", encoding="utf-8")
+        cfg, _ = watch.settled_config()
+        args = mock.Mock(kind="test-nostack", need_gb=None, command=["true"])
+        out = io.StringIO()
+        with mock.patch.object(watch, "admit_sample", return_value=(1.0, 1.0, CALM | {"psi_full": 5.0})), \
+                mock.patch.object(watch, "disk", return_value=(1e6, 2e6)), mock.patch.object(watch, "loaded", return_value=mock.Mock(admit=mock.Mock(return_value=None))), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(watch.cmd_admit(cfg, args), 3)
+        self.assertIn("memory stage stop", out.getvalue())
+        now = 1_800_000_000.0
+        clock = [now]
+        watch.SWAP_OUT.write_text(json.dumps({"readings": [[now - 1000, 1000]]}), encoding="utf-8")
+        watch.VMSTAT.write_text("pswpout 1000\n", encoding="utf-8")
+
+        def window(limits: dict) -> tuple[float, float]:
+            clock[0] += limits["load_limits"]["sample_seconds"]
+            return 10.0, 50.0
+
+        with mock.patch.object(watch.time, "time", side_effect=lambda: clock[0]), \
+                mock.patch.object(watch, "load", side_effect=window):
+            _, _, sample = watch.admit_sample(cfg)
+        self.assertEqual(sample["swap_out_mb_min"], 0.0)
+
+    def test_admit_and_status_on_a_broken_config_warn_and_use_the_built_in_limits(self):
+        for name, make in self._broken_configs()[:1] + self._broken_configs()[-1:]:
+            with self.subTest(config=name):
+                self._reset_config()
+                make()
+                runs = [self._run("status"), self._run("admit", "--kind", "nosuch", "--", "true")]
+                self.assertEqual(runs[0].returncode, 0, runs[0].stderr)
+                self.assertTrue(runs[0].stdout.startswith("stage="), runs[0].stdout)
+                self.assertEqual(runs[1].returncode, 3, runs[1].stderr)
+                if name == "comma":
+                    runs.append(self._run("admit", "--kind", "test-nostack", "--", "true"))
+                    self.assertIn(runs[-1].returncode, (0, 3), runs[-1].stderr)
+                    self.assertRegex(runs[-1].stdout, r"^(grant|deny): free .* memory stage ")
+                for done in runs:
+                    self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+                    self.assertIn(str(self.config), done.stderr)
+                    self.assertIn("built-in defaults", done.stderr)
+        self._reset_config()
+
+    def test_a_block_hook_that_cannot_read_its_input_refuses_the_command(self):
+        self._stage("ok")
+        for payload in ("not json", json.dumps({"tool_input": ["make test"]})):
+            with self.subTest(payload=payload):
+                refused = self._run("block", stdin=payload)
+                self.assertEqual(refused.returncode, 2, refused.stderr)
+                self.assertIn("counts as heavy", refused.stderr)
 
     def test_block_only_heavy_jobs_at_stop_and_never_teardown(self):
         self._stage("stop")
@@ -297,28 +1125,124 @@ class TestWatchCommands(unittest.TestCase):
     def test_admit_keeps_the_stop_floor(self):
         self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
         self._write_config()
-        self.assertEqual(self._run("admit", "--need-gb", "0.001").returncode, 0)
-        self.assertEqual(self._run("admit", "--need-gb", "1e9").returncode, 3)
+        self.assertEqual(self._run("admit", "--need-gb", "0.001", "--", "true").returncode, 0)
+        self.assertEqual(self._run("admit", "--need-gb", "1e9", "--", "true").returncode, 3)
 
     def test_every_admit_also_needs_cpu_and_ram_below_the_limits_and_memory_short_of_stop(self):
         self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
         self._write_config()
-        granted = self._run("admit", "--kind", "test")
+        granted = self._run("admit", "--kind", "test", "--", "true")
         self.assertEqual(granted.returncode, 0)
         self.assertIn("memory stage ok", granted.stdout)
         self.cfg["load_limits"]["cpu_percent"] = 0
         self._write_config()
         for args in (("--kind", "test"), ("--kind", "swarm"), ("--need-gb", "0.001")):
             with self.subTest(args=args):
-                denied = self._run("admit", *args)
+                denied = self._run("admit", *args, "--", "true")
                 self.assertEqual(denied.returncode, 3)
                 self.assertIn("cpu", denied.stdout)
         self.cfg["load_limits"]["cpu_percent"] = 101
         self.cfg["memory_limits"]["stop"] = dict(SHUT_MEMORY)
         self._write_config()
-        short = self._run("admit", "--need-gb", "0.001")
+        short = self._run("admit", "--need-gb", "0.001", "--", "true")
         self.assertEqual(short.returncode, 3)
         self.assertIn("memory stage stop", short.stdout)
+
+    def test_admit_refuses_a_heavy_command_and_names_the_queue_hold_of_kind_test(self):
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self.cfg["slot_need_gb"]["test-nostack"] = 0
+        self._write_config()
+        for command in (
+            ("python", "-m", "unittest"), ("pytest", "tests/e2e/test_orchestrator_e2e.py"), ("make", "quality-high"),
+        ):
+            with self.subTest(command=command):
+                denied = self._run("admit", "--kind", "test-nostack", "--", *command)
+                self.assertEqual(denied.returncode, 3)
+                self.assertIn(f"run it as `queue.py hold --kind test --task <register task> -- {shlex.join(command)}`", denied.stdout)
+        light = self.base / "tests" / "test_x.py"
+        light.parent.mkdir()
+        light.write_text("import unittest\n", encoding="utf-8")
+        granted = self._run("admit", "--kind", "test-nostack", "--", "pytest", str(light))
+        self.assertEqual(granted.returncode, 0, granted.stdout)
+        self.assertIn("swap-out", granted.stdout)
+
+    def _admit_beside(self, entries: list[dict], ram_share: float) -> subprocess.CompletedProcess:
+        self.root.mkdir(parents=True, exist_ok=True)
+        (self.root / "queue.json").write_text(json.dumps({"seq": 2, "entries": entries}), encoding="utf-8")
+        rows = [
+            {"id": f"r{n}", "kind": "test-nostack", "signature": "s", "end": time.time(), "minutes": 1, "disk_gb": 0,
+             "mem_before": 0, "mem_max": ram_share, "cpu_before": 0, "cpu_max": 1}
+            for n in range(5)
+        ]
+        (self.root / "queue-history.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        return self._run("admit", "--kind", "test-nostack", "--", "true")
+
+    def _light_config(self) -> None:
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self.cfg["slot_need_gb"]["test-nostack"] = 0
+        self.cfg["load_limits"]["mem_percent"] = 200
+        self.cfg |= {"exclusive_kinds": ["quality-high"], "light_kinds": ["test-nostack"]}
+        self._write_config()
+
+    def test_a_light_run_beside_a_young_gate_is_admitted_while_memory_stays_under_warn(self):
+        self._light_config()
+        (self.root / "holds").mkdir(parents=True)
+        lock = (self.root / "holds" / "7-1.lock").open("w", encoding="utf-8")
+        self.addCleanup(lock.close)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        gate = {"id": "quality-high-1", "kind": "quality-high", "status": "active", "lock": "7-1", "granted": time.time() - 60,
+                "footprint": {"ram": 150.0, "cpu": 1.0}, "aliases": ["g"], "workdir": "/w", "need_gb": 0}
+        calm = self._admit_beside([gate], 50)
+        self.assertEqual(calm.returncode, 0, calm.stdout)
+        self.cfg["memory_limits"]["warn"] = dict(SHUT_MEMORY)
+        self._write_config()
+        warned = self._admit_beside([gate], 50)
+        self.assertEqual(warned.returncode, 3, warned.stdout)
+        self.assertRegex(warned.stdout, r"RAM \d+ % used \+ 200 % still to come reach the limit 200 %")
+        self.assertEqual(self._admit_beside([{**gate, "lock": "7-2"}], 50).returncode, 0)
+
+    def test_two_admits_count_each_other_until_the_record_expires(self):
+        self._light_config()
+        first = self._admit_beside([], 100)
+        self.assertEqual(first.returncode, 0, first.stdout)
+        [record] = json.loads((self.root / "queue.json").read_text(encoding="utf-8"))["admits"]
+        self.assertEqual(record["ram"], 100)
+        self.assertGreater(record["expires"], time.time())
+        second = self._run("admit", "--kind", "test-nostack", "--", "true")
+        self.assertEqual(second.returncode, 3, second.stdout)
+        self.assertRegex(second.stdout, r"RAM \d+ % used \+ 200 % still to come reach the limit 200 %")
+        stored = json.loads((self.root / "queue.json").read_text(encoding="utf-8"))
+        stored["admits"] = [{**record, "expires": time.time() - 1}]
+        (self.root / "queue.json").write_text(json.dumps(stored), encoding="utf-8")
+        third = self._run("admit", "--kind", "test-nostack", "--", "true")
+        self.assertEqual(third.returncode, 0, third.stdout)
+
+    def test_admit_needs_the_command_and_refuses_a_gate_run_like_the_block_hook(self):
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self.cfg["slot_need_gb"]["test-nostack"] = 0
+        self._write_config()
+        bare = self._run("admit", "--kind", "test-nostack")
+        self.assertEqual(bare.returncode, 2)
+        self.assertIn("command", bare.stderr)
+        gated = self._run("admit", "--kind", "test-nostack", "--", "python3", "gate.py", "run", "--target", "lint")
+        self.assertEqual(gated.returncode, 3, gated.stdout)
+        self.assertIn("queue.py hold --kind test --task <register task> -- python3 gate.py run --target lint", gated.stdout)
+
+    def test_preflight_names_every_missing_memory_bound_and_passes_a_complete_or_absent_config(self):
+        self.cfg["memory_limits"] = OLD_MEMORY
+        self._write_config()
+        refused = self._run("preflight")
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn(
+            "lacks memory_limits.warn.psi_some, memory_limits.warn.swap_out_mb_min, memory_limits.stop.swap_out_mb_min;",
+            refused.stderr,
+        )
+        self.assertFalse(self.root.exists())
+        self.cfg["memory_limits"] = LIVE_MEMORY
+        self._write_config()
+        self.assertEqual(self._run("preflight").returncode, 0)
+        self.config.unlink()
+        self.assertEqual(self._run("preflight").returncode, 0)
 
     def test_block_refuses_heavy_jobs_at_memory_stop_only(self):
         self._stage("ok")
@@ -357,7 +1281,7 @@ class TestWatchCommands(unittest.TestCase):
         self.assertEqual(watched.returncode, 0)
         self.assertIn("RESOURCE WARN", watched.stdout)
         self.assertIn("lacks memory_limits", watched.stdout)
-        command = self._run("admit", "--need-gb", "0")
+        command = self._run("admit", "--need-gb", "0", "--", "true")
         self.assertEqual(command.returncode, 2)
         self.assertIn("lacks memory_limits", command.stderr)
 

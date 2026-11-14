@@ -11,7 +11,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GATES = REPO_ROOT / "skills" / "kvb-check-gate" / "scripts" / "gates.py"
 QUEUE = REPO_ROOT / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
-OPEN_MEMORY = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_swap_gb": 1e9}
+OPEN_MEMORY = {
+    "available": -1, "swap_free": -1, "psi_some": 1000, "psi_full": 1000, "swap_out_mb_min": 1e9, "container_swap_gb": 1e9,
+}
 
 
 class Scratch(unittest.TestCase):

@@ -27,9 +27,8 @@ turn: hold runs the command on its grant and exits with its code.
 - In a worktree the command stays `gate.py run|hold` (`kvb-check-gate`):
   `queue.py hold ... -- python3 <gate.py> run ...`.
 
-One test file or module, or ruff, without Docker self-admits with
-`watch.py admit --kind test-nostack` (`kvb-org-organize`); any other test
-run goes through hold with kind `test`.
+Light runs (`kvb-org-organize` Capacity) self-admit; anything else goes
+through hold with kind `test`, and a light kind refuses it.
 
 ## Order and grant
 
@@ -77,8 +76,8 @@ learned values, `cancel` removes your own waiting job.
   one down, and `kvb-git-hotfix` may void a gate. A `kvb-org-queue-cleanup`
   round deletes only entries whose lock no living process holds.
 - With `queue_enforce: true`, the `block` hook (PreToolUse on Bash) refuses
-  `heavy_commands`, image builds, `make install|verify-*`, tests beyond one
-  file and `gate.py run|hold` outside `queue.py hold`.
+  `heavy_commands`, image builds, `make install|test*|quality*|verify-*`,
+  tests beyond one unit file and `gate.py run|hold` outside `queue.py hold`.
 - Without the config, hold exits 2: tell the operator and ask the chair
   (`kvb-org-organize`) until it exists. A waiting hold rereads it every poll
   (a broken file keeps the last good one), so a limit change needs no re-hold.

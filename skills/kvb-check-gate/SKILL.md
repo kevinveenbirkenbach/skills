@@ -32,10 +32,9 @@ commit starts from zero.
    `missing hotfix` reason means back to step 1.
 4. **Admit**: every gate target is heavy and runs only inside
    `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold`.
-   Only a single test module
-   self-admits (`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py
-   admit --kind test-nostack`), and it never turns a gate target green. A
-   hotfix gate adds `--hotfix <slug>` and takes the next free gate slot.
+   Only a single test module self-admits (`kvb-org-organize` Capacity), and
+   it never turns a gate target green. A hotfix gate adds `--hotfix <slug>`
+   and takes the next free gate slot.
 5. **Run** the missing and red targets, tracked tree clean, in the
    background; give the operator `tail -f` on the log:
 

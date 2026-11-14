@@ -71,10 +71,8 @@ order:
 Show the full draft, then `AskUserQuestion`: `Write it` / `Revise it` /
 `Discard`. Revise loops back to the step the correction touches. Write only
 on `Write it`; lint the file with the project's markdown linter, a light run
-that self-admits with
-`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
-test-nostack`; a lint through `make` or Docker runs through `queue.py hold`
-(the `kvb-org-queue` skill).
+(`kvb-org-organize` Capacity); a lint through `make` or Docker runs through
+`queue.py hold` (the `kvb-org-queue` skill).
 
 ## Step 6: hand over
 

@@ -58,9 +58,9 @@ and the prose diff.
 - Write the script, then replace the compiled prose with its call
   (`${CLAUDE_SKILL_DIR}/scripts/<verb>.py ...`) and one line on reading its
   output.
-- Every script gets a unit test with a negative control shown once, run once
-  `watch.py admit --kind test-nostack` (the `kvb-org-organize` skill) prints
-  `grant`; `make test` runs through `queue.py hold` (`kvb-org-queue`).
+- Every script gets a unit test with a negative control shown once, run as a
+  light run (`kvb-org-organize` Capacity); `make test` runs through
+  `queue.py hold` (`kvb-org-queue`).
 - In another repository follow its agent rules (claims, worktree, branch); a
   file another line owns goes to that line through the `kvb-org-coordinate`
   skill.

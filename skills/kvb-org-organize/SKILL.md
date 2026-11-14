@@ -37,8 +37,13 @@ ends or goes stale, or after a restart.
 
 ## Capacity
 
-- Light runs (no Docker, about a minute: one test file or module, ruff)
-  self-admit: `watch.py admit --kind test-nostack`, start on `grant`.
+- Light runs self-admit: `watch.py admit --kind test-nostack -- <command>`,
+  start on `grant`. Light is only ruff, shellcheck, markdownlint, lizard, jq,
+  py_compile, cargo fmt, `env CARGO_BUILD_JOBS=4 cargo build|check|clippy|test`,
+  or one test file or module outside `e2e/` that reaches no Playwright;
+  anything else: `queue.py hold --kind test`.
+- Memory stop (also PSI or swap-out) blocks every admit and grant; running
+  jobs go on.
 - Other test runs, `make test`, `make test-lint`, quality gates, deploys,
   iteration loops, swarm, image builds, cloud, shared-data cleanup, anything
   with Docker or over a few minutes: run through `queue.py hold`

@@ -63,3 +63,16 @@ and stays silent below the thresholds.
 
 `watch.py status` shows the stage computed from the live free space and the
 stored samples, and the age of the stored measurement.
+
+An unusable config (broken JSON, wrong types, a regex refusing a light
+probe such as `grep` or freeing a heavy one such as `make swarm-deploy`, a
+dangling link, a directory) makes the hooks, admit, status and the queue
+warn and use `config.default.json`, which the install writes when no config
+exists; without that file every command, teardown included, is refused.
+The probes are samples, so a pattern hitting only other commands passes. A
+package script is read from the nearest package.json, a named workspace
+only from a folder of that name. The light-run check misses
+`sys.path.insert` in a conftest, editable installs without pytest
+`pythonpath`, browser libraries outside its list and generic third-party
+fixtures such as pytest-selenium's `driver`, browsers started by a
+subprocess, and `git bisect run` or a suite script behind `bash`.
