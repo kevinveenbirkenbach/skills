@@ -1,9 +1,5 @@
   const OFFICE_RESULTS = {done: ["done", "ok"], refused: ["refused", "bad"], failed: ["failed", "bad"]};
-  const OFFICE_VERBS = {
-    appoint: ["Appoint", "bi-person-plus", "council.py claim --operator on the host: the chosen session gets the free office."],
-    takeover: ["Hand over", "bi-arrow-left-right", "council.py takeover --operator on the host: the office goes to the chosen session, even if the current holder is still alive."],
-    recall: ["Recall", "bi-person-x", "council.py release --operator on the host: the office becomes free, even if the holder is still alive."],
-  };
+  const OFFICE_VERBS = Glossary.OFFICE_VERBS;
   const OFFICE_HINT = "The host checks your passkey signature itself and refuses if the holder changed since the signature.";
 
   function successors(office, holder) {

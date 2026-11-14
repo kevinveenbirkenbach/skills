@@ -72,8 +72,7 @@ const Ancestry = (() => {
       const level = LEVELS.includes(found.level) ? found.level : "none";
       const source = typeof found.source === "string" ? found.source : "";
       const own = source === branch;
-      const from = own ? "own rule" : source ? `from ${source}` : "no rule";
-      return {action, level, source, own, inherited: !own, icon: LEVEL_ICONS[level], title: `${action}: ${level} · ${from}`};
+      return {action, level, source, own, inherited: !own, icon: LEVEL_ICONS[level]};
     });
   }
 

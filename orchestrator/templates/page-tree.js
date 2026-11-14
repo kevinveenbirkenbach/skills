@@ -110,7 +110,7 @@
     const result = resultOf(repo, entry);
     return h("div", {class: "branch-row", "data-item": `artifact:${artifactRef(`branch:${repo.path}\u0000${entry.name}`)}`},
       h("div", {class: "branch-name", "data-star-slot": ""}, h("strong", {}, entry.name), h("span", {class: "states"}, branchStates(entry)), entry.upstream ? h("span", {class: "muted"}, `↔ ${entry.upstream}`) : null,
-        h("span", {class: "muted", title: entry.head}, entry.head.slice(0, 10)), result ? resultChip(result) : null, h("span", {class: "spacer"}), gateIcons(repo.path, entry.name), glance ? null : deleteButton(entry)),
+        h("span", {class: "muted", title: entry.head}, entry.head.slice(0, 10)), result ? resultChip(result) : null, h("span", {class: "spacer"}), gateChips(repo.path, entry.name), glance ? null : deleteButton(entry)),
       entry.worktrees.map(worktreeRow));
   }
 

@@ -21,6 +21,12 @@ GATES_SPEC = importlib.util.spec_from_file_location("kvb_gates_for_e2e", REPO_RO
 gates = importlib.util.module_from_spec(GATES_SPEC)
 GATES_SPEC.loader.exec_module(gates)
 KEPT_TIP = "0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d"
+DONE_CHIPS = ["commit: test (inherited from main)", "merge: none (no rule)", "push: none (no rule)", "pr: e2e (own rule)"]
+DONE_MARKS = [[action, level, inherited, words, inherited, True] for (action, level, inherited), words in zip([("commit", "test", True), ("merge", "none", True), ("push", "none", True), ("pr", "e2e", False)], DONE_CHIPS, strict=True)]
+EXPLAINED = ["Gate actions", "Gate levels", "Where a level comes from", "Branch marks"]
+CHIP_STATE = """
+  const chipState = (button) => [button.dataset.action, button.dataset.level, button.classList.contains("inherited"), button.getAttribute("aria-label"), getComputedStyle(button).borderTopStyle === "dashed", text(button) === button.getAttribute("aria-label") && button.title.split("\\n")[0] === text(button)];
+"""
 CLEAN_ALL = """(async () => {@HELPERS@@UNLABELLED@
   const every = await until(() => document.querySelector('#main button[aria-label="Delete all merged"]'), 8000);
   await until(() => document.querySelector("#main svg.ancestry"), 8000);
@@ -40,7 +46,7 @@ CLEAN_ALL = """(async () => {@HELPERS@@UNLABELLED@
   return {before, token, store: store ? [store.title, store.getAttribute("aria-label")] : null, rows, outcome: outcome ? (outcome.dataset.cleanup ? "queued" : "unsigned") : null, tokenClick, labels,
     wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
 })()"""
-ANCESTRY = """(async () => {@HELPERS@@UNLABELLED@
+ANCESTRY = """(async () => {@HELPERS@@UNLABELLED@@CHIPS@
   const svg = await until(() => document.querySelector('#main svg.ancestry[aria-label="Ancestry of github.com/me/demo"]'), 8000);
   if (!svg) {
     return {error: "no ancestry"};
@@ -49,9 +55,10 @@ ANCESTRY = """(async () => {@HELPERS@@UNLABELLED@
   const edges = all("path.ancestry-edge", svg).map((edge) => [edge.dataset.parent, edge.dataset.child, edge.dataset.source, getComputedStyle(edge).strokeDasharray !== "none"]);
   const marks = (branch) => {
     const row = all("#main .branch-row").find((entry) => text(entry.querySelector(".branch-name strong")) === branch);
-    return row ? all(".gate-mark", row).map((button) => [button.dataset.action, button.dataset.level, button.classList.contains("inherited"), button.title, Number(getComputedStyle(button).opacity) < 1]) : null;
+    return row ? all(".gate-mark", row).map(chipState) : null;
   };
-  return {nodes, edges, done: marks("feature/done"), main: marks("main"), unlabelled: unlabelled(document.getElementById("main")), wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
+  const inside = all("#main .gate-mark").every((chip) => chip.getBoundingClientRect().right <= document.documentElement.clientWidth + 1);
+  return {nodes, edges, done: marks("feature/done"), main: marks("main"), inside, unlabelled: unlabelled(document.getElementById("main")), wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
 })()"""
 STAGE = """(async () => {@HELPERS@
   const svg = await until(() => document.querySelector("#main svg.ancestry"), 8000);
@@ -102,10 +109,10 @@ AGENTS = """(async () => {@HELPERS@@UNLABELLED@
   const nodes = all("g.ancestry-node", fresh).map((node) => [node.dataset.kind, Number(node.dataset.generation), node.getBoundingClientRect().top]);
   return {nodes, edges: all("path.ancestry-edge", fresh).length, list: all("#main .spawn-tree li").length, unlabelled: unlabelled(document.getElementById("main")), wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
 })()"""
-POPUP_GATES = """(async () => {@HELPERS@@UNLABELLED@
+POPUP_GATES = """(async () => {@HELPERS@@UNLABELLED@@CHIPS@
   const id = `branch:${@REPO@}\\u0000feature/done`;
   const dialog = document.getElementById("popup");
-  const marks = (group) => all(".gate-mark", group).map((button) => [button.dataset.action, button.dataset.level, button.classList.contains("inherited"), button.title, Number(getComputedStyle(button).opacity) < 1]);
+  const marks = (group) => all(".gate-mark", group).map(chipState);
   const shut = async () => {
     (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
     await until(() => !dialog.open, 4000);
@@ -152,10 +159,56 @@ POPUP_GATES = """(async () => {@HELPERS@@UNLABELLED@
   }
   return {shown, wide: document.documentElement.scrollWidth > document.documentElement.clientWidth};
 })()"""
+POPUP_EXPLAIN = """(async () => {@HELPERS@
+  const id = `branch:${@REPO@}\\u0000feature/done`;
+  const dialog = document.getElementById("popup");
+  await screenShown(8000);
+  const picker = await until(() => document.querySelector('#main select[aria-label="Repository"]'), 8000);
+  if (picker && picker.value !== @REPO@) {
+    picker.value = @REPO@;
+    picker.dispatchEvent(new Event("change", {bubbles: true}));
+  }
+  const target = await until(() => all("#main svg [data-pick]").find((node) => node.dataset.pick === id), 8000);
+  if (!target) {
+    return {error: text(document.getElementById("main"))};
+  }
+  target.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true}));
+  const group = await until(() => dialog.open && dialog.querySelector(".popup-box .gates"), 6000);
+  const explain = group ? dialog.querySelector(".popup-box details.gate-explain") : null;
+  if (!explain) {
+    return {error: "no gate chips or Explain in the popup", open: dialog.open};
+  }
+  explain.querySelector("summary").click();
+  await until(() => explain.open, 2000);
+  const box = dialog.querySelector(".popup-box");
+  const frame = box.getBoundingClientRect();
+  const inside = (node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.left >= frame.left - 1 && rect.right <= frame.right + 1 && rect.right <= document.documentElement.clientWidth + 1;
+  };
+  const chips = all(".gate-mark", group);
+  const commit = group.querySelector('.gate-mark[data-action="commit"]');
+  commit.focus();
+  return {
+    chips: chips.map((chip) => [text(chip), chip.getAttribute("aria-label"), chip.title.split("\\n")[0], chip.tabIndex]),
+    inside: [...chips, explain].map(inside),
+    scrolls: [box, dialog.querySelector(".popup-body")].some((node) => node.scrollWidth > node.clientWidth + 1),
+    summary: [text(explain.querySelector("summary")), explain.open],
+    headings: all("h4", explain).map(text), terms: all("dt", explain).length,
+    focused: document.activeElement === commit,
+    wide: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  };
+})()"""
+KEYBOARD = """(async () => {@HELPERS@
+  const dialog = document.getElementById("popup");
+  const staged = await until(() => dialog.querySelector('.popup-box .gate-mark.pending[data-action="commit"]'), 4000);
+  const apply = document.querySelector('#main button[aria-label="Apply"]');
+  return {open: dialog.open, staged: staged ? [text(staged), staged.getAttribute("aria-label"), staged.dataset.level] : null, focused: Boolean(staged) && document.activeElement === staged, apply: apply ? apply.title : null};
+})()"""
 
 
 def probe(template: str) -> str:
-    return template.replace("@HELPERS@", base.HELPERS).replace("@UNLABELLED@", base.UNLABELLED)
+    return template.replace("@HELPERS@", base.HELPERS).replace("@UNLABELLED@", base.UNLABELLED).replace("@CHIPS@", CHIP_STATE)
 
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
@@ -196,13 +249,31 @@ class TestWorkbenchArtifacts(HubCase):
                 {"width": width, "height": height, "url": f"{self.base}?{width}-clean#artifacts/tree", "wait": 1200, "probe": probe(CLEAN_ALL), "shot": f"{shot}-clean-all.png"},
                 {"width": width, "height": height, "url": f"{self.base}?{width}#agents/tree", "wait": 1200, "probe": probe(AGENTS), "shot": f"{shot}-agents-ancestry.png"},
                 {"width": width, "height": height, "url": f"{self.base}?{width}-popups#artifacts/orbit", "wait": 1200, "probe": probe(POPUP_GATES).replace("@REPO@", json.dumps(self.repo)).replace("@THREE@", "true" if width == 1366 else "false"), "shot": f"{shot}-popup-gates.png"},
+                {"width": width, "height": height, "url": f"{self.base}?{width}-explain#artifacts/orbit", "wait": 1200, "probe": probe(POPUP_EXPLAIN).replace("@REPO@", json.dumps(self.repo)), "shot": f"{shot}-popup-explain.png"},
             ]
+            if browser == "chromium":
+                steps.append({"width": width, "height": height, "url": None, "wait": 0, "keys": ["Enter"], "probe": probe(KEYBOARD), "shot": f"{shot}-popup-keyboard.png"})
         return steps
+
+    def check_chips(self, explained: dict, typed: dict | None, browser: str, width: int) -> None:
+        with self.subTest(browser=browser, width=width, part="popup chips and Explain"):
+            self.assertNotIn("error", explained, explained)
+            self.assertEqual(explained["chips"], [[words, words, words, 0] for words in DONE_CHIPS])
+            self.assertEqual(explained["inside"], [True] * 5, "a gate chip or the Explain list overflows the popup")
+            self.assertEqual((explained["scrolls"], explained["wide"]), (False, False))
+            self.assertEqual(explained["summary"], ["Explain", True])
+            self.assertEqual((explained["headings"], explained["terms"]), (EXPLAINED, 25))
+            self.assertTrue(explained["focused"])
+        if typed is not None:
+            with self.subTest(browser=browser, width=width, part="keyboard cycles a chip"):
+                self.assertEqual(typed["staged"], ["commit: none (staged)", "commit: none (staged)", "none"], typed)
+                self.assertEqual((typed["open"], typed["focused"], typed["apply"]), (True, True, "Apply 1 gate changes with one passkey signature"), typed)
 
     def check(self, data: dict, browser: str, signs: bool) -> None:
         results = iter(data["results"])
         for width, _ in base.WIDTHS:
-            ancestry, staged, clean, agents, popups = next(results), next(results), next(results), next(results), next(results)
+            ancestry, staged, clean, agents, popups, explained = next(results), next(results), next(results), next(results), next(results), next(results)
+            self.check_chips(explained, next(results) if browser == "chromium" else None, browser, width)
             with self.subTest(browser=browser, width=width, part="popup gate marks"):
                 self.assertNotIn("error", popups, popups)
                 views = ["orbit", "chord", "swimlane", *(["3d"] if width == 1366 else [])]
@@ -210,9 +281,7 @@ class TestWorkbenchArtifacts(HubCase):
                 for found in popups["shown"]:
                     self.assertNotIn("error", found, found)
                     self.assertEqual((found["title"], found["group"], found["unlabelled"]), ("feature/done", "Gates of feature/done", []), found)
-                    self.assertEqual([mark[:3] for mark in found["marks"]], [["commit", "test", True], ["merge", "none", True], ["push", "none", True], ["pr", "e2e", False]], found)
-                    self.assertEqual(found["marks"][0][3], "commit: test · from main", found)
-                    self.assertEqual([mark[4] for mark in found["marks"]], [True, True, True, False], found)
+                    self.assertEqual(found["marks"], DONE_MARKS, found)
                     self.assertEqual(found["marks"], ancestry["done"], "a popup shows other gate levels than the Tree row")
                 self.assertFalse(popups["wide"])
             with self.subTest(browser=browser, width=width, part="unlabelled controls"):
@@ -225,10 +294,9 @@ class TestWorkbenchArtifacts(HubCase):
                 self.assertEqual(nodes, {"main": 0, "feature": 1, "feature/kept": 1, "feature/done": 2})
                 self.assertEqual(sorted(ancestry["edges"]), [
                     ["feature", "feature/done", "derived", True], ["feature/kept", "feature/done", "operator", False], ["main", "feature", "recorded", False], ["main", "feature/kept", "derived", True]])
-                self.assertEqual([mark[:3] for mark in ancestry["done"]], [["commit", "test", True], ["merge", "none", True], ["push", "none", True], ["pr", "e2e", False]])
-                self.assertEqual([mark[3] for mark in ancestry["done"]][:1], ["commit: test · from main"])
-                self.assertEqual([mark[4] for mark in ancestry["done"]], [True, True, True, False])
-                self.assertEqual(ancestry["main"][0][:3], ["commit", "test", False])
+                self.assertEqual(ancestry["done"], DONE_MARKS)
+                self.assertEqual(ancestry["main"][0], ["commit", "test", False, "commit: test (own rule)", False, True])
+                self.assertTrue(ancestry["inside"], "a gate chip of the Tree overflows the viewport")
                 self.assertEqual((staged["pending"], staged["staged"], staged["count"]), (True, True, "2"), staged)
                 self.assertEqual(staged["apply"], ["Apply 2 gate changes with one passkey signature", "Apply"])
                 self.assertEqual(staged["left"], 0 if signs else 2, staged)
