@@ -27,7 +27,7 @@ status, result or question that can wait.
 ## Radio: immediate
 
 `send` reaches the addressee at its next tool step and wakes it when idle:
-a full turn of every receiver, very expensive.
+a full turn per receiver, very expensive.
 
 | Class | Addressee | Use |
 | --- | --- | --- |
@@ -37,7 +37,8 @@ a full turn of every receiver, very expensive.
 | pan-pan | all | urgent trouble that blocks others and needs help soon |
 | mayday | all | shared state in danger (disk full, a broken shared branch, a leaked credential) |
 
-A mayday also holds radio silence for two hours: a hook refuses every
+A mayday holds radio silence two hours, except `--no-silence` or under
+another's silence, which notify the operator instead: a hook refuses every
 Edit, Write and Bash command except those the config's `never_block` and
 `mayday_allow` start with and bare `radio.py` calls (text in single quotes,
 no shell operators), until its sender runs `radio.py clear` once resolved. The sender keeps working; an agent that

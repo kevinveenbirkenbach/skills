@@ -16,12 +16,15 @@ Environment:
 
 Args:
     send <class> "<text>" [--to <name> ...] [--wake] [--sid <id>]
-        [--session <id>]: the radio, delivered at the addressee's next tool
-        step and waking it.
+        [--no-silence] [--session <id>]: the radio, delivered at the
+        addressee's next tool step and waking it.
         call needs --to; broadcast, security, pan-pan and mayday go to all
         and take no --to. direct is the old alias: with --wake a call,
         without it a post. mayday also sets radio silence
-        (<root>/radio-silence.json) for two hours. Prints `ts: <ts>`, the
+        (<root>/radio-silence.json) for two hours, unless --no-silence or
+        while the silence of another sender holds, which it never replaces;
+        --no-silence goes with mayday only; a mayday that sets no silence
+        tells the operator through the notify argv at once. Prints `ts: <ts>`, the
         stored row's ts, flushed right after it is stored, then `sent ...`
         and `wake: SendMessage to <name>` for every addressee without a live
         listener. --sid pins a call with a single --to to that session as in
@@ -365,10 +368,14 @@ def store(entries: list[dict]) -> float:
     return entries[-1]["ts"]
 
 
-def transmit(cls: str, to: list[str], text: str, caller: str | None, sessions: list[str]) -> int:
+def transmit(cls: str, to: list[str], text: str, caller: str | None, sessions: list[str], silencing: bool) -> int:
     """Args:
         sessions: the session ids of the addressees, kept under
             `to_sessions` beside their names; none keeps the row as before.
+        silencing: whether a mayday sets radio silence; it never replaces
+            the active silence of another sender, and renewing its own keeps
+            its helpers. A mayday that sets no silence runs the notify argv
+            itself, since no silence brings it to the hooks.
     """
     if cls in ADDRESSED and not to:
         fail(f"{cls} needs --to")
@@ -383,11 +390,15 @@ def transmit(cls: str, to: list[str], text: str, caller: str | None, sessions: l
     with organize("nofollow").locked(ROOT, LOCK, 0o600, None):
         ts = store([{"from": sender, "to": to, "text": text, "class": cls, "v": VERSION, **({"to_sessions": sessions} if sessions else {})}])
         print(f"{STORED}{ts!r}", flush=True)
-        if cls == "mayday":
+        active = (silence() or {}) if cls == "mayday" else {}
+        silenced = silencing and active.get("by", sender) == sender
+        if cls == "mayday" and silenced:
             write_atomic(
                 SILENCE,
-                json.dumps({"since": ts, "until": ts + SILENCE_SECONDS, "by": sender, "text": text}),
+                json.dumps({**active, "since": ts, "until": ts + SILENCE_SECONDS, "by": sender, "text": text}),
             )
+    if cls == "mayday" and not silenced:
+        notify_once({"since": ts, "by": sender, "text": text})
     print(f"sent {cls} to {', '.join(clip(name) for name in to) or 'all'}")
     if cls in RADIO:
         for name in unreached(cls, to, sid, sessions):
@@ -403,11 +414,13 @@ def cmd_send(args: argparse.Namespace) -> int:
         fail("--wake only with direct; a call always wakes")
     if args.sid and (cls != "call" or len(args.to or []) != 1):
         fail("--sid takes a call with a single --to")
-    return transmit(cls, args.to or [], args.text, args.session, [args.sid] if args.sid else [])
+    if args.no_silence and cls != "mayday":
+        fail("--no-silence goes with mayday only")
+    return transmit(cls, args.to or [], args.text, args.session, [args.sid] if args.sid else [], not args.no_silence)
 
 
 def cmd_post(args: argparse.Namespace) -> int:
-    return transmit("post" if args.to else "newsletter", args.to or [], args.text, args.session, [])
+    return transmit("post" if args.to else "newsletter", args.to or [], args.text, args.session, [], False)
 
 
 def cmd_clear(args: argparse.Namespace) -> int:
@@ -664,7 +677,7 @@ def cmd_feedback_send(args: argparse.Namespace) -> int:
         fail("--sid takes a single --to")
     chosen = read_json(FEEDBACK)
     for name in args.to:
-        transmit(feedback_of(chosen, args.sid or name), [name], args.text, args.session, [args.sid] if args.sid else [])
+        transmit(feedback_of(chosen, args.sid or name), [name], args.text, args.session, [args.sid] if args.sid else [], False)
     return 0
 
 
@@ -677,6 +690,7 @@ def main() -> int:
     p.add_argument("--to", action="append")
     p.add_argument("--wake", action="store_true")
     p.add_argument("--sid")
+    p.add_argument("--no-silence", action="store_true")
     p.add_argument("--session")
     p.set_defaults(func=cmd_send)
     p = sub.add_parser("post")
