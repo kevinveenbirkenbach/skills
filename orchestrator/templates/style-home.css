@@ -18,6 +18,14 @@
 .home-gone { display: grid; place-content: center; justify-items: center; gap: var(--sp-2); height: 100%; text-align: center; }
 .home-gone-word { color: var(--bad); font-size: var(--fs-lg); text-transform: uppercase; letter-spacing: .06em; }
 .home-agent { display: grid; gap: var(--sp-2); }
+.home-metric { display: flex; flex-direction: column; gap: var(--sp-1); height: 100%; min-height: 0; }
+.home-metric .res-plot { flex: 1; min-height: 60px; }
+.home-metric .res-plot > svg { height: 100%; max-height: none; }
+.home-metric .legend-chip, .home-order li { cursor: default; }
+.home-inbox { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.home-inbox > li { display: grid; gap: var(--sp-1); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--sunken); }
+.home-inbox .msg-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.leaf > .star-row { order: 1; margin-inline-start: auto; }
 @media (max-width: 640px) {
   .home-tile { grid-column: 1 / -1; }
   .legend[data-star-slot] > .star { order: 1; }

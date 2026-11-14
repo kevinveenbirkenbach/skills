@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 import subprocess
 import time
@@ -326,6 +327,31 @@ class TestResourcesPage(unittest.TestCase):
         self.assertEqual(self.found["stored"], stored)
         changes = {f"resources.{key}": value for key, value in stored.items()}
         self.assertEqual(self.found["fetched"], ["/api/resources?from=1", ["PATCH", "/api/view", changes]])
+
+
+AXIS_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const s = (tag, attrs, ...children) => ({tag, attrs, children: children.flat(), append(...more) { this.children.push(...more); }});
+const context = {s, h: s, DAY: 86400, fixed: (value) => value.toFixed(1), stampOf: (t) => t, absolute: {format: () => "14 Nov 2026, 10:00"}, clock: {format: () => "10:00"}};
+vm.runInNewContext(`${fs.readFileSync(process.argv[1], "utf8")}\\nglobalThis.frame = resourceFrame;`, context);
+const labels = (width, days) => context.frame({kind: "tokens", label: "Tokens"}, {from: 0, to: days * 86400}, {width, height: 120}, false).svg.children
+  .filter((node) => node.tag === "text").map((node) => [Number(node.attrs.x), node.attrs["text-anchor"], node.children.join("")]);
+console.log(JSON.stringify([[1600, 2], [390, 2], [340, 2], [150, 2], [340, 0.5]].map(([width, days]) => labels(width, days))));
+"""
+GLYPH = 6.2
+
+
+class TestResourcesAxis(unittest.TestCase):
+    def test_time_labels_never_overlap_and_a_plot_too_narrow_for_two_keeps_the_last(self):
+        done = subprocess.run(["node", "-e", AXIS_PROBE, str(PAGE)], capture_output=True, text=True, timeout=60, check=True)
+        found = json.loads(done.stdout)
+        self.assertEqual([len(labels) for labels in found], [5, 2, 2, 1, 5])
+        self.assertEqual(found[3][0][1:], ["end", "14 Nov 2026, 10:00"])
+        for labels in found:
+            spans = sorted((x - {"start": 0, "middle": 0.5, "end": 1}[anchor] * len(words) * GLYPH, x + {"start": 1, "middle": 0.5, "end": 0}[anchor] * len(words) * GLYPH) for x, anchor, words in labels)
+            with self.subTest(labels=labels):
+                self.assertTrue(all(left[1] <= right[0] for left, right in itertools.pairwise(spans)), spans)
 
 
 class TestHubResources(HubCase):

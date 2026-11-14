@@ -10,15 +10,19 @@ const Panels = (() => {
   const PANEL = "panel";
   const SIZES = {panel: [6, 4], item: [4, 3]};
   const HOSTS = "[data-panel], [data-item]";
+  const TOO_LONG = "the id runs past 200 characters";
   const XHTML = "http://www.w3.org/1999/xhtml";
   const SVG = "http://www.w3.org/2000/svg";
   const panels = new Map();
   const items = new Map();
+  const captures = new Map();
   const placed = new WeakMap();
 
   const keyOf = (pin) => `${pin.kind}:${pin.id}`;
   const span = (value) => Number.isInteger(value) && value >= 1 && value <= SPAN;
   const clamp = (value) => Math.min(Math.max(Math.round(value), 1), SPAN);
+  const plain = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  const keysOf = (pin) => Object.keys(pin).sort().join(",");
 
   /**
    * @param raw - an item's own id, any text.
@@ -32,8 +36,22 @@ const Panels = (() => {
 
   const raw = (id) => id.replace(ESCAPED, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
 
+  function fnv(text, seed) {
+    let value = seed;
+    for (const char of text) {
+      value = Math.imul(value ^ char.codePointAt(0), 0x01000193) >>> 0;
+    }
+    return value.toString(16).padStart(8, "0");
+  }
+
+  /**
+   * @param text - any text, such as the canonical form of a pin's view.
+   * @returns 16 hex characters, two FNV-1a hashes of the text with different offsets.
+   */
+  const digest = (text) => `${fnv(text, 0x811c9dc5)}${fnv(text, 0x01000193)}`;
+
   function valid(pin) {
-    return Boolean(pin) && typeof pin === "object" && !Array.isArray(pin) && Object.keys(pin).sort().join(",") === "h,id,kind,w"
+    return plain(pin) && ["h,id,kind,w", "h,id,kind,view,w"].includes(keysOf(pin)) && (!Object.hasOwn(pin, "view") || plain(pin.view))
       && typeof pin.kind === "string" && KIND.test(pin.kind) && typeof pin.id === "string" && ID.test(pin.id) && span(pin.w) && span(pin.h);
   }
 
@@ -46,7 +64,8 @@ const Panels = (() => {
       return [];
     }
     const seen = new Set();
-    return pins.filter((pin) => valid(pin) && !seen.has(keyOf(pin)) && Boolean(seen.add(keyOf(pin)))).slice(0, MAX).map(({kind, id, w, h}) => ({kind, id, w, h}));
+    return pins.filter((pin) => valid(pin) && !seen.has(keyOf(pin)) && Boolean(seen.add(keyOf(pin)))).slice(0, MAX)
+      .map(({kind, id, w, h, view}) => (view ? {kind, id, w, h, view} : {kind, id, w, h}));
   }
 
   /**
@@ -61,39 +80,61 @@ const Panels = (() => {
 
   /**
    * @param kind - the item kind, the part of data-item before the first colon.
-   * @param title - the tile title, or (id) => title.
-   * @param render - (size, id) => Node, or null once the item no longer exists.
+   * @param title - the tile title, or (id, view) => title.
+   * @param render - (size, id, view) => Node, or null once the item no longer exists; view is the pin's stored view,
+   * undefined for a pin without one.
    */
   function item(kind, title, render) {
     items.set(kind, {title, render, group: ""});
   }
 
-  function lookup(kind, id) {
+  /**
+   * @param id - the data-panel of a source element whose star pins a bookmark of what it shows instead of itself.
+   * @param take - (element) => {kind, id, view, refused}: the item pin the star makes now, such as a chart with the
+   * series switched on at this moment; the star shows that pin's pressed state, or stays disabled with refused as its
+   * reason while refused is a non-empty text.
+   */
+  function capture(id, take) {
+    captures.set(id, take);
+  }
+
+  function lookup(kind, id, view) {
     const entry = kind === PANEL ? panels.get(id) : items.get(kind);
     if (!entry) {
       return null;
     }
-    const plain = kind === PANEL ? id : raw(id);
-    return {kind, id, group: entry.group, title: typeof entry.title === "function" ? entry.title(plain) : entry.title, render: (size) => entry.render(size, plain)};
+    const name = kind === PANEL ? id : raw(id);
+    return {kind, id, group: entry.group, title: typeof entry.title === "function" ? entry.title(name, view) : entry.title, render: (size) => entry.render(size, name, view)};
   }
 
+  /**
+   * @param element - a source element with data-panel or data-item.
+   * @returns {kind, id, view, refused} of the pin its star makes now, or null for a data-item without a kind; refused
+   * names why no pin is possible, such as an id past 200 characters, and id is null then unless a capture gave one.
+   */
   function targetOf(element) {
     if (element.hasAttribute("data-panel")) {
-      return {kind: PANEL, id: element.getAttribute("data-panel")};
+      const id = element.getAttribute("data-panel");
+      return captures.has(id) ? captures.get(id)(element) : {kind: PANEL, id};
     }
     const value = element.getAttribute("data-item") || "";
     const cut = value.indexOf(":");
-    return cut > 0 ? {kind: value.slice(0, cut), id: token(value.slice(cut + 1))} : null;
+    if (cut < 1) {
+      return null;
+    }
+    const id = token(value.slice(cut + 1));
+    return id ? {kind: value.slice(0, cut), id} : {kind: value.slice(0, cut), id: null, refused: TOO_LONG};
   }
 
   const has = (pins, kind, id) => pins.some((pin) => pin.kind === kind && pin.id === id);
   const groupOf = (pin) => (lookup(pin.kind, pin.id) || {group: ""}).group;
 
   /**
+   * @param view - optional plain object the new pin stores, such as the chart selection of a metric bookmark.
    * @returns {pins, refused, holder}: pins unchanged when the pin is already there or refused; refused is "" when the
    * pin is there, "full" at 64 pins and "group" when holder, a pin of the same single-instance group, is on Home.
    */
-  function add(pins, kind, id) {
+  function add(pins, kind, id, view) {
     if (has(pins, kind, id)) {
       return {pins, refused: "", holder: null};
     }
@@ -106,7 +147,7 @@ const Panels = (() => {
       return {pins, refused: "group", holder};
     }
     const [w, h] = kind === PANEL ? SIZES.panel : SIZES.item;
-    return {pins: [...pins, {kind, id, w, h}], refused: "", holder: null};
+    return {pins: [...pins, plain(view) ? {kind, id, w, h, view} : {kind, id, w, h}], refused: "", holder: null};
   }
 
   const firstOfGroup = (pins, pin) => !groupOf(pin) || pins.find((other) => groupOf(other) === groupOf(pin)) === pin;
@@ -214,7 +255,7 @@ const Panels = (() => {
     return svg;
   }
 
-  function paint(button, on, title) {
+  function paint(button, on, title, refused) {
     const label = on ? "Unpin from Home" : "Pin to Home";
     if (button.getAttribute("aria-pressed") !== String(on)) {
       button.setAttribute("aria-pressed", String(on));
@@ -223,9 +264,16 @@ const Panels = (() => {
     if (button.getAttribute("aria-label") !== label) {
       button.setAttribute("aria-label", label);
     }
-    const hint = `${label}: ${title}`;
+    const hint = refused ? `${label}: not possible, ${refused}` : `${label}: ${title}`;
     if (button.getAttribute("title") !== hint) {
       button.setAttribute("title", hint);
+    }
+    if (button.hasAttribute("disabled") !== Boolean(refused)) {
+      if (refused) {
+        button.setAttribute("disabled", "");
+      } else {
+        button.removeAttribute("disabled");
+      }
     }
   }
 
@@ -244,25 +292,18 @@ const Panels = (() => {
     return row;
   }
 
-  function button(element, options, enabled) {
+  function button(element, options) {
     const made = document.createElement("button");
     made.setAttribute("type", "button");
     made.setAttribute("class", "star btn small ghost icon-only");
-    if (!enabled) {
-      made.setAttribute("disabled", "");
-      made.setAttribute("aria-label", "Pin to Home");
-      made.setAttribute("title", "Pin to Home: not possible, the id runs past 200 characters");
-      made.append(glyph("bi-star"));
-      return made;
-    }
     made.addEventListener("pointerdown", (event) => event.stopPropagation());
     made.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       const now = targetOf(element);
-      const entry = now && now.id ? lookup(now.kind, now.id) : null;
+      const entry = now && now.id && !now.refused ? lookup(now.kind, now.id, now.view) : null;
       if (entry) {
-        options.press(now.kind, now.id, entry.title);
+        options.press(now.kind, now.id, entry.title, now.view);
       }
     });
     return made;
@@ -273,26 +314,39 @@ const Panels = (() => {
       return;
     }
     const target = targetOf(element);
-    const entry = target && target.id ? lookup(target.kind, target.id) : null;
+    const entry = target && target.id ? lookup(target.kind, target.id, target.view) : null;
     if (!target || (target.id && !entry)) {
       return;
     }
     let made = placed.get(element);
     if (!made || !element.contains(made)) {
-      made = button(element, options, Boolean(entry));
+      made = button(element, options);
       placed.set(element, made);
       slotOf(element).append(made);
     }
-    if (entry) {
-      paint(made, options.pinned(target.kind, target.id), entry.title);
+    const refused = target.refused || "";
+    paint(made, !refused && options.pinned(target.kind, target.id), entry ? entry.title : "", refused);
+  }
+
+  /**
+   * @param slot - a data-star-slot element that draw moves into freshly drawn content.
+   * @param draw - () => void, the redraw.
+   * @returns nothing; the star in the slot gets back the focus it had before draw moved it.
+   */
+  function keepFocus(slot, draw) {
+    const held = slot && slot.contains(document.activeElement) ? document.activeElement : null;
+    draw();
+    if (held && held.isConnected && document.activeElement !== held) {
+      held.focus();
     }
   }
 
   /**
    * @param root - the element whose subtree gets a star on every element with data-panel or data-item; the star goes
    * into the element's own data-star-slot descendant, else into a star row the element gets as its first child.
-   * @param options - {pinned(kind, id) => boolean, press(kind, id, title), marks: [[selector, panel id], ...]}, marks
-   * naming source elements whose page carries no data-panel of its own.
+   * @param options - {pinned(kind, id) => boolean, press(kind, id, title, view), marks: [[selector, panel id], ...]},
+   * marks naming source elements whose page carries no data-panel of its own; view is undefined unless a capture
+   * gave one.
    * @returns mark(): tags the marks, stars what lacks one and repaints the pressed state of all.
    */
   function decorate(root, options) {
@@ -307,8 +361,8 @@ const Panels = (() => {
   }
 
   return {
-    MAX, SPAN, PANEL, ID, HOSTS, keyOf, token, raw, valid, validLayout, clean, panel, item, lookup, targetOf, has, add, remove, firstOfGroup,
-    place, move, resize, placeKey, moveKey, resizeKey, resizeBy, stretch, memory, store, decorate,
+    MAX, SPAN, PANEL, ID, HOSTS, keyOf, token, raw, digest, valid, validLayout, clean, panel, item, capture, lookup, targetOf, has, add, remove, firstOfGroup,
+    place, move, resize, placeKey, moveKey, resizeKey, resizeBy, stretch, memory, store, decorate, keepFocus,
   };
 })();
 if (typeof module === "object" && module.exports) {
