@@ -381,7 +381,7 @@ def cmd_set(args: argparse.Namespace) -> int:
     if args.unpin and args.prio is not None:
         fail("--unpin removes the pin; it cannot go with --prio")
     times = {f: stamp(getattr(args, f)) for f in ("start", "end") if getattr(args, f)}
-    for ref in args.artifact:
+    for ref in (*args.artifact, *args.drop_artifact):
         if not ARTIFACT.match(ref):
             fail(f"invalid artifact {ref!r}; use <kind>:<ref>, e.g. image:<name>:<tag>")
     with database() as tasks:
@@ -408,6 +408,10 @@ def cmd_set(args: argparse.Namespace) -> int:
                 entry.pop(field, None)
         if args.after and follows(tasks, args.task, args.task):
             fail(f"{args.task}: --after {', '.join(args.after)} closes a cycle; drop one with --drop-after")
+        recorded = [a["ref"] for a in entry.get("artifacts", [])]
+        absent = [ref for ref in dict.fromkeys(args.drop_artifact) if ref not in recorded]
+        if absent:
+            print(f"{args.task}: {', '.join(absent)} not recorded, nothing to drop; recorded: {', '.join(recorded) or 'none'}", file=sys.stderr)
         kept = [a for a in entry.get("artifacts", []) if a["ref"] not in args.drop_artifact]
         known = {a["ref"] for a in kept}
         kept += [{"ref": r, "added": stamp()} for r in dict.fromkeys(args.artifact) if r not in known]
@@ -530,7 +534,7 @@ def cmd_artifacts(args: argparse.Namespace) -> int:
     rows = merged(True)
     for task in sorted(rows):
         row = rows[task]
-        if task.startswith(RECORDS) or (args.task and task != args.task):
+        if task.startswith(RECORDS) or (args.task and task != args.task) or (args.worker and args.worker not in (row.get("worker") or "")):
             continue
         if args.ended and row["status"] not in (*ENDED, "stale"):
             continue
@@ -648,6 +652,7 @@ def main() -> int:
     p = sub.add_parser("artifacts")
     p.add_argument("--ended", action="store_true")
     p.add_argument("--task")
+    p.add_argument("--worker")
     p.set_defaults(func=cmd_artifacts)
     sub.add_parser("tools").set_defaults(func=cmd_tools)
     p = sub.add_parser("agents")

@@ -263,6 +263,27 @@ class TestRasci(unittest.TestCase):
         )
         self.assertIn("tool: council.py", self._out("get", "work/a"))
 
+    def test_artifacts_filter_by_worker_and_a_drop_without_kind_is_refused(self):
+        self._run("set", "work/a", "--worker", "session 44f0eff7", "--artifact", "dir:/tmp/a")
+        self._run("set", "work/b", "--worker", "subagent general-purpose (opus)", "--artifact", "log:/tmp/b.log")
+        self.assertEqual([line.split("\t")[1] for line in self._out("artifacts", "--worker", "44f0eff7")], ["work/a"])
+        self.assertEqual(self._out("artifacts", "--worker", "nobody"), [])
+        register = self.root / "rasci.json"
+        before = register.read_text(encoding="utf-8")
+        refused = self._run("set", "work/a", "--drop-artifact", "/tmp/a", "--title", "kept")
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("invalid artifact '/tmp/a'; use <kind>:<ref>", refused.stderr)
+        self.assertEqual(register.read_text(encoding="utf-8"), before)
+        absent = self._run("set", "work/a", "--drop-artifact", "dir:/tmp/other", "--title", "kept")
+        self.assertEqual(absent.returncode, 0)
+        self.assertIn("work/a: dir:/tmp/other not recorded, nothing to drop; recorded: dir:/tmp/a", absent.stderr)
+        self.assertIn("title: kept", self._out("get", "work/a"))
+        self._run("set", "work/c", "--workdir", "/w/x", "--branch", "feat/x")
+        self.assertEqual(self._run("set", "work/c", "--drop-artifact", "worktree:/w/x", "--branch", "").returncode, 0)
+        self.assertNotIn("branch: feat/x", self._out("get", "work/c"))
+        self.assertEqual(self._run("set", "work/a", "--drop-artifact", "dir:/tmp/a").returncode, 0)
+        self.assertEqual(self._out("artifacts", "--task", "work/a"), [])
+
     def test_claims_join_the_matrix_with_holder_as_ra(self):
         self._claim("work/live", "s1", "One", "Gamma")
         self._claim("cluster/dead", "s9", "Gone", "Delta")

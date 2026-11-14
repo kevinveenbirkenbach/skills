@@ -13,11 +13,14 @@ and takes status and worker from its task. The script is
 ```bash
 rasci.py set <task> --artifact <kind>:<ref>
 rasci.py set <task> --drop-artifact <kind>:<ref>
-rasci.py artifacts [--ended] [--task <task>]
+rasci.py artifacts [--ended] [--task <task>] [--worker <text>]
 ```
 
 Kinds: `image:`, `container:`, `volume:`, `network:`, `stack:`, `worktree:`,
-`dir:`, `log:`. `artifacts` lists each task's workdir and branch beside them.
+`dir:`, `log:`. `artifacts` lists each task's workdir and branch beside them;
+`--worker` keeps the tasks whose worker contains the text. A drop names the
+artifact with its kind, or is refused; one not recorded drops nothing and
+says so on stderr.
 
 ## Rules
 
