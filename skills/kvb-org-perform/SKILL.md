@@ -2,7 +2,7 @@
 name: kvb-org-perform
 description: >
   Pick `model` and `effort` per subagent from a fixed table, cheaper only at
-  90 % confidence of equal results. Apply AUTOMATICALLY before every Agent
+  90% confidence of equal results. Apply AUTOMATICALLY before every Agent
   call.
 ---
 

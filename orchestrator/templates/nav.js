@@ -2,7 +2,7 @@ const Nav = (() => {
   "use strict";
   const TABS = [["home", "Home"], ["stream", "Stream"], ["agents", "Agents"], ["artifacts", "Artifacts"], ["tasks", "Tasks"], ["resources", "Resources"]];
   const SUBS = {stream: [["rules", "Firewall"]]};
-  const PANES = {inbox: ["tasks", "operator"]};
+  const PANES = {inbox: ["tasks", "operator"], match: ["tasks", "match"]};
   const VIEWS = [["orbit", "Orbit"], ["chord", "Chord"], ["swimlane", "Swimlane"], ["tree", "Tree"], ["3d", "3D"]];
   const TASK_VIEWS = [["list", "List"], ["board", "Board"], ["rasci", "RASCI"], ["gantt", "Gantt"], ["burn", "Burndown and burnup"], ["3d", "3D"]];
   const OWN = {agents: [["hierarchy", "Hierarchy"]]};

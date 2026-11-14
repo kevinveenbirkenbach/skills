@@ -16,6 +16,7 @@ UNCATEGORIZED = frozenset(
         "kvb-coach",
         "kvb-dream",
         "kvb-help",
+        "kvb-match",
         "kvb-optimize",
         "kvb-release",
         "kvb-transcend",

@@ -26,6 +26,7 @@ from .inbox import Inbox
 from .jobs import Jobs
 from .language import Language, Model
 from .ledger import Ledger, Marks, Reviews
+from .matching import Matching
 from .mcp import Mcp
 from .messaging import Messaging
 from .names import Names
@@ -82,7 +83,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Firewall, Inbox, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Firewall, Inbox, Matching, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -128,6 +129,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     replay: Path
     history: History
     view_store: ViewStore
+    match_snapshots: Ledger
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -174,6 +176,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         voice_notes=VoiceNotes(state / "voice", host_state / "voice", speech, lambda: {message["voice"] for message in messages.listed() if message.get("voice")}),
         replay=state / "replay" / "messages.json",
         view_store=ViewStore(state / "view.json"),
+        match_snapshots=Ledger(state / "match.json"),
         rules=Ledger(state / "rules.json"),
         offers=Offers(),
         jobs=Ledger(state / "jobs.json"),

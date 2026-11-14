@@ -55,7 +55,7 @@
   }
 
   function screenOf() {
-    return {home: homeScreen, stream: streamScreen, inbox: tasksScreen, rules: rulesScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen, resources: resourcesScreen}[ui.screen]();
+    return {home: homeScreen, stream: streamScreen, inbox: tasksScreen, match: matchScreen, rules: rulesScreen, agents: agentsScreen, artifacts: artifactsScreen, tasks: tasksScreen, resources: resourcesScreen}[ui.screen]();
   }
 
   function render(force) {
@@ -70,10 +70,11 @@
       inboxDom = null;
       inboxSig = "";
       taskView.dom = null;
+      matchView.dom = null;
       const main = document.getElementById("main");
       main.setAttribute("aria-labelledby", `tab-${ui.screen}`);
       main.replaceChildren(screenOf());
-      const fit = ["tasks", "inbox", "resources"].includes(ui.screen) || (["agents", "artifacts"].includes(ui.screen) && !["tree", "hierarchy"].includes(ui.views[ui.screen]));
+      const fit = ["tasks", "inbox", "match", "resources"].includes(ui.screen) || (["agents", "artifacts"].includes(ui.screen) && !["tree", "hierarchy"].includes(ui.views[ui.screen]));
       document.body.classList.toggle("fit", fit);
       document.body.classList.toggle("pane", !fit);
       drawn.screen = ui.screen;
@@ -90,6 +91,7 @@
     drawInbox();
     drawRadio();
     drawTasks();
+    drawMatch(false);
     drawChoices();
     drawStatus();
     tick();
