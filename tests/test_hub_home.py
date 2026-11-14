@@ -79,6 +79,8 @@ const swapped = P.add(P.remove(one.pins, "panel", "agents/3d"), "panel", "tasks/
 const both = [...one.pins, {kind: "panel", id: "tasks/3d", w: 6, h: 4}];
 out.group = [one.refused, second.refused, second.holder, second.pins.length, swapped.refused, swapped.pins.at(-1).id, P.add(one.pins, "panel", "tasks/gantt").refused,
   P.firstOfGroup(both, both[4]), P.firstOfGroup(both, both[5]), P.firstOfGroup(both, both[0])];
+P.panel("radio", "Radio", () => "r", "", [12, 7]);
+out.sized = [P.add(pins, "panel", "radio").pins.at(-1), P.add(pins, "panel", "tasks/gantt").pins.at(-1), P.add(pins, "task", "work/z").pins.at(-1)];
 console.log(JSON.stringify(out));
 """
 REGISTRY_PROBE = """
@@ -216,7 +218,8 @@ const server = hub([]);
 const tab = page(server);
 const {homePress, homeUnpin, homeView, Panels} = tab;
 const ids = Object.fromEntries(["panel", "task", "message", "artifact", "agent", "ancestry", "metric", "nope"].map((kind) => [kind, Boolean(Panels.lookup(kind, kind === "panel" ? "stream" : "x"))]));
-const panels = ["stream", "radio-log", "agents/orbit", "agents/chord", "agents/swimlane", "agents/3d", "agents/tree", "agents/hierarchy", "agents/order", "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "artifacts/tree", "artifacts/3d",
+const panels = ["stream", "radio-log", "radio", "radio-device", "radio-speak", "agents/orbit", "agents/chord", "agents/swimlane", "agents/3d", "agents/tree", "agents/hierarchy", "agents/order",
+  "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "artifacts/tree", "artifacts/3d",
   "tasks/list", "tasks/board", "tasks/rasci", "tasks/gantt", "tasks/burn", "tasks/3d", "tasks/operator"].filter((id) => !Panels.lookup("panel", id));
 (async () => {
   homePress("panel", "tasks/gantt", "Gantt");
@@ -613,6 +616,10 @@ class TestHomeReorder(unittest.TestCase):
         holder = {"kind": "panel", "id": "agents/3d", "w": 6, "h": 4}
         self.assertEqual(data["group"], ["", "group", holder, 5, "", "tasks/3d", "", True, False, True])
 
+    def test_a_panel_with_its_own_size_is_pinned_at_it_and_the_rest_at_the_default(self):
+        data = node(REORDER_PROBE, str(PANELS))
+        self.assertEqual(data["sized"], [{"kind": "panel", "id": "radio", "w": 12, "h": 7}, PIN, {"kind": "task", "id": "work/z", "w": 4, "h": 3}])
+
 
 class TestHomeRegistry(unittest.TestCase):
     def test_the_registry_finds_panels_and_item_kinds_and_a_missing_item_renders_none(self):
@@ -692,7 +699,7 @@ class TestHomePage(unittest.TestCase):
         marked = set(re.findall(r"\['[^']+', \"([^\"]+)\"\]", home))
         captured = set(re.findall(r'Panels\.capture\("([^"]+)"', home))
         made = set(re.findall(r'\{kind: "(\w+)", id, view[,}]', sources))
-        self.assertEqual((len(literal), marked), (7, {"radio-log"}))
+        self.assertEqual((len(literal), marked), (11, {"radio-log"}))
         literal |= marked
         self.assertEqual(len(dynamic), 13)
         self.assertEqual(sorted(literal | dynamic), sorted(registered))

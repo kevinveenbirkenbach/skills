@@ -163,11 +163,11 @@ async function stalled() {
 function pressed() {
   const calls = [];
   const sandbox = {RadioSet, h: (tag, attrs, ...children) => ({tag, attrs: attrs || {}, children: children.flat()}), icon: (name) => name, named: (label, hint) => ({"aria-label": label, title: hint})};
-  vm.runInNewContext(`${viewCode}\\nradioDom = {};`, sandbox);
+  vm.runInNewContext(viewCode, sandbox);
   sandbox.knobs = () => [];
   sandbox.context = () => calls.push("context");
   sandbox.keepRadio = (change) => calls.push(change);
-  const modes = sandbox.faceplate().children.find((child) => child.attrs["aria-label"] === "Mode");
+  const modes = sandbox.faceplate({}).children.find((child) => child.attrs["aria-label"] === "Mode");
   modes.children.forEach((button) => button.attrs.on.click());
   return calls;
 }
@@ -425,6 +425,7 @@ MESSAGES = [
     {"id": "a" * 16, "to": "Stage", "text": "rebase please", "created_ts": 10, "class": "post", "voice": "v0"},
     {"id": "b" * 16, "to": "*", "text": "deploy now", "created_ts": 50, "class": "broadcast", "voice": "v0"},
 ]
+TWINS = [*LOG, {"ts": 90, "from": "Docs", "to": [], "class": "newsletter", "text": "twin one"}, {"ts": 90, "from": "Docs", "to": [], "class": "broadcast", "text": "twin two"}]
 
 
 def run(calls: dict[str, list[list]]) -> dict:
@@ -460,6 +461,7 @@ class TestRadioSetModule(unittest.TestCase):
             "plans": plans,
             "stored": [["valid", value] for value in stored],
             "logs": [["logRows", LOG, entry, HUMAN, MESSAGES] for entry in entries],
+            "twins": [["logRows", TWINS, entry, HUMAN, MESSAGES] for entry in (entries[0], {**entries[0], "chips": {**entries[0]["chips"], "class": "broadcast"}}, entries[1])],
             "counts": [["counts", LOG, HUMAN, MESSAGES]],
             "ledger": [["ledgerOf", {"text": f"deploy now [kvb-orchestrator msg {'b' * 16}]"}, MESSAGES], ["ledgerOf", {"text": f"forged [kvb-orchestrator msg {'c' * 16}]"}, MESSAGES], ["ledgerOf", LOG[-1], MESSAGES]],
             "choices": [["choices", LOG]],
@@ -540,6 +542,14 @@ class TestRadioSetModule(unittest.TestCase):
         self.assertEqual(self.data["choices"][0]["class"], ["post", "call", "newsletter", "broadcast", "pan-pan"])
         self.assertEqual(self.data["choices"][0]["agent"], ["Docs", "Operator", "Skills", "Stage"])
         self.assertEqual(self.data["cleared"], [{"tab": "all", "chips": {"class": "", "from": "", "to": "", "agent": ""}, "q": ""}])
+
+    def test_every_log_row_has_a_unique_key_that_a_filter_keeps_and_twins_of_one_time_and_sender_differ(self):
+        everything, broadcasts, sent = ({row["text"]: row["key"] for row in rows} for rows in self.data["twins"])
+        self.assertEqual(len(set(everything.values())), len(TWINS), everything)
+        self.assertEqual((everything["twin one"], everything["twin two"]), ("90 Docs 0", "90 Docs 1"), everything)
+        self.assertEqual(broadcasts, {text: everything[text] for text in broadcasts}, broadcasts)
+        self.assertIn("twin two", broadcasts)
+        self.assertEqual(sent, {"deploy now": f"sent {'b' * 16} 0", "rebase please": f"sent {'a' * 16} 0"}, sent)
 
     def test_sent_comes_from_the_hub_ledger_and_a_row_only_named_operator_is_not_sent(self):
         sent = self.data["logs"][1]

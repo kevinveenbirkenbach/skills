@@ -103,14 +103,28 @@ const RadioSet = (() => {
   }
 
   function sentRows(messages, human) {
-    return messages.map((message) => ({ts: message.created_ts, from: human, to: message.to === "*" ? [] : [message.to], class: message.class || "post", text: message.text, voice: message.voice, sent: true, readers: message.readers, acks: message.acks}));
+    return messages.map((message) => ({ts: message.created_ts, from: human, to: message.to === "*" ? [] : [message.to], class: message.class || "post", text: message.text, voice: message.voice, sent: true, id: message.id, readers: message.readers, acks: message.acks}));
+  }
+
+  /**
+   * @param {Array<object>} rows radio rows in arrival order, or sent rows of the ledger.
+   * @returns {Array<object>} copies of the rows, each with a key unique in the list and stable while rows arrive: the ledger id of a sent row, else time, sender and the occurrence index among rows of the same time and sender.
+   */
+  function keyed(rows) {
+    const seen = new Map();
+    return rows.map((row) => {
+      const base = row.sent ? `sent ${row.id}` : `${row.ts} ${row.from}`;
+      const index = seen.get(base) || 0;
+      seen.set(base, index + 1);
+      return {...row, key: `${base} ${index}`};
+    });
   }
 
   function tabRows(rows, tab, human, messages) {
     if (tab === "sent") {
-      return sentRows(messages, human);
+      return keyed(sentRows(messages, human));
     }
-    return rows.filter((row) => tab === "all" || toAll(row) || row.to.includes(human));
+    return keyed(rows).filter((row) => tab === "all" || toAll(row) || row.to.includes(human));
   }
 
   function matches(row, entry) {
@@ -128,7 +142,7 @@ const RadioSet = (() => {
    * @param {object} entry the log part of the radio set: tab, chips and q.
    * @param {string} human the operator's name.
    * @param {Array<object>} messages the hub's message ledger; Sent lists it, not radio rows that only claim the operator's name.
-   * @returns {Array<object>} the rows of the tab that every chip and the search match, newest first.
+   * @returns {Array<object>} keyed copies of the rows of the tab that every chip and the search match, newest first.
    */
   function logRows(rows, entry, human, messages) {
     return tabRows(rows, entry.tab, human, messages).filter((row) => matches(row, entry)).sort((a, b) => b.ts - a.ts);

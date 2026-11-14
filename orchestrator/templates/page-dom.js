@@ -137,10 +137,16 @@
     return button;
   }
 
+  const MENUS = "details.menu, details.radio-station";
+
   function closeMenus(keep) {
-    for (const menu of document.querySelectorAll("details.menu[open]")) {
-      if (menu !== keep) {
+    for (const menu of document.querySelectorAll(MENUS)) {
+      if (menu.open && menu !== keep) {
+        const inside = menu.contains(document.activeElement);
         menu.open = false;
+        if (inside) {
+          menu.querySelector("summary").focus({preventScroll: true});
+        }
       }
     }
   }

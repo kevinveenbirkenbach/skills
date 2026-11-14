@@ -9,7 +9,7 @@
     mayday: "MAYDAY: all agents pause writing steps until you cancel it.",
   };
   const VOICE_POLL = 700;
-  const composer = {voice: "", recorder: null, timer: 0, started: 0};
+  const composer = {live: null};
 
   function confirmMayday() {
     return window.confirm("Send a mayday to all? All agents pause writing steps until you cancel it.");
@@ -36,10 +36,25 @@
   }
 
   function attachVoice(parts, note) {
-    composer.voice = note;
+    parts.voice = note;
     parts.attach.checked = false;
     parts.replay.hidden = !note;
-    parts.replay.replaceChildren(...(note ? [icon("bi-soundwave"), h("span", {class: "muted"}, "Voice message"), voiceReplay(note), h("label", {class: "check"}, parts.attach, "Attach recording"), iconBtn("bi-trash", "Remove recording", "btn small ghost", () => attachVoice(parts, ""))] : []));
+    const audio = note ? voiceReplay(note) : null;
+    parts.replay.replaceChildren(...(note ? [icon("bi-soundwave"), h("span", {class: "muted voice-words"}, "Voice message"), audio, playToggle(audio), h("label", {class: "check"}, parts.attach, h("span", {}, "Attach", h("span", {class: "voice-words"}, " recording"))), iconBtn("bi-trash", "Remove recording", "btn small ghost", () => attachVoice(parts, ""))] : []));
+  }
+
+  function playToggle(audio) {
+    const button = iconBtn("bi-play-fill", "Play voice message", "btn small ghost voice-play", () => (audio.paused ? audio.play().catch((error) => toast("Playback failed", [String(error)], false)) : audio.pause()));
+    const show = () => {
+      const label = audio.paused ? "Play voice message" : "Pause voice message";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      button.querySelector("use").setAttribute("href", audio.paused ? "#bi-play-fill" : "#bi-pause-fill");
+    };
+    for (const kind of ["play", "pause", "ended"]) {
+      audio.addEventListener(kind, show);
+    }
+    return button;
   }
 
   async function heardNote(note) {
@@ -92,13 +107,20 @@
     parts.record.replaceChildren(icon(on ? "bi-stop-fill" : "bi-record-circle"), on ? "Stop" : "Record");
   }
 
-  function stopRecording() {
-    if (composer.recorder && composer.recorder.state === "recording") {
-      composer.recorder.stop();
+  function stopRecording(parts) {
+    if (parts && parts.recorder && parts.recorder.state === "recording") {
+      parts.recorder.stop();
+    }
+  }
+
+  function freeMicrophone(parts) {
+    if (composer.live && composer.live !== parts) {
+      stopRecording(composer.live);
     }
   }
 
   async function startRecording(parts) {
+    freeMicrophone(parts);
     let media = null;
     try {
       media = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}});
@@ -115,19 +137,24 @@
     });
     recorder.addEventListener("stop", () => {
       media.getTracks().forEach((track) => track.stop());
-      window.clearInterval(composer.timer);
-      composer.recorder = null;
+      window.clearInterval(parts.timer);
+      parts.recorder = null;
+      if (composer.live === parts) {
+        composer.live = null;
+      }
       recordLabel(parts, false);
       keepRecording(new Blob(chunks, {type: recorder.mimeType}), parts);
     }, {once: true});
-    Object.assign(composer, {recorder, started: Date.now()});
+    freeMicrophone(parts);
+    Object.assign(parts, {recorder, started: Date.now()});
+    composer.live = parts;
     recorder.start();
     recordLabel(parts, true);
-    composer.timer = window.setInterval(() => {
-      const seconds = Math.floor((Date.now() - composer.started) / 1000);
+    parts.timer = window.setInterval(() => {
+      const seconds = Math.floor((Date.now() - parts.started) / 1000);
       parts.status.textContent = `Recording ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} of at most ${state.speech.seconds} s`;
       if (seconds >= state.speech.seconds) {
-        stopRecording();
+        stopRecording(parts);
       }
     }, 250);
   }
@@ -136,33 +163,31 @@
     const channel = h("select", {class: "field"}, CHANNELS.map(([id, label]) => h("option", {value: id}, label)));
     const recipient = h("select", {class: "field"});
     const toField = h("label", {}, "To", recipient);
-    const text = h("textarea", {"aria-label": "Message", placeholder: "Message to the agents …", maxlength: 20000, on: {input: (event) => {
-      ui.draft = event.target.value;
-    }}});
-    text.value = ui.draft;
+    const text = h("textarea", {"aria-label": "Message", placeholder: "Message to the agents …", maxlength: 20000});
     const replay = h("div", {class: "voice-note", hidden: true});
-    const hint = h("p", {class: "muted"});
+    const hint = h("span", {class: "muted composer-hint"});
     const status = h("span", {class: "muted composer-status", "aria-live": "polite"});
     const record = h("button", {type: "button", class: "btn small", "aria-pressed": "false", title: "Record: one click starts, another stops; the hub transcribes, you check the text before sending"});
     const submit = h("button", {type: "submit", class: "btn primary ptt", title: "PTT: push to transmit the message; your passkey signs it"}, icon("bi-broadcast-pin"), "PTT");
     const attach = h("input", {type: "checkbox", title: "Attach recording: the agents get the path of the sound file; otherwise only the checked text goes out"});
-    const parts = {record, status, text, replay, attach};
+    const parts = {record, status, text, replay, attach, voice: "", recorder: null, timer: 0, started: 0};
     recordLabel(parts, false);
     const gap = micGap();
     if (gap) {
       record.disabled = true;
       record.title = `Record: ${gap}`;
     }
-    record.addEventListener("click", () => (composer.recorder ? stopRecording() : startRecording(parts)));
+    record.addEventListener("click", () => (parts.recorder ? stopRecording(parts) : startRecording(parts)));
     const sync = () => {
       const direct = TO_ONE.some(([id]) => id === channel.value);
       toField.hidden = !direct;
       hint.textContent = `${CHANNEL_HINTS[channel.value]} Your passkey signs every message.`;
+      channel.title = hint.textContent;
     };
     channel.addEventListener("change", sync);
     sync();
-    const form = h("form", {class: "composer"}, h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField), text, replay, hint,
-      h("div", {class: "actions"}, record, status, h("span", {class: "spacer"}), submit));
+    const form = h("form", {class: "composer"}, h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField), text, replay,
+      h("div", {class: "actions"}, record, status, hint, submit));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const direct = TO_ONE.some(([id]) => id === channel.value);
@@ -174,14 +199,13 @@
         return;
       }
       submit.disabled = true;
-      if (await radioSend({to: direct ? recipient.value : "*", text: text.value, upload: "", cls: channel.value, voice: attach.checked ? composer.voice : ""})) {
+      if (await radioSend({to: direct ? recipient.value : "*", text: text.value, upload: "", cls: channel.value, voice: attach.checked ? parts.voice : ""})) {
         text.value = "";
-        ui.draft = "";
         status.textContent = "";
         attachVoice(parts, "");
       }
       submit.disabled = false;
     });
-    attachVoice(parts, composer.voice);
-    return {form, recipient, text};
+    attachVoice(parts, "");
+    return {form, recipient, text, channel};
   }

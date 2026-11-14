@@ -127,7 +127,7 @@ RADIO = """
     await sleep(150);
   };
   const chips = () => Object.fromEntries(all(".chip-select", spot).map((box) => [box.dataset.chip, box.querySelector("select").value]));
-  const search = () => spot.querySelector('.radio-filters input[type="search"]');
+  const search = () => spot.querySelector('.radio-logbox input[type="search"]');
   const tab = async (id) => {
     spot.querySelector(`.radio-tabs [data-tab="${id}"]`).click();
     await sleep(150);
@@ -187,10 +187,11 @@ LOG = """(async () => {@HELPERS@@RADIO@
   all(".radio-filters button", spot).find((button) => name(button) === "Clear filters").click();
   await sleep(150);
   const clearedChips = [chips(), search().value, rows().length];
-  const summary = spot.querySelector(".radio-row summary");
-  summary.click();
+  spot.querySelector(".radio-row .radio-pick").click();
+  const full = await until(() => document.getElementById("popup").open && document.querySelector("#popup .radio-full"), 4000);
+  const opened = [document.getElementById("popup").open, text(full)];
+  all("#popup .popup-head button").find((button) => name(button) === "Close").click();
   await sleep(150);
-  const opened = [summary.parentElement.open, text(summary.parentElement.querySelector(".radio-full"))];
   await tab("received");
   await chip("agent", "Stage");
   search().value = "gate";

@@ -59,9 +59,9 @@ h1 { margin: 0; font-size: var(--fs-lg); font-weight: 680; letter-spacing: -.01e
 .badge.urgent { background: var(--accent); color: var(--on-accent); }
 .badge.alarm { background: var(--alarm); color: #fff; }
 .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
-.banner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-5); background: var(--alarm); color: #fff; font-weight: 650; }
+.banner { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-5); background: var(--alarm); color: #fff; font-weight: 650; }
 .banner[hidden] { display: none; }
-.banner .text { flex: 1; margin: 0; }
+.banner .text { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .banner .btn { border-color: rgb(255 255 255 / 70%); background: transparent; color: #fff; }
 .menu { position: relative; }
 .menu > summary { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); font-weight: 580; cursor: pointer; list-style: none; }
@@ -212,6 +212,7 @@ body.pane .shell { display: flex; flex: 1; flex-direction: column; min-height: 0
 body.pane main { flex: 1; min-height: 0; overflow: auto; }
 body.fit .shell, body.fit main, body.fit .graph, body.fit .stage-card, body.fit .stage { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 body.fit main { padding-bottom: var(--sp-5); }
+body.fit .stage > .empty { min-height: 0; overflow: auto; }
 body.fit .stage svg, body.fit .stage canvas.space, body.fit .graph3d { flex: 1; height: auto; min-height: 0; max-height: none; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 6px 10px 4px; color: var(--muted); font-size: var(--fs-sm); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }

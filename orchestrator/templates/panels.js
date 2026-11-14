@@ -73,9 +73,10 @@ const Panels = (() => {
    * @param title - the tile title.
    * @param render - (size) => Node, size being {w, h} in grid cells.
    * @param group - optional name of a group of which Home holds one pin at most, such as the 3D views.
+   * @param size - optional [w, h] in grid cells a new pin of the panel gets; SIZES.panel when left out.
    */
-  function panel(id, title, render, group) {
-    panels.set(id, {title, render, group: group || ""});
+  function panel(id, title, render, group, size) {
+    panels.set(id, {title, render, group: group || "", size: size || SIZES.panel});
   }
 
   /**
@@ -146,7 +147,7 @@ const Panels = (() => {
     if (holder) {
       return {pins, refused: "group", holder};
     }
-    const [w, h] = kind === PANEL ? SIZES.panel : SIZES.item;
+    const [w, h] = kind === PANEL ? (panels.get(id) || {size: SIZES.panel}).size : SIZES.item;
     return {pins: [...pins, plain(view) ? {kind, id, w, h, view} : {kind, id, w, h}], refused: "", holder: null};
   }
 
