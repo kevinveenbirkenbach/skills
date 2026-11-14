@@ -20,7 +20,7 @@ rasci.py get <task>
 rasci.py rm <task>
 rasci.py show [--all]
 rasci.py show --wide [--all]
-rasci.py artifacts [--ended] [--task <task>]
+rasci.py artifacts [--ended] [--task <task>] [--worker <text>]
 rasci.py estimate <task> "<party>" --value <fib> --complexity <fib>
 rasci.py estimate <task> Operator --value <fib>
 rasci.py wsjf [--all]
