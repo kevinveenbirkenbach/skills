@@ -49,7 +49,11 @@
     notifyLabel();
   }
 
-  function announce() {
+  /**
+   * @param {boolean} [resumed] whether this state is the first answer after the page was offline.
+   */
+  function announce(resumed) {
+    const arrived = !resumed && known.now !== null && state.now - known.now <= LIVE_GAP;
     const alarms = new Map(alarmRows().map((row) => [`${row.ts}|${row.from}`, row]));
     const radio = new Set(state.radio.map((row) => `${row.ts}|${row.from}|${row.text.slice(0, 40)}`));
     if (known.inbox !== null && live()) {
@@ -63,7 +67,7 @@
         play(kind, loudness(kind));
       }
       const lead = kind ? Math.max(...TONES[kind].map(([, at, length]) => at + length)) : 0;
-      window.setTimeout(() => speakRows(newRadio), lead * 1000);
+      window.setTimeout(() => speakRows(newRadio, arrived), lead * 1000);
       if (settings.notify && "Notification" in window && Notification.permission === "granted") {
         for (const row of newAlarms) {
           new Notification(`${row.class === "mayday" ? "Mayday" : "Pan-Pan"} from ${dash(row.from)}`, {body: row.text.slice(0, 200), tag: `alarm-${row.ts}`, requireInteraction: row.class === "mayday"});
@@ -79,6 +83,7 @@
     known.inbox = new Set(state.inbox.map(keyOf));
     known.alarms = new Set(alarms.keys());
     known.radio = radio;
+    known.now = state.now;
     for (const batch of state.pending) {
       if (!known.batches.has(batch.id)) {
         known.batches.add(batch.id);

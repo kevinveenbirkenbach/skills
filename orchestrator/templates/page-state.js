@@ -37,7 +37,7 @@
   const stream = {key: null, events: [], entries: [], last: 0, sessions: {}, busy: false, again: false, dom: null, error: ""};
   const tree = {data: null, model: null, busy: false, q: "", open: new Set(), dom: null};
   const palette = {items: [], index: 0, input: null, list: null, plan: null, box: null};
-  const known = {inbox: null, alarms: null, radio: null, batches: new Set()};
+  const known = {inbox: null, alarms: null, radio: null, batches: new Set(), now: null};
   const motion = {current: new Map(), from: new Map(), target: new Map(), start: 0, duration: 0, frame: 0, asOf: undefined};
   const drawn = {screen: "", sig: ""};
   const files = new Map();

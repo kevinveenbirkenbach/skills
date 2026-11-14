@@ -98,7 +98,26 @@ changed and what it costs, and a gate means something again.
     TTS the bubbles run at reading pace. Font: vendored Comic Neue (SIL OFL
     1.1). Rejected: a ticker, the full text with a karaoke mark, bubbles only
     with audio, system fonts only, a switch only in the settings, a caption
-    under the speaker only.
+    under the speaker only. Superseded by decision 18 (2026-11-14): bubbles
+    only for the rows read aloud, since with the default read-aloud classes
+    the bulk of the radio (Post, Broadcast, Newsletter) showed no bubble at
+    all.
+18. **A bubble for every live row** (operator-confirmed 2026-11-14): with the
+    bubbles on, every radio row that arrives live gets a bubble, whatever its
+    class, with no per-class choice; reading aloud stays unchanged (default
+    MAYDAY, PAN-PAN, Sécurité). A row that is not read aloud shows a silent
+    bubble beside the speech queue, never in it, so it takes no place in the
+    speech queue: its first line up to 80 characters at reading pace, at most
+    3 at once, one per agent, the speech queue first, at most 30 waiting. The
+    backlog at page load, after a reconnect or after a poll gap of more than
+    30 s, and any row older than 30 s, shows none. All rows of one poll reach
+    the speech queue before its one redraw, and a failing redraw only raises
+    a toast, so drawing never costs a row its speech. Rejected: a per-class
+    bubble choice, silent rows in the speech queue (a silent row being read
+    holds the one speech slot, so even a MAYDAY waits out its reading time,
+    routine rows read aloud wait behind all of them, and 20 of them fill the
+    queue and push routine rows out), every bubble at once (a burst of 30
+    covers the stage).
 
 ## Approach
 
@@ -392,6 +411,16 @@ The work packages meet only through these interfaces:
       bubble at the size of its earliest.
 - [ ] With speech off, TTS unavailable or muted, the same rows run through the
       same queue timed at 180 words per minute, at least 1.5 s each.
+- [x] Every radio row that arrives live and is not read aloud shows a silent
+      bubble beside the speech queue (decision 18): first line up to 80
+      characters at reading pace, at most 3 at once, one per agent, at most
+      30 waiting; the backlog at page load, after a reconnect or after a poll
+      gap of more than 30 s, and a row older than 30 s, shows none; it anchors
+      like every other bubble, at the agent's face or in the caption bar.
+- [x] A fault while a row sounds or is read (a throwing redraw, a rejected
+      sound) still hands the speech queue to the next row; all rows of one
+      poll reach the speech queue before its one redraw, and a throwing
+      redraw raises a toast and never costs a row its speech.
 - [x] Bubble text uses Comic Neue as a vendored woff2 with its SIL OFL 1.1
       text in `orchestrator/vendor/`, stack `"Comic Neue", "Comic Sans MS",
       cursive`; no external font request, the CSP stays unchanged.
@@ -424,6 +453,10 @@ The work packages meet only through these interfaces:
         fold.
   - [x] Bubble schedule: scale per queue position, word reveal times from a
         duration, reading-pace duration, one bubble per agent.
+  - [x] Rows of one poll: a throwing redraw still queues the MAYDAY behind a
+        Post, 1000 silent rows draw once, silent rows never enter the speech
+        queue; no silent bubble after a poll gap over 30 s, after a reconnect
+        or for a row older than 30 s.
 - Integration:
   - [x] A scratch repository with installed hooks refuses a commit without a
         receipt and passes it after a queue gate; refuses a merge below the
@@ -445,3 +478,8 @@ The work packages meet only through these interfaces:
         largest with its words appearing, the second as a smaller `…`; after
         the first ends the second grows; the setting survives a reload; off
         hides the layer.
+  - [ ] Bubbles on, Auto with the CPU gate closed: a Post, a Broadcast and a
+        Newsletter arriving live each show a silent bubble; the backlog at
+        load and after a reconnect shows none; a burst of 30 rows shows at
+        most 3 at once; a Sécurité after 10 silent rows starts speaking
+        within 5 s of the poll and at most 2 s later than the same row alone.

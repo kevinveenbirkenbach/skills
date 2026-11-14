@@ -51,6 +51,7 @@
   const SPEECH_QUEUE = 20;
   const SPEECH_QUIET = 60000;
   const SPEECH_FRESH = 300;
+  const LIVE_GAP = 30;
   const SOUND_SLACK = 2;
   const STATE_TIMEOUT = 15000;
   const THEME_CHOICES = [["sky", "Sky (follows the light outside)"], ["light", "Always light"], ["dark", "Always dark"], ["custom", "Custom colors"]];

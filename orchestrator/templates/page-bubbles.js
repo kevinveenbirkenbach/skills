@@ -1,7 +1,7 @@
   const BUBBLE_FONT = "/vendor/comic-neue.woff2";
   const BUBBLE_FADE = 400;
   const BUBBLE_EDGE = 8;
-  const bubbles = {shown: new Map(), frame: 0, font: null};
+  const bubbles = {shown: new Map(), frame: 0, font: null, quiet: [], waiting: [], warned: 0};
 
   function bubbleLayer() {
     return document.getElementById("bubbles");
@@ -103,16 +103,49 @@
       view.words.textContent = text;
       view.words.scrollTop = view.words.scrollHeight;
     }
-    Object.assign(view.node.dataset, {scale: String(entry.scale), state: item.started ? "speaking" : "waiting", words: String(count)});
+    Object.assign(view.node.dataset, {scale: String(entry.scale), state: item.quiet ? "quiet" : item.started ? "speaking" : "waiting", words: String(count)});
     view.node.style.setProperty("--scale", String(entry.scale));
     placeBubble(view, anchorOf(entry.who), entry.scale);
   }
 
+  function startQuiet(spoken) {
+    const {start, waiting} = Bubbles.admit(bubbles.quiet, bubbles.waiting, new Set(spoken.map((entry) => entry.who)));
+    bubbles.waiting = waiting;
+    for (const item of start) {
+      Object.assign(item, {started: performance.now(), duration: Bubbles.reading(saidOf(item).length)});
+      item.timer = window.setTimeout(() => {
+        bubbles.quiet = bubbles.quiet.filter((other) => other !== item);
+        drawBubbles();
+      }, item.duration * 1000);
+    }
+    bubbles.quiet = [...bubbles.quiet, ...start];
+  }
+
+  /**
+   * @param {Array<object>} items the silent bubbles of the rows one poll brought live, oldest first.
+   */
+  function quietBubbles(items) {
+    bubbles.waiting = items.reduce(Bubbles.queued, bubbles.waiting);
+  }
+
   function drawBubbles() {
+    try {
+      renderBubbles();
+    } catch (error) {
+      if (Date.now() - bubbles.warned > SPEECH_QUIET) {
+        bubbles.warned = Date.now();
+        toast("Drawing speech bubbles failed", [String(error.message || error)], false);
+      }
+    }
+  }
+
+  function renderBubbles() {
     if (!settings.bubbles) {
       return;
     }
-    const planned = Bubbles.plan(speech.current || speech.loading || speech.item, speech.pending);
+    const head = speech.current || speech.loading || speech.item;
+    startQuiet(Bubbles.plan(head, speech.pending));
+    const planned = Bubbles.plan(head, speech.pending, bubbles.quiet);
     const kept = new Set(planned.map((entry) => entry.item));
     for (const [item, view] of bubbles.shown) {
       if (!kept.has(item)) {
@@ -140,6 +173,8 @@
     window.cancelAnimationFrame(bubbles.frame);
     bubbles.frame = 0;
     bubbles.shown.clear();
+    bubbles.quiet.forEach((item) => window.clearTimeout(item.timer));
+    Object.assign(bubbles, {quiet: [], waiting: []});
     for (const node of bubbleLayer().querySelectorAll(".speech-bubble")) {
       node.remove();
     }
