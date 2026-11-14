@@ -10,7 +10,7 @@ MEDUSA is a defensive AI-first security scanner (40,000+ patterns: CVEs, prompt 
 ## Setup
 
 Check availability with `medusa --version`.
-The skills repository's `make install` installs it with pipx; if it is still missing, `pipx install medusa-security` is the operator's step.
+The skills repo's `make install` installs it with pipx; else `pipx install medusa-security` is the operator's step.
 
 ## Commands
 
@@ -32,11 +32,12 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/security.py --repo <root> --base <ref>
 It scans the files changed since `<ref>`, untracked ones included, once and
 prints one line: 100 % is safe, each critical, high, medium and low finding
 costs 50, 25, 10 and 2. Pass the value as `--security` and the critical count
-(`--json`) as `--critical` to `score.py`. A complete run is cached.
+(`--json`) as `--critical` to `score.py`. A complete run is cached. Run long
+files in the background, the log under `skills/.state`.
 
 - Exit 0: 100 %. Exit 3: below 100 without a critical; the score gate asks
   the operator. Exit 1: a critical; the gate forbids the commit. Exit 2: usage.
-- A `not covered` list or exit 4: read `coverage.md` next to this file first.
+- `not covered` or exit 4: read `coverage.md` first.
 - **Accepted false positives**: `security.py accept --repo <root> --rule <id>
   [--rule <id> ...] --path <path> --sha1 <sha1> --line <n> --reason "<one line>"`
   (values from `--json`) keeps a finding out of the score until its line or
@@ -46,7 +47,7 @@ costs 50, 25, 10 and 2. Pass the value as `--security` and the critical count
 
 ## Rules
 
-- Run scans read-only; never pass `--reveal` and never run `medusa secrets purge` unless the user explicitly asks for it.
-- Summarize findings by severity with file/line references; do not paste secret values into the conversation, even redacted ones.
-- Treat findings as signals for review, not verdicts; confirm true positives in the code before proposing fixes.
-- Vet third-party agent repos (`medusa scan --git`) before recommending the user clone or install them.
+- Run scans read-only; never pass `--reveal` and never run `medusa secrets purge` unless the user asks.
+- Summarize findings by severity with file/line references; never paste secret values, even redacted ones.
+- Treat findings as signals for review, not verdicts; confirm true positives in the code before fixing.
+- Vet third-party agent repos (`medusa scan --git`) before recommending a clone or install.

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -17,10 +20,16 @@ SECURITY = REPO_ROOT / "skills" / "kvb-check-security" / "scripts" / "security.p
 GIT_DIR = os.path.dirname(shutil.which("git"))
 PLACEHOLDER = "placeholder-value-never-shown"
 FAKE = """#!{shebang}
-import json, os, pathlib, sys
+import json, os, pathlib, subprocess, sys, time
 args = sys.argv[1:]
 pathlib.Path(__file__).with_name("argv.json").write_text(json.dumps(args))
 pathlib.Path(__file__).with_name("home.txt").write_text(os.environ["HOME"])
+pathlib.Path(__file__).with_name("timeout.txt").write_text(os.environ.get("MEDUSA_SCANNER_TIMEOUT", "unset"))
+if os.environ.get("FAKE_MEDUSA_CHILD"):
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    pathlib.Path(__file__).with_name("child.txt").write_text(str(child.pid))
+pathlib.Path(__file__).with_name("pid.txt").write_text(str(os.getpid()))
+time.sleep(float(os.environ.get("FAKE_MEDUSA_SLEEP", "0")))
 pathlib.Path(os.environ["HOME"], ".medusa").mkdir()
 target, out = pathlib.Path(args[1]), pathlib.Path(args[args.index("-o") + 1])
 out.mkdir(parents=True)
@@ -64,6 +73,7 @@ class MedusaConfig:
     exclude_files: List[str] = field(default_factory=lambda: ["*.min.js"])
 """
 PARALLEL = """MAX_SCAN_FILE_SIZE = {size}
+PER_SCANNER_TIMEOUT = {timeout}
 
 
 class MedusaParallelScanner:
@@ -76,6 +86,29 @@ class MedusaParallelScanner:
         ai_context_dir_names: Set[str] = {{".claude"}}
 """
 HAND = "review trust boundaries, secrets and injection in the diff by hand, then pass --security '~<n>' to kvb-check-score"
+
+
+def gone(pid: int, wait: float = 5.0) -> bool:
+    until = time.monotonic() + wait
+    while True:
+        try:
+            state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        except OSError:
+            return True
+        if state in "ZX":
+            return True
+        if time.monotonic() >= until:
+            return False
+        time.sleep(0.05)
+
+
+def ended(pids: list[int]) -> None:
+    for pid in pids:
+        if not gone(pid, 0):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 class TestSecurity(unittest.TestCase):
@@ -117,13 +150,30 @@ class TestSecurity(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-qm", "base")
 
-    def limits(self, size: str = "2 * 1024 * 1024", lines: str = "50_000") -> None:
-        for name, text in (("core/parallel.py", PARALLEL.format(size=size)), ("scanners/base.py", BASE.format(lines=lines))):
+    def limits(
+        self, size: str = "2 * 1024 * 1024", lines: str = "50_000",
+        timeout: str = 'int(os.environ.get("MEDUSA_SCANNER_TIMEOUT") or 60)',
+    ) -> None:
+        parallel = PARALLEL.format(size=size, timeout=timeout)
+        for name, text in (("core/parallel.py", parallel), ("scanners/base.py", BASE.format(lines=lines))):
             (self.package / name).parent.mkdir(parents=True, exist_ok=True)
             (self.package / name).write_text(text, encoding="utf-8")
 
     def git(self, *args: str) -> None:
         subprocess.run(["git", *args], cwd=self.repo, env=self.env, capture_output=True, check=True)
+
+    def started(self, *names: str) -> list[int]:
+        """Returns:
+            the pids the fake medusa writes to names (default: its own and its
+            child's), once all are written; all are killed on cleanup.
+        """
+        markers = [self.bin / name for name in names or ("pid.txt", "child.txt")]
+        until = time.monotonic() + 20
+        while not all(m.exists() and m.read_text() for m in markers) and time.monotonic() < until:
+            time.sleep(0.05)
+        pids = [int(m.read_text()) for m in markers]
+        self.addCleanup(ended, pids)
+        return pids
 
     def write(self, path: str, text: str) -> None:
         (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
@@ -571,6 +621,134 @@ class TestSecurity(unittest.TestCase):
                     (f"🛡️ security – (medusa never covers this diff, nothing cached: {problem}: {HAND})\n", 4),
                 )
                 (self.repo / name).unlink()
+
+    def test_the_scanner_timeout_reaches_medusa_in_place_of_the_callers_and_takes_whole_seconds_only(self):
+        spec = importlib.util.spec_from_file_location("kvb_check_security", SECURITY)
+        security = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(security)
+        knob = self.bin / "timeout.txt"
+        cases = (((), str(security.TIMEOUT)), (("--timeout", "86400"), "86400"))
+        for number, (extra, handed) in enumerate(cases, 2):
+            with self.subTest(handed=handed):
+                self.write("app.py", f"print({number})\n")
+                result = self.scan(*extra, env={**self.env, "MEDUSA_SCANNER_TIMEOUT": "5"})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(knob.read_text(encoding="utf-8"), handed)
+        for flag in ("--timeout", "--deadline"):
+            for value in ("0", "-1", "1.5", "x", "86401"):
+                with self.subTest(flag=flag, value=value):
+                    result = self.scan(flag, value, env=self.env)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn(f"want whole seconds from 1 to 86400, got {value!r}", result.stderr)
+
+    def test_a_scanner_fault_claims_no_cause_medusa_cannot_tell_apart(self):
+        self.write("app.py", "print(2)\n")
+        timed = "1 scanner error(s)/timeout(s) during scan: ModelAttackScanner (1)"
+        unread = "1 director(ies) could not be read and were skipped (e.g. locked)"
+        capped = (
+            "a scanner crashed or hit medusa's fixed 2 s cap (medusa counts both together): rerun when idle; "
+            "if it repeats, give medusa the MEDUSA_SCANNER_TIMEOUT knob"
+        )
+        erred = "scanner error (no scanner reached the 2 s cap): rerun when idle"
+        rerun = "rerun once the host is idle"
+        cases = (
+            ("2", "2.2", timed, capped),
+            ("2", "0", timed, erred),
+            ("2", "2.2", unread, rerun),
+            ("config.scanner_timeout()", "2.2", timed, rerun),
+        )
+        for timeout, sleep, line, advice in cases:
+            with self.subTest(timeout=timeout, sleep=sleep, line=line):
+                self.limits(timeout=timeout)
+                result = self.scan(env={**self.env, "FAKE_MEDUSA_STDOUT": f"⚠️  {line}\n", "FAKE_MEDUSA_SLEEP": sleep})
+                problem = f"medusa run incomplete, nothing cached, {advice}: {line}"
+                self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({problem}: {HAND})\n", 4))
+
+    def test_a_medusa_run_past_the_deadline_takes_its_whole_group_and_names_the_flag_to_raise(self):
+        self.write("app.py", "print(2)\n")
+        start = time.monotonic()
+        result = self.scan("--deadline", "1", env={**self.env, "FAKE_MEDUSA_SLEEP": "30", "FAKE_MEDUSA_CHILD": "1"})
+        self.assertLess(time.monotonic() - start, 8)
+        problem = (
+            "medusa run incomplete, nothing cached, medusa ran past its 1 s --deadline: "
+            "rerun it in the background with --deadline raised, up to 86400"
+        )
+        self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({problem}: {HAND})\n", 4))
+        self.assertTrue(all(gone(pid) for pid in self.started()))
+        self.assertEqual(list((self.base / "council" / "security-cache").glob("*.json")), [])
+
+    def test_a_stop_signal_to_security_py_takes_medusa_and_its_child_along(self):
+        self.write("app.py", "print(2)\n")
+        env = {**self.env, "FAKE_MEDUSA_SLEEP": "30", "FAKE_MEDUSA_CHILD": "1"}
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGKILL):
+            with self.subTest(signal=number.name):
+                for name in ("pid.txt", "child.txt"):
+                    (self.bin / name).unlink(missing_ok=True)
+                security = subprocess.Popen(
+                    [sys.executable, str(SECURITY), "--repo", str(self.repo), "--base", "HEAD"], cwd=self.base,
+                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                )
+                medusa, child = self.started()
+                os.killpg(security.pid, number)
+                self.assertEqual(security.wait(timeout=20), -number)
+                self.assertTrue(gone(medusa))
+                if number != signal.SIGKILL:
+                    self.assertTrue(gone(child))
+
+    def test_the_cache_key_holds_the_timeout_medusa_got_not_the_callers(self):
+        self.write("app.py", "print(2)\n")
+        argv = self.bin / "argv.json"
+        self.scan(env={**self.env, "MEDUSA_SCANNER_TIMEOUT": "5"})
+        argv.unlink()
+        self.scan(env={**self.env, "MEDUSA_SCANNER_TIMEOUT": "6"})
+        self.assertFalse(argv.exists())
+        self.scan("--timeout", "7", env=self.env)
+        self.assertTrue(argv.exists())
+
+    def test_signals_the_caller_ignores_stay_ignored_and_the_scan_scores(self):
+        self.write("app.py", "print(2)\n")
+        ignored = (signal.SIGHUP, signal.SIGINT)
+        previous = {number: signal.signal(number, signal.SIG_IGN) for number in ignored}
+        try:
+            security = subprocess.Popen(
+                [sys.executable, str(SECURITY), "--repo", str(self.repo), "--base", "HEAD"], cwd=self.base,
+                env={**self.env, "FAKE_MEDUSA_SLEEP": "2"}, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, start_new_session=True,
+            )
+        finally:
+            for number, handler in previous.items():
+                signal.signal(number, handler)
+        self.started("pid.txt")
+        for number in ignored:
+            os.killpg(security.pid, number)
+        out, _ = security.communicate(timeout=20)
+        self.assertEqual((out, security.returncode), ("🛡️ security 100 % (medusa: 0 findings in 1 file)\n", 0))
+
+    def test_the_first_stop_signal_ignores_the_others_and_kills_the_group(self):
+        spec = importlib.util.spec_from_file_location("kvb_check_security_halt", SECURITY)
+        security = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(security)
+        for number in security.STOPS:
+            self.addCleanup(signal.signal, number, signal.signal(number, signal.default_int_handler))
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+        self.addCleanup(ended, [sleeper.pid])
+        security.halt([sleeper.pid], security.STOPS)
+        self.assertEqual([signal.getsignal(number) for number in security.STOPS], [signal.SIG_IGN] * len(security.STOPS))
+        self.assertEqual(sleeper.wait(timeout=10), -signal.SIGKILL)
+
+    def test_a_libc_without_prctl_only_loses_the_parent_death_signal(self):
+        self.write("app.py", "print(2)\n")
+        wrap = (
+            "import ctypes, runpy, sys; ctypes.CDLL = lambda *args, **kwargs: object(); "
+            "sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", wrap, str(SECURITY), "--repo", str(self.repo), "--base", "HEAD"],
+            cwd=self.base, env=self.env, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(
+            (result.stdout, result.returncode), ("🛡️ security 100 % (medusa: 0 findings in 1 file)\n", 0), result.stderr,
+        )
 
     def test_usage_errors_exit_2(self):
         result = subprocess.run(

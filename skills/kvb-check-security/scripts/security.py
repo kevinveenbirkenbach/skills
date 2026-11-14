@@ -5,6 +5,13 @@ Args:
     --repo: git repository whose working tree holds the change.
     --base: git ref the change starts from.
     --json: print the figures as JSON instead of the line.
+    --timeout: whole seconds, 1 to CEILING, each medusa scanner may spend on
+        one file, handed to medusa as KNOB in place of any the caller set;
+        default TIMEOUT.
+    --deadline: whole seconds, 1 to CEILING, the whole medusa run may take;
+        past it its process group is killed and the run is incomplete;
+        default DEADLINE. A STOPS signal the caller does not ignore kills
+        that group too, then this process by the same signal.
 
     accept --repo <root> --rule <rule_id> [--rule ...] --path <repo path> --sha1 <40 hex> [--line <n>] --reason <one line>:
         record reviewed false positives of one line instead, a row per rule; --json
@@ -17,7 +24,8 @@ Scan:
     out, copied to a temporary tree and scanned once with
     `medusa scan <tree> --format json -o <dir> --no-cache --workers <w>`, w the
     files scanned but at most WORKERS, HOME pointing into the temporary
-    directory because medusa creates ~/.medusa on start, read from
+    directory because medusa creates ~/.medusa on start and KNOB set to
+    --timeout (a medusa that ignores KNOB keeps its own cap), read from
     `<dir>/medusa-scan-*.json`: a `findings` list whose entries carry
     `severity` (critical, high, medium, low or info), `rule_id`, `file` and `line`.
     medusa skips the SKIPPED suffixes (.mjs, .cjs, any case), so such a file is
@@ -48,15 +56,19 @@ Scan:
     `files_scanned` and, as medusa counts each file's LF bytes plus one and a
     skipped file as 0, their sum in `lines_scanned`. The run is complete only when medusa also exits 0 and its
     output names no FAULT (a scanner error or a timeout: a scanner over its
-    per-file timeout, as under a fully loaded CPU, adds nothing to the report;
+    per-file timeout, as on a long file or under a fully loaded CPU, adds
+    nothing to the report;
     a directory left unread, both printed by medusa's main process) and no
     SKIP. A SKIP line is a second signal only: medusa runs with `python -E`,
-    so its pool workers print it into a buffer that dies with them.
+    so its pool workers print it into a buffer that dies with them. A TIMED
+    FAULT names RERUN, unless core/parallel.py assigns PER_SCANNER_TIMEOUT
+    a plain number: medusa then ignores KNOB, and the problem names CAPPED
+    with that number when the run lasted at least as long, else ERRED.
 
 Cache:
     The findings of a complete scan, keyed by the sha256 of this script, the
     resolved medusa binary with its mtime and size, PATH, the files not covered,
-    every MEDUSA_* variable and the tree path, repository path, mode and
+    every MEDUSA_* variable handed to medusa and the tree path, repository path, mode and
     content sha256 of every copied file, in
     <council root>/security-cache/<key>.json for CACHE_SECONDS. A later scan
     with the same key reads them instead of running medusa; any edit of a
@@ -90,7 +102,7 @@ Output:
 Exit codes:
     0 security 100, 1 a critical finding, 2 usage error, 3 under 100 without a
     critical finding, 4 medusa missing, its report or RULES unreadable, its
-    run incomplete (rerun once the host is idle), a scanned file it never
+    run incomplete (RERUN, CAPPED, ERRED or past --deadline), a scanned file it never
     covers or a diff of files not covered only: review the diff by hand.
 """
 
@@ -98,20 +110,25 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
+import ctypes
 import datetime
 import fcntl
+import functools
 import hashlib
 import importlib.util
 import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
 import time
 from collections import Counter
+from collections.abc import Iterable
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
@@ -121,6 +138,10 @@ SAFE = 100
 SHOWN = 5
 REACH = 2
 WORKERS = 4
+KNOB = "MEDUSA_SCANNER_TIMEOUT"
+TIMEOUT = 900
+DEADLINE = 3600
+CEILING = 86400
 SKIPPED = (".mjs", ".cjs")
 ALIAS = ".js"
 NAME_MAX = 255
@@ -132,7 +153,16 @@ SHAPE = {
     "sha1": (str, NOTHING), "context": (str, NOTHING),
 }
 SHA1 = re.compile(r"[0-9a-f]{40}")
-FAULT = re.compile(r"scanner error\(s\)/timeout\(s\) during scan|could not be read and were skipped")
+TIMED = re.compile(r"scanner error\(s\)/timeout\(s\) during scan")
+FAULT = re.compile(rf"{TIMED.pattern}|could not be read and were skipped")
+RERUN = "rerun once the host is idle"
+CAPPED = (
+    "a scanner crashed or hit medusa's fixed {cap} s cap (medusa counts both together): rerun when idle; "
+    f"if it repeats, give medusa the {KNOB} knob"
+)
+ERRED = "scanner error (no scanner reached the {cap} s cap): rerun when idle"
+STOPS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+PR_SET_PDEATHSIG = 1
 SKIP = re.compile(r"Skipped .+ exceeds .+ limit")
 RULES = {
     "core/parallel.py": {
@@ -164,6 +194,10 @@ class Incomplete(Exception):
 
 
 class Uncovered(Exception):
+    pass
+
+
+class Stopped(BaseException):
     pass
 
 
@@ -470,6 +504,86 @@ def rules(folder: Path | None) -> Rules | None:
     )
 
 
+def capped(folder: Path) -> int | None:
+    """Returns:
+        the plain number medusa's core/parallel.py assigns PER_SCANNER_TIMEOUT, its
+        fixed cap that ignores KNOB, else None.
+    """
+    try:
+        return assigned(folder / "core" / "parallel.py", {"PER_SCANNER_TIMEOUT": int})["PER_SCANNER_TIMEOUT"]
+    except (OSError, SyntaxError, ValueError, TypeError):
+        return None
+
+
+def advice(short: str, cap: int | None, lasted: float) -> str:
+    """Returns:
+        what to do about the FAULT or shortfall short of a run that lasted these
+        seconds under medusa's fixed cap: CAPPED, ERRED or RERUN.
+    """
+    if cap is None or not TIMED.search(short):
+        return RERUN
+    return (CAPPED if lasted >= cap else ERRED).format(cap=cap)
+
+
+def halt(group: list[int], handled: Iterable[int]) -> None:
+    """Args:
+        group: process group ids to kill with SIGKILL.
+        handled: signals set to SIG_IGN before the kill.
+    """
+    for number in handled:
+        signal.signal(number, signal.SIG_IGN)
+    for pid in group:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(pid, signal.SIGKILL)
+
+
+def deathsig() -> functools.partial | None:
+    """Returns:
+        the preexec_fn that kills medusa when this process dies, None for a libc without prctl.
+    """
+    prctl = getattr(ctypes.CDLL(None), "prctl", None)
+    return functools.partial(prctl, PR_SET_PDEATHSIG, int(signal.SIGKILL)) if prctl else None
+
+
+def medusa_run(command: list[str], work: Path, env: dict[str, str], deadline: int) -> tuple[int, str, float]:
+    """Returns:
+        medusa's exit code, stdout and seconds. medusa runs in its own process
+        group, dies with this process (deathsig) and its group is killed past
+        deadline seconds (Incomplete), on a STOPS signal the caller does not
+        ignore (Stopped) or on any other exception.
+    """
+    group: list[int] = []
+    previous = {number: signal.getsignal(number) for number in STOPS}
+    previous = {number: handler for number, handler in previous.items() if handler not in (signal.SIG_IGN, None)}
+
+    def stop(number: int, frame: object) -> None:
+        halt(group, previous)
+        raise Stopped(number)
+
+    for number in previous:
+        signal.signal(number, stop)
+    start = time.monotonic()
+    try:
+        with subprocess.Popen(
+            command, cwd=work, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env,
+            start_new_session=True, preexec_fn=deathsig(),  # noqa: PLW1509
+        ) as process:
+            group.append(process.pid)
+            try:
+                out, _ = process.communicate(timeout=deadline)
+            except BaseException:
+                halt(group, previous)
+                raise
+    except subprocess.TimeoutExpired:
+        raise Incomplete(
+            f"medusa ran past its {deadline} s --deadline: rerun it in the background with --deadline raised, up to {CEILING}"
+        ) from None
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+    return process.returncode, out.decode(errors="replace"), time.monotonic() - start
+
+
 def taken(name: str, found: Rules) -> bool:
     """Returns:
         whether medusa's find_scannable_files takes up a file of this tree path:
@@ -546,13 +660,13 @@ def cut(code: int, said: list[str], summary: dict, sizes: dict[str, tuple[int, i
     return None
 
 
-def keyed(medusa: str, tree: Path, names: dict[str, str], missed: list[str]) -> str:
+def keyed(medusa: str, tree: Path, names: dict[str, str], missed: list[str], env: dict[str, str]) -> str:
     binary = Path(medusa).resolve()
     info = binary.stat()
     key = hashlib.sha256(Path(__file__).read_bytes())
     key.update(f"\0{binary}\0{info.st_mtime_ns}\0{info.st_size}\0{os.environ.get('PATH', '')}\0".encode())
     key.update("".join(f"{name}\0" for name in missed).encode() + b"\0")
-    key.update("".join(f"{k}={v}\0" for k, v in sorted(os.environ.items()) if k.startswith("MEDUSA_")).encode())
+    key.update("".join(f"{k}={v}\0" for k, v in sorted(env.items()) if k.startswith("MEDUSA_")).encode())
     for scratch, name in sorted(names.items()):
         path = tree / scratch
         key.update(f"{scratch}\0{name}\0{path.stat().st_mode & 0o777:o}\0".encode())
@@ -610,7 +724,9 @@ def remember(folder: Path, key: str, found: list[dict]) -> None:
         Path(name).unlink(missing_ok=True)
 
 
-def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, list[dict], list[str]]:
+def scan(
+    medusa: str, root: Path, base: str, cache: Path | None, timeout: int, deadline: int,
+) -> tuple[int, list[dict], list[str]]:
     """Returns:
         the count of scanned files, their findings and the repository paths
         of the copied files medusa never takes up.
@@ -623,8 +739,9 @@ def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, l
         names = copy(root, changed(root, base), tree)
         if not names:
             return 0, [], []
-        env = {**os.environ, "HOME": str(home)}
-        known = rules(package(medusa, work, env))
+        env = {**os.environ, "HOME": str(home), KNOB: str(timeout)}
+        folder = package(medusa, work, env)
+        known = rules(folder)
         if known is None:
             raise Uncovered("medusa's own types, exclusions and limits are unreadable from its source")
         sizes = {names[scratch]: size for scratch, size in sized(tree).items() if taken(scratch, known)}
@@ -635,26 +752,26 @@ def scan(medusa: str, root: Path, base: str, cache: Path | None) -> tuple[int, l
         over = oversized(sizes, known)
         if over:
             raise Uncovered(over)
-        key = keyed(medusa, tree, names, missed)
+        key = keyed(medusa, tree, names, missed, env)
         hit = recalled(cache, key) if cache else None
         if hit is not None:
             return scanned, hit, missed
-        result = subprocess.run(
+        code, out, lasted = medusa_run(
             [medusa, "scan", str(tree), "--format", "json", "-o", str(reports), "--no-cache",
              "--workers", str(min(scanned, WORKERS))],
-            cwd=work, stdin=subprocess.DEVNULL, capture_output=True, check=False, env=env,
+            work, env, deadline,
         )
         try:
             found, summary = findings(reports, tree, names)
         except Unreadable as error:
-            raise Unreadable(f"{error} (medusa exit {result.returncode})") from None
-        said = [line.replace(f"{tree}/", "").strip(" \t!⚠️") for line in result.stdout.decode(errors="replace").splitlines()]
+            raise Unreadable(f"{error} (medusa exit {code})") from None
+        said = [line.replace(f"{tree}/", "").strip(" \t!⚠️") for line in out.splitlines()]
         never = uncovered(said, summary, sizes)
         if never:
             raise Uncovered(never)
-        short = cut(result.returncode, said, summary, sizes)
+        short = cut(code, said, summary, sizes)
         if short:
-            raise Incomplete(short)
+            raise Incomplete(f"{advice(short, capped(folder), lasted)}: {short}")
         if cache:
             remember(cache, key, found)
         return scanned, found, missed
@@ -668,11 +785,19 @@ def shown(items: list[str]) -> str:
     return ", ".join(items[:SHOWN]) + (f", +{len(items) - SHOWN} more" if len(items) > SHOWN else "")
 
 
+def seconds(text: str) -> int:
+    if not text.isdecimal() or not 1 <= int(text) <= CEILING:
+        raise argparse.ArgumentTypeError(f"want whole seconds from 1 to {CEILING}, got {text!r}")
+    return int(text)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", required=True)
     parser.add_argument("--base", required=True)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--timeout", type=seconds, default=TIMEOUT)
+    parser.add_argument("--deadline", type=seconds, default=DEADLINE)
     args = parser.parse_args()
 
     repo = Path(args.repo)
@@ -690,11 +815,11 @@ def main() -> int:
     problem = None if medusa else "medusa missing"
     if medusa:
         try:
-            scanned, every, missed = scan(medusa, root, args.base, shelf(council.ROOT))
+            scanned, every, missed = scan(medusa, root, args.base, shelf(council.ROOT), args.timeout, args.deadline)
         except Unreadable as error:
             problem = f"medusa report unreadable: {error}"
         except Incomplete as error:
-            problem = f"medusa run incomplete, nothing cached, rerun once the host is idle: {error}"
+            problem = f"medusa run incomplete, nothing cached, {error}"
         except Uncovered as error:
             problem = f"medusa never covers this diff, nothing cached: {error}"
     if problem:
@@ -728,4 +853,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(accept(sys.argv[2:]) if sys.argv[1:2] == ["accept"] else main())
+    try:
+        sys.exit(accept(sys.argv[2:]) if sys.argv[1:2] == ["accept"] else main())
+    except Stopped as stopped:
+        signal.signal(stopped.args[0], signal.SIG_DFL)
+        os.kill(os.getpid(), stopped.args[0])
