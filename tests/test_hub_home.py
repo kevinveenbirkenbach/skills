@@ -537,7 +537,7 @@ TREE_PROBE = DOM_KIT + """
 const [, artifactsFile, treeFile, homeFile, dataFile] = process.argv.slice(1);
 Object.assign(context, {
   h, icon: () => text(""), named: (label, hint) => ({title: hint || label, "aria-label": label}), iconBtn: (name, label, cls, run, hint) => h("button", {"aria-label": label, title: hint}),
-  counter: (value) => text(value), emptyState: (title, words) => h("div", {class: "empty", "data-title": title}, words), branchAncestry: () => null, gateIcons: () => h("span", {class: "gates"}),
+  counter: (value) => text(value), emptyState: (title, words) => h("div", {class: "empty", "data-title": title}, words), branchAncestry: () => null, gateChips: () => h("span", {class: "gates"}), gateExplain: () => null,
   flowLine: () => null, flowDetails: () => null, flowEdges: () => [], copyButton: () => null, face: () => null, person: (name) => text(name), status: (value) => text(value), pill: (words) => text(words),
   workChips: () => null, popupHead: (glyph, label) => h("h2", {class: "panel-title"}, label), meta: (rows) => h("dl", {}, rows.map(([key, value]) => h("div", {"data-key": key}, value === null || value === undefined ? "" : value))),
   WORK_CHIPS: {}, clock: {format: () => "c"}, stampOf: (t) => t, nowSeconds: () => 1763000000, labelOf: (key) => key, toast: () => null,

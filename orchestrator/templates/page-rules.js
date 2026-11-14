@@ -1,9 +1,5 @@
   const RULE_KINDS = {ask: "Ask: tool + command pattern", review: "Review: branch pattern + gate green", decision: "Decision: take the recommendation"};
-  const RULE_HINTS = {
-    ask: "Grants matching asks in matching directories, never a command with a warning (rm -r, push, --force, sudo, pipes into a shell …). The passkey signs the rule and the agents it applies to once; the hook checks signature, pattern and agent itself.",
-    review: "Grants reviews of matching branches and worktrees, only when their gate is green, for every agent: a review names no session. The passkey signs the rule once; the commit skill checks signature and pattern itself.",
-    decision: "Takes the recommended option in decisions of matching agents. The passkey signs the rule once; the decisions themselves stay unsigned.",
-  };
+  const RULE_HINTS = Glossary.RULE_HINTS;
 
   /**
    * @param {Object} rule the stored rule to turn on again, which widens what agents may do.

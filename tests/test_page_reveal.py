@@ -10,7 +10,7 @@ from pathlib import Path
 from hub_support import signing
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "orchestrator" / "templates"
-MODULES = ["page-constants.js", "ancestry.js", "page-reveal.js", "page-dom.js", "page-diff.js", "page-rule-request.js", "page-inbox.js", "page-firewall.js", "page-review.js", "page-cleanup.js", "page-offices.js", "page-ancestry.js", "page-tasks-prio.js"]
+MODULES = ["page-constants.js", "glossary.js", "ancestry.js", "page-reveal.js", "page-dom.js", "page-diff.js", "page-rule-request.js", "page-inbox.js", "page-firewall.js", "page-review.js", "page-cleanup.js", "page-offices.js", "page-ancestry.js", "page-tasks-prio.js"]
 RLO, ZWSP, LRI, SEPARATOR, CARRIAGE = chr(0x202E), chr(0x200B), chr(0x2066), chr(0x2028), chr(0x0D)
 FILLER, NBSP, CGJ, VS15, VS16 = chr(0x3164), chr(0xA0), chr(0x34F), chr(0xFE0E), chr(0xFE0F)
 HIDDEN = (RLO, ZWSP, LRI, SEPARATOR, CARRIAGE, FILLER, NBSP, CGJ, VS16)
@@ -140,7 +140,7 @@ class TestPageReveal(unittest.TestCase):
         page_state = {
             "state": {"reviews": [review], "inbox": [], "jobs": [{"kind": "task", "task": "T1", "command": f"rasci.py set T1{RLO} --prio 3", "status": "done"}], "graph": {"nodes": []}, "claims": []},
             "ui": {"review": None, "file": 0},
-            "tree": {"data": {"repos": [repo], "gates": {"/r": {"feature/a": {"parents": [{"parent": f"main{FILLER}", "source": "own"}], "rules": {}}}}}},
+            "tree": {"data": {"repos": [repo], "gates": {"/r": {"feature/a": {"parents": [{"parent": f"main{FILLER}", "source": "own"}], "rules": {}, "resolved": {"merge": {"level": "test", "source": f"main{FILLER}"}}}}}}},
         }
         calls = [
             ["reviewSheet", ["r1"]],
@@ -149,12 +149,15 @@ class TestPageReveal(unittest.TestCase):
             ["branchAncestry", [repo]],
             ["priorityForm", [{"task": f"T1{FILLER}", "estimates": {}, "prio": 3}]],
             ["taskJobs", [{"task": "T1"}]],
+            ["gateChips", ["/r", "feature/a"]],
         ]
         found = shown(TEMPLATES, calls, page_state)
         self.assertRevealed(found[0], ["202E", "3164", "00A0", "034F", "FE0F"])
         for drawn in found[1:5]:
             self.assertRevealed(drawn, ["3164"])
         self.assertRevealed(found[5], ["202E"])
+        self.assertRevealed(found[6], ["3164"])
+        self.assertIn("merge: test (inherited from main⟨U+3164⟩)", found[6])
 
     def test_an_inbox_ask_operator_row_and_decision_show_every_hidden_character_as_a_marker(self):
         ask = item("ask", command=f"git status{RLO} && rm -rf ~", directory=f"/repo{ZWSP}", agent=f"Skills{RLO}")

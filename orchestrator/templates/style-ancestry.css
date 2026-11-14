@@ -8,10 +8,20 @@ svg .ancestry-edge.dropping { stroke: var(--bad); opacity: .5; }
 svg .ancestry-node { cursor: grab; }
 svg .ancestry-node:active { cursor: grabbing; }
 svg .ancestry-node .label { fill: var(--text); font-size: var(--fs-2xs); }
-.gates { display: inline-flex; align-items: center; gap: 2px; }
-.gate-mark { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; }
+.gates { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.gate-mark { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; padding: 1px 9px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--neutral-soft); color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: 650; line-height: 20px; text-align: start; cursor: pointer; }
+.gate-mark .bi { flex: none; }
+.gate-mark .gate-text { min-width: 0; overflow-wrap: anywhere; }
 .gate-mark:hover { background: var(--hover); }
-.gate-mark.inherited { opacity: .4; }
-.gate-mark.pending { outline: 1px dashed var(--info); color: var(--info); }
+.gate-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gate-mark.inherited { border-style: dashed; background: transparent; color: var(--muted); }
+.gate-mark.pending { border: 1px dashed var(--info); background: var(--info-soft); color: var(--info); }
+.gate-explain { margin: 4px 0 8px; }
+.gate-explain > summary { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--accent); font-weight: 650; cursor: pointer; }
+.gate-explain h4 { margin: 10px 0 4px; color: var(--muted); font-size: var(--fs-xs); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.glossary { display: grid; gap: 4px; margin: 0; }
+.glossary > div { display: grid; grid-template-columns: minmax(0, 9em) minmax(0, 1fr); gap: 8px; }
+.glossary dt { font-weight: 650; overflow-wrap: anywhere; }
+.glossary dd { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .gate-apply, .gate-staged { display: inline-flex; align-items: center; gap: 4px; }
 .dry-run.locked pre { opacity: .6; }

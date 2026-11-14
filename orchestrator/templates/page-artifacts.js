@@ -239,7 +239,7 @@
       body.push(meta([["Path", data.path], ["Remote", data.remote], ["Default", data.default], ["Forge", data.forge], ["As of", data.scanned_at]]),
         h("p", {class: "muted"}, `${data.branches.length} Branches · ${data.branches.reduce((sum, entry) => sum + entry.worktrees.length, 0) + data.detached.length} Worktrees`));
     } else if (node.kind === "branch") {
-      body.push(h("div", {class: "states"}, branchStates(data), gateIcons(node.repo, data.name)), meta([["Upstream", data.upstream], ["Head", data.head.slice(0, 12), data.head], ["Merged into", data.merged_into], ["Reason", data.reason]]),
+      body.push(h("div", {class: "states"}, branchStates(data), gateChips(node.repo, data.name)), gateExplain(), meta([["Upstream", data.upstream], ["Head", data.head.slice(0, 12), data.head], ["Merged into", data.merged_into], ["Reason", data.reason]]),
         data.worktrees.map((wt) => flowDetails(wt.flow, data.name)),
         h("h3", {}, "Dry run"), h("pre", {class: "notes"}, data.plan.join("\n")), glance ? null : h("div", {class: "actions"}, deleteButton(data)));
     } else if (node.kind === "worktree") {

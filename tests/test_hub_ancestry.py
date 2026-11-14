@@ -96,7 +96,8 @@ class TestGateMarks(unittest.TestCase):
         marks = {mark["action"]: mark for mark in self.data["marks"]}
         self.assertEqual(list(marks), ["commit", "merge", "push", "pr"])
         self.assertEqual([(marks[a]["level"], marks[a]["own"], marks[a]["inherited"]) for a in marks], [("test", True, False), ("quality-high", False, True), ("none", False, True), ("e2e", True, False)])
-        self.assertEqual([marks[a]["title"] for a in marks], ["commit: test · own rule", "merge: quality-high · from main", "push: none · no rule", "pr: e2e · own rule"])
+        self.assertEqual([marks[a]["source"] for a in marks], ["feature/a", "main", "", "feature/a"])
+        self.assertNotIn("title", marks["commit"])
         self.assertEqual([marks[a]["icon"] for a in marks], ["bi-check2-circle", "bi-shield-check", "bi-circle", "bi-browser-chrome"])
 
     def test_a_branch_gates_py_does_not_know_shows_none_inherited_for_every_action(self):
@@ -120,14 +121,14 @@ class TestAncestryAssets(unittest.TestCase):
         done = subprocess.run(["node", "--check", str(ANCESTRY)], capture_output=True, text=True, timeout=60, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("svg .ancestry-edge.derived { stroke-dasharray: 5 5; }", STYLE.read_text(encoding="utf-8"))
-        self.assertIn(".gate-mark.inherited { opacity: .4; }", STYLE.read_text(encoding="utf-8"))
+        self.assertIn(".gate-mark.inherited { border-style: dashed; background: transparent; color: var(--muted); }", STYLE.read_text(encoding="utf-8"))
 
     def test_every_new_control_is_an_icon_with_title_and_aria_label(self):
         page = PAGE.read_text(encoding="utf-8")
         for control in re.findall(r'iconBtn\("(bi-[a-z0-9-]+)", "([^"]+)"', page):
             with self.subTest(control=control):
                 self.assertTrue(control[1])
-        self.assertIn('...named(`${mark.action} gate`, title)', page)
+        self.assertIn("...named(revealed(chip.text), revealedLines(chip.hint))", page)
         self.assertIn('role: "button", "aria-label": node.label', page)
 
 

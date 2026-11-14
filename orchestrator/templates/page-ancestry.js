@@ -20,28 +20,41 @@
     return ((tree.data && tree.data.gates) || {})[repo] ? tree.data.gates[repo][name] || null : null;
   }
 
-  function gateIcons(repo, name) {
+  function gateChips(repo, name) {
     const found = gatesOf(repo, name);
     const own = (found && found.rules) || {};
-    return h("span", {class: "gates", role: "group", "aria-label": `Gates of ${name}`}, Ancestry.gateMarks(name, found).map((mark) => {
+    return h("span", {class: "gates", role: "group", "aria-label": `Gates of ${name}`, "data-repo": repo, "data-branch": name}, Ancestry.gateMarks(name, found).map((mark) => {
       const key = `rule\u0000${repo}\u0000${name}\u0000${mark.action}`;
-      const staged = gateStage.items.find((item) => item.key === key);
+      const staged = gateStage.items.find((item) => item.key === key) || null;
       const current = Object.hasOwn(own, mark.action) ? own[mark.action] : null;
       const level = staged ? staged.level || "none" : mark.level;
-      const title = staged ? `${mark.action}: ${staged.level || "inherited"} · staged` : mark.title;
+      const chip = Glossary.gateChip(mark, staged);
       const cycle = (event) => {
-        const group = event.currentTarget.closest(".gates");
+        const button = event.currentTarget;
+        const group = button.closest(".gates");
+        const focused = document.activeElement === button;
         const next = Ancestry.nextRule(staged ? staged.level : current);
         stageGate(key, next === current ? null : {argv: Ancestry.ruleArgv(repo, name, mark.action, next), level: next});
-        if (group && group.isConnected) {
-          group.replaceWith(gateIcons(repo, name));
+        const fresh = group && group.isConnected ? gateChips(repo, name) : null;
+        if (fresh) {
+          group.replaceWith(fresh);
+        }
+        const holder = fresh || [...document.querySelectorAll("#main .gates")].find((node) => node.dataset.repo === repo && node.dataset.branch === name);
+        if (focused && holder) {
+          holder.querySelector(`.gate-mark[data-action="${mark.action}"]`).focus();
         }
       };
       return h("button", {
-        type: "button", class: ["gate-mark", "icon-only", mark.inherited && !staged ? "inherited" : "", staged ? "pending" : ""].filter(Boolean).join(" "),
-        "data-action": mark.action, "data-level": level, "data-source": mark.source, ...named(`${mark.action} gate`, title), on: {click: cycle},
-      }, icon(Ancestry.LEVEL_ICONS[level]));
+        type: "button", class: ["gate-mark", mark.inherited && !staged ? "inherited" : "", staged ? "pending" : ""].filter(Boolean).join(" "),
+        "data-action": mark.action, "data-level": level, "data-source": mark.source, ...named(revealed(chip.text), revealedLines(chip.hint)), on: {click: cycle},
+      }, icon(Ancestry.LEVEL_ICONS[level]), h("span", {class: "gate-text"}, revealed(chip.text)));
     }));
+  }
+
+  function gateExplain() {
+    return h("details", {class: "gate-explain"}, h("summary", {title: "Explain: what each mark of this branch means"}, icon("bi-question-circle"), "Explain"),
+      Glossary.explain().map(([heading, rows]) => h("section", {}, h("h4", {}, heading),
+        h("dl", {class: "glossary"}, rows.map(([term, meaning]) => h("div", {}, h("dt", {}, term), h("dd", {}, meaning)))))));
   }
 
   function gateApply() {
