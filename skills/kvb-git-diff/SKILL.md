@@ -1,7 +1,7 @@
 ---
 name: kvb-git-diff
 description: >
-  Approve staged commits in the Agent Orchestrator; the commit skills run it.
+  Approve staged commits in the Agent Orchestrator; commit skills run it.
 ---
 
 The commit skills run this where they ask for the commit approval. A hub

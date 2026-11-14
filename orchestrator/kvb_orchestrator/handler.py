@@ -26,7 +26,9 @@ ITEM = re.compile(r"/api/(asks|decisions)/([0-9a-f]{16})(?:/(allow|deny))?")
 ENTRY = re.compile(r"/api/stream/([0-9]{1,12})")
 BOARD = re.compile(r"/api/board/([a-z-]{1,32})")
 UPLOADS = "/api/uploads"
-POSTS = ("/api/asks", UPLOADS, "/api/messages")
+MATCH_ROUTE = "/api/match"
+MATCH_POSTS = {"/api/match/stale": "match_stale", "/api/match/snapshot": "match_snapshot"}
+POSTS = ("/api/asks", UPLOADS, "/api/messages", *MATCH_POSTS)
 STORED = {
     "page": (".html", "text/html; charset=utf-8", PAGE_CSP),
     "files": (".json", "application/json", PLAIN_CSP),
@@ -128,6 +130,8 @@ class Handler(Exchange):
             self.answer(lambda: hub.events(self.query()), HTTPStatus.OK)
         elif path == "/api/tree":
             self.answer(hub.repositories, HTTPStatus.OK)
+        elif path == MATCH_ROUTE:
+            self.answer(hub.match_cards, HTTPStatus.OK)
         elif path == "/api/resources":
             self.answer(lambda: sampled(hub.kept / RESOURCES, hub.span(self.query(), time.time())), HTTPStatus.OK)
         elif path == "/api/scores":
@@ -265,9 +269,11 @@ class Handler(Exchange):
         """
         if path == "/mcp":
             return self.mcp_receiver(host)
-        if path == "/api/asks":
+        if path == "/api/asks" or path in MATCH_POSTS:
             if self.local(host):
-                return lambda body: self.answer(lambda: self.server.hub.ask(body), HTTPStatus.CREATED)
+                hub = self.server.hub
+                receive = getattr(hub, MATCH_POSTS[path]) if path in MATCH_POSTS else hub.ask
+                return lambda body: self.answer(lambda: receive(body), HTTPStatus.OK if path in MATCH_POSTS else HTTPStatus.CREATED)
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden: local POST with the X-Kvb-Orchestrator header and no foreign origin only")
             return None
         if RUNNER_ROUTE.fullmatch(path):

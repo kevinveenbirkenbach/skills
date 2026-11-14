@@ -1,0 +1,47 @@
+.graph.tasks.match > .match-stack { flex: 1; }
+.match-stack { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--sp-2); min-height: 0; width: min(100%, 960px); margin: 0 auto; }
+.match-peeks { display: flex; flex-wrap: wrap; gap: var(--sp-1); min-width: 0; }
+.match-peek { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 10px 4px 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: inherit; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.match-peek[data-stale="true"] { border-color: var(--bad); }
+.match-peek .match-peek-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.match-deck { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; padding-top: 14px; }
+.match-behind { position: absolute; inset: calc(14px - var(--depth) * 7px) calc(var(--depth) * 12px) auto; height: 40px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); opacity: calc(1 - var(--depth) * 0.3); }
+.match-card.front { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; padding: 0; overflow: hidden; }
+.match-card[data-stale="true"] { box-shadow: inset 0 3px 0 var(--bad); }
+.match-head { display: grid; justify-items: center; gap: 6px; padding: var(--sp-3); border-bottom: 1px solid var(--line); text-align: center; }
+.match-who { display: grid; justify-items: center; gap: 2px; }
+.match-who .avatar.big { width: 72px; height: 72px; }
+.match-name { font-size: var(--fs-lg); }
+.match-age { color: var(--muted); font-size: var(--fs-sm); }
+.match-place { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); width: 100%; margin: 0; text-align: left; }
+.match-place code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match-title { margin: 0; font-size: var(--fs-md); overflow-wrap: anywhere; }
+.match-stale { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--bad); font-size: var(--fs-sm); }
+.match-body { min-height: 0; overflow: auto; padding: var(--sp-2) var(--sp-3) var(--sp-3); overscroll-behavior: contain; }
+.match-payload { display: grid; gap: 4px; margin-bottom: var(--sp-2); }
+.match-command { margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--sunken); font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.match-directory, .match-reason { margin: 0; color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.match-directory::before { content: "in "; }
+.match-files { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.match-file { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.match-file > summary.diff-head { padding: 6px 10px; cursor: pointer; list-style: none; }
+.match-file > summary.diff-head::-webkit-details-marker { display: none; }
+.match-file .diff-scroll { max-height: none; overflow: auto hidden; }
+.match-file .diff-head .note { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); font-size: var(--fs-xs); }
+.match-marks { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: var(--fs-xs); text-align: center; }
+.match-file tr.marked td.code { box-shadow: inset 3px 0 0 var(--accent); }
+.match-file tr.match-mark td, .match-file tr.match-comment td { padding: 4px 10px; background: var(--info-soft); font-family: var(--sans); white-space: normal; }
+.match-mark-text { margin-left: 6px; }
+.match-comment-box { display: grid; gap: 6px; }
+.match-comment-box .actions { display: flex; justify-content: flex-end; gap: 6px; }
+.match-actions { display: flex; justify-content: space-between; padding-bottom: var(--sp-1); }
+.match-actions .btn { width: 56px; height: 56px; border-radius: 50%; }
+.match-reject { color: var(--bad); }
+.match-accept { color: var(--ok); }
+.match-accept:disabled { opacity: 0.4; cursor: not-allowed; }
+@media (max-width: 640px) {
+  .match-place { grid-template-columns: minmax(0, 1fr); }
+  .match-head { padding: var(--sp-2); }
+  .match-who .avatar.big { width: 56px; height: 56px; }
+  .match-body { padding: var(--sp-1) var(--sp-2) var(--sp-2); }
+}

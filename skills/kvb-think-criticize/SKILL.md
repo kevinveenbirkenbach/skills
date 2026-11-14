@@ -3,8 +3,8 @@ name: kvb-think-criticize
 description: >
   Constructive criticism of a plan, design, decision, text or code,
   hardened by dialectic. Trigger on "kritisiere",
-  "konstruktive Kritik", "was haeltst du davon", or requests for honest
-  feedback.
+  "konstruktive Kritik", "was haeltst du davon", or honest feedback
+  requests.
 ---
 
 Critical but constructive: the goal is a better result, not a verdict on its
