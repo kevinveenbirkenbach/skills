@@ -161,7 +161,7 @@
   Panels.panel("agents/swimlane", "Agents: Swimlane", () => swimlane());
   Panels.panel("agents/3d", "Agents: 3D", () => home3d("agents"), "3d");
   Panels.panel("agents/tree", "Agents: spawn tree", () => h("ul", {class: "spawn-tree root"}, spawnItem(spawnTree())));
-  Panels.panel("agents/hierarchy", "Agents: hierarchy", () => chartTree());
+  Panels.panel("agents/hierarchy", "Agents: organigram", () => organigram());
   Panels.panel("artifacts/orbit", "Artifacts: Orbit", () => homeArt("orbit"));
   Panels.panel("artifacts/chord", "Artifacts: Chord", () => homeArt("chord"));
   Panels.panel("artifacts/swimlane", "Artifacts: Swimlane", () => homeArt("swimlane"));
