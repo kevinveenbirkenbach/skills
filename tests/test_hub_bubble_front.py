@@ -54,7 +54,7 @@ const document = {
     return near[key] ? [{getBoundingClientRect: () => near[key]}] : [];
   },
 };
-const item = (who) => ({who, line: `${who} says four words`, words: [who, "says", "four", "words"], started: null});
+const item = (who) => ({who, line: `${who} says four words`, words: [who, "says", "four", "words"], started: null, floor: 0});
 const [a, b, c] = ["A", "B", "C"].map(item);
 const speech = {current: null, loading: null, pending: []};
 const context = {

@@ -361,9 +361,12 @@ The work packages meet only through these interfaces:
       frame; an agent without an anchor in the active view speaks from a
       caption bar at the bottom.
 - [ ] The bubble of `speech.current` is the largest (scale 1) and shows its
-      line word by word, word i of n at i/n of `buffer.duration`; text beyond
-      6 lines scrolls up inside the bubble. On `ended` it fades out within
-      400 ms while the next item grows to scale 1 and starts.
+      line word by word: the spoken rest reveals the unread words over the
+      speech audio, word i of n at i/n of `buffer.duration`, while the
+      procedure word reveals none; a burst and the silent reading reveal the
+      remaining words at reading pace; the words shown never go back;
+      text beyond 6 lines scrolls up inside the bubble. On `ended` it fades
+      out within 400 ms while the next item grows to scale 1 and starts.
 - [ ] Every item of `speech.pending` shows a `…` bubble at its agent, scaled
       by queue position: current 1, then 0.8, 0.65, at least 0.5, so the
       newest is the smallest; an agent with several waiting items shows one
