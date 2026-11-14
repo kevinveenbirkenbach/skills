@@ -26,6 +26,24 @@ def created_of(record: dict) -> float:
     return record["created_ts"] if "created_ts" in record else iso_epoch(record["created"]) or 0.0
 
 
+def matched(record: dict, subjects: list[dict], now: float) -> int:
+    """Args:
+        record: id, kind, tool, pattern, scope and expires of a rule, with
+            agents when it applies to one agent or group only.
+        subjects: what recent_subjects() lists for the rule's kind.
+        now: the current time in epoch seconds.
+
+    Returns:
+        How many subjects the rule would have approved.
+    """
+    kind_name = record["kind"]
+    payload = signing.rule_payload(record["id"], [kind_name], record["tool"], record["pattern"], record["scope"], int(record["expires"]))
+    if "agents" in record:
+        payload = signing.targeted(payload, record["agents"])
+    rule = {**{key: record[key] for key in RULE_FIELDS}, "enabled": True, "proof": {"payload": payload, "assertion": None}}
+    return sum(rule_matches(rule, kind_name, subject, now) for subject in subjects)
+
+
 class Requesting:
     def open_requests(self, now: float) -> list[dict]:
         return [record for record in self.rule_requests.pending() if request_status(record, now) == "pending"]
@@ -60,19 +78,23 @@ class Requesting:
             raise ToolError(f"no rule request {request_id}")
         return request_state(record, time.time())
 
+    def recent_subjects(self, kind_name: str, now: float) -> list[dict]:
+        """Returns:
+            The asks, reviews or decisions of the last RECENT_DAYS as a rule
+            of that kind is matched against them.
+        """
+        ledger = {"ask": self.asks, "review": self.reviews, "decision": self.decisions}[kind_name]
+        since = now - RECENT_DAYS * 86400
+        return [subject_of(kind_name, entry, self.deciders(kind_name, entry)) for entry in ledger.listed() if created_of(entry) >= since]
+
     def dry_run(self, record: dict, now: float) -> dict:
         """Returns:
             How many of the asks, reviews or decisions of the last
             RECENT_DAYS the requested rule would have approved, matched by
             the same code that applies a stored rule.
         """
-        kind_name = record["kind"]
-        payload = signing.rule_payload(record["id"], [kind_name], record["tool"], record["pattern"], record["scope"], int(record["expires"]))
-        rule = {**{key: record[key] for key in RULE_FIELDS}, "enabled": True, "proof": {"payload": payload, "assertion": None}}
-        ledger = {"ask": self.asks, "review": self.reviews, "decision": self.decisions}[kind_name]
-        since = now - RECENT_DAYS * 86400
-        subjects = [subject_of(kind_name, entry, self.deciders(kind_name, entry)) for entry in ledger.listed() if created_of(entry) >= since]
-        return {"matched": sum(rule_matches(rule, kind_name, subject, now) for subject in subjects), "total": len(subjects), "days": RECENT_DAYS}
+        subjects = self.recent_subjects(record["kind"], now)
+        return {"matched": matched(record, subjects, now), "total": len(subjects), "days": RECENT_DAYS}
 
     def request_items(self, base: dict, now: float, claims: list[dict]) -> list[dict]:
         items = []

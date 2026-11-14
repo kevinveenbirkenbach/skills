@@ -14,35 +14,56 @@ sys.path[:0] = [str(HERE.parent), str(HERE)]
 
 import test_orchestrator_e2e as base
 from hub_case import HubCase
-from hub_support import verifier
+from hub_support import ASK, verifier
 from test_settings_writer import ORIGINAL
 from test_settings_writer import host as writer_host
 
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/firewall-shots"))
 SECRET = ORIGINAL["env"]["EXAMPLE_FLAG"]
+ASKED = ["Bash(make deploy:*)", "Bash(make clean:*)", "Bash(git push:*)"]
 SHOW = """(async () => {@HELPERS@
   await screenShown(8000);
-  const ready = await until(() => document.querySelector("#main [data-file] .fw-group"), 10000);
+  const ready = await until(() => all("#main table.fw-table tbody[data-source]").length > 1, 10000);
   if (!ready) {
     return {error: text(document.getElementById("main"))};
   }
   const owned = (svg) => svg.closest("button, a, [title]");
+  const rows = () => all("#main table.fw-table tr[data-filter]");
+  const chip = (id) => document.querySelector(`#main [aria-label="Show rules"] button[data-filter="${id}"]`);
+  const sources = all("#main tbody[data-source]").map((node) => node.dataset.source);
+  const folded = {expanded: all("#main .fw-fold").map((node) => node.getAttribute("aria-expanded")), rows: rows().length};
+  for (const source of sources) {
+    all("#main tbody[data-source]").find((node) => node.dataset.source === source).querySelector(".fw-fold").click();
+  }
+  const opened = all("#main .fw-fold").map((node) => node.getAttribute("aria-expanded"));
+  const shown = rows().map((node) => [node.dataset.filter, node.dataset.list || null, node.dataset.entry || null, text(node.querySelector(".fw-hits")), node.hasAttribute("data-unused")]);
+  chip("deny").click();
+  const withoutDeny = {pressed: chip("deny").getAttribute("aria-pressed"), deny: rows().filter((node) => node.dataset.filter === "deny").length, rows: rows().length};
+  chip("deny").click();
+  const wrap = document.querySelector("#main .fw-table-wrap");
+  wrap.scrollIntoView({block: "start"});
+  await sleep(100);
   return {
     title: text(document.querySelector("#main h2.title")),
     subs: all("#tabs .subtabs button").map(name),
-    files: all("#main [data-file]").map((node) => node.dataset.file),
-    groups: all("#main [data-file] details.fw-group[data-tool]").map((node) => [node.dataset.tool, node.dataset.prefix, all("li", node).length]),
-    lists: all("#main [data-file] li[data-list]").map((node) => [node.dataset.list, node.dataset.entry]),
-    sandbox: all("#main [data-file] [data-key]").map((node) => node.dataset.key),
+    sources,
+    folded,
+    opened,
+    rows: shown,
+    withoutDeny,
+    restored: rows().length,
+    heads: all("#main table.fw-table thead th").map(text),
+    chips: all('#main [aria-label="Show rules"] button').map((node) => [node.dataset.filter, node.getAttribute("aria-pressed")]),
     patterns: all('#main [aria-label="Never granted"] li').length,
     targets: all('#main .rule-form select[aria-label="Applies to"] option').map(text),
     unlabelled: all("#main svg.bi").map(owned).filter((owner) => !owner || (!text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label")))).length,
     secret: document.documentElement.innerHTML.includes("@SECRET@"),
     wide: document.documentElement.scrollWidth > innerWidth + 1,
+    scrolls: wrap.scrollWidth > wrap.clientWidth,
   };
 })()"""
 SIGN = """(async () => {@HELPERS@
-  const entryNode = (entry) => all("#main li[data-entry]").find((node) => node.dataset.entry === entry);
+  const entryNode = (entry) => all("#main tr[data-entry]").find((node) => node.dataset.entry === entry);
   if (@REMOVE@) {
     entryNode("Bash(git status:*)").querySelector('button[aria-label="Remove"]').click();
     await sleep(100);
@@ -93,6 +114,7 @@ GROUP_RULE = """(async () => {@HELPERS@
   };
   await screenShown(8000);
   await until(() => document.querySelector('#main form[aria-label="New agent group"]'), 10000);
+  (await until(() => document.querySelector('#main tbody[data-source="hub"] .fw-fold'), 10000)).click();
   const group = document.querySelector('#main form[aria-label="New agent group"]');
   group.querySelector('input[aria-label="Group name"]').value = "builders";
   for (const option of group.querySelector('select[aria-label="Members"]').options) {
@@ -109,8 +131,10 @@ GROUP_RULE = """(async () => {@HELPERS@
   target.value = choice.value;
   rules.querySelector('input[placeholder="make test*"]').value = "make e2e";
   rules.requestSubmit();
-  const pill = await until(() => all("#main .rule-row [data-agents]").find((node) => text(node) === "group builders"), 15000);
-  const found = {group: text(row.querySelector("strong")), members: text(row.querySelector(".muted")), pills: all("#main .rule-row [data-agents]").map(text), found: Boolean(pill), toasts: all("#toasts .toast").map(text)};
+  const ruleRow = () => all("#main tr[data-rule]").find((node) => all("code", node).some((code) => text(code) === "make e2e"));
+  const pill = await until(() => all("#main tr[data-rule] [data-agents]").find((node) => text(node) === "group builders"), 15000);
+  const hits = await until(() => ruleRow() && text(ruleRow().querySelector(".fw-hits")) !== "…" && text(ruleRow().querySelector(".fw-hits")), 8000);
+  const found = {group: text(row.querySelector("strong")), members: text(row.querySelector(".muted")), pills: all("#main tr[data-rule] [data-agents]").map(text), found: Boolean(pill), hits, toasts: all("#toasts .toast").map(text)};
   const sets = document.querySelector('#main form[aria-label="New rule set"]');
   sets.querySelector('input[aria-label="Set name"]').value = "ci";
   for (const option of sets.querySelector('select[aria-label="Rules"]').options) {
@@ -148,7 +172,6 @@ GROUP_RULE = """(async () => {@HELPERS@
   found.sent = sent.filter((url) => url.startsWith("/api/rules"));
   choose(picker, "all");
   found.again = {value: picker.value, valid: picker.checkValidity(), blocked: sign.disabled, options: [...picker.options].map((option) => option.value).includes("gone")};
-  const ruleRow = () => all("#main .rule-row").find((node) => node.querySelector("[data-agents]") && all("code", node).some((code) => text(code) === "make e2e"));
   const toggle = (label) => ruleRow() && [...ruleRow().querySelectorAll("button")].find((button) => text(button) === label);
   toggle("Turn off").click();
   found.off = Boolean(await until(() => toggle("Turn on"), 8000));
@@ -189,7 +212,7 @@ class TestFirewallE2E(HubCase):
         home = self.outside / "home"
         self.settings = home / ".claude" / "settings.json"
         self.settings.parent.mkdir(parents=True)
-        self.settings.write_text(json.dumps(ORIGINAL, indent=2) + "\n", encoding="utf-8")
+        self.settings.write_text(json.dumps({**ORIGINAL, "permissions": {**ORIGINAL["permissions"], "ask": ASKED}}, indent=2) + "\n", encoding="utf-8")
         self.settings.chmod(0o640)
         tree = self.outside / "writer-tree.json"
         tree.write_text(json.dumps({"repos": [{"path": str(self.outside / "demo"), "known": True, "default": "main"}]}), encoding="utf-8")
@@ -206,6 +229,8 @@ class TestFirewallE2E(HubCase):
 
     def test_chromium_shows_the_settings_and_signs_a_settings_diff_at_three_widths(self):
         authenticator = self.authenticator()
+        for command in ("make deploy", "make deploy --dry", "git push origin main"):
+            self.create_ask({**ASK, "command": command})
         self.beside(self.host_unit)
         steps = []
         for index, (width, height) in enumerate(base.WIDTHS):
@@ -220,14 +245,30 @@ class TestFirewallE2E(HubCase):
             with self.subTest(width=width):
                 self.assertNotIn("error", shown, shown)
                 self.assertEqual((shown["title"], shown["subs"]), ("Firewall", base.SUBS))
-                self.assertEqual(shown["files"], [str(self.settings), str(self.outside / "demo" / ".claude" / "settings.json")])
-                self.assertIn(["Bash", "make", 1 + index], shown["groups"])
-                self.assertIn(["Read", "~/.ssh/**", 1], shown["groups"])
-                self.assertIn(["sandbox.filesystem.allowWrite", "/tmp"], shown["lists"])
-                self.assertIn("sandbox.enabled", shown["sandbox"])
+                self.assertEqual(shown["sources"], ["hub", str(self.settings), str(self.outside / "demo" / ".claude" / "settings.json")])
+                self.assertEqual(shown["folded"], {"expanded": ["false"] * 3, "rows": 0})
+                self.assertEqual(shown["opened"], ["true"] * 3)
+                self.assertEqual(shown["heads"], ["Action", "Tool", "Pattern", "Scope", "Source", "Hits (7 days)", ""])
+                self.assertEqual(shown["chips"], [[chip, "true"] for chip in ("allow", "ask", "deny", "sandbox", "signed")])
+                rows = shown["rows"]
+                self.assertEqual([row[0] for row in rows], sorted((row[0] for row in rows), key=["deny", "ask", "allow", "sandbox"].index))
+                for row in (
+                    ["deny", "permissions.deny", "Read(~/.ssh/**)", "not seen", False],
+                    ["ask", "permissions.ask", "Bash(make deploy:*)", "2", False],
+                    ["ask", "permissions.ask", "Bash(make clean:*)", "0 unused", True],
+                    ["ask", "permissions.ask", "Bash(git push:*)", "never granted: pushes", False],
+                    ["allow", "permissions.allow", "Bash(make test:*)", "not seen", False],
+                    ["sandbox", "sandbox.filesystem.allowWrite", "/tmp", "not seen", False],
+                    ["sandbox", "sandbox.enabled", None, "not seen", False],
+                ):
+                    self.assertIn(row, rows)
+                self.assertEqual(sum(1 for row in rows if row[0] == "allow" and row[2].startswith("Bash(make")), 1 + index)
+                self.assertEqual(shown["withoutDeny"], {"pressed": "false", "deny": 0, "rows": len(rows) - 1})
+                self.assertEqual(shown["restored"], len(rows))
                 self.assertGreater(shown["patterns"], 5)
                 self.assertEqual(shown["targets"], ["All agents", "Agent Skills", "Agent Stage"])
                 self.assertEqual((shown["unlabelled"], shown["secret"], shown["wide"]), (0, False, False))
+                self.assertEqual(shown["scrolls"], width < 600)
                 self.assertNotIn("error", signed, signed)
                 self.assertTrue(any(line.startswith("+") and f'"Bash(make lint-{width}:*)"' in line for line in signed["added"]), signed["added"])
                 self.assertEqual(any("git status" in line for line in signed["removed"]), index == 0)
@@ -247,7 +288,7 @@ class TestFirewallE2E(HubCase):
         self.assertEqual(data["errors"], [])
         found = data["results"][0]
         self.assertNotIn("error", found, found)
-        self.assertEqual((found["group"], found["members"], found["found"]), ("builders", "Skills, Stage", True), found)
+        self.assertEqual((found["group"], found["members"], found["found"], found["hits"]), ("builders", "Skills, Stage", True, "0 unused"), found)
         stored = [rule for rule in self.httpd.hub.rules.listed() if rule["pattern"] == "make e2e"]
         self.assertEqual([(rule["agents"], rule["proof"]["payload"]["agents"]) for rule in stored], [(["s1", "s2"], ["s1", "s2"])] * 2)
         for rule in stored:

@@ -10,6 +10,7 @@ from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, visible
 from .ledger import Ledger
 from .records import read_json, stamp
+from .requesting import RECENT_DAYS, matched
 from .rules import EVERY_AGENT, RULE_KINDS
 from .signed import signing
 
@@ -25,10 +26,23 @@ HASH = re.compile(r"[0-9a-f]{64}")
 PERMISSION_LISTS = ("allow", "ask", "deny")
 SET_KEYS = ("kind", "tool", "pattern", "scope")
 CHAINED = "chains, pipes, redirects or substitutions"
+COUNT_ID = "0" * 16
+UNSEEN = {"hits": None, "never": ""}
 
 
 def settings_request(raw: object) -> bool:
     return isinstance(raw, list) and bool(raw) and all(isinstance(entry, dict) and entry.get("kind") == "settings" for entry in raw)
+
+
+def tool_and_spec(entry: str) -> tuple[str, str]:
+    """Returns:
+        The tool of a permission rule such as Bash(git push:*) and its
+        specifier, git push:*; "" without specifier.
+    """
+    found = RULE_TEXT.fullmatch(entry)
+    if found is None:
+        return entry.strip(), ""
+    return found.group("tool").strip(), (found.group("spec") or "").strip()
 
 
 def tool_and_prefix(entry: str) -> tuple[str, str]:
@@ -36,10 +50,62 @@ def tool_and_prefix(entry: str) -> tuple[str, str]:
         The tool of a permission rule such as Bash(git push:*) and the first
         word of its specifier, for Bash the command; "" without specifier.
     """
-    found = RULE_TEXT.fullmatch(entry)
-    if found is None:
-        return entry.strip(), ""
-    return found.group("tool").strip(), WORD.split((found.group("spec") or "").strip(), maxsplit=1)[0]
+    tool, spec = tool_and_spec(entry)
+    return tool, WORD.split(spec, maxsplit=1)[0]
+
+
+def entry_rule(entry: str) -> dict:
+    """Returns:
+        A permissions.ask entry as the fields of an ask rule for every agent
+        in every directory: its tool, and its specifier as pattern, where a
+        trailing :* or no specifier matches any rest.
+    """
+    tool, spec = tool_and_spec(entry)
+    pattern = f"{spec.removesuffix(':*')}*" if spec.endswith(":*") or not spec else spec
+    return {"kind": "ask", "tool": tool, "pattern": pattern, "scope": "*"}
+
+
+def hits(rule: dict, asks: list[dict], now: float) -> dict:
+    """Args:
+        rule: kind ask, tool, pattern and scope of a rule, with agents when
+            it applies to one agent or group only.
+        asks: the asks of the last RECENT_DAYS as recent_subjects() lists
+            them.
+        now: the current time in epoch seconds.
+
+    Returns:
+        {"hits": how many of the asks the rule matches, on or off, expired or
+        not, "never": ""}; hits None and never the warning when the pattern
+        itself names a command the matcher never grants.
+    """
+    pattern = rule["pattern"]
+    never = [*signing.warnings(pattern), *([CHAINED] if signing.CHAINED.search(pattern) else [])]
+    if never:
+        return {"hits": None, "never": never[0]}
+    return {"hits": matched({**rule, "id": COUNT_ID, "expires": now + RECENT_DAYS * 86400}, asks, now), "never": ""}
+
+
+def counted(groups: list[dict], asks: list[dict], now: float) -> list[dict]:
+    """Returns:
+        groups with each entry's specifier and hits: counted for an ask
+        entry, UNSEEN for an allow or deny entry.
+    """
+    def shown(entry: dict) -> dict:
+        found = hits(entry_rule(entry["entry"]), asks, now) if entry["list"] == "ask" else UNSEEN
+        return {**entry, "spec": tool_and_spec(entry["entry"])[1], **found}
+
+    return [{**group, "entries": [shown(entry) for entry in group["entries"]]} for group in groups]
+
+
+def stored_hits(rule: dict, asks: list[dict], now: float) -> dict:
+    """Returns:
+        hits() of a stored ask rule for the agents it is signed for, UNSEEN
+        for a review or decision rule.
+    """
+    if rule["kind"] != "ask":
+        return UNSEEN
+    fields = {key: rule[key] for key in ("kind", "tool", "pattern", "scope")}
+    return hits({**fields, "agents": rule["agents"]} if "agents" in rule else fields, asks, now)
 
 
 def grouped(permissions: object) -> list[dict]:
@@ -130,8 +196,11 @@ class Firewall:
 
     def firewall(self) -> dict:
         files, meta = self.settings_files()
-        listed = [{key: entry[key] for key in ("path", "exists", "sha256", "error")} | {"groups": grouped(entry["settings"].get("permissions")), "sandbox": sandbox_entries(entry["settings"].get("sandbox"), "sandbox")} for entry in files]
-        return {**meta, "files": listed, "lists": list(signing.SETTINGS_LISTS), "patterns": deny_patterns(), "groups": self.groups.listed(), "sets": self.rule_sets.listed()}
+        now = time.time()
+        asks = self.recent_subjects("ask", now)
+        listed = [{key: entry[key] for key in ("path", "exists", "sha256", "error")} | {"groups": counted(grouped(entry["settings"].get("permissions")), asks, now), "sandbox": sandbox_entries(entry["settings"].get("sandbox"), "sandbox")} for entry in files]
+        rules = {rule["id"]: stored_hits(rule, asks, now) for rule in self.rules.listed()}
+        return {**meta, "files": listed, "lists": list(signing.SETTINGS_LISTS), "patterns": deny_patterns(), "groups": self.groups.listed(), "sets": self.rule_sets.listed(), "days": RECENT_DAYS, "rules": rules}
 
     def settings_changes(self, raw: object) -> list[dict]:
         """Args:
