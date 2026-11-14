@@ -19,6 +19,7 @@
       }
       appliedTicket = ticket;
       const previous = state.now;
+      const resumed = ui.offline;
       state = next;
       ui.offline = false;
       if (JSON.stringify(state.settings) !== settingsSig) {
@@ -26,7 +27,7 @@
       }
       tuneMusic(FADE / 1000);
       drawSky();
-      announce();
+      announce(resumed);
       render(false);
       drawTime();
       drawAgent();

@@ -41,8 +41,11 @@
     }
   }
 
-  function say(item) {
-    speech.pending = Voice.enqueue(speech.pending, item, SPEECH_QUEUE);
+  /**
+   * @param {...object} items the rows to read aloud.
+   */
+  function say(...items) {
+    speech.pending = items.reduce((pending, item) => Voice.enqueue(pending, item, SPEECH_QUEUE), speech.pending);
     pump();
     drawBubbles();
   }
@@ -52,8 +55,11 @@
     speech.current = item;
     speech.timer = window.setTimeout(() => {
       Object.assign(speech, {current: null, timer: 0});
-      drawSpeaker();
-      next();
+      try {
+        drawSpeaker();
+      } finally {
+        next();
+      }
     }, item.duration * 1000);
     drawSpeaker();
   }
@@ -77,11 +83,14 @@
       let timer = 0;
       const ended = () => {
         window.clearTimeout(timer);
-        if (speech.source === source) {
-          Object.assign(speech, {current: null, source: null});
-          drawSpeaker();
+        try {
+          if (speech.source === source) {
+            Object.assign(speech, {current: null, source: null});
+            drawSpeaker();
+          }
+        } finally {
+          resolve();
         }
-        resolve();
       };
       source.addEventListener("ended", ended, {once: true});
       timer = window.setTimeout(() => {
@@ -216,18 +225,26 @@
       readSilently(item, next);
       return;
     }
-    const voiced = await transmit(item, audio);
+    let voiced = false;
+    try {
+      voiced = await transmit(item, audio);
+    } catch (error) {
+      speechFailed([String(error.message || error)]);
+    }
     if (speech.item !== item) {
       next();
       return;
     }
     Object.assign(speech, {current: null, source: null, item: null});
-    drawSpeaker();
     if (!voiced && settings.bubbles && item.words) {
       readSilently(item, next);
       return;
     }
-    next();
+    try {
+      drawSpeaker();
+    } finally {
+      next();
+    }
   }
 
   function cancelSpeech() {
@@ -243,14 +260,24 @@
     drawSpeaker();
   }
 
-  function speakRows(rows) {
-    for (const row of rows.filter((entry) => entry.ts >= state.now - SPEECH_FRESH)) {
-      const steps = RadioSet.plan(row, radioSet, liveSpeech());
-      if (steps.length || (settings.bubbles && Bubbles.picked(row, radioSet))) {
-        const line = row.text.split("\n").map((part) => part.trim()).find(Boolean) || "";
-        say({row, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, sent: Boolean(RadioSet.ledgerOf(row, state.messages)), line: short(line), words: Bubbles.words(row.text), silent: !steps.length});
+  /**
+   * @param {Array<object>} rows the radio rows the page has not announced yet.
+   * @param {boolean} arrived whether they arrived while the page polled without a gap.
+   */
+  function speakRows(rows, arrived) {
+    const [spoken, quiet] = [[], []];
+    for (const row of rows) {
+      const fresh = row.ts >= state.now - SPEECH_FRESH;
+      const steps = fresh ? RadioSet.plan(row, radioSet, liveSpeech()) : [];
+      const line = short(row.text.split("\n").map((part) => part.trim()).find(Boolean) || "");
+      if (fresh && (steps.length || (settings.bubbles && Bubbles.picked(row, radioSet)))) {
+        spoken.push({row, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, sent: Boolean(RadioSet.ledgerOf(row, state.messages)), line, words: Bubbles.words(row.text), silent: !steps.length});
+      } else if (settings.bubbles && arrived && row.ts >= state.now - LIVE_GAP) {
+        quiet.push({who: row.source, cls: row.class, line, words: Bubbles.words(line), quiet: true});
       }
     }
+    quietBubbles(quiet);
+    say(...spoken);
   }
 
   function micGap() {

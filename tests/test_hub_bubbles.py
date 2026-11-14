@@ -13,6 +13,9 @@ from kvb_orchestrator import exchange, settings, view
 BUBBLES = HUB / "templates" / "bubbles.js"
 LAYER = HUB / "templates" / "page-bubbles.js"
 SPEECH = HUB / "templates" / "page-speech.js"
+ALERTS = HUB / "templates" / "page-alerts.js"
+CONSTANTS = HUB / "templates" / "page-constants.js"
+VOICE = HUB / "templates" / "voice.js"
 STYLE = HUB / "templates" / "style-bubbles.css"
 FONT = HUB / "vendor" / "comic-neue" / "comic-neue-latin-400-normal.woff2"
 FONT_SHA256 = "b7753f30f8bd4925cf48a2ffe936c52ff1f16fe441f8c0245acf046296ac590f"
@@ -21,7 +24,7 @@ BUBBLES_PROBE = """
 const B = require(process.argv[1]);
 const item = (who, n) => ({who, n});
 const [a1, b1, c1, a2, b2, d1] = [item("A", 1), item("B", 1), item("C", 1), item("A", 2), item("B", 2), item("D", 1)];
-const planOf = (head, pending) => B.plan(head, pending).map((entry) => [entry.who, entry.item.n, entry.scale]);
+const planOf = (head, pending, quiet) => B.plan(head, pending, quiet).map((entry) => [entry.who, entry.item.n, entry.scale]);
 const speech = {classes: ["security", "post"]};
 console.log(JSON.stringify({
   scales: [0, 1, 2, 3, 4, 9].map(B.scale),
@@ -31,6 +34,96 @@ console.log(JSON.stringify({
   words: [B.words("  Disk almost\\nfull\\t now  "), B.words(""), B.words(null)],
   plans: [planOf(a1, [b1, c1, a2, b2, d1]), planOf(null, [b1, a1, b2]), planOf(a1, []), planOf(null, [])],
   picked: [{class: "mayday"}, {class: "security"}, {class: "post"}, {class: "broadcast"}].map((row) => B.picked(row, speech)),
+  quiet: planOf(a1, [b1], [item("B", 9), item("E", 1), item("F", 1)]),
+  admitted: (() => {
+    const burst = Array.from({length: 30}, (_, index) => item("ABCDEF"[index % 6], index));
+    const first = B.admit([], burst, new Set(["A"]));
+    const later = B.admit(first.start.slice(1), first.waiting, new Set());
+    return {first: first.start.map((entry) => [entry.who, entry.n]), left: first.waiting.length, later: later.start.map((entry) => [entry.who, entry.n])};
+  })(),
+  queued: (() => {
+    let waiting = [];
+    for (let n = 0; n < 35; n += 1) {
+      waiting = B.queued(waiting, item("A", n));
+    }
+    return [waiting.length, waiting[0].n, waiting[waiting.length - 1].n];
+  })(),
+}));
+"""
+ROWS_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const real = require(process.argv[1]);
+const Voice = require(process.argv[2]);
+const code = process.argv.slice(3).map((path) => fs.readFileSync(path, "utf8")).join("\\n");
+function page(fault) {
+  const out = {draws: 0, pumped: [], toasts: []};
+  const sandbox = {
+    out,
+    Bubbles: {
+      ...real,
+      plan: () => [],
+      admit: (...args) => {
+        out.draws += 1;
+        if (fault && out.draws === 1) {
+          throw new Error("draw failed");
+        }
+        return real.admit(...args);
+      },
+    },
+    Voice: {...Voice, beep: () => null},
+    RadioSet: {plan: (row) => (["mayday", "security"].includes(row.class) ? [{kind: "burst"}] : []), ledgerOf: () => null},
+    settings: {bubbles: true, notify: false, music: {}},
+    radioSet: {mode: "auto", classes: ["mayday", "pan-pan", "security"], sounds: {}, squelch: 1},
+    state: {now: 1000, radio: [], inbox: [], pending: [], messages: [], speech: {tts: false, gate: {open: false}}},
+    known: {inbox: null, alarms: null, radio: null, batches: new Set(), now: null},
+    speech: {pending: [], busy: false, current: null, loading: null, item: null, source: null, timer: 0, warned: 0},
+    alarmRows: () => [], live: () => true, keyOf: (item) => item.id, short: (text) => text, dash: (text) => text, undoToast: () => null,
+    toast: (title, lines) => out.toasts.push(`${title}: ${lines.join(" ")}`),
+    document: {currentScript: null}, performance: {now: () => 0},
+    window: {matchMedia: () => ({matches: false}), setTimeout: (run, ms) => (ms ? 0 : run()), clearTimeout: () => null, requestAnimationFrame: () => 0, cancelAnimationFrame: () => null},
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(`${code}
+pump = () => out.pumped.push(speech.pending.map((item) => item.cls));
+function quietLines() {
+  return [...bubbles.quiet, ...bubbles.waiting].map((item) => item.line);
+}`, sandbox);
+  return sandbox;
+}
+const row = (line, cls, age) => ({ts: -age, from: line, source: line, to: [], text: line, class: cls});
+function batch(rows, fault) {
+  const at = page(fault);
+  at.state.now = 2000;
+  let thrown = null;
+  try {
+    at.speakRows(rows.map((entry) => ({...entry, ts: 2000 + entry.ts})), true);
+  } catch (error) {
+    thrown = String(error.message);
+  }
+  return {thrown, pumped: at.out.pumped, draws: at.out.draws, toasts: at.out.toasts, bubbles: at.quietLines().length};
+}
+function gap() {
+  const at = page(false);
+  const poll = (now, rows, resumed) => {
+    at.state.now = now;
+    at.state.radio = [...at.state.radio, ...rows.map((entry) => ({...entry, ts: now + entry.ts}))];
+    at.announce(resumed);
+  };
+  poll(1000, [], false);
+  poll(1010, [row("live", "post", 1)], false);
+  poll(1041, [row("late", "post", 1)], false);
+  poll(1050, [row("back", "post", 1)], true);
+  poll(1060, [row("again", "post", 1)], false);
+  poll(1070, [row("fresh", "post", 29), row("stale", "post", 31)], false);
+  return at.quietLines();
+}
+const posts = (count) => Array.from({length: count}, (_, index) => row(`post ${index % 6}`, "post", 2));
+console.log(JSON.stringify({
+  fault: batch([row("post", "post", 2), row("Sec", "mayday", 1)], true),
+  burst: batch([...posts(1000), row("Sec", "mayday", 1)], false),
+  speech: batch([...posts(10), row("Docs", "security", 1)], false),
+  gap: gap(),
 }));
 """
 SPEECH_PROBE = """
@@ -69,6 +162,89 @@ async function failed(bubbles, item, cancel) {
     cancelled: await failed(true, row(), true),
     burst: await failed(true, {...row(), steps: [{kind: "burst"}]}, false),
     unread: await failed(false, {...row(), steps: [{kind: "burst"}]}, false),
+  }));
+})();
+"""
+STUCK_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const Bubbles = require(process.argv[1]);
+const code = fs.readFileSync(process.argv[2], "utf8");
+const rejected = [];
+process.on("unhandledRejection", (error) => rejected.push(String(error && error.message)));
+const settle = async () => {
+  for (let round = 0; round < 5; round += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+};
+const part = () => ({gain: {value: 0, setValueAtTime: () => null, exponentialRampToValueAtTime: () => null}, frequency: {}, Q: {}, connect: (next) => next});
+const audio = {
+  sampleRate: 8000, currentTime: 0, destination: {}, createBuffer: (channels, frames) => ({getChannelData: () => new Float32Array(frames)}),
+  createBiquadFilter: part, createGain: part, createBufferSource: () => ({...part(), addEventListener: () => null, start: () => null, stop: () => null}),
+};
+async function run(rule, items) {
+  const speech = {pending: [], busy: false, current: null, loading: null, item: null, source: null, timer: 0, warned: 0};
+  const timers = new Map();
+  const heard = [];
+  let [fired, ducked, ids] = [false, false, 0];
+  const breaks = {
+    reading: () => speech.busy && !speech.current && !speech.timer,
+    ended: () => speech.busy && !speech.current && !speech.source && speech.item !== null,
+    tail: () => speech.busy && speech.item === null,
+  };
+  const sandbox = {
+    Bubbles, speech, Date, settings: {bubbles: true}, radioSet: {}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0, SOUND_SLACK: 2,
+    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 1}, RadioSet: {burst: (gain) => ({gain, seconds: 0.6, frequency: 1800, q: 0.9})},
+    toast: () => null, context: () => audio, drawBubbles: () => null, performance: {now: () => 1000},
+    duck: () => {
+      if (rule === "transmit" && !ducked) {
+        ducked = true;
+        throw new Error("no gain node");
+      }
+    },
+    drawSpeaker: () => {
+      if (speech.current && speech.current.who !== heard[heard.length - 1]) {
+        heard.push(speech.current.who);
+      }
+      if (!fired && breaks[rule] && breaks[rule]()) {
+        fired = true;
+        throw new Error("draw failed");
+      }
+    },
+    window: {
+      setTimeout: (next) => {
+        ids += 1;
+        timers.set(ids, next);
+        return ids;
+      },
+      clearTimeout: (id) => timers.delete(id),
+    },
+  };
+  vm.runInNewContext(code, sandbox);
+  items.forEach((item) => sandbox.say(item));
+  for (let round = 0; round < 12; round += 1) {
+    await settle();
+    const due = [...timers.values()];
+    timers.clear();
+    for (const next of due) {
+      try {
+        next();
+      } catch (error) {
+        rejected.push(String(error.message));
+      }
+    }
+  }
+  await settle();
+  return {faulted: fired || ducked, heard, busy: speech.busy, pending: speech.pending.map((item) => item.who)};
+}
+(async () => {
+  const silent = (who) => ({who, line: "Disk almost full", words: ["Disk", "almost", "full"], silent: true});
+  const sounded = (who) => ({who, line: "radio check", steps: [{kind: "burst"}], tone: "direct"});
+  console.log(JSON.stringify({
+    reading: await run("reading", [silent("A"), silent("B")]),
+    ended: await run("ended", [sounded("A"), sounded("B")]),
+    tail: await run("tail", [sounded("A"), sounded("B")]),
+    transmit: await run("transmit", [sounded("A"), sounded("B")]),
   }));
 })();
 """
@@ -181,6 +357,84 @@ class TestBubbleSchedule(unittest.TestCase):
     def test_bubbles_follow_the_read_aloud_classes_and_mayday_always(self):
         self.assertEqual(self.data["picked"], [True, True, True, False])
 
+    def test_a_silent_bubble_shows_beside_the_speech_queue_only_for_an_agent_the_queue_leaves_free(
+        self,
+    ):
+        self.assertEqual(
+            self.data["quiet"],
+            [["A", 1, 1], ["B", 1, 0.8], ["E", 1, 0.8], ["F", 1, 0.8]],
+        )
+
+    def test_a_burst_of_thirty_silent_bubbles_shows_at_most_three_at_once_one_per_agent_and_the_rest_wait_in_order(
+        self,
+    ):
+        self.assertEqual(
+            self.data["admitted"],
+            {"first": [["B", 1], ["C", 2], ["D", 3]], "left": 27, "later": [["A", 0]]},
+        )
+
+    def test_at_most_thirty_silent_bubbles_wait_and_the_oldest_go_first(self):
+        self.assertEqual(self.data["queued"], [30, 5, 34])
+
+
+class TestRowsReachSpeechBeforeAnyDraw(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        done = subprocess.run(
+            [
+                "node",
+                "-e",
+                ROWS_PROBE,
+                str(BUBBLES),
+                str(VOICE),
+                str(CONSTANTS),
+                str(LAYER),
+                str(SPEECH),
+                str(ALERTS),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+        cls.data = json.loads(done.stdout)
+
+    def test_a_throwing_redraw_never_costs_the_mayday_of_the_same_batch_its_speech(
+        self,
+    ):
+        self.assertEqual(
+            self.data["fault"],
+            {
+                "thrown": None,
+                "pumped": [["mayday"]],
+                "draws": 1,
+                "toasts": ["Drawing speech bubbles failed: draw failed"],
+                "bubbles": 1,
+            },
+        )
+
+    def test_a_batch_of_a_thousand_silent_rows_queues_the_mayday_and_draws_once(
+        self,
+    ):
+        self.assertEqual(
+            self.data["burst"],
+            {
+                "thrown": None,
+                "pumped": [["mayday"]],
+                "draws": 1,
+                "toasts": [],
+                "bubbles": 30,
+            },
+        )
+
+    def test_silent_rows_never_enter_the_speech_queue(self):
+        self.assertEqual(self.data["speech"]["pumped"], [["security"]])
+
+    def test_no_silent_bubble_after_a_poll_gap_over_30_s_a_reconnect_or_for_a_row_older_than_30_s(
+        self,
+    ):
+        self.assertEqual(self.data["gap"], ["live", "again", "fresh"])
+
 
 class TestSpeechFallback(unittest.TestCase):
     def test_a_failed_tts_request_reads_the_row_at_reading_pace_only_while_bubbles_are_on(self):
@@ -197,6 +451,35 @@ class TestSpeechFallback(unittest.TestCase):
         data = json.loads(done.stdout)
         self.assertEqual(data["burst"], {"current": True, "busy": True, "timer": 7, "started": 1000, "duration": 1.5, "shown": []})
         self.assertEqual(data["unread"], {"current": False, "busy": False, "timer": 0, "started": None, "duration": None, "shown": []})
+
+
+class TestQueueSurvivesAFault(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        done = subprocess.run(
+            ["node", "-e", STUCK_PROBE, str(BUBBLES), str(SPEECH)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+        cls.data = json.loads(done.stdout)
+
+    def test_a_fault_while_a_row_sounds_or_is_read_still_hands_the_queue_to_the_next_row(
+        self,
+    ):
+        for case, heard in (
+            ("reading", ["A", "B"]),
+            ("ended", ["A", "B"]),
+            ("tail", ["A", "B"]),
+            ("transmit", ["B"]),
+        ):
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.data[case],
+                    {"faulted": True, "heard": heard, "busy": False, "pending": []},
+                    self.data[case],
+                )
 
 
 class TestBubbleStop(unittest.TestCase):
