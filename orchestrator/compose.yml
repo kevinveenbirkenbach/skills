@@ -77,7 +77,7 @@ services:
       - --whisper
       - /opt/whisper/whisper-cli
       - --whisper-model
-      - /opt/whisper/ggml-base-q8_0.bin
+      - /opt/whisper/ggml-small-q8_0.bin
       - --scratch
       - /scratch
       - --speech-url

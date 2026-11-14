@@ -47,7 +47,7 @@
   const radio = {element: null, url: "", level: 0, timer: 0, playing: false, waiting: false, index: -1, pick: null, sig: "", state: "", short: "", note: "", told: null};
   const speech = {pending: [], busy: false, warned: 0, current: null, source: null, loading: null, timer: 0, item: null};
   let radioSet = RadioSet.valid(stored(RadioSet.KEY, null));
-  const mic = {recorder: null, held: false, busy: false, timer: 0};
+  const mic = {recorder: null, button: null, field: null, busy: false, cancel: false, timer: 0, started: 0};
   const space = {
     views: {graph: {...state.settings.space.graph}, sky: {...state.settings.space.sky}}, glides: {graph: null, sky: null}, edits: 0, saved: 0, timer: 0, look: false, compass: null,
   };

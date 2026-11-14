@@ -78,7 +78,7 @@
         throw new Error("no recording");
       }
       parts.status.textContent = "Converting …";
-      const stored = await send("/api/voice", await wavOf(blob, sound), "audio/wav");
+      const stored = await send("/api/voice", await wavOf(blob, sound, state.speech.seconds), "audio/wav");
       if (!stored.ok || !stored.data) {
         throw new Error(`${stored.status} ${stored.text}`.trim());
       }

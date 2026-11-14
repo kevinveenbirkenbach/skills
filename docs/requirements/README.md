@@ -16,4 +16,5 @@ skill defines the format.
 - [010 - Security Scan Cache per File](010-security-scan-cache-per-file.md)
 - [011 - Test Result Cache](011-test-result-cache.md)
 - [012 - Match Review](012-match-review.md)
+- [013 - Voice Input](013-voice-input.md)
 - [014 - Header Rates](014-header-rates.md)

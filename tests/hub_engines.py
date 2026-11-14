@@ -31,13 +31,16 @@ with wave.open(args.output_file, "wb") as out:
 """
 FAKE_WHISPER = """
 import json, os, sys
+argv = sys.argv[1:]
 data = sys.stdin.buffer.read()
 with open(os.path.join(os.environ["HOME"], "whisper.jsonl"), "a", encoding="utf-8") as log:
-    log.write(json.dumps({"argv": sys.argv[1:], "sha256": __import__("hashlib").sha256(data).hexdigest()}) + "\\n")
+    log.write(json.dumps({"argv": argv, "sha256": __import__("hashlib").sha256(data).hexdigest()}) + "\\n")
 if b"FAIL" in data:
     sys.exit(4)
-print(" hello  from the [BLANK_AUDIO] mic")
-print("second line")
+language = argv[argv.index("--language") + 1]
+segments = [{"text": " hello  from the [BLANK_AUDIO] mic", "tokens": [{"text": "[_BEG_]", "p": 0.1}, {"text": " hello", "p": 0.9}]}, {"text": "second line", "tokens": [{"text": " second", "p": 0.8}]}]
+with open(argv[argv.index("--output-file") + 1] + ".json", "w", encoding="utf-8") as out:
+    json.dump({"result": {"language": "en" if language == "auto" else language}, "transcription": segments}, out)
 """
 
 
@@ -53,7 +56,7 @@ def write_engines(base: Path) -> server.Engines:
         (voices / f"{model}.onnx").write_bytes(b"onnx")
         (voices / f"{model}.onnx.json").write_text(json.dumps(config), encoding="utf-8")
     (voices / "broken.onnx").write_bytes(b"onnx")
-    model = base / "ggml-base.bin"
+    model = base / "ggml-small-q8_0.bin"
     model.write_bytes(b"ggml")
     return server.Engines(piper=bin_dir / "piper", voices=voices, operator_voice=OPERATOR_VOICE, whisper=bin_dir / "whisper-cli", whisper_model=model, scratch=scratch, service=server.Service(url="", key=""))
 

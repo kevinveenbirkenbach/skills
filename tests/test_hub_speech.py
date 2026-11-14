@@ -18,6 +18,8 @@ from hub_engines import OPERATOR_VOICE, VOICES, log_rows, wav_bytes
 from hub_support import HOST_STATE, HUB, server
 from kvb_orchestrator import council, engines, exchange, handler, phrasing
 
+ROW = f"; the operator row {engines.MODEL_ROW} installs it"
+
 
 class TestHubSpeech(HubCase):
     def test_voices_come_from_the_models_and_stick_to_their_session(self):
@@ -52,9 +54,9 @@ class TestHubSpeech(HubCase):
             ({"piper": self.outside / "piper"}, "tts_off", f"the Piper executable {self.outside / 'piper'} is missing or not executable"),
             ({"voices": self.outside}, "tts_off", f"the voice directory {self.outside} holds no <model>.onnx voice"),
             ({"voices": lone}, "tts_off", f"the voice config {lone / 'solo.onnx'}.json is missing, unreadable or names no 1 to {engines.SPEAKER_LIMIT} speakers"),
-            ({"whisper": self.outside / "whisper-cli"}, "stt_off", f"the whisper.cpp executable {self.outside / 'whisper-cli'} is missing or not executable"),
-            ({"whisper_model": self.outside / "model.bin"}, "stt_off", f"the whisper.cpp model {self.outside / 'model.bin'} is missing or not readable"),
-            ({"whisper_model": self.outside}, "stt_off", f"the whisper.cpp model {self.outside} is not a file"),
+            ({"whisper": self.outside / "whisper-cli"}, "stt_off", f"the whisper.cpp executable {self.outside / 'whisper-cli'} is missing or not executable{ROW}"),
+            ({"whisper_model": self.outside / "model.bin"}, "stt_off", f"the whisper.cpp model {self.outside / 'model.bin'} is missing or not readable{ROW}"),
+            ({"whisper_model": self.outside}, "stt_off", f"the whisper.cpp model {self.outside} is not a file{ROW}"),
         )
         for number, (change, field, message) in enumerate(cases):
             with self.subTest(change=change):
@@ -70,7 +72,7 @@ class TestHubSpeech(HubCase):
             self.addCleanup(folder.chmod, 0o755)
         image = engines.Speech(dataclasses.replace(self.engines, whisper=whisper), self.state / "image").describe()
         self.assertEqual({key: image[key] for key in ("tts", "voices", "operator", "tts_off")}, {"tts": False, "voices": 0, "operator": "", "tts_off": f"the voice directory {voices} is missing or not searchable"})
-        self.assertEqual((image["stt"], image["stt_off"]), (False, f"the whisper.cpp executable {whisper} lies under {whisper.parent}, which the hub may not search"))
+        self.assertEqual((image["stt"], image["stt_off"]), (False, f"the whisper.cpp executable {whisper} lies under {whisper.parent}, which the hub may not search{ROW}"))
         status, _, body = self.post_json("/api/tts", {"text": "radio check", "voice": OPERATOR_VOICE}, self.guard(self.host))
         self.assertEqual((status, body.decode()), (503, f"speech output is off: the voice directory {voices} is missing or not searchable\n"))
 
@@ -147,7 +149,7 @@ class TestHubSpeech(HubCase):
             with self.subTest(content_type=content_type):
                 self.assertEqual(self.call("POST", "/api/stt", clip, {**good, "Content-Type": content_type})[0], 415)
         self.assertEqual(self.call("POST", "/api/stt", clip, good)[0], 415)
-        self.assertEqual(self.call("POST", "/api/stt", b"RIFF", {**good, "Content-Type": "audio/wav", "Content-Length": str(engines.STT_LIMIT + 1)})[0], 413)
+        self.assertEqual(self.call("POST", "/api/stt", b"RIFF", {**good, "Content-Type": "audio/wav", "Content-Length": str(engines.INPUT_LIMIT + 1)})[0], 413)
         for broken in (
             b"not a wav",
             wav_bytes(1, 2, 44100, b"\x00\x00" * 100),
@@ -157,14 +159,17 @@ class TestHubSpeech(HubCase):
         ):
             with self.subTest(broken=broken[:40]):
                 self.assertEqual(post(broken, good)[0], 400)
-        with mock.patch.object(engines, "STT_SECONDS", 1):
+        with mock.patch.object(engines, "INPUT_SECONDS", 1):
             self.assertEqual(post(wav_bytes(1, 2, engines.STT_RATE, b"\x00\x00" * (engines.STT_RATE + 1)), good)[0], 400)
         self.assertEqual(log_rows(calls), [])
         status, headers, body = post(clip, good)
         self.assertEqual((status, headers["content-type"]), (200, "application/json"), body)
-        self.assertEqual(json.loads(body), {"text": "hello from the mic second line"})
-        argv = ["--model", str(self.engines.whisper_model), "--file", "-", "--output-txt", "--language", "auto", "--no-prints", "--suppress-nst"]
-        self.assertEqual(log_rows(calls), [{"argv": argv, "sha256": hashlib.sha256(clip).hexdigest()}])
+        self.assertEqual(json.loads(body), {"text": "hello from the mic second line", "language": "en"})
+        [row] = log_rows(calls)
+        target = PurePosixPath(row["argv"][row["argv"].index("--output-file") + 1])
+        argv = ["--model", str(self.engines.whisper_model), "--file", "-", "--output-json", "--output-json-full", "--output-file", str(target), "--language", "auto", "--no-prints", "--suppress-nst"]
+        self.assertEqual(row, {"argv": argv, "sha256": hashlib.sha256(clip).hexdigest()})
+        self.assertEqual((target.name, str(target.parent.parent)), ("auto", str(self.engines.scratch)))
         long = wav_bytes(1, 2, engines.STT_RATE, b"\x00\x00" * engines.STT_RATE * 40)
         self.assertGreater(len(long), handler.BODY_LIMIT)
         self.assertEqual(post(long, good)[0], 200)

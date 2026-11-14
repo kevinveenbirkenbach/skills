@@ -320,7 +320,16 @@ textarea { width: 100%; min-height: 84px; padding: 8px 10px; border: 1px solid v
 .palette-box input { width: 100%; padding: 14px 16px; border: 0; background: transparent; font-size: var(--fs-lg); outline: none; }
 .palette-row { display: flex; align-items: center; gap: 6px; padding-right: 10px; border-bottom: 1px solid var(--line); }
 .palette-row input { flex: 1; min-width: 0; }
-.mic[aria-pressed="true"] { background: var(--bad-soft); color: var(--bad); }
+.mic { flex: none; }
+.mic[aria-pressed="true"] { background: var(--bad-soft); color: var(--bad); animation: mic-pulse 1.2s ease-in-out infinite; }
+.mic-auto { margin-left: 4px; vertical-align: middle; }
+textarea + .mic-auto { display: flex; margin: 4px 0 0 auto; }
+.mic-live { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px); padding: 8px 14px; transform: translateX(-50%); border-radius: 999px; background: var(--bad); color: #fff; font-weight: 650; box-shadow: var(--shadow-lift); }
+.mic-live[hidden] { display: none; }
+.mic-live::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: #fff; animation: mic-pulse 1s ease-in-out infinite; }
+@keyframes mic-pulse { 50% { opacity: .45; } }
+@media (max-width: 640px) { .mic { min-width: 44px; min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .mic[aria-pressed="true"], .mic-live::before { animation: none; } }
 .palette-list { max-height: 55vh; margin: 0; padding: 6px; overflow: auto; list-style: none; }
 .palette-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
 .palette-list li[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
@@ -616,6 +625,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-settings.js" %}
 
 {% include "page-speech.js" %}
+
+{% include "page-mic.js" %}
 
 {% include "page-bubbles.js" %}
 
