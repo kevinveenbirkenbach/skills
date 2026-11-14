@@ -297,7 +297,7 @@ class TestOrchestratorGaps(HubCase):
                 self.assertNotIn("error", icons, icons)
                 chips = icons["chips"]
                 expected = {
-                    "merged by #12 into main": "#bi-sign-merge-left", "clean": "#bi-check-circle", "not committed: 0 staged, 0 changed, 1 new": "#bi-pencil-square", "1 commits unpushed": "#bi-cloud-upload",
+                    "merged by pr#12 into main": "#bi-sign-merge-left", "clean": "#bi-check-circle", "not committed: 0 staged, 0 changed, 1 new": "#bi-pencil-square", "1 commits unpushed": "#bi-cloud-upload",
                     "upstream gone": "#bi-cloud-slash", f"locked: {LOCKED}": "#bi-lock-fill", "stale": "#bi-hourglass-bottom", "protected": "#bi-shield-lock",
                 }
                 for label, href in expected.items():

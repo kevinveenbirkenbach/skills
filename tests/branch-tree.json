@@ -78,7 +78,7 @@
             "demo:feature-done"
           ],
           "state": "merged-clean",
-          "merged_by": "#12",
+          "merged_by": "pr#12",
           "merged_into": "main",
           "size_bytes": 4096,
           "skip": null,
@@ -87,7 +87,7 @@
             "local-branch",
             "remote-branch"
           ],
-          "reason": "merged into main by #12",
+          "reason": "merged by pr#12",
           "result": null,
           "flow": null
         },

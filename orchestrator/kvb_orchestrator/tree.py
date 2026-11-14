@@ -20,6 +20,7 @@ INVALID = "invalid"
 TREE_HEARTBEAT = "tree-heartbeat"
 GC_SKILL = "kvb-git-gc"
 GC_COMPOSE_DOWN = ("docker", "compose", "-p", "{project}", "down", "-v", "--remove-orphans")
+LOCAL_PLAN = "local-plan.json"
 
 
 def flow(item: dict) -> dict | None:
@@ -72,15 +73,64 @@ def held_by(worktree: str) -> str:
     return f"held by worktree {worktree}: pkgmgr branch cleanup skips it, use branch gc ({GC_SKILL}, pkgmgr gc)"
 
 
-def dry_run(item: dict) -> list[str]:
-    """Returns:
+def kept_by(planned: dict | None, tip: str, upstream_of: str, stale: str) -> str:
+    """Args:
+        planned: this branch's item of the `pkgmgr branch cleanup --local`
+            dry run beside the tree file, None when it has none.
+        tip: the branch's local tip in the tree file.
+        upstream_of: a branch of the same dry run whose local upstream this
+            branch is, "" for none; pkgmgr's _config_keeps keeps it when the
+            host's `--branch` dry run chooses it alone.
+        stale: why the repository's dry run is stale, "" when it is fresh.
+
+    Returns:
+        Why the hub offers no delete: a stale dry run, or from that dry run
+        what keeps the branch (signing.local_keeps, the predicate the host
+        runner refuses by, then the local upstream), or that it has not
+        planned this tip yet; "" when it deletes exactly the local branch at
+        this tip.
+    """
+    if stale:
+        return f"pkgmgr branch cleanup --local plan stale: {stale}; use branch gc ({GC_SKILL}, pkgmgr gc)"
+    if planned is None or planned.get("local_sha") != tip:
+        return f"no pkgmgr branch cleanup --local dry run of {tip[:12]} yet: the tree timer writes {LOCAL_PLAN} within a minute"
+    keeps = signing.local_keeps(planned) or (f"kept: local upstream of {upstream_of}" if upstream_of else "")
+    return f"pkgmgr branch cleanup --local keeps it: {keeps}; use branch gc ({GC_SKILL}, pkgmgr gc)" if keeps else ""
+
+
+def local_upstreams(items: list[dict]) -> dict[str, str]:
+    """Args:
+        items: one repository's items of the `--local` dry run, each with
+            its `%(upstream:short)` as upstream.
+
+    Returns:
+        Each branch that is the local upstream of another branch there, with
+        the first such branch by name, as pkgmgr's _config_keeps names it.
+    """
+    names = {item["branch"] for item in items}
+    found: dict[str, str] = {}
+    for item in sorted(items, key=lambda entry: entry["branch"]):
+        upstream = str(item.get("upstream") or "")
+        parent = upstream if upstream in names else upstream.removeprefix("heads/")
+        if parent in names and parent != item["branch"]:
+            found.setdefault(parent, item["branch"])
+    return found
+
+
+def dry_run(item: dict, kept: str) -> list[str]:
+    """Args:
+        item: one tree item.
+        kept: kept_by() for it, "" when the hub offers its delete.
+
+    Returns:
         What the runner's `pkgmgr branch cleanup` does for one tree item,
         read from the gc plan the tree file carries: it deletes the local
         branch and never touches a worktree, Compose stack or volume; a
         remote branch stays, the runner refuses a plan that deletes one. A
-        branch held by a worktree it skips; its lines name what branch gc
-        would do instead, its `docker compose down -v` deleting the stack's
-        volumes.
+        branch held by a worktree it skips, and one the `--local` dry run
+        keeps or has not planned it does not delete; their lines name what
+        branch gc would do instead, its `docker compose down -v` deleting
+        the stack's volumes.
     """
     tip = (item["local_sha"] or item["head"] or "")[:12]
     merged = f", merged by {item['merged_by']}" if item["merged_by"] else ""
@@ -90,6 +140,10 @@ def dry_run(item: dict) -> list[str]:
         lines.append(f"branch gc would remove the worktree {item['worktree']} and the local branch {item['branch']}")
         lines += [f"branch gc would run {' '.join(GC_COMPOSE_DOWN).format(project=name)}, which deletes the volumes of {name}" for name in item["compose_projects"]]
         lines += [f"branch gc would remove the image {name}" for name in item["images"]]
+        return lines
+    if kept:
+        lines.append(kept)
+        lines += [f"branch gc would delete the local branch {item['branch']}" if action == "local-branch" else f"branch gc would delete {action}" for action in item["actions"]]
         return lines
     for action in item["actions"]:
         if action == "local-branch":
@@ -101,14 +155,25 @@ def dry_run(item: dict) -> list[str]:
     return lines
 
 
-def branch(item: dict, path: str, default: object) -> dict:
+def branch(item: dict, path: str, default: object, planned: dict | None, upstream_of: str, stale: str) -> dict:
+    """Args:
+        item: one tree item with a branch.
+        path: its repository's path.
+        default: the repository's default branch.
+        planned: the branch's item of the `--local` dry run, None without.
+        upstream_of: as kept_by() takes it.
+        stale: as kept_by() takes it.
+    """
     remote = next(iter(item["remotes"].values()), "")
     head = item["local_sha"] or item["head"] or remote
     held = held_by(item["worktree"]) if item["worktree"] and item["state"] == "merged-clean" else ""
-    open_to_delete = item["state"] == "merged-clean" and not item["skip"] and bool(item["local_sha"]) and not item["worktree"]
+    candidate = item["state"] == "merged-clean" and bool(item["local_sha"]) and not item["worktree"]
+    kept = kept_by(planned, item["local_sha"], upstream_of, stale) if candidate else ""
+    open_to_delete = candidate and not item["skip"] and not kept
     return {
         "held": held,
-        "token_free": signing.token_free(item, default),
+        "kept": kept,
+        "token_free": signing.token_free(planned, default) if candidate and planned is not None else False,
         "name": item["branch"],
         "head": head,
         "upstream": item["upstream"] or "",
@@ -120,20 +185,43 @@ def branch(item: dict, path: str, default: object) -> dict:
         "merged_into": item["merged_into"],
         "skip": item["skip"],
         "reason": item["reason"],
-        "plan": dry_run(item),
+        "plan": dry_run(item, kept),
         "cleanup": signing.cleanup_item(path, item["branch"], item["worktree"] or "", item["local_sha"]) if open_to_delete else None,
         "worktrees": [worktree(item)] if item["worktree"] else [],
     }
 
 
-def repo(entry: dict) -> dict:
+def repo(entry: dict, local: dict[tuple[str, str], tuple[dict, str]], stale: dict[str, str]) -> dict:
     items = entry["items"]
     return {
         **{key: value for key, value in entry.items() if key != "items"},
         "name": "/".join(Path(entry["path"]).parts[-LABEL_PARTS:]),
-        "branches": [branch(item, entry["path"], entry.get("default")) for item in items if item["branch"]],
+        "branches": [branch(item, entry["path"], entry.get("default"), *local.get((entry["path"], item["branch"]), (None, "")), stale.get(entry["path"], "")) for item in items if item["branch"]],
         "detached": [worktree(item) for item in items if item["detached"]],
     }
+
+
+def local_plan(path: Path) -> tuple[dict[tuple[str, str], tuple[dict, str]], dict[str, str]]:
+    """Returns:
+        Every item of the `pkgmgr branch cleanup --local` dry run that
+        client/local_plan.py writes at path, keyed by repository path and
+        branch, with the branch whose local upstream it is (local_upstreams,
+        "" for none); and each repository whose dry run is stale, with why.
+        Both are empty when the file is missing or unreadable, so the hub
+        offers no delete.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        found, stale = {}, {}
+        for repository in data["repos"]:
+            items = [item for item in repository["items"] if isinstance(item, dict) and isinstance(item.get("branch"), str)]
+            upstreams = local_upstreams(items)
+            found.update({(repository["repo"], item["branch"]): (item, upstreams.get(item["branch"], "")) for item in items})
+            if repository.get("stale"):
+                stale[repository["repo"]] = str(repository["stale"])[:200]
+        return found, stale
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return {}, {}
 
 
 def offered(scan: dict, ready: bool) -> list[dict]:
@@ -151,8 +239,9 @@ def offered(scan: dict, ready: bool) -> list[dict]:
 def read_tree(path: Path) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        local, stale = local_plan(path.with_name(LOCAL_PLAN))
         return {
-            "repos": sorted((repo(entry) for entry in data["repos"]), key=lambda entry: entry["name"]),
+            "repos": sorted((repo(entry, local, stale) for entry in data["repos"]), key=lambda entry: entry["name"]),
             "scanned": iso_epoch(data["generated_at"]),
             "delete_ready": data["delete_ready"],
             "delete_reason": data["delete_reason"],
@@ -204,7 +293,7 @@ class Tree:
     heartbeat: Path
     lock: threading.Lock
     cached: dict | None
-    stamp: tuple[int, int] | None
+    stamp: tuple[tuple[int, int], tuple[int, int] | None] | None
 
     def beat(self) -> None:
         self.heartbeat.touch()
@@ -218,7 +307,12 @@ class Tree:
                     f"no pkgmgr tree file at {self.file}: {error.strerror}. The tree timer runs `pkgmgr branch tree`, which the installed pkgmgr "
                     "lacks until a release ships it: release pkgmgr and install it, then the timer writes the file within a minute."
                 )}
-            stamp = (info.st_mtime_ns, info.st_size)
+            try:
+                planned = self.file.with_name(LOCAL_PLAN).stat()
+                plan_stamp = (planned.st_mtime_ns, planned.st_size)
+            except OSError:
+                plan_stamp = None
+            stamp = ((info.st_mtime_ns, info.st_size), plan_stamp)
             if self.cached is None or stamp != self.stamp:
                 self.cached, self.stamp = read_tree(self.file), stamp
             return self.cached

@@ -384,6 +384,45 @@ AFTER = """(async () => {@HELPERS@
   const past = await until(() => all("#main details.repo").find((details) => details.textContent.includes("Recently deleted")), 15000);
   return {past: past ? [past.querySelector("[data-result]").dataset.result, name(past.querySelector("span.state"))] : null, branches: all("#main details.repo").filter((details) => details !== past).flatMap((details) => all(".branch-name strong", details)).map(text)};
 })()""".replace("@HELPERS@", HELPERS)
+KEPT_TREE = """(async () => {@HELPERS@
+  const card = await until(() => all("#main details.repo").find((details) => details.textContent.includes("github.com/me/demo")), 8000);
+  if (!card) {
+    return {error: text(document.getElementById("main"))};
+  }
+  card.open = true;
+  await sleep(300);
+  const row = all(".branch-row", card).find((entry) => text(entry.querySelector(".branch-name strong")) === "feature/squashed");
+  const kept = row ? row.querySelector(".hint.kept") : null;
+  const deletes = all('button[aria-label="Delete"]', card).map((button) => text(button.closest(".branch-row").querySelector(".branch-name strong")));
+  const header = all("#main .delete-all span.state").map(name);
+  document.querySelector('#main button[aria-label="Delete all merged"]').click();
+  const sheet = await until(() => document.querySelector("#sheet:not([hidden]) li.dry-run") && document.getElementById("sheet"), 8000);
+  const kind = (li) => (li.dataset.token ? "token" : li.dataset.held ? "held" : li.dataset.kept ? "kept" : null);
+  const rows = sheet ? all("li.dry-run", sheet).map((li) => [text(li.querySelector("code")), kind(li), all("button", li).length, text(li.querySelector("pre"))]) : null;
+  const confirms = sheet ? all("#sheet button").filter((button) => name(button) === "Delete").length : null;
+  const title = text(document.querySelector(".sheet-head .panel-title"));
+  document.querySelector(".sheet-head button").click();
+  return {kept: kept ? [kept.title, name(kept.querySelector("span.state"))] : null, rowDeletes: row ? all('button[aria-label="Delete"]', row).length : null, deletes, header, rows, confirms, title};
+})()""".replace("@HELPERS@", HELPERS)
+KEPT_POPUP = """(async () => {@HELPERS@
+  await screenShown(8000);
+  const picker = await until(() => document.querySelector('#main select[aria-label="Repository"]'), 8000);
+  if (picker && picker.value !== @REPO@) {
+    picker.value = @REPO@;
+    picker.dispatchEvent(new Event("change", {bubbles: true}));
+  }
+  const id = `branch:${@REPO@}\\u0000feature/squashed`;
+  const target = await until(() => all("#main svg [data-pick]").find((node) => node.dataset.pick === id), 8000);
+  if (!target) {
+    return {error: text(document.getElementById("main"))};
+  }
+  target.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true}));
+  const dialog = document.getElementById("popup");
+  const dry = await until(() => dialog.open && dialog.querySelector(".popup-box pre.notes"), 6000);
+  const kept = dialog.querySelector(".popup-box .actions .hint.kept");
+  return {title: text(dialog.querySelector(".popup-box .panel-title")), heading: dry ? text(dry.previousElementSibling) : null, dry: dry ? dry.textContent : null,
+    deletes: all('#popup button[aria-label="Delete"]').length, kept: kept ? kept.title : null};
+})()""".replace("@HELPERS@", HELPERS)
 OVERLAP = """
   const shown = (node) => node.getClientRects().length > 0 && node.getBoundingClientRect().width > 0;
   const words = (label) => [...label.childNodes].filter((node) => node.nodeType === 3).map((node) => node.textContent).join("").trim();
@@ -1884,7 +1923,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertIn(["twig", "false"], by_hash["#agents/tree"]["spawn"])
         artifacts = by_hash["#artifacts/tree"]
         self.assertEqual(artifacts["deletes"], [["Delete all merged", True, "Delete all merged blocked: Secret Service locked"]])
-        for state in ("merged by #12 into main", "upstream gone", "protected", "1 commits unpushed", "clean", "not committed: 0 staged, 0 changed, 1 new", "gc skips: ignored files beyond known caches: notes.txt"):
+        for state in ("merged by pr#12 into main", "upstream gone", "protected", "1 commits unpushed", "clean", "not committed: 0 staged, 0 changed, 1 new", "gc skips: ignored files beyond known caches: notes.txt"):
             with self.subTest(state=state):
                 self.assertIn(state, artifacts["states"])
         for view in ("orbit", "chord"):
@@ -2237,15 +2276,16 @@ class TestOrchestratorE2E(HubCase):
     def test_chromium_deletes_a_merged_branch_after_dry_run_and_signature(self):
         tree = json.loads(self.tree_file.read_text(encoding="utf-8"))
         tree["delete_ready"], tree["delete_reason"] = True, ""
-        next(item for item in tree["repos"][0]["items"] if item["branch"] == "feature/done").update(worktree=None, worktree_state=None, actions=["local-branch", "remote-branch"], compose_projects=[], images=[])
+        next(item for item in tree["repos"][0]["items"] if item["branch"] == "feature/done").update(worktree=None, worktree_state=None, actions=["local-branch", "remote-branch"], compose_projects=[], images=[], merged_by="ancestor")
         self.tree_file.write_text(json.dumps(tree), encoding="utf-8")
+        self.write_local_plan(tree, {})
         demo = f"{self.root}/repos/github.com/me/demo"
         Path(demo).mkdir(parents=True)
         fake = self.outside / "bin" / "pkgmgr"
         fake.parent.mkdir()
         fake.write_text(FAKE_PKGMGR.format(python=sys.executable), encoding="utf-8")
         fake.chmod(0o755)
-        (fake.parent / "plan.json").write_text(json.dumps([{"branch": "feature/done", "worktree": None, "local_sha": DONE_TIP, "head": DONE_TIP, "state": "merged-clean", "skip": None, "actions": ["local-branch"]}]), encoding="utf-8")
+        (fake.parent / "plan.json").write_text(json.dumps([{"branch": "feature/done", "worktree": None, "local_sha": DONE_TIP, "head": DONE_TIP, "state": "merged-clean", "merged_by": "ancestor", "skip": None, "actions": ["local-branch"]}]), encoding="utf-8")
         following = json.loads(json.dumps(tree))
         following["repos"][0]["items"] = [item for item in following["repos"][0]["items"] if item["branch"] != "feature/done"]
         (fake.parent / "next-tree.json").write_text(json.dumps(following), encoding="utf-8")
@@ -2269,7 +2309,7 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual(opened["buttons"], [[False, "Delete: remove feature/done locally, after dry run and signature"]])
         self.assertEqual(opened["title"], "Delete feature/done")
         self.assertEqual(len(opened["dry"]), 1)
-        self.assertTrue(opened["dry"][0].startswith("feature/done @ 5b1e6fd3a7c0: merged-clean, merged by #12"), opened["dry"])
+        self.assertTrue(opened["dry"][0].startswith("feature/done @ 5b1e6fd3a7c0: merged-clean, merged by ancestor"), opened["dry"])
         self.assertIn("stays: remote-branch (local only; the host refuses a plan that deletes it)", opened["dry"][0])
         self.assertEqual((confirmed["result"], confirmed["text"]), ("done", "feature/donedeleted"), confirmed)
         self.assertEqual(confirmed["toasts"], ["Delete: donefeature/done: deleted"])
@@ -2279,10 +2319,48 @@ class TestOrchestratorE2E(HubCase):
         self.assertEqual([[(item["branch"], item["status"]) for item in result["items"]] for result in written], [[("feature/done", "done")]])
         calls = [json.loads(line)["argv"] for line in (fake.parent / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(calls, [
-            ["branch", "cleanup", "--json", "--branch", "feature/done"],
-            ["branch", "cleanup", "--apply", "--json", "--branch", "feature/done"],
+            ["branch", "cleanup", "--local", "--json", "--branch", "feature/done"],
+            ["branch", "cleanup", "--apply", "--local", "--json", "--branch", "feature/done"],
             ["branch", "tree", "--format", "json", "--output", str(self.tree_file)],
         ])
+
+    def test_chromium_shows_a_branch_the_local_dry_run_keeps_without_delete_and_offers_one_whose_local_tip_it_deletes(self):
+        squashed_tip, cherry_tip, cherry_remote = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b", "8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c", "7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d"
+        tree = json.loads(self.tree_file.read_text(encoding="utf-8"))
+        tree["delete_ready"], tree["delete_reason"] = True, ""
+        items = tree["repos"][0]["items"]
+        kept = next(item for item in items if item["branch"] == "feature/kept")
+        kept["skip"] = None
+        items.append({**kept, "branch": "feature/squashed", "local_sha": squashed_tip, "upstream": "origin/feature/squashed", "ahead": 0, "behind": 0, "remotes": {"origin": squashed_tip},
+                      "merged_by": "pr#7", "actions": ["local-branch", "remote-branch:origin"], "reason": "merged by pr#7"})
+        items.append({**kept, "branch": "feature/cherry", "local_sha": cherry_tip, "upstream": "origin/feature/cherry", "ahead": 0, "behind": 1, "remotes": {"origin": cherry_remote},
+                      "merged_by": "patch", "actions": ["local-branch", "remote-branch:origin"], "reason": "merged by patch"})
+        self.tree_file.write_text(json.dumps(tree), encoding="utf-8")
+        self.write_local_plan(tree, {"feature/cherry": {"skip": None, "actions": ["local-branch"]}})
+        demo = f"{self.root}/repos/github.com/me/demo"
+        local = f"http://localhost:{self.port}/"
+        steps = [
+            {"width": 1366, "height": 768, "url": f"{local}#artifacts/tree", "wait": 1200, "probe": KEPT_TREE, "shot": self.shot("1366-kept-tree")},
+            {"width": 1366, "height": 768, "url": f"{local}?kept#artifacts/orbit", "wait": 1200, "probe": KEPT_POPUP.replace("@REPO@", json.dumps(demo)), "shot": self.shot("1366-kept-popup")},
+        ]
+        data = self.drive(steps, None)
+        (OUT / "chromium-kept.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])
+        shown, popup = data["results"]
+        self.assertNotIn("error", shown, shown)
+        self.assertNotIn("error", popup, popup)
+        kept_line = "pkgmgr branch cleanup --local keeps it: merged by pr#7, tip is no ancestor of refs/remotes/origin/main; use branch gc (kvb-git-gc, pkgmgr gc)"
+        plan = f"feature/squashed @ {squashed_tip[:12]}: merged-clean, merged by pr#7\n{kept_line}\nbranch gc would delete the local branch feature/squashed\nbranch gc would delete remote-branch:origin"
+        self.assertEqual((shown["kept"], shown["rowDeletes"], shown["deletes"]), ([kept_line, kept_line], 0, ["feature/kept", "feature/cherry"]))
+        self.assertIn("1 kept by the --local dry run: see each dry run", shown["header"])
+        self.assertEqual([row[:3] for row in shown["rows"]], [["feature/kept", None, 0], ["feature/cherry", None, 0], ["feature/done", "held", 0], ["feature/squashed", "kept", 0]])
+        self.assertEqual(shown["rows"][1][3], f"feature/cherry @ {cherry_tip[:12]}: merged-clean, merged by patch\ndeletes the local branch feature/cherry\nstays: remote-branch:origin (local only; the host refuses a plan that deletes it)")
+        self.assertEqual(shown["rows"][3][3], plan)
+        self.assertEqual((shown["confirms"], shown["title"]), (1, "Delete 2 merged branches"))
+        self.assertEqual((popup["title"], popup["heading"], popup["dry"], popup["deletes"], popup["kept"]), ("feature/squashed", "Dry run", plan, 0, kept_line))
+        status, _, body = self.post_json("/api/sign", {"items": [{"kind": "cleanup", "repository": demo, "branch": "feature/squashed", "worktree": "", "tip": squashed_tip}]}, self.guard(self.host))
+        self.assertEqual((status, body.decode()), (400, f"feature/squashed in {demo} is no merged-clean branch without skip reason that the --local dry run deletes at that tip\n"))
+        self.assertEqual(list((self.cleanup / "jobs").glob("*.json")), [])
 
     def test_chromium_folds_the_hierarchy_by_keyboard_reorders_agents_and_hands_an_office_over_with_a_signature(self):
         signer = self.pin()
