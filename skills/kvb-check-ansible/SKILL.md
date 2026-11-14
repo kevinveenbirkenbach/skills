@@ -7,9 +7,8 @@ description: >
 
 Where an Ansible run spends its time: its log, a controller profile, a bench.
 Report the script's lines with their log and range, never a guess. The
-script and the bench are light runs (`watch.py admit --kind test-nostack` of
-`kvb-org-organize`); a deploy to profile is heavy and goes through the
-`kvb-org-queue` skill.
+script, the bench and a deploy to profile run through the `kvb-org-queue`
+skill.
 
 ## 1. Pick the log
 

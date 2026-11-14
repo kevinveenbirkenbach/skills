@@ -149,6 +149,53 @@ class TestCpu(unittest.TestCase):
             self.assertEqual(json.loads((state / "cpu.json").read_text(encoding="utf-8")), [NOW + sampler.BUCKET + 1, 9300, 12200])
 
 
+class TestPressure(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.proc, self.state = Path(tmp.name) / "proc", Path(tmp.name) / "state"
+        (self.proc / "pressure").mkdir(parents=True)
+        self.state.mkdir()
+
+    def vmstat(self, pages: int) -> None:
+        (self.proc / "vmstat").write_text(f"pgpgin 5\npswpin 3\npswpout {pages}\n", encoding="utf-8")
+
+    def test_psi_gives_some_and_full_avg10_and_none_without_pressure(self):
+        text = "some avg10=12.50 avg60=1.00 avg300=0.50 total=1\nfull avg10=6.25 avg60=0.80 avg300=0.10 total=1\n"
+        self.assertEqual((sampler.psi_avg10(text, "some"), sampler.psi_avg10(text, "full")), (12.5, 6.25))
+        self.assertEqual((sampler.psi_avg10("", "some"), sampler.psi_avg10(text.splitlines()[0], "full")), (None, None))
+        self.assertIsNone(sampler.swapped_pages("pgpgin 5\n"))
+
+    def test_swap_out_is_none_first_then_mb_per_minute_and_none_after_a_reset_or_a_gap(self):
+        with mock.patch.object(sampler, "PAGE_BYTES", 4096):
+            self.assertIsNone(sampler.swap_out_since(self.proc, self.state, NOW))
+            self.assertFalse((self.state / "swap.json").exists())
+            self.vmstat(1000)
+            self.assertIsNone(sampler.swap_out_since(self.proc, self.state, NOW))
+            self.vmstat(1000 + 1_400_000_000 // 4096)
+            self.assertEqual(sampler.swap_out_since(self.proc, self.state, NOW + 60), 1400.0)
+            self.vmstat(10)
+            self.assertIsNone(sampler.swap_out_since(self.proc, self.state, NOW + 120))
+            self.assertEqual(json.loads((self.state / "swap.json").read_text(encoding="utf-8")), [NOW + 120, 10])
+            self.assertIsNone(sampler.swap_out_since(self.proc, self.state, NOW + 120))
+            self.assertIsNone(sampler.swap_out_since(self.proc, self.state, NOW + 120 + sampler.BUCKET + 1))
+
+    def test_a_sample_row_adds_the_pressure_keys_and_keeps_every_other_key(self):
+        (self.proc / "pressure" / "memory").write_text("some avg10=3.00 avg60=0 avg300=0 total=1\n", encoding="utf-8")
+        found = sampler.sample(self.proc, self.proc / "sys", self.proc, lambda argv: None, self.state)
+        self.assertEqual(sorted(found), ["cpu", "disks", "gpus", "load", "psi_full", "psi_some", "queue", "ram", "swap", "swap_out_mb_min", "t"])
+        self.assertEqual((found["psi_some"], found["psi_full"], found["swap_out_mb_min"]), (3.0, None, None))
+
+    def test_the_fifteen_minute_mean_keeps_the_pressure_keys(self):
+        asleep = {"name": ASLEEP, "asleep": True}
+        rows = [
+            row(NOW + 60, 1.0, 1, 0, asleep) | {"psi_some": 2.0, "psi_full": 1.004, "swap_out_mb_min": 100.0},
+            row(NOW + 120, 1.0, 1, 0, asleep) | {"psi_some": 4.5, "psi_full": None, "swap_out_mb_min": 301.0},
+        ]
+        mean = sampler.mean_row(NOW, rows)
+        self.assertEqual((mean["psi_some"], mean["psi_full"], mean["swap_out_mb_min"]), (3.25, 1.0, 200.5))
+
+
 class TestGpus(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -206,6 +253,7 @@ class TestRetention(unittest.TestCase):
         self.assertIs(kept[0], mean)
         self.assertEqual(kept[1], {
             "t": bucket, "disks": [{"mount": "/", "used": 200, "total": 1000}, {"mount": "/mnt", "used": 10, "total": 20}], "cpu": 30.0, "ram": 15.0, "swap": 0.0, "load": 3.0,
+            "psi_some": None, "psi_full": None, "swap_out_mb_min": None,
             "gpus": [{"name": AWAKE, "util": 50.0, "vram_used": 300, "vram_total": 1000}], "queue": {"waiting": 1.0, "active": 1.0},
         })
         self.assertEqual((kept[2]["cpu"], kept[2]["disks"]), (40.0, [{"mount": "/", "used": 400, "total": 1000}]))
@@ -274,7 +322,7 @@ class TestSamplerInScratchHome(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         for found in rows:
             with self.subTest(t=found["t"]):
-                self.assertEqual(sorted(found), ["cpu", "disks", "gpus", "load", "queue", "ram", "swap", "t"])
+                self.assertEqual(sorted(found), ["cpu", "disks", "gpus", "load", "psi_full", "psi_some", "queue", "ram", "swap", "swap_out_mb_min", "t"])
                 self.assertEqual(found["disks"], DISKS)
                 self.assertEqual(found["gpus"], [{"name": AWAKE, "util": 37.0, "vram_used": 2048 * MIB, "vram_total": 8188 * MIB}, {"name": ASLEEP, "asleep": True}])
                 self.assertEqual(found["queue"], {"waiting": 1, "active": 2})

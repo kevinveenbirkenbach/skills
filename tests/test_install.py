@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -10,15 +11,26 @@ import unittest
 from pathlib import Path
 
 INSTALL = Path(__file__).resolve().parents[1] / "scripts" / "install.sh"
+ORGANIZE = Path(__file__).resolve().parents[1] / "skills" / "kvb-org-organize"
 NPX = "#!/bin/sh\nmkdir -p .agents/skills/locked\necho locked > .agents/skills/locked/SKILL.md\n"
 BYTECODE = ("__pycache__/radio.cpython-312.pyc", "json.pyc", "legacy.pyo")
+LIVE_MEMORY = {
+    "warn": {"available": 15, "swap_free": 40, "psi_full": 5, "container_swap_gb": 4},
+    "stop": {"available": 8, "swap_free": 10, "psi_full": 10, "container_swap_gb": 16},
+}
+SHIPPED = ORGANIZE / "config.default.json"
+DEFAULT = json.loads(SHIPPED.read_text(encoding="utf-8"))
+ROW_MEMORY = DEFAULT["memory_limits"]
 
 
 class TestInstall(unittest.TestCase):
-    def install(self, root: Path, target: Path, npx: str = NPX, planted: tuple[str, ...] = ()) -> None:
+    def install(self, root: Path, target: Path, npx: str = NPX, planted: tuple[str, ...] = (), config: Path | None = None,
+                code: int = 0, stubs_extra: tuple[tuple[str, str], ...] = ()) -> subprocess.CompletedProcess:
         repo, stubs = root / "repo", root / "bin"
         (repo / "scripts").mkdir(parents=True)
         shutil.copy(INSTALL, repo / "scripts" / "install.sh")
+        if config is not None:
+            shutil.copytree(ORGANIZE, repo / "skills" / ORGANIZE.name, ignore=shutil.ignore_patterns("__pycache__"))
         (repo / "scripts" / "enable-plugins.js").write_text("", encoding="utf-8")
         (repo / "skills" / "own").mkdir(parents=True)
         (repo / "skills" / "own" / "SKILL.md").write_text("own", encoding="utf-8")
@@ -26,11 +38,61 @@ class TestInstall(unittest.TestCase):
             (repo / name).parent.mkdir(parents=True, exist_ok=True)
             (repo / name).write_bytes(b"planted")
         stubs.mkdir()
-        (stubs / "npx").write_text(npx, encoding="utf-8")
-        (stubs / "npx").chmod(0o755)
+        for name, text in (("npx", npx), *stubs_extra):
+            (stubs / name).write_text(text, encoding="utf-8")
+            (stubs / name).chmod(0o755)
         env = {**os.environ, "PATH": f"{stubs}:/usr/bin:/bin", "TARGET": str(target), "HOME": str(root / "home")}
+        if config is not None:
+            env |= {"AGENTS_COUNCIL_CONFIG": str(config), "AGENTS_COUNCIL_ROOT": str(root / "council")}
         done = subprocess.run(["bash", str(repo / "scripts" / "install.sh")], env=env, capture_output=True, text=True, check=False)
-        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.returncode, code, done.stderr)
+        return done
+
+    def test_the_install_stops_before_any_copy_while_the_live_config_lacks_a_memory_bound_the_new_code_needs(self):
+        for limits, code in ((LIVE_MEMORY, 2), (ROW_MEMORY, 0)):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                target = root / "target"
+                target.mkdir()
+                config = root / "config.json"
+                config.write_text(json.dumps({**DEFAULT, "memory_limits": limits}), encoding="utf-8")
+                before = config.stat()
+                done = self.install(root, target, config=config, code=code)
+                after = config.stat()
+                self.assertEqual((after.st_ino, after.st_mtime_ns, after.st_mode), (before.st_ino, before.st_mtime_ns, before.st_mode))
+                installed = sorted(path.name for path in target.iterdir())
+                if code:
+                    self.assertIn(
+                        "lacks memory_limits.warn.psi_some, memory_limits.warn.swap_out_mb_min, memory_limits.stop.swap_out_mb_min;",
+                        done.stderr,
+                    )
+                    self.assertEqual(installed, [])
+                    self.assertFalse((root / "repo" / ".agents").exists())
+                else:
+                    self.assertEqual(installed, [".agents", ".claude"])
+                self.assertEqual(json.loads(config.read_text(encoding="utf-8")), {**DEFAULT, "memory_limits": limits})
+
+    def test_an_install_without_a_config_writes_the_shipped_default_as_the_initial_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            config = root / "council-config" / "config.json"
+            self.install(root, target, config=config)
+            self.assertEqual(config.read_bytes(), SHIPPED.read_bytes())
+            self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(config.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_a_config_written_while_the_install_creates_its_folder_survives(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            config = root / "council-config" / "config.json"
+            racer = f"#!/bin/sh\nmkdir -p {config.parent}\necho '{{\"mine\": true}}' > {config}\nexec /usr/bin/install \"$@\"\n"
+            done = self.install(root, target, config=config, stubs_extra=(("install", racer),))
+            self.assertEqual(json.loads(config.read_text(encoding="utf-8")), {"mine": True})
+            self.assertIn(str(config), done.stderr)
 
     def test_reinstall_empties_the_skill_directories_in_place(self):
         with tempfile.TemporaryDirectory() as tmp:

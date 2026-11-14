@@ -35,8 +35,8 @@ request, so a red one blocks nothing else.
    (`search_graph`, `trace_path`, `get_architecture`, `detect_changes`; the
    `kvb-agent-optimize` skill sets it up), grep and read after. Parallel
    work, gates, deploys and anything with Docker run through `queue.py hold`
-   (`kvb-org-queue`); light runs (no Docker, about a minute) self-admit with
-   `watch.py admit --kind test-nostack`. With the first change, swap the label: `gh issue
+   (`kvb-org-queue`); light runs self-admit (`kvb-org-organize` Capacity).
+   With the first change, swap the label: `gh issue
    edit <n> --remove-label "in analysis" --add-label "in progress"`.
 5. **Open the pull request** with the `kvb-git-pr-create` skill, closing
    exactly its issue; one for a failing default branch is posted with

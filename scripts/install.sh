@@ -48,6 +48,11 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 		exit 1
 	fi
 fi
+watch="${REPO_ROOT}/skills/kvb-org-organize/scripts/watch.py"
+if [[ -f "${watch}" ]] && ! python3 -I "${watch}" preflight; then
+	warn "skills: add the keys above to the agents council config first; the new hooks and queue.py refuse to run without them"
+	exit 2
+fi
 
 cd "${REPO_ROOT}"
 src="${REPO_ROOT}/.agents/skills"
@@ -117,6 +122,17 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	fi
 	if ((caught != 0 && caught != 3 && caught != 5)); then
 		warn "skills: the catch-up council root migration failed (exit ${caught}); what the old skills wrote during the install stays in the earlier root until 'python3 ${council_root} migrate --catch-up' succeeds."
+	fi
+fi
+
+config="${AGENTS_COUNCIL_CONFIG:-${HOME}/.claude/agents-council/config.json}"
+shipped="${REPO_ROOT}/skills/kvb-org-organize/config.default.json"
+if [[ -f "${shipped}" && ! -e "${config}" && ! -L "${config}" ]]; then
+	[[ -d "$(dirname -- "${config}")" ]] || install -d -m 0700 "$(dirname -- "${config}")"
+	if (umask 077 && set -o noclobber && cat -- "${shipped}" >"${config}") 2>/dev/null; then
+		log "skills: wrote the shipped agents council config to ${config}"
+	else
+		warn "skills: kept ${config}, which appeared while the install wrote the shipped default"
 	fi
 fi
 

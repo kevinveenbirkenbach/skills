@@ -38,11 +38,8 @@ any listed name. Never silently truncate.
 ## Step 3: run
 
 Before each run, admit it under the `kvb-org-organize` Capacity rules: a
-light run (no Docker, about a minute: one test file or module, ruff)
-self-admits with
-`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
-test-nostack`; `make test`, quality gates and anything with Docker run in the
-background through
+light run self-admits; `make test`, quality gates and anything with Docker
+run in the background through
 `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold --kind <kind>
 --task <register task> -- make <target>`, which waits for the rule-based
 grant and releases on exit.

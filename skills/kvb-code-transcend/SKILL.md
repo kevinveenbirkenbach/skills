@@ -49,9 +49,8 @@ single-select `Write it` / `Revise it` / `Discard` with the drafted diff.
   owner through the `kvb-org-coordinate` skill.
 - Every carried test fails without the code it guards: show the negative
   control once.
-- Run the carried tests as a light run (no Docker, about a minute) after
-  `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py admit --kind
-  test-nostack`; `make test`, gates and anything with Docker only through
+- Run the carried tests as a light run (`kvb-org-organize` Capacity);
+  `make test`, gates and anything with Docker only through
   `queue.py hold` (the `kvb-org-queue` skill). Leave the result
   uncommitted for the `kvb-git-commit-next` skill.
 - `transcend.py mark` every offered candidate with its verdict.

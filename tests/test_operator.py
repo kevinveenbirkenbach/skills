@@ -529,7 +529,10 @@ class TestOperator(unittest.TestCase):
 
     def _queue_config(self, slot_need_gb: dict) -> None:
         config = self.base / "config.json"
-        open_memory = {"available": -1, "swap_free": -1, "psi_full": 1000, "container_swap_gb": 1e9}
+        open_memory = {
+            "available": -1, "swap_free": -1, "psi_some": 1000, "psi_full": 1000, "swap_out_mb_min": 1e9,
+            "container_swap_gb": 1e9,
+        }
         config.write_text(json.dumps({
             "disk": str(self.base), "thresholds_gb": {"warn": 0, "stop": 0, "critical": 0}, "projection_minutes": 30,
             "slot_need_gb": slot_need_gb, "heavy_commands": [r"\btouch heavy\b"], "never_block": [],

@@ -39,7 +39,9 @@ Args:
         SIBLINGS); a poll that finds other code installed in
         ~/.agents/skills leaves the queue ungranted and restarts the same hold
         with the installed queue.py.
-        --kind: a key of slot_need_gb in the config.
+        --kind: a key of slot_need_gb in the config; a light one
+            (light_kinds or watch.LIGHT_KIND) refuses a command watch.light()
+            does not recognise, naming watch.queue_hold().
         --task: an open task of the kvb-org-rasci register; its rank orders
             the queue, and the operator's agent order (`rasci.py agents
             order`) of the holding session breaks ties. While one of its
@@ -88,7 +90,8 @@ disk of running and granted jobs, never a reservation; queue_enforce (bool), opt
 only. The watch.py keys disk, thresholds_gb (stop is the floor every grant
 leaves free), slot_need_gb (the disk seed per kind), load_limits (every grant
 also needs CPU busy below cpu_percent and RAM used plus the job's learned RAM
-share below mem_percent; both bound the learned slot limits), memory_limits (no
+share, the live admit records (admit()) and the young jobs' ramp
+(ramping_ram()) below mem_percent; both bound the learned slot limits), memory_limits (no
 grant at memory stage stop), heavy_commands and never_block are used as
 watch.py documents them. A signature is `<repository>: <command signature>`
 (aliases()).
@@ -166,6 +169,10 @@ XDIST_LONG = "--numprocesses="
 ADDOPTS = "PYTEST_ADDOPTS="
 FROZEN = "footprint"
 ALIASES = "aliases"
+ADMIT = "admit"
+ADMITS = "admits"
+ADMIT_SECONDS = 120
+GRANTED_MEM = "granted_mem"
 
 
 @functools.cache
@@ -207,7 +214,7 @@ def fail(message: str) -> NoReturn:
 
 
 def config() -> dict:
-    cfg = watch.load_config()
+    cfg, _ = watch.announced_config()
     if cfg is None:
         fail(f"no config at {watch.CONFIG}; the queue reads the kvb-org-organize watch config")
     problem = watch.missing(cfg, (*BUDGET_KEYS, *watch.MEMORY_KEYS))
@@ -219,13 +226,14 @@ def config() -> dict:
 def fresh(cfg: dict) -> dict:
     """Returns:
         The config as it stands now, else cfg while the file is missing,
-        unreadable or incomplete, so a half-saved edit never ends a wait.
+        unusable (watch.checked_config()) or incomplete, so a half-saved
+        edit never ends a wait.
     """
     try:
-        now = watch.load_config()
-    except (OSError, ValueError):
+        now = watch.checked_config(watch.load_config())
+    except watch.UNUSABLE:
         return cfg
-    if not isinstance(now, dict) or watch.missing(now, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) is not None:
+    if watch.missing(now, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) is not None:
         return cfg
     return now
 
@@ -691,11 +699,11 @@ def footprint(entry: dict, signatures: dict[tuple[str, str], dict], kinds: dict[
 
 
 def held_back(cfg: dict, entries: list[dict], now: float, signatures: dict[str, dict], kinds: dict[str, dict],
-              cpu: float, mem: float) -> dict[str, str]:
+              cpu: float, mem: float, admitted: float) -> dict[str, str]:
     loaded = {}
     for entry in entries:
         if entry["status"] == "waiting":
-            pending = pending_ram(entries, entry["id"], now, signatures, kinds)
+            pending = pending_ram(entries, entry["id"], now, signatures, kinds, mem, admitted)
             if (reason := load_reason(cfg["load_limits"], cpu, mem, pending)) is not None:
                 loaded[entry["id"]] = reason
     return loaded
@@ -743,18 +751,36 @@ def ram_share(entry: dict, signatures: dict[str, dict], kinds: dict[str, dict]) 
     return history.seed_ram(kinds) if share is None else share["ram"]
 
 
-def pending_ram(entries: list[dict], entry_id: str, now: float, signatures: dict[str, dict],
-                kinds: dict[str, dict]) -> float:
+def ramping_ram(entries: list[dict], now: float, signatures: dict[str, dict], kinds: dict[str, dict],
+                mem: float) -> float:
     """Returns:
-        The RAM share of entry_id plus the whole share of every active job
-        granted less than RAMP_SECONDS ago (or without a grant time): what
-        may still come once they ramp up. An older job counts as ramped, its
-        RAM inside the RAM used; one that peaks later is bounded by the
-        memory stage only.
+        What the active jobs granted less than RAMP_SECONDS ago (or without a
+        grant time) may still add: the shares of those whose grant recorded
+        the RAM used (GRANTED_MEM) minus what RAM used gained since the
+        earliest of these grants, between 0 and those shares (a RAM used
+        that fell since counts as no gain), plus the whole share of the
+        others. An older job counts as ramped, its RAM inside the RAM used;
+        one that peaks later is bounded by the memory stage only.
+    """
+    young = [e for e in entries if e["status"] == "active" and now - e.get("granted", now) < RAMP_SECONDS]
+    dated = [e for e in young if GRANTED_MEM in e]
+    gained = max(0.0, mem - min((e[GRANTED_MEM] for e in dated), default=mem))
+    ramp = max(0.0, sum(ram_share(e, signatures, kinds) for e in dated) - gained)
+    return ramp + sum(ram_share(e, signatures, kinds) for e in young if GRANTED_MEM not in e)
+
+
+def pending_ram(entries: list[dict], entry_id: str, now: float, signatures: dict[str, dict],
+                kinds: dict[str, dict], mem: float, admitted: float) -> float:
+    """Returns:
+        The RAM share of entry_id plus admitted (admitted_ram()) plus
+        ramping_ram() at RAM used mem.
     """
     mine = [e for e in entries if e["id"] == entry_id]
-    young = [e for e in entries if e["status"] == "active" and now - e.get("granted", now) < RAMP_SECONDS]
-    return ram_share(mine[0], signatures, kinds) + sum(ram_share(e, signatures, kinds) for e in young)
+    return ram_share(mine[0], signatures, kinds) + admitted + ramping_ram(entries, now, signatures, kinds, mem)
+
+
+def admitted_ram(data: dict, now: float) -> float:
+    return sum(record["ram"] for record in data.get(ADMITS, []) if record["expires"] > now)
 
 
 def workdir() -> str:
@@ -823,13 +849,13 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
                 print(f"queue: {entry_id} was cancelled", file=sys.stderr)
                 return CANCELLED, 0
             rejoin(data, mine[0], now)
-            loaded = held_back(cfg, data["entries"], now, signatures, kinds, cpu, mem)
+            loaded = held_back(cfg, data["entries"], now, signatures, kinds, cpu, mem, admitted_ram(data, now))
             verdicts = decide(cfg, data["entries"], free, now, signatures, kinds, loaded)
             reason = verdicts[entry_id] or loaded.get(entry_id)
             mine[0]["reason"] = reason
             if reason is None:
                 concurrent = sum(e["status"] == "active" for e in data["entries"])
-                mine[0].update(status="active", granted=now, **{FROZEN: footprint(mine[0], signatures, kinds)})
+                mine[0].update(status="active", granted=now, **{GRANTED_MEM: mem, FROZEN: footprint(mine[0], signatures, kinds)})
                 return None, concurrent
         position = list(verdicts).index(entry_id) + 1
         if (position, reason) != shown:
@@ -913,15 +939,27 @@ def keep_receipt(gates: ModuleType | None, args: argparse.Namespace, here: str, 
     print(f"queue: receipt {args.receipt} for tree {before}", file=sys.stderr)
 
 
-def cmd_hold(args: argparse.Namespace) -> int:
-    cfg = config()
+def check_hold(args: argparse.Namespace, cfg: dict) -> None:
+    """Args:
+        args: the hold arguments; fail() exits on an unknown kind, a command
+            that is no light run under a light kind, a task outside the
+            register or a missing hotfix row.
+        cfg: the watch config.
+    """
     if args.kind not in cfg["slot_need_gb"]:
         fail(f"kind {args.kind!r} is not in slot_need_gb of {watch.CONFIG}")
+    shown = shlex.join(args.command)
+    if args.kind in {watch.LIGHT_KIND, *cfg.get("light_kinds", [])} and not watch.light(shown, os.getcwd()):
+        fail(f"{shown} is no light run and the light kind {args.kind} skips every reservation; run `{watch.queue_hold(shown)}`")
     rasci = sibling("rasci")
     if args.task not in rasci.merged(False):
         fail(f"{args.task} is no open task of the kvb-org-rasci register")
     if args.hotfix is not None and HOTFIX + args.hotfix not in rasci.load():
         fail(f"the register has no row {HOTFIX}{args.hotfix}")
+
+def cmd_hold(args: argparse.Namespace) -> int:
+    cfg = config()
+    check_hold(args, cfg)
     here = workdir()
     gates, out = gated(args, here)
     names = aliases(here, args.command, os.getcwd())
@@ -1084,6 +1122,38 @@ def held_commands(command: str) -> list[list[str]]:
     ]
 
 
+def enforced(cfg: dict) -> dict:
+    return {**cfg, "heavy_commands": [*cfg["heavy_commands"], GATE.pattern]}
+
+
+def admit(cfg: dict, kind: str, argv: list[str], cpu: float, mem: float, calm: bool) -> str | None:
+    """Args:
+        cfg: the config.
+        kind: the kind of the light job that asks to start outside the queue.
+        argv: its command, run in the current directory.
+        cpu: CPU busy now, in percent.
+        mem: RAM used now, in percent.
+        calm: whether the memory stage is ok; the live active jobs' ramp
+            (ramping_ram()) counts only when it is not.
+
+    Returns:
+        load_reason() over the job's RAM share plus the live admit records
+        (admitted_ram()) and the ramp; under the store lock, a grant records
+        the share for ADMIT_SECONDS and expired records leave.
+    """
+    now = time.time()
+    signatures, kinds = learned(cfg, now)
+    mine = {"id": ADMIT, "status": "waiting", "kind": kind, ALIASES: list(aliases(workdir(), argv, os.getcwd()))}
+    share = ram_share(mine, signatures, kinds)
+    with store() as data:
+        active = [e for e in data["entries"] if e["status"] == "active" and living(e)]
+        ramp = 0.0 if calm else ramping_ram(active, now, signatures, kinds, mem)
+        reason = load_reason(cfg["load_limits"], cpu, mem, share + admitted_ram(data, now) + ramp)
+        granted = [{"ram": share, "expires": now + ADMIT_SECONDS}] if reason is None else []
+        data[ADMITS] = [record for record in data.get(ADMITS, []) if record["expires"] > now] + granted
+    return reason
+
+
 def tails(argv: list[str]) -> list[str]:
     return [shlex.join(argv[at:]) for at, word in enumerate(argv) if not word.startswith("-")]
 
@@ -1114,11 +1184,10 @@ def cmd_block() -> int:
             "hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": reason,
         }}))
         return 0
-    cfg = watch.load_config()
+    cfg, _ = watch.announced_config()
     if cfg is None or cfg.get("queue_enforce") is not True:
         return 0
-    gated = {**cfg, "heavy_commands": [*cfg["heavy_commands"], GATE.pattern]}
-    if watch.heavy(raw, gated, (THROUGH_QUEUE.pattern, *cfg["never_block"]), watch.payload_cwd(payload)):
+    if watch.heavy(raw, enforced(cfg), (THROUGH_QUEUE.pattern, *cfg["never_block"]), watch.payload_cwd(payload)):
         print(
             f"kvb-org-queue: heavy jobs run through the queue: start `python3 {Path(__file__).resolve()} hold "
             "--kind <kind> --task <register task> -- <command>` in the background; it runs the command on its grant.",
@@ -1157,8 +1226,10 @@ def main() -> int:
     if args.cmd == "block":
         try:
             return cmd_block()
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, re.error):
-            return 0
+        except Exception as error:  # noqa: BLE001
+            print(f"kvb-org-queue: the block hook failed ({error!r}), so the command counts as heavy and is refused.",
+                  file=sys.stderr)
+            return 2
     commands = {"hold": cmd_hold, "list": cmd_list, "history": cmd_history, "cancel": cmd_cancel}
     try:
         return commands[args.cmd](args)

@@ -1,0 +1,37 @@
+{
+  "disk": "/",
+  "thresholds_gb": {"warn": 40, "stop": 15, "critical": 12},
+  "projection_minutes": 30,
+  "interval_seconds": 120,
+  "cache_interval_seconds": 1800,
+  "heavy_commands": [
+    "\\bmake\\s+(-C\\s+\\S+\\s+)?(compose-deploy|compose-up|compose-playwright|roundtrip|quality|quality-high|test|test-integration|test-unit\\S*|swarm-\\S+|act-workflow|act-runner-image|build\\S*|worktree-up|store-\\S+)(\\s|$)",
+    "\\bdocker\\s+(build|pull|load)\\b",
+    "\\bdocker\\s+buildx\\s+build\\b",
+    "\\brun\\.sh\\s+local\\b"
+  ],
+  "never_block": [
+    "\\bmake\\s+(-C\\s+\\S+\\s+)?(swarm-down|swarm-clean|swarm-clean-stale-nfs|swarm-diagnostic|compose-down|compose-entity-purge|worktree-down|store-host-down)(\\s|$)",
+    "^\\s*git\\s+commit\\b.*\\s--no-verify\\b",
+    "\\bmake\\s+swarm-exec(\\s|$)"
+  ],
+  "queue_enforce": true,
+  "cleanup": [],
+  "worktree_cleanup": [],
+  "worktrees_command": "true",
+  "worktree_marker": ".git",
+  "busy_processes": ["make"],
+  "cache_dirs": ["~/.cache/pip", "~/.npm", "~/.cache/pre-commit", "~/.cache/act", "~/.cache/ms-playwright"],
+  "cache_budget_percent": 3,
+  "slot_need_gb": {"quality-high": 15, "test": 15, "test-nostack": 0, "iteration": 20, "swarm": 30, "gui-dind": 65, "operator": 10},
+  "notify": ["notify-send", "-u", "critical", "Agents council"],
+  "load_limits": {"cpu_percent": 90, "mem_percent": 85, "sample_seconds": 5, "kinds": ["test", "test-nostack", "quality-high"]},
+  "memory_limits": {
+    "warn": {"available": 15, "swap_free": 40, "psi_some": 10, "psi_full": 5, "swap_out_mb_min": 64, "container_swap_gb": 4},
+    "stop": {"available": 8, "swap_free": 10, "psi_full": 5, "swap_out_mb_min": 256, "container_swap_gb": 16}
+  },
+  "budget_percent": {"ram": 75, "cpu": 100},
+  "light_kinds": ["test-nostack"],
+  "exclusive_kinds": ["quality-high", "test"],
+  "gate_excluded_targets": ["test-oracle"]
+}

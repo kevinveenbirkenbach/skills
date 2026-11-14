@@ -31,9 +31,8 @@ picks do; every other session keeps its own.
 
 ## Night rules for the active session
 
-- **Grants**: request none; admit your own runs with `watch.py admit --kind
-  <slot>` (`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/watch.py`), whose
-  disk, CPU and RAM limits still apply.
+- **Grants**: request none; light runs self-admit and heavy ones queue
+  (`kvb-org-organize` Capacity), whose limits still apply.
 - **Offices**: the suspended agents' claims stay theirs. Take only free work;
   a piece a suspended agent holds waits for the resume or the operator.
 - **Messages**: no wakes and no peer questions; the Peer protocol's wait is
