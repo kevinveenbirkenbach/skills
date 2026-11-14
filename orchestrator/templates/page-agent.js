@@ -94,7 +94,7 @@
     const classes = choice("to-one", TO_ONE, "post");
     const form = h("form", {class: "popup-form"}, text, file, classes,
       h("p", {class: "muted"}, "Post arrives at the end of the turn, Call at once with a read receipt; your passkey signs, verifiable with operator_message."),
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), micButton(text), button));
+      h("div", {class: "actions"}, h("span", {class: "spacer"}), micButton(text, false), button));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!text.value.trim()) {

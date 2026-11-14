@@ -50,9 +50,9 @@ ADD --checksum=sha256:2efdc6d7f954588b8180132cbd9b8001933fdd00932c92bc92fd0d2028
     ${INFINITO_ARTEFACT_BASE:-https:/}/huggingface.co/rhasspy/piper-voices/resolve/e7229f7d33a10e145e109b886d661984201ac3c4/en/en_US/libritts/high/en_US-libritts-high.onnx.json \
     /opt/voices/en_US-libritts-high.onnx.json
 # hadolint ignore=DL3020
-ADD --checksum=sha256:c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9 --chmod=0644 \
-    ${INFINITO_ARTEFACT_BASE:-https:/}/huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q8_0.bin \
-    /opt/whisper/ggml-base-q8_0.bin
+ADD --checksum=sha256:49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f --chmod=0644 \
+    ${INFINITO_ARTEFACT_BASE:-https:/}/huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q8_0.bin \
+    /opt/whisper/ggml-small-q8_0.bin
 COPY --from=whisper-cli /out/whisper-cli /opt/whisper/whisper-cli
 # ADD --chmod=0644 also gives the directories it creates mode 0644; without the search bit the non-root hub finds no voice and no whisper.cpp
 RUN chmod 0755 /opt/voices /opt/whisper

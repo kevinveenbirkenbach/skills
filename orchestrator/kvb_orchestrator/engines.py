@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import secrets
 import struct
 import subprocess
+import tempfile
 import threading
 import time
 import wave
@@ -30,6 +32,12 @@ STT_RATE = 16000
 STT_SECONDS = 120
 STT_LIMIT = 44 + STT_RATE * 2 * STT_SECONDS
 STT_TIMEOUT = 120
+INPUT_SECONDS = 60
+INPUT_LIMIT = 5 << 20
+MODEL_ROW = "make orchestrator-install"
+HEARING_DIR = "stt-"
+LANGUAGES = ("de", "en")
+SPECIAL = "[_"
 HEARING_WINDOW = 60
 HEARING_RATE = 6
 HEARING_HOUR = 3600
@@ -100,7 +108,15 @@ def voice_of(key: str, pool: list[str], operator: str) -> str:
     return pool[int(digest(key), 16) % len(pool)]
 
 
-def wav_seconds(body: bytes) -> float:
+def wav_seconds(body: bytes, seconds: int) -> float:
+    """Args:
+        body: the recording.
+        seconds: the longest recording accepted.
+
+    Returns:
+        Its length in seconds once it is 16 kHz mono 16-bit PCM WAV lasting
+        more than 0 and at most seconds; otherwise it raises ToolError.
+    """
     try:
         with wave.open(io.BytesIO(body), "rb") as reader:
             shape = (reader.getnchannels(), reader.getsampwidth(), reader.getframerate(), reader.getcomptype())
@@ -109,8 +125,8 @@ def wav_seconds(body: bytes) -> float:
         raise ToolError("the recording must be a WAV file") from None
     if shape != (1, 2, STT_RATE, "NONE"):
         raise ToolError(f"the recording must be {STT_RATE} Hz mono 16-bit PCM")
-    if not 0 < frames <= STT_RATE * STT_SECONDS:
-        raise ToolError(f"the recording must last more than 0 and at most {STT_SECONDS} seconds")
+    if not 0 < frames <= STT_RATE * seconds:
+        raise ToolError(f"the recording must last more than 0 and at most {seconds} seconds")
     return frames / STT_RATE
 
 
@@ -154,6 +170,27 @@ def playable(path: Path) -> bool:
 
 def heard(output: str) -> str:
     return " ".join(NOISE.sub(" ", output).split())[:TEXT_LIMIT]
+
+
+def transcript(path: Path) -> tuple[str, str, float]:
+    """Args:
+        path: the JSON whisper.cpp writes with --output-json-full.
+
+    Returns:
+        (the language it names, its segment texts joined, the mean
+        probability of its text tokens, 0.0 without any); a file that is
+        missing or not of that shape raises EngineError.
+    """
+    try:
+        data = json.loads(path.read_bytes().decode("utf-8", errors="replace"))
+        language, segments = data["result"]["language"], data["transcription"]
+        texts = [segment["text"] for segment in segments]
+        sure = [token["p"] for segment in segments for token in segment.get("tokens", []) if not str(token["text"]).startswith(SPECIAL)]
+    except (OSError, ValueError, RecursionError, KeyError, IndexError, TypeError, AttributeError):
+        raise EngineError("whisper.cpp wrote no readable JSON transcript") from None
+    if not isinstance(language, str) or not all(isinstance(text, str) for text in texts) or not all(isinstance(p, int | float) and not isinstance(p, bool) for p in sure):
+        raise EngineError("whisper.cpp wrote no readable JSON transcript")
+    return language, " ".join(texts), sum(sure) / len(sure) if sure else 0.0
 
 
 @dataclass(frozen=True)
@@ -207,14 +244,15 @@ class Speech:
     def input_gap(self) -> str:
         """Returns:
             "" when speech input works, otherwise why not, naming the
-            whisper.cpp executable or model with its path; always "" with the
-            speech service.
+            whisper.cpp executable or model with its path and the operator row
+            MODEL_ROW that installs both; always "" with the speech service.
         """
         if self.engines.service.enabled():
             return ""
         model = self.engines.whisper_model
         gap = unreachable(self.engines.whisper, "the whisper.cpp executable", os.X_OK, "executable") or unreachable(model, "the whisper.cpp model", os.R_OK, "readable")
-        return gap or ("" if os.path.isfile(model) else f"the whisper.cpp model {model} is not a file")
+        gap = gap or ("" if os.path.isfile(model) else f"the whisper.cpp model {model} is not a file")
+        return f"{gap}; the operator row {MODEL_ROW} installs it" if gap else ""
 
     def voice_of(self, key: str) -> str:
         """Args:
@@ -233,7 +271,7 @@ class Speech:
         silent, deaf = self.output_gap(), self.input_gap()
         return {
             "tts": not silent, "stt": not deaf, "tts_off": silent, "stt_off": deaf, "voices": len(self.voices), "operator": operator, "sample": sample,
-            "limit": SPEECH_LIMIT, "rate": STT_RATE, "seconds": STT_SECONDS,
+            "limit": SPEECH_LIMIT, "rate": STT_RATE, "seconds": STT_SECONDS, "input": INPUT_SECONDS,
         }
 
     def synthesize(self, body: bytes, admit: Callable[[str], None]) -> bytes:
@@ -333,21 +371,40 @@ class Speech:
         gap = self.input_gap()
         if gap:
             raise Unavailable(f"speech input is off: {gap}")
-        self.admit(wav_seconds(body))
+        self.admit(wav_seconds(body, INPUT_SECONDS))
         return self.whisper(body)
 
     def whisper(self, body: bytes) -> dict:
+        """Returns:
+            {"text"} from the speech service, otherwise {"text", "language"}
+            in one of LANGUAGES.
+        """
         if self.engines.service.enabled():
             with self.hearing:
                 return {"text": heard(self.engines.service.hear(body))}
-        command = [str(self.engines.whisper), "--model", str(self.engines.whisper_model), "--file", "-", "--output-txt", "--language", "auto", "--no-prints", "--suppress-nst"]
-        with self.hearing:
-            try:
-                done = subprocess.run(command, input=body, capture_output=True, timeout=STT_TIMEOUT, env=self.env(), cwd=self.engines.scratch, check=False)
-            except subprocess.TimeoutExpired:
-                raise EngineError(f"whisper.cpp took longer than {STT_TIMEOUT} seconds") from None
-            except OSError as error:
-                raise EngineError(f"whisper.cpp did not start: {error.strerror}") from None
+        with self.hearing, tempfile.TemporaryDirectory(prefix=HEARING_DIR, dir=self.engines.scratch) as folder:
+            language, text, _ = self.listen(body, Path(folder), "auto")
+            if language not in LANGUAGES:
+                language, text, _ = max((self.listen(body, Path(folder), choice) for choice in LANGUAGES), key=lambda found: found[2])
+        return {"text": heard(text), "language": language}
+
+    def listen(self, body: bytes, folder: Path, language: str) -> tuple[str, str, float]:
+        """Args:
+            body: the recording.
+            folder: the request's own directory, cwd and TMPDIR of the run.
+            language: "auto" to detect it, otherwise the language to hear.
+
+        Returns:
+            transcript() of the JSON whisper.cpp writes into folder.
+        """
+        target = folder / language
+        command = [str(self.engines.whisper), "--model", str(self.engines.whisper_model), "--file", "-", "--output-json", "--output-json-full", "--output-file", str(target), "--language", language, "--no-prints", "--suppress-nst"]
+        try:
+            done = subprocess.run(command, input=body, capture_output=True, timeout=STT_TIMEOUT, env={**self.env(), "TMPDIR": str(folder)}, cwd=folder, check=False)
+        except subprocess.TimeoutExpired:
+            raise EngineError(f"whisper.cpp took longer than {STT_TIMEOUT} seconds") from None
+        except OSError as error:
+            raise EngineError(f"whisper.cpp did not start: {error.strerror}") from None
         if done.returncode != 0:
             raise EngineError(f"whisper.cpp failed with exit code {done.returncode}: {done.stderr.decode('utf-8', errors='replace').strip()[-300:]}")
-        return {"text": heard(done.stdout.decode("utf-8", errors="replace"))}
+        return transcript(target.with_name(f"{language}.json"))

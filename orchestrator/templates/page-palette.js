@@ -142,7 +142,7 @@
         runPalette(palette.index);
       }
     });
-    box.replaceChildren(h("div", {class: "palette-box", role: "dialog", "aria-label": "Commands"}, h("div", {class: "palette-row"}, palette.input, micButton(palette.input)), palette.list));
+    box.replaceChildren(h("div", {class: "palette-box", role: "dialog", "aria-label": "Commands"}, h("div", {class: "palette-row"}, palette.input, micButton(palette.input, false)), palette.list));
     box.hidden = false;
     drawPalette();
     palette.input.focus();

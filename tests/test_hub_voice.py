@@ -74,11 +74,24 @@ class TestVoiceModule(unittest.TestCase):
 
     def test_the_recording_is_encoded_as_16_khz_mono_pcm(self):
         body = base64.b64decode(self.data["wav"])
-        self.assertEqual(engines.wav_seconds(body), 7 / engines.STT_RATE)
+        self.assertEqual(engines.wav_seconds(body, engines.STT_SECONDS), 7 / engines.STT_RATE)
         with wave.open(io.BytesIO(body)) as reader:
             self.assertEqual((reader.getnchannels(), reader.getsampwidth(), reader.getframerate(), reader.getnframes()), (1, 2, 16000, 7))
             self.assertEqual(struct.unpack("<7h", reader.readframes(7)), (0, 16383, -16384, 32767, -32768, 32767, -32768))
         self.assertEqual(self.data["frames"], [24000, 16000 * 120, 0])
+
+    def test_the_transcript_lands_at_the_cursor_with_one_space_on_each_side(self):
+        cases = [["start end", 6, 6, "hello"], ["", 0, 0, " hello "], ["abc", 3, 3, "x"], ["ab cd", 1, 4, "X"], ["keep", 2, 2, "  "], ["a\nb", 2, 2, "line"]]
+        probe = "const V = require(process.argv[1]); console.log(JSON.stringify(JSON.parse(process.argv[2]).map((one) => V.spliced(...one))));"
+        done = subprocess.run(["node", "-e", probe, str(VOICE), json.dumps(cases)], capture_output=True, text=True, timeout=60, check=True)
+        self.assertEqual(json.loads(done.stdout), [
+            {"value": "start hello end", "caret": 11},
+            {"value": "hello", "caret": 5},
+            {"value": "abc x", "caret": 5},
+            {"value": "a X d", "caret": 3},
+            {"value": "keep", "caret": 2},
+            {"value": "a\nline b", "caret": 6},
+        ])
 
 
 if __name__ == "__main__":

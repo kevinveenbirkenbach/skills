@@ -8,7 +8,7 @@ from http import HTTPStatus
 from urllib.parse import urlsplit
 
 from .diffs import DIFF_BODY_LIMIT
-from .engines import STT_LIMIT
+from .engines import INPUT_LIMIT, STT_LIMIT
 from .exchange import PLAIN_CSP, Exchange
 from .resources import RESOURCES, sampled
 from .scores import scored
@@ -285,7 +285,7 @@ class Handler(Exchange):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: STT_LIMIT, VOICE_ROUTE: STT_LIMIT, "/mcp": DIFF_BODY_LIMIT, "/api/asks": DIFF_BODY_LIMIT}.get(path, BODY_LIMIT))
+        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: INPUT_LIMIT, VOICE_ROUTE: STT_LIMIT, "/mcp": DIFF_BODY_LIMIT, "/api/asks": DIFF_BODY_LIMIT}.get(path, BODY_LIMIT))
         if length is None:
             return
         host = self.host()

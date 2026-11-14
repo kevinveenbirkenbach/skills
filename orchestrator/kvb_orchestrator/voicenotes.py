@@ -10,7 +10,8 @@ from collections import Counter
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from .engines import Speech, wav_seconds
+from . import engines
+from .engines import Speech
 from .errors import EngineError, Missing, ToolError, Unavailable
 from .records import write_atomic
 
@@ -44,7 +45,7 @@ class VoiceNotes:
         gap = self.speech.input_gap()
         if gap:
             raise Unavailable(f"speech input is off: {gap}")
-        seconds = wav_seconds(body)
+        seconds = engines.wav_seconds(body, engines.STT_SECONDS)
         with self.lock:
             if sum(1 for note in self.notes.values() if note["status"] == "pending") >= HEARING_LIMIT:
                 raise Unavailable(f"{HEARING_LIMIT} recordings are already waiting for their transcript")

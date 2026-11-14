@@ -3,6 +3,7 @@ const Voice = (() => {
   const RANKS = {mayday: 0, "pan-pan": 1, security: 2};
   const ALARMS = new Set(["mayday", "pan-pan"]);
   const ROUTINE = 3;
+  const FIELDS = 'textarea, input:not([type]), input[type="text"], input[type="search"]';
 
   function toneOf(row, human) {
     if (ALARMS.has(row.class)) {
@@ -59,7 +60,26 @@ const Voice = (() => {
     return buffer;
   }
 
-  return {toneOf, loudness, beep, enqueue, frames, wav};
+  /**
+   * @param {string} value the text of the field.
+   * @param {number} start the start of its selection.
+   * @param {number} end the end of its selection.
+   * @param {string} text the transcript.
+   * @returns {{value: string, caret: number}} value with the trimmed transcript in place of the selection, one space on each side where a neighbour is no whitespace, and the caret right after the transcript.
+   */
+  function spliced(value, start, end, text) {
+    const words = String(text).trim();
+    if (!words) {
+      return {value, caret: end};
+    }
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const lead = before && !/\s$/.test(before) ? " " : "";
+    const tail = after && !/^\s/.test(after) ? " " : "";
+    return {value: `${before}${lead}${words}${tail}${after}`, caret: before.length + lead.length + words.length};
+  }
+
+  return {FIELDS, toneOf, loudness, beep, enqueue, frames, wav, spliced};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Voice;

@@ -37,6 +37,7 @@
   window.addEventListener("resize", refresh3d);
   window.addEventListener("resize", placePopup);
   skyPanel();
+  micWatch();
   radioSpot();
   radio.element = radioElement();
   drawSky();

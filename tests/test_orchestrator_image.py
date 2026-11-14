@@ -12,7 +12,7 @@ VOICE = "huggingface.co/rhasspy/piper-voices/resolve/e7229f7d33a10e145e109b886d6
 PINNED = {
     VOICE: "9127a559e11603f10b366d1a20ac7426826081dbc521de4c2420c57728d73f0f",
     f"{VOICE}.json": "2efdc6d7f954588b8180132cbd9b8001933fdd00932c92bc92fd0d2028a9eb3d",
-    "huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q8_0.bin": "c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9",
+    "huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q8_0.bin": "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f",
 }
 ARCHIVE = (f"codeload.github.com/ggml-org/whisper.cpp/tar.gz/{COMMIT}", "645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4")
 CLONE = ("clone", "https://github.com/ggml-org/whisper.cpp", f"v1.9.5@{COMMIT}")

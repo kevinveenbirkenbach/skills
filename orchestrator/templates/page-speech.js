@@ -259,84 +259,10 @@
       : !window.MediaRecorder ? "This browser cannot record" : !state.speech.stt ? `Voice input is off: ${state.speech.stt_off}` : "";
   }
 
-  function micButton(field) {
-    const button = h("button", {type: "button", class: "btn small ghost icon-only mic", "aria-pressed": "false", ...named("Voice input", "Voice input: hold and speak; the text lands in the field and is not sent")}, icon("bi-mic"));
-    const reason = micGap();
-    if (reason) {
-      button.disabled = true;
-      button.title = `Voice input: ${reason}`;
-      return button;
-    }
-    const press = (event) => {
-      event.preventDefault();
-      record(field, button);
-    };
-    button.addEventListener("pointerdown", press);
-    for (const name of ["pointerup", "pointerleave", "pointercancel"]) {
-      button.addEventListener(name, release);
-    }
-    button.addEventListener("keydown", (event) => {
-      if ((event.key === " " || event.key === "Enter") && !event.repeat) {
-        press(event);
-      }
-    });
-    button.addEventListener("keyup", (event) => {
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        release();
-      }
-    });
-    return button;
-  }
-
-  async function record(field, button) {
-    if (mic.held || mic.recorder || mic.busy) {
-      return;
-    }
-    mic.held = true;
-    let media = null;
-    try {
-      media = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}});
-    } catch (error) {
-      mic.held = false;
-      toast("Microphone not available", [String(error.message || error)], false);
-      return;
-    }
-    if (!mic.held) {
-      media.getTracks().forEach((track) => track.stop());
-      return;
-    }
-    const recorder = new MediaRecorder(media);
-    const chunks = [];
-    recorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size) {
-        chunks.push(event.data);
-      }
-    });
-    recorder.addEventListener("stop", () => {
-      media.getTracks().forEach((track) => track.stop());
-      mic.recorder = null;
-      button.setAttribute("aria-pressed", "false");
-      transcribe(new Blob(chunks, {type: recorder.mimeType}), field, button);
-    }, {once: true});
-    mic.recorder = recorder;
-    recorder.start();
-    button.setAttribute("aria-pressed", "true");
-    mic.timer = window.setTimeout(release, state.speech.seconds * 1000);
-  }
-
-  function release() {
-    mic.held = false;
-    window.clearTimeout(mic.timer);
-    if (mic.recorder && mic.recorder.state === "recording") {
-      mic.recorder.stop();
-    }
-  }
-
-  async function wavOf(blob, sound) {
+  async function wavOf(blob, sound, seconds) {
     const decoded = await sound.decodeAudioData(await blob.arrayBuffer());
     const rate = state.speech.rate;
-    const length = Voice.frames(decoded.duration, rate, state.speech.seconds);
+    const length = Voice.frames(decoded.duration, rate, seconds);
     if (length < rate / 4) {
       throw new Error("too short: speak for at least a quarter second");
     }
@@ -347,29 +273,4 @@
     source.start();
     const rendered = await offline.startRendering();
     return Voice.wav(rendered.getChannelData(0), rate);
-  }
-
-  async function transcribe(blob, field, button) {
-    const sound = context();
-    if (!sound || !blob.size) {
-      return;
-    }
-    mic.busy = true;
-    button.disabled = true;
-    try {
-      const result = await send("/api/stt", await wavOf(blob, sound), "audio/wav");
-      if (!result.ok || !result.data) {
-        throw new Error(`${result.status} ${result.text}`.trim());
-      }
-      if (result.data.text) {
-        field.value = [field.value.trim(), result.data.text].filter(Boolean).join(" ");
-        field.dispatchEvent(new Event("input", {bubbles: true}));
-      }
-      field.focus();
-    } catch (error) {
-      toast("Voice input failed", [String(error.message || error)], false);
-    } finally {
-      mic.busy = false;
-      button.disabled = false;
-    }
   }
