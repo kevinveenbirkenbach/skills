@@ -32,8 +32,9 @@ FULL = {
     "resources": {"hidden": ["host:CPU", "agent:Stage", "disk:/mnt_20_data"], "tokens": "accumulated", "combined": True, "combinedHidden": ["burn:scope"]},
     "burn": {"overlays": ["fix", "score"]},
     "home": {"pins": [{"kind": "panel", "id": "resources-hardware", "w": 12, "h": 4}, {"kind": "task", "id": "work/feature", "w": 1, "h": 12}]},
+    "kanban": {"hidden": ["line"]},
 }
-PIN = {"kind": "panel", "id": "resources-hardware", "w": 6, "h": 3}
+PIN ={"kind": "panel", "id": "resources-hardware", "w": 6, "h": 3}
 EMBEDDED = re.compile(r'<script nonce="[^"]+" id="view" type="application/json">(.*?)</script>')
 MAKE = """
 const make = (tag) => {
@@ -288,7 +289,7 @@ class TestViewDocument(unittest.TestCase):
     def test_the_defaults_and_a_full_document_pass_unchanged(self):
         self.assertEqual(valid_view(copy.deepcopy(VIEW)), VIEW)
         self.assertEqual(valid_view(copy.deepcopy(FULL)), FULL)
-        self.assertEqual(VIEW, {"resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []}, "burn": {"overlays": []}, "home": {"pins": []}})
+        self.assertEqual(VIEW, {"resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []}, "burn": {"overlays": []}, "home": {"pins": []}, "kanban": {"hidden": []}})
 
     def test_unknown_or_missing_keys_and_malformed_values_are_refused(self):
         def changed(section: str | None, key: str | None, value: object) -> dict:

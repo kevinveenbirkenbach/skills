@@ -1,0 +1,6 @@
+[
+ {"position": "run", "id": "q-1", "kind": "test", "task": "work/bravo", "session": "s-docs", "agent": "Docs", "class": "fix", "prio": 2, "wsjf": null, "waited_s": 95, "eta_s": 240, "reason": "granted on its last poll", "trace": ["granted at its last poll", "slot test:1 of 2"]},
+ {"position": 1, "id": "q-2", "kind": "quality-high", "task": "work/alpha", "session": "s-stage", "agent": "Stage", "class": "hotfix", "prio": 1, "wsjf": 2.6667, "waited_s": 1260, "eta_s": 480, "reason": "RAM 61 % used + 15 % still to come reach the limit 75 %", "trace": ["hotfix first", "rank 0", "line slot:2 behind q-1", "RAM 61 % + 15 % reaches 75 %"]},
+ {"position": 2, "id": "q-4", "kind": "deploy", "task": "work/delta", "session": "s-skills", "agent": "Skills", "class": "main", "prio": null, "wsjf": null, "waited_s": 4000, "eta_s": null, "reason": "waits behind q-2", "trace": []},
+ {"position": 3, "id": "q-3", "kind": "test", "task": "work/charlie", "session": "s-stage", "agent": "Stage", "class": "feature", "prio": null, "wsjf": 1.5, "waited_s": 30, "eta_s": 3900, "reason": "all 1 test slots taken", "trace": ["rank 7", "waited 0 h", "line slot:2 behind q-2", "RAM 52 % + 15 GB fits"]}
+]

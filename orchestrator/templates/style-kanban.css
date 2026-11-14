@@ -32,6 +32,20 @@ svg .kanban-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-eve
 svg .kanban-arrow.pending .kanban-link { opacity: .55; }
 svg .kanban-tip { fill: var(--violet); }
 svg .kanban-queue { fill: none; stroke: var(--warn); stroke-width: 1.6; stroke-dasharray: 6 4; }
+.kanban-card .queue-place + .task-id { flex-basis: calc(100% - 2.4em); }
+.queue-place { display: inline-grid; flex: none; place-items: center; min-width: 1.7em; height: 1.7em; padding: 0 4px; border: 2px solid var(--warn); border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: var(--fs-2xs); font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1; }
+.queue-jobs { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.queue-job { display: grid; gap: 2px; min-width: 0; padding-top: 4px; border-top: 1px dashed var(--line); }
+.queue-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0; }
+.queue-chips .pill { max-width: 100%; padding: 0 6px; line-height: 18px; white-space: normal; overflow-wrap: anywhere; }
+.queue-chips .queue-why { min-width: 0; padding: 0 6px; font-size: var(--fs-xs); }
+.queue-reason, .queue-more { margin: 0; color: var(--muted); font-size: var(--fs-2xs); overflow-wrap: anywhere; }
+.queue-trace { display: grid; gap: 4px; margin: 0; padding-left: 1.4em; overflow-wrap: anywhere; }
+.legend-chip.k-queue-line { --c: var(--warn); }
+.legend-chip.k-queue-jobs { --c: var(--teal); }
+@media (max-width: 640px) {
+  .queue-why-text { display: none; }
+}
 svg .burn-finish-line { fill: none; stroke: var(--c); stroke-width: 2; stroke-dasharray: 8 3; }
 svg .burn-finish-end { fill: var(--c); }
 svg.burn .k-fixed, .burn-key.k-fixed { --c: var(--violet); }

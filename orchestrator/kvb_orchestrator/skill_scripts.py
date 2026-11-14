@@ -34,6 +34,10 @@ def bounded(stdout: str) -> str:
     return "\n".join([first if len(first) <= FIRST_LINE_LIMIT else "", ELIDED, rest[-OUTPUT_LIMIT:]])
 
 
+def script_env(home: Path, council: Path) -> dict[str, str]:
+    return {"PATH": SAFE_PATH, "HOME": str(home), "AGENTS_COUNCIL_ROOT": str(council), "PYTHONDONTWRITEBYTECODE": "1"}
+
+
 def script_module(script: Path) -> ModuleType | None:
     """Returns:
         The installed script as a module, loaded again after an install
@@ -73,7 +77,7 @@ class Scripts:
 
     def run(self, script: str, args: list[str]) -> dict:
         command = " ".join([Path(script).name, *args])
-        env = {"PATH": SAFE_PATH, "HOME": str(self.home), "AGENTS_COUNCIL_ROOT": str(self.council), "PYTHONDONTWRITEBYTECODE": "1"}
+        env = script_env(self.home, self.council)
         try:
             done = subprocess.run(
                 [sys.executable, str(self.skills / script), *args],
