@@ -113,7 +113,7 @@ const context = {
   Nav: require(`${dir}/nav.js`), Diffs: require(`${dir}/diffs.js`), Faces: {of: () => ({parts: []}), SIZE: 64},
   state: {badges: {tasks: 3, agents: 0, artifacts: 1}, inbox: [operator, review, ask, decision], messages: [{id: "m1", text: "Feedback on review:0123456789abcdef a.py:1-2: \"x\" fix", created_ts: now}], people: {}, graph: {nodes: []}, silence: null, presence: {}, kinds: {operator: "Operator"}},
   ui: {screen: "inbox", views: {tasks: "list"}, selected: new Set(), cursor: 0, snoozed: false, busy: false, review: null, file: 0},
-  KINDS: [["operator", "Operator"], ["review", "Review"]], speech: {current: null}, look: {hidden: new Set()}, settings: {}, known: {batches: new Set()},
+  KINDS: [["operator", "Operator"], ["review", "Review"]], speech: {current: null}, look: {hidden: new Set()}, settings: {channels: {title: true}}, known: {batches: new Set()},
   relative: new Intl.RelativeTimeFormat("en"), absolute: new Intl.DateTimeFormat("en"), calm: {matches: true}, drawn: {screen: "", sig: ""},
   proofFor: async (entries, label) => { calls.proofs.push({entries, label}); return {proof: {payload: "p", assertion: "a"}}; },
   sendJson: async (path, body) => { calls.posts.push({path, body}); return {ok: true, data: {id: "b1", due: now + 3}}; },
@@ -160,6 +160,12 @@ const badgeState = {keys: [...navButtons.keys()], text: tasksBadge.textContent, 
 state.badges = {tasks: 0, agents: 0, artifacts: 1};
 drawStatus();
 badgeState.zero = [tasksBadge.hidden, document.title];
+settings.channels.title = false;
+state.badges = {tasks: 2, agents: 0, artifacts: 1};
+drawStatus();
+badgeState.untitled = [tasksBadge.textContent, tasksBadge.hidden, document.title];
+settings.channels.title = true;
+state.badges = {tasks: 0, agents: 0, artifacts: 1};
 const results = {
   operator: {classes: classes(operatorCard), checkbox: all(operatorCard).filter((el) => el.tag === "input" && el.attrs.type === "checkbox").length, ref: operatorCard.dataset.ref, to: operatorCard.dataset.to,
     command: all(operatorCard).filter((el) => classes(el).includes("command")).map((el) => [el.dataset.path, all(el).find((inner) => inner.tag === "code").textContent]),
@@ -288,6 +294,7 @@ class TestOperatorPage(unittest.TestCase):
         self.assertEqual(status["keys"], ["home", "stream", "rules", "agents", "artifacts", "tasks", "resources"])
         self.assertEqual((status["text"], status["hidden"], status["urgent"], status["title"]), ("3", False, "badge urgent", "(3) Agent Orchestrator"))
         self.assertEqual(status["zero"], [True, "Agent Orchestrator"])
+        self.assertEqual(status["untitled"], ["2", False, "Agent Orchestrator"])
 
     def test_an_operator_task_is_a_stream_card_with_a_checkbox_and_every_action(self):
         card = self.data["operator"]

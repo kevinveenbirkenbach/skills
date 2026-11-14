@@ -33,7 +33,7 @@ SETTINGS = {
     "theme": "sky",
     "colors": {"top": "#0b1020", "bottom": "#2b3a67", "accent": "#8fadff"},
     "music": {"on": False, "volume": 0.4},
-    "notify": True,
+    "channels": {"browser": True, "sounds": True, "aloud": True, "title": True},
     "streams": [],
     "speech": {"threshold": 50},
     "space": {
@@ -188,7 +188,7 @@ def valid_settings(raw: object) -> dict:
         "theme": data["theme"],
         "colors": {key: color(colors[key], f"colors.{key}") for key in SETTINGS["colors"]},
         "music": {"on": flag(music["on"], "music.on"), "volume": number_in(music["volume"], "music.volume", 0.0, 1.0)},
-        "notify": flag(data["notify"], "notify"),
+        "channels": channels_setting(data["channels"]),
         "streams": [stream_entry(entry, index) for index, entry in enumerate(data["streams"])],
         "speech": speech_setting(data["speech"]),
         "space": space_setting(data["space"]),
@@ -216,6 +216,22 @@ def radio_moved(stored: object) -> object:
     return {**others, "speech": rest} if rest else others
 
 
+def channels_setting(raw: object) -> dict:
+    entry = section(raw, "channels", tuple(SETTINGS["channels"]))
+    return {name: flag(entry[name], f"channels.{name}") for name in SETTINGS["channels"]}
+
+
+def notify_moved(stored: object) -> object:
+    """Returns:
+        The stored settings with the old notify flag as the browser channel
+        and every other channel on; stored channels win over the flag.
+    """
+    if not isinstance(stored, dict) or "notify" not in stored:
+        return stored
+    kept = {key: value for key, value in stored.items() if key != "notify"}
+    return {"channels": {**SETTINGS["channels"], "browser": stored["notify"]}, **kept}
+
+
 def migrated(stored: object) -> object:
     """Returns:
         The stored settings in the current shape: the radio set moved to the
@@ -223,7 +239,7 @@ def migrated(stored: object) -> object:
         it may have been saved without the passkey, so the hub never dials
         it unsigned; re-adding it with the passkey resolves its redirects.
     """
-    stored = radio_moved(stored)
+    stored = notify_moved(radio_moved(stored))
     streams = stored.get("streams") if isinstance(stored, dict) else None
     if not isinstance(streams, list):
         return stored

@@ -245,7 +245,7 @@
 
   function speakRows(rows) {
     for (const row of rows.filter((entry) => entry.ts >= state.now - SPEECH_FRESH)) {
-      const steps = RadioSet.plan(row, radioSet, liveSpeech());
+      const steps = settings.channels.aloud ? RadioSet.plan(row, radioSet, liveSpeech()) : [];
       if (steps.length || (settings.bubbles && Bubbles.picked(row, radioSet))) {
         const line = row.text.split("\n").map((part) => part.trim()).find(Boolean) || "";
         say({row, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, sent: Boolean(RadioSet.ledgerOf(row, state.messages)), line: short(line), words: Bubbles.words(row.text), silent: !steps.length});

@@ -1,6 +1,8 @@
 .rule-form { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
 .rule-form > label, .settings .grid > label { min-width: 0; }
 .rule-form .field, .settings .grid .field { width: 100%; min-width: 0; }
+.settings fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.settings legend { margin-bottom: var(--sp-2); padding: 0; color: var(--muted); font-size: var(--fs-sm); }
 .rule-form [hidden] { display: none; }
 .rule-form > label.check { display: inline-flex; min-height: 34px; }
 .speaker-face { position: relative; display: inline-grid; flex: none; border-radius: 50%; }

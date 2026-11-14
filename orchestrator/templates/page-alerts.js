@@ -42,6 +42,19 @@
     button.disabled = permission !== "default";
   }
 
+  /**
+   * @param {object} before the channels of the settings the page held until now.
+   */
+  function syncChannels(before) {
+    if (before.sounds && !settings.channels.sounds) {
+      silenceBeeps();
+    }
+    if (before.aloud && !settings.channels.aloud) {
+      cancelSpeech();
+    }
+    drawTitle();
+  }
+
   async function askNotify() {
     if ("Notification" in window) {
       await Notification.requestPermission();
@@ -58,13 +71,13 @@
       const newRadio = state.radio.filter((row) => !known.radio.has(`${row.ts}|${row.from}|${row.text.slice(0, 40)}`));
       const direct = newRadio.filter((row) => row.to.includes(HUMAN));
       const present = {mayday: newAlarms.length > 0, review: fresh.some((item) => item.kind !== "operator"), direct: direct.length > 0, radio: newRadio.length > 0};
-      const kind = radioSet.mode === "silence" ? null : Voice.beep(present, tones(), SOUND_KINDS.map(([id]) => id));
+      const kind = radioSet.mode === "silence" || !settings.channels.sounds ? null : Voice.beep(present, tones(), SOUND_KINDS.map(([id]) => id));
       if (kind) {
         play(kind, loudness(kind));
       }
       const lead = kind ? Math.max(...TONES[kind].map(([, at, length]) => at + length)) : 0;
       window.setTimeout(() => speakRows(newRadio), lead * 1000);
-      if (settings.notify && "Notification" in window && Notification.permission === "granted") {
+      if (settings.channels.browser && "Notification" in window && Notification.permission === "granted") {
         for (const row of newAlarms) {
           new Notification(`${row.class === "mayday" ? "Mayday" : "Pan-Pan"} from ${dash(row.from)}`, {body: row.text.slice(0, 200), tag: `alarm-${row.ts}`, requireInteraction: row.class === "mayday"});
         }
