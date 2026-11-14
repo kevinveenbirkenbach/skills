@@ -49,6 +49,11 @@ class TestBackfill(unittest.TestCase):
     def rows(self, council: Path) -> list[dict]:
         return [json.loads(line) for line in (council / JOURNAL_NAME).read_text(encoding="utf-8").splitlines()]
 
+    def test_runs_under_python_isolated_mode_from_another_directory(self):
+        done = subprocess.run([sys.executable, "-I", str(BACKFILL), "--help"], cwd=self.scratch, capture_output=True, text=True, check=False, timeout=HANG)
+        self.assertEqual((done.returncode, done.stderr), (0, ""))
+        self.assertIn("--repo", done.stdout)
+
     def test_three_commits_with_blocks_give_three_rows_then_none(self):
         council = self.council("one")
         first = backfill(council, "--repo", str(self.fixture.a))

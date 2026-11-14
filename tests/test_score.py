@@ -35,6 +35,15 @@ class TestScore(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         return result.stdout.splitlines(), result.returncode
 
+    def test_runs_under_python_isolated_mode_from_another_directory(self):
+        with tempfile.TemporaryDirectory() as elsewhere:
+            result = subprocess.run(
+                [sys.executable, "-I", str(SCORE), *flags(BASE), "--message-block"],
+                cwd=elsewhere, env=ENV, capture_output=True, text=True, check=False,
+            )
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        self.assertIn("🎯 Fix: 95 %", result.stdout)
+
     def test_formula_and_line_format(self):
         self.assertEqual(
             self._score(fix="95", **{"break": "4"}),
