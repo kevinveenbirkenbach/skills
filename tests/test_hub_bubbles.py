@@ -73,7 +73,7 @@ function page(fault) {
     },
     Voice: {...Voice, beep: () => null},
     RadioSet: {plan: (row) => (["mayday", "security"].includes(row.class) ? [{kind: "burst"}] : []), ledgerOf: () => null},
-    settings: {bubbles: true, notify: false, music: {}},
+    settings: {bubbles: true, channels: {browser: false, sounds: true, aloud: true, title: true}, music: {}},
     radioSet: {mode: "auto", classes: ["mayday", "pan-pan", "security"], sounds: {}, squelch: 1},
     state: {now: 1000, radio: [], inbox: [], pending: [], messages: [], speech: {tts: false, gate: {open: false}}},
     known: {inbox: null, alarms: null, radio: null, batches: new Set(), now: null},

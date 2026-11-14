@@ -56,6 +56,7 @@
   const STATE_TIMEOUT = 15000;
   const THEME_CHOICES = [["sky", "Sky (follows the light outside)"], ["light", "Always light"], ["dark", "Always dark"], ["custom", "Custom colors"]];
   const COLOR_FIELDS = [["top", "Sky at the top"], ["bottom", "Sky at the horizon"], ["accent", "Accent"]];
+  const CHANNEL_CHOICES = [["browser", "Desktop notifications when the browser allows them"], ["sounds", "Sound tones"], ["aloud", "Read radio aloud"], ["title", "Waiting count in the tab title"]];
   const STAGE_LABELS = {night: "Night", astronomical: "Astronomical twilight", nautical: "Nautical twilight", civil: "Civil twilight", golden: "Golden hour", day: "Day"};
   const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
   const COMPASS = [["N", "North"], ["NE", "Northeast"], ["E", "East"], ["SE", "Southeast"], ["S", "South"], ["SW", "Southwest"], ["W", "West"], ["NW", "Northwest"]];

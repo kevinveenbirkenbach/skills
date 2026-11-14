@@ -1,6 +1,7 @@
   let redirectsTold = "";
 
   function adoptSettings(next) {
+    const before = settings.channels;
     settings = next;
     settingsSig = JSON.stringify(next);
     if (space.edits === space.saved) {
@@ -14,6 +15,7 @@
     syncRadio();
     musicButton();
     syncBubbles();
+    syncChannels(before);
   }
 
   async function saveSettings(next) {
@@ -125,7 +127,7 @@
     judge();
     const musicOn = h("input", {type: "checkbox", checked: settings.music.on});
     const volume = h("input", {type: "range", min: 0, max: 1, step: 0.05, value: settings.music.volume, "aria-label": "Overall volume"});
-    const notify = h("input", {type: "checkbox", checked: settings.notify});
+    const channels = Object.fromEntries(CHANNEL_CHOICES.map(([id]) => [id, h("input", {type: "checkbox", name: `channel-${id}`, checked: settings.channels[id]})]));
     const form = h("form", {class: "settings"},
       ambience(),
       h("section", {}, h("h3", {}, "Location"), h("p", {class: "muted"}, "Sun, moon and stars stand where you see them from here, looking south; under 🔭 Sky (key h) you turn the view. Decimal degrees, north and east positive."),
@@ -133,8 +135,8 @@
       h("section", {}, h("h3", {}, "Appearance"), h("label", {}, "Colors", theme), custom, verdict),
       h("section", {}, h("h3", {}, "Music"), h("p", {class: "muted"}, "Generative ambient music, made offline: calm with an empty inbox, a little tenser when something waits, quieter under messages."),
         h("div", {class: "grid"}, h("label", {class: "check"}, musicOn, "Music on"), h("label", {}, "Overall volume (music and radio)", volume))),
-      h("section", {}, h("h3", {}, "Notifications"), h("p", {class: "muted"}, "Mode, tones, squelch, the speech threshold, reading aloud and the stations sit in the radio panel behind the radio button in the header."),
-        h("label", {class: "check"}, notify, "Show desktop notifications when the browser allows them")),
+      h("section", {}, h("h3", {}, "Notifications"), h("p", {class: "muted"}, "Each channel switches one way the hub tells you about something new. Which kinds sound and which classes are read aloud, the mode, squelch, speech threshold and stations sit in the radio panel behind the radio button in the header."),
+        h("fieldset", {class: "grid channels"}, h("legend", {}, "Notification channels"), CHANNEL_CHOICES.map(([id, label]) => h("label", {class: "check"}, channels[id], label)))),
       passkeySection(),
       h("div", {class: "sheet-foot"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), h("button", {type: "submit", class: "btn primary"}, "Save")));
     form.addEventListener("submit", async (event) => {
@@ -146,7 +148,7 @@
         theme: theme.value,
         colors: Object.fromEntries(COLOR_FIELDS.map(([id]) => [id, colors[id].value])),
         music: {on: musicOn.checked, volume: Number(volume.value)},
-        notify: notify.checked,
+        channels: Object.fromEntries(CHANNEL_CHOICES.map(([id]) => [id, channels[id].checked])),
         streams: settings.streams,
         speech: settings.speech,
         space: savedSpace(),

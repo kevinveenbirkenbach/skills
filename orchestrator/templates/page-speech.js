@@ -291,7 +291,7 @@
     const [spoken, quiet] = [[], []];
     for (const row of rows) {
       const fresh = row.ts >= state.now - SPEECH_FRESH;
-      const steps = fresh ? RadioSet.plan(row, radioSet, liveSpeech()) : [];
+      const steps = fresh && settings.channels.aloud ? RadioSet.plan(row, radioSet, liveSpeech()) : [];
       const line = short(row.text.split("\n").map((part) => part.trim()).find(Boolean) || "");
       if (fresh && (steps.length || (settings.bubbles && Bubbles.picked(row, radioSet)))) {
         spoken.push({row, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, sent: Boolean(RadioSet.ledgerOf(row, state.messages)), line, words: Bubbles.words(row.text), silent: !steps.length});

@@ -117,8 +117,12 @@
       banner.hidden = !silence;
       banner.replaceChildren(...(silence ? [h("p", {class: "text", title: alarm}, alarm), iconBtn("bi-x-octagon", "cancel", "btn small", () => confirmAct("clear-mayday", []), "cancel: end the mayday (radio.py clear)")] : []));
     }
-    document.title = `${state.badges.tasks ? `(${state.badges.tasks}) ` : ""}Agent Orchestrator`;
+    drawTitle();
     window.setTimeout(measure, 0);
+  }
+
+  function drawTitle() {
+    document.title = `${settings.channels.title && state.badges.tasks ? `(${state.badges.tasks}) ` : ""}Agent Orchestrator`;
   }
 
   function toggleLeitstand() {
