@@ -18,6 +18,7 @@ npm-debug.log*
 .mcp.json
 
 .state/
+.codebase-memory/
 
 # Editor / OS
 .DS_Store

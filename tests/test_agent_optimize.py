@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -24,17 +26,17 @@ class TestAgents(unittest.TestCase):
         self.bin.mkdir()
         os.symlink(GIT, self.bin / "git")
 
-    def _run(self, repo: Path) -> subprocess.CompletedProcess:
+    def _run(self, repo: Path, **env: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--repo", str(repo)],
             capture_output=True,
             text=True,
-            env={"PATH": str(self.bin), "HOME": str(self.tmp)},
+            env={"PATH": str(self.bin), "HOME": str(self.tmp), **env},
             check=False,
         )
 
-    def _report(self, repo: Path) -> dict[str, tuple[str, str]]:
-        result = self._run(repo)
+    def _report(self, repo: Path, **env: str) -> dict[str, tuple[str, str]]:
+        result = self._run(repo, **env)
         self.assertEqual(result.returncode, 0, result.stderr)
         return {check: (state, detail) for check, state, detail in (line.split("\t") for line in result.stdout.splitlines())}
 
@@ -69,9 +71,37 @@ class TestAgents(unittest.TestCase):
                 "links": ("drift", "docs/b.md"),
                 "index-pointer": ("ok", "AGENTS.md names codebase-memory-mcp"),
                 "index-binary": ("ok", "codebase-memory-mcp on PATH"),
+                "auto-index": ("missing", f"{self.tmp}/.cache/codebase-memory-mcp/_config.db not found"),
                 "snapshot": ("ignored", ".codebase-memory/graph.db.zst"),
             },
         )
+
+    def _config(self, value: str | None) -> Path:
+        cache = self.tmp / "cache"
+        cache.mkdir()
+        with closing(sqlite3.connect(cache / "_config.db")) as db:
+            db.execute("CREATE TABLE config (key TEXT PRIMARY KEY, value TEXT)")
+            if value is not None:
+                db.execute("INSERT INTO config VALUES ('auto_index', ?)", (value,))
+            db.commit()
+        (cache / "_config.db").chmod(0o444)
+        cache.chmod(0o555)
+        self.addCleanup(cache.chmod, 0o755)
+        return cache
+
+    def test_auto_index_read_only(self):
+        cache = self._config("false")
+        report = self._report(self.tmp, CBM_CACHE_DIR=str(cache))
+        self.assertEqual(report["auto-index"], ("ok", "auto_index = false (the graph.py hook indexes through the gates)"))
+        self.assertEqual(sorted(path.name for path in cache.iterdir()), ["_config.db"])
+
+    def test_auto_index_on_is_drift(self):
+        state, detail = self._report(self.tmp, CBM_CACHE_DIR=str(self._config("true")))["auto-index"]
+        self.assertEqual(state, "drift")
+        self.assertIn("bypasses", detail)
+
+    def test_auto_index_unset_is_ok(self):
+        self.assertEqual(self._report(self.tmp, CBM_CACHE_DIR=str(self._config(None)))["auto-index"][0], "ok")
 
     def test_bare_directory(self):
         report = self._report(self.tmp)
@@ -82,6 +112,7 @@ class TestAgents(unittest.TestCase):
                 "links": "ok",
                 "index-pointer": "missing",
                 "index-binary": "missing",
+                "auto-index": "missing",
                 "snapshot": "missing",
             },
         )

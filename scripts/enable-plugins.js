@@ -127,6 +127,7 @@ const SCRIPT_HOOKS = [
   ["kvb-org-queue/scripts/queue.py", "PreToolUse", "Bash", "block", {}],
   ["kvb-org-perform/scripts/log.py", "PreToolUse", "Agent|Task", "spawn", {}],
   ["kvb-org-perform/scripts/log.py", "PostToolUse", "Bash", "persist", {}],
+  ["kvb-agent-optimize/scripts/graph.py", "PreToolUse", null, "hook", { timeout: 30 }],
 ];
 for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
   data.hooks[event] = data.hooks[event] || [];
@@ -142,4 +143,4 @@ for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate and resource watch, the kvb-org-radio hooks, the kvb-org-queue gate, and the kvb-org-perform log in ${settingsPath}`);
+console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate and resource watch, the kvb-org-radio hooks, the kvb-org-queue gate, the kvb-org-perform log, and the kvb-agent-optimize code graph hook in ${settingsPath}`);

@@ -12,22 +12,26 @@ tokens.
 
 1. **Depends on**: nothing. Independent of 010, 011 and quality 003.
 2. **Timing**: implementation starts once the running agent lanes are done.
-3. **Automatic per repository**: a session that opens a repository without a
-   graph indexes it itself, with no `index_repository` by hand and no
-   operator step; afterwards the graph stays fresh incrementally through the
-   watcher. Mechanism found in codebase-memory-mcp 0.12.1: both, with
-   separate jobs. The daemon's `auto_index` indexes and watches the MCP
-   session root when a session connects
-   (`application_background_initialize_impl` in `src/daemon/application.c`).
-   The SessionStart hook (`hook-augment`) only adds context: it never
-   indexes and never spawns a daemon (`src/main.c`). Measured 2026-11-14:
-   `_config.db` holds `auto_index = true`, so the skills `make install` did
-   switch it on (`scripts/install.sh`), yet `cbm-daemon.log` holds 1113
-   `daemon.autoindex.skipped` lines for infinito-nexus-core and 8 for the
-   `feature-store-i18n` worktree, all `reason=unsafe_or_unavailable_path
-   files=-1`, and not one `autoindex.done`. `files=-1` means the bounded
-   admission count (5 s deadline, or an entry it cannot observe) failed, not
-   the file limit; the last graph was written 2026-11-12 22:24.
+3. **Automatic per repository** (amended by the operator 2026-11-14, pick
+   "auto_index aus"): the daemon's `auto_index` stays off; the skills
+   `make install` sets `codebase-memory-mcp config set auto_index false`. The
+   skills PreToolUse hook (`kvb-agent-optimize/scripts/graph.py hook`) indexes
+   every git root a tool call touches, the session root included, once it has
+   no graph, with no `index_repository` by hand and no operator step beyond
+   the one-time config: a root with more files than `queue_file_threshold`
+   (tracked plus untracked, not ignored) or with a `.gitmodules` file is
+   enqueued through `kvb-org-queue` under `queue_task` and never started by
+   the hook; a smaller root starts only while `kvb-org-organize` reports the
+   memory stage ok. Afterwards the graph stays fresh incrementally through
+   the watcher of the permanent daemon (decision 5). Rejected: the daemon's
+   `auto_index` for the session root, because it indexes with no queue and no
+   memory gate (the class of the 2026-11-14 13:15 host freeze), and because
+   upstream 0.12.1 refuses every repository holding a symlink: its bounded
+   admission count (`cbm_discover_count_bounded`, count-only mode in
+   `src/discover/discover.c`) fails on the first symlink or unreadable
+   directory, measured as 1210 `daemon.autoindex.skipped
+   reason=unsafe_or_unavailable_path files=-1` lines for infinito-nexus-core,
+   whose `playbooks/*/group_vars` are committed symlinks.
 4. **Fix the refusal, no workaround**: the root cause of that admission
    refusal is found and removed, in our repositories or upstream through an
    issue. Rejected: raising `auto_index_limit` (the count fails, the limit is
@@ -53,11 +57,21 @@ tokens.
    `src/main.c`), not per session, so a second session within 15 minutes
    hears nothing; `.hook-daemon-absent-notice` was last written 2026-11-14
    12:21. The skills hook checks `codebase-memory-mcp daemon status` at the
-   first tool call of a session, after the MCP servers connected, and on a
-   missing daemon prints once per session id:
-   `codebase-memory-mcp: no daemon; run: systemctl --user enable --now
-   kvb-code-graph.service`. The same command becomes one `kvb-org-operator`
-   row.
+   first tool call of a session, after the MCP servers connected, and
+   without a permanent daemon prints once per session id the remedy that
+   holds (amended 2026-11-14, skeptic round 5): with
+   `kvb-code-graph.service` installed but inactive
+   `codebase-memory-mcp: no permanent daemon; run: systemctl --user enable
+   --now kvb-code-graph.service`, and only this command becomes one
+   `kvb-org-operator` row; with the unit active and a session-managed daemon
+   that the service takes over after the last session ends, nothing to do;
+   with the unit active and no daemon, the `journalctl` check. Upstream
+   refuses `daemon start` while a session-managed daemon runs, so the
+   supervisor does not start one then; it checks `daemon status` every
+   30 s and starts the permanent daemon within one round after the last
+   session ends. Only consecutive failing starts wait longer, doubling up
+   to 1 h (amended 2026-11-14, skeptic round 6). `make install` restarts a
+   running supervisor (`try-restart`), so a reinstall takes effect at once.
 7. **Worktrees get their own graph**: codebase-memory-mcp registers every
    project under its absolute root, so each linked worktree is a separate
    index (`docs/CONFIGURATION.md`, `ignore_worktrees`); one graph cannot
@@ -130,9 +144,13 @@ flowchart TD
 
 ### Session root
 
-- [ ] The commit that fixes the admission refusal names its root cause, and
-      a new session in infinito-nexus-core then writes `autoindex.done` for
-      it to `~/.cache/codebase-memory-mcp/logs/cbm-daemon.log`.
+- [ ] The first tool call of a new session in infinito-nexus-core enqueues
+      core once and starts nothing itself (decision 3, amended 2026-11-14).
+      The hook writes its decisions alone to `<project>.log`; the queue job
+      and the helper write to `<project>.index.log`. In
+      `~/.local/state/kvb-code-graph/logs/`,
+      `grep -o '^graph: [a-z]*' home-kevinveenbirkenbach-Repositories-github.com-kevinveenbirkenbach-infinito-nexus-core.log | sort | uniq -c`
+      prints exactly `1 graph: queue`, before and after the job ran.
 - [ ] Fresh clone: a session started in a new `git clone` of skills finds the
       clone in `list_projects` with more than 0 nodes, with no
       `index_repository` call in its transcript and no new operator row.
@@ -166,20 +184,24 @@ flowchart TD
 
 ### Daemon notice
 
-- [ ] With no daemon running, the first tool call of a session prints the
-      notice with the exact command once, later tool calls of that session
-      print nothing, and a second session prints it once again.
-- [ ] The command appears as one `kvb-org-operator` row, not one per session.
-- [ ] With a daemon running, no notice is printed.
+- [ ] With no daemon running and the unit inactive, the first tool call of a
+      session prints the notice with the exact command once, later tool calls
+      of that session print nothing, and a second session prints it once
+      again.
+- [ ] The command appears as one `kvb-org-operator` row, not one per session;
+      with the unit active no row is added.
+- [ ] With a permanent daemon running, no notice is printed.
 
 ### Local only and instructions
 
 - [ ] `git check-ignore -q .codebase-memory/graph.db.zst` exits 0 in the main
       checkouts of skills, infinito-nexus-core, gui, package-manager and
       quality.
-- [ ] `kvb-agent-optimize/SKILL.md` step 2 names the daemon `auto_index` for
-      the session root and the hook for every other repository, and no longer
-      says `make install` alone indexes every repository a session opens.
+- [ ] `kvb-agent-optimize/SKILL.md` step 2 says `make install` turns the
+      daemon `auto_index` off and the hook indexes every git root, the
+      session root included (decision 3, amended 2026-11-14):
+      `` grep -Fc -e '`auto_index` off' -e 'the session root included' skills/kvb-agent-optimize/SKILL.md ``
+      prints 2.
 - [ ] `agents.py` reports `auto_index` from inside the agent sandbox by
       opening `_config.db` read-only.
 - [ ] `AGENTS.md` of skills still sends code questions to the graph first and

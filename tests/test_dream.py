@@ -196,6 +196,7 @@ class TestSettingsRegistration(unittest.TestCase):
             ("PreToolUse", "kvb-org-organize/scripts/watch.py"): 1,
             ("PreToolUse", "kvb-org-queue/scripts/queue.py"): 1,
             ("PreToolUse", "kvb-org-perform/scripts/log.py"): 1,
+            ("PreToolUse", "kvb-agent-optimize/scripts/graph.py"): 1,
             ("PostToolUse", "kvb-org-organize/scripts/watch.py"): 1,
             ("PostToolUse", "kvb-org-perform/scripts/log.py"): 1,
         }

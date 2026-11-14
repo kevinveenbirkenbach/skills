@@ -172,10 +172,31 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	if ! curl -fsSL --proto '=https' https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash; then
 		warn "skills: the codebase-memory-mcp installer failed; the code graph keeps its previous setup."
 	fi
-	if (ulimit -c 0; codebase-memory-mcp config set auto_index true); then
-		log "skills: auto-indexing every repository a session opens into the code graph"
+	if (ulimit -c 0; codebase-memory-mcp config set auto_index false); then
+		log "skills: daemon auto_index off; the kvb-agent-optimize graph.py hook indexes every git root a session touches, the session root included, through its size and memory gates"
 	else
 		warn "skills: codebase-memory-mcp is not runnable from PATH; the code graph stays off (see kvb-agent-optimize)."
+	fi
+	graph_config="${XDG_CONFIG_HOME:-${HOME}/.config}/kvb-code-graph/config.json"
+	graph_settings=""
+	if [[ -f "${graph_config}" ]]; then
+		graph_settings="$(<"${graph_config}")"
+	fi
+	if [[ "${graph_settings}" != *'"queue_file_threshold"'* || "${graph_settings}" != *'"queue_task"'* ]]; then
+		warn "skills: kvb-code-graph: no config at ${graph_config} with queue_file_threshold and queue_task; the graph.py hook indexes nothing until the operator sets both (see kvb-agent-optimize)."
+	fi
+	if command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null && [[ -x "${HOME}/.local/bin/codebase-memory-mcp" ]]; then
+		log "skills: enabling kvb-code-graph.service, which keeps a permanent codebase-memory-mcp daemon so every graph stays watched"
+		mkdir -p "${HOME}/.config/systemd/user"
+		cp -f "${REPO_ROOT}/skills/kvb-agent-optimize/systemd/kvb-code-graph.service" "${HOME}/.config/systemd/user/"
+		systemctl --user daemon-reload
+		systemctl --user try-restart kvb-code-graph.service || true
+		if ! systemctl --user enable --now kvb-code-graph.service; then
+			systemctl --user enable kvb-code-graph.service || true
+			log "skills: kvb-code-graph.service enabled; it did not start now and takes effect at next login."
+		fi
+	else
+		warn "skills: no systemd user session or no ~/.local/bin/codebase-memory-mcp; graphs keep their watch only while a session runs."
 	fi
 	if command -v medusa &>/dev/null; then
 		log "skills: the MEDUSA security scanner is installed"

@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep a permanent codebase-memory-mcp daemon so every graph stays watched after the last agent session
+
+[Service]
+Type=simple
+Environment=KVB_CODE_GRAPH_BIN=%h/.local/bin/codebase-memory-mcp
+ExecStart=/usr/bin/python3 -I %h/.agents/skills/kvb-agent-optimize/scripts/graph.py supervise
+KillMode=process
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target
