@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -39,6 +41,7 @@ BASE = {
     "loaded": {},
     "exclusive": set(),
     "light": set(),
+    "drain": None,
     "now": NOW,
 }
 CHILD = (
@@ -78,6 +81,10 @@ def job(seq: int, **fields: object) -> dict:
     }
 
 
+def idle() -> tuple[bool, list]:
+    return False, []
+
+
 def stored(seq: int, status: str, pid: int, pid_start: str | None, child: int | None,
            child_start: str | None) -> dict:
     return {
@@ -88,23 +95,31 @@ def stored(seq: int, status: str, pid: int, pid_start: str | None, child: int | 
     }
 
 
-class TestEvaluate(unittest.TestCase):
+class Passes:
     @classmethod
     def setUpClass(cls):
         cls.queue = _load(QUEUE)
 
-    def decide(self, entries: list[dict], **overrides: object) -> dict:
+    def run_pass(self, entries: list[dict], **overrides: object) -> tuple[dict, str | None, list[dict]]:
         footprints = {e["id"]: {"ram": 0, "cpu": 0} for e in entries} | overrides.pop("footprints", {})
         return self.queue.evaluate(entries, **{**BASE, "footprints": footprints, **overrides})
 
-    def test_the_budget_refuses_a_job_whose_share_would_pass_it_and_reserves_it(self):
+    def decide(self, entries: list[dict], **overrides: object) -> dict:
+        return self.run_pass(entries, **overrides)[0]
+
+
+class TestEvaluate(Passes, unittest.TestCase):
+    def test_the_budget_refuses_a_job_whose_share_would_pass_it_and_a_smaller_one_backfills(self):
         running = job(1, kind="test", status="active")
         candidate = job(2, kind="gui-dind", workdir="/x")
         small = job(3, task="work/b", workdir="/y")
         shares = {"j1": {"ram": 60, "cpu": 40}, "j2": {"ram": 30, "cpu": 20}, "j3": {"ram": 10, "cpu": 5}}
         verdicts = self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=shares)
-        self.assertEqual(verdicts["j2"], "RAM 60 % in use or reserved + 30 % > budget 75 %; reserved")
-        self.assertEqual(verdicts["j3"], "RAM 90 % in use or reserved + 10 % > budget 75 %; reserved")
+        self.assertEqual(verdicts["j2"], "RAM 60 % in use or reserved + 30 % > budget 75 %")
+        self.assertIsNone(verdicts["j3"])
+        fat = {**shares, "j3": {"ram": 16, "cpu": 5}}
+        verdicts = self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=fat)
+        self.assertEqual(verdicts["j3"], "RAM 60 % in use or reserved + 16 % > budget 75 %")
         unbounded = {"ram": 1000, "cpu": 1000}
         self.assertEqual(
             self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=shares, budget=unbounded),
@@ -115,12 +130,12 @@ class TestEvaluate(unittest.TestCase):
         alone = self.decide([job(1)], footprints={"j1": {"ram": 90, "cpu": 150}})
         self.assertEqual(alone, {"j1": None})
         busy = self.decide([job(1, status="active"), job(2)], footprints={"j1": {"ram": 1, "cpu": 70}, "j2": {"ram": 1, "cpu": 40}})
-        self.assertEqual(busy, {"j2": "CPU 70 % in use or reserved + 40 % > budget 100 %; reserved"})
+        self.assertEqual(busy, {"j2": "CPU 70 % in use or reserved + 40 % > budget 100 %"})
 
     def test_a_share_beyond_the_budget_runs_only_alone_even_beside_a_job_of_no_share(self):
         whole = {"ram": 80, "cpu": 1}
         beside = self.decide([job(1, status="active"), job(2)], footprints={"j1": {"ram": 0, "cpu": 0}, "j2": whole})
-        self.assertEqual(beside, {"j2": "RAM 0 % in use or reserved + 80 % > budget 75 %; reserved"})
+        self.assertEqual(beside, {"j2": "RAM 0 % in use or reserved + 80 % > budget 75 %"})
         self.assertEqual(self.decide([job(2)], footprints={"j2": whole}), {"j2": None})
 
     def test_load_counts_the_ram_in_use_plus_what_is_still_to_come(self):
@@ -338,18 +353,21 @@ class TestEvaluate(unittest.TestCase):
             {"j1": "quality-high runs only beside test-nostack, but iteration runs"},
         )
 
-    def test_an_exclusive_entry_kept_out_by_a_running_job_holds_back_lower_non_light_entries(self):
+    def test_r5_an_exclusive_entry_kept_out_by_a_running_job_holds_back_lower_non_light_entries_at_once(self):
         gates = {
             "exclusive": {"quality-high"}, "light": {"test-nostack"},
             "slot_limits": {"quality-high": 1, "iteration": 2, "test-nostack": 2},
         }
         running = job(1, kind="iteration", status="active")
         gate, deploy, light = job(2, kind="quality-high"), job(3, kind="iteration", task="work/b"), job(4, kind="test-nostack", task="work/c")
-        self.assertEqual(self.decide([running, gate, deploy, light], **gates), {
-            "j2": "quality-high runs only beside test-nostack, but iteration runs",
-            "j3": "waits behind j2, which needs the host beside light kinds only",
-            "j4": None,
-        })
+        held = {"j2": "quality-high runs only beside test-nostack, but iteration runs", "j3": "drained for j2", "j4": None}
+        verdicts, drain, _ = self.run_pass([running, gate, deploy, light], **gates)
+        self.assertEqual((verdicts, drain), (held, None))
+        self.assertEqual(self.decide([running, gate, deploy, light], drain="j2", **gates), held)
+        greedy = {"j1": {"ram": 30, "cpu": 30}, "j2": {"ram": 40, "cpu": 40}, "j3": {"ram": 5, "cpu": 5}, "j4": {"ram": 30, "cpu": 5}}
+        self.assertEqual(self.decide([running, gate, deploy, light], footprints=greedy, **gates)["j4"], None)
+        self.assertEqual(self.decide([running, gate, deploy, light], footprints=greedy | {"j4": {"ram": 40, "cpu": 70}}, **gates)["j4"],
+                         "drained for j2")
         self.assertEqual(
             self.decide([gate, deploy, light], **gates),
             {"j2": None, "j3": "quality-high runs only beside test-nostack", "j4": None},
@@ -379,11 +397,11 @@ class TestEvaluate(unittest.TestCase):
         self.queue.rejoin(data, polling, NOW)
         self.assertEqual((polling["seq"], polling["enqueued"], polling["polled"], data["seq"]), (3, NOW - HOUR, NOW, 8))
 
-    def test_disk_reservation_keeps_smaller_jobs_from_starving_a_big_one(self):
+    def test_a_smaller_job_backfills_past_a_big_head_the_disk_floor_blocks(self):
         big, small = job(1, need_gb=50), job(2, task="work/b", need_gb=5)
-        verdicts = self.decide([big, small], free_gb=40.0)
-        self.assertEqual(verdicts["j1"], "50 GB would cut into the 10 GB floor; reserved")
-        self.assertEqual(verdicts["j2"], "5 GB would cut into the 10 GB floor; reserved")
+        verdicts, drain, _ = self.run_pass([big, small], free_gb=40.0)
+        self.assertEqual(verdicts, {"j1": "50 GB would cut into the 10 GB floor", "j2": None})
+        self.assertIsNone(drain)
         self.assertIsNone(self.decide([small], free_gb=40.0)["j2"])
         running = job(3, need_gb=25, status="active")
         self.assertIsNone(self.decide([running, job(4, need_gb=5)], free_gb=40.0)["j4"])
@@ -406,38 +424,33 @@ class TestEvaluate(unittest.TestCase):
             job(1, workdir="/w", status="active"), job(2, workdir="/w"), job(3, workdir="/x"),
             job(4, task="work/b", workdir="/x"),
         ])
-        self.assertEqual(verdicts, {"j2": "/w runs another job", "j3": None, "j4": "/x runs another job"})
+        self.assertEqual(verdicts, {"j2": "waits in line behind j1", "j3": None, "j4": "waits in line behind j3"})
 
     def test_a_hotfix_the_host_load_holds_back_holds_back_every_entry_after_it_and_a_normal_one_does_not(self):
         load = "RAM 55 % used + 42 % still to come reach the limit 90 %"
         hotfix, light = job(1, hotfix="main-red"), job(2, task="work/b")
-        self.assertEqual(
-            self.decide([hotfix, light], loaded={"j1": load}),
-            {"j1": load, "j2": "waits behind hotfix j1, which the host load holds back"},
-        )
+        self.assertEqual(self.decide([hotfix, light], loaded={"j1": load}), {"j1": load, "j2": "waits behind hotfix j1"})
         self.assertEqual(self.decide([job(1), light], loaded={"j1": load}), {"j1": load, "j2": None})
         self.assertEqual(self.decide([hotfix, light]), {"j1": None, "j2": None})
 
-    def test_with_no_job_active_a_head_the_host_load_alone_keeps_out_reserves_nothing_and_with_one_active_it_does(self):
+    def test_r5_a_head_the_host_load_keeps_out_reserves_nothing_and_exclusive_kinds_share_no_line(self):
         load = "RAM 55 % used + 41 % still to come reach the limit 90 %"
         head, twin = job(1, kind="quality-high"), job(2, kind="quality-high", task="work/b")
         gate, light = job(3, task="work/b"), job(4, kind="test-nostack", task="work/c")
         shares = {"j1": {"ram": 41, "cpu": 62}, "j2": {"ram": 41, "cpu": 62}, "j3": {"ram": 20, "cpu": 40}, "j4": {"ram": 6, "cpu": 40}}
         rules = {"slot_limits": {"quality-high": 1, "test": 5, "test-nostack": 6}, "exclusive": {"quality-high", "test"}, "light": {"test-nostack"}}
         loaded = {"j1": load, "j2": load}
-        self.assertEqual(
-            self.decide([head, twin, gate, light], loaded=loaded, footprints=shares, **rules),
-            {"j1": load, "j2": load, "j3": None, "j4": None},
-        )
+        line = {"j2": load, "j3": None, "j4": None}
+        self.assertEqual(self.decide([head, twin, gate, light], loaded=loaded, footprints=shares, **rules), {"j1": load, **line})
         running = job(5, kind="test-nostack", task="work/c", status="active")
         self.assertEqual(
             self.decide([running, head, twin, gate, light], loaded=loaded, footprints=shares | {"j5": {"ram": 6, "cpu": 11}}, **rules),
-            {"j1": None, "j2": "all 1 quality-high slots taken", "j3": "test runs only beside test-nostack, but quality-high runs", "j4": None},
+            {"j1": load, **line},
         )
 
-    def test_a_light_entry_meets_only_running_and_granted_jobs_while_heavy_ones_keep_every_reservation(self):
+    def test_a_blocked_entry_reserves_nothing_for_light_and_heavy_kinds_alike(self):
         rules = {"slot_limits": {"test": 5, "test-nostack": 5, "deploy": 1}, "light": {"test-nostack"}}
-        with self.subTest("budget reservations hold back heavy kinds only"):
+        with self.subTest("budget"):
             running, head, twin = job(1, status="active"), job(2), job(3, task="work/b")
             light, heavy = job(4, kind="test-nostack", task="work/c", need_gb=0), job(5, task="work/c")
             shares = {
@@ -445,33 +458,721 @@ class TestEvaluate(unittest.TestCase):
                 "j4": {"ram": 6, "cpu": 11}, "j5": {"ram": 5, "cpu": 5},
             }
             self.assertEqual(self.decide([running, head, twin, light, heavy], footprints=shares, **rules), {
-                "j2": "RAM 30 % in use or reserved + 50 % > budget 75 %, CPU 50 % in use or reserved + 60 % > budget 100 %; reserved",
-                "j3": "RAM 80 % in use or reserved + 50 % > budget 75 %, CPU 110 % in use or reserved + 60 % > budget 100 %; reserved",
+                "j2": "RAM 30 % in use or reserved + 50 % > budget 75 %, CPU 50 % in use or reserved + 60 % > budget 100 %",
+                "j3": "RAM 30 % in use or reserved + 50 % > budget 75 %, CPU 50 % in use or reserved + 60 % > budget 100 %",
                 "j4": None,
-                "j5": "RAM 136 % in use or reserved + 5 % > budget 75 %, CPU 181 % in use or reserved + 5 % > budget 100 %; reserved",
+                "j5": None,
             })
-        with self.subTest("disk reservations hold back heavy kinds only"):
+        with self.subTest("disk"):
             big, small, late = job(1, need_gb=50), job(2, kind="test-nostack", task="work/b", need_gb=0), job(3, task="work/c", need_gb=5)
             self.assertEqual(self.decide([big, small, late], free_gb=40.0, **rules), {
-                "j1": "50 GB would cut into the 10 GB floor; reserved", "j2": None, "j3": "5 GB would cut into the 10 GB floor; reserved",
+                "j1": "50 GB would cut into the 10 GB floor", "j2": None, "j3": None,
             })
-        with self.subTest("a granted light counts for later lights, a blocked one reserves against heavy kinds"):
+        with self.subTest("a granted light counts for every later entry"):
             running = job(1, status="active")
             first, second = job(2, kind="test-nostack", need_gb=0), job(3, kind="test-nostack", task="work/b", need_gb=0)
             heavy = job(4, task="work/c")
             shares = {"j1": {"ram": 10, "cpu": 60}, "j2": {"ram": 0, "cpu": 30}, "j3": {"ram": 0, "cpu": 30}, "j4": {"ram": 5, "cpu": 5}}
             self.assertEqual(self.decide([running, first, second, heavy], footprints=shares, **rules), {
-                "j2": None, "j3": "CPU 90 % in use or reserved + 30 % > budget 100 %; reserved",
-                "j4": "CPU 120 % in use or reserved + 5 % > budget 100 %; reserved",
+                "j2": None, "j3": "CPU 90 % in use or reserved + 30 % > budget 100 %", "j4": None,
             })
-        with self.subTest("a head the host load keeps out while a job runs reserves against heavy kinds only"):
+        with self.subTest("a head the host load keeps out while a job runs"):
             load = "RAM 55 % used + 41 % still to come reach the limit 90 %"
             running, head = job(1, kind="test-nostack", status="active", need_gb=0), job(2, kind="deploy")
             heavy, light = job(3, task="work/b"), job(4, kind="test-nostack", task="work/c", need_gb=0)
             shares = {"j1": {"ram": 0, "cpu": 10}, "j2": {"ram": 0, "cpu": 60}, "j3": {"ram": 0, "cpu": 40}, "j4": {"ram": 0, "cpu": 40}}
             self.assertEqual(self.decide([running, head, heavy, light], loaded={"j2": load}, footprints=shares, **rules), {
-                "j2": None, "j3": "CPU 70 % in use or reserved + 40 % > budget 100 %; reserved", "j4": None,
+                "j2": load, "j3": None, "j4": None,
             })
+
+
+class TestBackfill(Passes, unittest.TestCase):
+    def test_the_live_case_small_jobs_backfill_past_a_65_gb_head_and_the_head_takes_the_next_capacity(self):
+        rules = {"floor": 15.0, "slot_limits": {"gui-dind": 1, "iteration": 8}}
+        head = job(1926, kind="gui-dind", need_gb=65, workdir="/store")
+        small = [job(n, kind="iteration", task="work/b", need_gb=gb) for n, gb in enumerate((9, 12, 20, 15, 10, 18, 14, 11), 1)]
+
+        def queue(running: set[int], waiting: list[int]) -> list[dict]:
+            return [head] + [{**small[n - 1], "status": "active", "granted": NOW - 60} for n in running] + [
+                small[n - 1] for n in waiting
+            ]
+
+        verdicts, drain, _ = self.run_pass(queue(set(), list(range(1, 9))), free_gb=47.0, **rules)
+        self.assertEqual(self.queue.labelled(verdicts, []), {
+            "j1926": "65 GB would cut into the 15 GB floor", "j1": "backfilled", "j2": "backfilled",
+            "j3": "20 GB would cut into the 15 GB floor", "j4": "15 GB would cut into the 15 GB floor", "j5": "backfilled",
+            "j6": "18 GB would cut into the 15 GB floor", "j7": "14 GB would cut into the 15 GB floor",
+            "j8": "11 GB would cut into the 15 GB floor",
+        })
+        self.assertIsNone(drain)
+        verdicts, drain, order = self.run_pass(queue({1, 2, 5}, [3, 4, 6, 7, 8]), free_gb=47.0, **rules)
+        self.assertNotIn(None, verdicts.values())
+        self.assertIsNone(drain, "47 GB free never holds 65 GB above the floor, so draining would only idle the host")
+        self.assertEqual(self.queue.stalled({"entries": queue({1, 2, 5}, [])}, order, verdicts, 15.0, 47.0, lambda: (False, []), NOW)[:2], ([], True))
+        verdicts, drain, _ = self.run_pass(queue({1, 2, 5}, [3, 4, 6, 7, 8]), free_gb=85.0, **rules)
+        self.assertEqual((verdicts["j3"], verdicts["j4"], drain), (None, None, None))
+        verdicts, drain, _ = self.run_pass(queue({1, 2, 3, 4, 5}, [6, 7, 8]), free_gb=85.0, **rules)
+        self.assertNotIn(None, verdicts.values())
+        self.assertEqual(drain, "j1926")
+        backfill = self.decide(queue({2, 3, 4, 5}, [6, 7, 8]), free_gb=85.0, **rules)
+        drained = self.decide(queue({2, 3, 4, 5}, [6, 7, 8]), free_gb=85.0, drain="j1926", **rules)
+        self.assertEqual((backfill["j8"], drained["j8"]), (None, "drained for j1926"))
+        self.assertEqual(drained["j6"], "18 GB would cut into the 15 GB floor")
+        verdicts, _, order = self.run_pass(queue(set(), [6, 7, 8]), free_gb=85.0, drain="j1926", **rules)
+        self.assertEqual((order[0]["id"], verdicts["j1926"]), ("j1926", None))
+
+    def test_a_line_runs_strictly_in_order_by_worktree_and_stack_and_exclusive_kinds_form_none(self):
+        load = "CPU 95 % busy reaches the limit 90 %"
+        disk, older = job(13, status="active", workdir="/z", need_gb=10), job(1, workdir="/core", need_gb=25)
+        younger, other, last = job(2, task="work/b", workdir="/core"), job(3, task="work/b", workdir="/x"), job(4, task="work/c", workdir="/core")
+        self.assertEqual(self.decide([disk, older, younger, other, last], free_gb=40.0), {
+            "j1": "25 GB would cut into the 10 GB floor", "j2": "waits in line behind j1", "j3": None,
+            "j4": "waits in line behind j1",
+        })
+        self.assertEqual(self.decide([{**older, "need_gb": 50}, younger, other, last], free_gb=40.0), {
+            "j1": "50 GB would cut into the 10 GB floor", "j2": None, "j3": None, "j4": "waits in line behind j2",
+        })
+        stacked = [job(5, claims=["/a", "stack:core"]), job(6, task="work/b", claims=["/b", "stack:core"]), job(7, task="work/b", claims=["/c"])]
+        self.assertEqual(self.decide(stacked, loaded={"j5": load}), {"j5": load, "j6": "waits in line behind j5", "j7": None})
+        rules = {"exclusive": {"test"}, "slot_limits": {"test": 5, "deploy": 1}}
+        machine = [job(8, workdir="/g"), job(9, task="work/b", workdir="/h"), job(10, kind="deploy", task="work/c", workdir="/i")]
+        self.assertEqual(self.decide(machine, loaded={"j8": load}, **rules), {"j8": load, "j9": None, "j10": "test runs only beside nothing"})
+        running = [job(11, workdir="/core", status="active"), job(12, task="work/b", workdir="/core", hotfix="fix-1")]
+        self.assertEqual(self.decide(running), {"j12": "waits in line behind j11"})
+
+    def test_r5_a_blocked_hotfix_head_that_could_start_is_passed_only_by_light_jobs_taking_nothing_it_lacks(self):
+        rules = {"free_gb": 40.0, "light": {"test-nostack"}, "slot_limits": {"test": 5, "test-nostack": 5}}
+        light = job(3, kind="test-nostack", task="work/c", need_gb=0, workdir="/l")
+        hotfix, small, disk = job(1, need_gb=15, hotfix="main-red"), job(2, task="work/b", workdir="/s"), job(8, status="active", need_gb=20, workdir="/d")
+        self.assertEqual(self.decide([disk, hotfix, small, light], **rules), {
+            "j1": "15 GB would cut into the 10 GB floor", "j2": "waits behind hotfix j1", "j3": None,
+        })
+        self.assertEqual(self.decide([{**hotfix, "need_gb": 50}, small, light], **rules),
+                         {"j1": "50 GB would cut into the 10 GB floor", "j2": None, "j3": None})
+        running, fixing = job(9, status="active", workdir="/r"), job(1, hotfix="main-red")
+        shares = {"j9": {"ram": 50, "cpu": 10}, "j1": {"ram": 30, "cpu": 10}, "j2": {"ram": 5, "cpu": 5}, "j3": {"ram": 10, "cpu": 5}}
+        self.assertEqual(self.decide([running, fixing, small, light], footprints=shares, **rules), {
+            "j1": "RAM 50 % in use or reserved + 30 % > budget 75 %", "j2": "waits behind hotfix j1", "j3": "waits behind hotfix j1",
+        })
+        self.assertEqual(self.decide([running, fixing, light], footprints=shares | {"j3": {"ram": 0, "cpu": 5}}, **rules)["j3"], None)
+        pressed = self.decide([running, fixing, light], loaded={"j1": "CPU 95 % busy reaches the limit 90 %"}, **rules)
+        self.assertEqual(pressed["j3"], "waits behind hotfix j1")
+        second = job(4, task="work/c", hotfix="fix-2", workdir="/f")
+        self.assertEqual(self.decide([disk, hotfix, second], **rules)["j4"], "waits behind hotfix j1")
+        normal = {**hotfix, "hotfix": None, "need_gb": 50}
+        self.assertEqual(self.decide([normal, small, light], **rules), {"j1": "50 GB would cut into the 10 GB floor", "j2": None, "j3": None})
+
+    def test_a_drain_starts_only_once_nothing_fits_and_ends_when_its_head_leaves_or_cannot_fit_the_disk(self):
+        running = job(9, need_gb=40, status="active", workdir="/r")
+        big, small = job(1, need_gb=50), job(2, task="work/b", need_gb=25, workdir="/s")
+        late, light = job(3, task="work/c", need_gb=5, workdir="/t"), job(4, kind="test-nostack", task="work/c", need_gb=0, workdir="/l")
+        rules = {"free_gb": 70.0, "light": {"test-nostack"}, "slot_limits": {"test": 5, "test-nostack": 5}}
+        self.assertIsNone(self.run_pass([running, big, small, late], **rules)[1])
+        self.assertEqual(self.run_pass([running, big, small], **rules)[1], "j1")
+        self.assertEqual(self.decide([running, big, small, late, light], drain="j1", **rules), {
+            "j1": "50 GB would cut into the 10 GB floor", "j2": "25 GB would cut into the 10 GB floor",
+            "j3": "drained for j1", "j4": None,
+        })
+        self.assertEqual(self.run_pass([running, big, small, late], drain="j1", **rules)[1], "j1")
+        self.assertEqual(self.decide([big, small, late], drain="j1", **rules), {
+            "j1": None, "j2": "25 GB would cut into the 10 GB floor", "j3": None,
+        })
+        self.assertIsNone(self.run_pass([running, small, late], drain="j1", **rules)[1])
+        self.assertIsNone(self.run_pass([running, big, small], drain="j1", **{**rules, "free_gb": 55.0})[1])
+        deploying, head = job(9, kind="deploy", need_gb=0, status="active", workdir="/r"), job(1, kind="deploy", need_gb=20)
+        fits, wide = job(3, task="work/c", need_gb=5, workdir="/t"), job(5, task="work/c", need_gb=45, workdir="/u")
+        slots = {**rules, "slot_limits": {"test": 5, "deploy": 1}}
+        self.assertEqual(self.decide([deploying, head, fits, wide], drain="j1", **slots), {
+            "j1": "all 1 deploy slots taken", "j3": None, "j5": "drained for j1",
+        })
+
+    def test_claims_name_the_worktree_and_the_compose_stack_its_directory_derives(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plain, named, stack = Path(tmp, "plain"), Path(tmp, "Core.Stack_1"), Path(tmp, "pinned")
+            for path in (plain, named, stack):
+                path.mkdir()
+            (named / "compose.yml").write_text("services: {}\n", encoding="utf-8")
+            (stack / "docker-compose.yaml").write_text("services: {}\n", encoding="utf-8")
+            (stack / ".env").write_text("A=1\nCOMPOSE_PROJECT_NAME='shared'\n", encoding="utf-8")
+            self.assertEqual(self.queue.claims_of(str(plain)), [str(plain)])
+            self.assertEqual(self.queue.claims_of(str(named)), [str(named), "stack:corestack_1"])
+            self.assertEqual(self.queue.claims_of(str(stack)), [str(stack), "stack:shared"])
+        self.assertEqual(self.queue.claims(job(1, kind="test")), ["/w1"])
+        self.assertEqual(self.queue.claims(job(1, claims=["/a", "stack:x"])), ["/a", "stack:x"])
+
+    def test_r2_worktrees_pinned_to_one_slot_share_a_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            pins = {"a": ("custom.env", "INFINITO_INSTANCE=174\n"), "b": (".env", 'X=1\nINFINITO_INSTANCE="174"\n'),
+                    "c": ("custom.env", "INFINITO_INSTANCE=175\n"), "core": ("default.env", "INFINITO_INSTANCE=0\n")}
+            for name, (pin, text) in pins.items():
+                (base / name).mkdir()
+                (base / name / "compose.yml").write_text("services: {}\n", encoding="utf-8")
+                (base / name / pin).write_text(text, encoding="utf-8")
+            (base / "a" / "default.env").write_text("INFINITO_INSTANCE=0\n", encoding="utf-8")
+            claims = {name: self.queue.claims_of(str(base / name)) for name in pins}
+            (base / "d").mkdir()
+            (base / "d" / "custom.env").write_text("INFINITO_INSTANCE=174\n", encoding="utf-8")
+            (base / "d" / ".env").write_text("INFINITO_INSTANCE=180\n", encoding="utf-8")
+            drifted = self.queue.claims_of(str(base / "d"))
+        self.assertEqual(claims["a"], [str(base / "a"), "stack:a", "slot:174"])
+        self.assertEqual(claims["b"], [str(base / "b"), "stack:b", "slot:174"])
+        self.assertEqual(claims["core"], [str(base / "core"), "stack:core", "slot:0"])
+        self.assertEqual(drifted, [str(base / "d"), "slot:174"])
+        load = "CPU 95 % busy reaches the limit 90 %"
+        entries = [job(1, claims=claims["a"]), job(2, task="work/b", claims=claims["b"]), job(3, task="work/b", claims=claims["c"])]
+        self.assertEqual(self.decide(entries, loaded={"j1": load}), {"j1": load, "j2": "waits in line behind j1", "j3": None})
+
+    def test_disk_reservation_keeps_smaller_jobs_from_starving_a_big_one(self):
+        big, small, later = job(1, workdir="/w", need_gb=50, enqueued=NOW - 60), job(2, workdir="/w", need_gb=5, enqueued=NOW - 30), job(3, workdir="/w", need_gb=5)
+        verdicts, _, order = self.run_pass([big, small], free_gb=64.0, floor=15.0)
+        self.assertEqual(verdicts, {"j1": "50 GB would cut into the 15 GB floor", "j2": None})
+        data = {"entries": [big, small], "granted_at": NOW}
+        self.assertEqual(self.queue.stalled(data, order, verdicts, 15.0, 64.0, idle, NOW)[:2], ([], True))
+        sends, clean, _ = self.queue.stalled(data, order, verdicts, 15.0, 64.0, idle, NOW + 60)
+        self.assertEqual(([label for label, _ in sends], clean), (["noticed that the head cannot fit"], False))
+        self.assertIn("head j1 needs 50 GB, max reachable 49 GB", " ".join(word for _, words in sends for word in words))
+        self.assertEqual(self.decide([big, later], free_gb=66.0, floor=15.0), {"j1": None, "j3": "waits in line behind j1"})
+
+    def test_labels_mark_backfilled_entries_and_the_escalated_head(self):
+        verdicts = {"h": "blocked", "a": None, "b": "waits in line behind h"}
+        self.assertEqual(self.queue.labelled(verdicts, ["post", "call"]), {
+            "h": "escalated call: blocked", "a": "backfilled", "b": "waits in line behind h",
+        })
+        self.assertEqual(self.queue.labelled({"a": None, "h": "blocked"}, []), {"a": None, "h": "blocked"})
+
+    def test_r3_p1_disk_alone_in_the_warn_and_stop_bands_starts_the_cleanup_and_the_notice(self):
+        head = job(1, kind="deploy", need_gb=20, enqueued=NOW - 60)
+        bands = ((30.0, "ok", "20 GB would cut into the 15 GB floor", 15), (35.0, "warn", "disk stage warn admits only jobs that need no disk", 0),
+                 (14.0, "stop", "disk stage stop", 0))
+        for free, stage, reason, reach in bands:
+            with self.subTest(stage=stage):
+                verdicts, _, order = self.run_pass([head], free_gb=free, stage=stage, floor=15.0)
+                data = {"entries": [head], "granted_at": NOW - 60}
+                polls = [self.queue.stalled(data, order, verdicts, 15.0, free, idle, NOW + at) for at in (0, 20, 40)]
+                text = f"kvb-org-queue: head j1 needs 20 GB, max reachable {reach} GB after cleanup ({reason}); operator cleanup needed"
+                self.assertEqual(verdicts, {"j1": reason})
+                self.assertEqual(polls, [
+                    ([], True, None), ([("noticed that the head cannot fit", ["post", text, "--to", "Main"])], False,
+                                       "low-risk cleanup ended without a report"), ([], False, None),
+                ])
+
+    def test_r3_s2_a_head_live_load_holds_behind_the_floor_is_no_disk_alone_stall(self):
+        head, load = job(1, need_gb=70), "CPU 95 % busy reaches the limit 90 %"
+        verdicts, _, order = self.run_pass([head], free_gb=80.0, floor=15.0, loaded={"j1": load})
+        self.assertEqual(verdicts, {"j1": "70 GB would cut into the 15 GB floor"})
+        self.assertEqual(self.queue.stalled({"entries": [head], "granted_at": NOW}, order, verdicts, 15.0, 80.0, idle, NOW), ([], False, None))
+
+    def test_r3_p4_a_line_runs_by_enqueue_time_whatever_the_rank(self):
+        load = "CPU 95 % busy reaches the limit 90 %"
+        older, younger, other = job(1, task="work/c", workdir="/core", enqueued=NOW - 1800), job(2, workdir="/core"), job(3, task="work/b", workdir="/x")
+        verdicts = self.decide([younger, other, older], loaded={"j1": load})
+        self.assertEqual(list(verdicts.items()), [("j1", load), ("j2", "waits in line behind j1"), ("j3", None)])
+        normal, hotfix = job(4, workdir="/core", need_gb=50, enqueued=NOW - 60), job(5, workdir="/core", hotfix="main-red")
+        self.assertEqual(self.decide([hotfix, normal, job(6, task="work/b", workdir="/s")], free_gb=40.0), {
+            "j5": None, "j4": "waits in line behind j5", "j6": None,
+        })
+
+    def test_r3_p5_a_drain_head_that_live_load_holds_holds_back_every_entry_after_it(self):
+        running, head, small = job(9, status="active", workdir="/r", granted=NOW - HOUR), job(1), job(2, task="work/b", workdir="/s")
+        shares = {"j9": {"ram": 30, "cpu": 10}, "j1": {"ram": 40, "cpu": 10}, "j2": {"ram": 5, "cpu": 5}}
+        ram = "RAM 60 % used + 40 % still to come reach the limit 90 %"
+        self.assertEqual(self.run_pass([running, head, small], footprints=shares, loaded={"j1": ram, "j2": ram})[1], "j1")
+        self.assertEqual(self.decide([running, head, small], footprints=shares, loaded={"j1": ram}, drain="j1"), {
+            "j1": ram, "j2": "drained for j1",
+        })
+        self.assertEqual(self.decide([running, head, small], footprints=shares, loaded={"j1": ram}), {"j1": ram, "j2": None})
+
+    def test_r3_p6_a_light_job_takes_nothing_the_drain_head_still_lacks(self):
+        rules = {"light": {"test-nostack"}, "slot_limits": {"test": 5, "test-nostack": 5}, "drain": "j1"}
+        running, head = job(9, status="active", workdir="/r"), job(1)
+        light = job(2, kind="test-nostack", task="work/b", workdir="/l")
+        shares = {"j9": {"ram": 40, "cpu": 0}, "j1": {"ram": 45, "cpu": 0}, "j2": {"ram": 35, "cpu": 0}}
+        self.assertEqual(self.decide([running, head, light], footprints=shares, **rules), {
+            "j1": "RAM 40 % in use or reserved + 45 % > budget 75 %", "j2": "drained for j1",
+        })
+        self.assertIsNone(self.decide([running, head, light], footprints={**shares, "j2": {"ram": 0, "cpu": 0}}, **rules)["j2"])
+
+    def test_r3_p7_one_spike_poll_never_starts_a_drain_and_a_minute_of_blocked_polls_does(self):
+        running, head = job(9, need_gb=40, status="active", workdir="/r"), job(1, need_gb=50)
+        small, spike = job(2, task="work/b", need_gb=5, workdir="/s"), "CPU 99 % busy reaches the limit 90 %"
+        data: dict = {"drain": None}
+
+        def poll(at: float, loaded: dict[str, str]) -> str | None:
+            _, drain, _ = self.run_pass([running, head, small], free_gb=70.0, loaded=loaded, drain=data["drain"], now=at)
+            data["drain"] = self.queue.latched(data, drain, at)
+            return data["drain"]
+
+        self.assertEqual([poll(NOW, {"j1": spike, "j2": spike}), poll(NOW + 20, {})], [None, None])
+        self.assertNotIn(self.queue.BLOCKED, data)
+        self.assertEqual([poll(NOW + 40 + 20 * n, {"j2": spike}) for n in range(4)], [None, None, None, "j1"])
+
+    def test_r3_s1_a_steady_stream_starts_the_head_within_the_age_limit_plus_one_job(self):
+        rules = {"free_gb": 100.0, "floor": 15.0, "slot_limits": {"test": 1000}}
+        head = job(1, need_gb=70, workdir="/h")
+        active, waiting, data = [job(2, need_gb=20, status="active", granted=NOW - 60, workdir="/w2")], [head], {"drain": None}
+        for poll in range(4 * 180):
+            at = NOW + poll * 20
+            active = [e for e in active if at - e["granted"] < 1800]
+            waiting.append(job(poll + 3, task="work/b", need_gb=0 if poll % 45 else 20, enqueued=at))
+            verdicts, drain, _ = self.run_pass([*active, *waiting], drain=data["drain"], now=at, **rules)
+            data["drain"] = self.queue.latched(data, drain, at)
+            if verdicts["j1"] is None:
+                self.assertLessEqual(at - NOW, self.queue.DRAIN_AFTER_SECONDS + 1800 + self.queue.DEBOUNCE_SECONDS)
+                return
+            active += [{**e, "status": "active", "granted": at} for e in waiting if verdicts[e["id"]] is None]
+            waiting = [e for e in waiting if verdicts[e["id"]] is not None]
+        self.fail("a steady stream starved the head")
+
+    def test_r4_load_from_outside_the_queue_drains_for_no_head_and_holds_back_no_job(self):
+        rules = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"},
+                 "slot_limits": {"quality-high": 1, "test": 1, "test-nostack": 4, "iteration": 3}}
+        head, light = job(1, kind="quality-high", enqueued=NOW - 3700), job(2, kind="test-nostack", task="work/b", workdir="/l")
+        heavy, running = job(3, kind="iteration", task="work/b", workdir="/i"), job(9, kind="test-nostack", status="active", workdir="/r")
+        ram = "RAM 45 % used + 41 % still to come reach the limit 85 %"
+        outside = self.queue.Outside(ram)
+        self.assertEqual(self.run_pass([head, light, heavy], loaded={"j1": ram}, drain="j1", **rules)[:2],
+                         ({"j1": ram, "j2": None, "j3": None}, None))
+        self.assertEqual(self.run_pass([running, head, light, heavy], loaded={"j1": outside}, drain="j1", **rules)[:2],
+                         ({"j1": ram, "j2": None, "j3": None}, None))
+        self.assertEqual(self.run_pass([running, head, light, heavy], loaded={"j1": ram}, drain="j1", **rules)[:2],
+                         ({"j1": ram, "j2": None, "j3": "drained for j1"}, "j1"))
+        twin = job(4, kind="test", task="work/c", workdir="/w1")
+        self.assertEqual((self.decide([head, twin], loaded={"j1": outside}, **rules), self.decide([head, twin], loaded={"j1": ram}, **rules)),
+                         ({"j1": ram, "j4": None}, {"j1": ram, "j4": "waits in line behind j1"}))
+
+    def test_r4_a_head_aged_out_waiting_only_for_an_exclusive_job_holds_back_no_light_job(self):
+        rules = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"}, "budget": {"ram": 75, "cpu": 100},
+                 "slot_limits": {"quality-high": 1, "test": 1, "test-nostack": 4}}
+        running = job(9, kind="test", status="active", workdir="/r", granted=NOW - 300)
+        head, light = job(1, kind="quality-high", enqueued=NOW - 3700), job(2, kind="test-nostack", task="work/b", workdir="/l")
+        shares = {"j9": {"ram": 34.5, "cpu": 24.5}, "j1": {"ram": 40.6, "cpu": 59.8}, "j2": {"ram": 7.2, "cpu": 9.8}}
+        verdicts, drain, _ = self.run_pass([running, head, light], footprints=shares, drain="j1", **rules)
+        self.assertEqual((verdicts, drain), ({"j1": "quality-high runs only beside test-nostack, but test runs", "j2": None}, "j1"))
+        greedy = {**shares, "j2": {"ram": 40.0, "cpu": 9.8}}
+        self.assertEqual(self.decide([running, head, light], footprints=greedy, drain="j1", **rules)["j2"], "drained for j1")
+
+
+class TestTrace(Passes, unittest.TestCase):
+    def traced(self, entries: list[dict], **overrides: object) -> tuple[dict, dict]:
+        trace: dict[str, list[str]] = {}
+        verdicts = self.run_pass(entries, trace=trace, **overrides)[0]
+        again: dict[str, list[str]] = {}
+        self.run_pass(entries, trace=again, **overrides)
+        self.assertEqual(again, trace)
+        return verdicts, trace
+
+    def test_r5_the_trace_names_the_order_and_the_fit_of_a_granted_entry(self):
+        fit = "RAM 0 % + 0 %, CPU 0 % + 0 %, 1 GB of 100 GB fits"
+        cases = {
+            "hotfix first": ([job(1, hotfix="main-red")], {}, ["hotfix first", "rank 0", "arrival 1", fit]),
+            "rank and age": ([job(1, task="work/c", enqueued=NOW - 2 * HOUR)], {}, ["rank 2, 2 h waited: 0", "arrival 1", fit]),
+            "unranked with agent order": ([job(1, task="work/z")], {"agents": {"s1": 0}}, ["unranked", "agent order 0", "arrival 1", fit]),
+            "backfill": ([job(1, need_gb=95), job(2, task="work/b")], {},
+                         ["rank 1", "arrival 2", "RAM 0 % + 0 %, CPU 0 % + 0 %, 1 GB of 100 GB fits", "backfilled past j1"]),
+        }
+        for name, (entries, overrides, steps) in cases.items():
+            with self.subTest(name):
+                verdicts, trace = self.traced(entries, **overrides)
+                self.assertEqual((verdicts[entries[-1]["id"]], trace[entries[-1]["id"]]), (None, steps))
+
+    def test_r5_the_trace_ends_in_the_rule_that_blocked_the_entry(self):
+        load = "CPU 95 % busy reaches the limit 90 %"
+        running = job(9, status="active", workdir="/r")
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"quality-high": 1, "iteration": 2, "test-nostack": 2, "test": 5}}
+        greedy = {"j9": {"ram": 30, "cpu": 30}, "j1": {"ram": 40, "cpu": 40}, "j2": {"ram": 40, "cpu": 70}, "j3": {"ram": 0, "cpu": 5}}
+        machine = [job(9, kind="iteration", status="active", workdir="/r"), job(1, kind="quality-high"), job(2, kind="iteration", task="work/b")]
+        cases = {
+            "line": ([job(9, kind="deploy", status="active", workdir="/r"), job(1, kind="deploy", workdir="/core"), job(2, task="work/b", workdir="/core")],
+                     {}, "j2", "line /core behind j1"),
+            "hotfix ahead that could start": ([job(9, kind="deploy", status="active", workdir="/r"), job(1, kind="deploy", hotfix="main-red"),
+                                               job(2, task="work/b")], {}, "j2", "hotfix j1 blocked ahead"),
+            "hotfix pressed": ([running, job(1, hotfix="main-red"), job(2, kind="test-nostack", task="work/b")],
+                               {"loaded": {"j1": load}, **gates}, "j2", "hotfix j1 blocked ahead: load holds it"),
+            "exclusive head": (machine, gates, "j2", "drained for j1: quality-high is exclusive"),
+            "load head": ([running, job(1), job(2, task="work/b")], {"loaded": {"j1": load}, "drain": "j1"}, "j2",
+                          "drained for j1: load holds it"),
+            "takes what the head lacks": ([*machine[:2], job(2, kind="test-nostack", task="work/b")], {"footprints": greedy, **gates}, "j2",
+                                          "drained for j1: takes RAM and CPU"),
+            "disk stage": ([job(1)], {"stage": "stop"}, "j1", "disk stage stop"),
+            "memory stage": ([job(1)], {"memory": "stop"}, "j1", "memory stage stop"),
+            "slot": ([job(1, kind="deploy", status="active"), job(2, kind="deploy", task="work/b")], {}, "j2", "all 1 deploy slots taken"),
+            "alone": (machine, gates, "j1", "quality-high runs only beside test-nostack, but iteration runs"),
+            "budget": ([running, job(1)], {"footprints": {"j9": {"ram": 50, "cpu": 0}, "j1": {"ram": 30, "cpu": 0}}}, "j1",
+                       "RAM 50 % in use or reserved + 30 % > budget 75 %"),
+            "floor": ([job(1, need_gb=95)], {}, "j1", "95 GB would cut into the 10 GB floor"),
+            "load": ([job(1)], {"loaded": {"j1": load}}, "j1", load),
+        }
+        for name, (entries, overrides, target, step) in cases.items():
+            with self.subTest(name):
+                verdicts, trace = self.traced(entries, **overrides)
+                self.assertIsNotNone(verdicts[target])
+                self.assertEqual(trace[target][-1], step)
+
+    def test_r5_the_trace_marks_the_drain_head_a_head_a_light_job_takes_nothing_from_and_a_silent_entry(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"quality-high": 1, "iteration": 2, "test-nostack": 2}}
+        machine = [job(9, kind="iteration", status="active", workdir="/r"), job(1, kind="quality-high"), job(2, kind="test-nostack", task="work/b")]
+        _, trace = self.traced(machine, drain="j1", **gates)
+        self.assertEqual(trace["j1"][-2:], ["drain head", "quality-high runs only beside test-nostack, but iteration runs"])
+        self.assertEqual(trace["j2"][-3:], ["takes nothing j1 lacks", "RAM 0 % + 0 %, CPU 0 % + 0 %, 1 GB of 99 GB fits", "backfilled past j1"])
+        verdicts, trace = self.traced([job(1, polled=NOW - 600)])
+        self.assertEqual(trace["j1"], [verdicts["j1"]])
+
+    def test_r6_a_light_job_passes_an_older_job_of_its_worktree_only_while_that_one_waits_for_the_machine(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"quality-high": 1, "iteration": 2, "test-nostack": 2}}
+        gate = job(9, kind="quality-high", status="active", workdir="/r")
+        heavy, light = job(1, kind="iteration", workdir="/core"), job(2, kind="test-nostack", task="work/b", workdir="/core")
+        verdicts, trace = self.traced([gate, heavy, light], **gates)
+        self.assertEqual(verdicts, {"j1": "quality-high runs only beside test-nostack", "j2": None})
+        self.assertIn("passes j1: it waits for the machine", trace["j2"])
+        self.assertEqual(self.decide([{**light, "status": "active"}, heavy], **gates), {"j1": "waits in line behind j2"})
+        stacked = [gate, job(8, kind="iteration", status="active", claims=["/x", "stack:core"]),
+                   {**heavy, "claims": ["/core", "stack:core"]}, {**light, "claims": ["/core"]}]
+        self.assertEqual(self.decide(stacked, **gates)["j2"], "waits in line behind j1")
+        self.assertEqual(self.decide([gate, {**heavy, "hotfix": "main-red"}, light], **gates)["j2"], "waits in line behind j1")
+
+    def test_r6_beside_a_head_waiting_for_an_exclusive_job_only_light_jobs_count(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"quality-high": 1, "gui-dind": 1, "test-nostack": 2}}
+        gate, head = job(9, kind="quality-high", status="active", workdir="/r"), job(1, kind="gui-dind")
+        light = job(2, kind="test-nostack", task="work/b")
+        shares = {"j9": {"ram": 40.6, "cpu": 59.8}, "j1": {"ram": 20.7, "cpu": 63.6}, "j2": {"ram": 7.2, "cpu": 9.8}}
+        verdicts, trace = self.traced([gate, head, light], footprints=shares, drain="j1", **gates)
+        self.assertEqual(verdicts["j2"], None)
+        self.assertIn("takes nothing j1 lacks", trace["j2"])
+        greedy = shares | {"j2": {"ram": 7.2, "cpu": 40.0}}
+        self.assertEqual(self.decide([gate, head, light], footprints=greedy, drain="j1", **gates)["j2"], "drained for j1")
+
+    def test_r7_a_hotfix_never_waits_in_line_behind_an_older_waiting_entry_that_is_no_hotfix(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"},
+                 "slot_limits": {"quality-high": 1, "iteration": 3, "test-nostack": 1}}
+        filled = job(9, id="A", kind="test-nostack", status="active", workdir="/a")
+        older = job(1, id="L", kind="test-nostack", workdir="/main", enqueued=NOW - 20, name="Main")
+        hotfix = job(2, id="H", kind="quality-high", workdir="/main", enqueued=NOW - 10, name="Main", hotfix="main-red")
+        self.assertEqual(self.decide([filled, older, hotfix], **gates), {"H": None, "L": "waits in line behind H"})
+        gate = job(8, id="Q", kind="quality-high", status="active", workdir="/other")
+        main = {**older, "id": "X", "kind": "quality-high"}
+        other = job(3, id="I", kind="iteration", task="work/b", workdir="/b", enqueued=NOW)
+        verdicts, trace = self.traced([gate, main, hotfix, other], **gates)
+        self.assertEqual(verdicts, {"H": "all 1 quality-high slots taken", "X": "waits behind hotfix H", "I": "waits behind hotfix H"})
+        self.assertEqual(trace["H"][0], "hotfix first")
+        self.assertEqual(self.decide([main, hotfix, other], **gates), {
+            "H": None, "X": "waits in line behind H", "I": "quality-high runs only beside test-nostack",
+        })
+
+    def test_r7_a_drain_head_keeps_its_slot_and_its_line_delays_it_by_one_light_run_at_most(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"iteration": 3, "test-nostack": 4}}
+        busy = [job(7, id="Ib", kind="iteration", status="active", workdir="/b"), job(8, id="Ic", kind="iteration", status="active", workdir="/c")]
+        head = job(1, id="H", kind="iteration", workdir="/h", enqueued=NOW - 5000)
+        rival = job(2, id="I2", kind="iteration", workdir="/v", enqueued=NOW - 4000)
+        running = job(9, id="L1", kind="test-nostack", status="active", workdir="/h")
+        verdicts, trace = self.traced([*busy, running, head, rival], drain="H", **gates)
+        self.assertEqual(verdicts, {"H": "waits in line behind L1", "I2": "drained for H"})
+        self.assertEqual(trace["I2"][-1], "drained for H: takes its iteration slot")
+        later = job(3, id="L2", kind="test-nostack", workdir="/h", enqueued=NOW - 100)
+        elsewhere = job(4, id="L3", kind="test-nostack", workdir="/z", enqueued=NOW - 50)
+        verdicts, trace = self.traced([*busy, {**rival, "status": "active"}, head, later, elsewhere], drain="H", **gates)
+        self.assertEqual(verdicts, {"H": "all 3 iteration slots taken", "L2": None, "L3": None})
+        self.assertEqual(trace["L2"][-4:-2], ["passes H: it waits for the machine", "takes nothing H lacks"])
+        self.assertIn("takes nothing H lacks", trace["L3"])
+        next_one = job(5, id="L4", kind="test-nostack", workdir="/h", enqueued=NOW - 20)
+        third = job(6, id="I3", kind="iteration", workdir="/w", enqueued=NOW - 10)
+        freed = [busy[0], {**rival, "status": "active"}, {**later, "status": "active"}, head, next_one, third]
+        self.assertEqual(self.decide(freed, drain="H", **gates), {"H": "waits in line behind L2", "L4": "waits in line behind L2", "I3": "drained for H"})
+        self.assertEqual(self.decide([busy[0], {**rival, "status": "active"}, head, next_one, third], drain="H", **gates),
+                         {"H": None, "L4": "waits in line behind H", "I3": "all 3 iteration slots taken"})
+
+    def test_r7_a_granted_entry_owns_its_line_for_the_rest_of_the_pass(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"quality-high": 1, "test-nostack": 4}}
+        gate = job(9, id="Q", kind="quality-high", status="active", workdir="/other")
+        waiting = job(1, id="M", kind="quality-high", workdir="/x", enqueued=NOW - 30)
+        first, second = (job(n, id=f"L{n - 1}", kind="test-nostack", workdir="/x", enqueued=NOW - 30 + n) for n in (2, 3))
+        verdicts, trace = self.traced([gate, waiting, first, second], **gates)
+        self.assertEqual(verdicts, {"M": "all 1 quality-high slots taken", "L1": None, "L2": "waits in line behind L1"})
+        self.assertEqual(trace["L2"][-1], "line /x behind L1")
+
+    def test_r8_a_main_job_whose_line_runs_or_waits_for_the_machine_reserves_against_younger_lines(self):
+        gates = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"},
+                 "slot_limits": {"quality-high": 1, "test": 1, "iteration": 2, "test-nostack": 4}}
+        filled = [job(10 + n, id=f"F{n}", kind="test-nostack", status="active", workdir=f"/f{n}") for n in range(4)]
+        light = job(1, id="L", kind="test-nostack", workdir="/main", enqueued=NOW - 30, name="Main")
+        gate = job(2, id="X", kind="quality-high", workdir="/main", enqueued=NOW - 20, name="Main")
+        rival = job(3, id="T", kind="test", task="work/b", workdir="/t", enqueued=NOW - 10)
+        verdicts, trace = self.traced([*filled, light, gate, rival], **gates)
+        self.assertEqual(verdicts, {"L": "all 4 test-nostack slots taken", "X": "waits in line behind L", "T": "reserved for X"})
+        self.assertEqual(trace["T"][-1], "reserved for X: quality-high is exclusive")
+        self.assertEqual(self.decide([*filled[:3], {**light, "status": "active"}, gate, rival], **gates)["T"], "reserved for X")
+        self.assertEqual(self.decide([*filled, light, {**gate, "name": "s1"}, rival], **gates)["T"], None)
+        running = job(4, id="R", kind="iteration", status="active", workdir="/w")
+        deploy, other = job(5, id="D", kind="iteration", workdir="/w", name="Main"), job(6, id="E", kind="iteration", task="work/b", workdir="/e")
+        small = job(7, id="S", kind="test-nostack", task="work/c", workdir="/s")
+        verdicts, trace = self.traced([running, deploy, other, small], **gates)
+        self.assertEqual(verdicts, {"D": "waits in line behind R", "E": "reserved for D", "S": None})
+        self.assertEqual(trace["E"][-1], "reserved for D: takes its iteration slot")
+        chained = [job(4, id="Z", kind="iteration", status="active", claims=["/z"]), job(5, id="Y", kind="iteration", claims=["/z", "/main"], enqueued=NOW - 600),
+                   {**gate, "claims": ["/main"]}, {**other, "id": "T"}]
+        self.assertEqual(self.decide(chained, **gates), {"Y": "waits in line behind Z", "X": "waits in line behind Y", "T": None})
+
+    def test_r10_a_job_passes_a_holder_of_its_line_that_can_never_start_and_takes_its_place(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"},
+                 "slot_limits": {"quality-high": 1, "iteration": 2, "gui-dind": 1, "swarm": 0}}
+        holder = job(1, id="O", kind="swarm", workdir="/main", enqueued=NOW - 30, name="Main")
+        gate = job(2, id="X", kind="quality-high", workdir="/main", enqueued=NOW - 20, name="Main")
+        others = [job(3, id="I", kind="iteration", task="work/b", workdir="/b"), job(4, id="G", kind="gui-dind", task="work/c", workdir="/c")]
+        verdicts, trace = self.traced([holder, gate, *others], **gates)
+        beside = "quality-high runs only beside test-nostack"
+        self.assertEqual(verdicts, {"O": "all 0 swarm slots taken", "X": None, "I": beside, "G": beside})
+        self.assertIn("passes O: O can never start, 0 swarm slots", trace["X"])
+        running, later = job(9, id="Q", kind="quality-high", status="active", workdir="/q"), job(5, id="Y", kind="iteration", workdir="/main")
+        self.assertEqual(self.decide([running, holder, gate, later], **gates),
+                         {"O": "all 0 swarm slots taken", "X": "all 1 quality-high slots taken", "Y": "waits in line behind X"})
+        huge = {**holder, "kind": "iteration", "need_gb": 200}
+        verdicts, trace = self.traced([huge, gate], **gates)
+        self.assertEqual(verdicts["X"], None)
+        self.assertIn("passes O: O can never start, 200 GB would cut into the 10 GB floor", trace["X"])
+
+    def test_r11_a_hotfix_that_can_never_start_holds_no_one_back_and_heads_nothing(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"},
+                 "slot_limits": {"swarm": 0, "iteration": 2, "gui-dind": 1, "test-nostack": 2, "quality-high": 1}}
+        doomed = job(1, id="H", kind="swarm", workdir="/main", hotfix="main-red", name="Main", enqueued=NOW - 30)
+        others = [job(2, id="I", kind="iteration", task="work/b", workdir="/b"), job(3, id="G", kind="gui-dind", task="work/c", workdir="/c"),
+                  job(4, id="L", kind="test-nostack", task="work/c", workdir="/d")]
+        self.assertEqual(self.decide([doomed, *others], **gates), {"H": "all 0 swarm slots taken", "I": None, "G": None, "L": None})
+        gate, able = job(9, id="Q", kind="quality-high", status="active", workdir="/q"), job(5, id="H2", kind="quality-high", workdir="/h2",
+                                                                                              hotfix="main-red", enqueued=NOW - 20)
+        self.assertEqual(self.decide([gate, doomed, able, others[0]], **gates),
+                         {"H": "all 0 swarm slots taken", "H2": "all 1 quality-high slots taken", "I": "waits behind hotfix H2"})
+
+    def test_r11_a_holder_that_could_not_start_regains_its_place_once_it_can(self):
+        gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"quality-high": 1, "iteration": 2, "swarm": 0}}
+        line = [job(1, id="O", kind="swarm", workdir="/main", enqueued=NOW - 30), job(2, id="X", kind="quality-high", workdir="/main", enqueued=NOW - 20),
+                job(3, id="Y", kind="iteration", workdir="/main", enqueued=NOW - 10)]
+        self.assertEqual(self.decide(line, **gates), {"O": "all 0 swarm slots taken", "X": None, "Y": "waits in line behind X"})
+        back = {**gates, "slot_limits": {**gates["slot_limits"], "swarm": 1}}
+        self.assertEqual(self.decide(line, **back), {"O": None, "X": "waits in line behind O", "Y": "waits in line behind O"})
+
+    def test_r7_the_stack_comes_from_the_env_then_the_compose_name_then_the_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = {
+                "a/compose.yml": "name: security-check-inspect\nservices: {}\n",
+                "b/compose.yaml": 'name: "security-check-inspect"  # shared\nservices:\n  web:\n    name: other\n',
+                "c/compose.yml": "name: security-check-inspect\n", "c/.env": "COMPOSE_PROJECT_NAME=own\n",
+                "d/docker-compose.yml": "services:\n  name: nested\n",
+            }
+            for name, text in files.items():
+                Path(tmp, name).parent.mkdir(exist_ok=True)
+                Path(tmp, name).write_text(text, encoding="utf-8")
+            stacks = {name: self.queue.claims_of(str(Path(tmp, name)))[1:] for name in "abcd"}
+        self.assertEqual(stacks, {"a": ["stack:security-check-inspect"], "b": ["stack:security-check-inspect"], "c": ["stack:own"], "d": ["stack:d"]})
+
+
+class TestEscalation(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.queue = _load(QUEUE)
+
+    def climb(self, stall: dict, grant: float, minutes: list[float], **flags: bool) -> tuple[dict, list]:
+        steps = []
+        for minute in minutes:
+            stall, step = self.queue.escalate(json.loads(json.dumps(stall)), grant, grant, flags.get("hotfix", False),
+                                              grant + minute * 60)
+            steps.append(step)
+        return stall, steps
+
+    def test_each_step_fires_once_at_its_threshold_and_the_state_survives_a_restart(self):
+        minutes = [29, 30, 31, 59, 60, 119, 120, 239, 240, 24 * 60 - 1, 24 * 60, 48 * 60]
+        stall, steps = self.climb({}, NOW, minutes)
+        self.assertEqual(steps, [None, "post", None, None, "call", None, "security", None, "pan-pan", None, "mayday", None])
+        self.assertEqual(stall["fired"], ["post", "call", "security", "pan-pan", "mayday"])
+        self.assertEqual([threshold for threshold, _, _ in self.queue.ESCALATION], [30, 60, 120, 240, 24 * 60])
+
+    def test_a_new_grant_resets_the_stall_and_a_late_first_look_fires_only_the_highest_due_step(self):
+        stall, _ = self.climb({}, NOW, [30])
+        stall, steps = self.climb(stall, NOW + 3600, [29, 30])
+        self.assertEqual((steps, stall["fired"]), ([None, "post"], ["post"]))
+        stall, step = self.queue.escalate({}, NOW, NOW, False, NOW + 5 * HOUR)
+        self.assertEqual((step, stall["fired"]), ("pan-pan", ["post", "call", "security", "pan-pan"]))
+        self.assertIsNone(self.queue.escalate({}, NOW, NOW + HOUR, False, NOW + HOUR + 29 * 60)[1])
+
+    def test_the_clock_stands_still_while_a_hotfix_runs_ahead_of_the_head(self):
+        stall, steps = self.climb({}, NOW, [20, 50], hotfix=True)
+        self.assertEqual(steps, [None, None])
+        stall, steps = self.climb(stall, NOW, [79, 80])
+        self.assertEqual(steps, [None, "post"])
+
+    def test_r3_p3_a_restart_at_50_min_keeps_the_clock_and_an_idle_queue_restarts_it(self):
+        data, fired = {"entries": [], "granted_at": NOW}, {}
+        for minute in range(130):
+            head = job(1 if minute < 50 else 2, kind="deploy", enqueued=NOW if minute < 50 else NOW + 50 * 60)
+            data["entries"] = [head]
+            sends, _, _ = self.queue.stalled(data, [head], {head["id"]: "all 1 deploy slots taken"}, 15.0, 100.0, idle, NOW + minute * 60)
+            fired.update((label, minute) for label, _ in sends)
+        self.assertEqual(fired, {"escalated post": 30, "escalated call": 60, "escalated security": 120})
+        late = job(3, kind="deploy", enqueued=NOW + 10 * HOUR)
+        data["entries"] = [late]
+        self.assertEqual(self.queue.stalled(data, [late], {"j3": "all 1 deploy slots taken"}, 15.0, 100.0, idle, NOW + 10 * HOUR + 60)[0], [])
+
+    def test_r4_a_head_that_never_fits_gets_one_cleanup_and_one_notice_whatever_starts_beside_it(self):
+        head = job(1, kind="test", need_gb=60, enqueued=NOW - 600)
+        data, now, cleanups, notices = {"entries": [head], "granted_at": NOW - 600}, NOW, 0, []
+        for cycle in range(3):
+            for _ in range(3):
+                sends, clean, _ = self.queue.stalled(data, [head], {"j1": self.queue.Disk("60 GB would cut into the 15 GB floor")},
+                                                     15.0, 40.0, idle, now)
+                cleanups += clean
+                notices += [label for label, _ in sends if label.startswith("noticed")]
+                now += 20
+            data["granted_at"] = now
+            data.pop("stall", None)
+            now += 20
+        self.assertEqual((cleanups, notices), (1, ["noticed that the head cannot fit"]))
+        other = job(2, kind="test", need_gb=60)
+        self.assertTrue(self.queue.stalled(data, [other], {"j2": self.queue.Disk("60 GB would cut into the 15 GB floor")},
+                                           15.0, 40.0, idle, now)[1])
+
+    def test_the_cleanup_runs_once_per_head_when_disk_alone_blocks_it(self):
+        state, clean = self.queue.cleanup_due({}, "j1", True, NOW)
+        again = self.queue.cleanup_due(state, "j1", True, NOW + 60)
+        fresh = self.queue.cleanup_due(again[0], "j2", True, NOW + 180)
+        self.assertEqual((clean, again[1], fresh[1], state["cleaned_at"]), (True, False, True, NOW))
+        self.assertFalse(self.queue.cleanup_due({}, "j1", False, NOW)[1])
+
+    def test_stalled_reads_the_store_names_the_head_and_skips_a_hotfix_ahead(self):
+        head = job(1926, kind="gui-dind", need_gb=65, enqueued=NOW - 40 * 60)
+        verdicts = {"j1926": self.queue.Disk("65 GB would cut into the 15 GB floor"), "j2": "all 1 test slots taken"}
+        order = [head, job(2)]
+        data = {"entries": [head, job(2)], "granted_at": NOW - 31 * 60}
+        text = "kvb-org-queue: no grant for 30 min; head j1926 (gui-dind, work/a) waits: 65 GB would cut into the 15 GB floor"
+        notice = ("noticed that the head cannot fit", ["post", (
+            f"kvb-org-queue: head j1926 needs 65 GB, max reachable 32 GB after cleanup ({verdicts['j1926']}); operator cleanup needed"
+        ), "--to", "Main"])
+        self.assertEqual(self.queue.stalled(data, order, verdicts, 15.0, 47.0, idle, NOW),
+                         ([("escalated post", ["post", text, "--to", "Main"])], True, None))
+        self.assertEqual(self.queue.stalled(data, order, verdicts, 15.0, 47.0, idle, NOW + 60),
+                         ([notice], False, "low-risk cleanup ended without a report"))
+        self.assertEqual(self.queue.stalled(data, order, verdicts, 15.0, 47.0, idle, NOW + 120), ([], False, None))
+        hotfix = {"entries": [head, job(3, status="active", hotfix="main-red", granted=NOW - 9 * HOUR)], "granted_at": NOW - 9 * HOUR}
+        self.assertEqual(self.queue.stalled(hotfix, order, verdicts, 15.0, 100.0, idle, NOW)[0], [])
+        self.assertEqual(self.queue.stalled({"entries": []}, order, {**verdicts, "j2": None}, 15.0, 100.0, idle, NOW), ([], True, None))
+        self.assertEqual(self.queue.stalled({"entries": []}, order, {**verdicts, "j1926": None}, 15.0, 100.0, idle, NOW), ([], False, None))
+
+    def test_r2_a_head_that_cannot_fit_after_the_cleanup_gets_one_notice_per_head(self):
+        head = job(1926, kind="gui-dind", need_gb=65, enqueued=NOW - 5 * 60)
+        floored = self.queue.Disk("65 GB would cut into the 15 GB floor")
+        order, data = [head], {"entries": [head], "granted_at": NOW - 60}
+        report = "RESOURCE CLEANUP: freed 1.0 GB (0.0 GB caches), / now 47.0 GB free; 3 commands ok."
+        notice = ("noticed that the head cannot fit", [
+            "post", f"kvb-org-queue: head j1926 needs 65 GB, max reachable 32 GB after cleanup ({floored}); operator cleanup needed",
+            "--to", "Main",
+        ])
+
+        def poll(at: float, cleaning: bool, reason: str = floored) -> tuple:
+            return self.queue.stalled(
+                data, order, {"j1926": reason}, 15.0, 47.0, lambda: (cleaning, [(NOW - 600, "older"), (at - 10, report)]), at
+            )
+
+        self.assertEqual(poll(NOW, False), ([], True, None))
+        self.assertEqual(poll(NOW + 20, True), ([], False, None))
+        self.assertEqual(poll(NOW + 40, False), ([notice], False, f"low-risk cleanup: {report}"))
+        self.assertEqual(poll(NOW + 60, False), ([], False, None))
+        data["granted_at"] = NOW + 100
+        self.assertEqual([poll(NOW + 200, False), poll(NOW + 220, False)], [([], False, None)] * 2)
+        data.pop("cleanup")
+        self.assertEqual(poll(NOW + 400, False), ([], True, None))
+        self.assertEqual(poll(NOW + 420, False, "all 1 gui-dind slots taken"), ([], False, f"low-risk cleanup: {report}"))
+
+    def test_r2_a_cleanup_that_fails_in_the_sandbox_is_logged_once_and_the_queue_keeps_polling(self):
+        failed = "RESOURCE CLEANUP: freed 0.0 GB (0.0 GB caches), / now 47.0 GB free; 0 commands ok, failed: exit 1: docker image prune"
+        stall, clean = self.queue.cleanup_due({}, "j1", True, NOW)
+        lines = []
+        for _ in range(3):
+            stall, log, _ = self.queue.settle(stall, lambda: (False, [(NOW + 5, failed)]), False)
+            lines.append(log)
+        self.assertEqual((clean, lines), (True, [f"low-risk cleanup: {failed}", None, None]))
+        refused = mock.Mock(side_effect=PermissionError(13, "Permission denied"))
+        stall, _ = self.queue.cleanup_due({}, "j1", True, NOW)
+        with mock.patch.object(self.queue.watch, "spawn_cleanup", refused):
+            stall, started = self.queue.cleaned(stall)
+        self.assertEqual(started, "low-risk cleanup did not start: [Errno 13] Permission denied")
+        stall, log, notice = self.queue.settle(stall, idle, True)
+        self.assertEqual((log, notice, self.queue.settle(stall, idle, True)[1:]), (None, True, (None, False)))
+        stamp = 1_800_000_005 * 10**9
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with mock.patch.object(self.queue.watch, "ROOT", root), mock.patch.object(self.queue.watch, "ALERTS", root / "alerts.jsonl"):
+                self.assertEqual(self.queue.cleanup_outcome(NOW), (False, []))
+                (root / "alerts.jsonl").write_text("\n".join([
+                    json.dumps({"id": stamp, "stage": "cleanup", "text": failed}), "{broken",
+                    json.dumps({"id": 7, "stage": "stop", "text": "RESOURCE STOP"}),
+                ]) + "\n", encoding="utf-8")
+                (root / "cleanup.lock").mkdir()
+                now = time.time()
+                self.assertEqual(self.queue.cleanup_outcome(now), (True, []))
+                self.assertEqual(self.queue.cleanup_outcome(now + 3600), (False, [(stamp / 1e9, failed)]))
+
+    def test_act_starts_the_cleanup_and_sends_each_step_with_the_radio_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            seen = Path(tmp, "argv.json")
+            fake = Path(tmp, "radio.py")
+            fake.write_text(f"import json, sys\njson.dump(sys.argv[1:], open({str(seen)!r}, 'w'))\n", encoding="utf-8")
+            spawn = mock.Mock()
+            with mock.patch.object(self.queue, "RADIO", fake), mock.patch.object(self.queue.watch, "spawn_cleanup", spawn), \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                stall, started = self.queue.cleaned({"settled": False})
+                self.queue.act([("escalated call", self.queue.radio_words("call", "head waits"))], ["low-risk cleanup: x", started], "s1")
+                self.queue.act([], [], "s1")
+            self.assertEqual(json.loads(seen.read_text(encoding="utf-8")), ["send", "call", "head waits", "--to", "Main", "--session", "s1"])
+            spawn.assert_called_once_with("--full")
+            self.assertEqual(stall, {"settled": False})
+            self.assertEqual(err.getvalue(), (
+                "queue: low-risk cleanup: x\nqueue: disk alone blocks the head; low-risk cleanup started\nqueue: escalated call\n"
+            ))
+
+    def council_env(self, tmp: str) -> tuple[Path, dict[str, str]]:
+        root = Path(tmp).resolve() / "council"
+        return root, {"PATH": os.environ["PATH"], "HOME": tmp, "AGENTS_COUNCIL_ROOT": str(root),
+                      "AGENTS_COUNCIL_CONFIG": str(Path(tmp, "none.json"))}
+
+    def test_every_step_is_a_command_the_installed_radio_accepts_and_its_mayday_sets_no_silence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, env = self.council_env(tmp)
+            with mock.patch.dict(os.environ, env, clear=True), contextlib.redirect_stderr(io.StringIO()) as err:
+                for _, step, _ in self.queue.ESCALATION:
+                    self.queue.act([(f"escalated {step}", self.queue.radio_words(step, f"kvb-org-queue: stall {step}"))], [], "s1")
+            rows = [json.loads(line) for line in (root / "news.jsonl").read_text(encoding="utf-8").splitlines()]
+            silent = (root / "radio-silence.json").exists()
+        self.assertEqual(err.getvalue().splitlines(), [f"queue: escalated {step}" for _, step, _ in self.queue.ESCALATION])
+        self.assertEqual([(row["class"], row["to"], row["text"]) for row in rows], [
+            ("post", ["Main"], "kvb-org-queue: stall post"), ("call", ["Main"], "kvb-org-queue: stall call"),
+            ("security", [], "kvb-org-queue: stall security"), ("pan-pan", [], "kvb-org-queue: stall pan-pan"),
+            ("mayday", [], "kvb-org-queue: stall mayday"),
+        ])
+        self.assertFalse(silent)
+
+    def test_r3_p2_a_mayday_never_replaces_the_silence_of_another_sender_and_any_silence_stops_grants(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, env = self.council_env(tmp)
+            root.mkdir()
+            silence, now = root / "radio-silence.json", time.time()
+            spoof = {"since": now, "until": now + HOUR, "by": "Operator", "text": "kvb-org-queue: no grant for 1440 min"}
+            silence.write_text(json.dumps(spoof), encoding="utf-8")
+
+            def send(*words: str) -> int:
+                return subprocess.run(
+                    [sys.executable, str(self.queue.RADIO), "send", *words, "--session", "s2"], env=env,
+                    stdin=subprocess.DEVNULL, capture_output=True, timeout=60, check=False,
+                ).returncode
+
+            codes = [send("mayday", "disk full"), send("mayday", "disk full", "--no-silence"),
+                     send("call", "x", "--to", "Main", "--no-silence")]
+            kept = json.loads(silence.read_text(encoding="utf-8"))
+            with mock.patch.object(self.queue.watch, "ROOT", root), mock.patch.object(self.queue, "SILENCE", silence):
+                stops = self.queue.silenced(now)
+            silence.unlink()
+            quiet = [send("mayday", "disk full", "--no-silence"), silence.exists()]
+            send("mayday", "disk full")
+            own = json.loads(silence.read_text(encoding="utf-8"))
+        self.assertEqual((codes, kept, stops, quiet), ([0, 0, 2], spoof, True, [0, False]))
+        self.assertEqual((own["text"], own["by"] != "Operator", own["until"] - own["since"]), ("disk full", True, 7200))
 
 
 class TestHistory(unittest.TestCase):
@@ -785,6 +1486,7 @@ class TestQueueCommands(unittest.TestCase):
         self.assertEqual((entry["aliases"], entry["footprint"]), ([signature], None))
         self.assertTrue(0 < entry["granted_mem"] < 100, entry)
         self.assertEqual(self.entries(), [])
+        self.assertGreaterEqual(json.loads((self.root / "queue.json").read_text(encoding="utf-8"))["granted_at"], entry["enqueued"])
         [row] = [json.loads(line) for line in self.history_file.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(
             [row[k] for k in ("kind", "signature", "workdir", "exit", "concurrent")],
@@ -856,6 +1558,18 @@ class TestQueueCommands(unittest.TestCase):
         self.assertFalse(ran.exists())
         self.assertEqual(self.entries(), [])
 
+    def test_r4_a_restart_onto_the_installed_code_keeps_the_entry_its_place_and_its_enqueue_time(self):
+        host = self.install_host_skills()
+        host.write_text(host.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        self.cfg["slot_limits"]["deploy"] = 0
+        self.write_config()
+        hold, err = self.blocked_hold("true")
+        data = json.loads((self.root / "queue.json").read_text(encoding="utf-8"))
+        hold.send_signal(signal.SIGTERM)
+        self.assertEqual(hold.wait(timeout=30), 128 + signal.SIGTERM)
+        self.assertIn("Restarting this hold with", err.read_text(encoding="utf-8"))
+        self.assertEqual(([e["id"] for e in data["entries"]], data["seq"], data.get("handover")), (["deploy-1"], 1, {}))
+
     def test_list_marks_an_entry_on_other_code_than_the_host_install(self):
         queue = _load(QUEUE)
         me, mine = os.getpid(), queue.identity(os.getpid())
@@ -867,6 +1581,116 @@ class TestQueueCommands(unittest.TestCase):
         reasons = [line.split("\t")[-1] for line in self.run_queue("list").stdout.splitlines()[1:]]
         self.assertEqual(reasons[0], "granted on its next poll")
         self.assertTrue(reasons[1].startswith(f"queue code without a stamp, the host runs {queue.CODE}: "), reasons[1])
+
+    def test_list_names_the_line_the_backfill_and_the_escalated_head(self):
+        queue = _load(QUEUE)
+        me, mine = os.getpid(), queue.identity(os.getpid())
+        self.cfg["slot_limits"] = {"test": 5, "deploy": 1}
+        self.write_config()
+
+        def entry(seq: int, status: str, **fields: object) -> dict:
+            return {**stored(seq, status, me, mine, me if status == "active" else None, mine if status == "active" else None),
+                    "code": queue.CODE, **fields}
+
+        (self.root / "queue.json").write_text(json.dumps({"seq": 4, "entries": [
+            entry(1, "waiting", id="deploy-1", kind="deploy", workdir="/core"),
+            entry(2, "waiting", workdir="/core"),
+            entry(3, "waiting", workdir="/x"),
+            entry(4, "active", kind="deploy", workdir="/y", reason="backfilled", footprint={"ram": 0, "cpu": 0}),
+        ], "stall": {"grant": 0, "since": 0, "fired": ["post"], "cleaned": False}}), encoding="utf-8")
+        listing = self.run_queue("list")
+        self.assertEqual(listing.returncode, 0, listing.stderr)
+        self.assertEqual({line.split("\t")[1]: line.split("\t")[-1] for line in listing.stdout.splitlines()[1:]}, {
+            "test-4": "backfilled", "deploy-1": "escalated post: all 1 deploy slots taken",
+            "test-2": "waits in line behind deploy-1", "test-3": "backfilled",
+        })
+
+    def test_r5_list_json_gives_each_row_its_class_prio_wsjf_waits_and_the_trace_of_the_pass_that_set_its_reason(self):
+        queue = _load(QUEUE)
+        me, mine = os.getpid(), queue.identity(os.getpid())
+        self.cfg["slot_limits"] = {"test": 5, "deploy": 0}
+        self.write_config()
+        register = json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
+        register["work/a"].update(prio=2, estimates={"Operator": {"value": 8, "complexity": 2}})
+        (self.root / "rasci.json").write_text(json.dumps(register), encoding="utf-8")
+        now = time.time()
+
+        def entry(seq: int, status: str, **fields: object) -> dict:
+            return {**stored(seq, status, me, mine, me if status == "active" else None, mine if status == "active" else None),
+                    "code": queue.CODE, "enqueued": now - 120, **fields}
+
+        polled = ["unranked", "arrival 2", "line /core behind deploy-1"]
+        (self.root / "queue.json").write_text(json.dumps({"seq": 3, "entries": [
+            entry(1, "waiting", id="deploy-1", kind="deploy", workdir="/core", hotfix="fix-1"),
+            entry(2, "waiting", workdir="/core", name="Main", polled=now, reason="waits in line behind deploy-1", trace=polled),
+            entry(3, "active", workdir="/y", granted=now - 60, reason="backfilled", trace=["arrival 3"], footprint={"ram": 0, "cpu": 0}),
+        ]}), encoding="utf-8")
+        listing = self.run_queue("list", "--json")
+        self.assertEqual(listing.returncode, 0, listing.stderr)
+        rows = json.loads(listing.stdout)
+        self.assertEqual([list(row) for row in rows], [[
+            "position", "id", "status", "kind", "task", "session", "agent", "class", "prio", "wsjf", "waited_s", "eta_s", "reason", "trace",
+        ]] * 3)
+        shown = {row["id"]: row for row in rows}
+        self.assertEqual([(row["position"], row["id"]) for row in rows], [(None, "test-3"), (1, "deploy-1"), (2, "test-2")])
+        self.assertEqual({i: (r["class"], r["prio"], r["wsjf"], r["agent"]) for i, r in shown.items()}, {
+            "test-3": ("fix", 2, 4.0, "s1"), "deploy-1": ("hotfix", 2, 4.0, "s1"), "test-2": ("main", 2, 4.0, "Main"),
+        })
+        self.assertEqual({i: (r["reason"], r["trace"]) for i, r in shown.items()}, {
+            "test-3": ("backfilled", ["arrival 3"]),
+            "deploy-1": ("all 0 deploy slots taken", ["hotfix first", "rank 0", "arrival 1", "all 0 deploy slots taken"]),
+            "test-2": ("waits in line behind deploy-1", polled),
+        })
+        self.assertTrue(all(118 <= r["waited_s"] <= 180 for i, r in shown.items() if i != "test-3"))
+        self.assertEqual((shown["test-3"]["waited_s"], shown["test-2"]["eta_s"]), (60, None))
+
+    def test_a_poll_of_a_stalled_queue_escalates_over_the_radio_once(self):
+        self.cfg["slot_limits"]["deploy"] = 0
+        self.write_config()
+        holds = self.root / "holds"
+        holds.mkdir()
+        script = "import fcntl, sys, time; h = open(sys.argv[1], 'w'); fcntl.flock(h, fcntl.LOCK_EX); print('locked', flush=True); time.sleep(60)"
+        holder = subprocess.Popen([sys.executable, "-c", script, str(holds / "5-6.lock")], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        self.addCleanup(holder.stdout.close)
+        self.assertEqual(holder.stdout.readline().strip(), "locked")
+        now = time.time()
+        head = {**stored(1, "waiting", 1, "1", None, None), "id": "deploy-1", "kind": "deploy", "lock": "5-6",
+                "workdir": "/core", "enqueued": now - 40 * 60, "polled": now}
+        (self.root / "queue.json").write_text(json.dumps({"seq": 1, "entries": [head], "granted_at": now - 31 * 60}),
+                                              encoding="utf-8")
+        err = self.base / "hold.err"
+        with open(err, "w", encoding="utf-8") as handle:
+            hold = subprocess.Popen(
+                [sys.executable, str(QUEUE), "hold", "--kind", "deploy", "--task", "work/a", "--session", "s1", "--", "true"],
+                cwd=self.base, env=self.env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=handle,
+            )
+        self.addCleanup(hold.wait)
+        self.addCleanup(hold.kill)
+        self.wait_for(lambda: "waits at position 2" in err.read_text(encoding="utf-8"))
+        hold.send_signal(signal.SIGTERM)
+        self.assertEqual(hold.wait(timeout=30), 128 + signal.SIGTERM)
+        self.assertEqual(err.read_text(encoding="utf-8").splitlines(), [
+            "queue: escalated post", "queue: deploy-2 waits at position 2: all 0 deploy slots taken",
+        ])
+        [row] = [json.loads(line) for line in (self.root / "news.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual((row["class"], row["to"], row["from"], row["text"]), (
+            "post", ["Main"], "s1",
+            "kvb-org-queue: no grant for 30 min; head deploy-1 (deploy, work/a) waits: all 0 deploy slots taken",
+        ))
+        data = json.loads((self.root / "queue.json").read_text(encoding="utf-8"))
+        self.assertEqual((data["stall"]["fired"], data["cleanup"]["head"], data["cleanup"]["cleaned"]), (["post"], "deploy-1", False))
+
+    def test_r3_any_radio_silence_stops_a_grant_even_one_in_the_queues_own_words(self):
+        now = time.time()
+        silence = {"since": now, "until": now + 7200, "by": "s1",
+                   "text": "kvb-org-queue: no grant for 1440 min; head deploy-9 (deploy, work/a) waits: x"}
+        (self.root / "radio-silence.json").write_text(json.dumps(silence), encoding="utf-8")
+        hold, err = self.blocked_hold("true")
+        hold.send_signal(signal.SIGTERM)
+        self.assertEqual(hold.wait(timeout=30), 128 + signal.SIGTERM)
+        self.assertEqual(err.read_text(encoding="utf-8"), "queue: deploy-1 waits at position 1: radio silence\n")
 
     def test_hold_refuses_bad_input_with_exit_2_and_enqueues_nothing(self):
         def hold(*args: str) -> list[str]:

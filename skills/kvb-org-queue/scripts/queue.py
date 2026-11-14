@@ -4,7 +4,7 @@
 Usage:
     queue.py hold --kind KIND --task TASK [--need-gb N] [--hotfix SLUG] [--session ID]
         [--receipt LEVEL --log PATH] -- CMD...
-    queue.py list
+    queue.py list [--json]
     queue.py history
     queue.py cancel ID [--session ID]
     queue.py block     hook (PreToolUse on Bash)
@@ -31,14 +31,22 @@ Environment:
 
 Args:
     hold: enqueue CMD, then every POLL_SECONDS evaluate the whole queue under
-        the lock until this entry is granted; measure disk, RAM and CPU, run
+        the lock until this entry is granted; while the head waits blocked,
+        that poll escalates over kvb-org-radio by ESCALATION, starts the
+        watch.py low-risk cleanup once per head when disk alone (its stage
+        or the floor) blocks it and nothing waiting fits, logs its report
+        once and posts to Main once when disk still blocks the head
+        (stalled()); its mayday sets no radio silence, and any silence
+        stops grants; a drain starts only after DEBOUNCE_SECONDS of polls
+        proposing it (latched()); measure disk, RAM and CPU, run
         CMD in the current directory with inherited stdio in a session of its
         own, forward SIGINT and SIGTERM to its process group, measure every
         POLL_SECONDS and at its end, record its history row and leave the
         queue. The entry carries its code (a hash of this file and the
         SIBLINGS); a poll that finds other code installed in
         ~/.agents/skills leaves the queue ungranted and restarts the same hold
-        with the installed queue.py.
+        with the installed queue.py, which keeps its entry id, place and
+        enqueue time (hand_over()).
         --kind: a key of slot_need_gb in the config; a light one
             (light_kinds or watch.LIGHT_KIND) refuses a command watch.light()
             does not recognise, naming watch.queue_hold().
@@ -62,10 +70,14 @@ Args:
     list: a header, then one line per entry: position (run for active jobs),
         id, status, kind, task, need GB, minutes waited, ETA minutes (until a
         running job ends or a waiting one starts, from learned medians; - while
-        one is unknown), workdir, blocking reason (the one the holder saw at
-        its last poll, host load included; prefixed when the entry runs other
-        code than the installed one). Entries of dead holders are dropped
-        first.
+        one is unknown), workdir, reason (the one the holder saw at its last
+        poll, host load included, such as `waits in line behind <id>` or
+        `drained for <id>`, the head's after `escalated <step>: ` once the
+        stall reached it; `backfilled` for a job started past a blocked one;
+        prefixed when the entry runs other code than the installed one).
+        Entries of dead holders are dropped first.
+        --json: print the same rows as a JSON list (listed()), each with
+            the trace of the evaluate() pass that set its reason.
     history: a markdown table per command signature and one per kind of what
         the last 30 days of history teach, with each slot limit's source.
     cancel ID: remove the caller's waiting entry ID; its hold exits 3.
@@ -85,10 +97,8 @@ yet) may sum to at most these percentage points, a job alone always fits;
 slot_limits {kind: N}, optional, caps the learned slot limit of a kind from
 above (history.slot_limits); exclusive_kinds [kind] and light_kinds [kind],
 optional: a job of an exclusive kind runs only beside jobs of light kinds, and
-no job of another kind starts beside it; a light job meets only the budget and
-disk of running and granted jobs, never a reservation; queue_enforce (bool), optional, read by block
-only. The watch.py keys disk, thresholds_gb (stop is the floor every grant
-leaves free), slot_need_gb (the disk seed per kind), load_limits (every grant
+no job of another kind starts beside it; queue_enforce (bool), optional, read by block only. The watch.py keys
+disk, thresholds_gb (stop is the floor every grant leaves free), slot_need_gb (the disk seed per kind), load_limits (every grant
 also needs CPU busy below cpu_percent and RAM used plus the job's learned RAM
 share, the live admit records (admit()) and the young jobs' ramp
 (ramping_ram()) below mem_percent; both bound the learned slot limits), memory_limits (no
@@ -126,11 +136,12 @@ import os
 import re
 import shlex
 import signal
+import stat
 import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
 from typing import NoReturn
@@ -173,6 +184,36 @@ ADMIT = "admit"
 ADMITS = "admits"
 ADMIT_SECONDS = 120
 GRANTED_MEM = "granted_mem"
+CLAIMS = "claims"
+DRAIN = "drain"
+GRANTED = "granted_at"
+STALL = "stall"
+CLEANUP = "cleanup"
+HANDOVER = "handover"
+STACK = "stack:"
+COMPOSE_FILES = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml")
+PROJECT_ENV = re.compile(r"^COMPOSE_PROJECT_NAME=(.*)$", re.MULTILINE)
+COMPOSE_NAME = re.compile(r"^name:[ \t]*([^#\n]*)", re.MULTILINE)
+PROJECT_CHARS = re.compile(r"[a-z0-9_-]")
+SLOT = "slot:"
+SLOT_ENV = re.compile(r"^INFINITO_INSTANCE=(.*)$", re.MULTILINE)
+SLOT_FILES = ("custom.env", ".env", "default.env")
+BLOCKED = "blocked_since"
+DEBOUNCE_SECONDS = 3 * POLL_SECONDS
+DRAIN_AFTER_SECONDS = HOUR
+IDLE_SECONDS = 30 * 60
+RADIO = SKILLS / "kvb-org-radio" / "scripts" / "radio.py"
+RADIO_SECONDS = 30
+PREFIX = "kvb-org-queue: "
+TEXT = "<text>"
+ESCALATION = (
+    (30, "post", ("post", TEXT, "--to", "Main")),
+    (60, "call", ("send", "call", TEXT, "--to", "Main")),
+    (120, "security", ("send", "security", TEXT)),
+    (240, "pan-pan", ("send", "pan-pan", TEXT)),
+    (24 * 60, "mayday", ("send", "mayday", TEXT, "--no-silence")),
+)
+STEPS = {step: (minutes, argv) for minutes, step, argv in ESCALATION}
 
 
 @functools.cache
@@ -205,6 +246,14 @@ CODE = code_of(SKILLS)
 
 
 class Stale(Exception):
+    pass
+
+
+class Disk(str):
+    pass
+
+
+class Outside(str):
     pass
 
 
@@ -386,6 +435,57 @@ def key_of(entry: dict) -> tuple[str, tuple[str, ...]]:
     return entry["kind"], aliases_of(entry)
 
 
+def claims_of(path: str) -> list[str]:
+    """Returns:
+        What a job whose workdir is path holds alone: path, then
+        `stack:<project>` when path holds a compose file, the project being
+        COMPOSE_PROJECT_NAME of path/.env, else the top-level `name:` of the
+        first of COMPOSE_FILES there, else the name of path normalized as
+        docker compose normalizes it, then `slot:<n>` for the
+        INFINITO_INSTANCE of the first of SLOT_FILES below path that pins
+        one, so custom.env wins and an unpinned core checkout holds the slot
+        of its default.env.
+    """
+    slots = slot_of(path)
+    files = tuple(name for name in COMPOSE_FILES if os.path.isfile(os.path.join(path, name)))
+    if not files:
+        return [path, *slots]
+    named = [value for value in pinned(path, PROJECT_ENV, (".env",)) if value][-1:]
+    named = named or [value for value in pinned(path, COMPOSE_NAME, files[:1]) if value][:1]
+    project = named[-1] if named else "".join(PROJECT_CHARS.findall(os.path.basename(path).lower()))
+    return [path, f"{STACK}{project.lstrip('_-')}", *slots]
+
+
+def slot_of(path: str) -> list[str]:
+    for name in SLOT_FILES:
+        found = [value for value in pinned(path, SLOT_ENV, (name,)) if value]
+        if found:
+            return [f"{SLOT}{found[-1]}"]
+    return []
+
+
+def pinned(path: str, key: re.Pattern, names: tuple[str, ...]) -> list[str]:
+    """Returns:
+        The values the env files names below path give the key, unquoted,
+        in file order; an unreadable file gives none.
+    """
+    found: list[str] = []
+    for name in names:
+        try:
+            found += [value.strip().strip("\"'") for value in key.findall(Path(path, name).read_text(encoding="utf-8"))]
+        except (OSError, UnicodeDecodeError):
+            continue
+    return found
+
+
+def claims(entry: dict) -> list[str]:
+    """Returns:
+        The claims stored at enqueue (claims_of(); the workdir alone for an
+        entry an older queue stored without them).
+    """
+    return entry[CLAIMS] if CLAIMS in entry else [entry["workdir"]]
+
+
 def identity(pid: int) -> str | None:
     """Name a live process by its start time, so a reused pid does not match.
 
@@ -473,14 +573,50 @@ def store() -> Iterator[dict]:
         nofollow.replace(watch.ROOT, STORE, json.dumps(data, indent=1, sort_keys=True), 0o600)
 
 
-def ordered(waiting: list[dict], ranks: dict[str, int], agents: dict[str, int], now: float) -> list[dict]:
-    def key(entry: dict) -> tuple:
-        hours = int((now - entry["enqueued"]) // HOUR)
-        rank = ranks[entry["task"]] if entry["task"] in ranks else len(ranks)
-        agent = agents[entry["name"]] if entry["name"] in agents else len(agents)
-        return (not entry["hotfix"], rank - hours, agent, entry["seq"])
+def priority(entry: dict, ranks: dict[str, int], agents: dict[str, int], now: float) -> tuple[tuple, list[str]]:
+    """Returns:
+        The sort key of entry in ordered() (hotfix first, register rank less
+        the whole hours waited, agent order, arrival) and the trace steps
+        that name it.
+    """
+    hours = int((now - entry["enqueued"]) // HOUR)
+    rank = ranks[entry["task"]] if entry["task"] in ranks else len(ranks)
+    agent = agents[entry["name"]] if entry["name"] in agents else len(agents)
+    steps = [
+        *(["hotfix first"] if entry["hotfix"] else []),
+        (f"rank {rank}" if entry["task"] in ranks else "unranked") + (f", {hours} h waited: {rank - hours}" if hours else ""),
+        *([f"agent order {agent}"] if entry["name"] in agents else []),
+        f"arrival {entry['seq']}",
+    ]
+    return (not entry["hotfix"], rank - hours, agent, entry["seq"]), steps
 
-    return sorted(waiting, key=key)
+
+def ordered(waiting: list[dict], ranks: dict[str, int], agents: dict[str, int], now: float) -> list[dict]:
+    return sorted(waiting, key=lambda entry: priority(entry, ranks, agents, now)[0])
+
+
+def in_lines(order: list[dict]) -> list[dict]:
+    """Returns:
+        order with every entry moved behind each entry of order enqueued
+        before it that shares one of its claims (claims()), so a line runs
+        by enqueue time alone, whatever the rank; a hotfix moves behind
+        older hotfixes only.
+    """
+    held = {e["id"]: set(claims(e)) for e in order}
+    placed: dict[str, dict] = {}
+
+    def place(entry: dict) -> None:
+        if entry["id"] in placed:
+            return
+        for older in order:
+            earlier = (older["enqueued"], older["seq"]) < (entry["enqueued"], entry["seq"])
+            if earlier and held[older["id"]] & held[entry["id"]] and (older["hotfix"] or not entry["hotfix"]):
+                place(older)
+        placed[entry["id"]] = entry
+
+    for entry in order:
+        place(entry)
+    return list(placed.values())
 
 
 def over_budget(used: dict[str, float], share: dict[str, float], budget: dict[str, float]) -> str | None:
@@ -490,13 +626,14 @@ def over_budget(used: dict[str, float], share: dict[str, float], budget: dict[st
     return ", ".join(
         f"{resource.upper()} {used[resource]:.0f} % in use or reserved + {share[resource]:.0f} % > budget {budget[resource]:g} %"
         for resource in over
-    ) + "; reserved"
+    )
 
 
 def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memory: str, silenced: bool,
              slot_limits: dict[str, int], footprints: dict[str, dict[str, float]], budget: dict[str, float],
              ranks: dict[str, int], agents: dict[str, int], loaded: dict[str, str],
-             exclusive: set[str], light: set[str], now: float) -> dict[str, str | None]:
+             exclusive: set[str], light: set[str], drain: str | None,
+             now: float, *, trace: dict[str, list[str]] | None = None) -> tuple[dict[str, str | None], str | None, list[dict]]:
     """Decide every waiting entry in grant order, without disk or processes.
 
     Args:
@@ -518,71 +655,202 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
         all of them.
       loaded: {entry id: why live CPU or RAM holds it back (load_reason())}
         for the waiting entries the host load keeps out.
-      exclusive: kinds that run only beside light kinds (exclusive_kinds).
+      exclusive: kinds that run only beside light kinds (exclusive_kinds,
+        alone_reason()); they wait in grant order, in no line of their own.
       light: kinds allowed beside an exclusive one (light_kinds).
+      drain: the entry the previous pass drained for (DRAIN), else None.
       now: epoch seconds; each whole hour waited moves an entry one rank up.
+      trace: when given, filled with {waiting entry id: the steps that
+        decided it, in order}: its priority() steps, `drain head`,
+        `passes <id>: it waits for the machine` (or `<id> can never start,
+        <why>`) per entry it passes, then the
+        rule that blocked it, or `takes nothing <head> lacks`, the fit and
+        `backfilled past <id>` for a granted one.
 
     Returns:
-      {entry id: None when granted, else the blocking reason}, in grant order.
-      An unblocked entry counts as granted for the entries after it, whoever
-      holds it, so a lower entry never takes a higher entry's slot; one
-      blocked by disk or budget reserves its need against the entries after it.
-      A light entry meets only the disk, RAM and CPU of running and granted
-      entries: reservations, a head the host load keeps out included, hold
-      back heavy kinds alone, so light jobs that keep coming can delay a heavy
-      head without bound. A hotfix entry that passes every check but the host
-      load holds back every entry after it, so lighter jobs cannot keep the
-      load up. While no queue job is active, any other entry the host load
-      alone keeps out reserves nothing and holds nothing back: that load lies
-      outside the queue, so holding the queue frees none of it. An exclusive
-      entry that only running jobs of other kinds keep out holds back every
-      entry after it but light ones, so none overtakes it. A waiting entry
-      whose holder has not polled for CLAIM_SECONDS reserves nothing and comes
-      last.
+      ({entry id: None when granted, else the blocking reason, a Disk when
+      the disk stage or the floor alone blocks it} in grant order, the entry
+      the next pass drains for (drained()), the polling waiting entries in
+      grant order). A granted entry counts against the disk, budget and
+      slots of the entries after it, whoever holds it. A blocked entry
+      reserves nothing, so a later entry that fits starts past it
+      (backfill), except the head: drain, or before it a blocked hotfix
+      that is the first blocked entry not unstartable() or an exclusive entry that only
+      running jobs of other kinds keep out (alone_reason()). Behind the
+      head every later entry, light ones too, starts only when it takes
+      nothing the head still lacks, the last slot of its kind included
+      (takes(); beside a head that is
+      exclusive or waits for an exclusive job only light jobs count); every
+      later one but light ones waits behind a
+      hotfix head, and behind any head whose kind is exclusive or that live
+      load holds while queue jobs run; light ones wait too while load the
+      queue causes holds a hotfix head. An entry never passes an active,
+      granted or waiting entry enqueued before it that shares one of its
+      claims (claims(): worktree, compose stack, slot): those form its
+      line, which runs by enqueue time alone (in_lines()), never by rank,
+      except that a hotfix waits behind no older entry but a hotfix or an
+      active one, and a light entry passes a waiting one that is no hotfix
+      and waits only for the machine (its slot, alone_reason() or a hold
+      behind an entry of other claims), which then waits for that light run;
+      a head keeps its slot, so that delays it by one light run at most. A
+      granted entry holds its claims for the rest of the pass. A waiting
+      entry of the session Main that could start, whose line only runs,
+      waits for the machine or is the head, reserves like a head against the
+      later entries of other claims: its slot, its exclusive room and its
+      budget (held_for()).
+      An entry that could not start with no queue job running (its disk
+      need cuts into floor, its kind has no slot, or load holds it that no
+      queue job causes: an Outside reason, or no queue job active) is no
+      head; one with an Outside reason holds no line either. A waiting
+      entry whose holder has not polled for CLAIM_SECONDS reserves nothing
+      and comes last. An entry passes a waiting entry of its line that never
+      could start (unstartable()) and takes its place in that line.
     """
     active = [e for e in entries if e["status"] == "active"]
-    available = free_gb - sum(e["need_gb"] for e in active)
     used = {resource: sum(footprints[e["id"]][resource] for e in active) for resource in budget}
-    taken = len(active)
-    granted = used, available, taken
+    available = free_gb - sum(e["need_gb"] for e in active)
+    lit = [e for e in active if e["kind"] in light]
+    beside = {resource: sum(footprints[e["id"]][resource] for e in lit) for resource in budget}
+    room = free_gb - sum(e["need_gb"] for e in lit)
     counts = Counter(e["kind"] for e in active)
-    busy = {e["workdir"] for e in active}
+    lines = {claim: e["id"] for e in active for claim in claims(e)}
+    polling = [e for e in entries if e["status"] == "waiting" and not silent(e, now)]
+    order = in_lines(ordered(polling, ranks, agents, now))
+    never = {e["id"]: unstartable(e, free_gb, floor, slot_limits) for e in order}
+    could = {
+        e["id"] for e in order if not never[e["id"]]
+        and not (e["id"] in loaded and (not active or isinstance(loaded[e["id"]], Outside)))
+    }
+    drain = drain if drain in could else None
+    steps = {} if trace is None else trace
     verdicts: dict[str, str | None] = {}
-    waiting = [e for e in entries if e["status"] == "waiting"]
-    held = drain = None
-    for entry in ordered([e for e in waiting if not silent(e, now)], ranks, agents, now):
-        if held is not None:
-            verdicts[entry["id"]] = f"waits behind hotfix {held}, which the host load holds back"
-            continue
-        kind, need, workdir, share = entry["kind"], entry["need_gb"], entry["workdir"], footprints[entry["id"]]
-        if drain is not None and kind not in light:
-            verdicts[entry["id"]] = f"waits behind {drain}, which needs the host beside light kinds only"
-            continue
-        reason = host_reason(stage, memory, silenced, need) or slot_reason(kind, workdir, slot_limits, counts, busy)
-        if reason is None:
-            reason = alone_reason(kind, counts, exclusive, light)
-            if reason is not None and kind in exclusive:
-                drain = entry["id"]
-        if reason is None:
-            pool_used, pool_available, pool_taken = granted if kind in light else (used, available, taken)
-            reason, took, disk = resources(need, share, pool_used, pool_available, floor, budget, pool_taken)
-            if reason is None and entry["id"] in loaded and (entry["hotfix"] or not active):
-                reason = loaded[entry["id"]]
-                if entry["hotfix"]:
-                    held = entry["id"]
+    blocked: list[dict] = []
+    able: list[dict] = []
+    reserve: tuple[dict[str, float], float, bool, str, str, str] | None = None
+    machine: set[str] = set()
+    holds: list[tuple[dict[str, float], float, str, str, set[str]]] = []
+    running = {e["id"] for e in active}
+    for entry in order:
+        kind, need, share, mine = entry["kind"], entry["need_gb"], footprints[entry["id"]], claims(entry)
+        taken = sum(counts.values())
+        lifted = [c for c in mine if never.get(lines.get(c))]
+        passed = list(dict.fromkeys(lines[c] for c in mine if c in lifted or kind in light and lines.get(c) in machine))
+        kept = [c for c in mine if lines.get(c) not in passed]
+        owners = {lines[c] for c in kept if c in lines}
+        lined = bool(owners)
+        lead = behind(entry, kept, lines, able, reserve[4] if reserve else drain, exclusive, light, loaded)
+        alone, slot = alone_reason(kind, counts, exclusive, light), slot_reason(kind, slot_limits, counts)
+        reason = blocking(
+            lead and lead[0], disk_reason(stage, need),
+            host_reason(memory, silenced) or slot or alone or (over_budget(used, share, budget) if taken else None),
+            None if available - need >= floor else floor_reason(need, floor), loaded.get(entry["id"]),
+        )
+        step = lead[1] if lead else reason
+        if reason is None and reserve is not None:
+            slotted = reserve[5] if kind == reserve[5] and counts[kind] + 1 >= slot_limits.get(kind, 0) else None
+            short = takes(need, share, *((beside, room) if reserve[2] else (used, available)), floor, budget, reserve[:2], slotted)
+            reason = reserve[3] if short else None
+            step = f"{reserve[3]}: takes {short}" if short else f"takes nothing {reserve[4]} lacks"
+        pools = used, available, beside, room
+        why = None if reason is not None else next(((h[2], s) for h in holds if not h[4] & set(mine) and (
+            s := held_for(kind, need, share, h, counts, slot_limits, exclusive, light, pools, floor, budget))), None)
+        if why:
+            reason, step = f"reserved for {why[0]}", f"reserved for {why[0]}: {why[1]}"
+        for claim in () if isinstance(loaded.get(entry["id"]), Outside) else mine:
+            if reason is None or claim in lifted:
+                lines[claim] = entry["id"]
             else:
-                used, available = plus(used, took), available - disk
-                if reason is None:
-                    taken += 1
-                    counts[kind] += 1
-                    busy.add(workdir)
-                    if entry["id"] not in loaded:
-                        granted = plus(granted[0], took), granted[1] - disk, granted[2] + 1
+                lines.setdefault(claim, entry["id"])
+        mark = [
+            *priority(entry, ranks, agents, now)[1], *(["drain head"] if entry["id"] == drain else []),
+            *(f"passes {o}: {o} can never start, {never[o]}" if never.get(o) else f"passes {o}: it waits for the machine" for o in passed),
+        ]
+        if reason is None:
+            steps[entry["id"]] = [*mark, *fitted(step, used, share, need, available, blocked)]
+            used, available = plus(used, share), available - need
+            if kind in light:
+                beside, room = plus(beside, share), room - need
+            counts[kind] += 1
+        else:
+            steps[entry["id"]] = [*mark, str(step)]
+            blocked.append(entry)
+            able += [] if never[entry["id"]] else [entry]
+            first = entry["hotfix"] and able == [entry] or kind in exclusive and reason == alone
+            if reserve is None and (entry["id"] == drain or entry["id"] in could and first):
+                held = f"waits behind hotfix {entry['id']}" if entry["hotfix"] else f"drained for {entry['id']}"
+                reserve = share, need, kind in exclusive or reason == alone, held, entry["id"], kind
+            if not entry["hotfix"] and not lined and (lead or reason in (alone, slot)):
+                machine.add(entry["id"])
+            settled = running | machine | {i for i, v in verdicts.items() if v is None} | {reserve[4] if reserve else None}
+            if lined and entry["name"] == "Main" and entry["id"] in could and entry["id"] != (reserve and reserve[4]) and owners <= settled:
+                holds.append((share, need, entry["id"], kind, set(mine)))
         verdicts[entry["id"]] = reason
-    for entry in waiting:
-        if silent(entry, now):
+    for entry in entries:
+        if entry["status"] == "waiting" and silent(entry, now):
             verdicts[entry["id"]] = f"no poll for {now - entry['polled']:.0f} s; reserves nothing until it polls again"
-    return verdicts
+            steps[entry["id"]] = [verdicts[entry["id"]]]
+    return verdicts, drained(order, verdicts, drain, could, now), order
+
+
+def fitted(step: str | None, used: dict[str, float], share: dict[str, float], need: float, available: float,
+           blocked: list[dict]) -> list[str]:
+    """Returns:
+        The trace steps of a granted entry: step when a head reserves, its
+        fit beside used and available, and the blocked entry it passes.
+    """
+    fit = ", ".join(f"{r.upper()} {used[r]:.0f} % + {share[r]:.0f} %" for r in used) + f", {need:g} GB of {available:.0f} GB fits"
+    return [*([step] if step else []), fit, *([f"backfilled past {blocked[0]['id']}"] if blocked else [])]
+
+
+def blocking(lead: str | None, staged: str | None, rest: str | None, floored: str | None,
+             late: str | None) -> str | None:
+    """Returns:
+        The first reason of lead, staged, rest, floored and late, a Disk
+        when only staged or floored, the disk checks, hold the entry back.
+    """
+    reason = lead or staged or rest or floored or late
+    return Disk(reason) if reason is not None and lead is None and rest is None and late is None else reason
+
+
+def behind(entry: dict, mine: list[str], lines: dict[str, str], blocked: list[dict], drain: str | None,
+           exclusive: set[str], light: set[str], loaded: dict[str, str]) -> tuple[str, str] | None:
+    """Returns:
+        (why an entry before it holds entry back, its trace step), else None:
+        the first of blocked (the blocked entries not unstartable()) is a
+        hotfix and entry is not light, or load
+        the queue causes holds that hotfix (loaded, no Outside reason); an
+        entry enqueued before it shares one of its claims mine (lines maps a
+        claim to the first entry holding it); or drain, the entry that
+        reserves (evaluate()), is blocked before it, entry is not light, and
+        live load holds drain or its kind is exclusive.
+    """
+    first = blocked[0] if blocked else None
+    if first and first["hotfix"]:
+        pressed = first["id"] in loaded and not isinstance(loaded[first["id"]], Outside)
+        if entry["kind"] not in light or pressed:
+            return f"waits behind hotfix {first['id']}", f"hotfix {first['id']} blocked ahead" + (": load holds it" if pressed else "")
+    ahead = [(claim, lines[claim]) for claim in mine if claim in lines]
+    if ahead:
+        return f"waits in line behind {ahead[0][1]}", f"line {ahead[0][0]} behind {ahead[0][1]}"
+    for e in blocked:
+        if entry["kind"] not in light and e["id"] == drain and (drain in loaded or e["kind"] in exclusive):
+            return f"drained for {drain}", f"drained for {drain}: " + ("load holds it" if drain in loaded else f"{e['kind']} is exclusive")
+    return None
+
+
+def drained(order: list[dict], verdicts: dict[str, str | None], drain: str | None, could: set[str],
+            now: float) -> str | None:
+    """Returns:
+        The entry the next pass drains for, among could, the entries of order
+        that could start with no queue job running: drain while it still
+        waits, else the first blocked one that waited DRAIN_AFTER_SECONDS,
+        else the first of order once none of order fits; None when there is
+        none.
+    """
+    blocked = [e["id"] for e in order if verdicts[e["id"]] is not None]
+    aged = [e["id"] for e in order if e["id"] in blocked and now - e["enqueued"] >= DRAIN_AFTER_SECONDS]
+    stuck = [order[0]["id"]] if order and len(blocked) == len(order) else []
+    return next((e for e in [drain, *aged, *stuck] if e in could), None)
 
 
 def silent(entry: dict, now: float) -> bool:
@@ -600,25 +868,72 @@ def plus(used: dict[str, float], share: dict[str, float]) -> dict[str, float]:
     return {resource: used[resource] + share[resource] for resource in used}
 
 
-def resources(need: float, share: dict[str, float], used: dict[str, float], available: float, floor: float,
-              budget: dict[str, float], taken: int) -> tuple[str | None, dict[str, float], float]:
+def takes(need: float, share: dict[str, float], used: dict[str, float], available: float, floor: float,
+          budget: dict[str, float], reserve: tuple[dict[str, float], float], slotted: str | None) -> str | None:
     """Returns:
-        (reason or None, RAM and CPU share, disk GB) the job takes or
-        reserves: one passing the budget beside other jobs reserves its share,
-        one cutting into the floor its disk, a granted one takes both.
+        What a job of disk need and footprint share, beside jobs that use
+        used and leave available GB, takes that the head's reserve
+        (footprint, disk need) leaves too short: `its <kind> slot` when
+        slotted names the head's kind whose last free slot it takes, the
+        budget resources it pushes past, or disk; None when it takes none of
+        a short resource.
     """
-    if taken and (reason := over_budget(used, share, budget)) is not None:
-        return reason, share, 0
-    if available - need < floor:
-        return f"{need:g} GB would cut into the {floor:g} GB floor; reserved", dict.fromkeys(share, 0), need
-    return None, share, need
+    held, held_need = reserve
+    over = plus(plus(used, held), share)
+    short = [r.upper() for r in budget if share[r] > 0 and over[r] > budget[r]]
+    if slotted:
+        return f"its {slotted} slot"
+    if short:
+        return " and ".join(short)
+    return "disk" if need > 0 and available - held_need - need < floor else None
 
 
-def host_reason(stage: str, memory: str, silenced: bool, need: float) -> str | None:
+def held_for(kind: str, need: float, share: dict[str, float], hold: tuple[dict[str, float], float, str, str, set[str]],
+             counts: Counter, slot_limits: dict[str, int], exclusive: set[str], light: set[str],
+             pools: tuple[dict[str, float], float, dict[str, float], float], floor: float, budget: dict[str, float]) -> str | None:
+    """Returns:
+        Why a job of kind, disk need and footprint share takes what hold
+        (footprint, disk need, id, kind, claims), a job whose line only runs
+        or waits for the machine, lacks: `<kind> is exclusive` when one of
+        the two is exclusive and the other not light, else `takes` what
+        takes() finds beside pools (used, available, then the light jobs'
+        beside and room, which count when hold's kind is exclusive), its last
+        free slot of hold's kind included; None when it takes nothing.
+    """
+    held = hold[3]
+    if held in exclusive and kind not in light or kind in exclusive and held not in light:
+        return f"{held if held in exclusive else kind} is exclusive"
+    used, available, beside, room = pools
+    slotted = held if kind == held and counts[kind] + 1 >= slot_limits.get(kind, 0) else None
+    short = takes(need, share, *((beside, room) if held in exclusive else (used, available)), floor, budget, hold[:2], slotted)
+    return f"takes {short}" if short else None
+
+
+def unstartable(entry: dict, free_gb: float, floor: float, slot_limits: dict[str, int]) -> str | None:
+    """Returns:
+        Why entry could not start even with no queue job running: `<cap>
+        <kind> slots` when its kind's cap is 0 or missing, floor_reason()
+        when its disk need cuts into floor of free_gb; else None.
+    """
+    cap = slot_limits.get(entry["kind"], 0)
+    if cap <= 0:
+        return f"{cap} {entry['kind']} slots"
+    return floor_reason(entry["need_gb"], floor) if free_gb - entry["need_gb"] < floor else None
+
+
+def floor_reason(need: float, floor: float) -> str:
+    return f"{need:g} GB would cut into the {floor:g} GB floor"
+
+
+def disk_reason(stage: str, need: float) -> str | None:
     if stage in ("stop", "critical"):
         return f"disk stage {stage}"
     if stage == "warn" and need > 0:
         return "disk stage warn admits only jobs that need no disk"
+    return None
+
+
+def host_reason(memory: str, silenced: bool) -> str | None:
     if memory == "stop":
         return "memory stage stop"
     if silenced:
@@ -626,13 +941,11 @@ def host_reason(stage: str, memory: str, silenced: bool, need: float) -> str | N
     return None
 
 
-def slot_reason(kind: str, workdir: str, slot_limits: dict[str, int], counts: Counter, busy: set[str]) -> str | None:
+def slot_reason(kind: str, slot_limits: dict[str, int], counts: Counter) -> str | None:
     if kind not in slot_limits:
         return f"slot_limits has no {kind}"
     if counts[kind] >= slot_limits[kind]:
         return f"all {slot_limits[kind]} {kind} slots taken"
-    if workdir in busy:
-        return f"{workdir} runs another job"
     return None
 
 
@@ -700,17 +1013,28 @@ def footprint(entry: dict, signatures: dict[tuple[str, str], dict], kinds: dict[
 
 def held_back(cfg: dict, entries: list[dict], now: float, signatures: dict[str, dict], kinds: dict[str, dict],
               cpu: float, mem: float, admitted: float) -> dict[str, str]:
+    """Returns:
+        {waiting entry id: load_reason()} for the waiting entries the host
+        load keeps out, an Outside reason when the load would keep the entry
+        out alone with every queue job gone: CPU less the active jobs' CPU
+        shares, RAM less the ramped ones' RAM shares.
+    """
+    active = [e for e in entries if e["status"] == "active"]
+    ramped = sum(ram_share(e, signatures, kinds) for e in active if now - e.get("granted", now) >= RAMP_SECONDS)
+    busy = sum((footprint(e, signatures, kinds) or {"cpu": 0})["cpu"] for e in active)
     loaded = {}
     for entry in entries:
         if entry["status"] == "waiting":
             pending = pending_ram(entries, entry["id"], now, signatures, kinds, mem, admitted)
             if (reason := load_reason(cfg["load_limits"], cpu, mem, pending)) is not None:
-                loaded[entry["id"]] = reason
+                alone = load_reason(cfg["load_limits"], cpu - busy, mem - ramped, ram_share(entry, signatures, kinds))
+                loaded[entry["id"]] = reason if alone is None else Outside(reason)
     return loaded
 
 
 def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, signatures: dict[str, dict],
-           kinds: dict[str, dict], loaded: dict[str, str]) -> dict[str, str | None]:
+           kinds: dict[str, dict], loaded: dict[str, str], drain: str | None, *,
+           trace: dict[str, list[str]] | None = None) -> tuple[dict[str, str | None], str | None, list[dict]]:
     slots = {kind: limit for kind, (limit, _) in limits(cfg, kinds, entries).items()}
     budget = cfg["budget_percent"]
     footprints = {}
@@ -718,12 +1042,207 @@ def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, signature
         share = footprint(entry, signatures, kinds)
         footprints[entry["id"]] = dict(budget) if share is None else share
     waits = after_waits(entries)
-    return evaluate(
+    steps = {} if trace is None else trace
+    verdicts, drain, order = evaluate(
         [e for e in entries if e["id"] not in waits], free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now),
         watch.memory_stage(watch.memory(), cfg), silenced(now), slots, footprints, budget,
         register_ranks(), agent_ranks(), loaded,
-        set(cfg.get("exclusive_kinds", [])), set(cfg.get("light_kinds", [])), now,
-    ) | waits
+        set(cfg.get("exclusive_kinds", [])), set(cfg.get("light_kinds", [])), drain, now, trace=steps,
+    )
+    steps.update({entry_id: [reason] for entry_id, reason in waits.items()})
+    return verdicts | waits, drain, order
+
+
+def latched(data: dict, drain: str | None, now: float) -> str | None:
+    """Returns:
+        drain when the store data drains for it already, or once a new drain
+        was proposed at every poll for DEBOUNCE_SECONDS (BLOCKED keeps since
+        when), else None; a pass proposing none clears BLOCKED.
+    """
+    if drain is None or drain == data.get(DRAIN):
+        data.pop(BLOCKED, None)
+        return drain
+    data.setdefault(BLOCKED, now)
+    return drain if now - data[BLOCKED] >= DEBOUNCE_SECONDS else None
+
+
+def labelled(verdicts: dict[str, str | None], fired: list[str]) -> dict[str, str | None]:
+    """Returns:
+        verdicts with `backfilled` for a granted entry after a blocked one,
+        and `escalated <step>: ` before the first entry's reason for the last
+        step fired in the stall.
+    """
+    shown: dict[str, str | None] = {}
+    for entry_id, reason in verdicts.items():
+        if reason is None:
+            shown[entry_id] = "backfilled" if any(shown.values()) else None
+        else:
+            shown[entry_id] = f"escalated {fired[-1]}: {reason}" if fired and not shown else reason
+    return shown
+
+
+def escalate(stall: dict, grant: float | None, since: float, hotfix: bool,
+             now: float) -> tuple[dict, str | None]:
+    """Args:
+        stall: the stored STALL, {} for none; one stored for another grant,
+            or last advanced more than IDLE_SECONDS before since, counts as
+            none, so a grant or an idle queue resets it, and nothing else: a
+            restart, rejoin, cancel or new hold keeps its clock.
+        grant: epoch seconds of the last grant on the host, None for none.
+        since: epoch seconds the oldest polling waiting entry was enqueued;
+            a new stall's clock starts at the later of grant and since.
+        hotfix: whether a hotfix job runs ahead of the head; the clock
+            stands still while one does.
+        now: epoch seconds.
+
+    Returns:
+        (the stall to store, the ESCALATION step to fire now or None). Each
+        step fires once per stall; steps the clock passed unseen are marked
+        fired with the last of them, which alone fires.
+    """
+    fresh = {"grant": grant, "since": since if grant is None else max(grant, since), "seen": now, "fired": []}
+    if stall.get("grant") != grant or not fresh.keys() <= stall.keys() or since - stall["seen"] > IDLE_SECONDS:
+        stall = fresh
+    start = now if hotfix else stall["since"]
+    due = [step for minutes, step, _ in ESCALATION if now - start >= minutes * 60 and step not in stall["fired"]]
+    return {**stall, "since": start, "seen": now, "fired": [*stall["fired"], *due]}, due[-1] if due else None
+
+
+def cleanup_due(state: dict, head: str, disk: bool, now: float) -> tuple[dict, bool]:
+    """Returns:
+        (the CLEANUP to store: the stored one while head stays the head,
+        whatever grants pass beside it, else a new one for head; whether to
+        start the low-risk cleanup now, once per head, when disk alone
+        blocks it).
+    """
+    if state.get("head") != head:
+        state = {"head": head, "cleaned": False, "cleaned_at": None, "settled": False, "noticed": False}
+    if disk and not state["cleaned"]:
+        return {**state, "cleaned": True, "cleaned_at": now}, True
+    return state, False
+
+
+def settle(stall: dict, outcome: Callable[[], tuple[bool, list[tuple[float, str]]]],
+           short: bool) -> tuple[dict, str | None, bool]:
+    """Args:
+        stall: the CLEANUP cleanup_due() returned.
+        outcome: () -> (whether a cleanup holds the watch.py cleanup lock,
+            the cleanup alerts as (epoch seconds, text)); called only while
+            the head's cleanup has started and not yet settled.
+        short: whether disk alone still blocks the head.
+
+    Returns:
+        (the CLEANUP to store, the line to log once the cleanup has ended
+        (its newest report since it started, or that it left none), whether
+        to send the notice now); both come once per head.
+    """
+    log = None
+    if stall["cleaned"] and not stall["settled"]:
+        cleaning, reports = outcome()
+        if cleaning:
+            return stall, None, False
+        texts = [text for at, text in reports if at >= stall["cleaned_at"]]
+        log = f"low-risk cleanup: {texts[-1]}" if texts else "low-risk cleanup ended without a report"
+        stall = {**stall, "settled": True}
+    notice = stall["settled"] and short and not stall["noticed"]
+    return {**stall, "noticed": stall["noticed"] or notice}, log, notice
+
+
+def cleanup_outcome(now: float) -> tuple[bool, list[tuple[float, str]]]:
+    """Returns:
+        (whether a watch.py cleanup holds its lock, younger than LOCK_TTL,
+        at now; the cleanup alerts of watch.py as (epoch seconds, text),
+        none while it does or when the file is unreadable).
+    """
+    try:
+        held = os.lstat(watch.ROOT / watch.CLEANUP_LOCK)
+    except OSError:
+        held = None
+    if held is not None and stat.S_ISDIR(held.st_mode) and now - held.st_mtime <= watch.LOCK_TTL:
+        return True, []
+    try:
+        rows = [json.loads(line) for _, line in watch.history_rows(nofollow.read_text(watch.ROOT, watch.ALERTS))]
+    except OSError:
+        return False, []
+    return False, [
+        (row["id"] / 1e9, row["text"]) for row in rows
+        if row.get("stage") == "cleanup" and isinstance(row["id"], int) and isinstance(row.get("text"), str)
+    ]
+
+
+def stalled(data: dict, order: list[dict], verdicts: dict[str, str | None], floor: float, free_gb: float,
+            outcome: Callable[[], tuple[bool, list[tuple[float, str]]]],
+            now: float) -> tuple[list[tuple[str, list[str]]], bool, str | None]:
+    """Returns:
+        ([(label, radio.py argv)] to send: the ESCALATION step due, then
+        the notice that the head cannot fit after the cleanup; whether to
+        start the cleanup; the line to log about the cleanup, else None).
+    """
+    fits = None in verdicts.values()
+    head = next((e for e in order if isinstance(verdicts[e["id"]], Disk)), None) if fits else next(iter(order), None)
+    if head is None:
+        return [], False, None
+    reason = verdicts[head["id"]]
+    active = [e for e in data["entries"] if e["status"] == "active"]
+    grants = [*([data[GRANTED]] if GRANTED in data else []), *(e["granted"] for e in active)]
+    disk = isinstance(reason, Disk)
+    sends = []
+    if not fits:
+        data[STALL], step = escalate(
+            data.get(STALL) or {}, max(grants) if grants else None, min(e["enqueued"] for e in order),
+            any(e["hotfix"] for e in active), now,
+        )
+        sends = [] if step is None else [(f"escalated {step}", radio_words(step, (
+            f"{PREFIX}no grant for {STEPS[step][0]} min; head {head['id']} ({head['kind']}, {head['task']}) waits: {reason}"
+        )))]
+    state, clean = cleanup_due(data.get(CLEANUP) or {}, head["id"], disk, now)
+    log = None
+    if not clean:
+        state, log, notice = settle(state, outcome, disk)
+        reach = max(free_gb - floor, 0) if reason == floor_reason(head["need_gb"], floor) else 0
+        if notice:
+            sends.append(("noticed that the head cannot fit", radio_words("post", (
+                f"{PREFIX}head {head['id']} needs {head['need_gb']:g} GB, max reachable {reach:.0f} GB "
+                f"after cleanup ({reason}); operator cleanup needed"
+            ))))
+    data[CLEANUP] = state
+    return sends, clean, log
+
+
+def radio_words(step: str, text: str) -> list[str]:
+    return [text if word == TEXT else word for word in STEPS[step][1]]
+
+
+def cleaned(state: dict) -> tuple[dict, str]:
+    """Returns:
+        (the CLEANUP state, settled when the cleanup did not start, so no
+        report is awaited; the line to log).
+    """
+    try:
+        watch.spawn_cleanup("--full")
+    except OSError as error:
+        return {**state, "settled": True}, f"low-risk cleanup did not start: {error}"
+    return state, "disk alone blocks the head; low-risk cleanup started"
+
+
+def act(sends: list[tuple[str, list[str]]], logs: list[str], session: str) -> None:
+    """Args:
+        sends: [(label, radio.py argv)] to send over kvb-org-radio, each
+            reported once by its label.
+        logs: lines to log.
+        session: the session that sends the radio rows.
+    """
+    for log in logs:
+        print(f"queue: {log}", file=sys.stderr, flush=True)
+    for label, words in sends:
+        try:
+            sent = subprocess.run(
+                [EXE, str(RADIO), *words, "--session", session], stdin=subprocess.DEVNULL, capture_output=True,
+                timeout=RADIO_SECONDS, check=False,
+            ).returncode
+        except (OSError, subprocess.TimeoutExpired) as error:
+            sent = error
+        print(f"queue: {label}" if sent == 0 else f"queue: {label} failed: {sent}", file=sys.stderr, flush=True)
 
 
 def load_reason(limits: dict, cpu: float, mem: float, ram_share: float) -> str | None:
@@ -795,11 +1314,31 @@ def workdir() -> str:
 
 
 def enqueue(fields: dict) -> dict:
+    """Returns:
+        The entry of fields; a hold that hand_over() left for the installed
+        code at most CLAIM_SECONDS before, of the same pid, session and
+        command, keeps its id, seq and enqueue time.
+    """
     with store() as data:
-        data["seq"] += 1
-        entry = {"id": f"{fields['kind']}-{data['seq']}", "seq": data["seq"], **fields}
+        kept = {pid: h for pid, h in data.get(HANDOVER, {}).items() if fields["enqueued"] - h["at"] <= CLAIM_SECONDS}
+        mine = kept.pop(str(fields["pid"]), None)
+        if mine is not None and (mine["session"], mine["cmd"]) == (fields["session"], fields["cmd"]):
+            entry = {**fields, "id": mine["id"], "seq": mine["seq"], "enqueued": mine["enqueued"]}
+        else:
+            data["seq"] += 1
+            entry = {"id": f"{fields['kind']}-{data['seq']}", "seq": data["seq"], **fields}
+        data[HANDOVER] = kept
         data["entries"].append(entry)
     return entry
+
+
+def hand_over(entry_id: str) -> None:
+    with store() as data:
+        for entry in [e for e in data["entries"] if e["id"] == entry_id]:
+            data["entries"].remove(entry)
+            data.setdefault(HANDOVER, {})[str(entry["pid"])] = {
+                **{key: entry[key] for key in ("id", "seq", "enqueued", "session", "cmd")}, "at": time.time(),
+            }
 
 
 def update(entry_id: str, **fields: object) -> None:
@@ -850,13 +1389,26 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
                 return CANCELLED, 0
             rejoin(data, mine[0], now)
             loaded = held_back(cfg, data["entries"], now, signatures, kinds, cpu, mem, admitted_ram(data, now))
-            verdicts = decide(cfg, data["entries"], free, now, signatures, kinds, loaded)
-            reason = verdicts[entry_id] or loaded.get(entry_id)
-            mine[0]["reason"] = reason
-            if reason is None:
+            steps: dict[str, list[str]] = {}
+            verdicts, drain, order = decide(cfg, data["entries"], free, now, signatures, kinds, loaded, data.get(DRAIN), trace=steps)
+            data[DRAIN] = latched(data, drain, now)
+            mine[0]["trace"] = steps[entry_id]
+            if verdicts[entry_id] is None:
                 concurrent = sum(e["status"] == "active" for e in data["entries"])
-                mine[0].update(status="active", granted=now, **{GRANTED_MEM: mem, FROZEN: footprint(mine[0], signatures, kinds)})
+                mine[0].update(status="active", granted=now, reason=labelled(verdicts, [])[entry_id],
+                               **{GRANTED_MEM: mem, FROZEN: footprint(mine[0], signatures, kinds)})
+                data[GRANTED] = now
+                data.pop(STALL, None)
                 return None, concurrent
+            sends, clean, log = stalled(data, order, verdicts, cfg["thresholds_gb"]["stop"], free,
+                                        functools.partial(cleanup_outcome, now), now)
+            logs = [] if log is None else [log]
+            if clean:
+                data[CLEANUP], started = cleaned(data[CLEANUP])
+                logs.append(started)
+            reason = labelled(verdicts, data[STALL]["fired"] if STALL in data else [])[entry_id]
+            mine[0]["reason"] = reason
+        act(sends, logs, mine[0]["session"])
         position = list(verdicts).index(entry_id) + 1
         if (position, reason) != shown:
             print(f"queue: {entry_id} waits at position {position}: {reason}", file=sys.stderr, flush=True)
@@ -990,10 +1542,14 @@ def cmd_hold(args: argparse.Namespace) -> int:
             "workdir": here, "session": session, "name": council.live_sessions().get(session) or session,
             "lock": tag, "code": CODE, "pid": os.getpid(), "pid_start": identity(os.getpid()), "child": None,
             "child_start": None, "status": "waiting", "enqueued": time.time(), "granted": None,
-            "cmd": shlex.join(args.command), ALIASES: list(names),
+            "cmd": shlex.join(args.command), ALIASES: list(names), CLAIMS: claims_of(here),
         })
         try:
-            code, concurrent = wait(cfg, entry["id"], caught)
+            try:
+                code, concurrent = wait(cfg, entry["id"], caught)
+            except Stale:
+                hand_over(entry["id"])
+                raise
             if code is not None:
                 return code
             if caught:
@@ -1022,38 +1578,91 @@ def cmd_hold(args: argparse.Namespace) -> int:
             leave(entry["id"])
 
 
-def cmd_list(_: argparse.Namespace) -> int:
+def cmd_list(args: argparse.Namespace) -> int:
     cfg = config()
     free, _ = watch.disk(cfg)
     now = time.time()
     signatures, kinds = learned(cfg, now)
+    steps: dict[str, list[str]] = {}
     with store() as data:
         data["entries"] = prune(data["entries"])
         entries = list(data["entries"])
-        verdicts = decide(cfg, entries, free, now, signatures, kinds, {})
+        verdicts, _, _ = decide(cfg, entries, free, now, signatures, kinds, {}, data.get(DRAIN), trace=steps)
+        verdicts = labelled(verdicts, (data.get(STALL) or {}).get("fired", []))
     by_id = {e["id"]: e for e in entries}
     running = [(key_of(e), e["granted"]) for e in entries if e["status"] == "active"]
     rows = [
-        ("run", e, history.eta(signatures, [(key_of(e), e["granted"])], [], now), "-")
+        (None, e, history.eta(signatures, [(key_of(e), e["granted"])], [], now), e.get("reason") or "-", e.get("trace", []))
         for e in entries if e["status"] == "active"
     ]
     ahead: list[tuple[str, str]] = []
     for n, (entry_id, reason) in enumerate(verdicts.items(), 1):
         e = by_id[entry_id]
-        polled = reason if silent(e, now) else e.get("reason") or reason
-        rows.append((str(n), e, history.eta(signatures, running, ahead, now), polled or "granted on its next poll"))
+        own = not silent(e, now) and bool(e.get("reason"))
+        rows.append((n, e, history.eta(signatures, running, ahead, now), (e["reason"] if own else reason) or "granted on its next poll",
+                     e.get("trace", steps[entry_id]) if own else steps[entry_id]))
         ahead.append(key_of(e))
     host = code_of(HOST_SKILLS) or CODE
+    rows = [(position, e, eta, stamped(e, reason, host), trace) for position, e, eta, reason, trace in rows]
+    if args.json:
+        rasci = sibling("rasci")
+        print(json.dumps(listed(rows, rasci.merged(False), rasci.wsjf, now), indent=1))
+        return 0
     print("position\tid\tstatus\tkind\ttask\tneed_gb\twaited_min\teta_min\tworkdir\treason")
-    for position, e, eta, reason in rows:
-        if e.get("code") != host:
-            reason = f"queue code {e.get('code') or 'without a stamp'}, the host runs {host}: {reason}"
+    for position, e, eta, reason, _ in rows:
         waited = ((e["granted"] or now) - e["enqueued"]) / 60
         print(tab_line(
-            [position, e["id"], e["status"], e["kind"], e["task"], f"{e['need_gb']:g}", f"{waited:.0f}",
+            ["run" if position is None else position, e["id"], e["status"], e["kind"], e["task"], f"{e['need_gb']:g}", f"{waited:.0f}",
              "-" if eta is None else f"{eta:.0f}", e["workdir"], reason]
         ))
     return 0
+
+
+def stamped(entry: dict, reason: str, host: str) -> str:
+    if entry.get("code") == host:
+        return reason
+    return f"queue code {entry.get('code') or 'without a stamp'}, the host runs {host}: {reason}"
+
+
+def job_class(entry: dict, pin: int | None) -> str:
+    """Returns:
+        hotfix for a --hotfix job or a task pinned in the hotfix band (prio
+        1), main for a job of the session named Main, fix for the fix band
+        (prio 2), else feature.
+    """
+    if entry["hotfix"] or pin == 1:
+        return "hotfix"
+    if entry["name"] == "Main":
+        return "main"
+    return "fix" if pin == 2 else "feature"
+
+
+def listed(rows: list[tuple], register: dict[str, dict], score: Callable[[dict], tuple | None],
+           now: float) -> list[dict]:
+    """Args:
+        rows: (position, None while active, entry, ETA minutes or None, the
+            reason list shows, the trace steps) in list order.
+        register: the merged kvb-org-rasci rows by task.
+        score: rasci.wsjf, (value, complexity, WSJF) of a row or None.
+        now: epoch seconds.
+
+    Returns:
+        One object per row: position, id, status, kind, task, session,
+        agent, class (job_class()), prio (the task's pin or None), wsjf (or
+        None), waited_s, eta_s (or None), reason and trace, the steps of
+        evaluate() that decided the entry at the poll that set its reason.
+    """
+    shown = []
+    for position, e, eta, reason, trace in rows:
+        row = register.get(e["task"], {})
+        wsjf = score(row)
+        shown.append({
+            "position": position, "id": e["id"], "status": e["status"], "kind": e["kind"], "task": e["task"],
+            "session": e.get("session"), "agent": e["name"], "class": job_class(e, row.get("prio")), "prio": row.get("prio"),
+            "wsjf": None if wsjf is None else wsjf[2], "waited_s": round((e["granted"] or now) - e["enqueued"]),
+            "eta_s": None if eta is None else round(eta * 60), "reason": reason, "trace": trace,
+        })
+    return shown
 
 
 def tab_line(fields: list[object]) -> str:
@@ -1209,7 +1818,7 @@ def cli() -> argparse.ArgumentParser:
     hold.add_argument("--receipt")
     hold.add_argument("--log")
     hold.add_argument("command", nargs="+")
-    sub.add_parser("list")
+    sub.add_parser("list").add_argument("--json", action="store_true")
     sub.add_parser("history")
     cancel = sub.add_parser("cancel")
     cancel.add_argument("id")

@@ -394,6 +394,22 @@ class TestRadio(unittest.TestCase):
         self._prompt("s3")
         self.assertEqual(log.read_text(encoding="utf-8"), "Agents radio MAYDAY by One: smoke\n")
 
+    def test_a_mayday_that_sets_no_silence_notifies_at_once_and_none_replaces_another_senders_silence(self):
+        log = self.root.parent / "notified.log"
+        script = "import sys; open(sys.argv[1], 'a').write(sys.argv[2] + '\\n')"
+        self.config.write_text(json.dumps({"notify": [sys.executable, "-c", script, str(log)]}), encoding="utf-8")
+        self._send("s1", "send", "mayday", "smoke")
+        self._send("s2", "send", "mayday", "queue stall", "--no-silence")
+        self._send("s3", "send", "mayday", "leaked credential")
+        silence = json.loads((self.root / "radio-silence.json").read_text(encoding="utf-8"))
+        self._prompt("s2")
+        self._prompt("s3")
+        self.assertEqual((silence["by"], silence["text"]), ("One", "smoke"))
+        self.assertEqual(log.read_text(encoding="utf-8").splitlines(), [
+            "Agents radio MAYDAY by Two: queue stall", "Agents radio MAYDAY by Three: leaked credential",
+            "Agents radio MAYDAY by One: smoke",
+        ])
+
     def test_listener_wakes_on_mayday(self):
         proc = self._listen("s2")
         self.assertEqual(self._send("s1", "send", "mayday", "host down"), ["sent mayday to all", "wake: SendMessage to Three"])

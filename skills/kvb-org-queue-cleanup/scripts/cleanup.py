@@ -349,7 +349,7 @@ def outcome(groups: dict[str, list[dict]], gone: list[dict]) -> dict[str, list[s
 
 
 def send(cls: str, to: list[str], text: str) -> None:
-    radio.transmit(cls, to, text, STATION, [])
+    radio.transmit(cls, to, text, STATION, [], True)
 
 
 def capped(ids: list[str]) -> str:
