@@ -30,6 +30,7 @@ B64URL = re.compile(r"[A-Za-z0-9_-]+")
 ASSERTION_KEYS = ("id", "clientDataJSON", "authenticatorData", "signature")
 CBOR_DEPTH = 16
 TIMEOUT = 30
+OPENSSL = "/usr/bin/openssl"
 
 
 def b64decode(text: object, name: str) -> bytes:
@@ -263,9 +264,9 @@ def by_openssl(alg: int, spki: bytes, data: bytes, signature: bytes) -> bool:
             message.write_bytes(data)
             sealed.write_bytes(signature)
             if alg == -8:
-                argv = ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(key), "-rawin", "-in", str(message), "-sigfile", str(sealed)]
+                argv = [OPENSSL, "pkeyutl", "-verify", "-pubin", "-inkey", str(key), "-rawin", "-in", str(message), "-sigfile", str(sealed)]
             else:
-                argv = ["openssl", "dgst", "-sha256", "-verify", str(key), "-signature", str(sealed), str(message)]
+                argv = [OPENSSL, "dgst", "-sha256", "-verify", str(key), "-signature", str(sealed), str(message)]
             try:
                 done = subprocess.run(argv, capture_output=True, timeout=TIMEOUT, check=False)
             except (OSError, subprocess.TimeoutExpired):

@@ -5,7 +5,7 @@ export PATH=/usr/bin:/bin
 interval="${DREAM_INTERVAL_SECONDS:-43200}"
 stamps="${DREAM_STAMP_DIR:-${HOME}/.claude/.dream-stamps}"
 
-session="$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("session_id", ""))' 2>/dev/null)" || exit 0
+session="$(/usr/bin/python3 -I -c'import json, sys; print(json.load(sys.stdin).get("session_id", ""))' 2>/dev/null)" || exit 0
 [[ "${session}" =~ ^[A-Za-z0-9_-]+$ ]] || exit 0
 stamp="${stamps}/${session}"
 

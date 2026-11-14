@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib
 import json
 import os
@@ -8,7 +9,6 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -219,11 +219,6 @@ def scratch_repo(root: Path) -> Path:
     return repo
 
 
-def bytes_read() -> int:
-    counters = dict(line.split(": ") for line in Path("/proc/self/io").read_text(encoding="ascii").splitlines())
-    return int(counters["rchar"])
-
-
 def deny(entries: object) -> dict:
     return {"sandbox": {"filesystem": {"denyRead": entries}}}
 
@@ -354,7 +349,7 @@ class TestStagedDiff(unittest.TestCase):
             self.addCleanup(patch.stop)
 
     def test_the_staged_diff_lists_each_file_once_and_a_file_matching_a_secret_rule_ships_only_its_counts_and_the_note(self):
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, False, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo,self.rules)}
         self.assertEqual(sorted(found), ["added.txt", "app.py", "gone.txt", "logo.png"])
         self.assertEqual({path: (entry["status"], entry["mode"], entry["additions"], entry["deletions"], entry["note"]) for path, entry in found.items()}, {
             "added.txt": ("A", "100644", 1, 0, ""), "app.py": ("M", "100644", 3, 1, WITHHELD), "gone.txt": ("D", "100644", 0, 1, ""), "logo.png": ("B", "100644", 0, 0, ""),
@@ -373,14 +368,14 @@ class TestStagedDiff(unittest.TestCase):
         (self.repo / "plain.txt").write_text("plain\n-----BEGIN lowercase is no armour-----\n", encoding="utf-8")
         (self.repo / "fresh.txt").write_text(ARMOURED, encoding="utf-8")
         git(self.repo, "add", "key.txt", "plain.txt", "fresh.txt")
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, False, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo,self.rules)}
         self.assertEqual([(found[path]["patch"], found[path]["note"], found[path]["deletions"]) for path in ("key.txt", "fresh.txt")], [("", WITHHELD, 3), ("", WITHHELD, 0)])
         self.assertEqual((found["plain.txt"]["note"], found["plain.txt"]["additions"]), ("", 1))
         self.assertNotIn("plain words only", json.dumps(list(found.values())))
 
     def test_past_the_cap_the_rest_is_listed_by_stat_only(self):
         with mock.patch.object(staged_diff, "DIFF_LIMIT", 40):
-            found = staged_diff.review_diff(self.repo, False, self.rules)
+            found = staged_diff.review_diff(self.repo,self.rules)
         self.assertEqual([(entry["path"], bool(entry["patch"]), entry["note"]) for entry in found], [("added.txt", True, ""), ("app.py", False, WITHHELD), ("gone.txt", False, ""), ("logo.png", False, "")])
         self.assertEqual([(entry["additions"], entry["deletions"]) for entry in found], [(1, 0), (3, 1), (0, 1), (0, 0)])
 
@@ -390,40 +385,22 @@ class TestStagedDiff(unittest.TestCase):
         (broken / "bad.yaml").write_text("cwe: CWE-798\nrules: [unclosed\n", encoding="utf-8")
         for rules in (None, self.root / "missing", broken):
             with self.subTest(rules=str(rules)):
-                found = staged_diff.review_diff(self.repo, False, rules)
+                found = staged_diff.review_diff(self.repo,rules)
                 self.assertEqual([(entry["patch"], entry["note"]) for entry in found], [("", WITHHELD)] * 3 + [("", "")])
         self.assertIsNone(staged_diff.secret_rules(broken))
 
     def test_the_diff_fails_past_the_file_cap_or_the_path_limit_instead_of_the_hub_refusing_it(self):
         for name, value in (("FILE_CAP", 3), ("PATH_LIMIT", 8)):
             with self.subTest(limit=name), mock.patch.object(staged_diff, name, value), self.assertRaises(staged_diff.DiffError):
-                staged_diff.review_diff(self.repo, False, self.rules)
+                staged_diff.review_diff(self.repo,self.rules)
         self.assertEqual((staged_diff.FILE_CAP, staged_diff.PATH_LIMIT, diffs.FILE_CAP, diffs.PATH_LIMIT), (hub_limits.FILE_CAP, hub_limits.PATH_LIMIT) * 2)
-
-    def test_commit_all_shows_the_executable_bit_on_disk(self):
-        (self.repo / "added.txt").chmod(0o755)
-        everything = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, True, self.rules)}
-        self.assertEqual((everything["added.txt"]["mode"], everything["app.py"]["mode"]), ("100755", "100644"))
-        git(self.repo, "commit", "-q", "-m", "next")
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, True, self.rules)}
-        self.assertEqual((found["added.txt"]["status"], found["added.txt"]["mode"], found["added.txt"]["additions"]), ("M", "100644 => 100755", 0))
-        self.assertEqual(staged_diff.review_diff(self.repo, False, self.rules), [])
-
-    def test_commit_all_diffs_the_tracked_working_tree_against_head_without_untracked_files(self):
-        (self.repo / "added.txt").write_text("fresh\nlater\n", encoding="utf-8")
-        (self.repo / "untracked.txt").write_text("not mine\n", encoding="utf-8")
-        staged = {entry["path"]: entry["additions"] for entry in staged_diff.review_diff(self.repo, False, self.rules)}
-        everything = {entry["path"]: entry["additions"] for entry in staged_diff.review_diff(self.repo, True, self.rules)}
-        self.assertEqual((staged["added.txt"], everything["added.txt"]), (1, 2))
-        self.assertNotIn("untracked.txt", everything)
 
     def test_a_planted_fsmonitor_or_clean_filter_starts_no_program(self):
         marker = self.root / "ran"
         git(self.repo, "config", "core.fsmonitor", f"touch {marker}")
         git(self.repo, "config", "filter.evil.clean", f"touch {marker}; cat")
         (self.repo / ".gitattributes").write_text("* filter=evil\n", encoding="utf-8")
-        for everything in (False, True):
-            staged_diff.review_diff(self.repo, everything, self.rules)
+        staged_diff.review_diff(self.repo, self.rules)
         self.assertFalse(marker.exists())
 
     def test_a_planted_promisor_remote_fetches_no_missing_object_and_starts_no_program(self):
@@ -436,63 +413,23 @@ class TestStagedDiff(unittest.TestCase):
         }
         for key, value in promisor.items():
             git(self.repo, "config", key, value)
-        for everything in (False, True):
-            with self.subTest(everything=everything), self.assertRaises(staged_diff.DiffError):
-                staged_diff.review_diff(self.repo, everything, self.rules)
+        with self.assertRaises(staged_diff.DiffError):
+            staged_diff.review_diff(self.repo, self.rules)
         self.assertFalse(marker.exists())
 
-    def test_commit_all_reads_no_file_behind_a_symlinked_parent_directory(self):
-        outside = self.root / "outside"
-        outside.mkdir()
-        (outside / "key").write_text("stolen = 1\n", encoding="utf-8")
-        for folder in ("k", "d"):
-            (self.repo / folder).mkdir()
-            (self.repo / folder / "key").write_text("mine = 1\n", encoding="utf-8")
-        (self.repo / "d" / "link").symlink_to("key")
-        git(self.repo, "add", "k", "d")
-        (self.repo / "k" / "key").unlink()
-        (self.repo / "k").rmdir()
-        (self.repo / "k").symlink_to(outside)
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, True, self.rules)}
-        self.assertEqual([found[path]["patch"] for path in ("d/key", "d/link")], ["@@ -0,0 +1 @@\n+mine = 1", "@@ -0,0 +1 @@\n+key"])
-        self.assertNotIn("k/key", found)
-        self.assertNotIn("stolen", json.dumps(list(found.values())))
-
-    def test_an_index_path_leaving_the_working_tree_is_refused(self):
-        (self.root / "outside.txt").write_text("stolen = 1\n", encoding="utf-8")
-        for path in ("../outside.txt", "d/../../outside.txt", str(self.root / "outside.txt")):
-            with self.subTest(path=path), self.assertRaises(staged_diff.DiffError):
-                staged_diff.worktree(self.repo, path, "100644", "sha1", [])
-
-    def test_a_fifo_in_the_working_tree_is_skipped_without_blocking(self):
-        os.mkfifo(self.repo / "pipe")
-        found = []
-        reader = threading.Thread(target=lambda: found.append(staged_diff.worktree(self.repo, "pipe", "100644", "sha1", [])), daemon=True)
-        reader.start()
-        reader.join(10)
-        self.assertEqual(found, [None])
-
-    def test_a_working_tree_file_over_the_blob_limit_is_not_read(self):
-        with (self.repo / "big.bin").open("wb") as handle:
-            handle.truncate(4 * staged_diff.BLOB_LIMIT)
-        before = bytes_read()
-        found = staged_diff.worktree(self.repo, "big.bin", "100644", "sha1", [])
-        self.assertLess(bytes_read() - before, staged_diff.BLOB_LIMIT)
-        self.assertEqual((found[0], found[2]), ("100644", None))
-
-    def test_commit_all_reads_no_file_under_a_deny_read_path_and_still_reads_its_sibling(self):
+    def test_the_staged_diff_ships_nothing_under_a_deny_read_path_and_still_its_sibling(self):
         (self.repo / "vault").mkdir()
         (self.repo / "vault" / "key").write_text("stolen = 1\n", encoding="utf-8")
         (self.repo / "open.txt").write_text("seen = 1\n", encoding="utf-8")
         git(self.repo, "add", "vault", "open.txt")
         write_settings(self.repo / ".claude" / "settings.local.json", deny(["~/repo/vault"]))
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, True, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)}
         self.assertEqual([found[path]["patch"] for path in ("vault/key", "open.txt")], ["", "@@ -0,0 +1 @@\n+seen = 1"])
         self.assertNotIn("stolen", json.dumps(list(found.values())))
 
-    def test_commit_all_without_any_settings_file_diffs_normal_files(self):
+    def test_the_staged_diff_without_any_settings_file_diffs_normal_files(self):
         self.assertEqual([file for file, _ in sandbox_paths.settings_files(self.repo) if file.exists()], [])
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, True, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)}
         self.assertEqual((found["added.txt"]["patch"], found["app.py"]["additions"]), ("@@ -0,0 +1 @@\n+fresh", 3))
 
     def test_a_planted_empty_deny_read_list_still_leaves_the_floor_unread(self):
@@ -502,25 +439,24 @@ class TestStagedDiff(unittest.TestCase):
         git(self.repo, "add", ".ssh", "notes.txt")
         write_settings(self.repo / ".claude" / "settings.json", deny([]))
         with mock.patch.dict(os.environ, {"HOME": str(self.repo)}):
-            found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, True, self.rules)}
+            found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)}
         self.assertEqual([found[path]["patch"] for path in (".ssh/id_ed25519", "notes.txt")], ["", "@@ -0,0 +1 @@\n+seen = 1"])
         self.assertNotIn("stolen", json.dumps(list(found.values())))
 
-    def test_commit_all_fails_closed_on_an_unreadable_deny_read_setting_or_in_a_denied_working_tree(self):
+    def test_the_staged_diff_fails_closed_on_an_unreadable_deny_read_setting_or_in_a_denied_working_tree(self):
         cases = {"unparsable": b"{", "no utf-8": b"\xff", "no paths": deny("~/x"), "denied top": deny(["~"])}
         for case, content in cases.items():
             with self.subTest(case=case):
                 write_settings(self.root / ".claude" / "settings.json", content)
-                for everything in (True, False):
-                    with self.assertRaises(staged_diff.DiffError):
-                        staged_diff.review_diff(self.repo, everything, self.rules)
+                with self.assertRaises(staged_diff.DiffError):
+                    staged_diff.review_diff(self.repo, self.rules)
 
     def test_the_staged_diff_ships_no_content_under_a_denied_path(self):
         (self.repo / "vault").mkdir()
         (self.repo / "vault" / "key").write_text("stolen = 1\n", encoding="utf-8")
         git(self.repo, "add", "vault")
         write_settings(self.repo / ".claude" / "settings.json", deny(["vault"]))
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, False, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo,self.rules)}
         self.assertEqual((found["vault/key"]["status"], found["vault/key"]["patch"], found["added.txt"]["patch"]), ("A", "", "@@ -0,0 +1 @@\n+fresh"))
 
     def test_the_session_project_settings_and_read_rules_add_denies(self):
@@ -531,7 +467,7 @@ class TestStagedDiff(unittest.TestCase):
         write_settings(self.root / "project" / ".claude" / "settings.local.json", deny(["~/repo/vault"]))
         write_settings(self.repo / ".claude" / "settings.json", {"permissions": {"deny": ["Read(/notes.txt)", "Bash(rm:*)"]}})
         write_settings(self.root / ".claude" / "settings.json", {"permissions": {"deny": ["Read(*.pem)"]}})
-        found = {entry["path"]: entry["patch"] for entry in staged_diff.review_diff(self.repo, True, self.rules)}
+        found = {entry["path"]: entry["patch"] for entry in staged_diff.review_diff(self.repo, self.rules)}
         self.assertEqual([found[path] for path in ("vault/key", "notes.txt", "deep.pem", "open.txt")], ["", "", "", "@@ -0,0 +1 @@\n+seen = 1"])
 
     def test_each_settings_scope_resolves_relative_entries_from_its_own_folder_and_read_rules_like_claude_code(self):
@@ -555,7 +491,7 @@ class TestStagedDiff(unittest.TestCase):
         self.assertFalse(sandbox_paths.denied(str(self.repo / "env.txt"), roots))
         (self.repo / ".env").write_text("hidden = 1\n", encoding="utf-8")
         git(self.repo, "add", ".env")
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, True, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)}
         self.assertEqual((found[".env"]["patch"], found["added.txt"]["patch"]), ("", "@@ -0,0 +1 @@\n+fresh"))
 
     def test_an_allow_turns_into_a_deny_when_the_staged_tree_changed_since_the_preview_even_in_a_file_it_withholds(self):
@@ -570,7 +506,8 @@ class TestStagedDiff(unittest.TestCase):
             with self.subTest(case=case):
                 git(self.repo, "add", "-A")
                 pinned, shown = permission_hook.commit_diff(ask, self.rules)
-                self.assertEqual((pinned, len(shown["diff"])), (git(self.repo, "write-tree").strip(), len(shown["diff"])))
+                index = subprocess.run(["git", "ls-files", "-s", "-z"], cwd=self.repo, capture_output=True, check=True).stdout
+                self.assertEqual((pinned, shown["diff"]), (hashlib.sha256(index).hexdigest(), staged_diff.review_diff(self.repo,self.rules)))
                 self.assertEqual(permission_hook.bound(ALLOW, ask, pinned), ALLOW)
                 edit()
                 self.assertEqual(permission_hook.bound(ALLOW, ask, pinned), ALLOW)
@@ -578,13 +515,10 @@ class TestStagedDiff(unittest.TestCase):
                 self.assertEqual(permission_hook.bound(ALLOW, ask, pinned), changed)
                 self.assertEqual(permission_hook.bound({"behavior": "deny", "message": "no"}, ask, pinned), {"behavior": "deny", "message": "no"})
 
-    def test_an_allow_of_commit_all_is_bound_to_the_working_tree_too(self):
+    def test_an_allow_of_commit_all_is_never_approved(self):
         ask = {**ASK, "tool": "Bash", "command": "git commit -am x", "cwd": str(self.repo)}
-        pinned, shown = permission_hook.commit_diff(ask, self.rules)
-        self.assertEqual([entry["path"] for entry in shown["diff"]], ["added.txt", "app.py", "gone.txt", "logo.png"])
-        self.assertEqual(permission_hook.bound(ALLOW, ask, pinned), ALLOW)
-        (self.repo / "app.py").write_text("unstaged edit\n", encoding="utf-8")
-        self.assertEqual(permission_hook.bound(ALLOW, ask, pinned)["behavior"], "deny")
+        self.assertEqual(permission_hook.commit_diff(ask, self.rules), (None, {}))
+        self.assertIsNone(permission_hook.bound(ALLOW, ask, None))
 
     def test_an_allow_fails_closed_with_a_reason_when_the_tree_cannot_be_read(self):
         ask = {**ASK, "tool": "Bash", "command": "git commit -m x", "cwd": str(self.repo)}
@@ -606,18 +540,18 @@ class TestStagedDiff(unittest.TestCase):
         (self.repo / "added.txt").write_text("fresh\nslipped in\n", encoding="utf-8")
         git(self.repo, "add", "added.txt")
         self.assertEqual(staged_diff.tree_diff(self.repo, tree, self.rules), before)
-        self.assertNotEqual(staged_diff.review_diff(self.repo, False, self.rules), before)
+        self.assertNotEqual(staged_diff.review_diff(self.repo,self.rules), before)
 
     def test_without_a_secret_pattern_no_patch_ships(self):
         empty = self.root / "empty-rules"
         empty.mkdir()
         (empty / "none.yaml").write_text("rules: []\n", encoding="utf-8")
-        self.assertEqual({(entry["patch"], entry["note"]) for entry in staged_diff.review_diff(self.repo, False, empty)}, {("", WITHHELD), ("", "")})
+        self.assertEqual({(entry["patch"], entry["note"]) for entry in staged_diff.review_diff(self.repo,empty)}, {("", WITHHELD), ("", "")})
 
     def test_a_file_name_that_is_no_utf8_ships_as_backslash_escapes(self):
         (self.repo / os.fsdecode(b"caf\xe9.txt")).write_text("x\n", encoding="utf-8")
         git(self.repo, "add", "-A")
-        found = staged_diff.review_diff(self.repo, False, self.rules)
+        found = staged_diff.review_diff(self.repo,self.rules)
         self.assertIn("caf\\xe9.txt", [entry["path"] for entry in found])
         json.dumps(found, ensure_ascii=False).encode("utf-8")
 
@@ -625,10 +559,10 @@ class TestStagedDiff(unittest.TestCase):
         tree = git(self.repo, "rev-parse", "HEAD^{tree}").strip()
         (self.repo / "added.txt").write_text("one\x0ctwo\n", encoding="utf-8")
         git(self.repo, "add", "added.txt")
-        self.assertEqual(next(entry for entry in staged_diff.review_diff(self.repo, False, self.rules) if entry["path"] == "added.txt")["additions"], 1)
+        self.assertEqual(next(entry for entry in staged_diff.review_diff(self.repo,self.rules) if entry["path"] == "added.txt")["additions"], 1)
         (self.repo / ".git" / "objects" / tree[:2] / tree[2:]).unlink()
         with self.assertRaises(staged_diff.DiffError):
-            staged_diff.review_diff(self.repo, False, self.rules)
+            staged_diff.review_diff(self.repo,self.rules)
 
     def test_a_head_naming_a_missing_commit_or_a_broken_ref_fails_and_only_an_unborn_one_is_empty(self):
         fresh = self.root / "fresh"
@@ -636,14 +570,14 @@ class TestStagedDiff(unittest.TestCase):
         git(fresh, "init", "-q", "-b", "main")
         (fresh / "one.txt").write_text("one\n", encoding="utf-8")
         git(fresh, "add", "one.txt")
-        self.assertEqual([(entry["path"], entry["status"]) for entry in staged_diff.review_diff(fresh, False, self.rules)], [("one.txt", "A")])
+        self.assertEqual([(entry["path"], entry["status"]) for entry in staged_diff.review_diff(fresh, self.rules)], [("one.txt", "A")])
         commit = git(self.repo, "rev-parse", "HEAD").strip()
         (self.repo / ".git" / "objects" / commit[:2] / commit[2:]).unlink()
         with self.assertRaises(staged_diff.DiffError):
-            staged_diff.review_diff(self.repo, False, self.rules)
+            staged_diff.review_diff(self.repo,self.rules)
         (self.repo / ".git" / "refs" / "heads" / "main").write_text("not a ref\n", encoding="utf-8")
         with self.assertRaises(staged_diff.DiffError):
-            staged_diff.review_diff(self.repo, False, self.rules)
+            staged_diff.review_diff(self.repo,self.rules)
 
     def test_the_rules_are_cached_until_a_rule_file_changes(self):
         first = staged_diff.secret_rules(self.rules)
@@ -661,17 +595,18 @@ class TestStagedDiff(unittest.TestCase):
                 staged_diff.CACHE.write_text(broken, encoding="utf-8")
                 self.assertEqual([globs for globs, _ in staged_diff.secret_rules(self.rules)], [("*.txt",)])
 
-    def test_only_a_single_git_commit_names_its_directory_and_all_mode(self):
+    def test_only_a_single_git_commit_of_the_staged_index_names_its_directory(self):
         cases = {
-            "git commit -m 'feat: x'": ("/w", False),
-            "git commit -am 'feat: x'": ("/w", True),
-            "git commit -m all -a": ("/w", True),
-            "git commit --all --no-verify -m x": ("/w", True),
-            "git commit -ma": ("/w", False),
-            "git -C sub commit -m x": ("/w/sub", False),
-            "GIT_EDITOR=true git commit": ("/w", False),
-            "env -C sub git commit -m x": ("/w/sub", False),
-            "env --chdir=sub GIT_EDITOR=true git -C deeper commit -am x": ("/w/sub/deeper", True),
+            "git commit -m 'feat: x'": "/w",
+            "git commit -am 'feat: x'": None,
+            "git commit -m all -a": None,
+            "git commit --all --no-verify -m x": None,
+            "git commit -ma": "/w",
+            "git -C sub commit -m x": "/w/sub",
+            "GIT_EDITOR=true git commit": "/w",
+            "env -C sub git commit -m x": "/w/sub",
+            "env --chdir=sub GIT_EDITOR=true git -C deeper commit -m x": "/w/sub/deeper",
+            "env --chdir=sub GIT_EDITOR=true git -C deeper commit -am x": None,
             "git commit -m x -- -a": None,
             "git commit -m x file.txt": None,
             "git commit -a -m x file.txt": None,
@@ -689,10 +624,14 @@ class TestStagedDiff(unittest.TestCase):
             "git commit -a --no-all -m x": None,
             "git commit --al -m x": None,
             "git commit --frobnicate -m x": None,
-            "git commit --mess 'feat: x' --no-veri": ("/w", False),
+            "git commit --mess 'feat: x' --no-veri": "/w",
             "git commit --all-m": None,
-            "git commit -U 3 -m x": ("/w", False),
-            "git commit --unified 3 -am x": ("/w", True),
+            "git commit -U 3 -m x": "/w",
+            "git commit --unified 3 -am x": None,
+            "git commit -m x --": "/w",
+            "git commit --amend --no-edit": None,
+            "git commit --amen -m x": None,
+            "git commit --no-amend -m x": "/w",
             "GIT_INDEX_FILE=/tmp/other git commit -m x": None,
             "GIT_DIR=/tmp/other git commit -m x": None,
             "env GIT_WORK_TREE=/tmp/other git commit -m x": None,
@@ -707,7 +646,7 @@ class TestStagedDiff(unittest.TestCase):
         for command, expected in cases.items():
             with self.subTest(command=command):
                 found = staged_diff.commit_of(command, "/w")
-                self.assertEqual(None if found is None else (str(found[0]), found[1]), expected)
+                self.assertEqual(None if found is None else str(found), expected)
 
 
 class TestHubOperatorTasks(HubCase):
@@ -769,7 +708,8 @@ class TestHubOperatorTasks(HubCase):
         with mock.patch.object(staged_diff, "CACHE", self.outside / "cache.json"), mock.patch.dict(os.environ, {key: env[key] for key in ("HOME", "CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR")}):
             commit = {**ASK, "command": "git commit -m 'feat: w1'", "cwd": str(repo)}
             pinned, attached = permission_hook.commit_diff(commit, rules)
-            self.assertEqual(([entry["path"] for entry in attached["diff"]], pinned), (["added.txt", "app.py", "gone.txt", "logo.png"], git(repo, "write-tree").strip()))
+            index = subprocess.run(["git", "ls-files", "-s", "-z"], cwd=repo, capture_output=True, check=True).stdout
+            self.assertEqual(([entry["path"] for entry in attached["diff"]], pinned), (["added.txt", "app.py", "gone.txt", "logo.png"], hashlib.sha256(index).hexdigest()))
             self.assertEqual(permission_hook.commit_diff({**commit, "command": "make deploy"}, rules), (None, {}))
             self.assertEqual(permission_hook.commit_diff({**commit, "tool": "Write"}, rules), (None, {}))
             self.assertEqual(permission_hook.commit_diff({**commit, "cwd": str(self.outside / "nowhere")}, rules), (None, {}))

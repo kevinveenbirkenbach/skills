@@ -24,9 +24,11 @@ changed and what it costs, and a gate means something again.
    line or matches a MEDUSA secret rule (every file when no rule loads)
    ships only path, status, mode and counts with the note "content withheld".
    Rejected: the hub reads git.
-   Every Ask for a `git commit` shows the staged diff the same way (with
-   `-a` or `--all` the diff against HEAD); the permission hook on the host
-   attaches it (operator order 2026-11-11).
+   Every Ask for a `git commit` of the staged index shows the staged diff
+   the same way; the permission hook on the host attaches it (operator order
+   2026-11-11). A commit that reads the working tree (`-a`, `--all`, `-i`,
+   `-o`, `-p`, a pathspec, a chain or a wrapper) is not approvable here: the
+   hook sends no Ask and Claude Code asks instead.
 4. **Inline feedback**: selected lines of a diff or a command go back to the
    agent as one radio `post` with path, line range, quote and text, through
    the right-click menu, the key `f` or a button at the selection.
@@ -173,14 +175,17 @@ flowchart TD
 - [x] The review request of `approval.py` (kvb-git-diff) carries
       `git diff --cached` of the exact staged tree; past 2 MiB the rest is
       listed per file with its stat.
-- [x] An Ask for a `git commit` carries the staged diff of its working
-      directory (with `-a` or `--all` the diff against HEAD), attached by
-      `permission_hook.py`, and shows it like a review, feedback included.
+- [x] An Ask for a `git commit` of the staged index carries the staged diff
+      of its working directory, attached by `permission_hook.py`, and shows
+      it like a review, feedback included; a commit that reads the working
+      tree gets no Ask, only the line "commit reads the working tree; stage
+      the files and commit the index" on the hook's stderr.
 - [x] A file whose content holds an armour line or matches MEDUSA's secret
       rules, and every file when no rule loads, is shown by stat with the
       note "content withheld".
-- [x] An allow of a commit Ask is bound to the staged tree `git write-tree`
-      prints (with `-a` also the working tree); a different tree at approval
+- [x] An allow of a commit Ask is bound to the staged tree, the sha256 of
+      `git ls-files -s -z`, read without writing the index or running a hook;
+      a different tree at approval
       turns it into a deny "staged tree changed since the preview".
 - [ ] Selecting lines in a diff or a command and choosing Feedback (right-click
       menu, key `f`, or the button at the selection) posts one radio `post` to
