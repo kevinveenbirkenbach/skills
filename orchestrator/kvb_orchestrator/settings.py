@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from .errors import ToolError
 from .fields import FIELDS, NAME_LIMIT, expect
+from .rates import METRICS, PERIOD_NAMES
 from .records import read_json, write_atomic
 
 THEMES = ("sky", "light", "dark", "custom")
@@ -43,7 +44,9 @@ SETTINGS = {
     "estimation": "none",
     "trend": {"mode": "off", "days": 7},
     "bubbles": False,
+    "rates": {"period": "hour", "metrics": ["tasks", "tokens", "cpu"]},
 }
+RATE_CHIP = (2, 3)
 SPACE_AXES = ("none", "time", "spawn")
 SPACE_LIMITS = {
     "graph": {"yaw": (-180.0, 180.0), "pitch": (-90.0, 90.0), "zoom": (0.25, 4.0), "pan_x": (-2000.0, 2000.0), "pan_y": (-2000.0, 2000.0)},
@@ -172,6 +175,17 @@ def trend_setting(raw: object) -> dict:
     return {"mode": entry["mode"], "days": entry["days"]}
 
 
+def rates_setting(raw: object) -> dict:
+    entry = section(raw, "rates", tuple(SETTINGS["rates"]))
+    low, high = RATE_CHIP
+    metrics = entry["metrics"]
+    if not isinstance(entry["period"], str) or entry["period"] not in PERIOD_NAMES:
+        raise ToolError(f"rates.period must be one of {', '.join(PERIOD_NAMES)}")
+    if not isinstance(metrics, list) or not low <= len(metrics) <= high or not all(isinstance(metric, str) and metric in METRICS for metric in metrics) or len(set(metrics)) != len(metrics):
+        raise ToolError(f"rates.metrics must list {low} to {high} distinct of {', '.join(METRICS)}")
+    return {"period": entry["period"], "metrics": list(metrics)}
+
+
 def valid_settings(raw: object) -> dict:
     data = section(raw, "settings", tuple(SETTINGS))
     colors = section(data["colors"], "colors", tuple(SETTINGS["colors"]))
@@ -195,7 +209,16 @@ def valid_settings(raw: object) -> dict:
         "estimation": data["estimation"],
         "trend": trend_setting(data["trend"]),
         "bubbles": flag(data["bubbles"], "bubbles"),
+        "rates": rates_setting(data["rates"]),
     }
+
+
+def completed(raw: object, saved: dict) -> object:
+    """Returns:
+        raw with the saved rates when it names none, as a page loaded before
+        the rates chip existed sends it; anything else unchanged.
+    """
+    return {**raw, "rates": saved["rates"]} if isinstance(raw, dict) and "rates" not in raw else raw
 
 
 def radio_moved(stored: object) -> object:

@@ -225,7 +225,7 @@ class TestGpus(unittest.TestCase):
         unknown = {"name": AWAKE, "util": None, "vram_used": None, "vram_total": None}
         self.assertEqual(sampler.gpus(host_sys(self.root), lambda argv: None), [unknown, {"name": ASLEEP, "asleep": True}])
         self.assertEqual(sampler.gpus(self.root, lambda argv: NVIDIA_SMI.splitlines()[1]), [unknown, {"name": ASLEEP, "asleep": True}])
-        self.assertEqual(sampler.mean_row(NOW, [row(NOW + 60, 1.0, 1, 0, unknown), row(NOW + 120, 1.0, 1, 0, unknown)])["gpus"], [unknown])
+        self.assertEqual(sampler.mean_row(NOW, sampler.BUCKET, [row(NOW + 60, 1.0, 1, 0, unknown), row(NOW + 120, 1.0, 1, 0, unknown)])["gpus"], [unknown])
 
     def test_no_nvidia_gpu_means_no_gpu_row_and_no_call(self):
         device(self.root, "0000:00:02.0", "0x8086", "0x030000", "active")
@@ -235,12 +235,13 @@ class TestGpus(unittest.TestCase):
 
 
 class TestRetention(unittest.TestCase):
-    def test_rows_older_than_seven_days_fold_into_fifteen_minute_means_and_means_past_ninety_days_drop(self):
+    def test_rows_older_than_seven_days_fold_into_fifteen_minute_means_and_rows_past_ninety_days_into_their_day(self):
         bucket = NOW - 8 * DAY
+        day = NOW - 91 * DAY - NOW % DAY
         asleep, awake = {"name": AWAKE, "asleep": True}, {"name": AWAKE, "util": 50.0, "vram_used": 300, "vram_total": 1000}
         mean = {**row(NOW - 30 * DAY, 12.0, 100, 0, asleep)}
         rows = [
-            row(NOW - 91 * DAY, 5.0, 1, 0, asleep),
+            row(NOW - 91 * DAY + 60, 5.0, 1, 0, asleep),
             mean,
             row(bucket, 10.0, 100, 0, asleep),
             row(bucket + 60, 20.0, 200, 1, asleep),
@@ -249,16 +250,37 @@ class TestRetention(unittest.TestCase):
             row(NOW - 60, 70.0, 700, 3, awake),
         ]
         kept = sampler.retain(rows, NOW)
-        self.assertEqual([entry["t"] for entry in kept], [NOW - 30 * DAY, bucket, bucket + 900, NOW - 60])
-        self.assertIs(kept[0], mean)
-        self.assertEqual(kept[1], {
+        self.assertEqual([entry["t"] for entry in kept], [day, NOW - 30 * DAY, bucket, bucket + 900, NOW - 60])
+        self.assertEqual(kept[0], {**row(day, 5.0, 1, 0, asleep), "queue": {"waiting": 0.0, "active": 1.0}, "span": 60, "width": DAY})
+        self.assertEqual(kept[1], {**mean, "span": sampler.BUCKET, "width": sampler.BUCKET})
+        self.assertEqual(kept[2], {
             "t": bucket, "disks": [{"mount": "/", "used": 200, "total": 1000}, {"mount": "/mnt", "used": 10, "total": 20}], "cpu": 30.0, "ram": 15.0, "swap": 0.0, "load": 3.0,
             "psi_some": None, "psi_full": None, "swap_out_mb_min": None,
-            "gpus": [{"name": AWAKE, "util": 50.0, "vram_used": 300, "vram_total": 1000}], "queue": {"waiting": 1.0, "active": 1.0},
+            "gpus": [{"name": AWAKE, "util": 50.0, "vram_used": 300, "vram_total": 1000}], "queue": {"waiting": 1.0, "active": 1.0}, "span": 180, "width": sampler.BUCKET,
         })
-        self.assertEqual((kept[2]["cpu"], kept[2]["disks"]), (40.0, [{"mount": "/", "used": 400, "total": 1000}]))
-        self.assertEqual(kept[3], rows[-1])
+        self.assertEqual((kept[3]["cpu"], kept[3]["disks"], kept[3]["span"], kept[3]["width"]), (40.0, [{"mount": "/", "used": 400, "total": 1000}], 60, sampler.BUCKET))
+        self.assertEqual(kept[4], rows[-1])
         self.assertEqual(sampler.retain(kept, NOW), kept)
+
+    def test_days_that_ended_more_than_ninety_days_ago_fold_into_one_mean_each_kept_forever(self):
+        asleep = {"name": AWAKE, "asleep": True}
+        day = NOW - NOW % DAY - 100 * DAY
+        edge = NOW - NOW % DAY - 90 * DAY
+        ancient = {**row(day - 1000 * DAY, 7.0, 7, 0, asleep), "span": 3600, "width": DAY}
+        means = [{**row(day + index * sampler.BUCKET, cpu, 100, 0, asleep), "span": sampler.BUCKET, "width": sampler.BUCKET} for index, cpu in enumerate((10.0, 20.0, 60.0))]
+        late = {**row(edge + sampler.BUCKET, 40.0, 400, 0, asleep), "span": sampler.BUCKET, "width": sampler.BUCKET}
+        recent = row(NOW - 60, 70.0, 700, 3, asleep)
+        kept = sampler.retain([ancient, *means, late, recent], NOW)
+        self.assertEqual([entry["t"] for entry in kept], [day - 1000 * DAY, day, edge + sampler.BUCKET, NOW - 60])
+        self.assertEqual(kept[0], ancient)
+        self.assertEqual(kept[1], {**row(day, 30.0, 100, 0, asleep), "load": 3.0, "queue": {"waiting": 0.0, "active": 1.0}, "span": 3 * sampler.BUCKET, "width": DAY})
+        self.assertEqual(kept[2:], [late, recent])
+        self.assertEqual(sampler.retain(kept, NOW), kept)
+        later = sampler.retain(kept, NOW + 2 * DAY)
+        self.assertEqual([entry["t"] for entry in later], [day - 1000 * DAY, day, edge, NOW - 60])
+        self.assertEqual(later[:2], kept[:2])
+        self.assertEqual((later[2]["cpu"], later[2]["span"], later[2]["width"]), (40.0, sampler.BUCKET, DAY))
+        self.assertEqual(sampler.retain(later, NOW + 400 * DAY)[:3], later[:3])
 
     def test_a_bucket_still_reaching_into_the_last_seven_days_stays_raw_and_asleep_buckets_stay_asleep(self):
         now = NOW + 300

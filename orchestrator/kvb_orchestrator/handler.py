@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from .diffs import DIFF_BODY_LIMIT
 from .engines import STT_LIMIT
 from .exchange import PLAIN_CSP, Exchange
+from .rates import rated
 from .resources import RESOURCES, sampled
 from .scores import scored
 
@@ -131,6 +132,8 @@ class Handler(Exchange):
             self.answer(lambda: sampled(hub.kept / RESOURCES, hub.span(self.query(), time.time())), HTTPStatus.OK)
         elif path == "/api/scores":
             self.answer(lambda: scored(hub.council, hub.scripts.skills, hub.span(self.query(), time.time())), HTTPStatus.OK)
+        elif path == "/api/rates":
+            self.answer(lambda: rated(hub.council, hub.kept, time.time()), HTTPStatus.OK)
         elif path == VIEW_ROUTE:
             self.answer(hub.view_store.get, HTTPStatus.OK)
         elif path == "/api/subagents":

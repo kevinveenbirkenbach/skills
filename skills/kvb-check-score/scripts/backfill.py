@@ -21,7 +21,6 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from collections import deque
@@ -36,9 +35,9 @@ from journal import (
     entry,
     git_read,
     journal_path,
+    known,
     load_labels,
     origin,
-    read,
 )
 
 FIELD = "\x00"
@@ -185,22 +184,6 @@ def scan(repo: Path, since: str | None, named: dict[str, str], extras: set[str],
             values, block = found
             rows.append(entry(commit.time, place, owner.get(sha), sha, values, block))
     return place[1], rows
-
-
-def known(path: Path) -> set[tuple[str | None, str]]:
-    try:
-        text = read(path)
-    except FileNotFoundError:
-        return set()
-    keys = set()
-    for line in text.splitlines():
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(row, dict) and isinstance(row.get("sha"), str):
-            keys.add((row.get("remote"), row["sha"]))
-    return keys
 
 
 def main() -> int:

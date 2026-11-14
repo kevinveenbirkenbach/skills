@@ -15,3 +15,4 @@ skill defines the format.
 - [009 - Code Graph by Default](009-code-graph-by-default.md)
 - [010 - Security Scan Cache per File](010-security-scan-cache-per-file.md)
 - [011 - Test Result Cache](011-test-result-cache.md)
+- [014 - Header Rates](014-header-rates.md)

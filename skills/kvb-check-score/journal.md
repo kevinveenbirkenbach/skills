@@ -3,7 +3,11 @@
 Each `--message-block` render appends one row to
 `scores.jsonl` in the council root that `councilroot.py root` prints: time, origin
 remote, top level path, branch, `sha` null, the six values and the block's
-digest. The hub's burndown draws it as overlays; no gate reads it. A failed
+digest. The commit table after the commit (`--commit-table <repo> --commit
+<sha>`) appends the same row for that repository with the full sha and the
+commit time, unless the journal holds one for that remote and sha already;
+the hub counts each such row once as a commit. The hub's burndown draws the
+rows as overlays; no gate reads them. A failed
 append prints one stderr line and keeps the exit code; a linked council
 root or a link, FIFO or other non-regular file at the journal fails it
 without blocking, through `nofollow.py` of `kvb-org-organize`; when that

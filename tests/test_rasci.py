@@ -142,6 +142,30 @@ class TestRasci(unittest.TestCase):
         self.assertEqual(self._run("set", "work/a", "--status", "done").returncode, 0)
         self.assertEqual(self._out("show"), ["no tasks"])
 
+    def test_a_key_result_set_met_records_met_at_once_and_open_drops_it(self):
+        self._run("kr", "work/a", "add", "tests green")
+        self.assertEqual(self._first_kr("work/a"), {"text": "tests green", "met": False})
+        before = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
+        self._out("kr", "work/a", "met", "1")
+        met = self._first_kr("work/a")
+        moment = datetime.datetime.fromisoformat(met["met_at"])
+        self.assertEqual((met["met"], moment.utcoffset()), (True, datetime.timedelta(0)))
+        self.assertLessEqual(before, moment)
+        self.assertLessEqual(moment, datetime.datetime.now(datetime.UTC))
+        self._out("kr", "work/a", "met", "1")
+        self.assertEqual(self._first_kr("work/a"), met)
+        self._out("kr", "work/a", "open", "1")
+        self.assertEqual(self._first_kr("work/a"), {"text": "tests green", "met": False})
+
+    def test_a_key_result_met_before_met_at_existed_stays_unstamped_when_met_again(self):
+        self.root.mkdir()
+        (self.root / "rasci.json").write_text(json.dumps({"work/a": {"roles": {}, "key_results": [{"text": "old", "met": True}]}}), encoding="utf-8")
+        self._out("kr", "work/a", "met", "1")
+        self.assertEqual(self._first_kr("work/a"), {"text": "old", "met": True})
+
+    def _first_kr(self, task: str) -> dict:
+        return json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))[task]["key_results"][0]
+
     def test_status_sets_start_and_end(self):
         self._run("set", "work/a", "--status", "running")
         self._run("set", "work/a", "--status", "done", "--description", "long text")

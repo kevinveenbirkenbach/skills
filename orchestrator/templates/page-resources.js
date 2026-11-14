@@ -10,7 +10,7 @@
   const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0, series: {}};
   const resourceKey = () => JSON.stringify([ui.preset, ui.from, ui.to, ui.asOf]);
   const resourcesStale = () => resourceKey() !== resourceView.key || nowSeconds() - resourceView.at >= RESOURCE.stale;
-  const compactCount = (value) => (value >= 1e6 ? `${fixed(value / 1e6)}M` : value >= 1e3 ? `${fixed(value / 1e3)}k` : String(Math.round(value)));
+  const compactCount = Resources.compact;
   const resourceLabel = (line) => (line.kind === "vram" ? `${line.name} VRAM` : line.name);
   const percentOf = (value) => `${value} %`;
 

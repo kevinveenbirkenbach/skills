@@ -37,7 +37,7 @@ from .register import (
     stored_order,
 )
 from .reviewing import review_row
-from .settings import media_origins, station_origins, valid_settings
+from .settings import completed, media_origins, station_origins, valid_settings
 from .signed import signing
 from .skill_scripts import OUTPUT_LIMIT
 from .tasks import queue_chain, queue_line, task_edges, task_rows
@@ -209,7 +209,8 @@ class View:
         return {**settings, "streams": streams}, problems
 
     def sign_settings(self, body: bytes) -> dict:
-        return self.challenge_for(self.signed_changes(valid_settings(decode(body)), self.settings.get()))
+        saved = self.settings.get()
+        return self.challenge_for(self.signed_changes(valid_settings(completed(decode(body), saved)), saved))
 
     def save_settings(self, body: bytes) -> dict:
         """Returns:
@@ -219,8 +220,8 @@ class View:
         """
         payload = decode(body)
         proof = payload.pop("proof", None)
-        settings = valid_settings(payload)
         saved = self.settings.get()
+        settings = valid_settings(completed(payload, saved))
         for change in self.signed_changes(settings, saved):
             self.operator_proven(proof, change)
         resolved, problems = self.resolved(settings, saved)

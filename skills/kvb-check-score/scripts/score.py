@@ -17,7 +17,9 @@ Args:
         that repository, then a blank line, `📁 Worktree:` and the top level path
         alone in a ```text block, so it copies in one go.
     --commit <sha>: with --commit-table, the diff stat of that commit instead of
-        the staged one, plus a commit column.
+        the staged one, plus a commit column; appends one row with the full sha
+        and the commit time to the score journal of journal.py unless it holds
+        one for that remote and sha, so the hub counts the commit once.
     --message-block: print the commit message block instead of the two lines, one
         value per line: `🎯 Fix: <f> %`, `💥 Break: <b> %`, `💸 Tokens: <c>`,
         `⏱️ Velocity: <t>`, `🛡️ Security: <n> %`, `💰 Value: <n:n>` with --value only,
@@ -63,6 +65,7 @@ from journal import (
     git,
     git_read,
     journal_path,
+    known,
     load_labels,
     origin,
 )
@@ -260,6 +263,10 @@ def main() -> int:
     if args.value:
         header.insert(list(metrics).index("tokens") + 1, value_header)
         row.insert(list(metrics).index("tokens") + 1, args.value)
+    lines = [f"{metric['emoji']} {metric['label']}: {measured[key]}" for key, metric in metrics.items()]
+    if args.value:
+        lines.insert(list(metrics).index("score"), f"{value_header}: {args.value}")
+    block = "\n".join((*lines, f"{extras['gate']['emoji']} {extras['gate']['label']}: {verdict_cell}"))
     if args.commit_table:
         try:
             lead, cells = commit_cells(args.commit_table, args.commit)
@@ -268,15 +275,12 @@ def main() -> int:
             print(f"score: {error}", file=sys.stderr)
             return 4 if code == 4 else 2
         print(table([*lead, *header], [*cells, *row]))
-        print(f"\n{WORKTREE}\n\n```text\n{top}\n```")
+        print(f"\n{WORKTREE}\n\n```text\n{top}\n```", flush=True)
+        if args.commit:
+            committed(args.commit_table, args.commit, values_of(args, total), block)
     elif args.table:
         print(table(header, row))
     elif args.message_block:
-        lines = [f"{metric['emoji']} {metric['label']}: {measured[key]}" for key, metric in metrics.items()]
-        if args.value:
-            lines.insert(list(metrics).index("score"), f"{value_header}: {args.value}")
-        gate_label = extras["gate"]
-        block = "\n".join((*lines, f"{gate_label['emoji']} {gate_label['label']}: {verdict_cell}"))
         print(block, flush=True)
         journal(args, total, block)
     else:
@@ -291,11 +295,14 @@ def plain(value: float | str) -> float | int | None:
     return int(value) if value.is_integer() else value
 
 
-def journal(args: argparse.Namespace, total: int, block: str) -> None:
-    values = {
+def values_of(args: argparse.Namespace, total: int) -> dict:
+    return {
         "fix": plain(args.fix), "break": plain(args.risk), "tokens": plain(args.efficiency),
         "velocity": plain(args.speed), "security": plain(args.security[0]), "score": total,
     }
+
+
+def journal(args: argparse.Namespace, total: int, block: str) -> None:
     try:
         path = journal_path()
     except OSError as error:
@@ -303,8 +310,31 @@ def journal(args: argparse.Namespace, total: int, block: str) -> None:
         return
     try:
         here = Path.cwd()
-        append(path, [entry(int(time.time()), origin(here), git_read(here, "branch", "--show-current") or None, None, values, block)])
+        append(path, [entry(int(time.time()), origin(here), git_read(here, "branch", "--show-current") or None, None, values_of(args, total), block)])
     except (OSError, ValueError) as error:
+        print(f"score: journal {path}: {getattr(error, 'strerror', None) or error}", file=sys.stderr)
+
+
+def committed(repo: str, commit: str, values: dict, block: str) -> None:
+    """Args:
+        repo: the --commit-table repository.
+        commit: the --commit revision.
+        values: values_of() the block.
+        block: the message block the commit carries.
+
+    Returns:
+        Appends one row with the full sha and the commit time unless the
+        journal holds one for its remote and sha; a failure prints one
+        stderr line.
+    """
+    path = journal_path()
+    try:
+        sha = git(repo, "rev-parse", "--verify", f"{commit}^{{commit}}")
+        place = origin(Path(repo))
+        if (place[0], sha) not in known(path):
+            when = int(git(repo, "show", "-s", "--format=%ct", sha))
+            append(path, [entry(when, place, git_read(Path(repo), "branch", "--show-current") or None, sha, values, block)])
+    except (OSError, ValueError, LookupError) as error:
         print(f"score: journal {path}: {getattr(error, 'strerror', None) or error}", file=sys.stderr)
 
 

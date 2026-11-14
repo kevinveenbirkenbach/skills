@@ -12,6 +12,16 @@ FILE_LIMIT = 64 << 20
 
 
 def rows_between(path: Path, begin: float, end: float, width: float) -> list[dict]:
+    """Args:
+        path: a JSON lines file of rows with t in epoch seconds.
+        begin: the earliest time a row may reach to.
+        end: the latest t a row may have.
+        width: the seconds a row reaches past its t unless it names its own
+            width.
+
+    Returns:
+        The rows from begin to end in file order.
+    """
     try:
         lines = read_regular(path, FILE_LIMIT).splitlines()
     except (OSError, ValueError):
@@ -19,7 +29,7 @@ def rows_between(path: Path, begin: float, end: float, width: float) -> list[dic
     found = []
     for row in map(parse_line, lines):
         t = None if row is None else epoch(row.get("t"))
-        if t is not None and begin <= t + width and t <= end:
+        if t is not None and t <= end and (begin <= t + width or begin <= t + (epoch(row.get("width")) or 0)):
             found.append(row)
     return found
 

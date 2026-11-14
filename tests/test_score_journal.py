@@ -218,6 +218,27 @@ class TestScoreJournal(ScoreCase):
         self.score(SCORE, *flags({}), "--table", cwd=repo)
         self.assertEqual(len(self.rows()), 2)
 
+    def test_the_commit_table_of_a_commit_records_its_sha_and_commit_time_once_per_remote_and_sha(self):
+        repo = self.repo()
+        env = git_env(self.tmp)
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, env=env, capture_output=True, text=True, check=True).stdout.strip()
+        stamp = int(subprocess.run(["git", "show", "-s", "--format=%ct", sha], cwd=repo, env=env, capture_output=True, text=True, check=True).stdout)
+        self.score(SCORE, *flags({}), "--message-block", cwd=repo)
+        for _ in range(2):
+            done = self.score(SCORE, *flags({}), "--commit-table", str(repo), "--commit", sha[:7], cwd=self.tmp)
+            self.assertEqual((done.returncode, done.stderr), (0, ""))
+        rendered, committed = self.rows()
+        self.assertEqual(committed, {**rendered, "time": stamp, "sha": sha})
+        self.score(SCORE, *flags({"fix": "80"}), "--commit-table", str(repo), cwd=self.tmp)
+        self.assertEqual(len(self.rows()), 2)
+        self.council.joinpath(JOURNAL_NAME).unlink()
+        self.council.rmdir()
+        self.council.write_text("not a directory", encoding="utf-8")
+        failed = self.score(SCORE, *flags({"critical": "1"}), "--commit-table", str(repo), "--commit", sha, cwd=self.tmp)
+        self.assertEqual(failed.returncode, 4)
+        self.assertEqual(len(failed.stderr.splitlines()), 1, failed.stderr)
+        self.assertTrue(failed.stderr.startswith(f"score: journal {self.council / JOURNAL_NAME}: "), failed.stderr)
+
     def test_a_failed_append_prints_one_stderr_line_and_keeps_the_exit_code(self):
         self.council.write_text("not a directory", encoding="utf-8")
         for values, code in (({}, 0), ({"efficiency": "120"}, 3), ({"break": "9"}, 1), ({"critical": "1"}, 4)):
