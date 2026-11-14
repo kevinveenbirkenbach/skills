@@ -14,8 +14,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "orchestrator.sh"
 HOST_SCRIPTS = (
-    "kvb-org-organize/scripts/council.py", "kvb-org-organize/scripts/nofollow.py", "kvb-org-rasci/scripts/rasci.py",
-    "kvb-org-operator/scripts/operator.py", "kvb-org-radio/scripts/radio.py",
+    "kvb-org-organize/scripts/council.py", "kvb-org-organize/scripts/nofollow.py", "kvb-org-organize/scripts/councilroot.py",
+    "kvb-org-rasci/scripts/rasci.py", "kvb-org-operator/scripts/operator.py", "kvb-org-radio/scripts/radio.py",
 )
 OLD = "kvb-hub"
 NEW = "kvb-orchestrator"
@@ -33,6 +33,8 @@ if tool == "docker" and args[:2] == ["image", "inspect"]:
 elif tool == "docker" and args[:2] == ["image", "rm"]:
     code = 0 if args[2] in state["images"] else 1
     state["images"] = [image for image in state["images"] if image != args[2]]
+elif tool == "docker" and args[0] == "compose" and "build" in args:
+    code = 1 if state.get("fail_build") else 0
 elif tool == "docker" and args[0] == "compose" and "up" in args:
     state["images"] = sorted({*state["images"], "kvb-orchestrator:local"})
 elif tool == "claude" and args[:2] == ["mcp", "get"]:
@@ -88,6 +90,7 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.state = self.root / "stub.json"
         self.state.write_text(json.dumps({"calls": [], "images": [f"{OLD}:local"], "mcp": {OLD: "http://127.0.0.1:8737/mcp"}, "enabled": [f"{OLD}-runner.service"]}), encoding="utf-8")
         self.env = {**os.environ, "HOME": str(self.home), "PATH": f"{stubs}:{os.environ['PATH']}", "STUB_STATE": str(self.state), "AGENTS_COUNCIL_ROOT": str(self.root / "council"), "PKGMGR_REPO": str(self.root / "no-pkgmgr")}
+        self.env.pop("XDG_STATE_HOME", None)
         share, local, config = self.home / ".local" / "share", self.home / ".local" / "state", self.home / ".config"
         self.write(share / OLD / "compose.yml", f"name: {OLD}\n")
         self.write(share / OLD / ".env", "KVB_HUB_PORT=8737\n")
@@ -145,6 +148,29 @@ class TestOrchestratorMigration(unittest.TestCase):
         self.assertEqual({key: second[key] for key in ("images", "mcp", "enabled")}, {key: first[key] for key in ("images", "mcp", "enabled")})
         legacy_calls = [call for call in second["calls"][len(first["calls"]) :] if any(OLD in arg for arg in call)]
         self.assertEqual(legacy_calls, [["docker", "image", "inspect", f"{OLD}:local"], ["claude", "mcp", "get", OLD]])
+
+    def test_install_hands_the_hub_the_agents_root_and_the_host_only_root_apart(self):
+        del self.env["AGENTS_COUNCIL_ROOT"]
+        self.install()
+        state = self.home / ".local" / "state"
+        env = (self.home / ".local" / "share" / NEW / ".env").read_text(encoding="utf-8").splitlines()
+        self.assertLessEqual({f"KVB_ORCHESTRATOR_COUNCIL={state / 'agents-shared'}", f"KVB_ORCHESTRATOR_KEPT={state / 'agents-council'}"}, set(env))
+        self.assertTrue((state / "agents-council" / "resources").is_dir())
+
+    def test_the_hub_is_built_before_it_is_replaced_and_a_failed_build_leaves_it_down_and_fails(self):
+        self.install()
+        hub = str(self.home / ".local" / "share" / NEW / "compose.yml")
+        first = json.loads(self.state.read_text(encoding="utf-8"))
+        self.assertEqual([call[4:] for call in first["calls"] if call[:4] == ["docker", "compose", "--file", hub]], [["build"], ["up", "-d"]])
+        self.state.write_text(json.dumps({**first, "calls": [], "fail_build": True}), encoding="utf-8")
+        done = subprocess.run(["bash", str(SCRIPT), "install"], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("building the Agent Orchestrator failed; it stays down until 'bash scripts/orchestrator.sh install' succeeds", done.stderr)
+        after = json.loads(self.state.read_text(encoding="utf-8"))
+        self.assertEqual([call[4:] for call in after["calls"] if call[:4] == ["docker", "compose", "--file", hub]], [["build"], ["stop"]])
+        self.assertIn(f"{NEW}-resources.timer", after["enabled"])
+        installer = (REPO_ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+        self.assertIn('if ! bash "${REPO_ROOT}/scripts/orchestrator.sh" install; then', installer)
 
     def test_check_reports_the_sessions_timer_the_install_enabled_as_active(self):
         for tool in ("curl", "journalctl"):

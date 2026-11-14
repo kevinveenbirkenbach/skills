@@ -41,5 +41,8 @@ mechanism and the upgrade path, investors read only what the brief proves.
 - Stay inside the channel's length bounds. Without project bounds: a blog
   article 600 to 1200 words, a LinkedIn article 400 to 900, a newsletter
   250 to 500.
-- Write `/tmp/release-<version>/<channel>/<language>.md`, or the format the
-  project's template names, and report each file's word count.
+- Write `<drafts>/<channel>/<language>.md`, or the format the project's
+  template names, and report each file's word count. `<drafts>` is the
+  directory `kvb-release` handed over, else the one
+  `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py release <version>`
+  prints.

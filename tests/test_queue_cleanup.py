@@ -693,7 +693,13 @@ class TestQueueCleanup(unittest.TestCase):
         inode = request.stat().st_ino
         self.cli("request")
         self.assertEqual((request.stat().st_ino, len(request.read_text(encoding="utf-8").splitlines())), (inode, 2))
-        self.assertIn("PathModified=/tmp/agents-council/queue-cleanup.request\n", unit.read_text(encoding="utf-8"))
+        self.assertIn("PathModified=%S/agents-shared/queue-cleanup.request\n", unit.read_text(encoding="utf-8"))
+
+    def test_agents_request_in_their_root_and_the_round_state_stays_host_only(self):
+        with mock.patch.dict(os.environ, {"AGENTS_COUNCIL_ROOT": ""}):
+            cleanup = _load(CLEANUP)
+        state = self.home / ".local" / "state"
+        self.assertEqual((cleanup.REQUEST, cleanup.STATE), (state / "agents-shared" / "queue-cleanup.request", self.kept / "queue-cleanup.json"))
 
     def test_request_refuses_during_a_round_and_for_30_minutes_after_one(self):
         self.install_unit()

@@ -2,7 +2,7 @@
 Description=kvb-org-queue-cleanup round on cleanup.py request
 
 [Path]
-PathModified=/tmp/agents-council/queue-cleanup.request
+PathModified=%S/agents-shared/queue-cleanup.request
 
 [Install]
 WantedBy=paths.target

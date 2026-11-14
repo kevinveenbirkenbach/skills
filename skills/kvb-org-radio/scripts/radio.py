@@ -2,8 +2,9 @@
 """Reach other agents: the radio is immediate, the post waits until a turn ends; one shared store.
 
 Environment:
-    AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
-        /tmp/agents-council unless set. Rows live in <root>/news.jsonl under
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the council directory the
+        kvb-org-organize councilroot.py resolves, shared by every agent on the
+        host. Rows live in <root>/news.jsonl under
         <root>/news.lock, the store the old news.py reads and writes too.
     AGENTS_COUNCIL_CONFIG: config file; its "notify" argv tells the operator
         of a mayday, its "never_block" and "mayday_allow" regexes name the
@@ -89,18 +90,9 @@ from pathlib import Path
 from types import ModuleType
 
 # Every agent on the host must agree on one council directory and one config without being told.
-ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
 CONFIG = Path(
     os.environ.get("AGENTS_COUNCIL_CONFIG", str(Path.home() / ".claude" / "agents-council" / "config.json"))
 )
-NEWS = ROOT / "news.jsonl"
-LOCK = ROOT / "news.lock"
-SEEN = ROOT / "news-seen"
-STATE = ROOT / "radio-seen"
-LISTEN = ROOT / "radio-listen"
-SILENCE = ROOT / "radio-silence.json"
-NOTIFIED = ROOT / "radio-notified"
-FEEDBACK = ROOT / "feedback.json"
 ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
 SELF = Path(__file__).resolve()
 RADIO = ("mayday", "pan-pan", "security", "call", "broadcast")
@@ -140,6 +132,17 @@ def organize(name: str) -> ModuleType:
     return module
 
 
+ROOT = organize("councilroot").root()
+NEWS = ROOT / "news.jsonl"
+LOCK = ROOT / "news.lock"
+SEEN = ROOT / "news-seen"
+STATE = ROOT / "radio-seen"
+LISTEN = ROOT / "radio-listen"
+SILENCE = ROOT / "radio-silence.json"
+NOTIFIED = ROOT / "radio-notified"
+FEEDBACK = ROOT / "feedback.json"
+
+
 def council() -> ModuleType:
     return organize("council")
 
@@ -149,8 +152,9 @@ def name_of(sid: str) -> str:
 
 
 def items() -> list[dict]:
+    nofollow = organize("nofollow")
     try:
-        lines = organize("nofollow").read_text(ROOT, NEWS).splitlines()
+        lines = nofollow.read_tail(ROOT, NEWS, nofollow.READ_LIMIT).splitlines()
     except OSError:
         return []
     rows = []
@@ -361,7 +365,11 @@ def store(entries: list[dict]) -> float:
     for entry in entries:
         entry["ts"] = ts
         ts = math.nextafter(ts, math.inf)
-    write_atomic(NEWS, "".join(json.dumps(row) + "\n" for row in [*rows[-(KEPT - len(entries)):], *entries]))
+    cut = max(0, len(rows) - max(0, KEPT - len(entries)))
+    if cut:
+        archive = ROOT / "archive" / f"news-{time.strftime('%Y-%m-%d')}.jsonl"
+        organize("nofollow").append(ROOT, archive, "".join(json.dumps(row) + "\n" for row in rows[:cut]), 0o600)
+    write_atomic(NEWS, "".join(json.dumps(row) + "\n" for row in [*rows[cut:], *entries]))
     return entries[-1]["ts"]
 
 

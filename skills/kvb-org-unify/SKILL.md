@@ -19,10 +19,11 @@ bar on `<line>`", key results gate green, landed, cleaned up, overview posted.
 ## Step 1: collect
 
 The register is the swarm's record (stage 2 of `kvb-org-swarm` sets `--branch`
-and `--base`):
+and `--base`); `<council>` is what
+`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py root` prints:
 
 ```bash
-jq -r --arg base "<line>" 'to_entries[] | select(.value.base == $base and .value.branch) | [.key, .value.branch, .value.workdir // "-", .value.status] | @tsv' "${AGENTS_COUNCIL_ROOT:-/tmp/agents-council}/rasci.json"
+jq -r --arg base "<line>" 'to_entries[] | select(.value.base == $base and .value.branch) | [.key, .value.branch, .value.workdir // "-", .value.status] | @tsv' "<council>/rasci.json"
 ```
 
 Per branch: `git log --oneline <line>..<branch>` (empty: already merged, go
@@ -44,7 +45,8 @@ the branch becomes a proposal naming the conflicting files.
 
 The project's full gate on `unify/<goal>` through `queue.py hold`
 (`kvb-check-gate`), and `security.py` over `<line>..unify/<goal>`
-(`kvb-check-security`), logs under `/tmp`. Red: find the merge that broke it
+(`kvb-check-security`), logs under the directory `councilroot.py dir gates`
+prints. Red: find the merge that broke it
 (`git bisect start --first-parent`), rebuild the branch without it, which
 becomes a proposal naming the failing test, and gate again.
 

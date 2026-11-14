@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: orchestrator.sh install | migrate | check | pin <blob> | runner | hook
+# Usage: orchestrator.sh install | migrate | stop | start | check | pin <blob> | runner | hook
 #   install  migrate, then copy orchestrator/ to ~/.local/share/kvb-orchestrator,
 #            write its .env, build and start the container, register the MCP
 #            server for Claude Code, build pkgmgr from the newest signed tag of
@@ -12,12 +12,16 @@
 #            once: container, image, code, state, approvals, pinned keys, MCP
 #            server, PermissionRequest hook, runner unit; a second run changes
 #            nothing
+#   stop     stop the container, the runner, the offices path unit and the
+#            resources timer, which write the council roots, keeping them
+#            enabled; exit 1 when the container does not stop
+#   start    start them again, the units only while enabled
 #   check    image imports, container, logs, HTTP, pinned keys, hook, runner,
 #            disk; exit 1 when a check fails
 #   pin      pin the credential blob the "Passkey registrieren" settings show
 #   runner   install, enable and restart the runner user service; disable it
-#            and exit 1 while the installed council.py, nofollow.py or
-#            rasci.py differ from this tree
+#            and exit 1 while the installed council.py, nofollow.py,
+#            councilroot.py or rasci.py differ from this tree
 #   hook     register the PermissionRequest hook in ~/.claude/settings.json,
 #            replacing an earlier entry, keeping everything else and the file
 #            mode, after a copy to settings.json.before-kvb-orchestrator-hook
@@ -31,8 +35,9 @@ STATE="${HOME}/.local/state/${NAME}"
 APPROVALS="${HOME}/.local/state/${NAME}-approvals"
 APPROVERS="${HOME}/.config/${NAME}"
 UNITS="${HOME}/.config/systemd/user"
-# council.py ROOT: every agent must agree on this directory
-COUNCIL="${AGENTS_COUNCIL_ROOT:-/tmp/agents-council}"
+COUNCIL_ROOT="${REPO_ROOT}/skills/kvb-org-organize/scripts/councilroot.py"
+COUNCIL="$(python3 "${COUNCIL_ROOT}" root)"
+KEPT="$(python3 "${COUNCIL_ROOT}" durable)"
 SETTINGS="${HOME}/.claude/settings.json"
 LOCAL_SETTINGS="${HOME}/.claude/settings.local.json"
 HOOK_TIMEOUT=110
@@ -44,7 +49,7 @@ SESSIONS_UNIT="${NAME}-sessions"
 RESOURCES_UNIT="${NAME}-resources"
 FIREWALL_UNIT="${NAME}-firewall"
 INSTALLED_SKILLS="${HOME}/.claude/skills"
-HOST_SCRIPTS=(kvb-org-organize/scripts/council.py kvb-org-organize/scripts/nofollow.py kvb-org-rasci/scripts/rasci.py kvb-org-operator/scripts/operator.py kvb-org-radio/scripts/radio.py)
+HOST_SCRIPTS=(kvb-org-organize/scripts/council.py kvb-org-organize/scripts/nofollow.py kvb-org-organize/scripts/councilroot.py kvb-org-rasci/scripts/rasci.py kvb-org-operator/scripts/operator.py kvb-org-radio/scripts/radio.py)
 TREE_DIR="${HOME}/.local/state/pkgmgr/tree"
 PKGMGR_REPO="${PKGMGR_REPO:-https://github.com/kevinveenbirkenbach/package-manager.git}"
 IMAGE="${NAME}:local"
@@ -153,7 +158,7 @@ install_hub() {
 	port="$(port_of "${REPO_ROOT}/orchestrator/.env")"
 	log "skills: starting the Agent Orchestrator on http://localhost:${port}/"
 	rm -rf "${HUB}"
-	mkdir -p "${HUB}" "${STATE}" "${APPROVALS}" "${COUNCIL}" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" "${HOME}/.local/state/agents-council/resources"
+	mkdir -p "${HUB}" "${STATE}" "${APPROVALS}" "${COUNCIL}" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" "${KEPT}/resources"
 	chmod 700 "${APPROVERS}"
 	cp -a "${REPO_ROOT}/orchestrator/." "${HUB}/"
 	# Python loads a cached .pyc whose header matches the source mtime and size, and cp -a keeps the mtime: one planted in the sandbox-writable tree would run on the host
@@ -162,8 +167,12 @@ install_hub() {
 	log "skills: the PermissionRequest hook client is ${HUB}/client/permission_hook.py"
 	log "skills: approvals need a pinned passkey: settings, 'Passkey registrieren', then 'make orchestrator-pin CREDENTIAL=<blob>'; until then every executor refuses"
 	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\nKVB_ORCHESTRATOR_KEPT=%s\n' \
-		"$(id -u)" "$(id -g)" "${STATE}" "${COUNCIL}" "${HOME}/.claude/skills" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" "${HOME}/.local/state/agents-council" >>"${HUB}/.env"
-	if ! docker compose --file "${HUB}/compose.yml" up -d --build; then
+		"$(id -u)" "$(id -g)" "${STATE}" "${COUNCIL}" "${HOME}/.claude/skills" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" "${KEPT}" >>"${HUB}/.env"
+	if ! docker compose --file "${HUB}/compose.yml" build; then
+		docker compose --file "${HUB}/compose.yml" stop || true
+		warn "skills: building the Agent Orchestrator failed; it stays down until 'bash scripts/orchestrator.sh install' succeeds."
+		return 1
+	elif ! docker compose --file "${HUB}/compose.yml" up -d; then
 		warn "skills: docker compose failed; the Agent Orchestrator stays down until 'make orchestrator-install' succeeds."
 	fi
 	if ! command -v claude &>/dev/null; then
@@ -255,7 +264,7 @@ resources_timer() {
 	systemctl --user daemon-reload
 	systemctl --user enable --now "${RESOURCES_UNIT}.timer"
 	systemctl --user restart "${RESOURCES_UNIT}.timer"
-	log "skills: ${RESOURCES_UNIT}.timer samples the host and counts the transcripts' tokens into ${HOME}/.local/state/agents-council/resources every minute"
+	log "skills: ${RESOURCES_UNIT}.timer samples the host and counts the transcripts' tokens into ${KEPT}/resources every minute"
 }
 
 firewall_unit() {
@@ -285,7 +294,7 @@ offices_unit() {
 	fi
 	if ! skills_current; then
 		systemctl --user disable --now "${OFFICES_UNIT}.path" >/dev/null 2>&1 || true
-		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py, rasci.py, operator.py or radio.py than this tree; run 'make install' to enable ${OFFICES_UNIT}.path."
+		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py, councilroot.py, rasci.py, operator.py or radio.py than this tree; run 'make install' to enable ${OFFICES_UNIT}.path."
 		return 0
 	fi
 	cp -f "${HUB}/systemd/${OFFICES_UNIT}.service" "${HUB}/systemd/${OFFICES_UNIT}.path" "${UNITS}/"
@@ -296,7 +305,8 @@ offices_unit() {
 
 install_all() {
 	migrate || return 0
-	install_hub
+	local hub=0
+	install_hub || hub=1
 	tree_timer
 	sessions_timer
 	resources_timer
@@ -305,6 +315,27 @@ install_all() {
 	if ((TOOK_RUNNER)) || runner_enabled; then runner || true; fi
 	if ((TOOK_HOOK)); then
 		if [[ -f "${HUB}/client/permission_hook.py" ]]; then hook; else warn "skills: run 'make orchestrator-hook' once the Agent Orchestrator is installed"; fi
+	fi
+	return "${hub}"
+}
+
+stop_all() {
+	if [[ -f "${HUB}/compose.yml" ]] && command -v docker &>/dev/null; then
+		docker compose --file "${HUB}/compose.yml" stop || return 1
+	fi
+	if has_systemd; then
+		systemctl --user stop "${RUNNER}" "${OFFICES_UNIT}.path" "${OFFICES_UNIT}.service" "${RESOURCES_UNIT}.timer" "${RESOURCES_UNIT}.service" &>/dev/null || true
+	fi
+}
+
+start_all() {
+	if [[ -f "${HUB}/compose.yml" ]] && command -v docker &>/dev/null; then
+		docker compose --file "${HUB}/compose.yml" start || warn "skills: starting the Agent Orchestrator failed"
+	fi
+	if has_systemd; then
+		for unit in "${OFFICES_UNIT}.path" "${RESOURCES_UNIT}.timer" "${RUNNER}"; do
+			if [[ "$(systemctl --user is-enabled "${unit}" 2>/dev/null || true)" == "enabled" ]]; then systemctl --user start "${unit}" || true; fi
+		done
 	fi
 }
 
@@ -319,7 +350,7 @@ runner() {
 	fi
 	if ! skills_current; then
 		systemctl --user disable --now "${RUNNER}" >/dev/null 2>&1 || true
-		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py, rasci.py, operator.py or radio.py than this tree; run 'make install' to enable ${RUNNER}."
+		warn "skills: ${INSTALLED_SKILLS} holds other council.py, nofollow.py, councilroot.py, rasci.py, operator.py or radio.py than this tree; run 'make install' to enable ${RUNNER}."
 		return 1
 	fi
 	cp -f "${HUB}/systemd/${RUNNER}" "${UNITS}/"
@@ -425,12 +456,14 @@ hook() {
 case "${1:-}" in
 install) install_all ;;
 migrate) migrate ;;
+stop) stop_all ;;
+start) start_all ;;
 check) check ;;
 pin) pin "${2:-}" ;;
 runner) runner ;;
 hook) hook ;;
 *)
-	warn "usage: orchestrator.sh install | migrate | check | pin <blob> | runner | hook"
+	warn "usage: orchestrator.sh install | migrate | stop | start | check | pin <blob> | runner | hook"
 	exit 2
 	;;
 esac

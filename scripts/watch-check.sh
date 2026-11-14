@@ -5,9 +5,9 @@
 #   resource stage. Exit 1 when the stored stage is older than STALE_SECONDS.
 set -euo pipefail
 
-# council.py ROOT: every agent must agree on this directory
-STATE="${AGENTS_COUNCIL_ROOT:-/tmp/agents-council}/watch.json"
-KEPT="${HOME}/.local/state/agents-council/queue-history.jsonl"
+COUNCIL_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/skills/kvb-org-organize/scripts/councilroot.py"
+STATE="$(python3 "${COUNCIL_ROOT}" root)/watch.json"
+KEPT="$(python3 "${COUNCIL_ROOT}" durable)/queue-history.jsonl"
 STALE_SECONDS=600
 
 printf 'watch hooks running: %s\n' "$(pgrep -fc 'watch.py watch' || true)"

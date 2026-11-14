@@ -9,7 +9,7 @@
     --replay: this runner's replay store, outside the hub's reach, e.g.
         ~/.local/state/kvb-orchestrator-approvals/offices.json.
     --council: the council directory every agent shares, e.g.
-        /tmp/agents-council.
+        ~/.local/state/agents-shared.
     --script: the installed council.py of the kvb-org-organize skill.
 
 Returns:

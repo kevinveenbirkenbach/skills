@@ -26,6 +26,7 @@ REQUIREMENTS = REPO_ROOT / "docs" / "requirements"
 SCORE = SKILL / "scripts" / "score.py"
 EFFICIENCY = REPO_ROOT / "skills" / "kvb-check-efficiency" / "scripts"
 NOFOLLOW = REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "nofollow.py"
+COUNCIL_ROOT = NOFOLLOW.with_name("councilroot.py")
 HANG = 20
 FORMER = re.compile(r"💸 Cost|⏱️ Time|(?i:💸 cost|⏱️ time|\bcost (?:and|or) time\b|\bcost, time\b|\b(?:cost|time) from the `kvb-check-(?:efficiency|speed)`)")
 REMOTES = (
@@ -97,6 +98,7 @@ class ScoreCase(unittest.TestCase):
         organize = self.tmp / "skills" / "kvb-org-organize" / "scripts"
         organize.mkdir(parents=True)
         shutil.copy(NOFOLLOW, organize / "nofollow.py")
+        shutil.copy(COUNCIL_ROOT, organize / "councilroot.py")
         (skill / "labels.json").write_text(labels, encoding="utf-8")
         return skill / "scripts" / "score.py"
 
@@ -171,12 +173,14 @@ class TestJournalPlace(unittest.TestCase):
     def setUp(self):
         self.journal = module(SKILL / "scripts" / "journal.py")
 
-    def test_an_empty_council_root_means_the_default(self):
-        for value in ("", None):
-            with self.subTest(value=value), mock.patch.dict(os.environ, {} if value is None else {"AGENTS_COUNCIL_ROOT": value}):
-                if value is None:
-                    os.environ.pop("AGENTS_COUNCIL_ROOT", None)
-                self.assertEqual(self.journal.journal_path(), Path("/tmp/agents-council/scores.jsonl"))
+    def test_an_empty_council_root_means_the_durable_agents_default(self):
+        with tempfile.TemporaryDirectory() as home:
+            for value in ("", None):
+                with self.subTest(value=value), mock.patch.dict(os.environ, {"HOME": home} if value is None else {"HOME": home, "AGENTS_COUNCIL_ROOT": value}):
+                    os.environ.pop("XDG_STATE_HOME", None)
+                    if value is None:
+                        os.environ.pop("AGENTS_COUNCIL_ROOT", None)
+                    self.assertEqual(self.journal.journal_path(), Path(home) / ".local" / "state" / "agents-shared" / "scores.jsonl")
 
     def test_ssh_scp_and_https_remotes_share_one_key(self):
         self.assertEqual({self.journal.identity(url) for url in REMOTES}, {"github.com/org/repo"})
@@ -290,6 +294,18 @@ class TestScoreJournal(ScoreCase):
                     self.assertEqual(done.stderr, f"score: journal {self.council / JOURNAL_NAME}: helper {helper} unusable ({kind}): install or update kvb-org-organize\n")
                     self.assertEqual(len(done.stdout.splitlines()), 7)
                     self.assertFalse(self.council.exists())
+
+    def test_a_missing_council_root_helper_is_named_in_the_one_stderr_line(self):
+        script = self.copy_skills((SKILL / "labels.json").read_text(encoding="utf-8"))
+        helper = self.tmp.resolve() / "skills" / "kvb-org-organize" / "scripts" / "councilroot.py"
+        helper.unlink()
+        for values, code in (({}, 0), ({"critical": "1"}, 4)):
+            with self.subTest(values=values):
+                done = self.score(script, *flags(values), "--message-block", cwd=self.tmp)
+                self.assertEqual(done.returncode, code)
+                self.assertEqual(done.stderr, f"score: journal: helper {helper} unusable (FileNotFoundError): install or update kvb-org-organize\n")
+                self.assertEqual(len(done.stdout.splitlines()), 7)
+                self.assertFalse(self.council.exists())
 
     def test_a_branch_or_commit_outside_utf8_keeps_the_score_exit(self):
         repo = self.tmp / "latin"

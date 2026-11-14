@@ -86,6 +86,25 @@ def read_text(root: Path, path: Path) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def read_tail(root: Path, path: Path, limit: int) -> str:
+    """Args:
+      root: the trusted directory.
+      path: the file, below root.
+      limit: bytes to read at most; a longer file yields its last limit
+        bytes after the first line break in them, so only whole lines.
+
+    Returns:
+      That text, UTF-8 decoded, undecodable bytes replaced.
+    """
+    with open(open_below(root, path, os.O_RDONLY, 0), "rb") as handle:
+        size = os.fstat(handle.fileno()).st_size
+        if size <= limit:
+            return handle.read(limit).decode("utf-8", errors="replace")
+        handle.seek(size - limit)
+        data = handle.read(limit)
+    return data[data.find(b"\n") + 1:].decode("utf-8", errors="replace")
+
+
 @contextlib.contextmanager
 def locked(root: Path, path: Path, mode: int, wait: float | None) -> Iterator[TextIO]:
     """Hold an exclusive flock on a lock file below root, created without truncation.

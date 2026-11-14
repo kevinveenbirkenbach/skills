@@ -48,7 +48,7 @@ def branch_gates(gates: ModuleType, db: sqlite3.Connection, repo: str, branch: s
 def read_gates(gates: ModuleType | None, db: Path, scan: dict) -> dict:
     """Args:
         gates: the gates.py module, or None.
-        db: gates.db under the read-only mount of ~/.local/state/agents-council.
+        db: gates.db under the read-only mount of the durable council root.
         scan: the tree; its repositories and branches are the ones shown.
 
     Returns:

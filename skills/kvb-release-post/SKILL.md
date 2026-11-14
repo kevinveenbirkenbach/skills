@@ -43,6 +43,9 @@ replaces this one:
 
 - Every number, name and date comes from `brief.yml`.
 - No em dashes, no placeholder, no claim the brief does not prove.
-- Write into `/tmp/release-<version>/` under the file name the project skill
-  sets, else `<channel>/<language>.txt`, and report each file's character
-  count against its limit.
+- Write into `<drafts>/` under the file name the project skill sets, else
+  `<channel>/<language>.txt`, and report each file's character count
+  against its limit. `<drafts>` is the directory `kvb-release` handed over,
+  else the one
+  `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py release <version>`
+  prints.

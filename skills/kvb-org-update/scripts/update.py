@@ -2,8 +2,9 @@
 """Tell every agent which skills changed and how to use them: one newsletter per update.
 
 Environment:
-    AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
-        /tmp/agents-council unless set. The last announced revision per
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the council directory the
+        kvb-org-organize councilroot.py resolves, shared by every agent on the
+        host. The last announced revision per
         repository lives in <root>/skills-announced.json.
     CLAUDE_CODE_SESSION_ID: the sending session, passed on to radio.py.
 
@@ -25,14 +26,11 @@ import argparse
 import functools
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
 
-ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
-ANNOUNCED = ROOT / "skills-announced.json"
 SKILLS = Path(__file__).resolve().parents[2]
 RADIO = SKILLS / "kvb-org-radio" / "scripts" / "radio.py"
 ORGANIZE = SKILLS / "kvb-org-organize" / "scripts"
@@ -46,6 +44,10 @@ def organize(name: str) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+ROOT = organize("councilroot").root()
+ANNOUNCED = ROOT / "skills-announced.json"
 
 
 def git(repo: Path, *args: str) -> str:

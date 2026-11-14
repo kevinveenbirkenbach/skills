@@ -61,8 +61,8 @@ changed and what it costs, and a gate means something again.
 12. **Gates**: a level (none < quick < test < quality-high < e2e) per branch
     and action (commit, merge, push, pr), inherited from all ancestors, the
     strictest wins, an own rule wins over all; kept in the local database
-    `~/.local/state/agents-council/gates.db` (the council root lives in the
-    tmpfs `/tmp` and loses it at reboot) that agents read through `gates.py`;
+    `~/.local/state/agents-council/gates.db` (host-only; agents share the
+    council root `~/.local/state/agents-shared`) that agents read through `gates.py`;
     set in every Artifacts view. Rejected: a committed `.gates.yml`, repo plus
     local.
 13. **Hooks with receipts**: pre-commit runs only quick checks of the staged
@@ -243,6 +243,9 @@ flowchart TD
       `gate-parents.jsonl` in the council root, which the watch hook of
       `kvb-org-organize` keeps in `~/.local/state/agents-council/` beside
       `gates.db`; reads merge both, and a database row for an edge wins.
+      Amended 2026-11-14: the council root is the durable
+      `~/.local/state/agents-shared` (`councilroot.py root`); the copy stays in
+      the host-only `~/.local/state/agents-council` (`councilroot.py durable`).
 - [x] `gates.py resolve --repo R --branch B --action A` prints the level and its
       source: the branch's own rule, else the strictest resolved level of all
       ancestors, else none.
@@ -293,6 +296,10 @@ flowchart TD
     sandboxed gates write receipts to `/tmp/agents-council` (the council
     root) and the watch hook of `kvb-org-organize` mirrors them to
     `~/.local/state/agents-council`, as it does `security-accepted.jsonl`.
+    Amended 2026-11-14 after a host crash wiped `/tmp`: the council root
+    moved to the durable `~/.local/state/agents-shared`, the one state path
+    the sandbox may write; `~/.local/state/agents-council` stays host-only,
+    and the watch hook still mirrors receipts and acceptances into it.
     (4) Agents commit and push with `--no-verify` per operator rule, so the
     hooks bind humans and CI; the push hand-over keeps its own green gate on
     the exact commit.
@@ -347,7 +354,8 @@ The work packages meet only through these interfaces:
   cache_write}`, t the hour), `offsets.json` and `cpu.json` under
   `~/.local/state/agents-council/resources/`.
 - **Mounts**: the hub mounts `~/.local/state/agents-council` read-only and
-  opens `gates.db` read-only.
+  opens `gates.db` read-only; the council root `~/.local/state/agents-shared`
+  is mounted read-write at its host path.
 
 ### W6 Speech bubbles
 

@@ -14,8 +14,10 @@ the project's own `<prefix>-release-<channel>` skills.
 
 Run the `kvb-think-listen` skill once for what only the operator knows: the
 tag, the languages (default English), the audiences, the highlights, what to
-leave out and the channels wanted. Write the answers to
-`/tmp/release-<version>/listen.yml` (`tag`, `languages`, `audience`,
+leave out and the channels wanted. `<drafts>` is the directory
+`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py release <version>`
+prints, which survives a reboot. Write the answers to
+`<drafts>/listen.yml` (`tag`, `languages`, `audience`,
 `highlights`, `leave_out`, `channels`) and hand that file to every channel,
 so the operator answers each question once.
 
@@ -31,7 +33,7 @@ so the operator answers each question once.
 ## 3. Brief
 
 Run the `kvb-think-brainstorm` skill on the headline benefit, then write
-`/tmp/release-<version>/brief.yml`: version, date, languages, headline
+`<drafts>/brief.yml`: version, date, languages, headline
 benefit, three to five benefits each with the changelog lines that prove it,
 upgrade notes and links. `languages` is the only answer the brief copies from
 `listen.yml`: an answer steers what a channel stresses, it never backs a
@@ -51,12 +53,12 @@ the general method:
 | entry | changelog | `kvb-release-changelog` |
 
 Each gets `brief.yml`, `listen.yml` and its channel, runs its own listen and
-brainstorm, and writes into `/tmp/release-<version>/` under the file name
+brainstorm, and writes into `<drafts>/` under the file name
 the project skill sets, else `<channel>/<language>.<ext>`.
 
 ## 5. Check
 
-Fix in every file under `/tmp/release-<version>/`, subfolders included,
+Fix in every file under `<drafts>/`, subfolders included,
 before the hand-over: a leftover placeholder (`TODO`, `XXX`, `<...>`), an
 em dash, a length outside the channel's bounds, a number absent from
 `brief.yml`.

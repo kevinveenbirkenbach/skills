@@ -2,11 +2,11 @@
 """Gate rules, branch parents and gate receipts of every repository on this host.
 
 Args:
-    --db: the SQLite database of rules and parents, default
-        ~/.local/state/agents-council/gates.db (GATES_DB overrides it); it
-        survives reboots, the council root under /tmp does not. Only rule and
-        parents add|drop|derive write it; every other command opens it
-        read-only and an absent one as empty.
+    --db: the SQLite database of rules and parents, default gates.db in the
+        durable council root (councilroot.py durable of kvb-org-organize;
+        GATES_DB overrides it). Only rule and parents add|drop|derive write
+        it; every other command opens it read-only and an absent one as
+        empty.
 
     rule set --repo R --branch B --action A --level L: the branch's own level
         for one action. rule drop --repo R --branch B --action A removes it.
@@ -48,7 +48,8 @@ Args:
         branch's merge level before it leaves. Each passes when a receipt for the tree meets the resolved
         level, else prints the command that produces it and exits 1:
         `gates.py quick` for quick; above it `queue.py hold --receipt <level>`
-        of `make <level>` with INFINITO_TEST_GPU=false, held as kind
+        of `make <level>` with INFINITO_TEST_GPU=false and its log in the
+        council root's gates/, which it creates, held as kind
         quality-high for e2e, else as the level, with the open register task
         whose branch is B. post-checkout: parents record on a branch
         checkout; it exits 0 even when recording fails.
@@ -63,9 +64,9 @@ Args:
 Journals:
     Receipts {id, repo, tree, level, gpu, log, at} and recorded parents {id,
     repo, branch, parent} are rows of gate-receipts.jsonl and
-    gate-parents.jsonl in the council root (AGENTS_COUNCIL_ROOT, else
-    /tmp/agents-council), which sandboxed agents can write; the watch hook of
-    kvb-org-organize copies them to ~/.local/state/agents-council, and reading
+    gate-parents.jsonl in the council root (councilroot.py root of
+    kvb-org-organize), which sandboxed agents can write; the watch hook of
+    kvb-org-organize copies them to the host-only durable root, and reading
     merges both by id; a row whose id is no string is skipped. A receipt
     carries INFINITO_TEST_GPU of the environment that wrote it as gpu; it
     meets its own level and every lower one, above quick only with gpu
@@ -99,7 +100,6 @@ LEVELS = ("none", "quick", "test", "quality-high", "e2e")
 ACTIONS = ("commit", "merge", "push", "pr")
 SOURCES = ("recorded", "derived", "operator")
 DROPPED = "dropped"
-DEFAULT_DB = Path.home() / ".local" / "state" / "agents-council" / "gates.db"
 SKILLS = Path(__file__).resolve().parents[2]
 QUEUE = SKILLS / "kvb-org-queue" / "scripts" / "queue.py"
 RASCI = SKILLS / "kvb-org-rasci" / "scripts" / "rasci.py"
@@ -137,6 +137,8 @@ def module(name: str, path: Path) -> ModuleType:
 
 
 watch = module("kvb_gates_watch", SKILLS / "kvb-org-organize" / "scripts" / "watch.py")
+DEFAULT_DB = watch.KEPT / "gates.db"
+LOGS = "gates"
 
 
 def fail(message: str) -> None:
@@ -250,7 +252,8 @@ def receipted(repo: str, tree: str, level: str) -> bool:
 def opened(path: Path, write: bool, kept_dir: Path) -> sqlite3.Connection:
     """Args:
         path: gates.db; read-only unless write, in memory when it is missing.
-        write: open it for rule and parent changes.
+        write: open it for rule and parent changes; OSError when path or its
+            directory is a link or path no regular file with a single link.
         kept_dir: the directory holding the kept gate-parents.jsonl: watch.KEPT
             on the host, the read-only mount of it in the hub.
 
@@ -260,6 +263,7 @@ def opened(path: Path, write: bool, kept_dir: Path) -> sqlite3.Connection:
     """
     if write:
         path.parent.mkdir(parents=True, exist_ok=True)
+        os.close(watch.nofollow.open_below(path.parent, path, os.O_RDWR | os.O_CREAT, FILE_MODE))
         db = sqlite3.connect(path)
     elif path.exists():
         db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
@@ -466,7 +470,10 @@ def task_of(branch: str) -> str:
 def producer(worktree: str, branch: str, level: str, tree: str) -> str:
     if level == "quick":
         return shlex.join(["python3", str(Path(__file__).resolve()), "quick", "--worktree", worktree])
-    log = Path(tempfile.gettempdir()) / f"gate-{tree[:12]}-{level}.log"
+    try:
+        log = watch.councilroot.directory(watch.ROOT, LOGS) / f"gate-{tree[:12]}-{level}.log"
+    except (OSError, ValueError) as error:
+        return f"nothing until the council root is fixed: {error}"
     return shlex.join([
         "env", "-C", worktree, f"INFINITO_TEST_GPU={GPU_OFF}", "python3", str(QUEUE), "hold", "--kind", KINDS[level],
         "--task", task_of(branch), "--receipt", level, "--log", str(log), "--", "make", level,

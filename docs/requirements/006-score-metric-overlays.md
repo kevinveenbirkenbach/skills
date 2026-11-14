@@ -25,7 +25,8 @@ the burndown, so that I see how quality and cost move alongside the work.
    [--labels <file>]` parses score blocks from commit messages through
    `git log` with the label file, keyed by (remote, commit sha), idempotent (a
    second run adds nothing), runnable on any host, after a reboot (the journal
-   lives in the RAM-backed `/tmp`) or on another PC; no model calls.
+   lived in the RAM-backed `/tmp` until 2026-11-14 and is durable since) or
+   on another PC; no model calls.
    Rejected: an agent reading the history (tokens); parsing at view time in
    the hub (the hub would need every repository).
 5. **Overlays**: the burndown gets one switch per metric (six), all off by

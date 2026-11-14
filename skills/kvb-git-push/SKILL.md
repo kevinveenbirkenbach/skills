@@ -26,11 +26,14 @@ hands over, `kvb-git-pr-create`, `kvb-git-update-branches` and
    output streamed to a log; give the operator `tail -f <log>`:
 
    ```bash
-   queue.py hold --kind <kind> --task <register task> -- python3 <gate.py> hold --repo <root> -- make <target> 2>&1 | tee /tmp/kvb-git-push-<slug>-<N>.log
+   queue.py hold --kind <kind> --task <register task> -- python3 <gate.py> hold --repo <root> -- make <target> 2>&1 | tee <gates>/kvb-git-push-<slug>-<N>.log
    ```
 
    `<gate.py>` is `${CLAUDE_SKILL_DIR}/../kvb-check-gate/scripts/gate.py`;
-   its worktree lock keeps a sync out while the gate runs.
+   its worktree lock keeps a sync out while the gate runs. `<gates>` is the
+   directory
+   `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py dir gates`
+   prints, so the evidence survives a reboot.
 5. **Judge** by the gate's own result tables and its failure line
    (infinito-nexus: the `📊 per-target wall-clock` table and `FAILED
    TARGETS:`), never by the exit code of a pipe. Green also needs HEAD and

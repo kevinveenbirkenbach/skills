@@ -7,7 +7,8 @@ description: >
 
 `${CLAUDE_SKILL_DIR}/scripts/radio.py` is the channel every skill uses to
 reach other agents, on every runtime. Both channels share one store,
-`news.jsonl` in the council directory (`/tmp/agents-council`).
+`news.jsonl` in the council directory, which
+`${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py root` prints.
 
 ```bash
 radio.py post "<text>" [--to <name> ...] [--session <id>]

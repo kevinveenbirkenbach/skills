@@ -2,12 +2,12 @@
 """Keep the RASCI register of the organisation's tasks in a local JSON file.
 
 Environment:
-    AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
-        the register is <root>/rasci.json, and `show` also lists every work/
-        and cluster/ claim of the council there. The operator's agent order
-        (`agents order`) lies beside it in <root>/agent-order.json, apart from
-        every task row: it breaks ties of equal task priority only.
-        /tmp/agents-council unless set.
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the council directory the
+        kvb-org-organize councilroot.py resolves, shared by every agent on the
+        host; the register is <root>/rasci.json, and `show` also lists every
+        work/ and cluster/ claim of the council there. The operator's agent
+        order (`agents order`) lies beside it in <root>/agent-order.json, apart
+        from every task row: it breaks ties of equal task priority only.
 
 Exit codes:
     0 done, 2 usage error.
@@ -20,7 +20,6 @@ import contextlib
 import datetime
 import importlib.util
 import json
-import os
 import re
 import statistics
 import sys
@@ -28,10 +27,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
 
-ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
-DB = ROOT / "rasci.json"
-LOCK = ROOT / "rasci.lock"
-AGENT_ORDER = ROOT / "agent-order.json"
 FILE_MODE = 0o600
 ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
 COUNCIL = ORGANIZE / "council.py"
@@ -88,6 +83,10 @@ def script(name: str, path: Path) -> ModuleType:
 
 
 nofollow = script("kvb_rasci_nofollow", ORGANIZE / "nofollow.py")
+ROOT = script("kvb_rasci_councilroot", ORGANIZE / "councilroot.py").root()
+DB = ROOT / "rasci.json"
+LOCK = ROOT / "rasci.lock"
+AGENT_ORDER = ROOT / "agent-order.json"
 
 
 def load() -> dict[str, dict]:

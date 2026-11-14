@@ -23,6 +23,32 @@ if [[ ! -d "${TARGET}" ]]; then
 	exit 2
 fi
 
+council_root="${REPO_ROOT}/skills/kvb-org-organize/scripts/councilroot.py"
+has_user_systemd() { command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; }
+resume_units() {
+	bash "${REPO_ROOT}/scripts/orchestrator.sh" start || true
+	if has_user_systemd; then systemctl --user start kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.path || true; fi
+}
+# Args: extra councilroot.py migrate arguments. Returns its exit code; on 3
+# or 5 every file it left behind or kept beside its namesake is named on stderr.
+migrate_council() {
+	local report code=0
+	report="$(python3 "${council_root}" migrate "$@")" || code=$?
+	log "${report}"
+	if ((code == 3 || code == 5)); then
+		warn "skills: the council root migration left these files in the earlier root or beside their namesakes; merge them by hand, the install exits 1 at the end:"
+		grep -E '^(unmoved|conflict|kept) ' <<<"${report}" | sed 's/^/skills:   /' >&2 || true
+	fi
+	return "${code}"
+}
+status=0
+if [[ "${TARGET}" == "${HOME}" ]]; then
+	if ! python3 "${council_root}" preflight; then
+		warn "skills: install refused before copying anything; the installed skills keep the earlier council root until the reasons above are gone."
+		exit 1
+	fi
+fi
+
 cd "${REPO_ROOT}"
 src="${REPO_ROOT}/.agents/skills"
 rm -rf "${src}"
@@ -37,6 +63,31 @@ fi
 if [[ -d "${REPO_ROOT}/skills" ]]; then
 	log "skills: adding first-party skills from skills/..."
 	cp -a "${REPO_ROOT}/skills/." "${src}/"
+fi
+
+if [[ "${TARGET}" == "${HOME}" ]]; then
+	install -d -m 0700 "$(python3 "${council_root}" durable)"
+	if has_user_systemd; then
+		systemctl --user stop kvb-org-queue-cleanup.path kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.service &>/dev/null || true
+	fi
+	if ! bash "${REPO_ROOT}/scripts/orchestrator.sh" stop; then
+		resume_units
+		warn "skills: install refused before copying anything: the Agent Orchestrator did not stop."
+		exit 1
+	fi
+	moved=0
+	migrate_council || moved=$?
+	marker="$(python3 "${council_root}" durable)/migrate.started"
+	if [[ -e "${marker}" ]]; then
+		warn "skills: the council root migration stopped halfway (exit ${moved}): ${marker} exists; the install copies the new skills so they read the new root and exits 1 at the end; 'python3 ${council_root} migrate --catch-up' finishes the move and removes ${marker}."
+		status=1
+	elif ((moved == 3 || moved == 5)); then
+		status=1
+	elif ((moved != 0)); then
+		resume_units
+		warn "skills: install refused before copying anything: the council root migration failed (exit ${moved}); run the install again once the reasons above are gone."
+		exit 1
+	fi
 fi
 
 for root in .agents/skills .claude/skills; do
@@ -58,6 +109,17 @@ for root in .agents/skills .claude/skills; do
 	fi
 done
 
+if [[ "${TARGET}" == "${HOME}" ]]; then
+	caught=0
+	migrate_council --catch-up || caught=$?
+	if ((caught != 0)); then
+		status=1
+	fi
+	if ((caught != 0 && caught != 3 && caught != 5)); then
+		warn "skills: the catch-up council root migration failed (exit ${caught}); what the old skills wrote during the install stays in the earlier root until 'python3 ${council_root} migrate --catch-up' succeeds."
+	fi
+fi
+
 settings="${TARGET}/.claude/settings.local.json"
 if command -v node &>/dev/null; then
 	log "skills: auto-enabling caveman + ponytail plugins in ${settings}"
@@ -70,8 +132,7 @@ else
 fi
 
 if [[ "${TARGET}" == "${HOME}" ]]; then
-	install -d -m 0700 "${HOME}/.local/state/agents-council"
-	if command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; then
+	if has_user_systemd; then
 		log "skills: enabling the daily kvb-dream notification timer and the kvb-org-queue-cleanup rounds at 00:00, 12:00 and on request"
 		units="${HOME}/.config/systemd/user"
 		mkdir -p "${units}"
@@ -83,7 +144,10 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 		warn "skills: no systemd user session; skipped the kvb-dream notification timer and the kvb-org-queue-cleanup rounds."
 	fi
 	if command -v docker &>/dev/null; then
-		bash "${REPO_ROOT}/scripts/orchestrator.sh" install
+		if ! bash "${REPO_ROOT}/scripts/orchestrator.sh" install; then
+			warn "skills: the Agent Orchestrator is down or partly installed; run 'bash scripts/orchestrator.sh install' once the reasons above are gone."
+			status=1
+		fi
 		bash "${REPO_ROOT}/scripts/orchestrator.sh" runner || true
 	else
 		warn "skills: docker not found; skipped the Agent Orchestrator."
@@ -129,3 +193,4 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 fi
 
 log "skills: done. Restart your agent to load the skills."
+exit "${status}"

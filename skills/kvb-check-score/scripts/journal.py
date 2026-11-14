@@ -1,9 +1,10 @@
 """Labels and score journal shared by score.py and backfill.py of kvb-check-score.
 
 Environment:
-    AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
-        /tmp/agents-council when unset or empty. The journal is its scores.jsonl,
-        display data for the hub's burndown only, never a gate input.
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the council directory the
+        kvb-org-organize councilroot.py resolves, shared by every agent on the
+        host. The journal is its scores.jsonl, display data for the hub's
+        burndown only, never a gate input.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -20,9 +20,10 @@ from types import ModuleType
 from urllib.parse import urlsplit
 
 LABELS = Path(__file__).resolve().parents[1] / "labels.json"
-NOFOLLOW = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "nofollow.py"
+ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
+NOFOLLOW = ORGANIZE / "nofollow.py"
+COUNCIL_ROOT = ORGANIZE / "councilroot.py"
 JOURNAL = "scores.jsonl"
-COUNCIL = "/tmp/agents-council"
 SCP = re.compile(r"(?:[^@/:]+@)?([^/:]+):(?!//)(.+)")
 FILE_MODE = 0o600
 
@@ -39,7 +40,11 @@ def load_labels(path: Path) -> dict:
 
 
 def journal_path() -> Path:
-    return Path(os.environ.get("AGENTS_COUNCIL_ROOT") or COUNCIL) / JOURNAL
+    """Returns:
+        scores.jsonl in the council root; OSError naming councilroot.py of
+        kvb-org-organize when it is missing or unusable.
+    """
+    return helper(COUNCIL_ROOT, "kvb_score_councilroot", lambda loaded: loaded.root()) / JOURNAL
 
 
 def git(repo: Path | str, *args: str) -> str:
@@ -130,13 +135,15 @@ def line(row: dict) -> str:
     return json.dumps(row, ensure_ascii=False) + "\n"
 
 
-def unusable(error: Exception) -> OSError:
-    return OSError(f"helper {NOFOLLOW} unusable ({type(error).__name__}): install or update kvb-org-organize")
+def unusable(path: Path, error: Exception) -> OSError:
+    return OSError(f"helper {path} unusable ({type(error).__name__}): install or update kvb-org-organize")
 
 
-def nofollow[T](use: Callable[[ModuleType], T]) -> T:
+def helper[T](path: Path, name: str, use: Callable[[ModuleType], T]) -> T:
     """Args:
-        use: what to do with nofollow.py of kvb-org-organize.
+        path: a script of kvb-org-organize.
+        name: the module name it loads under.
+        use: what to do with it.
 
     Returns:
         The result of use; its OSError unchanged, any other failure loading
@@ -144,17 +151,27 @@ def nofollow[T](use: Callable[[ModuleType], T]) -> T:
         FileNotFoundError.
     """
     try:
-        spec = importlib.util.spec_from_file_location("kvb_score_nofollow", NOFOLLOW)
+        spec = importlib.util.spec_from_file_location(name, path)
         loaded = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(loaded)
     except Exception as error:  # noqa: BLE001
-        raise unusable(error) from None
+        raise unusable(path, error) from None
     try:
         return use(loaded)
     except OSError:
         raise
     except Exception as error:  # noqa: BLE001
-        raise unusable(error) from None
+        raise unusable(path, error) from None
+
+
+def nofollow[T](use: Callable[[ModuleType], T]) -> T:
+    """Args:
+        use: what to do with nofollow.py of kvb-org-organize.
+
+    Returns:
+        helper() of it.
+    """
+    return helper(NOFOLLOW, "kvb_score_nofollow", use)
 
 
 def append(path: Path, rows: list[dict]) -> None:
