@@ -42,6 +42,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 async function failed(bubbles, item, cancel) {
   const shown = [];
   const speech = {pending: [], busy: false, current: null, loading: null, item: null, timer: 0, warned: 0};
+  const draw = () => null;
   const fetch = async () => {
     if (cancel) {
       speech.item = null;
@@ -52,7 +53,7 @@ async function failed(bubbles, item, cancel) {
     Bubbles, speech, fetch, item, Date, settings: {bubbles}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0, radioSet: {},
     Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 0}, RadioSet: {burst: (gain) => ({gain})},
     toast: (title, lines) => shown.push(`${title}: ${lines.join(" ")}`),
-    context: () => ({}), drawBubbles: () => {}, drawSpeaker: () => {},
+    context: () => ({}), drawBubbles: draw, drawSpeaker: draw, wordsRead: () => 0,
     performance: {now: () => 1000}, window: {setTimeout: () => 7, clearTimeout: () => {}},
   });
   for (let round = 0; round < 5; round += 1) {
@@ -72,7 +73,7 @@ async function failed(bubbles, item, cancel) {
   }));
 })();
 """
-STOP_PROBE = """
+PAGE_HEAD = """
 const fs = require("fs");
 const vm = require("vm");
 const Bubbles = require(process.argv[1]);
@@ -116,6 +117,114 @@ class Node {
     return this.querySelectorAll(selector)[0] || null;
   }
 }
+"""
+SOUND_PROBE = PAGE_HEAD + """
+const settle = async () => {
+  for (let round = 0; round < 5; round += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+};
+const part = () => ({gain: {value: 0, setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {}}, frequency: {}, Q: {}, connect: (next) => next});
+const ROW = {who: "A", line: "Disk almost full", words: ["Disk", "almost", "full"]};
+async function transmitted(steps, cut, row = ROW, broken = "") {
+  const layer = new Node({class: "bubbles"});
+  layer.append(new Node({class: "bubble-bar"}));
+  const clock = {now: 1000};
+  const [ends, made, counts, states] = [[], [], [], []];
+  const timers = new Map();
+  const item = {...row, steps};
+  const audio = {
+    sampleRate: 8000, currentTime: 0, destination: {}, createBuffer: (channels, frames) => ({getChannelData: () => new Float32Array(frames)}),
+    createBiquadFilter: part, createGain: part, decodeAudioData: async () => ({duration: 1}),
+    createBufferSource: () => ({...part(), addEventListener: (name, run) => ends.push(run), start: () => {}, stop: () => {}}),
+  };
+  const context = {
+    Bubbles, item, counts, states, made, broken, thrown: [], settings: {bubbles: true}, radioSet: {}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0, SOUND_SLACK: 2,
+    speech: {pending: [], busy: false, current: null, loading: null, item: null, source: null, timer: 0, warned: 0},
+    document: {getElementById: () => layer, querySelectorAll: () => [], fonts: {add: () => null}},
+    window: {
+      innerWidth: 1366, innerHeight: 768, requestAnimationFrame: () => 1, cancelAnimationFrame: () => null, clearTimeout: () => null,
+      setTimeout: (run) => {
+        timers.set(timers.size + 1, run);
+        return timers.size;
+      },
+    },
+    performance: {now: () => clock.now}, CSS: {escape: (value) => value}, g3: {tab: "stream"}, anchor3d: () => () => null,
+    h: (tag, attrs, ...children) => {
+      const node = new Node(attrs);
+      node.append(...children);
+      if (node.classes.has("speech-bubble")) {
+        made.push(node);
+      }
+      return node;
+    },
+    nameOf: (key) => key, fixed: (value) => value.toFixed(1), FontFace: class {}, toast: () => null, context: () => audio,
+    duck: () => {
+      if (broken === "duck") {
+        throw new Error("no gain node");
+      }
+    },
+    fetch: async (url, options) => (JSON.parse(options.body).text === "fails"
+      ? {ok: false, status: 500, headers: {get: () => "text/plain"}, text: async () => "tts down"}
+      : {ok: true, status: 200, headers: {get: () => "audio/wav"}, arrayBuffer: async () => ({})}),
+    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 1}, RadioSet: {burst: (gain) => ({gain, seconds: 0.6, frequency: 1800, q: 0.9})},
+  };
+  vm.runInNewContext(`${code}
+function drawSpeaker() {
+  if (broken === "ended" && !speech.source && !speech.current && !thrown.length) {
+    thrown.push("draw failed");
+    throw new Error("draw failed");
+  }
+  drawBubbles();
+  counts.push(wordsRead(item));
+  const node = made.find((entry) => entry.dataset.who === item.who);
+  states.push(node ? node.dataset.state : null);
+}
+say(item);`, context);
+  await settle();
+  while (ends.length) {
+    clock.now += 500;
+    context.drawSpeaker();
+    if (cut && item.playing === "speech") {
+      Object.assign(item, {cut: true, steps: [...item.steps.slice(0, item.at), {kind: "burst"}]});
+    }
+    ends.splice(0).forEach((run) => {
+      try {
+        run();
+      } catch (error) {
+        context.thrown.push(String(error.message));
+      }
+    });
+    await settle();
+  }
+  clock.now += 2000;
+  context.drawSpeaker();
+  const mine = made.filter((node) => node.dataset.who === item.who);
+  const text = mine.length ? mine[0].querySelector(".bubble-words").textContent : null;
+  const found = {nodes: mine.length, leaving: mine.some((node) => node.classes.has("leaving")), counts: [...counts], states: [...states], text, reading: context.speech.current === item && Boolean(context.speech.timer)};
+  if (context.speech.timer) {
+    timers.get(context.speech.timer)();
+    await settle();
+  }
+  context.drawBubbles();
+  return {...found, after: {cleared: context.speech.item === null && context.speech.current === null, busy: context.speech.busy, left: mine.every((node) => node.classes.has("leaving"))}};
+}
+(async () => {
+  const [word, speech] = [{kind: "word", text: "W"}, {kind: "speech", text: "t"}];
+  console.log(JSON.stringify({
+    quiet: await transmitted([word, {kind: "burst"}], false),
+    burst: await transmitted([{kind: "burst"}], false),
+    fallback: await transmitted([word, {kind: "speech", text: "fails"}], false),
+    cut: await transmitted([word, speech], true),
+    auto: await transmitted([word, speech], false),
+    check: await transmitted([{kind: "speech", text: "fails"}], false, {who: "Operator", line: "radio check"}),
+    silent: await transmitted([], false, {...ROW, silent: true}),
+    rejected: await transmitted([{kind: "burst"}], false, ROW, "duck"),
+    faulty: await transmitted([{kind: "burst"}], false, ROW, "ended"),
+  }));
+})();
+"""
+STOP_PROBE = PAGE_HEAD + """
 function run(scenario) {
   const layer = new Node({class: "bubbles"});
   layer.append(new Node({class: "bubble-bar"}));
@@ -137,10 +246,10 @@ function run(scenario) {
     drawSpeaker: () => null, toast: () => null, saveSettings: () => null, context: () => null, Voice: {enqueue: (pending, next) => [...pending, next]}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0,
   };
   vm.runInNewContext(`${code}
-const playing = {who: "A", line: "Disk almost full", words: ["Disk", "almost", "full"], started: 1000, duration: 3};
+const playing = {who: "A", line: "Disk almost full", words: ["Disk", "almost", "full"], started: 1000, duration: 3, floor: 0};
 const next = {who: "B", line: "Gate green", words: ["Gate", "green"]};
 const quiet = {who: "C", line: "Docs green", words: ["Docs", "green"], silent: true};
-Object.assign(speech, {current: playing, busy: true, source: {stop: () => { stops += 1; }}, pending: [next, quiet]});
+Object.assign(speech, {current: playing, item: playing, busy: true, source: {stop: () => { stops += 1; }}, pending: [next, quiet]});
 drawBubbles();
 const before = layer.querySelectorAll(".speech-bubble").length;
 ${scenario}
@@ -149,7 +258,11 @@ out = {before, after: layer.querySelectorAll(".speech-bubble").length, shown: bu
   pending: speech.pending.map((item) => item.who), hidden: layer.hidden, pressed: toggle.attrs["aria-pressed"] || null};`, context);
   return context.out;
 }
-console.log(JSON.stringify({stop: run("cancelSpeech();"), off: run("settings.bubbles = false;\\nsyncBubbles();")}));
+console.log(JSON.stringify({
+  stop: run("cancelSpeech();"),
+  off: run("settings.bubbles = false;\\nsyncBubbles();"),
+  dropped: run("Object.assign(speech, {current: quiet, item: quiet, timer: 5, pending: []});\\nsettings.bubbles = false;\\nsyncBubbles();\\nsettings.bubbles = true;\\nsyncBubbles();"),
+}));
 """
 
 
@@ -199,6 +312,56 @@ class TestSpeechFallback(unittest.TestCase):
         self.assertEqual(data["unread"], {"current": False, "busy": False, "timer": 0, "started": None, "duration": None, "shown": []})
 
 
+class TestTransmission(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        done = subprocess.run(["node", "-e", SOUND_PROBE, str(BUBBLES), str(SPEECH), str(LAYER)], capture_output=True, text=True, timeout=60, check=True)
+        cls.data = json.loads(done.stdout)
+
+    def test_one_bubble_node_carries_a_row_through_every_sound_into_its_silent_reading(self):
+        for case in ("quiet", "burst", "fallback", "cut", "silent", "rejected", "faulty"):
+            with self.subTest(case=case):
+                found = self.data[case]
+                self.assertEqual((found["nodes"], found["leaving"], found["reading"]), (1, False, True), found)
+
+    def test_a_spoken_row_keeps_its_one_node_until_the_speech_ends_and_then_fades(self):
+        found = self.data["auto"]
+        self.assertEqual((found["nodes"], found["leaving"], found["reading"]), (1, True, False), found)
+
+    def test_the_speech_reveals_the_line_a_procedure_word_none_of_it_and_a_burst_or_the_silent_reading_the_rest_at_reading_pace(self):
+        expected = {
+            "quiet": [0, 0, 0, 1, 2, 2, 2, 3],
+            "burst": [1, 2, 2, 2, 3],
+            "fallback": [0, 0, 0, 1, 2, 2, 2, 3],
+            "cut": [0, 0, 0, 1, 2, 2, 3, 3, 3, 3, 3],
+            "auto": [0, 0, 0, 1, 2, 2, 2, 3],
+            "check": [1, 2, 2, 2, 2],
+            "silent": [1, 3],
+            "rejected": [1, 2, 3],
+            "faulty": [1, 2, 2, 3],
+        }
+        self.assertEqual({case: found["counts"] for case, found in self.data.items()}, expected)
+
+    def test_the_words_shown_never_go_back(self):
+        for case, found in self.data.items():
+            with self.subTest(case=case):
+                self.assertEqual(found["counts"], sorted(found["counts"]), found)
+
+    def test_every_row_ends_cleared_with_its_bubble_leaving_once_its_reading_time_is_over(self):
+        for case, found in self.data.items():
+            with self.subTest(case=case):
+                self.assertEqual(found["after"], {"cleared": True, "busy": False, "left": True}, found)
+
+    def test_the_bubble_of_the_sounding_row_speaks_throughout(self):
+        for case, found in self.data.items():
+            with self.subTest(case=case):
+                self.assertEqual(set(found["states"]), {"speaking"}, found)
+
+    def test_a_radio_check_without_words_shows_its_line_during_the_burst_that_stands_in_for_it(self):
+        found = self.data["check"]
+        self.assertEqual((found["nodes"], found["text"], found["leaving"], found["reading"]), (1, "radio check", True, False), found)
+
+
 class TestBubbleStop(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -210,6 +373,9 @@ class TestBubbleStop(unittest.TestCase):
 
     def test_switching_the_bubbles_off_clears_the_layer_and_leaves_the_audible_item_playing(self):
         self.assertEqual(self.data["off"], {"before": 3, "after": 0, "shown": 0, "stops": 0, "current": True, "busy": True, "pending": ["B"], "hidden": True, "pressed": "false"})
+
+    def test_switching_the_bubbles_off_during_a_silent_reading_leaves_no_bubble_when_they_come_back(self):
+        self.assertEqual(self.data["dropped"], {"before": 3, "after": 0, "shown": 0, "stops": 0, "current": False, "busy": False, "pending": [], "hidden": False, "pressed": "true"})
 
 
 class TestBubbleAssets(unittest.TestCase):

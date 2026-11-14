@@ -87,7 +87,11 @@
   }
 
   function wordsRead(item) {
-    return item.started ? Bubbles.shown(saidOf(item).length, item.duration, (performance.now() - item.started) / 1000) : 0;
+    if (!item.started) {
+      return 0;
+    }
+    const [said, floor] = [saidOf(item).length, item.floor || 0];
+    return Math.min(said, floor + Bubbles.shown(item.span ?? said - floor, item.duration, (performance.now() - item.started) / 1000));
   }
 
   function drawBubble(entry, view) {
@@ -108,7 +112,7 @@
     if (!settings.bubbles) {
       return;
     }
-    const planned = Bubbles.plan(speech.current || speech.loading, speech.pending);
+    const planned = Bubbles.plan(speech.current || speech.loading || speech.item, speech.pending);
     const kept = new Set(planned.map((entry) => entry.item));
     for (const [item, view] of bubbles.shown) {
       if (!kept.has(item)) {

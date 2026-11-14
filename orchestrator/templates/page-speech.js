@@ -47,20 +47,38 @@
     drawBubbles();
   }
 
+  /**
+   * @param {object} item the row that sounds now.
+   * @param {number} span how many of its unread words this sound says: Infinity for the spoken rest, 0 for a procedure word.
+   * @param {number} seconds how long the sound plays.
+   */
+  function voicePace(item, span, seconds) {
+    const floor = wordsRead(item);
+    Object.assign(item, {floor, span: Math.min(span, saidOf(item).length - floor), started: performance.now(), duration: seconds, reading: false});
+  }
+
+  function readingPace(item) {
+    if (!item.reading) {
+      const floor = wordsRead(item);
+      const span = item.words.length - floor;
+      Object.assign(item, {floor, span, started: performance.now(), duration: Bubbles.reading(span), reading: true});
+    }
+  }
+
   function readSilently(item, next) {
-    Object.assign(item, {started: performance.now(), duration: Bubbles.reading(item.words.length)});
+    readingPace(item);
     speech.current = item;
     speech.timer = window.setTimeout(() => {
-      Object.assign(speech, {current: null, timer: 0});
+      Object.assign(speech, {current: null, timer: 0, item: null});
       drawSpeaker();
       next();
-    }, item.duration * 1000);
+    }, Math.max(0, item.started + item.duration * 1000 - performance.now()));
     drawSpeaker();
   }
 
   function endSilent() {
     window.clearTimeout(speech.timer);
-    Object.assign(speech, {current: null, timer: 0, busy: false});
+    Object.assign(speech, {current: null, timer: 0, busy: false, item: null});
   }
 
   function dropSilent() {
@@ -77,11 +95,14 @@
       let timer = 0;
       const ended = () => {
         window.clearTimeout(timer);
-        if (speech.source === source) {
-          Object.assign(speech, {current: null, source: null});
-          drawSpeaker();
+        try {
+          if (speech.source === source) {
+            Object.assign(speech, {current: null, source: null});
+            drawSpeaker();
+          }
+        } finally {
+          resolve();
         }
-        resolve();
       };
       source.addEventListener("ended", ended, {once: true});
       timer = window.setTimeout(() => {
@@ -89,7 +110,6 @@
         ended();
       }, (seconds + SOUND_SLACK) * 1000);
       duck(seconds);
-      Object.assign(item, {started: performance.now(), duration: seconds});
       Object.assign(speech, {current: item, source});
       drawSpeaker();
     });
@@ -117,6 +137,11 @@
     gain.gain.exponentialRampToValueAtTime(0.0001, start + shape.seconds);
     source.buffer = buffer;
     source.connect(filter).connect(gain).connect(sound.destination);
+    if (item.words) {
+      readingPace(item);
+    } else {
+      voicePace(item, Infinity, shape.seconds);
+    }
     const ended = sounded(item, source, shape.seconds);
     source.start(start);
     source.stop(start + shape.seconds);
@@ -144,6 +169,7 @@
       gain.gain.value = loudness(item.tone);
       source.buffer = buffer;
       source.connect(gain).connect(sound.destination);
+      voicePace(item, step.kind === "speech" ? Infinity : 0, buffer.duration);
       const ended = sounded(item, source, buffer.duration);
       source.start();
       await ended;
@@ -216,17 +242,22 @@
       readSilently(item, next);
       return;
     }
-    const voiced = await transmit(item, audio);
+    let voiced = false;
+    try {
+      voiced = await transmit(item, audio);
+    } catch (error) {
+      speechFailed([String(error.message || error)]);
+    }
     if (speech.item !== item) {
       next();
       return;
     }
     Object.assign(speech, {current: null, source: null, item: null});
-    drawSpeaker();
     if (!voiced && settings.bubbles && item.words) {
       readSilently(item, next);
       return;
     }
+    drawSpeaker();
     next();
   }
 
