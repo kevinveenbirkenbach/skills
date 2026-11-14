@@ -573,6 +573,71 @@ console.log(JSON.stringify({pinned, glance, empty, gone}));
 """
 
 
+LINK_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const [navFile, panelsFile, homeFile] = process.argv.slice(1);
+const context = vm.createContext({labelOf: (key) => key, toast: () => null, tree: {data: null, model: null}, URLSearchParams, console});
+[navFile, panelsFile].forEach((file) => vm.runInContext(fs.readFileSync(file, "utf8"), context));
+vm.runInContext(`${fs.readFileSync(homeFile, "utf8")}
+globalThis.probe = {homeLink, Panels, Nav};`, context);
+const {homeLink, Panels, Nav} = context.probe;
+const panels = JSON.parse(process.argv[4]);
+const items = [["task", "work/a"], ["message", "1763000000.5/radio:abc"], ["artifact", "branch:/repo\\u0000feature x"], ["agent", "s1"], ["ancestry", "/repo"], ["metric", "hardware/0123456789abcdef"]];
+const link = (pin) => {
+  const href = homeLink(pin);
+  return {href, route: href === null ? null : Nav.route(href, 1)};
+};
+console.log(JSON.stringify({
+  panels: Object.fromEntries(panels.map((id) => [id, Panels.lookup("panel", id) ? link({kind: "panel", id, w: 6, h: 4}) : null])),
+  items: Object.fromEntries(items.map(([kind, raw]) => [kind, Panels.lookup(kind, Panels.token(raw)) ? link({kind, id: Panels.token(raw), w: 4, h: 3}) : null])),
+  unknown: homeLink({kind: "nope", id: "x", w: 1, h: 1}),
+}));
+"""
+OPEN_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const [panelsFile, homeFile] = process.argv.slice(1);
+const calls = [];
+const context = vm.createContext({
+  labelOf: (key) => key, toast: () => null, ui: {screen: "artifacts"}, art: {repo: ""}, tree: {data: null, model: null, dom: null}, window: {setTimeout}, console,
+  artSelect: (id) => calls.push(["artSelect", id]), drawArtifacts: () => calls.push(["drawArtifacts"]), taskSheet: (id) => calls.push(["taskSheet", id]),
+  openAgent: (key, anchor) => calls.push(["openAgent", key, typeof anchor]), pickOf: (id) => () => id,
+});
+vm.runInContext(fs.readFileSync(panelsFile, "utf8"), context);
+vm.runInContext(`${fs.readFileSync(homeFile, "utf8")}
+globalThis.probe = {homeOpen, HOME_RETRY};`, context);
+const {homeOpen, HOME_RETRY} = context.probe;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+(async () => {
+  ["nokind", ":x", "task:", "task:bad id", "nope:x", "artifact"].forEach((open) => homeOpen(open, "artifacts", 3));
+  const refused = calls.splice(0);
+  homeOpen("task:work/a", "tasks", 3);
+  const elsewhere = calls.splice(0);
+  context.ui.screen = "tasks";
+  homeOpen("task:work/a", "tasks", 3);
+  homeOpen("agent:name_3a_Stage", "tasks", 3);
+  const direct = calls.splice(0);
+  context.ui.screen = "artifacts";
+  homeOpen("artifact:wt_3a_/r/w", "artifacts", 3);
+  await wait(HOME_RETRY / 2);
+  const waiting = calls.splice(0);
+  context.tree.model = {byRef: new Map([["wt:/r/w", {id: "wt:/r/w", repo: "/r"}]])};
+  await wait(HOME_RETRY * 2);
+  const opened = [calls.splice(0), context.art.repo];
+  context.tree.model = null;
+  homeOpen("artifact:wt_3a_/r/w", "artifacts", 1);
+  context.ui.screen = "stream";
+  await wait(HOME_RETRY * 3);
+  context.ui.screen = "artifacts";
+  context.tree.model = {byRef: new Map()};
+  homeOpen("artifact:wt_3a_/r/gone", "artifacts", 3);
+  await wait(HOME_RETRY * 2);
+  console.log(JSON.stringify({refused, elsewhere, direct, waiting, opened, left: calls}));
+})();
+"""
+
+
 def node(probe: str, *args: str) -> dict:
     done = subprocess.run(["node", "-e", probe, *args], capture_output=True, text=True, timeout=60, check=True)
     return json.loads(done.stdout)
@@ -830,13 +895,66 @@ class TestHomeMessage(unittest.TestCase):
         self.assertEqual(len(data["urls"]), data["fetches"])
 
 
+class TestHomeOpen(unittest.TestCase):
+    PANEL_IDS = (
+        "stream", "radio-log", "agents/orbit", "agents/chord", "agents/swimlane", "agents/3d", "agents/tree", "agents/hierarchy", "agents/order",
+        "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "artifacts/tree", "artifacts/3d",
+        "tasks/list", "tasks/board", "tasks/rasci", "tasks/gantt", "tasks/burn", "tasks/3d", "tasks/operator",
+    )
+    ITEMS: ClassVar[dict] = {
+        "task": ("#tasks/list", "task:work/a", "tasks", "list"),
+        "message": ("#stream", "message:1763000000.5/radio_3a_abc", "stream", None),
+        "artifact": ("#artifacts/orbit", "artifact:branch_3a_/repo_0_feature_20_x", "artifacts", "orbit"),
+        "agent": ("#agents/orbit", "agent:s1", "agents", "orbit"),
+        "ancestry": ("#artifacts/tree", "ancestry:/repo", "artifacts", "tree"),
+        "metric": ("#resources", "metric:hardware/0123456789abcdef", "resources", None),
+    }
+
+    def test_a_hash_may_name_a_pin_to_open_and_then_redirects_to_its_screen_without_it(self):
+        hashes = ["#agents/orbit?open=agent:s1", "#stream/radio?open=x:y", "#tasks/operator?open=panel:tasks/operator", "#agents/orbit?other=1", "#resources?open=metric:hardware/x", "#?open=task:a"]
+        probe = "const N = require(process.argv[1]); console.log(JSON.stringify(JSON.parse(process.argv[2]).map((hash) => N.route(hash, 1))));"
+        done = subprocess.run(["node", "-e", probe, str(NAV), json.dumps(hashes)], capture_output=True, text=True, timeout=60, check=True)
+        self.assertEqual(json.loads(done.stdout), [
+            {"screen": "agents", "view": "orbit", "redirect": "#agents/orbit", "open": "agent:s1"},
+            {"screen": "stream", "view": None, "redirect": "#stream", "spot": True, "open": "x:y"},
+            {"screen": "inbox", "view": None, "redirect": "#tasks/operator", "open": "panel:tasks/operator"},
+            {"screen": "agents", "view": "orbit", "redirect": None},
+            {"screen": "resources", "view": None, "redirect": "#resources", "open": "metric:hardware/x"},
+            {"screen": "home", "view": None, "redirect": "#home", "open": "task:a"},
+        ])
+
+    def test_every_panel_and_item_kind_links_to_its_own_tab_and_view_and_an_item_names_itself_to_open(self):
+        data = node(LINK_PROBE, str(NAV), str(PANELS), str(HOME), json.dumps(self.PANEL_IDS))
+        special = {"stream": ("stream", None), "radio-log": ("stream", None), "agents/order": ("agents", "hierarchy"), "tasks/operator": ("inbox", None)}
+        for panel in self.PANEL_IDS:
+            with self.subTest(panel=panel):
+                found = data["panels"][panel]
+                self.assertIsNotNone(found)
+                screen, view = special.get(panel, tuple(panel.split("/")))
+                self.assertEqual((found["route"]["screen"], found["route"]["view"]), (screen, view), found)
+        self.assertEqual(data["panels"]["radio-log"], {"href": "#stream/radio", "route": {"screen": "stream", "view": None, "redirect": "#stream", "spot": True}})
+        self.assertEqual(data["panels"]["agents/order"]["href"], "#agents/hierarchy?open=panel:agents/order")
+        self.assertEqual(data["panels"]["agents/order"]["route"]["open"], "panel:agents/order")
+        self.assertEqual({panel: found["href"] for panel, found in data["panels"].items() if panel not in ("radio-log", "agents/order")}, {panel: f"#{panel}" for panel in self.PANEL_IDS if panel not in ("radio-log", "agents/order")})
+        for kind, (hash_, key, screen, view) in self.ITEMS.items():
+            with self.subTest(kind=kind):
+                self.assertEqual(data["items"][kind], {"href": f"{hash_}?open={key}", "route": {"screen": screen, "view": view, "redirect": hash_, "open": key}})
+        self.assertIsNone(data["unknown"])
+
+    def test_an_opened_item_waits_for_its_data_gives_up_on_a_gone_one_and_stops_once_another_screen_shows(self):
+        data = node(OPEN_PROBE, str(PANELS), str(HOME))
+        self.assertEqual((data["refused"], data["elsewhere"], data["waiting"], data["left"]), ([], [], [], []), data)
+        self.assertEqual(data["direct"], [["taskSheet", "work/a"], ["openAgent", "name:Stage", "function"]])
+        self.assertEqual(data["opened"], [[["drawArtifacts"], ["artSelect", "wt:/r/w"]], "/r"])
+
+
 class TestHomeIndex(HubCase):
     def test_the_index_embeds_the_registry_the_home_page_and_its_styles(self):
         html = self.index()
         for name in ("panels.js", "page-home.js", "style-home.css"):
             with self.subTest(name=name):
                 self.assertIn((TEMPLATES / name).read_text(encoding="utf-8").strip(), html)
-        for glyph in ("bi-star", "bi-star-fill", "bi-house-door", "bi-grip-vertical", "bi-arrow-down-right"):
+        for glyph in ("bi-star", "bi-star-fill", "bi-house-door", "bi-grip-vertical", "bi-arrow-down-right", "bi-arrows-angle-expand"):
             with self.subTest(glyph=glyph):
                 self.assertIn(f'<symbol id="{glyph}"', html)
 

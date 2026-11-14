@@ -39,7 +39,11 @@
     drawHome();
   }
 
-  function homeMessage(key) {
+  /**
+   * @param key - a message pin's raw id, <ts>/<entry id>.
+   * @returns the stream entry, null when it no longer exists or the key is malformed, undefined while it loads.
+   */
+  function homeEntry(key) {
     const cut = key.indexOf("/");
     const ts = Number(key.slice(0, cut));
     const id = key.slice(cut + 1);
@@ -51,7 +55,11 @@
     if (!shown && (!known || (!known.busy && Date.now() - known.at > HOME_MESSAGE))) {
       homeLoadMessage(key, ts, id);
     }
-    const entry = shown || (known ? known.entry : undefined);
+    return shown || (known ? known.entry : undefined);
+  }
+
+  function homeMessage(key) {
+    const entry = homeEntry(key);
     if (entry === undefined) {
       return homeWait("Loading …");
     }
@@ -229,6 +237,119 @@
     legend.replaceChildren(...drawn.series.map((line) => h("span", {class: `legend-chip ${line.tone}`, "data-series": line.id}, line.label)));
   }
 
+  const HOME_RETRY = 150;
+  const HOME_TRIES = 60;
+  const HOME_LINKS = {"radio-log": "#stream/radio", "agents/order": "#agents/hierarchy?open=panel:agents/order"};
+  const HOME_SCREENS = {task: "#tasks/list", message: "#stream", artifact: "#artifacts/orbit", agent: "#agents/orbit", ancestry: "#artifacts/tree", metric: "#resources"};
+  const homeItemOf = (item) => [...document.querySelectorAll("#main [data-item]")].find((node) => node.dataset.item === item) || null;
+
+  /**
+   * @param pin - a Home pin.
+   * @returns the hash of the full view of its panel or item: the panel's own tab and view, or the item's tab and view
+   * with ?open=<pin key>; null for a kind without a full view.
+   */
+  function homeLink(pin) {
+    if (pin.kind === Panels.PANEL) {
+      return Object.hasOwn(HOME_LINKS, pin.id) ? HOME_LINKS[pin.id] : `#${pin.id}`;
+    }
+    return Object.hasOwn(HOME_SCREENS, pin.kind) ? `${HOME_SCREENS[pin.kind]}?open=${Panels.keyOf(pin)}` : null;
+  }
+
+  function homeOpenPanel(id) {
+    const found = document.querySelector(`#main [data-panel="${id}"]`);
+    if (found) {
+      found.scrollIntoView({block: "start"});
+      const title = found.querySelector('[tabindex="-1"]');
+      if (title) {
+        title.focus({preventScroll: true});
+      }
+    }
+    return Boolean(found);
+  }
+
+  function homeOpenMessage(key) {
+    const entry = homeEntry(key);
+    if (entry) {
+      openPopup("Message", [popupHead(icon(Nav.ICONS.stream), "Message", h("span", {class: "muted"}, when(entry.ts))),
+        h("div", {class: "popup-body"}, h("ol", {class: "feed"}, eventRow(entry)))], () => homeItemOf(`message:${key}`));
+    }
+    return entry !== undefined;
+  }
+
+  function homeOpenArtifact(ref) {
+    const node = artifactNode(ref);
+    if (!node) {
+      return Boolean(tree.model);
+    }
+    if (node.repo && node.repo !== art.repo) {
+      art.repo = node.repo;
+      drawArtifacts();
+    }
+    artSelect(node.id);
+    return true;
+  }
+
+  function homeOpenAncestry(path) {
+    if (!tree.data || tree.busy || !tree.dom || tree.dom.view !== "tree") {
+      return false;
+    }
+    tree.open.add(path);
+    drawArtifacts();
+    const frame = homeItemOf(`ancestry:${path}`);
+    if (frame) {
+      frame.scrollIntoView({block: "center"});
+    }
+    return true;
+  }
+
+  function homeOpenMetric(id) {
+    const pin = homePins().find((entry) => entry.kind === "metric" && entry.id === id);
+    if (!pin || !homeMetricView(pin.view)) {
+      return true;
+    }
+    if (!resourceRestore(pin.view)) {
+      return false;
+    }
+    const panel = document.querySelector(`#main [data-panel="resources-${pin.view.chart}"]`);
+    if (panel) {
+      panel.scrollIntoView({block: "nearest"});
+    }
+    return true;
+  }
+
+  const HOME_OPENERS = {
+    panel: homeOpenPanel,
+    task: (id) => {
+      taskSheet(id);
+      return true;
+    },
+    message: homeOpenMessage,
+    artifact: homeOpenArtifact,
+    agent: (key) => {
+      openAgent(key, pickOf(key));
+      return true;
+    },
+    ancestry: homeOpenAncestry,
+    metric: (raw, id) => homeOpenMetric(id),
+  };
+
+  /**
+   * @param open - the pin key a hash names after ?open=, such as agent:s1 or panel:agents/order.
+   * @param screen - the screen the hash shows.
+   * @param tries - how many more times to wait HOME_RETRY ms for data the item needs, such as the tree or the samples.
+   */
+  function homeOpen(open, screen, tries) {
+    const cut = open.indexOf(":");
+    const kind = open.slice(0, cut);
+    const id = open.slice(cut + 1);
+    if (cut < 1 || !Object.hasOwn(HOME_OPENERS, kind) || !Panels.ID.test(id) || ui.screen !== screen) {
+      return;
+    }
+    if (!HOME_OPENERS[kind](kind === Panels.PANEL ? id : Panels.raw(id), id) && tries > 0) {
+      window.setTimeout(() => homeOpen(open, screen, tries - 1), HOME_RETRY);
+    }
+  }
+
   function homeRefused(why) {
     homeView.pins = homeStore.read();
     drawHome();
@@ -373,13 +494,24 @@
     const body = h("div", {class: "home-body"});
     const grip = iconBtn("bi-grip-vertical", "Move", "btn small ghost home-grip", null, "Move: drag to another tile, or focus the tile and press the arrow keys");
     const handle = iconBtn("bi-arrow-down-right", "Resize", "btn small ghost home-resize", null, "Resize: drag, or the arrow keys, 1 to 12 columns wide and rows high");
+    const open = h("a", {class: "btn small ghost icon-only home-open", "aria-label": "Open", hidden: true}, icon("bi-arrows-angle-expand"));
     const tile = h("article", {class: "home-tile", tabindex: 0, role: "listitem", "data-pin": key, on: {keydown: (event) => homeKeys(event, key)}},
-      h("header", {class: "home-head"}, grip, title, iconBtn("bi-x-lg", "Unpin", "btn small ghost home-unpin", () => homeUnpin(key), "Unpin: remove the tile from Home")), body, handle);
+      h("header", {class: "home-head"}, grip, title, open, iconBtn("bi-x-lg", "Unpin", "btn small ghost home-unpin", () => homeUnpin(key), "Unpin: remove the tile from Home")), body, handle);
     grip.addEventListener("pointerdown", (event) => homeGrab(event, key, "move"));
     handle.addEventListener("pointerdown", (event) => homeGrab(event, key, "size"));
     handle.addEventListener("keydown", (event) => homeSizeKeys(event, key));
     homeView.tiles.set(key, tile);
     return tile;
+  }
+
+  function homeOpenLink(open, link, name) {
+    open.hidden = !link;
+    if (link) {
+      open.setAttribute("href", link);
+      open.setAttribute("title", `Open: show ${name} in full view`);
+    } else {
+      open.removeAttribute("href");
+    }
   }
 
   function homeContent(entry, pin) {
@@ -401,6 +533,7 @@
     tile.setAttribute("aria-label", `${name}, ${pin.w} by ${pin.h}, tile ${index + 1} of ${count}`);
     homeSpan(tile, pin);
     tile.querySelector(".home-title").textContent = name;
+    homeOpenLink(tile.querySelector(".home-open"), content ? homeLink(pin) : null, name);
     const body = tile.querySelector(".home-body");
     const shown = content || homeGone(pin, key);
     if (body.childNodes.length !== 1 || body.firstChild !== shown) {

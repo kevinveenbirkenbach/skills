@@ -28,11 +28,20 @@ const Nav = (() => {
   }
 
   /**
-   * @param hash - the location hash.
+   * @param hash - the location hash, optionally ending in ?open=<kind>:<id>, a Home pin key the screen opens.
    * @param pinned - how many pins Home holds; an empty hash opens Home once it holds one, else Stream.
+   * @returns {screen, view, redirect, spot}, plus open, the pin key, when the hash names one; a hash with open
+   * redirects to itself without it.
    */
   function route(hash, pinned) {
-    const [head, sub] = decodeURIComponent(String(hash).replace(/^#/, "")).split("/");
+    const [path, query] = String(hash).replace(/^#/, "").split("?");
+    const found = place(path, pinned);
+    const open = new URLSearchParams(query || "").get("open");
+    return open ? {...found, open, redirect: found.redirect || `#${path}`} : found;
+  }
+
+  function place(path, pinned) {
+    const [head, sub] = decodeURIComponent(path).split("/");
     if (!head && pinned > 0) {
       return {screen: "home", view: null, redirect: "#home"};
     }

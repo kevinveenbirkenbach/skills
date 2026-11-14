@@ -269,14 +269,35 @@
    * plot is too small, and those series for a legend.
    */
   function metricChart(view, size) {
-    const data = resourceView.data;
-    const span = {from: data.since, to: Math.max(data.until, data.since + 60)};
-    const parts = resourceParts(data, {tokens: view.tokens, hidden: [], combinedHidden: [], combined: view.chart === "combined"}, span);
-    const series = RESOURCE_SERIES[view.chart](parts);
-    const hidden = new Set(view.shown === null ? [] : series.map((line) => line.id).filter((id) => !view.shown.includes(id)));
+    const {span, parts, series, hidden} = metricParts(resourceView.data, view);
     const [, , label] = RESOURCE_PANELS.find(([kind]) => kind === view.chart);
     const drawn = RESOURCE_CHARTS[view.chart]({kind: view.chart, label}, {...parts, hidden, combinedHidden: hidden}, span, size);
     return {svg: resourceSmall(size) ? null : drawn.svg, series: series.filter((line) => !hidden.has(line.id))};
+  }
+
+  function metricParts(data, view) {
+    const span = {from: data.since, to: Math.max(data.until, data.since + 60)};
+    const parts = resourceParts(data, {tokens: view.tokens, hidden: [], combinedHidden: [], combined: view.chart === "combined"}, span);
+    const series = RESOURCE_SERIES[view.chart](parts);
+    return {span, parts, series, hidden: new Set(view.shown === null ? [] : series.map((line) => line.id).filter((id) => !view.shown.includes(id)))};
+  }
+
+  /**
+   * @param view - a metric pin's view: {chart, tokens, shown}.
+   * @returns false while no samples are loaded; else true.
+   */
+  function resourceRestore(view) {
+    if (resourceView.data === null) {
+      return false;
+    }
+    const {series, hidden} = metricParts(resourceView.data, view);
+    const ids = new Set(series.map((line) => line.id));
+    ViewStore.update(view.chart === "combined" ? "resources.combinedHidden" : "resources.hidden", (list) => [...list.filter((id) => !ids.has(id)), ...hidden]);
+    ViewStore.set("resources.combined", view.chart === "combined");
+    if (view.chart !== "hardware") {
+      ViewStore.set("resources.tokens", view.tokens);
+    }
+    return true;
   }
 
   function resourceParts(data, view, span) {

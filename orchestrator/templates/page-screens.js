@@ -36,14 +36,20 @@
     if (route.view) {
       ui.views[route.screen] = route.view;
     }
+    const show = () => {
+      render(true);
+      if (route.open) {
+        window.setTimeout(() => homeOpen(route.open, route.screen, HOME_TRIES), 0);
+      }
+    };
     if (document.startViewTransition && drawn.screen && !calm.matches) {
-      document.startViewTransition(() => render(true)).ready.catch((error) => {
+      document.startViewTransition(show).ready.catch((error) => {
         if (error.name !== "AbortError") {
           throw error;
         }
       });
     } else {
-      render(true);
+      show();
     }
   }
 
