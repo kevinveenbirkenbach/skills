@@ -1,7 +1,9 @@
   const KANBAN_LABELS = {blocked: ["Blocked", "bad"], stopped: ["Stopped", "neutral"]};
   const KANBAN_COLUMN_ICONS = {queued: "bi-hourglass", running: "bi-play-circle", done: "bi-check2-circle"};
   const KANBAN_DRAG = "application/x-kvb-task";
-  const kanban = {staged: [], collapsed: new Set(), old: false, dragging: null};
+  const KANBAN_LAYERS = "kanban.hidden";
+  const KANBAN_JOBS_SHOWN = 3;
+  const kanban = {staged: [], collapsed: new Set(), old: false, dragging: null, queue: {marks: {}, line: true, jobs: true}, bound: false};
 
   function restage(next) {
     kanban.staged = next;
@@ -81,6 +83,65 @@
 
   const cardOf = (task) => () => [...document.querySelectorAll("#main .kanban-card")].find((node) => node.dataset.task === task) || null;
 
+  function whyButton(task, id) {
+    const card = cardOf(task)();
+    return card ? [...card.querySelectorAll(".queue-why")].find((node) => node.dataset.job === id) || null : null;
+  }
+
+  function openWhy(task, job) {
+    const found = Kanban.whyHere(job);
+    const anchor = () => whyButton(task, job.id);
+    const body = h("div", {class: "popup-body"}, h("ol", {class: "queue-trace", "aria-label": `Rule trace of ${job.id}`}, found.steps.map((step) => h("li", {}, step))),
+      job.reason && job.trace.length ? h("p", {class: "queue-reason"}, `Now: ${job.reason}`) : null);
+    openPopup(found.label, [popupHead(icon("bi-signpost-split"), found.label, h("code", {class: "task-id"}, job.task || task)), body], anchor, () => {
+      const button = anchor();
+      if (button) {
+        button.focus();
+      }
+    });
+    const close = popupBox().querySelector(".popup-head button");
+    if (close) {
+      close.focus();
+    }
+  }
+
+  function queuePlace(row) {
+    const mark = kanban.queue.marks[row.task];
+    if (!kanban.queue.line || !mark || mark.place === null) {
+      return null;
+    }
+    return h("span", {class: "queue-place", "data-place": mark.place, role: "img", ...named(`Queue stop ${mark.place} of ${mark.of}`, `${row.task}: stop ${mark.place} of ${mark.of} on the queue line, in grant order`)}, String(mark.place));
+  }
+
+  function chipHint(job, chip) {
+    if (chip.key === "waited") {
+      return `${chip.hint}, since ${absolute.format(stampOf(state.now - job.waited_s))}`;
+    }
+    return chip.key === "eta" && job.eta_s !== null ? `${chip.hint}, about ${absolute.format(stampOf(state.now + job.eta_s))}` : chip.hint;
+  }
+
+  function queueJob(row, job) {
+    const chips = Kanban.jobChips(job).map((chip) => h("span", {class: "pill queue-chip", "data-chip": chip.key, "data-tone": chip.tone, title: chipHint(job, chip)}, chip.text));
+    const open = (event) => {
+      event.stopPropagation();
+      openWhy(row.task, job);
+    };
+    const hint = `Why ${job.id} stands at ${Kanban.whyHere(job).place}: the rules queue.py applied, in order`;
+    const why = h("button", {type: "button", class: "btn small ghost queue-why", "data-job": job.id, ...named(`Why here: ${job.id}`, hint), on: {click: open}}, icon("bi-question-circle"), h("span", {class: "queue-why-text"}, "Why here?"));
+    return h("li", {class: "queue-job", "data-job": job.id, "data-class": job.class || "", "data-kind": job.kind},
+      h("div", {class: "queue-chips"}, chips, why), job.reason ? h("p", {class: "queue-reason", title: job.reason}, job.reason) : null);
+  }
+
+  function queueJobs(row) {
+    const mark = kanban.queue.marks[row.task];
+    if (!kanban.queue.jobs || !mark || !mark.jobs.length) {
+      return null;
+    }
+    const more = mark.jobs.length - KANBAN_JOBS_SHOWN;
+    return h("ul", {class: "queue-jobs", "aria-label": `Queue jobs of ${row.task}`}, mark.jobs.slice(0, KANBAN_JOBS_SHOWN).map((job) => queueJob(row, job)),
+      more > 0 ? h("li", {class: "queue-more muted"}, `+${more} more queue jobs`) : null);
+  }
+
   function kanbanCard(row, lane, column, cards) {
     const open = () => taskSelect(row.task, cardOf(row.task));
     const own = (event) => !event.target.closest("button, summary, details, select, .kanban-handle");
@@ -112,7 +173,7 @@
         },
       },
     },
-    h("div", {class: "head-row", "data-star-slot": ""}, h("code", {class: "task-id"}, row.task), cardLabels(row), h("span", {class: "spacer"}),
+    h("div", {class: "head-row", "data-star-slot": ""}, queuePlace(row), h("code", {class: "task-id"}, row.task), cardLabels(row), h("span", {class: "spacer"}),
       row.pending ? h("span", {class: "kanban-pending", role: "img", ...named("Staged", row.pending.map(shownArgv).join("\n"))}, icon("bi-pencil")) : null,
       openJobs(row.task).length ? h("span", {class: "kanban-wait", role: "img", ...named("At the runner", `${row.task}: a signed change waits for the runner`)}, icon("bi-hourglass-split")) : null,
       row.editable ? h("span", {class: "kanban-handle", role: "img", draggable: "true", ...named("Follows", `Drag onto the card that waits for ${row.task}`), on: {dragstart: dragFrom(row.task, "after"), dragend: () => {
@@ -121,6 +182,7 @@
       row.movable ? kanbanMenu(row, cards) : null),
     h("span", {class: "kanban-title"}, titleOf(row)),
     row.worker !== "-" ? h("span", {class: "muted"}, row.worker) : null,
+    queueJobs(row),
     cardWhy(row.task));
   }
 
@@ -168,16 +230,38 @@
     const stalled = h("span", {class: "pill", id: "kanban-stale", "data-tone": "warn", role: "img", ...named(`Stale: ${stale}`, `Stale: ${stale} tasks without a register change for ${Plan.STALE_DAYS} days, counted apart`)}, icon("bi-hourglass-bottom"), String(stale));
     const listed = count ? h("ol", {class: "kanban-staged", id: "kanban-staged", "aria-label": `${words}: the passkey signs exactly these`},
       kanban.staged.map(({task, argv}) => h("li", {"data-task": task}, h("code", {}, shownArgv(argv))))) : null;
-    return [h("div", {class: "kanban-bar", role: "toolbar", "aria-label": "Board"}, apply, discard, older, stalled), listed];
+    return [h("div", {class: "kanban-bar", role: "toolbar", "aria-label": "Board"}, apply, discard, older, stalled, queueLegend()), listed];
+  }
+
+  function queueLegend() {
+    const layers = LegendChips.render(Kanban.QUEUE_LAYERS.map(([id, label, tone]) => ({id, label, tone})), KANBAN_LAYERS, "hidden");
+    const words = "The installed queue.py lists no JSON (queue.py list --json): the board numbers the grant order but shows no class, gate, ETA or rule trace";
+    const only = state.queue_jobs === null && state.queue_line.length ? h("span", {class: "pill", id: "kanban-queue-order", "data-tone": "warn", role: "img", ...named("Queue order only", words)}, icon("bi-info-circle"), "Order only") : null;
+    return [layers, only];
+  }
+
+  function bindLayers() {
+    if (!kanban.bound) {
+      kanban.bound = true;
+      ViewStore.on(KANBAN_LAYERS, () => {
+        taskView.sig = "";
+        drawTasks();
+      });
+    }
   }
 
   function kanbanLines(box, rows) {
     const svg = box.querySelector("svg.kanban-lines");
     const base = box.getBoundingClientRect();
-    const rectOf = (task) => {
-      const node = [...box.querySelectorAll(".kanban-card")].find((card) => card.dataset.task === task);
+    const rectIn = (node) => {
       const found = node && node.getClientRects().length ? node.getBoundingClientRect() : null;
       return found && {x: found.left - base.left, y: found.top - base.top, w: found.width, h: found.height};
+    };
+    const cardNode = (task) => [...box.querySelectorAll(".kanban-card")].find((card) => card.dataset.task === task) || null;
+    const rectOf = (task) => rectIn(cardNode(task));
+    const stopOf = (task) => {
+      const card = cardNode(task);
+      return rectIn(card && card.querySelector(".queue-place")) || rectIn(card);
     };
     const centre = (r) => ({x: r.x + r.w / 2, y: r.y + r.h / 2});
     const rim = (r, toward) => {
@@ -187,7 +271,7 @@
       return {x: c.x + dx * scale, y: c.y + dy * scale};
     };
     const hub = new Map(state.tasks.map((row) => [row.task, row]));
-    const {arrows, queue} = Kanban.lines(rows, state.queue_line);
+    const {arrows, queue} = Kanban.lines(rows, kanban.queue.line ? state.queue_line : []);
     const marks = [];
     for (const {from, to} of arrows) {
       const [a, b] = [rectOf(from), rectOf(to)];
@@ -199,7 +283,7 @@
           s("title", {}, `${to} follows ${from}: click to remove`), s("path", {class: "kanban-hit", d}), s("path", {class: "kanban-link", d, "marker-end": "url(#kanban-tip)"})));
       }
     }
-    const stops = queue.map(rectOf).filter(Boolean).map(centre);
+    const stops = queue.map(stopOf).filter(Boolean).map(centre);
     if (stops.length > 1) {
       marks.push(s("polyline", {class: "kanban-queue", "data-tasks": queue.filter((task) => rectOf(task)).join(" "), points: stops.map((at) => `${fixed(at.x)},${fixed(at.y)}`).join(" ")}, s("title", {}, "Queue order")));
     }
@@ -215,6 +299,8 @@
     }
     const ids = new Set(shown.map((row) => row.task));
     const rows = Kanban.pending(state.tasks, kanban.staged).filter((row) => ids.has(row.task) && Kanban.onBoard(row));
+    bindLayers();
+    kanban.queue = {marks: Kanban.queued(rows, state.queue_line, state.queue_jobs), ...Kanban.layers(ViewStore.get(KANBAN_LAYERS))};
     const {lanes} = Kanban.board(rows, {now: state.now, old: kanban.old});
     const cards = lanes.flatMap((lane) => Object.values(lane.cells).flat());
     const head = h("div", {class: "kanban-head"}, TASK_COLUMNS.map(([id, label]) => h("h3", {class: "task-column group-title", "data-column": id}, icon(KANBAN_COLUMN_ICONS[id]), label,

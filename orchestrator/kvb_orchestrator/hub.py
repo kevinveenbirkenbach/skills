@@ -31,6 +31,7 @@ from .messaging import Messaging
 from .names import Names
 from .offices import Offices
 from .presence import SNAPSHOT
+from .queue_order import QUEUE_SCRIPT, QueueOrder
 from .receipts import (
     NAMES,
     READS,
@@ -127,6 +128,7 @@ class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Reque
     voice_notes: VoiceNotes
     replay: Path
     history: History
+    queue_order: QueueOrder
     view_store: ViewStore
 
     def hosts(self) -> tuple[str, str]:
@@ -193,6 +195,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         kept=places.kept,
         council=council,
         history=History(council / queue_live.HISTORY),
+        queue_order=QueueOrder(script=scripts.skills / QUEUE_SCRIPT, council=council, home=state),
         pages=pages,
         public_port=public_port,
         reviews=reviews,

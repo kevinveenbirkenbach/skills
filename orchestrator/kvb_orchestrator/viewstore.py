@@ -17,6 +17,7 @@ VIEW = {
     "resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []},
     "burn": {"overlays": []},
     "home": {"pins": []},
+    "kanban": {"hidden": []},
 }
 VIEW_PATH = re.compile(r"[A-Za-z]{1,32}(?:\.[A-Za-z]{1,32})?")
 SERIES_ID = re.compile(r"[A-Za-z0-9:_./-]{1,200}")
@@ -24,6 +25,7 @@ PIN_KIND = re.compile(r"[A-Za-z0-9:_./-]{1,32}")
 IDS_LIMIT = 500
 TOKEN_MODES = ("interval", "accumulated")
 OVERLAYS = ("fix", "break", "tokens", "velocity", "security", "score")
+KANBAN_LAYERS = ("line", "jobs")
 PINS_LIMIT = 64
 SPAN = (1, 12)
 METRIC = "metric"
@@ -38,6 +40,12 @@ def series_ids(value: object, name: str) -> list[str]:
         raise ToolError(f"{name} must list at most {IDS_LIMIT} ids of 1 to 200 characters from A-Z, a-z, 0-9 and :_./-")
     if len(set(value)) != len(value):
         raise ToolError(f"{name} must not repeat an id")
+    return list(value)
+
+
+def members(value: object, name: str, what: str, allowed: tuple[str, ...]) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) and item in allowed for item in value) or len(set(value)) != len(value):
+        raise ToolError(f"{name} must list distinct {what} of {', '.join(allowed)}")
     return list(value)
 
 
@@ -140,11 +148,9 @@ def valid_view(raw: object) -> dict:
     resources = section(data["resources"], "resources", tuple(VIEW["resources"]))
     burn = section(data["burn"], "burn", tuple(VIEW["burn"]))
     home = section(data["home"], "home", tuple(VIEW["home"]))
+    kanban = section(data["kanban"], "kanban", tuple(VIEW["kanban"]))
     if not isinstance(resources["tokens"], str) or resources["tokens"] not in TOKEN_MODES:
         raise ToolError(f"resources.tokens must be one of {', '.join(TOKEN_MODES)}")
-    overlays = burn["overlays"]
-    if not isinstance(overlays, list) or not all(isinstance(item, str) and item in OVERLAYS for item in overlays) or len(set(overlays)) != len(overlays):
-        raise ToolError(f"burn.overlays must list distinct metrics of {', '.join(OVERLAYS)}")
     return {
         "resources": {
             "hidden": series_ids(resources["hidden"], "resources.hidden"),
@@ -152,9 +158,18 @@ def valid_view(raw: object) -> dict:
             "combined": flag(resources["combined"], "resources.combined"),
             "combinedHidden": series_ids(resources["combinedHidden"], "resources.combinedHidden"),
         },
-        "burn": {"overlays": list(overlays)},
+        "burn": {"overlays": members(burn["overlays"], "burn.overlays", "metrics", OVERLAYS)},
         "home": {"pins": pins(home["pins"])},
+        "kanban": {"hidden": members(kanban["hidden"], "kanban.hidden", "layers", KANBAN_LAYERS)},
     }
+
+
+def upgraded(raw: object) -> object:
+    """Returns:
+        A stored document of an older hub with each VIEW section it lacks
+        at its default; anything else as it is.
+    """
+    return {**copy.deepcopy(VIEW), **raw} if isinstance(raw, dict) else raw
 
 
 def slot(view: dict, path: object) -> tuple[dict, str]:
@@ -188,7 +203,7 @@ class ViewStore:
         self.file = file
         self.lock = threading.Lock()
         try:
-            self.current = valid_view(read_json(file))
+            self.current = valid_view(upgraded(read_json(file)))
         except ToolError:
             self.current = copy.deepcopy(VIEW)
 

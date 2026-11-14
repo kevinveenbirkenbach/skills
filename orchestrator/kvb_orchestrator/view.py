@@ -24,6 +24,7 @@ from .messaging import message_row
 from .orbits import TRACK_STEPS, track
 from .phrasing import joined, phrase_parts
 from .presence import presence, read_snapshot
+from .queue_order import grant_order, live_ids
 from .receipts import inline, read_of
 from .records import epoch, iso_epoch, read_jsonl
 from .register import (
@@ -120,9 +121,10 @@ class View:
         settings = self.settings.get()
         inbox = self.inbox(now, tasks, directory)
         queue = queue_entries(self.council, self.history.rows)
+        jobs = self.queue_order.get(live_ids(queue), now)
         order = stored_order(self.council / AGENT_ORDER)
         rows = task_rows(tasks, queue, self.tree.get())
-        chain = queue_chain(queue, tasks, order, now)
+        chain = grant_order(queue_chain(queue, tasks, order, now), jobs)
         return {
             "settings": settings,
             "media": media_origins(settings),
@@ -151,6 +153,7 @@ class View:
             "tasks": rows,
             "task_edges": task_edges(rows, chain),
             "queue_line": queue_line(chain, queue),
+            "queue_jobs": jobs,
             "agent_order": agent_order(tasks, claims, order),
             "radio": radio,
             "claims": claims,

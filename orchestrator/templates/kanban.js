@@ -6,7 +6,13 @@ const Kanban = (() => {
   const FREE_FROM = 4;
   const OFF = ["command"];
   const DAY = 86400;
+  const HOUR = 3600;
+  const MINUTE = 60;
   const REFUSED = ["failed", "refused"];
+  const QUEUE = "queue/";
+  const RUNNING = "run";
+  const QUEUE_LAYERS = [["line", "Queue line", "k-queue-line"], ["jobs", "Queue jobs", "k-queue-jobs"]];
+  const CLASS_TONES = {hotfix: "bad", fix: "warn", feature: "info", main: "violet"};
 
   const onBoard = (row) => !OFF.includes(row.kind);
   const laneOf = (prio) => (prio === null ? "unpinned" : prio >= FREE_FROM ? "p4" : `p${Math.max(prio, 1)}`);
@@ -164,7 +170,102 @@ const Kanban = (() => {
     return failed.length ? {failed, applied: batch.filter((job) => job.status === "done").length, total: batch.length} : null;
   }
 
-  return {COLUMNS, LANES, FREE_FROM, onBoard, columnOf, laneOf, labelOf, board, freePin, move, stage, pending, lines, why};
+  /**
+   * @param seconds - a span in seconds.
+   * @returns the span in words, cut to its two largest units: "45 s", "12 min", "2 h 5 min", "3 d 4 h".
+   */
+  function span(seconds) {
+    const whole = Math.max(0, Math.floor(seconds));
+    if (whole < MINUTE) {
+      return `${whole} s`;
+    }
+    if (whole < HOUR) {
+      return `${Math.floor(whole / MINUTE)} min`;
+    }
+    const [big, unit, small, rest] = whole < DAY ? [HOUR, "h", MINUTE, "min"] : [DAY, "d", HOUR, "h"];
+    const part = Math.floor((whole % big) / small);
+    return part ? `${Math.floor(whole / big)} ${unit} ${part} ${rest}` : `${Math.floor(whole / big)} ${unit}`;
+  }
+
+  /**
+   * @param rows - the shown cards' rows.
+   * @param line - the hub's queue_line: tasks holding a live queue entry, in grant order.
+   * @param jobs - the hub's queue_jobs: the rows of `queue.py list --json` in grant order, null where the installed
+   * queue.py lists no JSON.
+   * @returns {task: {place, of, jobs}} for each shown card the queue concerns: place its 1-based stop on the queue
+   * line (null for a card off the line), of the line's length, and jobs its queue jobs in grant order, a queue card's
+   * own job and a task card's jobs by task; jobs stays empty without queue_jobs.
+   */
+  function queued(rows, line, jobs) {
+    const found = {};
+    for (const row of rows) {
+      const place = line.indexOf(row.task);
+      const own = (jobs || []).filter((job) => (row.kind === "queue" ? `${QUEUE}${job.id}` === row.task : job.task === row.task));
+      if (place >= 0 || own.length) {
+        found[row.task] = {place: place >= 0 ? place + 1 : null, of: line.length, jobs: own};
+      }
+    }
+    return found;
+  }
+
+  const placeOf = (job) => (typeof job.position === "number" ? `#${job.position}` : job.position === RUNNING ? "running" : job.position || "?");
+
+  /**
+   * @param job - one queue_jobs row.
+   * @returns the chips of its card overlay in display order, each {key, text, hint, tone}: its grant position, class,
+   * pin, WSJF, the gate it runs (its kind), how long it waits and its ETA; a class, pin, WSJF or wait the row lacks
+   * leaves its chip out, an unknown ETA reads "ETA ?".
+   */
+  function jobChips(job) {
+    const running = job.position === RUNNING;
+    const chips = [{key: "position", text: placeOf(job), hint: `${job.id}: ${running ? "granted, running now" : `grant position ${placeOf(job)}`}`, tone: "neutral"}];
+    if (job.class) {
+      chips.push({key: "class", text: job.class, hint: `${job.id}: class ${job.class}`, tone: CLASS_TONES[job.class]});
+    }
+    if (job.prio !== null) {
+      chips.push({key: "prio", text: `P${job.prio}`, hint: `${job.id}: its task is pinned P${job.prio}`, tone: "neutral"});
+    }
+    if (job.wsjf !== null) {
+      chips.push({key: "wsjf", text: `WSJF ${Number(job.wsjf.toFixed(2))}`, hint: `${job.id}: WSJF ${job.wsjf} of its task`, tone: "neutral"});
+    }
+    chips.push({key: "gate", text: job.kind || "?", hint: `${job.id}: runs the gate ${job.kind || "of an unknown kind"}`, tone: "teal"});
+    if (job.waited_s !== null) {
+      chips.push({key: "waited", text: `${running ? "waited" : "waits"} ${span(job.waited_s)}`, hint: `${job.id}: ${running ? "waited" : "waits"} ${span(job.waited_s)} in the queue`, tone: "neutral"});
+    }
+    const eta = job.eta_s === null ? "no ETA learned yet" : `${running ? "ends" : "starts"} in about ${span(job.eta_s)}`;
+    chips.push({key: "eta", text: job.eta_s === null ? "ETA ?" : `ETA ${span(job.eta_s)}`, hint: `${job.id}: ${eta}`, tone: "neutral"});
+    return chips;
+  }
+
+  /**
+   * @param job - one queue_jobs row.
+   * @returns {label, place, steps}: the popover's name, where the job stands (#n, running or the word queue.py gave)
+   * and the rule trace that put it there, in the order queue.py applied it; a row without a trace shows its reason
+   * as the only step, one without either says so.
+   */
+  function whyHere(job) {
+    const steps = job.trace.length ? job.trace : [job.reason || "queue.py gave no trace and no reason for this job"];
+    return {label: `Why here: ${job.id} at ${placeOf(job)}`, place: placeOf(job), steps};
+  }
+
+  /**
+   * @param hidden - the kanban.hidden view-store list: the queue layers switched off.
+   * @returns {line, jobs}: whether the numbered queue line and the job overlay of the cards show.
+   */
+  function layers(hidden) {
+    return Object.fromEntries(QUEUE_LAYERS.map(([id]) => [id, !hidden.includes(id)]));
+  }
+
+  /**
+   * @param jobs - the hub's queue_jobs.
+   * @returns them with waited_s and eta_s in whole minutes.
+   */
+  function queueSig(jobs) {
+    const minutes = (value) => (value === null ? null : Math.floor(value / MINUTE));
+    return jobs === null ? null : jobs.map((job) => ({...job, waited_s: minutes(job.waited_s), eta_s: minutes(job.eta_s)}));
+  }
+
+  return {COLUMNS, LANES, FREE_FROM, QUEUE_LAYERS, onBoard, columnOf, laneOf, labelOf, board, freePin, move, stage, pending, lines, why, span, queued, jobChips, whyHere, layers, queueSig};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Kanban;
