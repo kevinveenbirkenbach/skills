@@ -555,6 +555,18 @@ class TestWorktreeLock(GateCase):
         self.assertIn("(last recorded pid 4242: gate.py run --repo OLD-FINISHED-RUN, possibly stale)", err.getvalue())
         self.assertEqual(git_lock.read_text(encoding="utf-8"), "4242\tgate.py run --repo OLD-FINISHED-RUN\n")
 
+    def test_a_recorded_holder_reaches_the_message_with_control_characters_escaped(self):
+        gate, lock = load_gate(), self.root / "holder.lock"
+        for recorded, named in (
+            ("4242\tgate.py run \x1b[2Jforged\nERROR: done\x07\n", "pid 4242: gate.py run \\x1b[2Jforged\\nERROR: done\\x07"),
+            ("4242 \x1b[2J\tgate.py run\n", "holder not recorded"),
+            ("4242\tgate.py hold -- make test-ä\n", "pid 4242: gate.py hold -- make test-ä"),
+        ):
+            with self.subTest(recorded=recorded):
+                lock.write_text(recorded, encoding="utf-8")
+                with lock.open("rb") as handle:
+                    self.assertEqual(gate.holder(handle.fileno()), named)
+
     def test_a_fifo_link_or_second_name_as_git_dir_lock_ends_the_hold_with_2_at_once(self):
         git_lock = self.repo / ".git" / RUN_LOCK
         victim, marker = self.root / "victim", self.root / "ran"

@@ -415,7 +415,10 @@ def holder(fd: int) -> str:
         pid, _, command = os.pread(fd, HOLDER_BYTES, 0).decode("utf-8", "replace").strip().partition("\t")
     except OSError:
         pid, command = "", ""
-    return f"pid {pid}: {command}" if pid and command else "holder not recorded"
+    if not (pid.isdecimal() and command):
+        return "holder not recorded"
+    shown = "".join(char if char.isprintable() else repr(char)[1:-1] for char in command)
+    return f"pid {pid}: {shown}"
 
 
 def shared(sync: TextIO, repo: Path, caught: list[int]) -> None:
