@@ -38,10 +38,12 @@
 
   let signing = false;
 
-  async function prove(path, fields, label) {
+  async function prove(path, fields, label, handled) {
     const result = await sendJson(path, fields);
     if (!result.ok || !result.data) {
-      toast(`${label}: not possible`, fail(result), false);
+      if (!handled || !handled(result)) {
+        toast(`${label}: not possible`, fail(result), false);
+      }
       return null;
     }
     if (result.data.payload === null) {
@@ -51,21 +53,21 @@
     return signed ? {proof: {payload: result.data.payload, assertion: signed}} : null;
   }
 
-  async function signedProof(path, fields, label) {
+  async function signedProof(path, fields, label, handled) {
     if (signing) {
       toast(`${label}: not signed`, ["Another passkey signature is still open: finish or cancel it first; nothing was sent."], false);
       return null;
     }
     signing = true;
     try {
-      return await prove(path, fields, label);
+      return await prove(path, fields, label, handled);
     } finally {
       signing = false;
     }
   }
 
-  function proofFor(entries, label) {
-    return signedProof("/api/sign", {items: entries}, label);
+  function proofFor(entries, label, handled) {
+    return signedProof("/api/sign", {items: entries}, label, handled);
   }
 
   async function registerPasskey(output) {

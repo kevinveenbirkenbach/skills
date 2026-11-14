@@ -86,7 +86,7 @@
 
   async function dismissJob(job) {
     const result = await sendJson("/api/inbox/dismiss", {id: job.id});
-    if (!result.ok) {
+    if (!result.ok && !closeGone(result, state.inbox.filter((item) => item.job && item.job.id === job.id).map(keyOf), "Close")) {
       toast("Cannot close", fail(result), false);
     }
     await load();
