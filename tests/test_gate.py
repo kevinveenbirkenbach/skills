@@ -560,7 +560,7 @@ class TestWorktreeLock(GateCase):
         for recorded, named in (
             ("4242\tgate.py run \x1b[2Jforged\nERROR: done\x07\n", "pid 4242: gate.py run \\x1b[2Jforged\\nERROR: done\\x07"),
             ("4242 \x1b[2J\tgate.py run\n", "holder not recorded"),
-            ("4242\tgate.py hold -- make test-ä\n", "pid 4242: gate.py hold -- make test-ä"),
+            ("4242\tgate.py hold -- make test-é\n", "pid 4242: gate.py hold -- make test-é"),
         ):
             with self.subTest(recorded=recorded):
                 lock.write_text(recorded, encoding="utf-8")
