@@ -16,7 +16,8 @@
   document.getElementById("palette-open").addEventListener("click", openPalette);
   document.getElementById("settings-open").addEventListener("click", settingsSheet);
   document.getElementById("bubbles-toggle").addEventListener("click", toggleBubbles);
-  document.addEventListener("click", (event) => closeMenus(event.target instanceof Element ? event.target.closest("details.menu") : null));
+  document.addEventListener("click", (event) => closeMenus(event.target instanceof Element ? event.target.closest(MENUS) : null));
+  document.addEventListener("scroll", placeStations, {capture: true, passive: true});
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement) {
       document.body.classList.remove("leitstand");
@@ -36,6 +37,7 @@
   window.addEventListener("resize", redrawSky);
   window.addEventListener("resize", refresh3d);
   window.addEventListener("resize", placePopup);
+  window.addEventListener("resize", placeStations);
   skyPanel();
   radioSpot();
   radio.element = radioElement();

@@ -398,7 +398,8 @@ OVERLAP = """
         found.push(`${called(a.node)} × ${called(b.node)}`);
       }
     }));
-    const outside = boxes.filter(({box}) => box.right > root.getBoundingClientRect().right + 0.5).map(({node}) => called(node));
+    const framed = (node) => (getComputedStyle(node).display === "contents" ? framed(node.parentElement) : node);
+    const outside = boxes.filter(({box}) => box.right > framed(root).getBoundingClientRect().right + 0.5).map(({node}) => called(node));
     return {found, outside};
   };
 """
@@ -464,6 +465,8 @@ MEDIA = """
 ADD_STATION = """(async () => {@HELPERS@
   const clock = (date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   location.hash = "#stream/radio";
+  const fold = await until(() => document.querySelector("#radio-spot details.radio-station"), 8000);
+  fold.open = true;
   const edit = await until(() => all("#radio-spot button").find((button) => text(button) === "Edit stations" && button.getClientRects().length), 8000);
   edit.click();
   const form = await until(() => document.querySelector('.sheet-box form[aria-label="Stations"]'), 8000);
@@ -495,6 +498,8 @@ RADIO_STATE = """(async () => {@HELPERS@@MEDIA@
 })()""".replace("@HELPERS@", HELPERS).replace("@MEDIA@", MEDIA)
 RADIO_VIEW = """(async () => {@HELPERS@@MEDIA@
   location.hash = "#stream/radio";
+  const fold = await until(() => document.querySelector("#radio-spot details.radio-station"), 8000);
+  fold.open = true;
   const row = await until(() => all('#radio-spot [data-station="0"]').find((item) => item.getClientRects().length), 8000);
   if (!row) {
     const initial = JSON.parse(document.getElementById("state").textContent);
@@ -2070,7 +2075,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual(sent["inline"], ["static", True, True])
                 self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
                 self.assertEqual(sent["heads"], [["Read aloud", "Read aloud: the classes and agents the radio sounds for"], ["Cancel mayday", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"]])
-                self.assertEqual((sent["tall"], sent["wide"]), (False, False))
+                self.assertEqual((sent["tall"], sent["wide"]), (width == 390, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
                 for run in sent["runs"]:
                     direct = run["cls"] in ("post", "call")
@@ -2082,8 +2087,8 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual([entry[1:] for entry in saved["classes"] if entry[0] == "MAYDAY"], [["true", True]])
                 self.assertEqual((saved["kept"], saved["after"]), ([float(squelch), tone == "true", post == "true"], ["false", False]))
                 self.assertEqual(saved["general"], {"sections": ["Ambience", "Location", "Appearance", "Music", "Notifications", "Passkey"], "radio": 0})
-                self.assertEqual((saved["tall"], saved["wide"]), (False, False))
-                self.assertEqual(read, {"squelch": float(squelch), "tone": tone == "true", "post": post == "true", "tall": False, "wide": False})
+                self.assertEqual((saved["tall"], saved["wide"]), (width == 390, False))
+                self.assertEqual(read, {"squelch": float(squelch), "tone": tone == "true", "post": post == "true", "tall": width == 390, "wide": False})
         heads = {"post": ["post", "--to", "Stage"], "call": ["send", "call", "--to", "Stage"], "newsletter": ["post"]}
         radio = [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
         sends = [(width, cls) for width, _ in WIDTHS for cls in CHOICE_CHANNELS]
@@ -2122,7 +2127,7 @@ class TestOrchestratorE2E(HubCase):
                 self.assertEqual((sent["closed"], sent["open"], sent["inline"]), ([True, "false"], [False, "true", True], ["static", True, True]))
                 self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
                 self.assertEqual(sent["heads"], [["Read aloud", "Read aloud: the classes and agents the radio sounds for"], ["Cancel mayday", hint]])
-                self.assertEqual((sent["tall"], sent["wide"]), (False, False))
+                self.assertEqual((sent["tall"], sent["wide"]), (width == 390, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
                 for run in sent["runs"]:
                     direct = run["cls"] in ("post", "call")

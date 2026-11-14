@@ -10,6 +10,7 @@ import {join} from "node:path";
 const [binary, planFile] = process.argv.slice(2);
 const plan = JSON.parse(readFileSync(planFile, "utf8"));
 const profile = mkdtempSync(join(tmpdir(), "bidi-"));
+writeFileSync(join(profile, "user.js"), ['user_pref("media.navigator.streams.fake", true);', 'user_pref("media.navigator.permission.disabled", true);', ""].join("\n"));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const port = await new Promise((resolve) => {
   const probe = createServer().listen(0, "127.0.0.1", () => {

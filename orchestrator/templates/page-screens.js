@@ -105,8 +105,12 @@
     }
     const banner = document.getElementById("mayday");
     const silence = state.silence;
-    banner.hidden = !silence;
-    banner.replaceChildren(...(silence ? [h("p", {class: "text"}, `MAYDAY · ${dash(silence.by)}: ${silence.text}`), iconBtn("bi-x-octagon", "cancel", "btn small", () => confirmAct("clear-mayday", []), "cancel: end the mayday (radio.py clear)")] : []));
+    const alarm = silence ? `MAYDAY · ${dash(silence.by)}: ${silence.text}` : "";
+    if (banner.alarm !== alarm) {
+      banner.alarm = alarm;
+      banner.hidden = !silence;
+      banner.replaceChildren(...(silence ? [h("p", {class: "text", title: alarm}, alarm), iconBtn("bi-x-octagon", "cancel", "btn small", () => confirmAct("clear-mayday", []), "cancel: end the mayday (radio.py clear)")] : []));
+    }
     document.title = `${state.badges.tasks ? `(${state.badges.tasks}) ` : ""}Agent Orchestrator`;
     window.setTimeout(measure, 0);
   }

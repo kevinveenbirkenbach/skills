@@ -1,8 +1,7 @@
   const HOME_PATH = "home.pins";
   const HOME_FETCH = 3000;
   const HOME_MESSAGE = 30000;
-  const HOME_RADIO = 12;
-  const HOME_MARKS = [['section[aria-label="Radio log"]', "radio-log"], ['section[aria-label="Recently sent"]', "radio-log"]];
+  const HOME_MARKS = [['section[aria-label="Recently sent"]', "radio-log"]];
   const homeView = {dom: null, pins: [], tiles: new Map(), hosts: new Map(), messages: new Map(), drag: null, mark: () => null, touched: false, fetched: {}};
   const homeStore = Panels.store(typeof ViewStore === "object" && ViewStore ? ViewStore : Panels.memory(), HOME_PATH);
   const homePins = () => homeView.pins;
@@ -58,12 +57,10 @@
     return entry ? h("ol", {class: "feed"}, eventRow(entry)) : null;
   }
 
-  function homeRadio() {
-    const rows = state.radio.slice(-HOME_RADIO).reverse();
-    return rows.length ? h("ul", {class: "mini"}, rows.map((row) => h("li", {},
-      h("div", {class: "row"}, klass(row.class), when(row.ts)),
-      h("span", {class: "muted"}, `${dash(row.from)} → ${targetsOf(row)}`),
-      h("span", {}, short(row.text))))) : h("p", {class: "muted"}, "No radio in the chosen time range yet.");
+  function homeRadio(id) {
+    const host = homeView.hosts.get(id) || radioPart(id);
+    homeView.hosts.set(id, host);
+    return host;
   }
 
   function homeTree(draw) {
@@ -142,7 +139,10 @@
   }
 
   Panels.panel("stream", "Stream", homeStream);
-  Panels.panel("radio-log", "Radio log", homeRadio);
+  Panels.panel("radio-log", "Radio log", () => homeRadio("radio-log"), "", [6, 5]);
+  Panels.panel("radio", "Radio", () => homeRadio("radio"), "", [12, 7]);
+  Panels.panel("radio-device", "Radio: device", () => homeRadio("radio-device"), "", [6, 6]);
+  Panels.panel("radio-speak", "Radio: speak", () => homeRadio("radio-speak"), "", [6, 5]);
   Panels.panel("agents/orbit", "Agents: Orbit", homeOrbit);
   Panels.panel("agents/chord", "Agents: Chord", () => chord());
   Panels.panel("agents/swimlane", "Agents: Swimlane", () => swimlane());
