@@ -11,7 +11,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import HOST_STATE, HUB, server
-from kvb_orchestrator import records
+from kvb_orchestrator import records, viewstore
 from kvb_orchestrator.errors import Conflict, ToolError
 from kvb_orchestrator.handler import BODY_LIMIT
 from kvb_orchestrator.viewstore import (
@@ -24,6 +24,8 @@ from kvb_orchestrator.viewstore import (
 )
 
 STORE = HUB / "templates" / "view-store.js"
+PANELS = HUB / "templates" / "panels.js"
+DIGESTS = "const P = require(process.argv[1]); console.log(JSON.stringify(process.argv.slice(2).map(P.digest)));"
 CHIPS = HUB / "templates" / "legend-chips.js"
 CHIPS_STYLE = HUB / "templates" / "style-legend-chips.css"
 FULL = {
@@ -277,6 +279,11 @@ def change(values: dict, expected: dict) -> bytes:
     return json.dumps({"set": values, "expect": expected}).encode()
 
 
+def client_digests(*texts: str) -> list[str]:
+    done = subprocess.run(["node", "-e", DIGESTS, str(PANELS), *texts], capture_output=True, text=True, timeout=60, check=True)
+    return json.loads(done.stdout)
+
+
 class TestViewDocument(unittest.TestCase):
     def test_the_defaults_and_a_full_document_pass_unchanged(self):
         self.assertEqual(valid_view(copy.deepcopy(VIEW)), VIEW)
@@ -327,6 +334,73 @@ class TestViewDocument(unittest.TestCase):
         for name, doc in cases.items():
             with self.subTest(case=name), self.assertRaises(ToolError):
                 valid_view(doc)
+
+    def test_the_hub_digests_a_selection_exactly_as_panels_js_does(self):
+        texts = ["", "host:CPU", "burn:done\nhost:CPU", "agent:Ä€\U0001f600", "x" * 5000]
+        self.assertEqual([viewstore.digest(text) for text in texts], client_digests(*texts))
+
+    def test_a_metric_pin_id_must_be_the_one_its_view_gives_so_no_view_hides_under_another_charts_id(self):
+        cpu = {"chart": "hardware", "tokens": "interval", "shown": ["host:CPU"]}
+        tokens = {"chart": "tokens", "tokens": "accumulated", "shown": None}
+        mixed = {"chart": "combined", "tokens": "interval", "shown": ["burn:done", "host:CPU"]}
+        hundred = {"chart": "tokens", "tokens": "interval", "shown": sorted(f"agent:a{index:03d}" for index in range(100))}
+        cpu_digest, ram_digest, mixed_digest, hundred_digest = client_digests("host:CPU", "host:RAM", "burn:done\nhost:CPU", "\n".join(hundred["shown"]))
+
+        def doc(*pins: dict) -> dict:
+            made = copy.deepcopy(VIEW)
+            made["home"]["pins"] = [{"kind": "metric", "w": 4, "h": 3, **pin} for pin in pins]
+            return made
+
+        accepted = doc({"id": f"hardware/{cpu_digest}", "view": cpu}, {"id": "tokens/accumulated/all", "view": tokens}, {"id": f"combined/interval/{mixed_digest}", "view": mixed},
+                       {"id": f"tokens/interval/{hundred_digest}", "view": hundred})
+        self.assertEqual(valid_view(copy.deepcopy(accepted)), accepted)
+        cases = {
+            "hardware all id with a tokens view": doc({"id": "hardware/all", "view": tokens}),
+            "tokens id with a hardware view": doc({"id": "tokens/accumulated/all", "view": {**cpu, "shown": None}}),
+            "all id with a selection": doc({"id": "hardware/all", "view": cpu}),
+            "digest of another selection": doc({"id": f"hardware/{ram_digest}", "view": cpu}),
+            "other token mode": doc({"id": "tokens/interval/all", "view": tokens}),
+            "hardware id with a mode": doc({"id": f"hardware/interval/{cpu_digest}", "view": cpu}),
+            "combined id without a mode": doc({"id": f"combined/{mixed_digest}", "view": mixed}),
+        }
+        for name, broken in cases.items():
+            with self.subTest(case=name), self.assertRaises(ToolError):
+                valid_view(broken)
+
+    def test_a_metric_pin_keeps_its_chart_selection_and_a_malformed_one_is_refused(self):
+        metric = {"kind": "metric", "id": f"hardware/{client_digests('host:CPU')[0]}", "w": 4, "h": 3, "view": {"chart": "hardware", "tokens": "interval", "shown": ["host:CPU"]}}
+        everything = {"kind": "metric", "id": "combined/accumulated/all", "w": 4, "h": 3, "view": {"chart": "combined", "tokens": "accumulated", "shown": None}}
+        doc = copy.deepcopy(VIEW)
+        doc["home"]["pins"] = [metric, everything, PIN]
+        self.assertEqual(valid_view(copy.deepcopy(doc)), doc)
+
+        def view(**changes: object) -> dict:
+            broken = copy.deepcopy(VIEW)
+            broken["home"]["pins"] = [{**metric, "view": {**metric["view"], **changes}}]
+            return broken
+
+        bare = copy.deepcopy(VIEW)
+        bare["home"]["pins"] = [{key: value for key, value in metric.items() if key != "view"}]
+        task = copy.deepcopy(VIEW)
+        task["home"]["pins"] = [{**PIN, "view": metric["view"]}]
+        extra = copy.deepcopy(VIEW)
+        extra["home"]["pins"] = [{**metric, "view": {**metric["view"], "hidden": []}}]
+        cases = {
+            "metric without view": bare,
+            "view on a panel pin": task,
+            "unknown view key": extra,
+            "unknown chart": view(chart="disks"),
+            "hardware accumulated": view(tokens="accumulated"),
+            "unknown token mode": view(chart="tokens", tokens="sum"),
+            "unsorted series": view(shown=["host:RAM", "host:CPU"]),
+            "series with a space": view(shown=["host CPU"]),
+            "repeated series": view(shown=["host:CPU", "host:CPU"]),
+            "101 series": view(shown=sorted(f"s{index:03d}" for index in range(101))),
+            "series not a list": view(shown="host:CPU"),
+        }
+        for name, broken in cases.items():
+            with self.subTest(case=name), self.assertRaises(ToolError):
+                valid_view(broken)
 
     def test_sixty_four_pins_of_one_by_one_to_twelve_by_twelve_pass(self):
         doc = copy.deepcopy(VIEW)

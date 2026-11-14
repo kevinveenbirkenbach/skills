@@ -1,4 +1,4 @@
-  const RESOURCE = {left: 46, right: 10, wide: 50, top: 6, bottom: 6, axis: 18, poll: 5000, stale: 60, tones: 6, narrow: 600};
+  const RESOURCE = {left: 46, right: 10, wide: 50, top: 6, bottom: 6, axis: 18, poll: 5000, stale: 60, tones: 6, glyph: 6.5, shown: 100};
   const RESOURCE_PANELS = [["hardware", "bi-cpu", "Hardware: disks, CPU, RAM, swap, GPU and VRAM"], ["tokens", "bi-coin", "Tokens per agent"], ["combined", "bi-layers", "Hardware, tokens and burnup"]];
   const RESOURCE_ZONES = {idle: "Idle: below 30 %", saturated: "Saturated: above 90 %"};
   const RESOURCE_MARKS = {
@@ -7,8 +7,9 @@
     unknown: ["#bi-question-circle", (mark) => `${mark.name} unknown: no reading`],
   };
   const RESOURCE_BURN = {done: "Done", scope: "Scope"};
-  const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0};
+  const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0, series: {}};
   const resourceKey = () => JSON.stringify([ui.preset, ui.from, ui.to, ui.asOf]);
+  const resourcesStale = () => resourceKey() !== resourceView.key || nowSeconds() - resourceView.at >= RESOURCE.stale;
   const compactCount = (value) => (value >= 1e6 ? `${fixed(value / 1e6)}M` : value >= 1e3 ? `${fixed(value / 1e3)}k` : String(Math.round(value)));
   const resourceLabel = (line) => (line.kind === "vram" ? `${line.name} VRAM` : line.name);
   const percentOf = (value) => `${value} %`;
@@ -28,7 +29,7 @@
       const legend = h("div", {class: "res-legend"});
       const plot = h("div", {class: "res-plot"});
       const panel = h("section", {class: `card res-panel res-${kind}`, "data-panel": `resources-${kind}`, "aria-label": label, hidden: kind === "combined"},
-        h("div", {class: "res-head"}, h("span", {class: "res-title", title: label, "aria-label": label}, icon(name)), legend), plot);
+        h("div", {class: "res-head", "data-star-slot": ""}, h("span", {class: "res-title", title: label, "aria-label": label}, icon(name)), legend), plot);
       return {kind, label, legend, plot, panel};
     });
     resourceView.dom = {count, switches, panels};
@@ -52,7 +53,7 @@
     if (!dom || !dom.count.isConnected || document.hidden || resourceView.busy) {
       return;
     }
-    if (resourceKey() !== resourceView.key || nowSeconds() - resourceView.at >= RESOURCE.stale) {
+    if (resourcesStale()) {
       fetchResources();
     }
   }
@@ -82,15 +83,29 @@
     const bottom = size.height - (axis ? RESOURCE.axis : RESOURCE.bottom);
     const x = (t) => RESOURCE.left + ((Math.min(Math.max(t, span.from), span.to) - span.from) / (span.to - span.from)) * (right - RESOURCE.left);
     const svg = s("svg", {class: `chart res-chart res-${entry.kind}`, "data-chart": entry.kind, "data-from": span.from, "data-to": span.to, viewBox: `0 0 ${size.width} ${size.height}`, role: "img", "aria-label": entry.label});
-    const ticks = size.width < RESOURCE.narrow ? 2 : 4;
-    for (let index = 0; index <= ticks; index += 1) {
-      const t = span.from + ((span.to - span.from) * index) / ticks;
+    const ticks = resourceTicks(span, right - RESOURCE.left);
+    for (let index = 0; index <= ticks.count; index += 1) {
+      const t = span.from + ((span.to - span.from) * index) / ticks.count;
       svg.append(s("line", {class: "grid", x1: fixed(x(t)), x2: fixed(x(t)), y1: RESOURCE.top, y2: fixed(bottom)}));
-      if (axis) {
-        svg.append(s("text", {class: "axis", x: fixed(x(t)), y: size.height - 4, "text-anchor": index === 0 ? "start" : index === ticks ? "end" : "middle"}, (span.to - span.from > DAY ? absolute : clock).format(stampOf(t))));
+      if (axis && (ticks.all || index === ticks.count)) {
+        svg.append(s("text", {class: "axis", "data-axis": "time", x: fixed(x(t)), y: size.height - 4, "text-anchor": index === 0 ? "start" : index === ticks.count ? "end" : "middle"}, ticks.format.format(stampOf(t))));
       }
     }
     return {svg, x, top: RESOURCE.top, bottom, right};
+  }
+
+  /**
+   * @param span - {from, to} of the chart in epoch seconds.
+   * @param room - the plot width in px.
+   * @returns {count, all, format}: up to 4 intervals between time labels, as many as fit apart at RESOURCE.glyph px
+   * per character, all false when not even the first and the last label fit, so that only the last is drawn.
+   */
+  function resourceTicks(span, room) {
+    const format = span.to - span.from > DAY ? absolute : clock;
+    const wide = Math.max(...[span.from, span.to].map((t) => format.format(stampOf(t)).length)) * RESOURCE.glyph + RESOURCE.glyph;
+    const fits = (count) => room / count >= wide * (count === 1 ? 2 : 1.5);
+    const count = [4, 3, 2, 1].find(fits);
+    return {count: count || 1, all: Boolean(count), format};
   }
 
   function resourceScale(frame, values, label, side) {
@@ -203,7 +218,7 @@
     const y = resourceScale(frame, [0, 50, 100], percentOf, "left");
     resourceBackdrop(frame, y, parts.marks, span);
     resourceLines(frame, y, parts.hardware.filter((line) => !parts.hidden.has(line.id)));
-    return {svg: frame.svg, series: parts.hardware, path: "resources.hidden"};
+    return {svg: frame.svg, series: RESOURCE_SERIES.hardware(parts), path: "resources.hidden"};
   }
 
   function tokensChart(entry, parts, span, size) {
@@ -211,7 +226,7 @@
     const plot = tokenPlot(shownRows(parts.tokens, parts.agents, parts.hidden), parts.mode);
     const y = resourceScale(frame, [0, plot.top], compactCount, "left");
     tokenMarks(frame, y, plot, parts.agents.tones, span, false);
-    return {svg: frame.svg, series: parts.agents.list, path: "resources.hidden"};
+    return {svg: frame.svg, series: RESOURCE_SERIES.tokens(parts), path: "resources.hidden"};
   }
 
   function combinedChart(entry, parts, span, size) {
@@ -224,10 +239,45 @@
     for (const line of parts.burn.filter((item) => !parts.combinedHidden.has(item.id) && item.points.length)) {
       frame.svg.append(s("path", {class: line.tone, "data-id": line.id, "data-series": line.name, "data-last": line.points[line.points.length - 1][1], "data-top": line.top, d: resourceSteps(frame, y, line.points)}, s("title", {}, `${line.label} of the largest scope in the window (${line.top})`)));
     }
-    return {svg: frame.svg, series: [...parts.hardware, ...parts.agents.list, ...parts.burn], path: "resources.combinedHidden"};
+    return {svg: frame.svg, series: RESOURCE_SERIES.combined(parts), path: "resources.combinedHidden"};
   }
 
   const RESOURCE_CHARTS = {hardware: hardwareChart, tokens: tokensChart, combined: combinedChart};
+  const RESOURCE_SERIES = {hardware: (parts) => parts.hardware, tokens: (parts) => parts.agents.list, combined: (parts) => [...parts.hardware, ...parts.agents.list, ...parts.burn]};
+  const resourceSmall = (size) => size.width < RESOURCE.left + RESOURCE.wide + 10 || size.height < RESOURCE.axis + 10;
+
+  /**
+   * @param kind - hardware, tokens or combined.
+   * @returns the metric pin the chart's star makes now: {kind: "metric", id, view}, view being the chart, its token
+   * mode and the sorted ids of the series switched on, null while all are on; the id names the chart, the mode and
+   * all or a digest of the series, so another selection is another pin. With more than RESOURCE.shown series on but
+   * not all, the pin also carries refused, as the view store keeps at most that many.
+   */
+  function resourcePin(kind) {
+    const drawn = resourceView.series[kind] || {ids: [], shown: [], tokens: ViewStore.get("resources").tokens};
+    const shown = [...drawn.shown].sort();
+    const view = {chart: kind, tokens: kind === "hardware" ? "interval" : drawn.tokens, shown: shown.length === drawn.ids.length ? null : shown};
+    const id = [kind, kind === "hardware" ? "" : view.tokens, view.shown === null ? "all" : Panels.digest(shown.join("\n"))].filter(Boolean).join("/");
+    const over = view.shown !== null && view.shown.length > RESOURCE.shown;
+    return over ? {kind: "metric", id, view, refused: `more than ${RESOURCE.shown} series are switched on: switch some off, or all of them on`} : {kind: "metric", id, view};
+  }
+
+  /**
+   * @param view - a metric pin's view: {chart, tokens, shown}.
+   * @param size - {width, height} of the plot in px.
+   * @returns {svg, series}: the chart drawn from the loaded samples with only the view's series, svg null when the
+   * plot is too small, and those series for a legend.
+   */
+  function metricChart(view, size) {
+    const data = resourceView.data;
+    const span = {from: data.since, to: Math.max(data.until, data.since + 60)};
+    const parts = resourceParts(data, {tokens: view.tokens, hidden: [], combinedHidden: [], combined: view.chart === "combined"}, span);
+    const series = RESOURCE_SERIES[view.chart](parts);
+    const hidden = new Set(view.shown === null ? [] : series.map((line) => line.id).filter((id) => !view.shown.includes(id)));
+    const [, , label] = RESOURCE_PANELS.find(([kind]) => kind === view.chart);
+    const drawn = RESOURCE_CHARTS[view.chart]({kind: view.chart, label}, {...parts, hidden, combinedHidden: hidden}, span, size);
+    return {svg: resourceSmall(size) ? null : drawn.svg, series: series.filter((line) => !hidden.has(line.id))};
+  }
 
   function resourceParts(data, view, span) {
     return {
@@ -274,8 +324,9 @@
       const box = entry.plot.getBoundingClientRect();
       const size = {width: Math.round(box.width), height: Math.round(box.height)};
       const drawn = RESOURCE_CHARTS[entry.kind](entry, parts, span, size);
-      const small = size.width < RESOURCE.left + RESOURCE.wide + 10 || size.height < RESOURCE.axis + 10;
-      entry.plot.replaceChildren(...(small ? [] : [drawn.svg]));
+      const hidden = drawn.path === "resources.hidden" ? parts.hidden : parts.combinedHidden;
+      resourceView.series[entry.kind] = {ids: drawn.series.map((line) => line.id), shown: drawn.series.map((line) => line.id).filter((id) => !hidden.has(id)), tokens: view.tokens};
+      entry.plot.replaceChildren(...(resourceSmall(size) ? [] : [drawn.svg]));
       entry.legend.replaceChildren(LegendChips.render(drawn.series, drawn.path, "hidden"));
       const chip = focused === null ? null : [...entry.legend.querySelectorAll("[data-chip]")].find((node) => node.getAttribute("data-chip") === focused);
       if (chip) {

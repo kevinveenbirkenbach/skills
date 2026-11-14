@@ -64,8 +64,9 @@
       tree.data.delete_ready !== true ? iconBtn("bi-key-fill", "Store token", "btn small soft", storeToken, "Store token: add the operator row that stores the GitHub token in the Secret Service") : null);
   }
 
-  function leafRow(found) {
-    return h("li", {class: "leaf"}, h("span", {class: "state", "data-tone": found.ended ? "warn" : "neutral", role: "img", ...named(found.kind)}, icon(ARTEFACT_ICONS[found.kind] || "bi-paperclip")),
+  function leafRow(holder, found) {
+    return h("li", {class: "leaf", "data-item": `artifact:${artifactRef(`artefact:${holder}\u0000${found.task}\u0000${found.ref}`)}`},
+      h("span", {class: "state", "data-tone": found.ended ? "warn" : "neutral", role: "img", ...named(found.kind)}, icon(ARTEFACT_ICONS[found.kind] || "bi-paperclip")),
       h("code", {}, found.ref), h("span", {class: "muted"}, found.task), found.ended ? pill("task ended", "warn") : null);
   }
 
@@ -75,8 +76,8 @@
 
   function worktreeRow(wt) {
     const review = wt.review;
-    return h("div", {class: wt.open_work.length ? "wt open-work" : "wt", "data-open-work": wt.open_work.join(" ") || null},
-      h("div", {class: "wt-head"},
+    return h("div", {class: wt.open_work.length ? "wt open-work" : "wt", "data-open-work": wt.open_work.join(" ") || null, "data-item": `artifact:${artifactRef(`wt:${wt.path}`)}`},
+      h("div", {class: "wt-head", "data-star-slot": ""},
         h("span", {class: "states"}, worktreeStates(wt), openWork(wt)),
         h("code", {}, wt.path),
         h("span", {class: "muted", title: wt.head}, wt.head.slice(0, 10)),
@@ -84,7 +85,7 @@
         review ? [status(review.status), review.gate ? pill(review.gate === "pass" ? "Gate green" : "Gate red", review.gate === "pass" ? "ok" : "bad") : null] : null,
         copyButton(wt.path)),
       flowLine(wt.flow, wt.branch),
-      wt.artefacts && wt.artefacts.length ? h("ul", {class: "leaves", "aria-label": "Artifacts"}, wt.artefacts.map(leafRow)) : null);
+      wt.artefacts && wt.artefacts.length ? h("ul", {class: "leaves", "aria-label": "Artifacts"}, wt.artefacts.map((found) => leafRow(`wt:${wt.path}`, found))) : null);
   }
 
   function resultOf(repo, entry) {
@@ -97,11 +98,11 @@
     return chip(name, `${label}${result.reason ? `: ${result.reason}` : ""}`, tone);
   }
 
-  function branchRow(repo, entry) {
+  function branchRow(repo, entry, glance) {
     const result = resultOf(repo, entry);
-    return h("div", {class: "branch-row"},
-      h("div", {class: "branch-name"}, h("strong", {}, entry.name), h("span", {class: "states"}, branchStates(entry)), entry.upstream ? h("span", {class: "muted"}, `↔ ${entry.upstream}`) : null,
-        h("span", {class: "muted", title: entry.head}, entry.head.slice(0, 10)), result ? resultChip(result) : null, h("span", {class: "spacer"}), gateIcons(repo.path, entry.name), deleteButton(entry)),
+    return h("div", {class: "branch-row", "data-item": `artifact:${artifactRef(`branch:${repo.path}\u0000${entry.name}`)}`},
+      h("div", {class: "branch-name", "data-star-slot": ""}, h("strong", {}, entry.name), h("span", {class: "states"}, branchStates(entry)), entry.upstream ? h("span", {class: "muted"}, `↔ ${entry.upstream}`) : null,
+        h("span", {class: "muted", title: entry.head}, entry.head.slice(0, 10)), result ? resultChip(result) : null, h("span", {class: "spacer"}), gateIcons(repo.path, entry.name), glance ? null : deleteButton(entry)),
       entry.worktrees.map(worktreeRow));
   }
 
@@ -116,7 +117,19 @@
       return;
     }
     tree.dom.removeAll.replaceChildren(deleteAll(), gateApply() || "");
-    const q = tree.q.trim().toLowerCase();
+    const shown = treeCards(tree.q.trim().toLowerCase());
+    tree.dom.count.textContent = `${shown.count} repositories · as of ${clock.format(stampOf(tree.data.scanned))}${tree.data.delete_ready ? "" : ` · Delete blocked: ${tree.data.delete_reason}`}`;
+    tree.dom.list.replaceChildren(...shown.nodes);
+  }
+
+  /**
+   * @param q - the lower-case filter text, "" for all.
+   * @param glance - true for the read-only copy a Home tile shows, without the delete buttons.
+   * @returns {count, nodes}: how many repositories match and the cards of the tree view for them, the tasks without a
+   * worktree and the recently deleted branches, or an empty state when nothing matches or, without a filter, when
+   * pkgmgr names nothing.
+   */
+  function treeCards(q, glance) {
     const hit = (...texts) => !q || texts.some((text) => String(text).toLowerCase().includes(q));
     const repos = [];
     for (const repo of tree.data.repos) {
@@ -129,22 +142,20 @@
     const tasks = (tree.data.tasks || []).filter((task) => hit(task.task, task.title, ...task.artefacts.map((found) => found.ref)));
     const listed = new Set(tree.data.repos.flatMap((repo) => repo.branches.map((entry) => `${repo.path}\u0000${entry.name}`)));
     const gone = (tree.data.cleanups || []).flatMap((result) => result.items).filter((item) => !listed.has(`${item.repository}\u0000${item.branch}`) && hit(item.repository, item.branch));
-    tree.dom.count.textContent = `${repos.length} repositories · as of ${clock.format(stampOf(tree.data.scanned))}${tree.data.delete_ready ? "" : ` · Delete blocked: ${tree.data.delete_reason}`}`;
     if (!repos.length && !tasks.length && !gone.length) {
-      tree.dom.list.replaceChildren(emptyState("Nothing found", "No repository matches the filter."));
-      return;
+      return {count: 0, nodes: [q ? emptyState("Nothing found", "No repository matches the filter.") : emptyState("No repository", "pkgmgr names no repository.")]};
     }
     const cards = repos.map(({repo, branches, detached}) => {
       const trees = repo.branches.flatMap((entry) => entry.worktrees).concat(repo.detached);
       const dirty = trees.filter((wt) => wt.dirty).length;
       const merged = repo.branches.filter((entry) => entry.cleanup).length;
       const busy = trees.filter((wt) => wt.open_work.length).length;
-      const details = h("details", {class: "card repo", open: Boolean(q) || tree.open.has(repo.path)},
-        h("summary", {}, icon("bi-git"), h("span", {}, repo.name), counter(`${repo.branches.length} branches`), counter(`${trees.length} worktrees`),
+      const details = h("details", {class: "card repo", open: Boolean(q) || tree.open.has(repo.path), "data-item": `artifact:${artifactRef(`repo:${repo.path}`)}`},
+        h("summary", {"data-star-slot": ""}, icon("bi-git"), h("span", {}, repo.name), counter(`${repo.branches.length} branches`), counter(`${trees.length} worktrees`),
           dirty ? chip("bi-pencil-square", `${dirty} worktrees with changes`, "warn", dirty) : null, merged ? chip("bi-sign-merge-left", `${merged} merged, deletable`, "ok", merged) : null,
           busy ? chip("bi-lightning-charge", `${busy} worktrees with open work`, "warn", busy) : null),
         repo.branches.length ? branchAncestry(repo) : null,
-        branches.map((entry) => branchRow(repo, entry)),
+        branches.map((entry) => branchRow(repo, entry, glance)),
         detached.length ? h("div", {class: "branch-row"}, h("div", {class: "branch-name"}, h("strong", {}, "detached HEAD")), detached.map(worktreeRow)) : null);
       details.addEventListener("toggle", () => {
         if (details.open) {
@@ -157,8 +168,8 @@
     });
     const loose = tasks.length ? h("details", {class: "card repo", open: true}, h("summary", {}, icon("bi-card-checklist"), h("span", {}, "Tasks without a worktree"), counter(tasks.length)),
       tasks.map((task) => h("div", {class: "branch-row"}, h("div", {class: "branch-name"}, h("strong", {}, task.task), h("span", {class: "muted"}, task.title), status(task.status)),
-        h("ul", {class: "leaves", "aria-label": "Artifacts"}, task.artefacts.map(leafRow))))) : null;
+        h("ul", {class: "leaves", "aria-label": "Artifacts"}, task.artefacts.map((found) => leafRow(`task:${task.task}`, found)))))) : null;
     const past = gone.length ? h("details", {class: "card repo", open: true}, h("summary", {}, icon("bi-trash3"), h("span", {}, "Recently deleted"), counter(gone.length)),
       gone.map((item) => h("div", {class: "branch-row", "data-result": item.status}, h("div", {class: "branch-name"}, h("strong", {}, item.branch), h("code", {}, item.repository), resultChip(item))))) : null;
-    tree.dom.list.replaceChildren(...cards, loose || "", past || "");
+    return {count: repos.length, nodes: [...cards, loose || "", past || ""]};
   }

@@ -4,7 +4,8 @@
 
   function hierarchyScreen() {
     hier.chart = h("section", {class: "card org-chart", "data-panel": "agents/hierarchy", "aria-labelledby": "org-title"});
-    orderDom.box = h("section", {class: "card agent-order", id: "agent-order", "aria-labelledby": "agent-order-title"});
+    orderDom.box = h("section", {class: "card agent-order", id: "agent-order", "aria-labelledby": "agent-order-title", "data-panel": "agents/order"});
+    orderDom.slot = h("span", {"data-star-slot": ""});
     hier.sig = "";
     return h("div", {class: "hierarchy-body"}, hier.chart, orderDom.box);
   }

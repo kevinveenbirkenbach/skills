@@ -60,7 +60,17 @@
       }
     }
     const ids = new Set(nodes.map((node) => node.id));
-    return {nodes, links: links.filter((link) => ids.has(link.source) && ids.has(link.target)), byId: new Map(nodes.map((node) => [node.id, node]))};
+    return {nodes, links: links.filter((link) => ids.has(link.source) && ids.has(link.target)), byId: new Map(nodes.map((node) => [node.id, node])), byRef: new Map(nodes.map((node) => [artifactRef(node.id), node]))};
+  }
+
+  /**
+   * @param id - an artifacts model node id, such as wt:<path> or artefact:wt:<path>\u0000<task>\u0000<ref>.
+   * @returns the id its star pins after the artifact: kind: the node id while Panels.token keeps it within 200
+   * characters, else <node kind>#<Panels.digest of the node id>, which no node id equals and which Home resolves
+   * against the live tree through byRef.
+   */
+  function artifactRef(id) {
+    return Panels.token(id) === null ? `${id.slice(0, id.indexOf(":"))}#${Panels.digest(id)}` : id;
   }
 
   function chosenRepo() {
@@ -216,7 +226,12 @@
     return h("div", {class: "legend"}, marks, h("span", {class: "muted"}, words[view]));
   }
 
-  function artPopup(node) {
+  /**
+   * @param node - an artifacts model node.
+   * @param glance - true for the read-only copy a Home tile shows, without the delete button.
+   * @returns the popup head and body of the node.
+   */
+  function artPopup(node, glance) {
     const [kindName, kindIcon] = ART_KINDS[node.kind];
     const data = node.data;
     const body = [];
@@ -226,7 +241,7 @@
     } else if (node.kind === "branch") {
       body.push(h("div", {class: "states"}, branchStates(data), gateIcons(node.repo, data.name)), meta([["Upstream", data.upstream], ["Head", data.head.slice(0, 12), data.head], ["Merged into", data.merged_into], ["Reason", data.reason]]),
         data.worktrees.map((wt) => flowDetails(wt.flow, data.name)),
-        h("h3", {}, "Dry run"), h("pre", {class: "notes"}, data.plan.join("\n")), h("div", {class: "actions"}, deleteButton(data)));
+        h("h3", {}, "Dry run"), h("pre", {class: "notes"}, data.plan.join("\n")), glance ? null : h("div", {class: "actions"}, deleteButton(data)));
     } else if (node.kind === "worktree") {
       body.push(h("div", {class: "states"}, worktreeStates(data)), workChips(data.open_work), meta([["Path", data.path], ["Branch", data.branch], ["HEAD", data.head.slice(0, 12), data.head]]),
         flowDetails(data.flow, data.branch),
@@ -237,7 +252,7 @@
     } else {
       body.push(meta([["Title", data.title], ["Status", data.status]]));
     }
-    return [popupHead(icon(kindIcon), node.label, h("span", {class: "muted"}, kindName)), h("div", {class: "popup-body", "data-item": `artifact:${node.id}`}, body)];
+    return [popupHead(icon(kindIcon), node.label, h("span", {class: "muted"}, kindName)), h("div", {class: "popup-body", "data-item": `artifact:${artifactRef(node.id)}`}, body)];
   }
 
   function artifactsScreen() {
@@ -264,7 +279,7 @@
     }, 0);
     const controls = h("div", {class: "card controls"}, viewSwitch("artifacts"), view === "3d" ? layoutTools("artifacts") : view === "tree" ? null : picker,
       h("div", {class: "toolbar", role: "toolbar", "aria-label": "Artifacts"}, search, reload, removeAll, apply), count);
-    const body = view === "tree" ? list : h("div", {class: "card stage-card", "data-panel": `artifacts/${view}`}, stageBox, legendBox);
+    const body = view === "tree" ? h("div", {class: "tree-panel", "data-panel": "artifacts/tree"}, list) : h("div", {class: "card stage-card", "data-panel": `artifacts/${view}`}, stageBox, legendBox);
     return h("div", {class: "graph"}, controls, body);
   }
 

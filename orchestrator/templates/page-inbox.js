@@ -1,3 +1,5 @@
+  let inboxSlot = null;
+
   async function submit(entries, label) {
     ui.busy = true;
     const signed = await proofFor(entries, label);
@@ -150,6 +152,10 @@
     return buttons;
   }
 
+  function inboxHeadline(item) {
+    return h("button", {type: "button", class: "linkish headline", title: "Open", on: {click: () => openItem(item)}}, revealed(item.kind === "operator" ? item.id : item.kind === "ask" ? item.title.split(": ")[0] : item.title));
+  }
+
   function inboxItem(item, index) {
     const red = item.kind === "review" && item.gate !== "pass";
     const commanded = item.kind === "ask" || item.kind === "operator";
@@ -166,7 +172,7 @@
         item.until ? pill(`until ${absolute.format(stampOf(item.until))}`, "neutral") : null),
       h("div", {class: "entry-body"},
         h("div", {class: "route"},
-          h("button", {type: "button", class: "linkish headline", title: "Open", on: {click: () => openItem(item)}}, revealed(item.kind === "operator" ? item.id : item.kind === "ask" ? item.title.split(": ")[0] : item.title)),
+          inboxHeadline(item),
           item.agent ? [face(item.agent, false), person(item.agent)] : null),
         item.kind === "review" ? h("div", {class: "muted"}, revealed(item.detail), item.score ? revealed(` · ${item.score}`) : "") : null,
         commanded ? h("div", {class: "command", "data-path": item.directory || "-"}, h("code", {}, revealed(item.command)), copyButton(item.command)) : null,
@@ -189,7 +195,8 @@
   }
 
   function inboxScreen() {
-    inboxDom = h("div", {class: "inbox"});
+    inboxDom = h("div", {class: "inbox", "data-panel": "tasks/operator"});
+    inboxSlot = h("span", {"data-star-slot": ""});
     return inboxDom;
   }
 
@@ -223,12 +230,12 @@
     const choose = h("button", {type: "button", class: "btn small soft", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection", false)}}, icon("bi-check2-square"), String(grantable.length));
     const deny = h("button", {type: "button", class: "btn small danger", ...named(`Deny selection (${deniable.length})`, `Deny selection (${deniable.length}): each requester gets its denial by post, one passkey signature, 3 s to undo`), disabled: !deniable.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), String(deniable.length));
     const all = h("button", {type: "button", class: "btn small primary", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), String(green.length));
-    inboxDom.replaceChildren(
+    Panels.keepFocus(inboxSlot, () => inboxDom.replaceChildren(
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Waits on Operator", counter(waitingCount())), h("span", {class: "spacer"}),
-        hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null),
+        hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null, inboxSlot),
       h("div", {class: "inbox-actions"}, choose, deny, all),
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
-      items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now."));
+      items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now.")));
     settleConsoles(items);
     const current = inboxDom.querySelector(`.item[data-index="${ui.cursor}"]`);
     if (current && document.activeElement === document.body) {

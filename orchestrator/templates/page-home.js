@@ -67,8 +67,10 @@
   }
 
   function homeTree(draw) {
-    if (!tree.data) {
+    if (!tree.data || Date.now() - (homeView.fetched.tree || 0) > HOME_TREE) {
       homeFetch("tree", fetchTree);
+    }
+    if (!tree.data) {
       return homeWait("Reading repositories …");
     }
     return tree.data.error ? emptyState("No tree", tree.data.error) : draw();
@@ -81,10 +83,13 @@
     });
   }
 
-  function homeArtifact(id) {
+  const artifactNode = (ref) => (tree.model ? tree.model.byRef.get(ref) || null : null);
+  const artifactTitle = (ref) => `Artifact ${(artifactNode(ref) ? artifactNode(ref).id : ref).replace(/\u0000/g, " ")}`;
+
+  function homeArtifact(ref) {
     return homeTree(() => {
-      const node = tree.model.byId.get(id);
-      return node ? h("div", {class: "home-popup"}, artPopup(node)) : null;
+      const node = artifactNode(ref);
+      return node ? h("div", {class: "home-popup"}, artPopup(node, true)) : null;
     });
   }
 
@@ -161,9 +166,68 @@
   Panels.panel("tasks/3d", "Tasks: 3D", () => home3d("tasks"), "3d");
   Panels.item("task", (id) => `Task ${id}`, (size, id) => homeTask(id));
   Panels.item("message", "Message", (size, id) => homeMessage(id));
-  Panels.item("artifact", (id) => `Artifact ${id.replace(/\u0000/g, " ")}`, (size, id) => homeArtifact(id));
+  Panels.item("artifact", artifactTitle, (size, id) => homeArtifact(id));
   Panels.item("agent", (id) => `Agent ${labelOf(id)}`, (size, id) => agentTile(id));
   Panels.item("ancestry", (id) => `Ancestry ${id}`, (size, id) => homeAncestry(id));
+  Panels.panel("artifacts/tree", "Artifacts: tree", () => homeTree(() => h("div", {class: "repos"}, treeCards("", true).nodes)));
+  Panels.panel("agents/order", "Agents: priority", homeOrder);
+  Panels.panel("tasks/operator", "Tasks: Waits on Operator", homeInbox);
+  Panels.item("metric", (id, view) => metricTitle(view), (size, id, view) => homeMetric(id, view));
+  Panels.capture("resources-hardware", () => resourcePin("hardware"));
+  Panels.capture("resources-tokens", () => resourcePin("tokens"));
+  Panels.capture("resources-combined", () => resourcePin("combined"));
+
+  const HOME_TREE = 30000;
+  const HOME_METRICS = {hardware: "Hardware", tokens: "Tokens", combined: "Combined"};
+  const homeMetricView = (view) => Boolean(view) && Object.hasOwn(HOME_METRICS, view.chart) && (view.shown === null || Array.isArray(view.shown));
+  const seriesName = (id) => Panels.raw(id).slice(Panels.raw(id).indexOf(":") + 1);
+
+  function homeOrder() {
+    const order = state.agent_order;
+    return order.length ? h("ol", {class: "order-list home-order"}, order.map((name, index) => h("li", {"data-name": name}, h("span", {class: "rank"}, `${index + 1}.`), face(name, false), person(name))))
+      : h("p", {class: "muted"}, "No agent with an office or an open task.");
+  }
+
+  function homeInbox() {
+    const items = visibleInbox();
+    return items.length ? h("ol", {class: "home-inbox"}, items.map((item) => h("li", {class: `k-${item.kind}`, "data-wait": keyOf(item)},
+      h("div", {class: "msg-meta"}, when(item.ts), pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? [face(item.agent, false), person(item.agent)] : null),
+      inboxHeadline(item),
+      h("div", {class: "item-actions line-actions"}, actionsFor(item))))) : emptyState("All done", "Nothing is waiting for you right now.");
+  }
+
+  function metricTitle(view) {
+    if (!homeMetricView(view)) {
+      return "Metric";
+    }
+    const mode = view.chart !== "hardware" && view.tokens === "accumulated" ? " (accumulated)" : "";
+    const names = view.shown === null ? "all series" : view.shown.length > 3 ? `${view.shown.length} series` : view.shown.map(seriesName).join(", ") || "no series";
+    return `${HOME_METRICS[view.chart]}${mode}: ${names}`;
+  }
+
+  function homeMetric(id, view) {
+    if (!homeMetricView(view)) {
+      return null;
+    }
+    homeFetch("resources", () => (resourceView.data === null || resourcesStale() ? fetchResources() : null));
+    const key = `metric:${id}`;
+    const host = homeView.hosts.get(key) || h("div", {class: "home-metric", "data-chart": view.chart}, h("div", {class: "legend-chips"}), h("div", {class: "res-plot"}));
+    homeView.hosts.set(key, host);
+    window.setTimeout(() => host.isConnected && drawMetric(host, view), 0);
+    return host;
+  }
+
+  function drawMetric(host, view) {
+    const [legend, plot] = host.children;
+    if (resourceView.data === null) {
+      plot.replaceChildren(homeWait("Loading …"));
+      return;
+    }
+    const box = plot.getBoundingClientRect();
+    const drawn = metricChart(view, {width: Math.round(box.width), height: Math.round(box.height)});
+    plot.replaceChildren(...(drawn.svg ? [drawn.svg] : []));
+    legend.replaceChildren(...drawn.series.map((line) => h("span", {class: `legend-chip ${line.tone}`, "data-series": line.id}, line.label)));
+  }
 
   function homeRefused(why) {
     homeView.pins = homeStore.read();
@@ -197,21 +261,21 @@
     }
   }
 
-  function homePress(kind, id, title) {
+  function homePress(kind, id, title, view) {
     homeView.touched = true;
     if (Panels.has(homePins(), kind, id)) {
       homeSave((pins) => Panels.remove(pins, kind, id));
       return;
     }
-    const {refused, holder} = Panels.add(homePins(), kind, id);
+    const {refused, holder} = Panels.add(homePins(), kind, id, view);
     if (refused) {
       homeRefusal(refused, holder, title);
       return;
     }
-    homeSave((pins) => Panels.add(pins, kind, id).pins).then((stored) => {
+    homeSave((pins) => Panels.add(pins, kind, id, view).pins).then((stored) => {
       const now = homeStore.read();
       if (stored && !Panels.has(now, kind, id)) {
-        const late = Panels.add(now, kind, id);
+        const late = Panels.add(now, kind, id, view);
         homeRefusal(late.refused, late.holder, title);
       }
     });
@@ -328,7 +392,7 @@
 
   function homeFill(tile, pin, index, count) {
     const key = Panels.keyOf(pin);
-    const entry = Panels.lookup(pin.kind, pin.id);
+    const entry = Panels.lookup(pin.kind, pin.id, pin.view);
     const content = entry ? homeContent(entry, pin) : null;
     const name = entry ? entry.title : `${pin.kind} ${pin.id}`;
     tile.classList.toggle("gone", !content);

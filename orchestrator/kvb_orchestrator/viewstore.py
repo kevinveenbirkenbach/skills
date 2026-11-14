@@ -26,6 +26,11 @@ TOKEN_MODES = ("interval", "accumulated")
 OVERLAYS = ("fix", "break", "tokens", "velocity", "security", "score")
 PINS_LIMIT = 64
 SPAN = (1, 12)
+METRIC = "metric"
+CHARTS = ("hardware", "tokens", "combined")
+SHOWN_LIMIT = 100
+FNV_PRIME = 0x01000193
+FNV_SEEDS = (0x811C9DC5, 0x01000193)
 
 
 def series_ids(value: object, name: str) -> list[str]:
@@ -43,14 +48,75 @@ def span(value: object, name: str) -> int:
     return value
 
 
+def fnv(text: str, seed: int) -> str:
+    value = seed
+    for char in text:
+        value = ((value ^ ord(char)) * FNV_PRIME) & 0xFFFFFFFF
+    return f"{value:08x}"
+
+
+def digest(text: str) -> str:
+    """Args:
+        text: any text, such as the series ids of a metric pin joined by
+            newlines.
+
+    Returns:
+        The 16 hex characters Panels.digest gives for the same text: FNV-1a
+        over its code points from FNV_SEEDS, one hash per seed.
+    """
+    return "".join(fnv(text, seed) for seed in FNV_SEEDS)
+
+
+def metric_id(view: dict) -> str:
+    """Args:
+        view: a metric pin's view as metric_view returns it.
+
+    Returns:
+        The only id resourcePin gives a pin of that view: the chart, the
+        token mode unless the chart is hardware, and all or the digest of the
+        series switched on.
+    """
+    shown = "all" if view["shown"] is None else digest("\n".join(view["shown"]))
+    return "/".join([view["chart"], shown] if view["chart"] == "hardware" else [view["chart"], view["tokens"], shown])
+
+
+def metric_view(raw: object, name: str) -> dict:
+    """Args:
+        raw: the view a metric pin stores: the chart, its token mode and the
+            series switched on when it was starred, null for all of them.
+        name: where the view sits, for the error message.
+
+    Returns:
+        The view; a chart outside CHARTS, a hardware chart with a token mode
+        other than interval, or a series list that is not a sorted list of
+        at most SHOWN_LIMIT distinct series ids raises ToolError.
+    """
+    view = section(raw, name, ("chart", "tokens", "shown"))
+    if not isinstance(view["chart"], str) or view["chart"] not in CHARTS:
+        raise ToolError(f"{name}.chart must be one of {', '.join(CHARTS)}")
+    if not isinstance(view["tokens"], str) or view["tokens"] not in TOKEN_MODES or (view["chart"] == "hardware" and view["tokens"] != "interval"):
+        raise ToolError(f"{name}.tokens must be one of {', '.join(TOKEN_MODES)}, interval for the hardware chart")
+    shown = view["shown"]
+    if shown is not None and (len(series_ids(shown, f"{name}.shown")) > SHOWN_LIMIT or shown != sorted(shown)):
+        raise ToolError(f"{name}.shown must be null or a sorted list of at most {SHOWN_LIMIT} series ids")
+    return {"chart": view["chart"], "tokens": view["tokens"], "shown": None if shown is None else list(shown)}
+
+
 def pin_entry(raw: object, index: int) -> dict:
     name = f"home.pins[{index}]"
-    entry = section(raw, name, ("kind", "id", "w", "h"))
+    metric = isinstance(raw, dict) and raw.get("kind") == METRIC
+    entry = section(raw, name, ("kind", "id", "w", "h", "view") if metric else ("kind", "id", "w", "h"))
     if not isinstance(entry["kind"], str) or not PIN_KIND.fullmatch(entry["kind"]):
         raise ToolError(f"{name}.kind must be 1 to 32 characters from A-Z, a-z, 0-9 and :_./-")
     if not isinstance(entry["id"], str) or not SERIES_ID.fullmatch(entry["id"]):
         raise ToolError(f"{name}.id must be 1 to 200 characters from A-Z, a-z, 0-9 and :_./-")
-    return {"kind": entry["kind"], "id": entry["id"], "w": span(entry["w"], f"{name}.w"), "h": span(entry["h"], f"{name}.h")}
+    pin = {"kind": entry["kind"], "id": entry["id"], "w": span(entry["w"], f"{name}.w"), "h": span(entry["h"], f"{name}.h")}
+    if not metric:
+        return pin
+    view = metric_view(entry["view"], f"{name}.view")
+    if entry["id"] != metric_id(view):
+        raise ToolError(f"{name}.id must be {metric_id(view)}, the chart, token mode and series of its view")
+    return {**pin, "view": view}
 
 
 def pins(value: object) -> list[dict]:

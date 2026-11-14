@@ -43,7 +43,16 @@ GIT_ENV = {
     "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
 }
 TREE = "0123456789abcdef0123456789abcdef01234567"
-PAGE = "<!doctype html><title>diff</title><script>document.title = 'page script'</script>"
+LONG_REPO = "/home/operator-example-01/Repositories/github.com/operator-example-01/skills"
+LONG_WORKTREE = f"{LONG_REPO}/.worktrees/feature/hub-bookmarks-everywhere"
+LONG_BRANCH = "feature/hub-bookmarks-everywhere"
+LONG_TASK = "work/bookmarks"
+LONG_VOLUME = "volume:infinito_nexus_core_mariadb_data"
+CORE_REPO = "/home/operator-example-01/Repositories/github.com/infinito-nexus/core"
+CORE_BRANCH = "feature/store-workspace-proxmox-cosmos-requirements-statically-into-iam-before-the-final-compose-and-swarm-roundtrip"
+CORE_WORKTREE = f"/home/operator-example-01/.local/share/worktrees/github.com/infinito-nexus/core/{CORE_BRANCH}"
+MERGED_BRANCH = "feature/merged-away"
+PAGE ="<!doctype html><title>diff</title><script>document.title = 'page script'</script>"
 HOST_STATE = Path("/home/op/.local/state/kvb-orchestrator")
 ASK = {"tool": "Bash", "command": "make deploy", "cwd": "/repo", "session": "s1", "agent": "", "timeout": 60}
 HOOK = {
@@ -96,6 +105,51 @@ class FakeScripts:
 
 def iso(ts: float) -> str:
     return datetime.datetime.fromtimestamp(ts, datetime.UTC).isoformat().replace("+00:00", "Z")
+
+
+def scan_item(branch: str, worktree: str | None, state: str, sha: str) -> dict:
+    """Args:
+        branch: the branch name.
+        worktree: its worktree path, None for a branch without one.
+        state: the gc state, such as unmerged or merged-clean.
+        sha: the local tip.
+
+    Returns:
+        One pkgmgr branch tree item; a merged-clean one without a worktree
+        is a branch the tree offers to delete.
+    """
+    merged = state == "merged-clean"
+    counts = 0 if worktree else None
+    return dict({
+        "branch": branch, "worktree": worktree, "head": sha, "detached": False, "locked": None, "worktree_state": "clean" if worktree else "none",
+        "staged": counts, "unstaged": counts, "untracked": counts, "upstream": None, "ahead": None, "behind": None, "gone": False, "local_sha": sha, "remotes": {},
+        "compose_projects": [], "images": [], "state": state, "merged_by": "#7" if merged else None, "merged_into": "main" if merged else None, "size_bytes": None,
+        "skip": None, "reason": state, "result": None, "flow": None,
+    }, actions=["local-branch"])
+
+
+def long_repos() -> list[dict]:
+    """Returns:
+        pkgmgr scan repositories on paths of real length: the skills
+        repository with the worktree of LONG_BRANCH and the merged
+        MERGED_BRANCH, and infinito-nexus/core with a worktree path of 196
+        characters.
+    """
+    def entry(path: str, items: list[dict]) -> dict:
+        return {"path": path, "remote": f"{path}.git", "default": "main", "missing": False, "known": True, "forge": "none", "scanned_at": "2026-11-14T12:00:00+00:00", "warnings": [], "items": items}
+
+    return [
+        entry(LONG_REPO, [scan_item(LONG_BRANCH, LONG_WORKTREE, "unmerged", "1" * 40), scan_item(MERGED_BRANCH, None, "merged-clean", "2" * 40)]),
+        entry(CORE_REPO, [scan_item(CORE_BRANCH, CORE_WORKTREE, "unmerged", "3" * 40)]),
+    ]
+
+
+def long_task(now: float) -> dict:
+    """Returns:
+        The register row of LONG_TASK, working in LONG_WORKTREE and holding
+        the volume LONG_VOLUME.
+    """
+    return {"title": "Bookmarks everywhere", "status": "running", "worker": "Skills session", "workdir": LONG_WORKTREE, "roles": {"Skills session": "RA"}, "artifacts": [{"ref": LONG_VOLUME, "added": iso(now - 600)}]}
 
 
 KEYS = tempfile.TemporaryDirectory()

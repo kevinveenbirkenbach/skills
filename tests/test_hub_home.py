@@ -3,10 +3,27 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 import unittest
+from typing import ClassVar
 
 from hub_case import HubCase
-from hub_support import HUB, NAV
+from hub_support import (
+    CORE_BRANCH,
+    CORE_REPO,
+    CORE_WORKTREE,
+    HUB,
+    LONG_BRANCH,
+    LONG_REPO,
+    LONG_TASK,
+    LONG_VOLUME,
+    LONG_WORKTREE,
+    MERGED_BRANCH,
+    NAV,
+    long_repos,
+    long_task,
+)
+from kvb_orchestrator.viewstore import SERIES_ID, SHOWN_LIMIT
 
 TEMPLATES = HUB / "templates"
 PANELS = TEMPLATES / "panels.js"
@@ -185,7 +202,7 @@ function viewStore(server) {
 function page(server) {
   const store = viewStore(server);
   const toasts = [];
-  const context = vm.createContext({ViewStore: store, labelOf: (key) => key, toast: (title, lines, good) => toasts.push([title, lines.join(" "), good]), console});
+  const context = vm.createContext({ViewStore: store, labelOf: (key) => key, toast: (title, lines, good) => toasts.push([title, lines.join(" "), good]), tree: {data: null, model: null}, console});
   vm.runInContext(fs.readFileSync(panelsFile, "utf8"), context);
   vm.runInContext(`${fs.readFileSync(homeFile, "utf8")}
 globalThis.probe = {homePress, homeUnpin, homeView, Panels};`, context);
@@ -198,9 +215,9 @@ PAGE_PROBE = TAB_KIT + """
 const server = hub([]);
 const tab = page(server);
 const {homePress, homeUnpin, homeView, Panels} = tab;
-const ids = Object.fromEntries(["panel", "task", "message", "artifact", "agent", "ancestry", "nope"].map((kind) => [kind, Boolean(Panels.lookup(kind, kind === "panel" ? "stream" : "x"))]));
-const panels = ["stream", "radio-log", "agents/orbit", "agents/chord", "agents/swimlane", "agents/3d", "agents/tree", "agents/hierarchy", "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "artifacts/3d",
-  "tasks/list", "tasks/board", "tasks/rasci", "tasks/gantt", "tasks/burn", "tasks/3d"].filter((id) => !Panels.lookup("panel", id));
+const ids = Object.fromEntries(["panel", "task", "message", "artifact", "agent", "ancestry", "metric", "nope"].map((kind) => [kind, Boolean(Panels.lookup(kind, kind === "panel" ? "stream" : "x"))]));
+const panels = ["stream", "radio-log", "agents/orbit", "agents/chord", "agents/swimlane", "agents/3d", "agents/tree", "agents/hierarchy", "agents/order", "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "artifacts/tree", "artifacts/3d",
+  "tasks/list", "tasks/board", "tasks/rasci", "tasks/gantt", "tasks/burn", "tasks/3d", "tasks/operator"].filter((id) => !Panels.lookup("panel", id));
 (async () => {
   homePress("panel", "tasks/gantt", "Gantt");
   await settle();
@@ -261,7 +278,7 @@ RACE_PROBE = TAB_KIT + """
 """
 
 
-STAR_PROBE = """
+DOM_KIT = """
 const fs = require("fs");
 const vm = require("vm");
 const XHTML = "http://www.w3.org/1999/xhtml";
@@ -275,8 +292,16 @@ class El {
   setAttribute(name, value) { this.attrs.set(name, String(value)); }
   getAttribute(name) { return this.attrs.has(name) ? this.attrs.get(name) : null; }
   hasAttribute(name) { return this.attrs.has(name); }
+  removeAttribute(name) { this.attrs.delete(name); }
   get classList() { const list = (this.getAttribute("class") || "").split(/\\s+/); return {contains: (name) => list.includes(name)}; }
-  detach() { if (this.parentNode) { this.parentNode.children = this.parentNode.children.filter((child) => child !== this); this.parentNode = null; } }
+  get isConnected() { let at = this; while (at.parentNode) { at = at.parentNode; } return at === document.body; }
+  focus() { document.activeElement = this; }
+  detach() {
+    if (this.parentNode) {
+      if (this.contains(document.activeElement)) { document.activeElement = document.body; }
+      this.parentNode.children = this.parentNode.children.filter((child) => child !== this); this.parentNode = null;
+    }
+  }
   append(...nodes) { nodes.forEach((child) => { child.detach(); child.parentNode = this; this.children.push(child); }); }
   prepend(...nodes) { nodes.reverse().forEach((child) => { child.detach(); child.parentNode = this; this.children.unshift(child); }); }
   replaceChildren(...nodes) { [...this.children].forEach((child) => child.detach()); this.append(...nodes); }
@@ -292,10 +317,26 @@ const el = (tag, attrs, ...children) => {
   made.append(...children);
   return made;
 };
-const document = {createElement: (tag) => new El(tag), createElementNS: (ns, tag) => new El(tag, ns)};
+const document = {createElement: (tag) => new El(tag), createElementNS: (ns, tag) => new El(tag, ns), body: null, activeElement: null};
+document.body = new El("body");
+document.activeElement = document.body;
+const text = (value) => {
+  const made = new El("#text");
+  made.textContent = String(value);
+  return made;
+};
+const h = (tag, attrs, ...children) => {
+  const made = new El(tag);
+  Object.entries(attrs || {}).filter(([name, value]) => name !== "on" && value !== null && value !== undefined && value !== false).forEach(([name, value]) => made.setAttribute(name, value));
+  made.append(...children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false && child !== "").map((child) => (child instanceof El ? child : text(child))));
+  return made;
+};
+const textOf = (node) => (node.tagName === "#TEXT" ? node.textContent : node.children.map(textOf).join(""));
 const context = vm.createContext({document, MutationObserver: class { observe() {} }, console});
 vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
 const P = vm.runInContext("Panels", context);
+"""
+STAR_PROBE = DOM_KIT + """
 P.panel("tasks/list", "Tasks: list", () => null);
 P.panel("radio-log", "Radio log", () => null);
 P.item("task", (id) => `Task ${id}`, () => null);
@@ -366,9 +407,179 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 """
 
 
+VIEW_PROBE = """
+const P = require(process.argv[1]);
+const view = {chart: "hardware", tokens: "interval", shown: ["host:CPU"]};
+const pin = {kind: "metric", id: "hardware/x", w: 4, h: 3, view};
+P.item("metric", (id, seen) => `Metric ${id} ${seen ? seen.shown.join() : "none"}`, (size, id, seen) => (seen ? `${id} ${size.w} ${seen.chart}` : null));
+const added = P.add([], "metric", "hardware/x", view);
+const looked = P.lookup("metric", "hardware/x", view);
+const bare = P.lookup("metric", "hardware/x");
+console.log(JSON.stringify({
+  valid: [P.validLayout([pin]), P.validLayout([{...pin, view: []}]), P.validLayout([{...pin, view: "x"}]), P.validLayout([{...pin, view: null}]), P.validLayout([{...pin, extra: 1}])],
+  cleaned: P.clean([pin, {...pin, id: "hardware/y", view: [1]}]),
+  added: [added.pins, P.add([], "task", "work/a").pins, P.add([], "task", "work/a", "x").pins],
+  resized: P.resizeKey(added.pins, "metric:hardware/x", 6, 5),
+  lookup: [looked.title, looked.render({w: 4, h: 3}), bare.title, bare.render({w: 1, h: 1})],
+  digest: [P.digest("host:CPU") === P.digest("host:CPU"), P.digest("host:CPU") === P.digest("host:RAM"), /^[0-9a-f]{16}$/.test(P.digest("")), P.ID.test(`hardware/${P.digest("x")}`)],
+}));
+"""
+CAPTURE_PROBE = DOM_KIT + """
+P.item("metric", (id, view) => `Metric ${view.shown === null ? "all" : view.shown.join()}`, () => null);
+let selection = null;
+P.capture("resources-hardware", () => ({kind: "metric", id: selection === null ? "hardware/all" : "hardware/cpu", view: {chart: "hardware", tokens: "interval", shown: selection}}));
+const head = el("div", {class: "res-head", "data-star-slot": ""}, el("span", {class: "res-title"}));
+const chart = el("section", {"data-panel": "resources-hardware"}, head, el("div", {class: "res-plot"}));
+const loose = el("section", {"data-panel": "resources-unknown"});
+const root = el("main", {}, chart, loose);
+const clicked = [];
+const mark = P.decorate(root, {pinned: (kind, id) => `${kind}:${id}` === "metric:hardware/cpu", press: (...args) => clicked.push(args)});
+const star = () => head.children.find((child) => child.classList.contains("star"));
+const before = [star().getAttribute("aria-pressed"), star().getAttribute("title"), loose.children.length, chart.children[0] === head];
+selection = ["host:CPU"];
+mark();
+const after = [star().getAttribute("aria-pressed"), star().getAttribute("title"), head.children.filter((child) => child.classList.contains("star")).length];
+star().listeners.click[0]({preventDefault: () => null, stopPropagation: () => null});
+console.log(JSON.stringify({before, after, clicked, target: P.targetOf(chart)}));
+"""
+METRIC_PROBE = """
+const fs = require("fs");
+const vm = require("vm");
+const [panelsFile, resourcesFile, homeFile] = process.argv.slice(1);
+const context = vm.createContext({ViewStore: {get: () => ({tokens: "accumulated"}), update: () => Promise.resolve(true), on: () => null}, labelOf: (key) => key, toast: () => null, console});
+vm.runInContext(fs.readFileSync(panelsFile, "utf8"), context);
+vm.runInContext(`${fs.readFileSync(resourcesFile, "utf8")}\\n${fs.readFileSync(homeFile, "utf8")}\\nglobalThis.probe = {resourcePin, resourceView, Panels};`, context);
+const {resourcePin, resourceView, Panels} = context.probe;
+const empty = resourcePin("tokens");
+resourceView.series.hardware = {ids: ["host:RAM", "host:CPU", "disk:/"], shown: ["host:CPU"], tokens: "accumulated"};
+resourceView.series.tokens = {ids: ["agent:Skills", "agent:Stage"], shown: ["agent:Stage", "agent:Skills"], tokens: "accumulated"};
+resourceView.series.combined = {ids: ["host:CPU", "agent:Skills", "burn:done"], shown: ["host:CPU", "burn:done"], tokens: "interval"};
+const pins = ["hardware", "tokens", "combined"].map(resourcePin);
+resourceView.series.hardware = {ids: ["host:RAM", "host:CPU", "disk:/"], shown: ["host:RAM", "host:CPU", "disk:/"], tokens: "interval"};
+const all = resourcePin("hardware");
+const titles = [...pins, all, empty].map((pin) => Panels.lookup(pin.kind, pin.id, pin.view).title);
+const four = Panels.lookup("metric", "x", {chart: "tokens", tokens: "interval", shown: ["agent:a", "agent:b", "agent:c", "agent:d"]}).title;
+const broken = [Panels.lookup("metric", "x").title, Panels.lookup("metric", "x", {chart: "disks", shown: null}).render({w: 1, h: 1})];
+const limit = Number(process.argv[4]);
+const agents = (count) => Array.from({length: count}, (_, index) => `agent:a${String(index).padStart(3, "0")}`);
+const selected = (count, off) => {
+  resourceView.series.tokens = {ids: agents(count), shown: agents(count).slice(off), tokens: "interval"};
+  const pin = resourcePin("tokens");
+  return [pin.view.shown === null ? null : pin.view.shown.length, pin.refused || null, pin.id.split("/").length];
+};
+const limits = [selected(limit + 1, 1), selected(limit + 2, 1), selected(limit + 2, 0), selected(limit + 2, limit + 2)];
+console.log(JSON.stringify({empty, pins, all, titles, four, broken, limits, digests: [Panels.digest("host:CPU"), Panels.digest("burn:done\\nhost:CPU")]}));
+"""
+PRESS_PROBE = TAB_KIT + """
+const server = hub([]);
+const tab = page(server);
+const view = {chart: "hardware", tokens: "interval", shown: ["host:CPU"]};
+(async () => {
+  tab.homePress("metric", "hardware/abc", "Hardware: CPU", view);
+  await settle();
+  const stored = clone(server.value);
+  tab.homePress("metric", "hardware/abc", "Hardware: CPU", view);
+  await settle();
+  console.log(JSON.stringify({stored, after: server.value, pins: tab.homeView.pins}));
+})();
+"""
+REFUSED_PROBE = DOM_KIT + """
+P.item("metric", (id) => `Metric ${id}`, () => null);
+P.item("artifact", (id) => `Artifact ${id}`, () => null);
+let over = true;
+P.capture("resources-tokens", () => (over ? {kind: "metric", id: "tokens/interval/x", view: {chart: "tokens"}, refused: "too many series"} : {kind: "metric", id: "tokens/interval/y", view: {chart: "tokens"}}));
+const chart = el("section", {"data-panel": "resources-tokens"}, el("div", {"data-star-slot": ""}));
+const long = el("li", {"data-item": `artifact:wt:/${"p".repeat(300)}`});
+const root = el("main", {}, chart, long);
+const clicked = [];
+const mark = P.decorate(root, {pinned: () => false, press: (...args) => clicked.push(args)});
+const star = (host) => host.all().find((node) => node.classList.contains("star"));
+const read = (host) => [star(host).hasAttribute("disabled"), star(host).getAttribute("title"), star(host).getAttribute("aria-pressed")];
+const fire = (host) => (star(host).listeners.click || []).forEach((listen) => listen({preventDefault: () => null, stopPropagation: () => null}));
+const refused = read(chart);
+const first = star(chart);
+fire(chart);
+over = false;
+mark();
+const freed = [...read(chart), star(chart) === first];
+fire(chart);
+over = true;
+mark();
+const again = read(chart);
+fire(chart);
+fire(long);
+console.log(JSON.stringify({refused, freed, again, long: read(long), clicked}));
+"""
+ORDER_PROBE = DOM_KIT + """
+Object.assign(context, {h, state: {agent_order: ["Skills", "Stage"]}, ui: {order: null}, counter: (value) => text(value), face: () => text("face"), person: (name) => text(name),
+  icon: () => text("icon"), officeBtn: (name, label) => h("button", {"aria-label": label}), focusKey: () => null, refocus: () => null, act: async () => true, go: () => null});
+vm.runInContext(`${fs.readFileSync(process.argv[2], "utf8")}\\nglobalThis.probe = {orderDom, drawAgentOrder};`, context);
+const {orderDom, drawAgentOrder} = context.probe;
+P.panel("agents/order", "Agents: priority", () => null);
+orderDom.box = el("section", {"data-panel": "agents/order"});
+orderDom.slot = el("span", {"data-star-slot": ""});
+document.body.append(orderDom.box);
+const mark = P.decorate(document.body, {pinned: () => false, press: () => null});
+const stars = () => orderDom.box.all().filter((node) => node.classList.contains("star"));
+drawAgentOrder();
+mark();
+const first = stars()[0];
+first.focus();
+drawAgentOrder();
+mark();
+context.state.agent_order = ["Stage", "Skills", "Docs"];
+drawAgentOrder();
+mark();
+console.log(JSON.stringify({count: stars().length, same: stars()[0] === first, focused: document.activeElement === first, head: first.parentNode.parentNode === orderDom.box.children[0],
+  ranks: orderDom.box.all().filter((node) => node.tagName === "LI").map((node) => node.getAttribute("data-name"))}));
+"""
+TREE_PROBE = DOM_KIT + """
+const [, artifactsFile, treeFile, homeFile, dataFile] = process.argv.slice(1);
+Object.assign(context, {
+  h, icon: () => text(""), named: (label, hint) => ({title: hint || label, "aria-label": label}), iconBtn: (name, label, cls, run, hint) => h("button", {"aria-label": label, title: hint}),
+  counter: (value) => text(value), emptyState: (title, words) => h("div", {class: "empty", "data-title": title}, words), branchAncestry: () => null, gateIcons: () => h("span", {class: "gates"}),
+  flowLine: () => null, flowDetails: () => null, flowEdges: () => [], copyButton: () => null, face: () => null, person: (name) => text(name), status: (value) => text(value), pill: (words) => text(words),
+  workChips: () => null, popupHead: (glyph, label) => h("h2", {class: "panel-title"}, label), meta: (rows) => h("dl", {}, rows.map(([key, value]) => h("div", {"data-key": key}, value === null || value === undefined ? "" : value))),
+  WORK_CHIPS: {}, clock: {format: () => "c"}, stampOf: (t) => t, nowSeconds: () => 1763000000, labelOf: (key) => key, toast: () => null,
+  tree: {data: JSON.parse(fs.readFileSync(dataFile, "utf8")), model: null, busy: false, q: "", open: new Set(), dom: null},
+});
+vm.runInContext(`${[artifactsFile, treeFile, homeFile].map((file) => fs.readFileSync(file, "utf8")).join("\\n")}
+tree.model = artifactModel(tree.data);
+homeView.fetched.tree = Date.now();
+globalThis.probe = {treeCards};`, context);
+const {treeCards} = context.probe;
+const tree = context.tree;
+const flat = (nodes) => nodes.filter((node) => node instanceof El).flatMap((node) => [node, ...node.all()]);
+const deletes = (nodes) => flat(nodes).filter((node) => node.getAttribute("aria-label") === "Delete").length;
+const rows = flat(treeCards("", false).nodes).filter((node) => node.hasAttribute("data-item"));
+const pinned = rows.map((row) => {
+  const target = P.targetOf(row);
+  const entry = target.id ? P.lookup(target.kind, target.id) : null;
+  const shown = entry ? entry.render({w: 4, h: 3}) : null;
+  const head = shown ? shown.all().find((node) => node.classList.contains("panel-title")) : null;
+  const path = shown ? shown.all().find((node) => node.getAttribute("data-key") === "Path" || node.getAttribute("data-key") === "Ref") : null;
+  return {id: target.id, refused: target.refused || null, title: entry ? entry.title : null, label: head ? textOf(head) : null, path: path ? textOf(path) : null, deletes: shown ? deletes([shown]) : null};
+});
+const home = P.lookup("panel", "artifacts/tree").render({w: 6, h: 4});
+const glance = [deletes(treeCards("", false).nodes), deletes(treeCards("", true).nodes), deletes([home])];
+const digested = pinned.map((entry) => entry.id).filter((id) => /_23_/.test(id || ""));
+const kept = tree.data;
+tree.data = {...kept, repos: [], tasks: [], cleanups: []};
+const empty = [treeCards("", true).nodes[0].getAttribute("data-title"), treeCards("zz", false).nodes[0].getAttribute("data-title"), textOf(P.lookup("panel", "artifacts/tree").render({w: 6, h: 4}).children[0])];
+tree.data = kept;
+tree.model = context.artifactModel({...kept, repos: [], tasks: []});
+const gone = digested.map((id) => [P.lookup("artifact", id).render({w: 4, h: 3}), P.lookup("artifact", id).title]);
+console.log(JSON.stringify({pinned, glance, empty, gone}));
+"""
+
+
 def node(probe: str, *args: str) -> dict:
     done = subprocess.run(["node", "-e", probe, *args], capture_output=True, text=True, timeout=60, check=True)
     return json.loads(done.stdout)
+
+
+def escaped(raw: str) -> str:
+    return re.sub(r"[^A-Za-z0-9./-]", lambda found: f"_{ord(found.group()):x}_", raw)
 
 
 class TestHomeLayout(unittest.TestCase):
@@ -447,7 +658,7 @@ class TestHomeStart(unittest.TestCase):
 class TestHomePage(unittest.TestCase):
     def test_the_page_registers_every_panel_and_item_kind_and_refuses_the_65th_pin_before_any_update(self):
         data = node(PAGE_PROBE, str(PANELS), str(HOME))
-        self.assertEqual(data["ids"], {"panel": True, "task": True, "message": True, "artifact": True, "agent": True, "ancestry": True, "nope": False})
+        self.assertEqual(data["ids"], {"panel": True, "task": True, "message": True, "artifact": True, "agent": True, "ancestry": True, "metric": True, "nope": False})
         self.assertEqual(data["panels"], [])
         self.assertEqual((data["one"], data["none"], data["solid"], data["full"], data["after"]), (["panel:tasks/gantt"], 0, ["panel:agents/3d"], [64, 0], 63))
         self.assertEqual(data["paths"], ["home.pins"])
@@ -479,11 +690,16 @@ class TestHomePage(unittest.TestCase):
         dynamic = {f"{tab}/{view}" for tab in re.findall(r'"data-panel": `(\w+)/\$\{view\}`', sources) for view in views[tab]}
         used = set(re.findall(r'(?:"data-item"|item): `(\w+):', sources))
         marked = set(re.findall(r"\['[^']+', \"([^\"]+)\"\]", home))
-        self.assertEqual((len(literal), marked), (4, {"radio-log"}))
+        captured = set(re.findall(r'Panels\.capture\("([^"]+)"', home))
+        made = set(re.findall(r'\{kind: "(\w+)", id, view[,}]', sources))
+        self.assertEqual((len(literal), marked), (7, {"radio-log"}))
         literal |= marked
         self.assertEqual(len(dynamic), 13)
         self.assertEqual(sorted(literal | dynamic), sorted(registered))
-        self.assertEqual(sorted(used), sorted(kinds))
+        self.assertIn('"data-panel": `resources-${kind}`', sources)
+        self.assertEqual(captured, {"resources-hardware", "resources-tokens", "resources-combined"})
+        self.assertFalse(captured & registered)
+        self.assertEqual((made, sorted(used | made)), ({"metric"}, sorted(kinds)))
 
 
 class TestHomeStars(unittest.TestCase):
@@ -493,7 +709,7 @@ class TestHomeStars(unittest.TestCase):
         self.assertEqual(data["task"], {"inSlot": True, "slotLast": True, "rows": 0, "pressed": "true", "label": "Unpin from Home"})
         self.assertEqual(data["bare"], {"first": "star-row", "stars": 1})
         self.assertEqual((data["svg"], data["radio"], data["again"], data["redrawn"]), (0, ["radio-log", "star-row"], [4, 4], [True, 4]))
-        self.assertEqual(data["clicked"], [["task", "work/a", "Task work/a"]])
+        self.assertEqual(data["clicked"], [["task", "work/a", "Task work/a", None]])
 
     def test_the_star_css_positions_nothing_and_leaves_the_starred_elements_alone(self):
         css = (TEMPLATES / "style-home.css").read_text(encoding="utf-8")
@@ -502,6 +718,107 @@ class TestHomeStars(unittest.TestCase):
         self.assertFalse(any("position" in rule for rule in star), star)
         self.assertNotIn("[data-panel]", css)
         self.assertNotIn("[data-item]", css)
+
+
+class TestHomeBookmarks(unittest.TestCase):
+    VIEW: ClassVar[dict] = {"chart": "hardware", "tokens": "interval", "shown": ["host:CPU"]}
+
+    def test_a_pin_may_carry_a_plain_view_that_cleaning_adding_resizing_and_the_registry_keep(self):
+        data = node(VIEW_PROBE, str(PANELS))
+        pin = {"kind": "metric", "id": "hardware/x", "w": 4, "h": 3, "view": self.VIEW}
+        self.assertEqual(data["valid"], [True, False, False, False, False])
+        self.assertEqual(data["cleaned"], [pin])
+        self.assertEqual(data["added"], [[pin], [{"kind": "task", "id": "work/a", "w": 4, "h": 3}], [{"kind": "task", "id": "work/a", "w": 4, "h": 3}]])
+        self.assertEqual(data["resized"], [{**pin, "w": 6, "h": 5}])
+        self.assertEqual(data["lookup"], ["Metric hardware/x host:CPU", "hardware/x 4 hardware", "Metric hardware/x none", None])
+        self.assertEqual(data["digest"], [True, False, True, True])
+
+    def test_a_captured_panel_stars_the_pin_its_capture_makes_now_and_presses_it_with_its_view(self):
+        data = node(CAPTURE_PROBE, str(PANELS))
+        self.assertEqual(data["before"], ["false", "Pin to Home: Metric all", 0, True])
+        self.assertEqual(data["after"], ["true", "Unpin from Home: Metric host:CPU", 1])
+        self.assertEqual(data["clicked"], [["metric", "hardware/cpu", "Metric host:CPU", self.VIEW]])
+        self.assertEqual(data["target"], {"kind": "metric", "id": "hardware/cpu", "view": self.VIEW})
+
+    def test_a_chart_star_pins_the_series_switched_on_now_so_another_selection_is_another_pin(self):
+        data = node(METRIC_PROBE, str(PANELS), str(TEMPLATES / "page-resources.js"), str(HOME))
+        cpu, mixed = data["digests"]
+        self.assertEqual(data["empty"], {"kind": "metric", "id": "tokens/accumulated/all", "view": {"chart": "tokens", "tokens": "accumulated", "shown": None}})
+        self.assertEqual(data["pins"], [
+            {"kind": "metric", "id": f"hardware/{cpu}", "view": self.VIEW},
+            {"kind": "metric", "id": "tokens/accumulated/all", "view": {"chart": "tokens", "tokens": "accumulated", "shown": None}},
+            {"kind": "metric", "id": f"combined/interval/{mixed}", "view": {"chart": "combined", "tokens": "interval", "shown": ["burn:done", "host:CPU"]}},
+        ])
+        self.assertEqual(data["all"], {"kind": "metric", "id": "hardware/all", "view": {"chart": "hardware", "tokens": "interval", "shown": None}})
+        self.assertEqual(data["titles"], ["Hardware: CPU", "Tokens (accumulated): all series", "Combined: done, CPU", "Hardware: all series", "Tokens (accumulated): all series"])
+        self.assertEqual((data["four"], data["broken"]), ("Tokens: 4 series", ["Metric", None]))
+
+    def test_pressing_a_metric_star_stores_its_view_with_the_pin_and_pressing_again_unpins_it(self):
+        data = node(PRESS_PROBE, str(PANELS), str(HOME))
+        pin = {"kind": "metric", "id": "hardware/abc", "w": 4, "h": 3, "view": self.VIEW}
+        self.assertEqual((data["stored"], data["after"], data["pins"]), ([pin], [], []))
+
+    def test_a_chart_star_refuses_a_selection_past_the_view_stores_series_limit_and_names_why(self):
+        data = node(METRIC_PROBE, str(PANELS), str(TEMPLATES / "page-resources.js"), str(HOME), str(SHOWN_LIMIT))
+        why = f"more than {SHOWN_LIMIT} series are switched on: switch some off, or all of them on"
+        self.assertEqual(data["limits"], [[SHOWN_LIMIT, None, 3], [SHOWN_LIMIT + 1, why, 3], [None, None, 3], [0, None, 3]])
+
+    def test_a_refused_capture_or_an_overlong_id_disables_the_star_with_its_reason_and_a_press_pins_nothing(self):
+        data = node(REFUSED_PROBE, str(PANELS))
+        refused = [True, "Pin to Home: not possible, too many series", "false"]
+        self.assertEqual((data["refused"], data["again"]), (refused, refused))
+        self.assertEqual(data["freed"], [False, "Pin to Home: Metric tokens/interval/y", "false", True])
+        self.assertEqual(data["long"], [True, "Pin to Home: not possible, the id runs past 200 characters", "false"])
+        self.assertEqual(data["clicked"], [["metric", "tokens/interval/y", "Metric tokens/interval/y", {"chart": "tokens"}]])
+
+    def test_the_agent_priority_star_stays_the_same_button_and_keeps_its_focus_through_a_redraw(self):
+        data = node(ORDER_PROBE, str(PANELS), str(TEMPLATES / "page-agent-order.js"))
+        self.assertEqual(data, {"count": 1, "same": True, "focused": True, "head": True, "ranks": ["Stage", "Skills", "Docs"]})
+
+    def test_the_client_pin_id_grammar_is_the_hubs(self):
+        done = subprocess.run(["node", "-e", "console.log(JSON.stringify(require(process.argv[1]).ID.source))", str(PANELS)], capture_output=True, text=True, timeout=60, check=True)
+        self.assertEqual(json.loads(done.stdout), f"^{SERIES_ID.pattern}$")
+
+
+class TestHomeTree(HubCase):
+    def served_tree(self) -> str:
+        self.tree_file.write_text(json.dumps({"generated_at": "2026-11-14T12:00:00+00:00", "delete_ready": False, "delete_reason": "Secret Service locked", "repos": long_repos()}), encoding="utf-8")
+        self.write_council({"rasci.json": {LONG_TASK: long_task(time.time())}})
+        status, _, body = self.get("/api/tree")
+        self.assertEqual(status, 200, body[:300])
+        served = self.outside / "served-tree.json"
+        served.write_bytes(body)
+        return str(served)
+
+    def test_every_tree_row_on_paths_of_real_length_pins_shows_that_one_element_on_home_and_turns_gone(self):
+        data = node(TREE_PROBE, str(PANELS), str(TEMPLATES / "page-artifacts.js"), str(TEMPLATES / "page-tree.js"), str(HOME), self.served_tree())
+        rows = [
+            (f"repo:{CORE_REPO}", "github.com/infinito-nexus/core", CORE_REPO),
+            (f"branch:{CORE_REPO}\0{CORE_BRANCH}", CORE_BRANCH, None),
+            (f"wt:{CORE_WORKTREE}", CORE_BRANCH, CORE_WORKTREE),
+            (f"repo:{LONG_REPO}", "github.com/operator-example-01/skills", LONG_REPO),
+            (f"branch:{LONG_REPO}\0{LONG_BRANCH}", LONG_BRANCH, None),
+            (f"wt:{LONG_WORKTREE}", LONG_BRANCH, LONG_WORKTREE),
+            (f"artefact:wt:{LONG_WORKTREE}\0{LONG_TASK}\0{LONG_VOLUME}", LONG_VOLUME.split(":", 1)[1], LONG_VOLUME),
+            (f"branch:{LONG_REPO}\0{MERGED_BRANCH}", MERGED_BRANCH, None),
+        ]
+        self.assertEqual(len(data["pinned"]), len(rows), data["pinned"])
+        digested = []
+        for found, (raw, label, path) in zip(data["pinned"], rows, strict=True):
+            with self.subTest(row=raw):
+                self.assertEqual((found["refused"], found["title"], found["label"], found["path"], found["deletes"]), (None, f"Artifact {raw.replace(chr(0), ' ')}", label, path, 0), found)
+                self.assertTrue(SERIES_ID.fullmatch(found["id"]), found)
+                if len(escaped(raw)) <= 200:
+                    self.assertEqual(found["id"], escaped(raw))
+                else:
+                    self.assertRegex(found["id"], rf"^{raw.split(':', 1)[0]}_23_[0-9a-f]{{16}}$")
+                    digested.append(found["id"].split("_23_")[0])
+        self.assertEqual(digested, ["wt", "artefact"])
+        self.assertEqual(data["glance"], [1, 0, 0])
+        self.assertEqual(data["empty"], ["No repository", "Nothing found", "pkgmgr names no repository."])
+        self.assertEqual([gone[0] for gone in data["gone"]], [None, None])
+        for gone, kind in zip(data["gone"], digested, strict=True):
+            self.assertRegex(gone[1], rf"^Artifact {kind}#[0-9a-f]{{16}}$")
 
 
 class TestHomeMessage(unittest.TestCase):

@@ -83,6 +83,45 @@ flowchart TD
 - [ ] With no pins the hub opens on Stream, with one or more on Home; an
       explicit hash wins.
 
+### More bookmarks (operator 2026-11-14)
+
+- [ ] The hardware chart, the tokens chart and the combined overlay of
+      Resources each carry exactly one star, uncovered, and none per
+      series.
+- [ ] A metric pin stores the chip selection of the moment it was starred:
+      the chart, accumulated or not, and the series switched on (null while
+      all are on); the hub refuses a metric pin without that view or with
+      an unknown chart, an unsorted, repeated or oversized series list.
+- [ ] Another selection is another pin: with only CPU on, the hardware star
+      pins `metric:hardware/<digest>`, with all series on
+      `metric:hardware/all`, and the star shows the pressed state of the
+      selection shown now.
+- [ ] A metric pin made with only CPU on draws only the CPU line on Home,
+      after a reload too, while Resources shows all series again.
+- [ ] A pin of the combined overlay draws the combined chart on Home with
+      its right token axis and the burnup lines.
+- [ ] The artifacts tree view, Agent priority and Waits on Operator each
+      carry a star and pin as a live tile.
+- [ ] Every repository, branch, worktree and artifact row of the artifacts
+      tree carries a star; its pin shows that one element on Home.
+- [ ] A row whose escaped id runs past 200 characters, such as an artifact
+      of a worktree under `~/Repositories/.../.worktrees/...`, pins
+      `<kind>#<digest>` instead, which Home resolves against the live tree,
+      so its star is never disabled for the length of a real path.
+- [ ] With more than 100 series switched on but not all, a chart star is
+      disabled and names why, so no press ends in "Home not saved"; the hub
+      refuses a metric pin whose id is not the one its view gives.
+- [ ] The tree tile on Home is a read-only glance: no delete button; with
+      no repository at all it says so instead of naming a filter.
+- [ ] A star in a slot that a redraw moves keeps the keyboard focus; a tile
+      keeps its scroll position when Home draws it again.
+- [ ] The time labels of a resources chart never overlap, at 390 px too.
+- [ ] A pinned single agent card and a pinned single artifact row show
+      "gone" with an unpin button once the agent or the artifact
+      disappears, and Home reads the tree again at most 30 s after it last
+      did.
+- [ ] Every view starred before keeps its star and pins as before.
+
 ### Tests
 
 - [ ] Unit: registry lookup, layout validation, reorder math.
@@ -92,3 +131,10 @@ flowchart TD
 - [ ] E2E: Chromium and Firefox at 1920, 1366 and 390: star and unstar,
       resize, reorder by drag and keyboard, the gone tile, the start tab;
       screenshots for the checkpoint.
+- [ ] E2E (`tests/e2e/test_home_bookmarks_e2e.py`): Chromium and Firefox at
+      1920, 1366 and 390: every new star exists and is uncovered, pins and
+      renders live on Home; the CPU-only metric pin survives a reload; the
+      combined pin shows combined mode; the single agent and artifact
+      tiles show their element and then "gone"; a repository, a worktree,
+      a core worktree and an artifact row on paths of real length pin,
+      show that one element on Home, turn "gone" and unpin; unpin works.
