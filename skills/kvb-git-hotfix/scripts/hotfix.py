@@ -20,7 +20,12 @@ Args:
         repeat around another unbounded repeat or around an alternation whose
         branches can start alike; bounded repeats such as {3} pass. Each
         --target is a make target or `deploy` the fix turns green, none listed
-        means every target; --pr is the pull request number.
+        means every target; --pr is the pull request number. A register
+        task of that name without hotfix fields, as `rasci.py set` leaves
+        it (for example for a `queue.py hold`), takes them and keeps its
+        other fields and roles, with the adding session as R and A and its
+        status set from --status; one that already is a hotfix, records
+        another branch or works in another repository is refused.
     update <slug> --status staged|pr|merged [--sha <commit>] [--pr <n>]
         [--repo <abs clone>] [--default <branch>] [--session <id>]: move a
         hotfix on. --sha resolves in the recorded git common dir or in
@@ -563,12 +568,45 @@ def pr_cell(row: dict) -> str:
     return f"#{row['pr']}" if row.get("pr") else "-"
 
 
+def adoptable(task: str, row: dict | None, branch: str, repository: tuple[str, str]) -> dict:
+    if row is None:
+        return {}
+    if "stage" in row:
+        fail(f"{task} is already in the register; move it on with update")
+    if row.get("branch") not in (None, "", branch):
+        fail(f"{task} works on {row['branch']}, --branch says {branch}")
+    there = identity(row.get("workdir") or "")
+    if there is not None and not same(there, repository):
+        fail(f"{task} works in {row['workdir']}, another repository than --repo")
+    return row
+
+
+def authored(roles: dict, author: str) -> dict:
+    """Args:
+        roles: the adopted task's roles.
+        author: the adding session.
+
+    Returns:
+        The roles with the author as R and A besides its own letters, and A
+        taken from every other party.
+    """
+    others = {party: "".join(letter for letter in letters if letter != "A") for party, letters in roles.items() if party != author}
+    mine = "".join(letter for letter in "RASCI" if letter in roles.get(author, "") + "RA")
+    return {**{party: letters for party, letters in others.items() if letters}, author: mine}
+
+
+def set_status(rasci: ModuleType, row: dict, status: str) -> None:
+    final = "stopped" if status == "done" and rasci.open_results(row) else status
+    if row.get("status") != final:
+        row.pop("end", None)
+    rasci.apply_status(row, final)
+
+
 def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
     task = task_of(rasci, args.slug)
-    if task in rasci.load():
-        fail(f"{task} is already in the register; move it on with update")
     repo = clone(args.repo)
     common, origin = identity(repo)
+    adoptable(task, rasci.load().get(task), args.branch, (common, origin))
     entry = {
         "common_dir": common,
         "origin": origin,
@@ -583,11 +621,11 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
     entry["sha"] = landed(repo, args.sha, args.default) if args.status == "merged" else commit(repo, args.sha)
     council = module("council", rasci.COUNCIL)
     sid, _ = council.caller(args.session)
-    entry["roles"] = {council.live_sessions().get(sid) or sid: "RA"}
-    rasci.apply_status(entry, REGISTER_STATUS[args.status])
+    author = council.live_sessions().get(sid) or sid
     with rasci.database() as tasks:
-        if task in tasks:
-            fail(f"{task} is already in the register; move it on with update")
+        row = adoptable(task, tasks.get(task), entry["branch"], (common, origin))
+        entry = {**row, **entry, "roles": authored(row.get("roles") or {}, author)}
+        set_status(rasci, entry, REGISTER_STATUS[args.status])
         tasks[task] = entry
     print(f"added {task}")
     if args.status == "merged":
@@ -656,7 +694,7 @@ def cmd_update(rasci: ModuleType, args: argparse.Namespace) -> int:
             fail(f"{task}: no hotfix in the register; record it with add")
         entry.update(fields)
         entry["stage"] = args.status
-        rasci.apply_status(entry, REGISTER_STATUS[args.status])
+        set_status(rasci, entry, REGISTER_STATUS[args.status])
     print(f"updated {task}")
     if args.status == "merged":
         announce(task, entry, args.session)

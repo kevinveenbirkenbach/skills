@@ -289,6 +289,57 @@ class TestHotfix(unittest.TestCase):
         self.assertIn("| hotfix/lint | running | - | One |", shown)
         self.assertNotIn("hotfix/db", shown)
 
+    def test_add_adopts_a_register_task_without_hotfix_fields_and_keeps_its_own(self):
+        self.rasci("set", "hotfix/queued", "--title", "held for a gate", "--branch", "fix/q", "--workdir", str(self.work), "--status", "running")
+        self.rasci("role", "hotfix/queued", "Two", "RA")
+        before = self.rows()["hotfix/queued"]
+        self.assertEqual(self.out("add", "queued", *self.flags({"--branch": "fix/q", "--status": "pr", "--pr": "1950"})),
+                         ["added hotfix/queued"])
+        row = self.rows()["hotfix/queued"]
+        self.assertEqual((row["title"], row["workdir"], row["start"]), ("held for a gate", str(self.work), before["start"]))
+        self.assertEqual((row["roles"]["One"], row["roles"]["Two"]), ("RA", "R"))
+        self.assertEqual([party for party, letters in row["roles"].items() if "A" in letters], ["One"])
+        self.assertEqual((row["branch"], row["stage"], row["pr"], row["sha"], row["status"]),
+                         ("fix/q", "pr", 1950, self.lint, "running"))
+        self.assertIn("hotfix/queued", "\n".join(self.out("pending", "--repo", str(self.seed))))
+        self.assertEqual(self.out("update", "queued", "--status", "staged"), ["updated hotfix/queued"])
+        self.rasci("set", "hotfix/elsewhere", "--branch", "fix/other")
+        foreign = self.base / "foreign"
+        self.git(self.base, "init", "-q", str(foreign))
+        self.rasci("set", "hotfix/foreign", "--workdir", str(foreign))
+        register = self.root / "rasci.json"
+        kept = register.read_text(encoding="utf-8")
+        for slug, branch, message in (("queued", "fix/q", "already in the register; move it on with update"),
+                                      ("elsewhere", "fix/x", "works on fix/other, --branch says fix/x"),
+                                      ("foreign", "fix/f", f"works in {foreign}, another repository than --repo")):
+            with self.subTest(slug=slug):
+                result = self.hotfix("add", slug, *self.flags({"--branch": branch}))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(message, result.stderr)
+        self.assertEqual(register.read_text(encoding="utf-8"), kept)
+
+    def test_an_adopted_task_takes_its_status_from_the_hotfix_and_keeps_open_key_results_open(self):
+        self.rasci("set", "hotfix/ended", "--status", "done")
+        self.assertIn("end", self.rows()["hotfix/ended"])
+        self.out("add", "ended", *self.flags({"--branch": "fix/e", "--status": "pr"}))
+        row = self.rows()["hotfix/ended"]
+        self.assertEqual((row["status"], "end" in row), ("running", False))
+        self.rasci("set", "hotfix/landed", "--status", "running")
+        self.rasci("kr", "hotfix/landed", "add", "the deploy is green")
+        self.out("add", "landed", *self.flags({"--branch": "fix/db", "--sha": self.fix, "--status": "merged"}))
+        row = self.rows()["hotfix/landed"]
+        self.assertEqual((row["stage"], row["status"], "end" in row), ("merged", "stopped", True))
+        old = "2000-01-01T00:00:00+00:00"
+        self.rasci("set", "hotfix/landed", "--end", old)
+        self.rasci("kr", "hotfix/landed", "met", "1")
+        self.assertEqual(self.out("update", "landed", "--status", "merged", "--sha", self.fix), ["updated hotfix/landed"])
+        row = self.rows()["hotfix/landed"]
+        self.assertEqual(row["status"], "done")
+        self.assertNotEqual(row["end"], old)
+        self.rasci("set", "hotfix/closed", "--status", "done", "--end", old)
+        self.out("add", "closed", *self.flags({"--branch": "fix/db", "--sha": self.fix, "--status": "merged"}))
+        self.assertEqual(self.rows()["hotfix/closed"]["end"], old)
+
     def test_pending_reports_missing_and_open_hotfixes_of_the_repository(self):
         expected = [
             f"missing (merge main)\thotfix/db\tmerged\tfix/db\t{self.fix}\t#12",
