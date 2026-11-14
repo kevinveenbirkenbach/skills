@@ -136,6 +136,7 @@ import contextlib
 import errno
 import hashlib
 import importlib.util
+import io
 import json
 import re
 import select
@@ -521,6 +522,24 @@ def ask(holdable: bool, read: Callable[[str], str | None]) -> str:
             return answer.strip().lower()
 
 
+def whole_characters(read: Callable[[str], str | None]) -> Callable[[str], str | None]:
+    """Returns:
+        read with IUTF8 set on a terminal stdin while it waits for a line and
+        the previous terminal mode restored afterwards.
+    """
+    def reading(prompt: str) -> str | None:
+        if not sys.stdin.isatty():
+            return read(prompt)
+        mode = termios.tcgetattr(sys.stdin.fileno())
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, [mode[0] | termios.IUTF8, *mode[1:]])
+        try:
+            return read(prompt)
+        finally:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, mode)
+    return reading
+
+
+@whole_characters
 def typed(prompt: str) -> str | None:
     try:
         return input(prompt)
@@ -528,6 +547,7 @@ def typed(prompt: str) -> str | None:
         return None
 
 
+@whole_characters
 def timed(prompt: str) -> str | None:
     """Returns:
         One line read unbuffered from stdin, None at its end or when no line
@@ -899,6 +919,8 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
     shell = os.environ.get("SHELL")
     if not shell:
         fail("SHELL is not set; run executes each command in the operator's own shell")
+    if isinstance(sys.stdin, io.TextIOWrapper):
+        sys.stdin.reconfigure(errors="replace")
     steps = [row for row in open_rows(rasci, None) if runnable(row)]
     if not steps:
         print("operator: nothing to run")

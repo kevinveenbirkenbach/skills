@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import os
 import pty
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import termios
 import time
 import unittest
 from pathlib import Path
@@ -120,6 +123,60 @@ class TestOperator(unittest.TestCase):
                 break
             chunks.append(chunk)
         return b"".join(chunks).decode()
+
+    @staticmethod
+    def _chunk(leader: int) -> bytes:
+        if not select.select([leader], [], [], 30)[0]:
+            return b""
+        try:
+            return os.read(leader, 65536)
+        except OSError:
+            return b""
+
+    @staticmethod
+    def _iutf8(leader: int) -> bool:
+        return bool(termios.tcgetattr(leader)[0] & termios.IUTF8)
+
+    def _terminal(self, args: list[str], steps: list[tuple[bytes, bytes | signal.Signals]]) -> tuple[int, str, list[bool]]:
+        """Args:
+            args: the operator.py arguments.
+            steps: each prompt to wait for and what the operator does at it:
+                the keys typed, or a signal sent once operator.py waits in
+                the read.
+
+        Returns:
+            The exit code of operator.py on a terminal without IUTF8 under a
+            strict UTF-8 stdin, everything the terminal showed, and whether
+            IUTF8 was set at each prompt reached and after the exit.
+        """
+        leader, follower = pty.openpty()
+        self.addCleanup(os.close, leader)
+        mode = termios.tcgetattr(follower)
+        termios.tcsetattr(follower, termios.TCSANOW, [mode[0] & ~termios.IUTF8, *mode[1:]])
+        try:
+            child = subprocess.Popen(
+                [sys.executable, str(OPERATOR), *args], stdin=follower, stdout=follower, stderr=follower,
+                env={**self.env, "SHELL": "/bin/sh", "PYTHONIOENCODING": "utf-8:strict"}, cwd=self.tmp.name,
+            )
+        finally:
+            os.close(follower)
+        self.addCleanup(child.kill)
+        shown, start, modes = b"", 0, []
+        for prompt, act in steps:
+            while prompt not in shown[start:] and (chunk := self._chunk(leader)):
+                shown += chunk
+            if prompt not in shown[start:]:
+                break
+            start = shown.index(prompt, start) + len(prompt)
+            modes.append(self._iutf8(leader))
+            if isinstance(act, bytes):
+                os.write(leader, act)
+            else:
+                time.sleep(0.3)
+                child.send_signal(act)
+        while chunk := self._chunk(leader):
+            shown += chunk
+        return child.wait(timeout=30), shown.decode(errors="replace"), [*modes, self._iutf8(leader)]
 
     def _open(self) -> list[str]:
         return [row["task"] for row in json.loads("\n".join(self._out("list", "--json")))]
@@ -343,6 +400,46 @@ class TestOperator(unittest.TestCase):
         self.assertIn("operator: stopped", result.stdout)
         self.assertEqual(self._open(), ["operator/drop"])
         self.assertFalse((self.root / "news.jsonl").exists())
+
+    def test_a_cancel_reason_typed_on_a_terminal_keeps_an_erased_umlaut_whole_and_replaces_a_bad_byte(self):
+        self._add("drop", self.base, "true", "r", "manual")
+        self._add("bad", self.base, "true", "r", "manual")
+        code, shown, modes = self._terminal(["run"], [
+            (b"Run it?", b"c\n"),
+            (b"Why cancel?", "ich hä\x7fätte gerne einen befehl bei dem ich seh was passiert\n".encode()),
+            (b"Run it?", b"c\n"),
+            (b"Why cancel?", b"kaputt \xff " + "👀\n".encode()),
+        ])
+        self.assertEqual(code, 0, shown)
+        self.assertNotIn("Traceback", shown)
+        self.assertEqual(modes, [True, True, True, True, False])
+        register = self._register()
+        self.assertEqual(register["operator/drop"]["cancelled"], "ich hätte gerne einen befehl bei dem ich seh was passiert")
+        self.assertEqual(register["operator/bad"]["cancelled"], "kaputt � 👀")
+
+    def test_a_granted_cancel_typed_on_a_terminal_keeps_an_erased_umlaut_whole_and_restores_the_mode(self):
+        self._add("paint", self.base, "true", "r", "manual")
+        code, shown, modes = self._terminal(
+            ["granted", "operator/paint", "--dir", str(self.base), "--check", "manual", "--", "/bin/sh", "-ic", "true"],
+            [(b"Run it?", b"c\n"), (b"Why cancel?", "ich hä\x7fätte gerne einen befehl\n".encode())],
+        )
+        self.assertEqual((code, modes), (75, [True, True, False]), shown)
+        self.assertEqual(self._register()["operator/paint"]["cancelled"], "ich hätte gerne einen befehl")
+
+    def test_an_interrupt_at_a_prompt_restores_the_terminal_mode(self):
+        self._add("drop", self.base, "true", "r", "manual")
+        code, shown, modes = self._terminal(["run"], [(b"Run it?", b"c\n"), (b"Why cancel?", signal.SIGINT)])
+        self.assertNotEqual(code, 0, shown)
+        self.assertIn("KeyboardInterrupt", shown)
+        self.assertEqual(modes, [True, True, False], shown)
+        self.assertEqual(self._open(), ["operator/drop"])
+
+    def test_run_with_stdin_closed_and_nothing_open_says_so(self):
+        result = subprocess.run(
+            ["/bin/sh", "-c", 'exec "$0" "$1" run <&-', sys.executable, str(OPERATOR)],
+            capture_output=True, text=True, env={**self.env, "SHELL": "/bin/sh"}, cwd=self.tmp.name, check=False,
+        )
+        self.assertEqual((result.returncode, result.stdout), (0, "operator: nothing to run\n"), result.stderr)
 
     def test_cancel_escapes_the_post_and_works_on_a_granted_row(self):
         work = self.base / "work"
