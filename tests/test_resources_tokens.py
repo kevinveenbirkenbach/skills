@@ -170,16 +170,19 @@ class TestTokens(TokensCase):
             self.assertEqual(self.count(now=NOW + 180), [])
         self.assertEqual(self.offsets(), stored)
 
-    def test_the_first_minute_of_an_hour_merges_rows_and_drops_those_older_than_ninety_days(self):
+    def test_the_first_minute_of_an_hour_merges_rows_and_folds_days_past_ninety_days_into_one_row_kept_forever(self):
         hour = NOW
-        stale = {"t": hour - 91 * 86400, "agent": "Old", "model": OPUS, "input": 1, "output": 1, "cache_read": 1, "cache_write": 1}
+        stale = {"t": hour - 92 * 86400, "agent": "Old", "model": OPUS, "input": 1, "output": 1, "cache_read": 1, "cache_write": 1}
         parts = [{"t": hour - HOUR, "agent": "Skills", "model": OPUS, "input": value, "output": 0, "cache_read": 0, "cache_write": 0} for value in (1, 2, 3)]
         (self.state / "tokens.jsonl").write_text(lines([stale, *parts]), encoding="utf-8")
         self.transcript.write_text(lines([assistant(NOW + 10, SESSION, OPUS, "msg_1", (4, 0, 0, 0))]), encoding="utf-8")
         self.count(now=hour + 1800)
         self.assertEqual(len(self.written()), 5)
         self.count(now=hour + 30)
-        self.assertEqual(self.written(), [{**parts[0], "input": 6}, {"t": hour, "agent": "Skills", "model": OPUS, "input": 4, "output": 0, "cache_read": 0, "cache_write": 0}])
+        daily = {**stale, "t": stale["t"] - stale["t"] % 86400, "width": 86400}
+        self.assertEqual(self.written(), [daily, {**parts[0], "input": 6}, {"t": hour, "agent": "Skills", "model": OPUS, "input": 4, "output": 0, "cache_read": 0, "cache_write": 0}])
+        self.count(now=hour + 400 * 86400 + 30)
+        self.assertEqual(self.written()[0], daily)
 
 
 class TestNoLanguageModel(unittest.TestCase):

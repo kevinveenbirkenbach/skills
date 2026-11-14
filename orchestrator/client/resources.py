@@ -13,7 +13,9 @@
         reading for (no driver, a driver mismatch) keeps its name with util
         and vram None. In the first minute of a 15-minute bucket, rows older
         than 7 days fold into 15-minute means and means older than 90 days
-        are dropped.
+        into one mean per day, kept forever, each row weighted by the seconds
+        it sampled; a folded row carries span, the seconds its rows sampled
+        (60 per raw row), and width, the seconds of its bucket.
     tokens: add the input, output, cache-read and cache-write tokens of the
         usage fields in the Claude Code transcripts under --transcripts since
         each file's byte offset to <state>/tokens.jsonl as {t, agent, model,
@@ -25,7 +27,8 @@
         seen: {hour: [key digest]}}, seen keeping the hours this run read and
         the last two, and is replaced only when it changes. In the first
         minute of an hour, rows of the same hour, agent and model merge and
-        rows older than 90 days are dropped.
+        the rows of a day that ended more than 90 days ago fold into one row
+        per day, agent and model with width: 86400, kept forever.
     --state: the directory of these files, the unit passes
         ~/.local/state/agents-council/resources.
     --council: the council directory with queue.json and the claims.
@@ -61,8 +64,9 @@ import queue_live
 INTERVAL = 60
 BUCKET = 900
 HOUR = 3600
-FINE = 7 * 86400
-COARSE = 90 * 86400
+DAY = 86400
+FINE = 7 * DAY
+COARSE = 90 * DAY
 COMMAND_SECONDS = 10
 KEY_BYTES = 9
 KIB = 1 << 10
@@ -278,77 +282,122 @@ def sample(proc: Path, sys_root: Path, council: Path, run: Callable[[list[str]],
     }
 
 
-def average(values: list[object], digits: int) -> float | None:
-    found = [value for value in values if isinstance(value, int | float) and not isinstance(value, bool)]
-    return round(sum(found) / len(found), digits) if found else None
+def is_number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
 
 
-def whole(values: list[object]) -> int | None:
-    found = average(values, 0)
+def weight(row: dict) -> int | float:
+    """Returns:
+        The seconds row sampled: its span, INTERVAL for a raw row.
+    """
+    span = row.get("span")
+    return span if is_number(span) and span > 0 else INTERVAL
+
+
+def average(pairs: list[tuple[int | float, object]], digits: int) -> float | None:
+    """Args:
+        pairs: (weight, value) per reading; a value that is no number is
+            left out.
+    """
+    found = [(part, value) for part, value in pairs if is_number(value)]
+    total = sum(part for part, _ in found)
+    return round(sum(part * value for part, value in found) / total, digits) if total else None
+
+
+def whole(pairs: list[tuple[int | float, object]]) -> int | None:
+    found = average(pairs, 0)
     return None if found is None else int(found)
 
 
-def listed(rows: list[dict], key: str) -> list[dict]:
-    return [item for row in rows if isinstance(row.get(key), list) for item in row[key] if isinstance(item, dict)]
+def listed(rows: list[dict], key: str) -> list[tuple[int | float, dict]]:
+    return [(weight(row), item) for row in rows if isinstance(row.get(key), list) for item in row[key] if isinstance(item, dict)]
 
 
-def grouped(items: list[dict], key: str) -> dict[object, list[dict]]:
-    found: dict[object, list[dict]] = {}
-    for item in items:
-        found.setdefault(item.get(key), []).append(item)
+def grouped(items: list[tuple[int | float, dict]], key: str) -> dict[object, list[tuple[int | float, dict]]]:
+    found: dict[object, list[tuple[int | float, dict]]] = {}
+    for part, item in items:
+        found.setdefault(item.get(key), []).append((part, item))
     return found
 
 
-def gpu_mean(name: object, readings: list[dict]) -> dict:
-    awake = [reading for reading in readings if reading.get("asleep") is not True]
+def means(readings: list[tuple[int | float, dict]], key: str) -> list[tuple[int | float, object]]:
+    return [(part, reading.get(key)) for part, reading in readings]
+
+
+def gpu_mean(name: object, readings: list[tuple[int | float, dict]]) -> dict:
+    awake = [(part, reading) for part, reading in readings if reading.get("asleep") is not True]
     if not awake:
         return {"name": name, "asleep": True}
-    return {"name": name, "util": average([reading.get("util") for reading in awake], 1), "vram_used": whole([reading.get("vram_used") for reading in awake]), "vram_total": whole([reading.get("vram_total") for reading in awake])}
+    return {"name": name, "util": average(means(awake, "util"), 1), "vram_used": whole(means(awake, "vram_used")), "vram_total": whole(means(awake, "vram_total"))}
 
 
 def disk_means(rows: list[dict]) -> list[dict]:
-    return [{"mount": mount, "used": whole([disk.get("used") for disk in disks]), "total": whole([disk.get("total") for disk in disks])} for mount, disks in grouped(listed(rows, "disks"), "mount").items()]
+    return [{"mount": mount, "used": whole(means(disks, "used")), "total": whole(means(disks, "total"))} for mount, disks in grouped(listed(rows, "disks"), "mount").items()]
 
 
 def queue_mean(rows: list[dict]) -> dict:
-    queues = [row["queue"] for row in rows if isinstance(row.get("queue"), dict)]
-    return {key: average([entry.get(key) for entry in queues], 2) for key in ("waiting", "active")}
+    queues = [(weight(row), row["queue"]) for row in rows if isinstance(row.get("queue"), dict)]
+    return {key: average(means(queues, key), 2) for key in ("waiting", "active")}
 
 
-def mean_row(start: int, rows: list[dict]) -> dict:
+def mean_row(start: int, width: int, rows: list[dict]) -> dict:
     """Returns:
-        The 15-minute mean of rows at start: per mount and per GPU the mean
-        of the rows that list it, a GPU asleep in every row stays asleep;
-        a single row already at start comes back unchanged.
+        The mean of rows in the bucket of width seconds at start, each row
+        weighted by weight(): per mount and per GPU the mean of the rows that
+        list it, a GPU asleep in every row stays asleep; span the seconds the
+        rows sampled together, width the bucket's.
+    """
+    host = {key: average([(weight(row), row.get(key)) for row in rows], digits) for key, digits in HOST_DIGITS}
+    gpu_rows = [gpu_mean(name, readings) for name, readings in grouped(listed(rows, "gpus"), "name").items()]
+    return {"t": start, "disks": disk_means(rows), **host, "gpus": gpu_rows, "queue": queue_mean(rows), "span": sum(weight(row) for row in rows), "width": width}
+
+
+def folded(start: int, width: int, rows: list[dict]) -> dict:
+    """Returns:
+        The one row the bucket of width seconds at start keeps: a lone row
+        at start already folded to width or wider unchanged; a lone row at
+        start without span, a 15-minute mean written before folded rows
+        carried span, with span and width the whole bucket; else mean_row().
     """
     if len(rows) == 1 and rows[0]["t"] == start:
-        return rows[0]
-    host = {key: average([row.get(key) for row in rows], digits) for key, digits in HOST_DIGITS}
-    gpu_rows = [gpu_mean(name, readings) for name, readings in grouped(listed(rows, "gpus"), "name").items()]
-    return {"t": start, "disks": disk_means(rows), **host, "gpus": gpu_rows, "queue": queue_mean(rows)}
+        kept = rows[0].get("width")
+        if is_number(kept) and kept >= width:
+            return rows[0]
+        if "span" not in rows[0]:
+            return {**rows[0], "span": width, "width": width}
+    return mean_row(start, width, rows)
 
 
 def timed(row: object) -> bool:
-    return isinstance(row, dict) and isinstance(row.get("t"), int | float) and not isinstance(row.get("t"), bool)
+    return isinstance(row, dict) and is_number(row.get("t"))
+
+
+def fold(rows: list[dict], width: int, line: float) -> list[dict]:
+    """Returns:
+        rows with every bucket of width seconds that ended by line folded()
+        into one row at its start, the other rows following unchanged and in
+        order.
+    """
+    buckets: dict[int, list[dict]] = {}
+    rest = []
+    for row in rows:
+        start = int(row["t"] // width * width)
+        if start + width <= line:
+            buckets.setdefault(start, []).append(row)
+        else:
+            rest.append(row)
+    return [folded(start, width, buckets[start]) for start in sorted(buckets)] + rest
 
 
 def retain(rows: list[dict], now: float) -> list[dict]:
     """Returns:
-        rows without those older than 90 days, every 15-minute bucket that
-        ended more than 7 days ago folded into one mean at its start, the
-        newer rows unchanged and in order.
+        rows with every 15-minute bucket that ended more than 7 days ago
+        folded into one mean at its start, every day (UTC) that ended more
+        than 90 days ago folded into one mean of those, kept forever, and the
+        newer rows unchanged and in order; a folded row carries span, the
+        seconds its rows sampled, and width, its bucket's seconds.
     """
-    buckets: dict[int, list[dict]] = {}
-    recent = []
-    for row in rows:
-        if not timed(row) or row["t"] < now - COARSE:
-            continue
-        start = int(row["t"] // BUCKET * BUCKET)
-        if start + BUCKET <= now - FINE:
-            buckets.setdefault(start, []).append(row)
-        else:
-            recent.append(row)
-    return [mean_row(start, buckets[start]) for start in sorted(buckets)] + recent
+    return fold(fold([row for row in rows if timed(row)], BUCKET, now - FINE), DAY, now - COARSE)
 
 
 def read_rows(path: Path) -> list[dict]:
@@ -498,7 +547,25 @@ def scan(path: Path, start: int, budget: int, seen: dict[int, set[str]]) -> tupl
 
 
 def token_rows(sums: dict[tuple, list[int]]) -> list[dict]:
-    return [{"t": t, "agent": agent, "model": model, **dict(zip(NAMES, counts, strict=True))} for (t, agent, model), counts in sorted(sums.items())]
+    """Args:
+        sums: per (t, agent, model, width) the counts in COUNTS order.
+
+    Returns:
+        One token row per key in key order; a row other than hourly names
+        its width.
+    """
+    return [{"t": t, "agent": agent, "model": model, **dict(zip(NAMES, counts, strict=True)), **({} if width == HOUR else {"width": width})} for (t, agent, model, width), counts in sorted(sums.items())]
+
+
+def token_key(row: dict, line: float) -> tuple:
+    """Returns:
+        (t, agent, model, width) of the row a token row merges into: its day
+        (UTC) when the row is daily or the day ended by line, else its hour.
+    """
+    day = int(row["t"] // DAY * DAY)
+    if row.get("width") == DAY or day + DAY <= line:
+        return day, row["agent"], row["model"], DAY
+    return row["t"], row["agent"], row["model"], HOUR
 
 
 def add(sums: dict[tuple, list[int]], key: tuple, counts: tuple[int, ...]) -> None:
@@ -508,10 +575,14 @@ def add(sums: dict[tuple, list[int]], key: tuple, counts: tuple[int, ...]) -> No
 
 
 def compact(rows: list[dict], now: float) -> list[dict]:
+    """Returns:
+        The token rows merged per token_key(), every day that ended more than
+        90 days ago one row per agent and model, kept forever.
+    """
     sums: dict[tuple, list[int]] = {}
     for row in rows:
-        if timed(row) and row["t"] >= now - COARSE and isinstance(row.get("agent"), str) and isinstance(row.get("model"), str):
-            add(sums, (row["t"], row["agent"], row["model"]), tuple(count(row.get(name)) for name in NAMES))
+        if timed(row) and isinstance(row.get("agent"), str) and isinstance(row.get("model"), str):
+            add(sums, token_key(row, now - COARSE), tuple(count(row.get(name)) for name in NAMES))
     return token_rows(sums)
 
 
@@ -568,7 +639,7 @@ def count_tokens(transcripts: Path, council: Path, state: Path, now: float, budg
             seen.setdefault(hour, set()).update(read)
             touched.add(hour)
         for ts, session, model, counts in found:
-            add(sums, (int(ts // HOUR * HOUR), names.get(session) or session[:8], model), counts)
+            add(sums, (int(ts // HOUR * HOUR), names.get(session) or session[:8], model, HOUR), counts)
     rows = token_rows(sums)
     append_rows(state / TOKENS, rows)
     kept = {"files": files, "seen": kept_seen(seen, touched, now)}

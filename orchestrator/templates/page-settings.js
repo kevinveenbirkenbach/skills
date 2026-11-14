@@ -14,6 +14,7 @@
     syncRadio();
     musicButton();
     syncBubbles();
+    drawRates();
   }
 
   async function saveSettings(next) {
@@ -153,6 +154,7 @@
         estimation: settings.estimation,
         trend: settings.trend,
         bubbles: settings.bubbles,
+        rates: settings.rates,
       };
       if (await saveSettings(next)) {
         closeSheet();

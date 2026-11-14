@@ -449,8 +449,13 @@ def cmd_kr(args: argparse.Namespace) -> int:
             index = int(args.value) - 1
             if args.action == "rm":
                 results.pop(index)
+            elif args.action == "met":
+                if results[index].get("met") is not True:
+                    results[index]["met_at"] = stamp()
+                results[index]["met"] = True
             else:
-                results[index]["met"] = args.action == "met"
+                results[index]["met"] = False
+                results[index].pop("met_at", None)
         if not results:
             entry.pop("key_results")
     print(f"{args.task}: key result {args.action} {args.value}")

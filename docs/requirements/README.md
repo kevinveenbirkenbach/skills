@@ -12,3 +12,4 @@ skill defines the format.
 - [006 - Score Metric Overlays](006-score-metric-overlays.md)
 - [007 - Resources View](007-resources-view.md)
 - [008 - Home Dashboard](008-home-dashboard.md)
+- [012 - Header Rates](012-header-rates.md)

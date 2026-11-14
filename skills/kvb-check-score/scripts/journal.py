@@ -182,3 +182,25 @@ def read(path: Path) -> str:
         Its text, undecodable bytes replaced.
     """
     return nofollow(lambda helper: helper.read_text(path.parent, path))
+
+
+def known(path: Path) -> set[tuple[str | None, str]]:
+    """Args:
+        path: the journal, read through read(); a missing one holds none.
+
+    Returns:
+        (remote, sha) of every row with a sha.
+    """
+    try:
+        text = read(path)
+    except FileNotFoundError:
+        return set()
+    keys = set()
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and isinstance(row.get("sha"), str):
+            keys.add((row.get("remote"), row["sha"]))
+    return keys

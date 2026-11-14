@@ -8,6 +8,8 @@ const Resources = (() => {
   const HOUR = 3600;
   const COUNTS = ["input", "output", "cache_read", "cache_write"];
   const ZONES = [{kind: "idle", from: 0, to: IDLE}, {kind: "saturated", from: SATURATED, to: 100}];
+  const COUNT_UNITS = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "k"]];
+  const ROUNDS_UP = 0.99995;
   const finite = (value) => typeof value === "number" && Number.isFinite(value);
   const share = (part, whole) => (finite(part) && finite(whole) && whole > 0 ? Math.round((1000 * part) / whole) / 10 : null);
   const listOf = (row, key) => (Array.isArray(row[key]) ? row[key].filter((item) => item && typeof item === "object") : []);
@@ -178,7 +180,17 @@ const Resources = (() => {
     return {top, done: points.map((point) => [point.t, percent(point.done)]), scope: points.map((point) => [point.t, percent(point.scope)])};
   }
 
-  return {IDLE, SATURATED, CALM, GAP, HOUR, COUNTS, ZONES, lines, hardware, segments, spans, waits, asleep, unknown, stack, accumulate, burnup};
+  /**
+   * @param value - a count.
+   * @returns the count with one decimal in the largest of k, M, B and T it reaches once rounded to that decimal,
+   * else as a whole number.
+   */
+  function compact(value) {
+    const unit = COUNT_UNITS.find(([size]) => value >= size * ROUNDS_UP);
+    return unit ? `${(value / unit[0]).toFixed(1)}${unit[1]}` : String(Math.round(value));
+  }
+
+  return {IDLE, SATURATED, CALM, GAP, HOUR, COUNTS, ZONES, lines, hardware, segments, spans, waits, asleep, unknown, stack, accumulate, burnup, compact};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Resources;

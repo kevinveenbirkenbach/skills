@@ -194,6 +194,35 @@ class TestHubSettings(HubCase):
         (self.state / "settings.json").write_text(json.dumps(older), encoding="utf-8")
         self.assertEqual(settings.Settings(self.state / "settings.json").get()["trend"], {"mode": "off", "days": 7})
 
+    def test_the_rates_chip_defaults_to_tasks_tokens_and_cpu_per_hour_is_validated_stored_without_a_passkey_survives_a_reload_and_a_sheet_without_it_keeps_it(self):
+        default = {"period": "hour", "metrics": ["tasks", "tokens", "cpu"]}
+        self.assertEqual((settings.SETTINGS["rates"], self.snapshot()["settings"]["rates"]), (default, default))
+        good = self.guard(self.host)
+        wrongs = [{"period": period, "metrics": ["tasks", "cpu"]} for period in ("second", "Hour", "", None, 1)]
+        wrongs += [{"period": "day", "metrics": metrics} for metrics in (["tasks"], [], ["tasks", "cpu", "ram", "swap"], ["tasks", "tasks"], ["tasks", "gpu"], [1, 2], "tasks,cpu", None)]
+        wrongs += [{"period": "day"}, {"metrics": ["tasks", "cpu"]}, {**default, "extra": 1}, "day", ["day"]]
+        for wrong in wrongs:
+            with self.subTest(wrong=wrong):
+                self.assertEqual(self.post_json("/api/settings", {**settings.SETTINGS, "rates": wrong}, good)[0], 400)
+        self.assertEqual(self.snapshot()["settings"]["rates"], default)
+        for chosen in ({"period": "minute", "metrics": ["commits", "krs"]}, {"period": "total", "metrics": ["disk", "vram", "swap"]}, {"period": "week", "metrics": ["ram", "tokens"]}):
+            with self.subTest(chosen=chosen):
+                self.assertIsNone(self.prepared({**self.snapshot()["settings"], "rates": chosen})["payload"])
+                status, _, body = self.post_json("/api/settings", {**self.snapshot()["settings"], "rates": chosen, "proof": None}, good)
+                self.assertEqual((status, json.loads(body)["settings"]["rates"]), (200, chosen))
+        last = {"period": "week", "metrics": ["ram", "tokens"]}
+        self.assertEqual(json.loads((self.state / "settings.json").read_text(encoding="utf-8"))["rates"], last)
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["rates"], last)
+        self.assertEqual(self.snapshot()["settings"]["rates"], last)
+        sheet = {key: value for key, value in self.snapshot()["settings"].items() if key != "rates"}
+        self.assertIsNone(self.prepared({**sheet, "estimation": "points"})["payload"])
+        status, _, body = self.post_json("/api/settings", {**sheet, "estimation": "points", "proof": None}, good)
+        self.assertEqual((status, json.loads(body)["settings"]["estimation"], json.loads(body)["settings"]["rates"]), (200, "points", last))
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["rates"], last)
+        older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "rates"}
+        (self.state / "settings.json").write_text(json.dumps(older), encoding="utf-8")
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["rates"], default)
+
     def test_settings_written_before_the_radio_filter_keep_their_values(self):
         older = {key: value for key, value in self.settings_payload(STREAMS).items() if key != "speech"}
         (self.state / "settings.json").write_text(json.dumps(older), encoding="utf-8")

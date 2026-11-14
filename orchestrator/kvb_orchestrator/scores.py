@@ -22,6 +22,21 @@ def checked(labels: object) -> dict | None:
     return labels if valid else None
 
 
+def journal(council: Path) -> list[dict]:
+    """Args:
+        council: the council directory holding scores.jsonl.
+
+    Returns:
+        The journal rows with a values object, in file order; none when the
+        journal is missing or unreadable.
+    """
+    try:
+        lines = read_regular(council / SCORES, FILE_LIMIT).splitlines()
+    except (OSError, ValueError):
+        lines = []
+    return [row for row in map(parse_line, lines) if row is not None and isinstance(row.get("values"), dict)]
+
+
 def scored(council: Path, skills: Path, span: tuple[float, float]) -> dict:
     """Args:
         council: the council directory holding scores.jsonl, which score.py
@@ -35,10 +50,5 @@ def scored(council: Path, skills: Path, span: tuple[float, float]) -> dict:
         time order.
     """
     begin, end = span
-    try:
-        lines = read_regular(council / SCORES, FILE_LIMIT).splitlines()
-    except (OSError, ValueError):
-        lines = []
-    rows = [row for row in map(parse_line, lines) if row is not None and isinstance(row.get("values"), dict)]
-    inside = [row for row in rows if (moment := epoch(row.get("time"))) is not None and begin <= moment <= end]
+    inside = [row for row in journal(council) if (moment := epoch(row.get("time"))) is not None and begin <= moment <= end]
     return {"since": begin, "until": end, "labels": checked(read_json(skills / LABELS)), "rows": sorted(inside, key=lambda row: row["time"])}

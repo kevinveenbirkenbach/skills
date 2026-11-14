@@ -1,0 +1,20 @@
+.rates { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.rates-period { padding: 3px 6px; border-radius: 999px; font-size: var(--fs-xs); }
+.rates-menu > summary.rates-chip { gap: 10px; padding: 3px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 560; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rates-chip .rate { display: inline-flex; align-items: center; gap: 4px; }
+.rates-chip .bi { color: var(--muted); }
+.rates-chip .rate[data-approx="true"] .rate-value, .rates-table td[data-approx="true"] { color: var(--muted); }
+.rates-box { max-width: min(1100px, calc(100vw - 32px)); }
+.rates-scroll { max-width: 100%; overflow-x: auto; }
+.rates-box > p { width: 0; min-width: 100%; margin: 0; }
+.rates-table { border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.rates-table th, .rates-table td { padding: 3px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.rates-table thead th { color: var(--muted); font-size: var(--fs-xs); font-weight: 650; }
+.rates-table th[scope="row"], .rates-table thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); font-weight: 560; text-align: left; }
+.rates-table td[aria-current="true"] { background: var(--accent-soft); color: var(--accent); }
+@media (min-width: 641px) {
+  .rates-box { width: max-content; }
+}
+@media (max-width: 640px) {
+  .rates-menu > summary.rates-chip { gap: 6px; padding: 3px 8px; }
+}

@@ -415,6 +415,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 
 {% include "style-resources.css" %}
 
+{% include "style-rates.css" %}
+
 {% include "style-legend-chips.css" %}
 
 {% include "style-inbox.css" %}
@@ -454,6 +456,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
   <span class="spacer"></span>
   <details class="menu" id="time"></details>
   <span class="updated" id="updated" aria-live="polite"></span>
+  <div class="rates" id="rates"></div>
 </div>
 <div class="banner" id="mayday" role="alert" hidden></div>
 </div>
@@ -610,6 +613,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-alerts.js" %}
 
 {% include "page-resources.js" %}
+
+{% include "page-rates.js" %}
 
 {% include "page-home.js" %}
 

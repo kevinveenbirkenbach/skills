@@ -66,6 +66,7 @@
     const updated = document.getElementById("updated");
     updated.classList.toggle("offline", ui.offline);
     updated.textContent = `${ui.offline ? "No connection · " : ""}${live() ? "Live" : "As of"} ${absolute.format(stampOf(live() ? state.now : state.until))}`;
+    pollRates();
   }
 
   const faceParts = (key) => Faces.of(key).parts.map(([tag, attrs]) => s(tag, attrs));
