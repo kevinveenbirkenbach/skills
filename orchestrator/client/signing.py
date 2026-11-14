@@ -35,6 +35,7 @@ GATE_ACTIONS = ("commit", "merge", "push", "pr")
 GATE_REPO = re.compile(r"/[^\x00-\x1f\x7f]{0,4095}")
 GATE_BRANCH = re.compile(r"(?![-/])(?!.*\.\.)(?!.*@\{)(?!.*//)[^\x00-\x20\x7f~^:?*\[\\]{1,255}(?<![/.])")
 TOKEN_FREE_MERGE = "ancestor"
+LOCAL_DELETE = ["local-branch"]
 APPROVAL_KEYS = {"v", "kind", "items", "nonce", "expires"}
 RULE_KEYS = {"v", "kind", "id", "kinds", "tool", "pattern", "scope", "expires"}
 TARGET = "agents"
@@ -273,7 +274,8 @@ def names_default(ref: object, default: object) -> bool:
     """Args:
         ref: a ref as pkgmgr names it, bare such as main or behind one
             remote such as origin/main, the remote-tracking ref it compares
-            against when the remote has a HEAD.
+            against when the remote has a HEAD; `branch cleanup --local`
+            names it in full, refs/remotes/origin/main.
         default: the repository's default branch as the tree file names it,
             without the remote (pkgmgr tree.py strips it).
 
@@ -282,7 +284,7 @@ def names_default(ref: object, default: object) -> bool:
     """
     if not isinstance(ref, str) or not isinstance(default, str) or not default:
         return False
-    remote, _, name = ref.partition("/")
+    remote, _, name = ref.removeprefix("refs/remotes/").partition("/")
     return ref == default or (bool(remote) and name == default)
 
 
@@ -298,6 +300,33 @@ def token_free(entry: dict, default: object) -> bool:
         GitHub token.
     """
     return entry.get("merged_by") == TOKEN_FREE_MERGE and names_default(entry.get("merged_into"), default) and not entry.get("remotes")
+
+
+def local_keeps(entry: dict) -> str:
+    """Args:
+        entry: one item of `pkgmgr branch cleanup --local --json`, the dry
+            run of what `--apply --local` does to this branch's local tip.
+
+    Returns:
+        Why that dry run keeps the branch, in pkgmgr's words where it gives
+        them: a state other than merged-clean, its skip reason (for a tip
+        that is no ancestor of the default branch "merged by patch, tip is
+        no ancestor of refs/remotes/origin/main"), a remote branch delete,
+        or a plan without exactly the local-branch delete; "" when it
+        deletes exactly the local branch, the only case the hub offers and
+        the host runs.
+    """
+    if entry.get("state") != "merged-clean":
+        return f"state is {entry.get('state')}, not merged-clean"
+    if entry.get("skip"):
+        return str(entry["skip"])
+    actions = [str(action) for action in entry.get("actions") or []]
+    remote = [action for action in actions if action.startswith("remote-branch")]
+    if remote:
+        return f"the plan also deletes {', '.join(remote)[:200]}; a signed delete is local only"
+    if actions != LOCAL_DELETE:
+        return f"the dry run plans {', '.join(actions)[:200] or 'no delete'}, not exactly the local branch"
+    return ""
 
 
 def approval_payload(hashes: list[str], nonce: str, expires: int) -> dict:

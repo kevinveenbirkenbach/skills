@@ -14,6 +14,7 @@ from pathlib import Path
 
 from hub_case import HubCase
 from hub_support import GIT_ENV, HUB, ORIGIN, REPO_ROOT, key, signing, verifier
+from test_hub_cleanup import INSTALLED_PKGMGR
 
 CLEANUP_SPEC = importlib.util.spec_from_file_location("kvb_orchestrator_cleanup_token_runner", HUB / "client" / "cleanup.py")
 host = importlib.util.module_from_spec(CLEANUP_SPEC)
@@ -23,7 +24,7 @@ operator_script = importlib.util.module_from_spec(OPERATOR_SPEC)
 OPERATOR_SPEC.loader.exec_module(operator_script)
 KEPT_TIP = "0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d"
 DONE_TIP = "5b1e6fd3a7c0e2d94f8a61b3c2d7e9f0a1b2c3d4"
-# Param: format with python=<interpreter>; plans one branch of the real repository in its cwd as pkgmgr 2.4.0 `branch cleanup` does without a GitHub token: argv parsed as branch_cmd.py does (exit 2 on any other flag), merged_into the remote HEAD ref (gc.py symbolic-ref --short), an origin on github.com skips every item with "forge unavailable" (gc.py _skip), actions local-branch plus remote-branch:<remote> (gc.py _actions), --apply deletes only an item without skip (Item.eligible) and the output is gc.py _render's {"host_pid_namespace", "repos": [{"repo", "default", "merged_into", "warnings", "items"}]}.
+# Param: format with python=<interpreter>; plans one branch of the real repository in its cwd as pkgmgr 2.5.0 `branch cleanup --local` does, which reads no forge token: argv parsed as branch_cmd.py does (exit 2 on any other flag), default and merged_into the full remote HEAD ref (refs/remotes/origin/main), no forge skip on a github.com origin, actions only local-branch while the remote branch stays listed under remotes, --apply deletes only a merged item and the output is gc.py _render's {"host_pid_namespace", "repos": [{"repo", "default", "merged_into", "warnings", "items"}]}.
 SCRATCH_PKGMGR = """#!{python}
 import argparse
 import json
@@ -36,7 +37,7 @@ tree = branch.add_parser("tree")
 tree.add_argument("--format", choices=("json", "yaml"), default="json")
 tree.add_argument("--output")
 cleanup = branch.add_parser("cleanup")
-for flag in ("--apply", "--json", "--all", "--sizes"):
+for flag in ("--apply", "--json", "--local", "--all", "--sizes"):
     cleanup.add_argument(flag, action="store_true")
 for option in ("--branch", "--exclude", "--merged-into"):
     cleanup.add_argument(option, action="append", default=[])
@@ -50,20 +51,25 @@ def git(*argv):
     return subprocess.run(["git", *argv], capture_output=True, text=True, check=False)
 
 
-name = args.branch[0]
-tip = git("rev-parse", "--verify", "refs/heads/" + name).stdout.strip()
-default = git("symbolic-ref", "--short", "refs/remotes/origin/HEAD").stdout.strip()
-merged = bool(tip) and git("merge-base", "--is-ancestor", tip, default).returncode == 0
+default = git("symbolic-ref", "refs/remotes/origin/HEAD").stdout.strip()
 listed = git("for-each-ref", "refs/remotes", "--format=%(refname:lstrip=2) %(objectname)").stdout.split("\\n")
-remotes = {{line.split("/", 1)[0]: line.split(" ")[1] for line in listed if line and line.split(" ")[0].split("/", 1)[1] == name}}
-skip = "forge unavailable" if "github.com" in git("remote", "get-url", "origin").stdout else None
-actions = ["local-branch", *("remote-branch:" + remote for remote in remotes)] if merged else []
-entry = {{"branch": name, "worktree": None, "local_sha": tip, "head": None, "state": "merged-clean" if merged else "unmerged", "skip": skip,
-         "merged_by": "ancestor" if merged else None, "merged_into": default if merged else None, "remotes": remotes, "actions": actions, "result": None}}
-if args.apply and skip is None:
-    git("branch", "-D", "--", name)
-    entry["result"] = "done"
-print(json.dumps({{"host_pid_namespace": True, "repos": [{{"repo": os.getcwd(), "default": default, "merged_into": [], "warnings": [], "items": [entry]}}]}}))
+
+
+def planned(name):
+    tip = git("rev-parse", "--verify", "refs/heads/" + name).stdout.strip()
+    merged = bool(tip) and git("merge-base", "--is-ancestor", tip, default).returncode == 0
+    remotes = {{line.split("/", 1)[0]: line.split(" ")[1] for line in listed if line and line.split(" ")[0].split("/", 1)[1] == name}}
+    entry = {{"branch": name, "worktree": None, "local_sha": tip, "head": None, "state": "merged-clean" if merged else "unmerged", "skip": None,
+             "merged_by": "ancestor" if merged else None, "merged_into": default if merged else None, "remotes": remotes, "result": None}}
+    entry["actions"] = ["local-branch"] if merged else []
+    if args.apply and merged:
+        git("branch", "-D", "--", name)
+        entry["result"] = "done"
+    return entry
+
+
+items = [planned(name) for name in args.branch]
+print(json.dumps({{"host_pid_namespace": True, "repos": [{{"repo": os.getcwd(), "default": default, "merged_into": [], "warnings": [], "items": items}}]}}))
 """
 
 
@@ -75,8 +81,9 @@ class TestHubCleanupToken(HubCase):
         kept = next(item for item in data["repos"][0]["items"] if item["branch"] == "feature/kept")
         kept["skip"] = kept_skip
         done = next(item for item in data["repos"][0]["items"] if item["branch"] == "feature/done")
-        done.update(worktree=None, worktree_state=None, actions=["local-branch"], compose_projects=[], images=[])
+        done.update(worktree=None, worktree_state=None, actions=["local-branch", "remote-branch:origin"], compose_projects=[], images=[], merged_by="ancestor", remotes={"origin": DONE_TIP})
         self.tree_file.write_text(json.dumps(data), encoding="utf-8")
+        self.write_local_plan(data, {})
         return root
 
     def items(self, root: Path) -> tuple[dict, dict]:
@@ -96,10 +103,14 @@ class TestHubCleanupToken(HubCase):
         self.assertEqual({name: entry["token_free"] for name, entry in branches.items()}, {"feature": False, "feature/done": False, "feature/kept": True, "main": False})
         entry = {"merged_by": "ancestor", "merged_into": "main", "remotes": {}}
         cases = (("ancestry, no remote", entry, "main", True), ("pull request", {**entry, "merged_by": "#12"}, "main", False),
+                 ("pull request as pkgmgr names it", {**entry, "merged_by": "pr#12"}, "main", False), ("patch", {**entry, "merged_by": "patch"}, "main", False),
                  ("remote branch", {**entry, "remotes": {"origin": "a" * 40}}, "main", False), ("other line", {**entry, "merged_into": "store-i18n"}, "main", False),
                  ("no default", entry, None, False), ("line merge", {**entry, "merged_by": "line:main"}, "main", False),
                  ("pkgmgr names the remote HEAD", {**entry, "merged_into": "origin/main"}, "main", True), ("other remote line", {**entry, "merged_into": "origin/store-i18n"}, "main", False),
-                 ("nested name", {**entry, "merged_into": "origin/feature/main"}, "main", False), ("no merged_into", {**entry, "merged_into": None}, "main", False))
+                 ("nested name", {**entry, "merged_into": "origin/feature/main"}, "main", False), ("no merged_into", {**entry, "merged_into": None}, "main", False),
+                 ("--local names the full remote ref", {**entry, "merged_into": "refs/remotes/origin/main"}, "main", True),
+                 ("full ref of another line", {**entry, "merged_into": "refs/remotes/origin/store-i18n"}, "main", False),
+                 ("full local ref", {**entry, "merged_into": "refs/heads/main"}, "main", False))
         for name, candidate, default, free in cases:
             with self.subTest(name=name):
                 self.assertEqual(signing.token_free(candidate, default), free)
@@ -123,19 +134,25 @@ class TestHubCleanupToken(HubCase):
         status, _, body = self.get("/api/tree")
         self.assertEqual(status, 200, body)
         repos = {repo["name"]: {entry["name"]: entry for entry in repo["branches"]} for repo in json.loads(body)["repos"]}
-        shown = {name: {branch: (entry["token_free"], entry["cleanup"] is not None, entry["skip"]) for branch, entry in branches.items()} for name, branches in repos.items()}
+        shown = {name: {branch: (entry["token_free"], entry["cleanup"] is not None, entry["skip"], bool(entry["kept"])) for branch, entry in branches.items()} for name, branches in repos.items()}
         self.assertEqual(shown, {
-            "github.com/anon/web": {"chore/ancestor-local": (True, False, "forge unavailable"), "fix/remote-merged": (False, False, "forge unavailable"), "feature/open": (False, False, "forge unavailable"), "main": (False, False, None)},
-            "git.example.org/anon/notes": {"topic/ancestor-local": (True, True, None), "topic/patch-local": (False, True, None), "master": (False, False, None)},
+            "github.com/anon/web": {"chore/ancestor-local": (True, False, "forge unavailable", False), "fix/remote-merged": (False, False, "forge unavailable", False), "feature/open": (False, False, "forge unavailable", False), "main": (False, False, None, False)},
+            "git.example.org/anon/notes": {"topic/ancestor-local": (True, True, None, False), "topic/patch-local": (False, False, None, True), "master": (False, False, None, False)},
         })
         notes = repos["git.example.org/anon/notes"]
-        free, patch = notes["topic/ancestor-local"]["cleanup"], notes["topic/patch-local"]["cleanup"]
+        free = notes["topic/ancestor-local"]["cleanup"]
         self.assertEqual(free, signing.cleanup_item(f"{root}/repos/git.example.org/anon/notes", "topic/ancestor-local", "", "5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f"))
         status, _, body = self.post_json("/api/sign", {"items": [free]}, self.guard(self.host))
         self.assertEqual(status, 200, body)
         self.assertEqual(json.loads(body)["payload"]["items"], [signing.item_hash(free)])
-        status, _, body = self.post_json("/api/sign", {"items": [patch]}, self.guard(self.host))
-        self.assertEqual((status, body.decode()), (400, "delete blocked: no GitHub token in the Secret Service\n"))
+        self.assertEqual(notes["topic/patch-local"]["plan"][1], "pkgmgr branch cleanup --local keeps it: merged by patch, tip is no ancestor of refs/remotes/origin/master; use branch gc (kvb-git-gc, pkgmgr gc)")
+        patch = signing.cleanup_item(f"{root}/repos/git.example.org/anon/notes", "topic/patch-local", "", "6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a")
+        data = json.loads(self.tree_file.read_text(encoding="utf-8"))
+        for ready in (False, True):
+            with self.subTest(delete_ready=ready):
+                self.tree_file.write_text(json.dumps({**data, "delete_ready": ready}), encoding="utf-8")
+                status, _, body = self.post_json("/api/sign", {"items": [patch]}, self.guard(self.host))
+                self.assertEqual((status, body.decode()), (400, f"topic/patch-local in {root}/repos/git.example.org/anon/notes is no merged-clean branch without skip reason that the --local dry run deletes at that tip\n"))
 
     def test_with_the_token_every_merged_clean_branch_without_skip_reason_is_offered(self):
         kept, done = self.items(self.tree(True, None))
@@ -154,6 +171,7 @@ class TestHubCleanupToken(HubCase):
         command = args[args.index("--command") + 1]
         self.assertEqual(shlex.split(command), ["env", "secret-tool", "store", "--label=pkgmgr-github", "service", "pkgmgr:github", "username", "github.com|-", "</dev/tty"])
         self.assertEqual(args[args.index("--check") + 1], "manual")
+        self.assertEqual(args[args.index("--reason") + 1], "Store the GitHub token in the Secret Service under the key pkgmgr reads; Delete all merged then also deletes the local branch of a merged branch that has a remote branch; never the remote branch.")
         self.assertIsNone(operator_script.unrunnable(command, "/"))
         self.assertEqual(self.post_json("/api/cleanup/token", {"extra": 1}, self.guard(self.host))[0], 400)
         self.assertEqual(self.post_json("/api/cleanup/token", {}, {"Host": self.host})[0], 403)
@@ -168,13 +186,13 @@ class TestHostCleanupWithoutToken(unittest.TestCase):
         self.repo = base / "repo"
         self.git("init", "-q", "-b", "main", str(self.repo), cwd=base)
         self.git("commit", "-q", "--allow-empty", "-m", "one")
-        self.git("branch", "local-merged")
-        self.git("branch", "remote-merged")
-        self.git("branch", "squash-candidate")
-        self.git("commit", "-q", "--allow-empty", "-m", "two")
-        self.git("checkout", "-q", "squash-candidate")
-        self.git("commit", "-q", "--allow-empty", "-m", "side")
+        for name in ("local-merged", "remote-merged", "squash-candidate"):
+            self.git("checkout", "-q", "-b", name, "main")
+            (self.repo / f"{name}.txt").write_text(name, encoding="utf-8")
+            self.git("add", f"{name}.txt")
+            self.git("commit", "-q", "-m", name)
         self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--no-ff", "-m", "merge", "local-merged", "remote-merged")
         self.git("remote", "add", "origin", "ssh://git@git.example.org/anon/repo.git")
         self.git("update-ref", "refs/remotes/origin/main", self.tip("main"))
         self.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
@@ -213,28 +231,40 @@ class TestHostCleanupWithoutToken(unittest.TestCase):
         result = json.loads((self.results / f"{job_id}.json").read_text(encoding="utf-8"))
         return {entry["branch"]: entry for entry in result["items"]}
 
-    def test_the_executor_deletes_a_local_merged_branch_without_token_and_refuses_a_remote_one(self):
+    @unittest.skipUnless(INSTALLED_PKGMGR, "no pkgmgr installed")
+    def test_the_scratch_model_plans_every_fixture_branch_as_the_installed_pkgmgr_does(self):
+        keys = ("state", "skip", "merged_by", "merged_into", "remotes", "actions", "worktree", "local_sha")
+        cases = (("ssh://git@git.example.org/anon/repo.git", ("local-merged", "remote-merged", "squash-candidate")),
+                 ("git@github.com:anon/repo.git", ("local-merged",)))
+        for url, names in cases:
+            self.git("remote", "set-url", "origin", url)
+            for name in names:
+                with self.subTest(url=url, name=name):
+                    plans = [host.plan_items(host.run(Path(pkgmgr), host.plan_argv([name], False), str(self.repo), host.TIMEOUT)[1]) for pkgmgr in (INSTALLED_PKGMGR, self.fake)]
+                    self.assertEqual(*[[{key: entry.get(key) for key in keys} for entry in plan] for plan in plans])
+
+    def test_without_token_the_executor_deletes_a_local_merged_branch_and_refuses_one_with_a_remote_branch(self):
         result = self.run_job(["local-merged", "remote-merged"])
         self.assertEqual(result["local-merged"]["status"], "done", result["local-merged"]["reason"])
-        self.assertEqual(result["remote-merged"]["status"], "refused")
-        self.assertIn("a signed delete is local only", result["remote-merged"]["reason"])
+        self.assertEqual((result["remote-merged"]["status"], result["remote-merged"]["reason"]), ("refused", host.TOKEN_NEEDED))
         self.assertEqual(self.branches(), {"main", "remote-merged", "squash-candidate"})
 
-    def test_without_token_an_unmerged_squash_candidate_stays_and_with_the_token_a_plan_that_deletes_the_remote_branch_is_refused(self):
+    def test_without_token_an_unmerged_squash_candidate_stays_and_with_the_token_a_remote_merged_branch_loses_only_its_local_branch(self):
         result = self.run_job(["squash-candidate"])
         self.assertEqual(result["squash-candidate"]["status"], "refused")
         self.assertIn("not merged-clean", result["squash-candidate"]["reason"])
         data = json.loads(self.tree.read_text(encoding="utf-8"))
         self.tree.write_text(json.dumps({**data, "delete_ready": True}), encoding="utf-8")
         remote = self.run_job(["remote-merged"])["remote-merged"]
-        self.assertEqual((remote["status"], remote["reason"]), ("refused", "the plan also deletes remote-branch:origin; a signed delete is local only"))
-        self.assertEqual(self.branches(), {"main", "local-merged", "remote-merged", "squash-candidate"})
+        self.assertEqual((remote["status"], remote["reason"]), ("done", ""))
+        self.assertEqual(self.branches(), {"main", "local-merged", "squash-candidate"})
+        self.assertTrue(self.git("rev-parse", "--verify", "refs/remotes/origin/remote-merged"))
 
-    def test_without_token_pkgmgr_skips_every_item_of_a_github_repository_so_the_executor_refuses_and_keeps_even_the_token_free_branch(self):
+    def test_on_a_github_origin_the_local_merged_branch_is_deleted_without_token(self):
         self.git("remote", "set-url", "origin", "git@github.com:anon/repo.git")
         result = self.run_job(["local-merged"])["local-merged"]
-        self.assertEqual((result["status"], result["reason"]), ("refused", "gc skip reason: forge unavailable"))
-        self.assertIn("local-merged", self.branches())
+        self.assertEqual((result["status"], result["reason"]), ("done", ""))
+        self.assertNotIn("local-merged", self.branches())
 
 
 if __name__ == "__main__":

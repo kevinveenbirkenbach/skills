@@ -242,7 +242,39 @@ class HubCase(unittest.TestCase):
         root = self.outside / "scan"
         sample = (Path(__file__).parent / fixture).read_text(encoding="utf-8")
         self.tree_file.write_text(sample.replace("@ROOT@", str(root)), encoding="utf-8")
+        self.write_local_plan(json.loads(self.tree_file.read_text(encoding="utf-8")), {})
         return root
+
+    def write_local_plan(self, tree: dict, local: dict[str, dict]) -> None:
+        """Args:
+            tree: a tree file's data; each branch becomes the item `pkgmgr
+                branch cleanup --local --json` plans for it as gc.py
+                _local_actions does: a merged-clean local branch without
+                worktree merged by ancestry gets exactly local-branch, any
+                other merged-clean one the skip pkgmgr gives a tip that is no
+                ancestor of the default branch.
+            local: branch -> fields that replace the modelled ones, for a
+                local tip that is an ancestor while the tree's merged_by,
+                which covers every tip, is not.
+        """
+        repos = []
+        for entry in tree["repos"]:
+            default = f"refs/remotes/origin/{entry.get('default')}"
+            items = []
+            for item in entry["items"]:
+                if not item["branch"]:
+                    continue
+                candidate = item["state"] == "merged-clean" and bool(item["local_sha"]) and not item["worktree"]
+                ancestry = candidate and item["merged_by"] == "ancestor"
+                planned = {
+                    "branch": item["branch"], "worktree": item["worktree"], "head": item["head"], "local_sha": item["local_sha"], "remotes": item["remotes"], "upstream": item["upstream"], "state": item["state"],
+                    "merged_by": item["merged_by"], "merged_into": default if item["state"] == "merged-clean" else None,
+                    "skip": f"merged by {item['merged_by']}, tip is no ancestor of {default}" if candidate and not ancestry else None,
+                    "actions": ["local-branch"] if ancestry else [], "result": None,
+                }
+                items.append({**planned, **local.get(item["branch"], {})})
+            repos.append({"repo": entry["path"], "default": default, "merged_into": [], "warnings": [], "items": items})
+        self.tree_file.with_name("local-plan.json").write_text(json.dumps({"repos": repos}), encoding="utf-8")
 
     def jsonl(self, rows: list[dict]) -> str:
         return "".join(json.dumps(row) + "\n" for row in rows)

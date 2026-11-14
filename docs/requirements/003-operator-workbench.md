@@ -52,9 +52,13 @@ changed and what it costs, and a gate means something again.
    labelled stale and counted apart. Rejected: count everything, only drop
    operator rows.
 10. **Clean all merged**: dry run, one passkey, signed job. Local branches
-    merged by ancestry and without a remote branch need no token; remote
-    branches and squash-merge candidates need the GitHub token, stored through
-    an operator row. Rejected: wait for the token, ancestry for remotes.
+    merged by ancestry and without a remote branch need no token; the local
+    branch of one with a remote branch needs the GitHub token, stored through
+    an operator row. A branch the `pkgmgr branch cleanup --local` dry run
+    keeps, such as a squash or patch merge whose local tip is no ancestor of
+    the default branch, is never deleted here, token or not: its dry run says
+    why and names branch gc (`kvb-git-gc`, `pkgmgr gc`) (operator
+    2026-11-14). Rejected: wait for the token, ancestry for remotes.
 11. **Ancestry**: Artifacts and Agents get a family tree (generations top down)
     in the slot of today's Tree view. A branch may have several parents;
     parents are recorded at creation (post-checkout hook), older branches are
@@ -227,8 +231,10 @@ flowchart TD
 - [x] "Clean all merged" shows the gc dry run of every `merged-clean` item; one
       passkey runs the signed job.
 - [ ] Without a GitHub token, local branches merged by ancestry into the
-      default branch and without a remote branch can be deleted; the others
-      show "token needed", and an operator row stores the token.
+      default branch and without a remote branch can be deleted; the other
+      branches the `--local` dry run deletes show "token needed", and an
+      operator row stores the token. A branch that dry run keeps shows no
+      delete and no "token needed", with or without the token.
 - [ ] Artifacts and Agents show Ancestry in the Tree slot: generations top
       down, several parents per node; a derived parent edge is dashed.
 - [ ] Dragging a branch onto another stages a parent edge, applied with the

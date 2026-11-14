@@ -106,7 +106,7 @@ class TestHubArtifacts(HubCase):
         self.assertEqual(branches["feature"]["worktrees"][0]["artefacts"], [])
         self.assertEqual([(task["task"], [leaf["ref"] for leaf in task["artefacts"]]) for task in data["tasks"]], [("work/loose", ["log:/tmp/loose.log"])])
         self.assertEqual(repo["overlaps"], [{"a": "feature", "b": "feature/done", "count": 1, "files": ["a.py"]}])
-        self.assertEqual(repo["merges"], [{"from": "feature/done", "into": "main", "by": "#12"}, {"from": "feature/kept", "into": "main", "by": "ancestor"}])
+        self.assertEqual(repo["merges"], [{"from": "feature/done", "into": "main", "by": "pr#12"}, {"from": "feature/kept", "into": "main", "by": "ancestor"}])
         self.assertEqual((branches["feature"]["files"], branches["feature/done"]["files"]), (2, 2))
         kinds = [(event["kind"], event["ok"]) for event in branches["feature/done"]["events"]]
         self.assertEqual(kinds, [("gate", True), ("review", None), ("gate", True), ("commit", True)])

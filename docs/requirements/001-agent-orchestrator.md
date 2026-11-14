@@ -125,6 +125,33 @@ from three views down to any agent, branch or artefact.
       worktree holds is skipped and left to `kvb-git-gc`, and no worktree,
       Compose stack or volume is touched. Rejected: per Scope, also removing
       the worktree and running `compose down` without `-v`.
+    - **Amended by the operator 2026-11-14**: only a branch whose local tip
+      the `pkgmgr branch cleanup --local` dry run deletes is offered: the tree
+      timer writes that dry run (`--json`, per known repository within a
+      budget, again only when its refs, HEAD, config, reftable or worktree
+      heads changed, the file rewritten after each repository) as
+      `local-plan.json` beside the tree file; a repository whose dry run
+      failed, timed out or was killed keeps its old plan marked stale, and
+      the hub offers nothing there and says why. The hub and the host decide
+      with one predicate on its item for that tip (`merged-clean`, no skip
+      reason, exactly the action `local-branch`); the hub also keeps the
+      local upstream of another branch, as pkgmgr keeps it for the host's
+      dry run of that branch alone. A branch that dry run keeps, such as one
+      merged by pull request (`pr#N`), squash or patch whose local tip is no
+      ancestor of the default branch, shows its dry run without a Delete
+      button, with the skip reason of the dry run and branch gc
+      (`kvb-git-gc`, `pkgmgr gc`) as the way to remove it, and the host
+      refuses its signed delete. The host runs one dry run and one apply per
+      repository and job; an item pkgmgr deleted at another merged tip than
+      the signed one is done with a warning, one the apply keeps is failed
+      with pkgmgr's skip reason, and only a branch pkgmgr reports deleted is
+      done: a signed branch whose ref is gone otherwise is `gone` ("deleted
+      outside this run" when pkgmgr answered without deleting it, "gone
+      after an interrupted apply" when the apply ended without output),
+      rewrites the tree and shows apart from deleted and failed. A dry run
+      or apply that names gone branches unknown runs once more without
+      them. Rejected: deciding by
+      `merged_by` alone, and offering a Delete the host then refuses.
 22. **Organisation update**: a new skill `kvb-org-update` tells every agent
     and client which skills changed and how to use them, as one
     `newsletter` per update; phase 1 announces the radio change through it.
@@ -641,23 +668,34 @@ flowchart TD
 - [x] The Artifacts Tree marks every branch and worktree with icons for
       merged (with what merged it), clean, uncommitted changes (with counts),
       unpushed commits, gone upstream, locked, stale and protected.
-- [x] A `merged-clean` item without a gc skip reason shows a delete button,
-      and the Tree header shows "Delete all merged"; both are disabled,
-      with the reason as tooltip, while `delete_ready` is false.
+- [x] A `merged-clean` item without a gc skip reason whose local tip the
+      `pkgmgr branch cleanup --local` dry run in `local-plan.json` deletes
+      shows a delete button, also when its remote tip was merged by squash or
+      patch, and the Tree header shows "Delete all merged"; both are
+      disabled, with the reason as tooltip, while `delete_ready` is false.
+- [x] A `merged-clean` item that dry run keeps, or that it has not planned
+      at this tip yet, shows no delete button in its Tree row, its popup or
+      the delete sheet; its dry run says `pkgmgr branch cleanup --local` keeps
+      it with the skip reason of that dry run and names branch gc
+      (`kvb-git-gc`, `pkgmgr gc`) as the way to remove it, and the unit
+      refuses its signed delete by the same predicate.
 - [x] A click shows the gc dry-run lines of exactly the chosen items;
       "Delete" requires the operator signature through `/api/sign`.
 - [x] The orchestrator writes the signed job (repository, branch, worktree
       and tip sha per item, no command) into a host-mounted job directory and
       holds no git, token or key.
-- [ ] A systemd user path unit verifies the signature on the host and runs
-      `pkgmgr branch cleanup --apply --local` (the `--local` release is
-      pending in pkgmgr) for exactly the signed items, matched exactly, never
-      as a pattern; it removes the local branch, never a remote branch, a
-      worktree, a Compose stack or a volume, and needs no SSH key; a branch a
-      worktree holds is skipped and left to `kvb-git-gc`.
+- [x] A systemd user path unit verifies the signature on the host and runs
+      `pkgmgr branch cleanup --apply --local` (pkgmgr 2.5.0) for exactly the
+      signed items, matched exactly, never as a pattern; it removes the local
+      branch, never a remote branch, a worktree, a Compose stack or a volume,
+      and needs no SSH key; a branch a worktree holds is skipped and left to
+      `kvb-git-gc`.
 - [x] The unit refuses, and changes nothing for, an item whose tip or state
       differs from the signed one, an unknown repository, a non-`merged-clean`
-      item and a job with a bad or missing signature, and reports why.
+      item and a job with a bad or missing signature, and reports why; an
+      item pkgmgr deleted at another merged tip than the signed one is done
+      with a warning, and one it did not delete there is failed, or `gone`,
+      never done, when its ref is gone.
 - [x] The unit writes each item's result back and rewrites the tree file; the
       Tree shows the result.
 

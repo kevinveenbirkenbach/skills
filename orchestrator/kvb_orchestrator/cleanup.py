@@ -22,7 +22,7 @@ ITEM_LIMIT = 100
 RESULTS_SHOWN = 20
 TOKEN_ROW = "pkgmgr-github-token"
 TOKEN_COMMAND = "env secret-tool store --label=pkgmgr-github service pkgmgr:github username 'github.com|-' </dev/tty"
-TOKEN_REASON = "Store the GitHub token in the Secret Service under the key pkgmgr reads; Clean all merged then also deletes remote and squash-merged branches."
+TOKEN_REASON = "Store the GitHub token in the Secret Service under the key pkgmgr reads; Delete all merged then also deletes the local branch of a merged branch that has a remote branch; never the remote branch."
 TOKEN_ADDER = "Operator"
 
 
@@ -71,8 +71,10 @@ class Cleaning:
 
         Returns:
             The signed items, each still a merged-clean branch without a gc
-            skip reason at the same tip in the current tree file; without
-            the GitHub token (delete_ready false) each also token-free.
+            skip reason at the same tip in the current tree file whose
+            `--local` dry run deletes exactly its local branch at that tip
+            (tree.kept_by); without the GitHub token (delete_ready false)
+            each also token-free.
         """
         if not isinstance(raw, list) or not 1 <= len(raw) <= ITEM_LIMIT:
             raise ToolError(f"items must be a list of 1 to {ITEM_LIMIT} objects")
@@ -90,7 +92,7 @@ class Cleaning:
             if entry in locked and entry not in known:
                 raise ToolError(f"delete blocked: {scan.get('delete_reason') or 'delete_ready is false'}")
             if entry not in known:
-                raise ToolError(f"{entry.get('branch')!s:.200} in {entry.get('repository')!s:.200} is no merged-clean branch without skip reason at that tip in the tree file")
+                raise ToolError(f"{entry.get('branch')!s:.200} in {entry.get('repository')!s:.200} is no merged-clean branch without skip reason that the --local dry run deletes at that tip")
             if entry in chosen:
                 raise ToolError("items must be distinct")
             chosen.append(entry)
