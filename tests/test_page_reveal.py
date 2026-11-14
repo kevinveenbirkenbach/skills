@@ -173,9 +173,16 @@ class TestPageReveal(unittest.TestCase):
 
     def test_a_settings_entry_staged_for_removal_and_its_diff_show_every_hidden_character_as_a_marker(self):
         entry = f"Read(~/.ssh/**{RLO})"
-        found = shown(TEMPLATES, [["entryRow", ["/home/op/.claude/settings.json", "permissions.deny", entry]], ["diffLines", [f'-      "{entry}",\n+      "Bash(make{ZWSP} build:*)"']]])
-        self.assertRevealed(found[0], ["202E"])
-        self.assertRevealed(found[1], ["202E", "200B"])
+        path = f"/home/op{FILLER}/.claude/settings.json"
+        group = {"id": path, "label": path, "file": True}
+        row = {"filter": "deny", "action": "Deny", "tone": "bad", "tool": f"Read{CGJ}", "pattern": f"~/.ssh/**{RLO}", "list": "permissions.deny", "entry": entry, "hits": None, "never": ""}
+        rule = {"id": "0123456789abcdef", "kind": "ask", "tool": "Bash", "pattern": f"make test{RLO}*", "scope": f"/repo{ZWSP}*", "agents": ["*"], "expires": 1_800_000_000, "enabled": True, "signed": True}
+        signed = {"filter": "signed", "action": "Grant ask", "tone": "ok", "tool": f"Bash{NBSP}", "pattern": rule["pattern"], "rule": rule, "hits": 0, "never": ""}
+        found = shown(TEMPLATES, [["ruleRow", [group, row]], ["ruleRow", [{"id": "hub", "label": "Hub rules", "file": False}, signed]], ["diffLines", [f'-      "{entry}",\n+      "Bash(make{ZWSP} build:*)"']]])
+        self.assertRevealed(found[0], ["202E", "3164", "034F"])
+        self.assertRevealed(found[1], ["202E", "200B", "00A0"])
+        self.assertIn("unused", found[1])
+        self.assertRevealed(found[2], ["202E", "200B"])
 
 
 if __name__ == "__main__":

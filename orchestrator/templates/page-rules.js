@@ -14,6 +14,18 @@
     return signed ? sendJson(`/api/rules/${encodeURIComponent(rule.id)}/enable`, {proof: signed.proof}) : null;
   }
 
+  /**
+   * @param {Object} rule the stored rule.
+   * @param {string} verb enable, disable or delete.
+   */
+  async function changeRule(rule, verb) {
+    const result = verb === "enable" ? await turnOn(rule) : await send(`/api/rules/${encodeURIComponent(rule.id)}/${verb}`, "", "application/json");
+    if (result && !result.ok) {
+      toast("Rule not changed", fail(result), false);
+    }
+    await load();
+  }
+
   function rulesScreen() {
     const kind = h("select", {class: "field", "aria-label": "Kind"}, Object.entries(RULE_KINDS).map(([value, label]) => h("option", {value}, label)));
     const target = targetSelect("Applies to", null);
@@ -63,29 +75,6 @@
       toast(result.ok ? "Rule created" : "Rule not created", result.ok ? [] : fail(result), result.ok);
       await load();
     });
-    const change = async (rule, verb) => {
-      const result = verb === "enable" ? await turnOn(rule) : await send(`/api/rules/${encodeURIComponent(rule.id)}/${verb}`, "", "application/json");
-      if (result && !result.ok) {
-        toast("Rule not changed", fail(result), false);
-      }
-      await load();
-    };
-    const now = nowSeconds();
-    const list = state.rules.length ? h("div", {class: "mini"}, state.rules.map((rule) => h("div", {class: "rule-row"},
-      pill(rule.kind, KIND_TONES[rule.kind]),
-      targetPill(rule.agents),
-      rule.tool ? h("code", {}, revealed(rule.tool)) : null,
-      h("code", {}, revealed(rule.pattern)),
-      rule.kind === "decision" ? null : h("code", {title: "Directory"}, rule.scope ? revealed(rule.scope) : "–"),
-      pill(rule.signed ? "signed" : "unsigned: has no effect", rule.signed ? "ok" : "bad"),
-      rule.expires <= now ? pill("expired", "bad") : h("span", {class: "muted"}, `until ${absolute.format(stampOf(rule.expires))}`),
-      rule.enabled ? pill("active", "ok") : pill("off", "neutral"),
-      h("span", {class: "spacer"}),
-      btn(rule.enabled ? "Turn off" : "Turn on", "btn small", () => change(rule, rule.enabled ? "disable" : "enable")),
-      btn("Delete", "btn small danger", () => {
-        if (window.confirm("Delete rule?")) {
-          change(rule, "delete");
-        }
-      })))) : h("p", {class: "muted"}, "No rule yet. Every automatic grant shows up in the stream and can be undone for 3 s.");
-    return h("div", {class: "stack"}, h("h2", {class: "title"}, "Firewall"), h("h3", {}, "Hub rules for automatic grants"), list, h("div", {class: "card"}, hint, form), ...firewallSections());
+    const [table, ...rest] = firewallSections();
+    return h("div", {class: "stack"}, h("h2", {class: "title"}, "Firewall"), table, h("div", {class: "card"}, h("h3", {}, "New hub rule for automatic grants"), hint, form), ...rest);
   }

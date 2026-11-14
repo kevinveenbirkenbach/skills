@@ -7,7 +7,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import ASK, PRESENT, key, signing, verifier
-from kvb_orchestrator import batches, rules
+from kvb_orchestrator import batches, firewall, requesting, rules
 
 HOME_FILE = "/home/op/.claude/settings.json"
 PROJECT_FILE = "/home/op/Repositories/demo/.claude/settings.json"
@@ -65,6 +65,51 @@ class TestHubFirewall(HubCase):
             with self.subTest(path=path):
                 self.assertEqual(self.get(path)[0], 405)
         self.assertEqual(self.get("/api/firewall/settings/0123456789abcdef")[0], 404)
+
+    def test_the_rule_table_counts_hits_of_the_last_seven_days_from_the_ask_ledger_with_the_dry_run_matcher(self):
+        permissions = {"allow": ["Bash(make deploy:*)"], "ask": ["Bash(make deploy:*)", "Bash(git push:*)", "Bash(make clean:*)", "Bash"], "deny": ["Bash(make deploy --prod:*)"]}
+        self.view([{**self.home_view(), "settings": {"permissions": permissions, "sandbox": SANDBOX}}])
+        for command, session in (("make deploy", "s1"), ("make deploy --dry", "s1"), ("make deploy", "s2"), ("make deploy && rm -rf /", "s1"), ("git push origin main", "s1"), ("make test", "s1")):
+            self.create_ask({**ASK, "command": command, "session": session})
+        old = self.create_ask({**ASK, "command": "make deploy"})
+        self.httpd.hub.asks.change(old, {"created_ts": time.time() - 8 * 86400})
+        signer = self.pin()
+        later = time.time() + 3600
+        mine = self.signed_rule(signer, {"kind": "ask", "tool": "Bash", "pattern": "make deploy*", "scope": "/repo*", "expires": later, "agents": ["s1"]})
+        elsewhere = self.signed_rule(signer, {"kind": "ask", "tool": "Bash", "pattern": "make deploy*", "scope": "/elsewhere*", "expires": later})
+        pushing = self.signed_rule(signer, {"kind": "ask", "tool": "Bash", "pattern": "git push *", "scope": "*", "expires": later})
+        review = self.signed_rule(signer, {"kind": "review", "tool": "", "pattern": "feature/*", "scope": "/repo/*", "expires": later})
+        self.assertEqual(self.call("POST", f"/api/rules/{mine['id']}/disable", b"", self.guard(self.host))[0], 200)
+        found = self.firewall()
+        entries = {(entry["list"], entry["entry"]): (entry["spec"], entry["hits"], entry["never"]) for group in found["files"][0]["groups"] for entry in group["entries"]}
+        self.assertEqual(entries, {
+            ("allow", "Bash(make deploy:*)"): ("make deploy:*", None, ""),
+            ("ask", "Bash(make deploy:*)"): ("make deploy:*", 3, ""),
+            ("ask", "Bash(git push:*)"): ("git push:*", None, "pushes"),
+            ("ask", "Bash(make clean:*)"): ("make clean:*", 0, ""),
+            ("ask", "Bash"): ("", 4, ""),
+            ("deny", "Bash(make deploy --prod:*)"): ("make deploy --prod:*", None, ""),
+        })
+        self.assertEqual(found["days"], requesting.RECENT_DAYS)
+        self.assertEqual(found["rules"], {mine["id"]: {"hits": 2, "never": ""}, elsewhere["id"]: {"hits": 0, "never": ""}, pushing["id"]: {"hits": None, "never": "pushes"}, review["id"]: {"hits": None, "never": ""}})
+
+    def test_an_entry_becomes_the_rule_the_dry_run_matcher_counts_and_a_hit_needs_the_rule_to_match(self):
+        now = time.time()
+        for entry, rule in (
+            ("Bash(make test:*)", {"kind": "ask", "tool": "Bash", "pattern": "make test*", "scope": "*"}),
+            ("Bash(npm run *)", {"kind": "ask", "tool": "Bash", "pattern": "npm run *", "scope": "*"}),
+            ("Bash", {"kind": "ask", "tool": "Bash", "pattern": "*", "scope": "*"}),
+            ("mcp__memory__search", {"kind": "ask", "tool": "mcp__memory__search", "pattern": "*", "scope": "*"}),
+        ):
+            with self.subTest(entry=entry):
+                self.assertEqual(firewall.entry_rule(entry), rule)
+        asks = [rules.subject_of("ask", {"id": "0123456789abcdef", "tool": "Bash", "command": command, "cwd": "/repo", "session": "s1"}, set()) for command in ("make test", "make test-unit", "make lint")]
+        self.assertEqual(firewall.hits(firewall.entry_rule("Bash(make test:*)"), asks, now), {"hits": 2, "never": ""})
+        self.assertEqual(firewall.hits(firewall.entry_rule("Bash(make build:*)"), asks, now), {"hits": 0, "never": ""})
+        self.assertEqual(firewall.hits(firewall.entry_rule("Bash(make test | sh:*)"), asks, now), {"hits": None, "never": "pipes into a shell"})
+        self.assertEqual(firewall.hits(firewall.entry_rule("Bash(make test; make lint)"), asks, now), {"hits": None, "never": firewall.CHAINED})
+        with mock.patch.object(requesting, "rule_matches", return_value=False):
+            self.assertEqual(firewall.hits(firewall.entry_rule("Bash(make test:*)"), asks, now), {"hits": 0, "never": ""})
 
     def test_a_settings_change_is_previewed_signed_and_queued_for_the_host(self):
         self.view([self.home_view()])

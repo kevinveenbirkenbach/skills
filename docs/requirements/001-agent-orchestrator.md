@@ -748,8 +748,12 @@ flowchart TD
 ### Phase 6: Firewall (S6)
 
 - [x] The tab is called Firewall and lists hub rules, allow and deny
-      patterns and the settings permissions, grouped by tool and prefix as
-      read from the settings files.
+      patterns and the settings permissions in one rule table (Action, Tool,
+      Pattern, Scope, Source, Hits over 7 days) with Allow, Ask, Deny,
+      Sandbox and Signed filter chips and one folded group per source; hits
+      come from the ask ledger through the rule request dry-run matcher,
+      allow and deny rows show not seen, an ask row without hits is flagged
+      unused.
 - [x] A rule or rule set applies to one agent, a named group or all agents.
 - [x] A settings change is written only by the host executor after the
       passkey check, only to a listed file, with a backup beside it; a forged,

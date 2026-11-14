@@ -2,11 +2,20 @@
 .fw-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
 .fw-form label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
 .fw-form .field { width: 100%; min-width: 0; }
-.fw-file { display: grid; gap: 8px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
-.fw-file > .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .fw-path { overflow-wrap: anywhere; }
-.fw-group > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: pointer; }
-.fw-group code, .fw-patterns code { overflow-wrap: anywhere; }
+.fw-patterns code { overflow-wrap: anywhere; }
+.fw-rules { grid-template-columns: minmax(0, 1fr); }
+.fw-table-wrap { min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.fw-table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: var(--fs-sm); }
+.fw-table th, .fw-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.fw-table thead th { background: var(--sunken); color: var(--muted); font-weight: 650; white-space: nowrap; }
+.fw-table td { overflow-wrap: anywhere; }
+.fw-table td .pill { margin: 0 4px 2px 0; }
+.fw-source > th { background: var(--sunken); font-weight: 560; }
+.fw-source .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fw-fold { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.fw-hits { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fw-change { white-space: nowrap; text-align: right; }
 .fw-diff { max-height: 50vh; margin: 4px 0 0; padding: 8px; overflow: auto; border-radius: 8px; background: var(--sunken); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 .fw-diff .add { color: var(--ok); }
 .fw-diff .del { color: var(--bad); }
