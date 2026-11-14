@@ -294,7 +294,11 @@ def journal(args: argparse.Namespace, total: int, block: str) -> None:
         "fix": plain(args.fix), "break": plain(args.risk), "tokens": plain(args.efficiency),
         "velocity": plain(args.speed), "security": plain(args.security[0]), "score": total,
     }
-    path = journal_path()
+    try:
+        path = journal_path()
+    except OSError as error:
+        print(f"score: journal: {error}", file=sys.stderr)
+        return
     try:
         here = Path.cwd()
         append(path, [entry(int(time.time()), origin(here), git_read(here, "branch", "--show-current") or None, None, values, block)])

@@ -8,8 +8,8 @@ Usage:
                        (kvb-org-queue), <root>/security-accepted.jsonl
                        (kvb-check-security), <root>/gate-receipts.jsonl and
                        <root>/gate-parents.jsonl (kvb-check-gate) whose id it
-                       lacks to the same name under
-                       ~/.local/state/agents-council/
+                       lacks to the same name in the host-only root
+                       (councilroot.py durable), never through a link
     watch.py block     hook (PreToolUse on Bash): exit 2 for a heavy job while the
                        disk stage is stop or critical, the memory stage is stop
                        or cannot be judged without memory_limits, or a
@@ -33,8 +33,9 @@ Usage:
                        REPORT
 
 Environment:
-    AGENTS_COUNCIL_ROOT: shared state directory; /tmp/agents-council unless set,
-        because every agent on the host must agree on it. Every command creates
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the shared state directory
+        councilroot.py resolves, which survives a reboot and on which every
+        agent on the host agrees. Every command creates
         it with mode 700; while it is a symlink, another uid's, or group or
         other writable, a hook mode prints why and exits 0 doing nothing and
         any other mode exits 2. queue.py and radio.py check it the same way.
@@ -114,7 +115,8 @@ def sibling(name: str) -> ModuleType:
 
 nofollow = sibling("nofollow")
 hookpath = sibling("hookpath")
-ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
+councilroot = sibling("councilroot")
+ROOT = councilroot.root()
 CONFIG = Path(
     os.environ.get(
         "AGENTS_COUNCIL_CONFIG",
@@ -126,7 +128,7 @@ STAGES = ("ok", "warn", "stop", "critical")
 STATE = ROOT / "watch.json"
 SILENCE = ROOT / "radio-silence.json"
 ALERTS = ROOT / "alerts.jsonl"
-KEPT = Path.home() / ".local" / "state" / "agents-council"
+KEPT = councilroot.durable()
 HISTORY = ROOT / "queue-history.jsonl"
 KEPT_HISTORY = KEPT / "queue-history.jsonl"
 ACCEPTED = ROOT / "security-accepted.jsonl"
@@ -273,6 +275,13 @@ def guard_root(hook: bool) -> int | None:
         ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     except FileExistsError:
         pass
+    except OSError as error:
+        print(
+            f"agents council: cannot create {ROOT} ({error.strerror or error}); a sandbox needs it in allowWrite; "
+            "the council hooks stay off until it exists",
+            file=sys.stdout if hook else sys.stderr,
+        )
+        return 0 if hook else 2
     st = ROOT.lstat()
     if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o022:
         return None
@@ -459,14 +468,13 @@ def history_rows(text: str) -> list[tuple[str, str]]:
 
 
 def keep_rows(origin: Path, target: Path) -> None:
-    # The agents' sandbox cannot write ~/.local/state and /tmp is wiped on reboot, so this hook keeps the rows.
     # The kept file takes the source's mtime: an unchanged source is skipped without parsing.
     try:
         source = origin.stat().st_mtime_ns
         if target.exists() and target.stat().st_mtime_ns == source:
             return
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("a+", encoding="utf-8") as kept:
+        KEPT.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with open(nofollow.open_below(KEPT, target, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600), "a+", encoding="utf-8") as kept:
             fcntl.flock(kept, fcntl.LOCK_EX | fcntl.LOCK_NB)
             kept.seek(0)
             known = {row_id for row_id, _ in history_rows(kept.read())}
@@ -475,7 +483,7 @@ def keep_rows(origin: Path, target: Path) -> None:
                     known.add(row_id)
                     kept.write(line + "\n")
             kept.flush()
-            os.utime(target, ns=(source, source))
+            os.utime(kept.fileno(), ns=(source, source))
     except (OSError, ValueError, TypeError):
         pass
 

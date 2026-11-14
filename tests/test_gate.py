@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
+import hashlib
 import importlib.util
 import io
 import json
@@ -12,6 +13,7 @@ import os
 import pwd
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -26,6 +28,18 @@ SCRIPT = REPO_ROOT / "skills" / "kvb-check-gate" / "scripts" / "gate.py"
 HOTFIX = REPO_ROOT / "skills" / "kvb-git-hotfix" / "scripts" / "hotfix.py"
 RUN_LOCK = "kvb-gate-run.lock"
 SYNC_LOCK = "kvb-gate-sync.lock"
+STATE = "kvb-gate.json"
+LOCK_BASE = Path("/tmp/agents-locks")
+EARLIER_GATE = (
+    "import fcntl, sys\n"
+    "with open(sys.argv[1], 'a', encoding='utf-8') as lock:\n"
+    "    try:\n"
+    "        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+    "    except BlockingIOError:\n"
+    "        print('held')\n"
+    "    else:\n"
+    "        print('free')\n"
+)
 GREEN = {
     "Makefile": (
         "include mk/*.mk\n"
@@ -70,6 +84,7 @@ RED = {
     "tracked.txt": "one\n",
 }
 USAGE = {"Makefile": "test:\n\t@true\nbuild:\n\t@true\n"}
+MARKING = {"Makefile": ".PHONY: test\ntest:\n\t@touch \"$$MARKER\"\n"}
 VOID = {"Makefile": ".PHONY: test test-a test-b\ntest:\n\t@echo all\ntest-a:\n\t@echo a\ntest-b:\n\t@echo b\n"}
 ORACLE = {"Makefile": ".PHONY: test test-oracle\ntest:\n\t@echo all\ntest-oracle:\n\t@echo oracle\n"}
 FAILED = ("--fail-regex", r"FAILED TARGETS: \S")
@@ -95,6 +110,17 @@ def load_gate() -> object:
     return gate
 
 
+def lock_dir(worktree: Path) -> Path:
+    return LOCK_BASE / hashlib.sha256(os.fsencode(str(worktree))).hexdigest()[:16]
+
+
+def drop_lock_dir(path: Path) -> None:
+    if path.is_symlink():
+        path.unlink()
+    else:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 class GateCase(unittest.TestCase):
     files: ClassVar[dict[str, str]]
 
@@ -105,6 +131,7 @@ class GateCase(unittest.TestCase):
         self.repo = self.root / "repo"
         self.logs = self.root / "logs"
         self.repo.mkdir()
+        self.addCleanup(drop_lock_dir, lock_dir(self.repo))
         self.env = {
             "PATH": "/usr/bin:/bin",
             "HOME": tmp.name,
@@ -378,15 +405,279 @@ class TestWorktreeLock(GateCase):
     files = VOID
 
     def lock(self, name: str) -> Path:
-        return Path(self._git("rev-parse", "--absolute-git-dir").strip()) / name
+        LOCK_BASE.mkdir(mode=0o700, exist_ok=True)
+        lock_dir(self.repo).mkdir(mode=0o700, exist_ok=True)
+        return lock_dir(self.repo) / name
 
-    def lock_free(self) -> bool:
-        with open(self.lock(RUN_LOCK), "a", encoding="utf-8") as handle:
+    def test_a_read_only_git_dir_holds_no_lock_and_the_hold_still_runs(self):
+        git_dir = self.repo / ".git"
+        git_dir.chmod(0o555)
+        self.addCleanup(git_dir.chmod, 0o755)
+        result = self.gate("hold", "--repo", str(self.repo), "--", "sh", "-c", "exit 7")
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertEqual(list(git_dir.glob("kvb-gate-*.lock")), [])
+        locks = lock_dir(self.repo)
+        self.assertEqual(sorted(path.name for path in locks.iterdir()), [RUN_LOCK, SYNC_LOCK])
+        self.assertEqual(stat.S_IMODE(locks.stat().st_mode), 0o700)
+        self.assertEqual({stat.S_IMODE((locks / name).stat().st_mode) for name in (RUN_LOCK, SYNC_LOCK)}, {0o600})
+
+    def test_the_lock_path_ignores_tmpdir_council_root_state_and_home(self):
+        with open(self.lock(RUN_LOCK), "a", encoding="utf-8") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            for name in ("TMPDIR", "AGENTS_COUNCIL_ROOT", "XDG_STATE_HOME", "HOME"):
+                for value in (str(self.root / f"other-{name}"), "relative"):
+                    with self.subTest(name=name, value=value):
+                        result = subprocess.run(
+                            [sys.executable, str(SCRIPT), "hold", "--repo", str(self.repo), "--", "true"],
+                            cwd=self.root, env={**self.env, name: value}, capture_output=True, text=True, check=False,
+                        )
+                        self.assertEqual(result.returncode, 75, result.stderr)
+        self.assertEqual([path.name for path in self.root.iterdir() if path.name.startswith(("other-", "relative"))], [])
+
+    def test_a_link_shared_directory_or_second_name_at_any_level_is_refused(self):
+        gate = load_gate()
+        elsewhere, victim = self.root / "elsewhere", self.root / "victim"
+        elsewhere.mkdir()
+        victim.write_text("keep\n", encoding="utf-8")
+        key = lock_dir(self.repo).name
+        for case, refusal in (
+            ("base link", "cannot open the worktree lock {base}:"),
+            ("key link", "cannot open the worktree lock {base}/{key}:"),
+            ("run link", f"cannot open the worktree lock {{base}}/{{key}}/{RUN_LOCK}:"),
+            ("sync link", f"cannot open the worktree lock {{base}}/{{key}}/{SYNC_LOCK}:"),
+            ("base shared", f"{{base}} must be a directory of uid {os.getuid()} that group and others cannot write"),
+            ("key shared", f"{{base}}/{{key}} must be a directory of uid {os.getuid()} that group and others cannot write"),
+            ("run hardlink", f"{{base}}/{{key}}/{RUN_LOCK} must be a regular file of uid {os.getuid()} with one link"),
+            ("run fifo", f"{{base}}/{{key}}/{RUN_LOCK} must be a regular file of uid {os.getuid()} with one link"),
+        ):
+            with self.subTest(case):
+                base = self.root / case.replace(" ", "-")
+                level, kind = case.split()
+                path = {"base": base, "key": base / key, "run": base / key / RUN_LOCK, "sync": base / key / SYNC_LOCK}[level]
+                for directory in {"base": (), "key": (base,)}.get(level, (base, base / key)):
+                    directory.mkdir(mode=0o700)
+                if kind == "link":
+                    path.symlink_to(elsewhere if level in ("base", "key") else elsewhere / path.name)
+                elif kind == "shared":
+                    path.mkdir()
+                    path.chmod(0o777)
+                elif kind == "hardlink":
+                    os.link(victim, path)
+                else:
+                    os.mkfifo(path, 0o600)
+                with (
+                    contextlib.redirect_stderr(io.StringIO()) as err,
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    gate.lock_files(self.repo, base)
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(refusal.format(base=base, key=key), err.getvalue())
+                self.assertEqual(list(elsewhere.iterdir()), [])
+                self.assertEqual(victim.read_text(encoding="utf-8"), "keep\n")
+        marker = self.root / "ran"
+        lock_dir(self.repo).parent.mkdir(mode=0o700, exist_ok=True)
+        lock_dir(self.repo).symlink_to(elsewhere, target_is_directory=True)
+        result = self.gate("hold", "--repo", str(self.repo), "--", "touch", str(marker))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn(f"gate: cannot open the worktree lock {lock_dir(self.repo)}:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual((list(elsewhere.iterdir()), marker.exists()), ([], False))
+
+    def test_a_held_git_dir_lock_keeps_run_and_hold_out_and_a_read_only_one_is_still_held(self):
+        git_lock = self.repo / ".git" / RUN_LOCK
+        with open(git_lock, "a", encoding="utf-8") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            lock.write("4242\tgate.py hold -- make deploy\n")
+            lock.flush()
+            run = self.run_targets("test-a", extra=())
+            hold = self.gate("hold", "--repo", str(self.repo), "--", "true")
+        for result in (run, hold):
+            with self.subTest(command=result.args[2]):
+                self.assertEqual(result.returncode, 75, result.stderr)
+                self.assertIn(f"another gate.py run or hold or a hotfix.py sync holds the git dir lock of {self.repo} "
+                              "(last recorded pid 4242: gate.py hold -- make deploy, possibly stale)", result.stderr)
+        git_lock.chmod(0o400)
+        git_dir = self.repo / ".git"
+        git_dir.chmod(0o555)
+        self.addCleanup(git_dir.chmod, 0o755)
+        reader = EARLIER_GATE.replace("'a'", "'r'")
+        result = self.gate("hold", "--repo", str(self.repo), "--", sys.executable, "-c", reader, str(git_lock))
+        self.assertEqual((result.returncode, result.stdout), (0, "held\n"), result.stderr)
+        self.assertEqual(git_lock.read_text(encoding="utf-8"), "4242\tgate.py hold -- make deploy\n")
+
+    def test_a_missing_git_dir_lock_is_created_and_held_so_an_earlier_gate_py_stays_out(self):
+        git_lock = self.repo / ".git" / RUN_LOCK
+        self.assertFalse(git_lock.exists())
+        result = self.gate("hold", "--repo", str(self.repo), "--", sys.executable, "-c", EARLIER_GATE, str(git_lock))
+        self.assertEqual((result.returncode, result.stdout), (0, "held\n"), result.stderr)
+        self.assertEqual(stat.S_IMODE(git_lock.stat().st_mode), 0o600)
+        self.assertIn(f"\tgate.py hold --repo {self.repo} -- {sys.executable} -c ", git_lock.read_text(encoding="utf-8"))
+        self.assertTrue(self.free(git_lock))
+
+    def test_a_gate_py_with_a_tmp_of_its_own_is_kept_out_by_the_git_dir_lock(self):
+        host, box = load_gate(), load_gate()
+        for gate, name in ((host, "host-tmp"), (box, "box-tmp")):
+            (self.root / name).mkdir(mode=0o700)
+            gate.LOCK_BASE = self.root / name / "agents-locks"
+        with (
+            host.worktree_lock(self.repo, ["gate.py", "hold", "--", "make", "deploy"], []),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+            self.assertRaises(SystemExit) as raised,
+            box.worktree_lock(self.repo, ["gate.py", "hold"], []),
+        ):
+            self.fail("a gate.py with a /tmp of its own took the worktree lock")
+        self.assertEqual(raised.exception.code, 75)
+        self.assertIn(f"holds the git dir lock of {self.repo} (last recorded pid {os.getpid()}: gate.py hold -- make "
+                      "deploy, possibly stale)", err.getvalue())
+        with box.worktree_lock(self.repo, ["gate.py", "hold"], []) as fds:
+            self.assertEqual(len(fds), 2)
+
+    def test_a_read_only_git_dir_lock_holder_is_named_live_by_its_tmp_lock_and_the_git_dir_line_as_stale(self):
+        git_lock = self.repo / ".git" / RUN_LOCK
+        git_lock.write_text("4242\tgate.py run --repo OLD-FINISHED-RUN\n", encoding="utf-8")
+        git_lock.chmod(0o400)
+        self.addCleanup(git_lock.chmod, 0o600)
+        live, box = load_gate(), load_gate()
+        (self.root / "box-tmp").mkdir(mode=0o700)
+        box.LOCK_BASE = self.root / "box-tmp" / "agents-locks"
+        with live.worktree_lock(self.repo, ["gate.py", "hold", "--", "live"], []):
+            same_tmp = self.gate("hold", "--repo", str(self.repo), "--", "true")
+            with (
+                contextlib.redirect_stderr(io.StringIO()) as err,
+                self.assertRaises(SystemExit) as raised,
+                box.worktree_lock(self.repo, ["gate.py", "hold"], []),
+            ):
+                self.fail("a gate.py with a /tmp of its own took the worktree lock")
+        self.assertEqual(same_tmp.returncode, 75, same_tmp.stderr)
+        self.assertIn(f"another gate.py run or hold holds {self.repo} (pid {os.getpid()}: gate.py hold -- live)",
+                      same_tmp.stderr)
+        self.assertEqual(raised.exception.code, 75)
+        self.assertIn("(last recorded pid 4242: gate.py run --repo OLD-FINISHED-RUN, possibly stale)", err.getvalue())
+        self.assertEqual(git_lock.read_text(encoding="utf-8"), "4242\tgate.py run --repo OLD-FINISHED-RUN\n")
+
+    def test_a_recorded_holder_reaches_the_message_with_control_characters_escaped(self):
+        gate, lock = load_gate(), self.root / "holder.lock"
+        for recorded, named in (
+            ("4242\tgate.py run \x1b[2Jforged\nERROR: done\x07\n", "pid 4242: gate.py run \\x1b[2Jforged\\nERROR: done\\x07"),
+            ("4242 \x1b[2J\tgate.py run\n", "holder not recorded"),
+            ("4242\tgate.py hold -- make test-é\n", "pid 4242: gate.py hold -- make test-é"),
+        ):
+            with self.subTest(recorded=recorded):
+                lock.write_text(recorded, encoding="utf-8")
+                with lock.open("rb") as handle:
+                    self.assertEqual(gate.holder(handle.fileno()), named)
+
+    def test_a_fifo_link_or_second_name_as_git_dir_lock_ends_the_hold_with_2_at_once(self):
+        git_lock = self.repo / ".git" / RUN_LOCK
+        victim, marker = self.root / "victim", self.root / "ran"
+        victim.write_text("keep\n", encoding="utf-8")
+        second_name = f"{git_lock} must be a regular file of uid {os.getuid()} with one link"
+        for case, plant, refusal in (
+            ("fifo", lambda: os.mkfifo(git_lock, 0o600), second_name),
+            ("hardlink", lambda: os.link(victim, git_lock), second_name),
+            ("symlink", lambda: git_lock.symlink_to(victim), f"cannot open the git dir lock {git_lock}:"),
+        ):
+            with self.subTest(case):
+                plant()
+                try:
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPT), "hold", "--repo", str(self.repo), "--", "touch", str(marker)],
+                        env=self.env, capture_output=True, text=True, timeout=30, check=False,
+                    )
+                finally:
+                    git_lock.unlink()
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn(refusal, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertFalse(marker.exists())
+                self.assertEqual(victim.read_text(encoding="utf-8"), "keep\n")
+
+    def test_record_and_status_never_follow_a_link_or_second_name_in_the_git_common_dir(self):
+        gate = load_gate()
+        victim = self.root / "victim.json"
+        secret = '{"auths": {"registry": "secret"}}\n'
+        for case in ("lock link", "lock hardlink", "state link", "state hardlink"):
+            with self.subTest(case):
+                common = self.root / case.replace(" ", "-")
+                common.mkdir()
+                victim.write_text(secret, encoding="utf-8")
+                planted = common / (f"{STATE}.lock" if case.startswith("lock") else STATE)
+                if case.endswith("hardlink"):
+                    os.link(victim, planted)
+                else:
+                    planted.symlink_to(victim)
+                with (
+                    contextlib.redirect_stderr(io.StringIO()) as err,
+                    self.assertRaises(SystemExit) as raised,
+                    gate.state_lock(common / STATE) as lock,
+                ):
+                    gate.record(lock, common / STATE, "0" * 40, "test-a", {"status": "green"})
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(str(planted), err.getvalue())
+                self.assertEqual(victim.read_text(encoding="utf-8"), secret)
+                self.assertEqual(planted.is_symlink(), case.endswith(" link"))
+                self.assertEqual([path.name for path in common.iterdir() if path.name.startswith(f".{STATE}.")], [])
+                self.assertEqual((common / STATE).exists() and not (common / STATE).is_symlink(),
+                                 case == "state hardlink")
+        state = self.repo / ".git" / STATE
+        for case, plant, refusal in (
+            ("link", lambda: state.symlink_to(victim), f"gate: cannot read {state}:"),
+            ("fifo", lambda: os.mkfifo(state, 0o600), f"gate: {state} must be a regular file of uid {os.getuid()}"),
+        ):
+            with self.subTest(f"status through a {case}"):
+                plant()
+                try:
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPT), "status", "--repo", str(self.repo), "--json"],
+                        env=self.env, capture_output=True, text=True, timeout=30, check=False,
+                    )
+                finally:
+                    state.unlink()
+                self.assertEqual((result.returncode, result.stdout), (2, ""), result.stderr)
+                self.assertIn(refusal, result.stderr)
+                self.assertNotIn("secret", result.stdout + result.stderr)
+
+    def test_each_worktree_has_its_own_lock_and_a_subdirectory_shares_its_worktrees(self):
+        other = self.root / "other"
+        self._git("worktree", "add", "-q", "-b", "other", str(other))
+        self.addCleanup(drop_lock_dir, lock_dir(other))
+        (self.repo / "sub").mkdir()
+        self.assertNotEqual(lock_dir(self.repo), lock_dir(other))
+        with open(self.lock(RUN_LOCK), "a", encoding="utf-8") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            busy = self.gate("hold", "--repo", str(self.repo / "sub"), "--", "true")
+            free = self.gate("hold", "--repo", str(other), "--", "true")
+        self.assertEqual((busy.returncode, free.returncode), (75, 0), busy.stderr + free.stderr)
+        self.assertTrue((lock_dir(other) / RUN_LOCK).is_file())
+
+    def test_a_lock_or_command_that_cannot_start_ends_the_hold_non_zero(self):
+        marker = self.root / "ran"
+        locks = self.lock(RUN_LOCK).parent
+        locks.chmod(0o500)
+        self.addCleanup(locks.chmod, 0o700)
+        unwritable = self.gate("hold", "--repo", str(self.repo), "--", "touch", str(marker))
+        locks.chmod(0o700)
+        missing = self.gate("hold", "--repo", str(self.repo), "--", str(self.root / "no-such-command"))
+        for result, message in (
+            (unwritable, f"gate: cannot open the worktree lock {locks / RUN_LOCK}: Permission denied"),
+            (missing, "gate: cannot start"),
+        ):
+            with self.subTest(message):
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn(message, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse(marker.exists())
+
+    def free(self, path: Path) -> bool:
+        with open(path, "a", encoding="utf-8") as handle:
             try:
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 return False
             return True
+
+    def lock_free(self) -> bool:
+        return self.free(self.lock(RUN_LOCK))
 
     def test_a_busy_worktree_makes_run_and_hold_exit_75_naming_the_holder(self):
         with open(self.lock(RUN_LOCK), "a", encoding="utf-8") as lock:
@@ -459,8 +750,10 @@ class TestWorktreeLock(GateCase):
         self.assertEqual(result.returncode, 128 + signal.SIGTERM)
         self.assertEqual(self.gate("hold", "--repo", str(self.repo)).returncode, 2)
 
-    def test_an_orphan_of_a_hold_keeps_the_lock(self):
+    def test_an_orphan_of_a_hold_keeps_both_locks(self):
         pid_file = self.root / "deploy.pid"
+        git_lock = self.repo / ".git" / RUN_LOCK
+        git_lock.touch(mode=0o600)
         holder = subprocess.Popen(
             [sys.executable, str(SCRIPT), "hold", "--repo", str(self.repo), "--",
              "sh", "-c", f"echo $$ > {pid_file}.tmp; mv {pid_file}.tmp {pid_file}; exec sleep 60"],
@@ -477,14 +770,15 @@ class TestWorktreeLock(GateCase):
         self.addCleanup(self.kill, deploy)
         holder.kill()
         holder.wait()
+        self.assertFalse(self.free(git_lock), "the git dir lock died with the hold")
         result = self.run_targets("test-a", extra=())
         self.assertEqual(result.returncode, 75)
         self.assertIn(f"another gate.py run or hold holds {self.repo} (pid {holder.pid}: "
                       f"gate.py hold --repo {self.repo} -- sh -c", result.stderr)
         self.kill(deploy)
         deadline = time.monotonic() + 30
-        while not self.lock_free():
-            self.assertLess(time.monotonic(), deadline, "the killed deploy kept the lock")
+        while not (self.lock_free() and self.free(git_lock)):
+            self.assertLess(time.monotonic(), deadline, "the killed deploy kept a lock")
             time.sleep(0.05)
         self.assertEqual(self.run_targets("test-a", extra=()).returncode, 0)
 
@@ -534,6 +828,54 @@ class TestWorktreeLock(GateCase):
         self.assertIn(f"a hotfix.py sync still holds {self.repo} after 1 s (pid 4242: hotfix.py sync --task t)",
                       err.getvalue())
         self.assertTrue(self.lock_free())
+
+
+class TestReadOnlyCommonDir(GateCase):
+    files = MARKING
+
+    def test_a_read_only_common_dir_ends_run_with_2_before_any_target_runs(self):
+        marker = self.root / "ran"
+        self.env["MARKER"] = str(marker)
+        git_dir = self.repo / ".git"
+        self.addCleanup(git_dir.chmod, 0o755)
+        for case in ("no state yet", "state of an earlier run"):
+            with self.subTest(case):
+                git_dir.chmod(0o755)
+                if case == "state of an earlier run":
+                    self.assertEqual(self.run_targets("test", extra=()).returncode, 0)
+                    marker.unlink()
+                before = {path.name: path.read_bytes() for path in git_dir.glob(f"{STATE}*")}
+                git_dir.chmod(0o555)
+                result = self.run_targets("test", extra=())
+                self.assertEqual((result.returncode, marker.exists()), (2, False), result.stdout + result.stderr)
+                self.assertIn("nothing ran", result.stderr)
+                self.assertIn("as an operator row on the host", result.stderr)
+                self.assertIn("`make <target>` alone runs but records nothing", result.stderr)
+                self.assertNotIn("queue.py", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual({path.name: path.read_bytes() for path in git_dir.glob(f"{STATE}*")}, before)
+                self.assertEqual(list(git_dir.glob(f".{STATE}.*")), [])
+
+    def test_a_linked_or_invalid_state_file_ends_run_with_2_before_any_target_runs(self):
+        marker, victim = self.root / "ran", self.root / "victim.json"
+        self.env["MARKER"] = str(marker)
+        victim.write_text('{"auths": {"registry": "secret"}}\n', encoding="utf-8")
+        state = self.repo / ".git" / STATE
+        for case, plant, refusal in (
+            ("link", lambda: state.symlink_to(victim), f"gate: cannot read {state}:"),
+            ("invalid JSON", lambda: state.write_text("{broken\n", encoding="utf-8"), f"gate: {state} is not valid JSON"),
+        ):
+            with self.subTest(case):
+                plant()
+                try:
+                    result = self.run_targets("test", extra=())
+                finally:
+                    state.unlink()
+                self.assertEqual((result.returncode, marker.exists()), (2, False), result.stdout + result.stderr)
+                self.assertIn(refusal, result.stderr)
+                self.assertNotIn("secret", result.stdout + result.stderr)
+                self.assertEqual(victim.read_text(encoding="utf-8"), '{"auths": {"registry": "secret"}}\n')
+                self.assertEqual(list((self.repo / ".git").glob(f".{STATE}.*")), [])
 
 
 class TestUsage(GateCase):

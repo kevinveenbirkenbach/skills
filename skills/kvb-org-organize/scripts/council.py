@@ -2,8 +2,8 @@
 """Claim, release and list kvb-org-organize offices in the shared council directory.
 
 Environment:
-    AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
-        /tmp/agents-council unless set, because all agents must agree on it.
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the council directory
+        councilroot.py resolves, shared by every agent on the host.
     CLAUDE_CODE_SESSION_ID: the caller's session, taken over --session; other
         runtimes pass --session.
     PATH: filtered to the directories hookpath.py trusts before git runs.
@@ -44,7 +44,7 @@ def sibling(name: str) -> ModuleType:
 
 nofollow = sibling("nofollow")
 
-ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
+ROOT = sibling("councilroot").root()
 HEARTBEAT_LIMIT = 3600
 OFFICE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$")
 CLAIM = "claim.json"

@@ -16,7 +16,9 @@ Usage:
 
 Environment:
     SUBAGENT_MODEL_LOG: the log shared by every session;
-        ~/.local/state/agents-council/subagent-model.jsonl unless set.
+        subagent-model.jsonl in the host-only root (councilroot.py durable of
+        kvb-org-organize) unless set. Writes go through its nofollow.py, so
+        a link at the log or its directory fails them.
     CLAUDE_CODE_SESSION_ID: the session that rates its spawns.
 """
 
@@ -24,19 +26,27 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import importlib.util
 import json
 import os
 import re
 import shlex
 import sys
 from pathlib import Path
+from types import ModuleType
 
-LOG = Path(
-    os.environ.get(
-        "SUBAGENT_MODEL_LOG",
-        str(Path.home() / ".local" / "state" / "agents-council" / "subagent-model.jsonl"),
-    )
-)
+ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
+
+
+def organize(name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(f"kvb_perform_{name}", ORGANIZE / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+nofollow = organize("nofollow")
+LOG = Path(os.environ.get("SUBAGENT_MODEL_LOG") or organize("councilroot").durable() / "subagent-model.jsonl")
 TASK_CLASS = re.compile(r"^task-class:\s*(\S+)", re.MULTILINE)
 PENDING = "pending: "
 SCRIPT = "kvb-org-perform/scripts/log.py"
@@ -54,9 +64,8 @@ def now() -> str:
 
 
 def append(line: dict) -> None:
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with LOG.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(line, sort_keys=True) + "\n")
+    LOG.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    nofollow.append(LOG.parent, LOG, json.dumps(line, sort_keys=True) + "\n", 0o600)
 
 
 def record(line: dict) -> int:

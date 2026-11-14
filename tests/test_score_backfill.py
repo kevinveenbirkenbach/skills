@@ -139,6 +139,8 @@ class TestBackfill(unittest.TestCase):
             shutil.copy(BACKFILL.parent / name, scripts / name)
         shutil.copy(LABELS, scripts.parent / "labels.json")
         helper = scripts.parents[1] / "kvb-org-organize" / "scripts" / "nofollow.py"
+        helper.parent.mkdir(parents=True)
+        shutil.copy(REPO_ROOT / "skills" / "kvb-org-organize" / "scripts" / "councilroot.py", helper.parent / "councilroot.py")
         council = self.council("missing")
         env = {"PATH": os.environ["PATH"], "AGENTS_COUNCIL_ROOT": str(council)}
         done = subprocess.run([sys.executable, "-B", str(scripts / "backfill.py"), "--repo", str(self.fixture.a)], env=env, capture_output=True, text=True, check=False, timeout=HANG)

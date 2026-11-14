@@ -2,8 +2,9 @@
 """Keep the organisation's night mode: one active session, the others drained or suspended.
 
 Environment:
-    AGENTS_COUNCIL_ROOT: council directory shared by every agent on the host;
-        the state is <root>/night.json. /tmp/agents-council unless set.
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the council directory the
+        kvb-org-organize councilroot.py resolves, shared by every agent on the
+        host; the state is <root>/night.json.
     CLAUDE_CODE_SESSION_ID: the calling session.
 
 Args:
@@ -43,18 +44,25 @@ import tempfile
 from pathlib import Path
 from types import ModuleType
 
-ROOT = Path(os.environ.get("AGENTS_COUNCIL_ROOT", "/tmp/agents-council"))
-STATE = ROOT / "night.json"
-COUNCIL = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "council.py"
+ORGANIZE = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts"
+COUNCIL = ORGANIZE / "council.py"
 PARTS = {"drain": "drain (kvb-agent-drain)", "suspend": "suspend (kvb-agent-suspend)"}
 RENAMED = {"evening": "drain", "sunset": "suspend"}
 
 
-def council() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("council", COUNCIL)
+def loaded(name: str, path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def council() -> ModuleType:
+    return loaded("council", COUNCIL)
+
+
+ROOT = loaded("kvb_night_councilroot", ORGANIZE / "councilroot.py").root()
+STATE = ROOT / "night.json"
 
 
 def migrated(state: object) -> object:

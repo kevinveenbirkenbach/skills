@@ -10,8 +10,9 @@ Usage:
     queue.py block     hook (PreToolUse on Bash)
 
 Environment:
-    AGENTS_COUNCIL_ROOT: shared state directory; /tmp/agents-council unless set,
-        because every agent on the host must agree on it. The queue is
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the shared state directory the
+        kvb-org-organize councilroot.py resolves, on which every agent on the
+        host agrees. The queue is
         <root>/queue.json, every read-modify-write holds <root>/queue.lock.
         Each hold keeps an exclusive flock on <root>/holds/<tag>.lock, shared
         with its command, from before its entry exists until it leaves; an
@@ -138,6 +139,7 @@ SIBLINGS = {
     "rasci": SKILLS / "kvb-org-rasci" / "scripts" / "rasci.py",
     "history": Path(__file__).resolve().parent / "history.py",
     "nofollow": SKILLS / "kvb-org-organize" / "scripts" / "nofollow.py",
+    "councilroot": SKILLS / "kvb-org-organize" / "scripts" / "councilroot.py",
 }
 TOOLS = {"gates": SKILLS / "kvb-check-gate" / "scripts" / "gates.py"}
 HOST_SKILLS = Path.home() / ".agents" / "skills"
@@ -156,7 +158,6 @@ GATE = re.compile(r"\bgate\.py\s+(run|hold)\b")
 THROUGH_QUEUE = re.compile(r"\bqueue\.py\s+hold\b")
 BASH_RULE = re.compile(r"Bash(?:\((.*)\))?", re.DOTALL)
 RULE_PART = re.compile(r"( \*|\*)")
-MANAGED = Path("/etc/claude-code")
 BUDGET_KEYS = ("budget_percent.ram", "budget_percent.cpu")
 HOTFIX = "hotfix/"
 PYTEST = frozenset({"pytest", "py.test"})
@@ -1043,15 +1044,7 @@ def cmd_cancel(args: argparse.Namespace) -> int:
 
 
 def settings_files(project: Path) -> list[Path]:
-    user = Path.home() / ".claude"
-    return [
-        MANAGED / "managed-settings.json",
-        *sorted((MANAGED / "managed-settings.d").glob("*.json")),
-        user / "settings.json",
-        user / "settings.local.json",
-        project / ".claude" / "settings.json",
-        project / ".claude" / "settings.local.json",
-    ]
+    return sibling("councilroot").settings_files(project)
 
 
 def bash_rule(rule: str) -> re.Pattern | None:

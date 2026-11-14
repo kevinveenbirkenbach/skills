@@ -276,7 +276,7 @@ class TestInstalledHooks(Scratch):
         tree = self.out("write-tree")
         self.assertIn(f"gates: commit on main needs test (rule of main); no receipt for tree {tree} meets it.", refused.stderr)
         command = self.produce_command(refused.stderr)
-        log = self.base / f"gate-{tree[:12]}-test.log"
+        log = self.council / "gates" / f"gate-{tree[:12]}-test.log"
         self.assertEqual(command[:6], ["env", "-C", str(self.repo), "INFINITO_TEST_GPU=false", "python3", str(QUEUE)])
         self.assertEqual(
             command[6:], ["hold", "--kind", "test", "--task", "work/gate", "--receipt", "test", "--log", str(log), "--", "make", "test"]

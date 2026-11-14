@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
+import hashlib
 import importlib.util
 import io
 import json
@@ -37,6 +38,7 @@ PROBE = (
 SIGNATURE = r"connection refused .* port 5432"
 RUN_LOCK = "kvb-gate-run.lock"
 SYNC_LOCK = "kvb-gate-sync.lock"
+LOCK_BASE = Path("/tmp/agents-locks")
 IDENTITY = {
     "GIT_AUTHOR_NAME": "Test",
     "GIT_AUTHOR_EMAIL": "test@example.org",
@@ -51,6 +53,16 @@ def load_hotfix() -> object:
     hotfix = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(hotfix)
     return hotfix
+
+
+def gate_locks(worktree: Path) -> Path:
+    return LOCK_BASE / hashlib.sha256(os.fsencode(str(worktree))).hexdigest()[:16]
+
+
+def gate_lock(worktree: Path, name: str) -> Path:
+    LOCK_BASE.mkdir(mode=0o700, exist_ok=True)
+    gate_locks(worktree).mkdir(mode=0o700, exist_ok=True)
+    return gate_locks(worktree) / name
 
 
 class TestOriginUrls(unittest.TestCase):
@@ -172,6 +184,8 @@ class TestHotfix(unittest.TestCase):
         self.seed = self.published(self.origin, self.base / "seed", "app.txt")
 
         self.work = self.base / "work"
+        for worktree in (self.work, self.base / "feature", self.base / "line", self.base / "lone"):
+            self.addCleanup(shutil.rmtree, gate_locks(worktree), True)
         self.git(self.base, "clone", "-q", str(self.origin), str(self.work))
         self.feature = self.base / "feature"
         self.git(self.work, "worktree", "add", "-q", "-b", "feature", str(self.feature), "origin/main")
@@ -709,12 +723,20 @@ class TestHotfix(unittest.TestCase):
 
     def test_sync_refuses_while_a_gate_or_a_busy_process_holds_the_worktree(self):
         before = self.head(self.work)
-        git_dir = Path(self.git(self.work, "rev-parse", "--absolute-git-dir").strip())
-        with open(git_dir / RUN_LOCK, "a", encoding="utf-8") as lock:
+        with open(gate_lock(self.work, RUN_LOCK), "a", encoding="utf-8") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             result = self.sync(self.work, "work/side")
         self.assertEqual(result.returncode, 2)
         self.assertIn(f"a gate.py run or hold holds {self.work}", result.stderr)
+        git_lock = Path(self.git(self.work, "rev-parse", "--absolute-git-dir").strip()) / RUN_LOCK
+        with open(git_lock, "a", encoding="utf-8") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            lock.write("4242\tgate.py hold -- make deploy\n")
+            lock.flush()
+            result = self.sync(self.work, "work/side")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(f"a gate.py run or hold or another sync holds the git dir lock of {self.work} "
+                      "(last recorded pid 4242: gate.py hold -- make deploy, possibly stale)", result.stderr)
         config = self.base / "config.json"
         config.write_text(json.dumps({"busy_processes": ["sleep"]}), encoding="utf-8")
         self.env["AGENTS_COUNCIL_CONFIG"] = str(config)
@@ -771,7 +793,7 @@ class TestHotfix(unittest.TestCase):
         self.assertIn(f"a gate.py run or hold holds {self.work} (pid {holder.pid}: "
                       f"gate.py hold --repo {self.work} -- sh", result.stderr)
         self.assertEqual(self.head(self.work), before)
-        lock = Path(self.git(self.work, "rev-parse", "--absolute-git-dir").strip()) / RUN_LOCK
+        lock = gate_lock(self.work, RUN_LOCK)
         os.kill(deploy, signal.SIGKILL)
         deadline = time.monotonic() + 30
         while not self.lock_free(lock):
@@ -783,15 +805,17 @@ class TestHotfix(unittest.TestCase):
         line = self.base / "line"
         self.git(self.work, "worktree", "add", "-q", str(line), "line")
         self.commit(line, "side.txt", "other\n", "clashing line work")
-        lock = Path(self.git(self.work, "rev-parse", "--absolute-git-dir").strip()) / RUN_LOCK
-        probe, calls = self.base / "probe.py", self.base / "lock-states.log"
+        lock = gate_lock(self.work, RUN_LOCK)
+        git_lock = self.work / ".git" / RUN_LOCK
+        probe, calls, git_calls = self.base / "probe.py", self.base / "lock-states.log", self.base / "git-dir-states.log"
         probe.write_text(PROBE, encoding="utf-8")
         wrapper = self.base / "bin" / "git"
         wrapper.parent.mkdir()
         real = shutil.which("git", path=self.env["PATH"])
         wrapper.write_text(
             "#!/bin/sh\n"
-            f"case \" $* \" in *\" fetch \"*|*\" merge \"*) {sys.executable} {probe} {lock} \"$*\" >> {calls} ;; esac\n"
+            f"case \" $* \" in *\" fetch \"*|*\" merge \"*) {sys.executable} {probe} {lock} \"$*\" >> {calls}\n"
+            f"  {sys.executable} {probe} {git_lock} \"$*\" >> {git_calls} ;; esac\n"
             f"exec {real} \"$@\"\n",
             encoding="utf-8",
         )
@@ -799,13 +823,16 @@ class TestHotfix(unittest.TestCase):
         traced = {**self.env, "PATH": f"{wrapper.parent}:{self.env['PATH']}"}
         result = self.hotfix("sync", "--repo", str(self.work), "--task", "work/side", env=traced)
         self.assertEqual(result.returncode, 4, result.stderr)
-        states = [entry.split(" ", 1) for entry in calls.read_text(encoding="utf-8").splitlines()]
-        commands = [command.split(" ")[2] + (" --abort" if command.endswith("--abort") else "") for _, command in states]
-        self.assertEqual(commands, ["fetch", "merge", "merge", "merge --abort"])
-        self.assertEqual([state for state, _ in states], ["free", "held", "held", "held"], states)
-        self.assertTrue(self.lock_free(lock))
-        self.assertIn(f"\thotfix.py sync --repo {self.work} --task work/side\n",
-                      lock.with_name(SYNC_LOCK).read_text(encoding="utf-8"))
+        for log, path in ((calls, lock), (git_calls, git_lock)):
+            with self.subTest(lock=str(path)):
+                states = [entry.split(" ", 1) for entry in log.read_text(encoding="utf-8").splitlines()]
+                commands = [command.split(" ")[2] + (" --abort" if command.endswith("--abort") else "")
+                            for _, command in states]
+                self.assertEqual(commands, ["fetch", "merge", "merge", "merge --abort"])
+                self.assertEqual([state for state, _ in states], ["free", "held", "held", "held"], states)
+                self.assertTrue(self.lock_free(path))
+        for path in (lock.with_name(SYNC_LOCK), lock, git_lock):
+            self.assertIn(f"\thotfix.py sync --repo {self.work} --task work/side\n", path.read_text(encoding="utf-8"))
 
     def test_sync_and_update_keep_git_maintenance_off(self):
         calls = self.base / "git-calls.log"

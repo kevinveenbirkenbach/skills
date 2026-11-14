@@ -7,10 +7,11 @@ Usage:
     cleanup.py request
 
 Environment:
-    AGENTS_COUNCIL_ROOT: shared state directory; /tmp/agents-council unless
-        set. Agents append their requests to <root>/queue-cleanup.request,
-        which kvb-org-queue-cleanup.path watches below /tmp/agents-council
-        only. The round lives in ~/.local/state/agents-council, which only
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the council root the
+        kvb-org-organize councilroot.py resolves. Agents append their
+        requests to <root>/queue-cleanup.request, which
+        kvb-org-queue-cleanup.path watches below %S/agents-shared only. The
+        round lives in the host-only root (councilroot.py durable), which only
         the host can write, in queue-cleanup.json under queue-cleanup.lock,
         written by run alone.
     CLAUDE_CODE_SESSION_ID: run refuses to start while it is set.

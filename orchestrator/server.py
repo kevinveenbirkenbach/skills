@@ -25,8 +25,8 @@
     --tree-file: the JSON file `pkgmgr branch tree --output` writes, mounted
         read-only; read again whenever it changes.
     --timers: directory holding the systemd user units (*.timer).
-    --kept: ~/.local/state/agents-council, mounted read-only: gates.db and
-        the resources/ files of the host sampler.
+    --kept: the durable council root (councilroot.py durable), mounted
+        read-only: gates.db and the resources/ files of the host sampler.
     --vendor: directory holding the vendored Bootstrap Icons sprite,
         3d-force-graph and three with their licence texts.
     --cleanup: host-mounted directory the hub writes signed branch deletions

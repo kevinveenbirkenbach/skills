@@ -2,8 +2,9 @@
 """Ask every agent once, by one newsletter, to estimate the open register tasks that carry no complexity.
 
 Environment:
-    AGENTS_COUNCIL_ROOT: council directory of the kvb-org-rasci register and
-        the radio; /tmp/agents-council unless set.
+    AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the council directory of the
+        kvb-org-rasci register and the radio, as the kvb-org-organize
+        councilroot.py resolves it.
 
 Args:
     show: print the newsletter's text, send nothing.

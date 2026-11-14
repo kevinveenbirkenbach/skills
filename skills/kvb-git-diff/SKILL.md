@@ -9,11 +9,14 @@ approval is the operator's word for one commit, the exact tree it names, only
 once the operator's pinned passkey signature over it verifies here.
 
 1. Render the page. `<repo>` is the repository's name, `<branch>` the
-   branch with every `/` as `-`, `<base>` the branch's base and `<table>` a
-   file under `/tmp` holding the kvb-check-score commit table:
+   branch with every `/` as `-`, `<base>` the branch's base, `<table>` a
+   file under `/tmp` holding the kvb-check-score commit table, `<pages>`
+   and `<approvals>` the directories
+   `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py dir pages`
+   and `... dir approvals` print, in the council root the hub reads:
 
    ```bash
-   pkgmgr review --out /tmp/kvb-git-diff/<repo>-<branch>.html --max-file-lines 400 --base <base> --note <table>
+   pkgmgr review --out <pages>/<repo>-<branch>.html --max-file-lines 400 --base <base> --note <table>
    ```
 
 2. Request the review in the worktree; it ships the staged diff, every file
@@ -23,7 +26,7 @@ once the operator's pinned passkey signature over it verifies here.
    `<agent>` your agent name, which inline feedback is posted to:
 
    ```bash
-   python3 ~/.local/share/kvb-orchestrator/client/approval.py request --port 8737 --title "<subject>" --page /tmp/kvb-git-diff/<repo>-<branch>.html --notes <table> --gate <gate> --score "<score line>" --agent "<agent>"
+   python3 ~/.local/share/kvb-orchestrator/client/approval.py request --port 8737 --title "<subject>" --page <pages>/<repo>-<branch>.html --notes <table> --gate <gate> --score "<score line>" --agent "<agent>"
    ```
 
    Only a `pass` review can be approved in bulk or by a rule. Tell the
@@ -37,7 +40,7 @@ once the operator's pinned passkey signature over it verifies here.
    first, `<gate>` being the `gate` from step 2:
 
    ```bash
-   python3 ~/.local/share/kvb-orchestrator/client/approval.py verify --port 8737 --approvers ~/.config/kvb-orchestrator/approvers.json --replay /tmp/kvb-orchestrator-approvals/commit.json --review <id> --gate <gate>
+   python3 ~/.local/share/kvb-orchestrator/client/approval.py verify --port 8737 --approvers ~/.config/kvb-orchestrator/approvers.json --replay <approvals>/commit.json --review <id> --gate <gate>
    ```
 
    Exit 0 only: commit as the calling skill says. Any other exit,

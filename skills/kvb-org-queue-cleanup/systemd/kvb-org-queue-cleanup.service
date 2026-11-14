@@ -3,5 +3,6 @@ Description=One kvb-org-queue-cleanup round: pan-pan, security, delete the jobs 
 
 [Service]
 Type=oneshot
+ExecStartPre=-/usr/bin/python3 -I %h/.claude/skills/kvb-org-organize/scripts/councilroot.py retire
 ExecStart=/usr/bin/python3 -I %h/.claude/skills/kvb-org-queue-cleanup/scripts/cleanup.py run --window 900
 TimeoutStartSec=2400

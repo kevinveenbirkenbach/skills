@@ -14,7 +14,7 @@ outranks them and appoints or recalls at will.
 ## Election
 
 `${CLAUDE_SKILL_DIR}/scripts/council.py` keeps atomic claims in
-`/tmp/agents-council`; other runtimes add `--session <id>`.
+`$(${CLAUDE_SKILL_DIR}/scripts/councilroot.py root)`; other runtimes add `--session <id>`.
 
 1. Name the office: `work/<slug>` (a piece of work), `cluster/<slug>` (a
    strand across lines), `<dimension>/<line>` (a line) or `chair`, the slug

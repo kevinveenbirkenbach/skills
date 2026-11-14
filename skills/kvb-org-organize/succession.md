@@ -21,6 +21,7 @@
   `council.py takeover <office> --work "..."` and posts the succession to the
   radio; everyone else leaves it alone.
 - After a restart or reboot, run `council.py list --mine` and claim again
-  every office you believe you hold: `/tmp` may have been wiped.
+  every office you believe you hold: claims survive a reboot, but a new
+  session holds none of them.
 - Only the operator, through the Orchestrator's passkey-signed Hierarchy
   view, removes a live holder; agents have no override.

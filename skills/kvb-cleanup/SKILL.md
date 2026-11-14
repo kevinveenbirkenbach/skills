@@ -32,6 +32,7 @@ rules forbidding raw commands.
   joins Step 4) and `worktrees.md` next to this file when present.
 - **Agent dirs**: pip, npm, pre-commit, act, gh, buildx caches; Ansible and
   build temp dirs.
+- **Council root** (`~/.local/state/agents-shared`): `archive/` only.
 - **Register**: `council.py list --long`; `rasci.py artifacts` (`kvb-org-artefacts`,
   `--ended` for candidates).
 - **Queue**: `${CLAUDE_SKILL_DIR}/../kvb-org-queue-cleanup/scripts/cleanup.py

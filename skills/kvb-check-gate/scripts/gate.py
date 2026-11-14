@@ -28,15 +28,42 @@ Args:
         command's process group while hold keeps waiting for it. For deploys
         and every other heavy command that is no `make test*` target.
 
-    The worktree lock is `kvb-gate-run.lock` in the worktree's git dir,
-    taken without waiting and passed to make or the command, so it stays
-    held while they or a process they left running on this host live; a
-    process inside a container (`docker compose exec`) runs on there after
-    they die, and the lock no longer covers it. run and hold write their PID
-    and command into it, and a busy message names them. `hotfix.py sync`
-    takes `kvb-gate-sync.lock` exclusively, recording its PID and command
-    there, then the worktree lock, and releases them in reverse order; run
-    and hold take the worktree lock while holding `kvb-gate-sync.lock`
+    The worktree lock is `kvb-gate-run.lock` in `/tmp/agents-locks/<key>`,
+    key the first 16 hex digits of the SHA-256 of the worktree's real
+    top-level path: a fixed path no environment variable moves, so every
+    caller sharing this /tmp meets the same lock whether the git dir is
+    writable or not; a reboot ends every holder, so it needs no durability.
+    Both directories are created with mode 700 where missing; each level and
+    lock file is opened relative to its parent without following a link and
+    refused unless it is the current user's and not writable by group or
+    others, a lock file a regular file with one link. /tmp belongs to one
+    mount namespace, so run, hold and sync also hold the git dir lock,
+    `kvb-gate-run.lock` in the worktree's git dir: the one inode that a
+    caller with another /tmp (an agentbox box with the project bind-mounted,
+    the host) and a gate.py from before /tmp/agents-locks share. It is
+    created with mode 600 where missing, opened read-only where the git dir
+    or the file refuses writing, opened without following a link and refused
+    unless it is a regular file of the current user with one link; while it
+    is missing and cannot be created, only the /tmp lock guards the worktree
+    and a caller with another /tmp is not kept out. `kvb-gate.json` and
+    `kvb-gate.json.lock` in the git common dir pass the same checks, and
+    `kvb-gate.json` is replaced by a new file, never written in place; run
+    opens the lock, creates and removes a temporary file beside
+    `kvb-gate.json` and reads it before it takes the locks, so a read-only
+    git common dir or a refused `kvb-gate.json` ends it before any target
+    runs. Both
+    locks are taken without waiting and passed to make or the command, so
+    they stay held while they or a process they left running on this host
+    live; a process inside a container (`docker compose exec`) runs on there
+    after they die, and the locks no longer cover it. run and hold write
+    their PID and command into both, the git dir lock only when it opened
+    for writing, and a busy message names them; one on the git dir lock
+    shows its last recorded line as possibly stale, since a holder that
+    opened it read-only records nothing there. `hotfix.py sync` takes
+    `kvb-gate-sync.lock` beside the worktree lock exclusively, recording its
+    PID and command there, then the worktree lock and the git dir lock,
+    recording them in both too, and releases them in reverse
+    order; run and hold take the locks while holding `kvb-gate-sync.lock`
     shared, so they wait for a running sync, naming it, for at most
     SYNC_WAIT_SECONDS, and a busy worktree lock then means another run or
     hold.
@@ -58,28 +85,38 @@ Output:
 
 Exit codes:
     list: 0 done, 2 usage error.
-    status: 0 gate green, 1 gate open, 2 usage error.
+    status: 0 gate green, 1 gate open, 2 usage error or a `kvb-gate.json`
+        that cannot be opened or trusted.
     run: 0 every target green, 1 a target red, 2 usage error, an excluded
-        target, dirty tracked files or HEAD moved during a run, 3 void: the remaining targets are
-        neither run nor recorded, 75 (EX_TEMPFAIL) busy: another run or hold
-        holds the worktree, or a sync still holds it after SYNC_WAIT_SECONDS.
+        target, a worktree lock, git dir lock, `kvb-gate.json` or its lock
+        that cannot be created, opened or trusted, a git common dir it cannot
+        write (before any target runs), dirty tracked files or
+        HEAD moved during a run, 3 void: the remaining targets are neither
+        run nor recorded, 75 (EX_TEMPFAIL) busy: another run, hold or sync
+        holds the worktree or its git dir lock, or a sync still holds it
+        after SYNC_WAIT_SECONDS.
     hold: the command's exit code unchanged, 128+N when signal N ended it;
-        before the command started 2 on a usage error, 75 busy as for run,
-        128+N when signal N reached hold.
+        before the command started 2 on a usage error, a worktree lock or
+        git dir lock that cannot be created, opened or trusted or a command
+        that cannot start, 75 busy as for run, 128+N when signal N reached
+        hold.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 import fcntl
 import glob
+import hashlib
 import json
 import os
 import pwd
 import re
 import shlex
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -109,6 +146,12 @@ POLL_SECONDS = 0.1
 BUSY = os.EX_TEMPFAIL
 FORWARDED = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 HOTFIX = Path(__file__).resolve().parents[2] / "kvb-git-hotfix" / "scripts" / "hotfix.py"
+LOCK_BASE = Path("/tmp/agents-locks")
+KEY_HEX = 16
+DIRECTORY_MODE = 0o700
+LOCK_MODE = 0o600
+READ_ONLY = (errno.EROFS, errno.EACCES, errno.EPERM)
+HOLDER_BYTES = 4096
 CONFIG = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".claude" / "agents-council" / "config.json"
 EXCLUDED = "gate_excluded_targets"
 
@@ -241,21 +284,61 @@ def state_path(repo: Path) -> Path:
 
 
 def load(path: Path) -> dict:
-    if not path.exists():
-        return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError:
-        fail(f"{path} is not valid JSON; move it aside to start over")
+        handle = os.fdopen(git_file(path, os.O_RDONLY), encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except OSError as error:
+        fail(f"cannot read {path}: {error.strerror or error}")
+    with handle:
+        try:
+            data = json.load(handle)
+        except ValueError:
+            fail(f"{path} is not valid JSON; move it aside to start over")
     if not isinstance(data, dict):
         fail(f"{path} holds no object; move it aside to start over")
     return data
 
 
-def record(path: Path, sha: str, target: str, entry: dict) -> None:
+def unwritable(path: Path, error: OSError) -> NoReturn:
+    fail(f"cannot write {path}: {error.strerror or error}; nothing ran. Run `gate.py run` as an operator row on the "
+         "host, where the git common dir is writable; `make <target>` alone runs but records nothing")
+
+
+def state_lock(path: Path) -> TextIO:
+    """Args:
+      path: STATE in the git common dir.
+
+    Returns:
+      Its lock file, opened by git_file() for reading and writing, once a
+      temporary file could be created and removed beside path and load()
+      read path; exit 2 naming the host-side route to a writable git common
+      dir, or as load() does, otherwise.
+    """
+    lock_path = path.with_name(f"{STATE}.lock")
+    try:
+        lock = os.fdopen(git_file(lock_path, os.O_RDWR | os.O_CREAT), "r+", encoding="utf-8")
+    except OSError as error:
+        unwritable(lock_path, error)
+    try:
+        handle, temp = tempfile.mkstemp(dir=path.parent, prefix=f".{STATE}.")
+    except OSError as error:
+        lock.close()
+        unwritable(path.parent, error)
+    os.close(handle)
+    os.unlink(temp)
+    try:
+        load(path)
+    except SystemExit:
+        lock.close()
+        raise
+    return lock
+
+
+def record(lock: TextIO, path: Path, sha: str, target: str, entry: dict) -> None:
     # Linked worktrees share the git common dir, so parallel runs write this file.
-    with open(path.with_name(f"{STATE}.lock"), "w", encoding="utf-8") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    try:
         data = load(path)
         data.setdefault(sha, {})[target] = entry
         handle, temp = tempfile.mkstemp(dir=path.parent, prefix=f".{STATE}.")
@@ -263,6 +346,8 @@ def record(path: Path, sha: str, target: str, entry: dict) -> None:
             json.dump(data, out, indent=1, sort_keys=True)
             out.write("\n")
         os.replace(temp, path)
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def first_failure(log: Path, checks: list[re.Pattern]) -> str | None:
@@ -314,22 +399,26 @@ def claim(lock: TextIO, command: list[str]) -> None:
       lock: the open, exclusively held lock file.
       command: the holder's command line.
     """
+    lock.seek(0)
     lock.truncate(0)
     lock.write(f"{os.getpid()}\t{shlex.join(command)}\n")
     lock.flush()
 
 
-def holder(path: Path) -> str:
+def holder(fd: int) -> str:
     """Name the holder that `claim` recorded in a lock file.
 
     Args:
-      path: the lock file.
+      fd: an open descriptor of the lock file.
     """
     try:
-        pid, _, command = path.read_text(encoding="utf-8").strip().partition("\t")
+        pid, _, command = os.pread(fd, HOLDER_BYTES, 0).decode("utf-8", "replace").strip().partition("\t")
     except OSError:
         pid, command = "", ""
-    return f"pid {pid}: {command}" if pid and command else "holder not recorded"
+    if not (pid.isdecimal() and command):
+        return "holder not recorded"
+    shown = "".join(char if char.isprintable() else repr(char)[1:-1] for char in command)
+    return f"pid {pid}: {shown}"
 
 
 def shared(sync: TextIO, repo: Path, caught: list[int]) -> None:
@@ -351,34 +440,169 @@ def shared(sync: TextIO, repo: Path, caught: list[int]) -> None:
         if caught:
             sys.exit(128 + caught[0])
         if time.monotonic() >= deadline:
-            busy(f"a hotfix.py sync still holds {repo} after {SYNC_WAIT_SECONDS} s ({holder(Path(sync.name))}); "
+            busy(f"a hotfix.py sync still holds {repo} after {SYNC_WAIT_SECONDS} s ({holder(sync.fileno())}); "
                  "retry once it ends")
         if not waiting:
-            print(f"gate: a hotfix.py sync merges in {repo} ({holder(Path(sync.name))}); waiting for it at most "
+            print(f"gate: a hotfix.py sync merges in {repo} ({holder(sync.fileno())}); waiting for it at most "
                   f"{SYNC_WAIT_SECONDS} s", file=sys.stderr, flush=True)
             waiting = True
         time.sleep(POLL_SECONDS)
 
 
+class Busy(Exception):
+    pass
+
+
+def owned(fd: int, path: Path, regular: bool, private: bool) -> int:
+    """Args:
+      fd: an open descriptor of path, closed on a refusal.
+      path: named in the refusal.
+      regular: whether path is a lock or state file rather than a directory.
+      private: whether group and others must not be able to write path.
+
+    Returns:
+      fd when it is a directory, or with regular a regular file with one
+      link, of the current user that, with private, group and others cannot
+      write; exit 2 naming path otherwise.
+    """
+    info = os.fstat(fd)
+    if regular:
+        kind, fits = f"regular file of uid {os.getuid()} with one link", stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+    else:
+        kind, fits = f"directory of uid {os.getuid()}", stat.S_ISDIR(info.st_mode)
+    if fits and info.st_uid == os.getuid() and not (private and info.st_mode & 0o022):
+        return fd
+    os.close(fd)
+    fail(f"{path} must be a {kind}" + (" that group and others cannot write" if private else ""))
+
+
+def git_file(path: Path, flags: int) -> int:
+    """Args:
+      path: a lock or state file in a git dir, where a sandboxed caller may
+        have put a link, FIFO or second name.
+      flags: os.open flags; O_NOFOLLOW, O_NONBLOCK and O_CLOEXEC are added,
+        and a created file gets LOCK_MODE.
+
+    Returns:
+      Its descriptor once owned() passes it as a regular file, without the
+      private check; OSError of the open propagates.
+    """
+    return owned(os.open(path, flags | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, LOCK_MODE), path, True, False)
+
+
+def lock_files(top: Path, base: Path) -> tuple[TextIO, TextIO]:
+    """Args:
+      top: the worktree's top-level directory, as `git rev-parse
+        --show-toplevel` prints it.
+      base: the directory holding one lock directory per worktree, LOCK_BASE
+        outside tests.
+
+    Returns:
+      RUN_LOCK and SYNC_LOCK of base/<key>, open for reading and writing,
+      key the first KEY_HEX hex digits of the SHA-256 of the real path of
+      top. base and base/<key> are created with DIRECTORY_MODE where
+      missing; each level and lock file is opened relative to its parent's
+      descriptor without following a link and passes owned() before
+      anything is written to it. Exit 2 naming the level otherwise.
+    """
+    key = hashlib.sha256(os.fsencode(os.path.realpath(top))).hexdigest()[:KEY_HEX]
+    where = base.parent
+    try:
+        fd = os.open(where, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        for name in (base.name, key):
+            where = where / name
+            with contextlib.suppress(FileExistsError):
+                os.mkdir(name, DIRECTORY_MODE, dir_fd=fd)
+            parent, fd = fd, os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd)
+            os.close(parent)
+            owned(fd, where, False, True)
+        files = []
+        for name in (RUN_LOCK, SYNC_LOCK):
+            where = base / key / name
+            flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+            opened = owned(os.open(name, flags, LOCK_MODE, dir_fd=fd), where, True, True)
+            files.append(os.fdopen(opened, "r+", encoding="utf-8"))
+        os.close(fd)
+    except OSError as error:
+        fail(f"cannot open the worktree lock {where}: {error.strerror or error}")
+    return files[0], files[1]
+
+
+def git_dir_file(path: Path) -> TextIO | None:
+    """Args:
+      path: RUN_LOCK in a worktree's git dir.
+
+    Returns:
+      path opened by git_file() for reading and writing, created where
+      missing, or read-only where the git dir or the file refuses writing;
+      None when it is missing and cannot be created; exit 2 when it cannot
+      be opened otherwise.
+    """
+    try:
+        return os.fdopen(git_file(path, os.O_RDWR | os.O_CREAT), "r+", encoding="utf-8")
+    except OSError as error:
+        if error.errno not in READ_ONLY:
+            fail(f"cannot open the git dir lock {path}: {error.strerror or error}")
+    try:
+        return os.fdopen(git_file(path, os.O_RDONLY), "r", encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        fail(f"cannot open the git dir lock {path}: {error.strerror or error}")
+
+
 @contextlib.contextmanager
-def worktree_lock(repo: Path, command: list[str], caught: list[int]) -> Iterator[int]:
-    """Hold the worktree lock; yields its file descriptor for pass_fds.
+def git_dir_lock(git_dir: Path, command: list[str]) -> Iterator[int | None]:
+    """Args:
+      git_dir: the worktree's git dir, one inode for every mount namespace
+        that sees the worktree and for gate.py from before LOCK_BASE.
+      command: the holder's command line, recorded in it when git_dir_file()
+        opened it for writing.
+
+    Returns:
+      A context holding RUN_LOCK of git_dir exclusively and yielding its
+      descriptor, or holding nothing and yielding None when git_dir_file()
+      finds it missing and not creatable; Busy with the line last recorded
+      there, labelled possibly stale, while another run, hold or sync holds it.
+    """
+    lock = git_dir_file(git_dir / RUN_LOCK)
+    if lock is None:
+        yield None
+        return
+    with lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Busy(f"last recorded {holder(lock.fileno())}, possibly stale") from None
+        if lock.writable():
+            claim(lock, command)
+        yield lock.fileno()
+
+
+@contextlib.contextmanager
+def worktree_lock(repo: Path, command: list[str], caught: list[int]) -> Iterator[tuple[int, ...]]:
+    """Hold the worktree lock and the git dir lock; yields their file descriptors for pass_fds.
 
     Args:
-      repo: the worktree whose git dir holds RUN_LOCK and SYNC_LOCK.
-      command: the holder's command line, recorded in RUN_LOCK.
+      repo: the worktree whose lock_files and git_dir_lock are taken.
+      command: the holder's command line, recorded in both RUN_LOCKs.
       caught: signals the caller caught; the first ends a wait for a sync with 128+N.
     """
     git_dir = Path(git(repo, "rev-parse", "--absolute-git-dir").strip())
-    with open(git_dir / RUN_LOCK, "a", encoding="utf-8") as lock:
-        with open(git_dir / SYNC_LOCK, "a", encoding="utf-8") as sync:
+    run_lock, sync_lock = lock_files(Path(git(repo, "rev-parse", "--show-toplevel").strip()), LOCK_BASE)
+    with run_lock as lock, contextlib.ExitStack() as held:
+        with sync_lock as sync:
             shared(sync, repo, caught)
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                busy(f"another gate.py run or hold holds {repo} ({holder(git_dir / RUN_LOCK)})")
+                busy(f"another gate.py run or hold holds {repo} ({holder(lock.fileno())})")
+            try:
+                git_fd = held.enter_context(git_dir_lock(git_dir, command))
+            except Busy as other:
+                busy(f"another gate.py run or hold or a hotfix.py sync holds the git dir lock of {repo} ({other})")
             claim(lock, command)
-        yield lock.fileno()
+        yield (lock.fileno(),) if git_fd is None else (lock.fileno(), git_fd)
 
 
 def repository(value: str) -> Path:
@@ -483,7 +707,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     barred = sorted(set(args.target) & excluded())
     if barred:
         fail(f"excluded from every gate by {EXCLUDED} in {CONFIG}: {', '.join(barred)}")
-    with worktree_lock(repo, ["gate.py", "run", "--repo", str(repo), *target_flags(args.target)], []) as lock:
+    state = state_path(repo)
+    with (
+        state_lock(state) as state_file,
+        worktree_lock(repo, ["gate.py", "run", "--repo", str(repo), *target_flags(args.target)], []) as locks,
+    ):
         sha = head(repo)
         dirty, untracked = tree(repo)
         if dirty:
@@ -492,7 +720,6 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"untracked\t{len(untracked)} file(s), not part of the gate")
         log_dir = Path(args.log_dir).resolve()
         log_dir.mkdir(parents=True, exist_ok=True)
-        state = state_path(repo)
         red = False
         order = list(dict.fromkeys(args.target))
         checking = hotfix_checks()
@@ -505,7 +732,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             with open(log, "w", encoding="utf-8") as out:
                 code = subprocess.run(
                     ["make", "-C", str(repo), target],
-                    stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, pass_fds=(lock,), check=False,
+                    stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, pass_fds=locks, check=False,
                 ).returncode
             if head(repo) != sha:
                 fail(f"HEAD moved during {target}; nothing recorded for it")
@@ -525,7 +752,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                      "fail_regex": [c.pattern for c in checks]}
             if reasons:
                 entry["reason"] = "; ".join(reasons)
-            record(state, sha, target, entry)
+            record(state_file, state, sha, target, entry)
             print("\t".join([status, target, str(log), cell(entry.get("reason"))]))
             if changed:
                 fail(f"{target} left tracked files dirty; remaining targets not run")
@@ -551,11 +778,11 @@ def cmd_hold(args: argparse.Namespace) -> int:
 
     for signum in FORWARDED:
         signal.signal(signum, forward)
-    with worktree_lock(repo, ["gate.py", "hold", "--repo", str(repo), "--", *args.command], caught) as lock:
+    with worktree_lock(repo, ["gate.py", "hold", "--repo", str(repo), "--", *args.command], caught) as locks:
         if caught:
             return 128 + caught[0]
         try:
-            child = subprocess.Popen(args.command, cwd=repo, pass_fds=(lock,), start_new_session=True)
+            child = subprocess.Popen(args.command, cwd=repo, pass_fds=locks, start_new_session=True)
         except OSError as error:
             fail(f"cannot start {args.command[0]}: {error.strerror}")
         for signum in caught:

@@ -43,7 +43,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import datetime
+import errno
 import functools
 import hashlib
 import json
@@ -51,7 +53,6 @@ import os
 import shutil
 import stat
 import subprocess
-import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -367,20 +368,47 @@ def encoded(rows: list[dict]) -> str:
     return "".join(json.dumps(row, separators=(",", ":")) + "\n" for row in rows)
 
 
+def folder(path: Path) -> int:
+    return os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+
+
 def append_rows(path: Path, rows: list[dict]) -> None:
+    """Args:
+        path: the file; a link at it or its directory, or a file that is not
+            regular with a single link, raises OSError.
+        rows: appended as JSON lines.
+    """
     if rows:
-        with path.open("a", encoding="utf-8") as handle:
+        parent = folder(path)
+        try:
+            fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, 0o600, dir_fd=parent)
+        finally:
+            os.close(parent)
+        with open(fd, "a", encoding="utf-8") as handle:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise OSError(errno.EINVAL, "not a regular file with a single link", str(path))
             handle.write(encoded(rows))
 
 
 def replace(path: Path, text: str) -> None:
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as handle:
-        try:
+    """Args:
+        path: the file, replaced through a fresh temp file beside it; a link
+            at its directory raises OSError, one at path is replaced.
+        text: the new content.
+    """
+    parent = folder(path)
+    temp = f".{path.name}.{os.urandom(8).hex()}"
+    try:
+        with open(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent), "w", encoding="utf-8") as handle:
             handle.write(text)
-        except BaseException:
-            os.unlink(handle.name)
-            raise
-    os.replace(handle.name, path)
+        os.replace(temp, path.name, src_dir_fd=parent, dst_dir_fd=parent)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temp, dir_fd=parent)
+        raise
+    finally:
+        os.close(parent)
 
 
 def rewrite(path: Path, keep: Callable[[list[dict], float], list[dict]], now: float) -> None:

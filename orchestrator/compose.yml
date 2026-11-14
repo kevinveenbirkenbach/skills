@@ -13,6 +13,7 @@ services:
     read_only: true
     environment:
       TMPDIR: /scratch
+      AGENTS_COUNCIL_ROOT: "${KVB_ORCHESTRATOR_COUNCIL:?written into .env by scripts/install.sh}"
     cap_drop:
       - ALL
     security_opt:
@@ -36,9 +37,9 @@ services:
       - --public-port
       - "${KVB_ORCHESTRATOR_PORT:?set in .env}"
       - --council
-      - /tmp/agents-council
+      - "${KVB_ORCHESTRATOR_COUNCIL:?written into .env by scripts/install.sh}"
       - --pages
-      - /tmp/kvb-git-diff
+      - "${KVB_ORCHESTRATOR_COUNCIL:?written into .env by scripts/install.sh}/pages"
       - --state
       - /state
       - --host-state
@@ -89,12 +90,8 @@ services:
       - /scratch:size=64m,mode=1777,noexec,nosuid,nodev
     volumes:
       - type: bind
-        source: /tmp
-        target: /tmp
-        read_only: true
-      - type: bind
         source: "${KVB_ORCHESTRATOR_COUNCIL:?written into .env by scripts/install.sh}"
-        target: /tmp/agents-council
+        target: "${KVB_ORCHESTRATOR_COUNCIL:?written into .env by scripts/install.sh}"
         bind:
           create_host_path: false
       - type: bind

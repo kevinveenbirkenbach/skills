@@ -217,7 +217,11 @@ def main() -> int:
     except LookupError as error:
         print(f"backfill: {error}", file=sys.stderr)
         return 2
-    path = journal_path()
+    try:
+        path = journal_path()
+    except OSError as error:
+        print(f"backfill: journal: {error}", file=sys.stderr)
+        return 2
     try:
         keys = known(path)
     except (OSError, ValueError) as error:

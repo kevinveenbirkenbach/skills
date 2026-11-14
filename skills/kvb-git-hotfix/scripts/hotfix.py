@@ -46,9 +46,10 @@ Args:
         tracked tree, merge origin/<default> and each base up the chain, each
         with `git merge --no-verify --no-edit`. From the tree check to the
         last merge or abort it holds `kvb-gate-sync.lock`, with its PID and
-        command recorded there, and the worktree lock of the kvb-check-gate
-        skill's gate.py, and refuses while a `gate.py run` or `gate.py hold`
-        holds it, naming the holder. A watch.py busy process it sees in <dir>
+        command recorded there, and the worktree lock and git dir lock of the
+        kvb-check-gate skill's gate.py, and refuses while a `gate.py run` or
+        `gate.py hold` or, by the git dir lock, a sync with another /tmp
+        holds one, naming the holder. A watch.py busy process it sees in <dir>
         also refuses, but processes in another sandbox's PID namespace stay
         unseen, so the lock is the guard. The default branch is origin/HEAD; --default is read
         only when that ref is missing and must agree with it otherwise.
@@ -742,27 +743,30 @@ def cmd_void(rasci: ModuleType, args: argparse.Namespace) -> int:
 
 @contextlib.contextmanager
 def locked(repo: str, command: list[str]) -> Iterator[None]:
-    """Hold gate.py's sync lock and worktree lock of the worktree.
+    """Hold gate.py's sync lock, worktree lock and git dir lock of the worktree.
 
     Args:
       repo: the worktree.
-      command: sync's command line, recorded in the sync lock.
+      command: sync's command line, recorded in every lock it holds that it can write.
     """
     if not GATE.is_file():
         yield
         return
     gate = module("gate", GATE)
     git_dir = Path(git_out(repo, "rev-parse", "--absolute-git-dir").strip())
-    with (
-        open(git_dir / gate.SYNC_LOCK, "a", encoding="utf-8") as sync,
-        open(git_dir / gate.RUN_LOCK, "a", encoding="utf-8") as run,
-    ):
+    run_lock, sync_lock = gate.lock_files(Path(git_out(repo, "rev-parse", "--show-toplevel").strip()), gate.LOCK_BASE)
+    with sync_lock as sync, run_lock as run, contextlib.ExitStack() as held:
         fcntl.flock(sync, fcntl.LOCK_EX)
         gate.claim(sync, command)
         try:
             fcntl.flock(run, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            fail(f"a gate.py run or hold holds {repo} ({gate.holder(git_dir / gate.RUN_LOCK)}); sync once it ends")
+            fail(f"a gate.py run or hold holds {repo} ({gate.holder(run.fileno())}); sync once it ends")
+        try:
+            held.enter_context(gate.git_dir_lock(git_dir, command))
+        except gate.Busy as other:
+            fail(f"a gate.py run or hold or another sync holds the git dir lock of {repo} ({other}); sync once it ends")
+        gate.claim(run, command)
         yield
 
 

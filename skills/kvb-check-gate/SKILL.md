@@ -28,8 +28,8 @@ commit starts from zero.
    include or target expression means the list may be short: read that line
    and name the gap. A project without any target keeps the gate open; ask
    the operator.
-3. **Status**: `gate.py status --repo <root>`. `gate: green` ends here; a
-   `missing hotfix` reason means back to step 1.
+3. **Status**: `gate.py status --repo <root>`. `gate: green` ends here;
+   `missing hotfix` means step 1.
 4. **Admit**: every gate target is heavy and runs only inside
    `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold`.
    Only a single test module
@@ -40,8 +40,10 @@ commit starts from zero.
    background; give the operator `tail -f` on the log:
 
    ```bash
-   queue.py hold --kind <kind> --task <register task> -- gate.py run --repo <root> --target <t> [--target ...] --log-dir /tmp/<slug> [--fail-regex <re> ...]
+   queue.py hold --kind <kind> --task <register task> -- gate.py run --repo <root> --target <t> [--target ...] --log-dir <logs> [--fail-regex <re> ...]
    ```
+
+   `<logs>`: what `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py dir gates <slug>` prints; stop when it fails.
 
    Pass one `--fail-regex` per failure line the project prints while exiting
    0; infinito-nexus needs `FAILED TARGETS: \S`. A non-zero exit, a
@@ -49,8 +51,7 @@ commit starts from zero.
    target red; the last stops the run. Before each target `run` asks
    `hotfix.py void` for it and every later one. Exit 3 (`void: merge main
    for hotfix <slug>, then rerun`): back to step 1, then through the queue
-   again. Exit 75: the worktree is
-   busy, the message names the holder; wait, then rerun.
+   again. Exit 75: busy worktree, holder named; wait, rerun.
 6. **Judge** every red target by its `status` line and the log around it:
    caused by the change, already red on the default branch, or the
    environment. Fix the cause and rerun; looking unrelated never makes it
