@@ -12,3 +12,6 @@ skill defines the format.
 - [006 - Score Metric Overlays](006-score-metric-overlays.md)
 - [007 - Resources View](007-resources-view.md)
 - [008 - Home Dashboard](008-home-dashboard.md)
+- [009 - Code Graph by Default](009-code-graph-by-default.md)
+- [010 - Security Scan Cache per File](010-security-scan-cache-per-file.md)
+- [011 - Test Result Cache](011-test-result-cache.md)
