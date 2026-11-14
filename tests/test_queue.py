@@ -1339,6 +1339,21 @@ class TestHistory(unittest.TestCase):
         signatures, kinds = self.learn(small[:4])
         self.assertIsNone(footprint("test", ("make test",), signatures, kinds))
 
+    def test_the_ram_cap_lowers_what_footprint_and_ceiling_book_and_leaves_the_learned_shares_raw(self):
+        small = [history_row(n, signature="make test", mem_max=25, cpu_max=20) for n in range(5)]
+        big = [history_row(n + 5, kind="quality-high", signature="make verify-test", mem_max=80, cpu_max=90) for n in range(5)]
+        cfg = {"load_limits": {"mem_percent": 80, "cpu_percent": 90}, "ram_cap_percent": {"quality-high": 30, "test": 90}}
+        signatures, kinds = self.history.learn([*small, *big], NOW, cfg)
+        for booked in (self.history.footprint, self.history.ceiling):
+            with self.subTest(booked=booked.__name__):
+                self.assertEqual(booked("quality-high", ("make verify-test",), signatures, kinds), {"ram": 30, "cpu": 80})
+                self.assertEqual(booked("test", ("make test",), signatures, kinds), {"ram": 5, "cpu": 10})
+        self.assertEqual((kinds["quality-high"]["ram_share"], signatures["quality-high", "make verify-test"]["ram_share"]), (60, 60))
+        self.assertEqual((kinds["quality-high"]["ram_cap"], kinds["test"]["ram_cap"]), (30, 90))
+        signatures, kinds = self.learn([*small, *big])
+        self.assertIsNone(kinds["quality-high"]["ram_cap"])
+        self.assertEqual(self.history.footprint("quality-high", ("make verify-test",), signatures, kinds), {"ram": 60, "cpu": 80})
+
     def test_slot_limits_take_the_learned_limit_else_the_seed_and_a_smaller_cap(self):
         kinds = {"deploy": {"limit": 3}, "build": {"limit": None}}
         self.assertEqual(self.history.slot_limits(kinds, {"deploy": 2, "swarm": 0, "test": 9}, ["test", "gate"]), {
@@ -1805,6 +1820,21 @@ class TestQueueCommands(unittest.TestCase):
         for error in (ValueError("half-saved"), OSError("gone")):
             with self.subTest(error=error), mock.patch.object(queue.watch, "load_config", side_effect=error):
                 self.assertEqual(queue.fresh(good), good)
+
+    def test_a_broken_ram_cap_keeps_the_last_good_config_and_a_hold_refuses_it(self):
+        queue = _load(QUEUE)
+        good = {**self.cfg, "ram_cap_percent": {"test": 30}}
+        capped = {**self.cfg, "ram_cap_percent": {"test": 30, "quality-high": 100}}
+        with mock.patch.object(queue.watch, "load_config", return_value=capped):
+            self.assertEqual(queue.fresh(good), capped)
+        for caps in ({"test": 0}, {"test": 101}, {"test": "30"}, {"test": True}, {"test": float("nan")}, [30]):
+            with self.subTest(caps=caps), mock.patch.object(queue.watch, "load_config", return_value={**self.cfg, "ram_cap_percent": caps}):
+                self.assertEqual(queue.fresh(good), good)
+        self.config.write_text(json.dumps({**self.cfg, "ram_cap_percent": {"test": 101}}), encoding="utf-8")
+        result = self.run_queue("hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", "true")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("ram_cap_percent is no {kind: percent above 0 up to 100} map", result.stderr)
+        self.assertFalse((self.root / "queue.json").exists())
 
     def test_hold_takes_the_need_learned_for_its_command_from_both_history_files(self):
         self.cfg["slot_limits"]["deploy"] = 0

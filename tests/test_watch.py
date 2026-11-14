@@ -1148,6 +1148,17 @@ class TestWatchCommands(unittest.TestCase):
         self.assertEqual(short.returncode, 3)
         self.assertIn("memory stage stop", short.stdout)
 
+    def test_admit_refuses_while_the_ram_cap_is_broken_and_grants_under_a_valid_one(self):
+        self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
+        self.cfg["ram_cap_percent"] = {"test": "30"}
+        self._write_config()
+        denied = self._run("admit", "--kind", "test", "--", "true")
+        self.assertEqual(denied.returncode, 3)
+        self.assertIn("ram_cap_percent is no {kind: percent above 0 up to 100} map", denied.stdout)
+        self.cfg["ram_cap_percent"] = {"test": 30}
+        self._write_config()
+        self.assertEqual(self._run("admit", "--kind", "test", "--", "true").returncode, 0)
+
     def test_admit_refuses_a_heavy_command_and_names_the_queue_hold_of_kind_test(self):
         self.cfg["thresholds_gb"] = {"warn": 0, "stop": 0, "critical": 0}
         self.cfg["slot_need_gb"]["test-nostack"] = 0

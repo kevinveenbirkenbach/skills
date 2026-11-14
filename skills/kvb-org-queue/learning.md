@@ -29,3 +29,8 @@ was granted on.
 Until then the seeds hold: `slot_need_gb[kind]` for disk, 1 slot per kind,
 the whole budget as footprint.
 The optional `slot_limits {kind: N}` only caps a limit from above.
+The optional `ram_cap_percent {kind: percent}` caps the RAM share a job of
+that kind books, its footprint and its ceiling, while the learned shares and
+the history rows stay raw; keep it truthful by limiting the job's own memory
+to that share, such as a container memory limit. A waiting hold keeps the
+code it loaded: hold it again after an install so it books with the cap.

@@ -95,7 +95,9 @@ Config keys: budget_percent {ram, cpu}, required: the active and granted jobs'
 learned footprints (history.footprint, the whole budget for a kind not learned
 yet) may sum to at most these percentage points, a job alone always fits;
 slot_limits {kind: N}, optional, caps the learned slot limit of a kind from
-above (history.slot_limits); exclusive_kinds [kind] and light_kinds [kind],
+above (history.slot_limits); ram_cap_percent {kind: percent above 0 up to
+100}, optional, caps the RAM share history.footprint and history.ceiling
+book for a job of that kind, the learned shares stay raw; exclusive_kinds [kind] and light_kinds [kind],
 optional: a job of an exclusive kind runs only beside jobs of light kinds, and
 no job of another kind starts beside it; queue_enforce (bool), optional, read by block only. The watch.py keys
 disk, thresholds_gb (stop is the floor every grant leaves free), slot_need_gb (the disk seed per kind), load_limits (every grant
@@ -266,10 +268,23 @@ def config() -> dict:
     cfg, _ = watch.announced_config()
     if cfg is None:
         fail(f"no config at {watch.CONFIG}; the queue reads the kvb-org-organize watch config")
-    problem = watch.missing(cfg, (*BUDGET_KEYS, *watch.MEMORY_KEYS))
+    problem = watch.missing(cfg, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) or cap_problem(cfg)
     if problem is not None:
         fail(problem)
     return cfg
+
+
+def cap_problem(cfg: dict) -> str | None:
+    """Returns:
+        Why history.RAM_CAP is no {kind: percent above 0 up to 100} map, None
+        when it is one or unset.
+    """
+    caps = cfg.get(history.RAM_CAP, {})
+    if isinstance(caps, dict) and all(
+        isinstance(cap, (int, float)) and not isinstance(cap, bool) and 0 < cap <= 100 for cap in caps.values()
+    ):
+        return None
+    return f"{history.RAM_CAP} is no {{kind: percent above 0 up to 100}} map"
 
 
 def fresh(cfg: dict) -> dict:
@@ -282,7 +297,7 @@ def fresh(cfg: dict) -> dict:
         now = watch.checked_config(watch.load_config())
     except watch.UNUSABLE:
         return cfg
-    if watch.missing(now, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) is not None:
+    if (watch.missing(now, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) or cap_problem(now)) is not None:
         return cfg
     return now
 
@@ -1746,10 +1761,13 @@ def admit(cfg: dict, kind: str, argv: list[str], cpu: float, mem: float, calm: b
             (ramping_ram()) counts only when it is not.
 
     Returns:
-        load_reason() over the job's RAM share plus the live admit records
-        (admitted_ram()) and the ramp; under the store lock, a grant records
-        the share for ADMIT_SECONDS and expired records leave.
+        cap_problem() of cfg first; else load_reason() over the job's RAM
+        share plus the live admit records (admitted_ram()) and the ramp;
+        under the store lock, a grant records the share for ADMIT_SECONDS
+        and expired records leave.
     """
+    if (problem := cap_problem(cfg)) is not None:
+        return problem
     now = time.time()
     signatures, kinds = learned(cfg, now)
     mine = {"id": ADMIT, "status": "waiting", "kind": kind, ALIASES: list(aliases(workdir(), argv, os.getcwd()))}

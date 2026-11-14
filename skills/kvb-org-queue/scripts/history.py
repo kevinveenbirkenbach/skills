@@ -32,6 +32,7 @@ SIGNATURE_KEY = operator.itemgetter("kind", "signature")
 NAME_KEY = operator.itemgetter("signature")
 KIND_KEY = operator.itemgetter("kind")
 ANY_KIND = "*"
+RAM_CAP = "ram_cap_percent"
 SIGNATURE_HEADER = ("Signature", "Kind", "Runs", "Median min", "p90 disk GB", "p90 RAM %", "Need GB")
 KIND_HEADER = ("Kind", "Runs", "p90 RAM share %", "Median CPU share %", "Slot limit", "Source")
 
@@ -189,15 +190,17 @@ def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[tuple[str, str]
       now: epoch seconds; rows that ended more than WINDOW_SECONDS earlier are
         ignored.
       cfg: the config; load_limits.mem_percent and cpu_percent bound a limit,
-        light_kinds marks a kind light.
+        light_kinds marks a kind light, RAM_CAP {kind: percent} sets its
+        ram_cap.
 
     Returns:
       (signatures, kinds). signatures: {(kind, signature): {runs, minutes,
       disk_gb, ram_share, cpu_share, need_gb}}, and {(ANY_KIND, signature):
       ...} over the rows of every kind with that signature, which is what a
       queue before the per-kind learning booked; kinds: {kind: {runs,
-      ram_share, cpu_share, limit, light}}. With fewer than MIN_RUNS rows
-      every value but runs and light is None.
+      ram_share, cpu_share, limit, light, ram_cap}}, ram_cap None without a
+      cap. With fewer than MIN_RUNS rows every value but runs, light and
+      ram_cap is None.
       minutes is the median, disk_gb and ram_share the p90 of the disk taken
       and of max minus before in percentage points, cpu_share the median of
       max minus before; need_gb is ceil(disk_gb + DISK_MARGIN_GB); limit is
@@ -206,10 +209,11 @@ def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[tuple[str, str]
     """
     recent = [r for r in rows if now - r["end"] <= WINDOW_SECONDS]
     light = set(cfg.get("light_kinds", []))
+    caps = cfg.get(RAM_CAP, {})
     signatures = {(ANY_KIND, name): command_stats(group) for name, group in grouped(recent, NAME_KEY).items()}
     signatures.update((key, command_stats(group)) for key, group in grouped(recent, SIGNATURE_KEY).items())
     kinds = {
-        name: {**kind_stats(group, cfg["load_limits"]), "light": name in light}
+        name: {**kind_stats(group, cfg["load_limits"]), "light": name in light, "ram_cap": caps.get(name)}
         for name, group in grouped(recent, KIND_KEY).items()
     }
     return signatures, kinds
@@ -241,15 +245,17 @@ def footprint(kind: str, aliases: tuple[str, ...], signatures: dict[tuple[str, s
       there, for a kind not light at least booked_before(); else the
       largest of the kind's share and each alias's share over every kind,
       so a shape without runs of its own never books less than its kind or
-      the runs it was learned from; at least MIN_SHARE_PERCENT. None while
-      the kind is not learned yet.
+      the runs it was learned from; at least MIN_SHARE_PERCENT; RAM at most
+      the kind's ram_cap (capped()). None while the kind is not learned yet.
     """
     if kind not in kinds or kinds[kind]["ram_share"] is None:
         return None
     mine = own(signatures, kind, aliases[0])
     if mine is None:
-        return largest([kinds[kind], *wider(signatures, aliases)])
-    return largest([mine] if kinds[kind]["light"] else [mine, booked_before(kind, aliases, signatures, kinds)])
+        sources = [kinds[kind], *wider(signatures, aliases)]
+    else:
+        sources = [mine] if kinds[kind]["light"] else [mine, booked_before(kind, aliases, signatures, kinds)]
+    return capped(kinds[kind], largest(sources))
 
 
 def booked_before(kind: str, aliases: tuple[str, ...], signatures: dict[tuple[str, str], dict],
@@ -267,17 +273,26 @@ def ceiling(kind: str, aliases: tuple[str, ...], signatures: dict[tuple[str, str
     """Returns:
         The largest of every share footprint() can pick for the job: its
         signature under kind once learned, its kind's and each alias's over
-        every kind, which holds booked_before(); None while the kind is not
-        learned yet.
+        every kind, which holds booked_before(); RAM at most the kind's
+        ram_cap (capped()); None while the kind is not learned yet.
     """
     if kind not in kinds or kinds[kind]["ram_share"] is None:
         return None
     mine = own(signatures, kind, aliases[0])
-    return largest([kinds[kind], *wider(signatures, aliases), *([mine] if mine is not None else [])])
+    return capped(kinds[kind], largest([kinds[kind], *wider(signatures, aliases), *([mine] if mine is not None else [])]))
 
 
 def largest(sources: list[dict]) -> dict[str, float]:
     return {resource: max(MIN_SHARE_PERCENT, *(s[f"{resource}_share"] for s in sources)) for resource in RESOURCES}
+
+
+def capped(stats: dict, shares: dict[str, float]) -> dict[str, float]:
+    """Returns:
+        shares with RAM lowered to the ram_cap of the kind stats, learn()'s
+        RAM_CAP value; unchanged without one.
+    """
+    cap = stats.get("ram_cap")
+    return shares if cap is None else {**shares, "ram": min(shares["ram"], cap)}
 
 
 def learned_value(signatures: dict[tuple[str, str], dict], kind: str, aliases: tuple[str, ...],
