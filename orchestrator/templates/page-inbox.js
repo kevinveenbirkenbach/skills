@@ -1,16 +1,53 @@
+  const GONE_NOTICE = "already done or removed elsewhere";
+
+  function closeGone(result, keys, label) {
+    if (result.status !== 404 || !keys.length) {
+      return false;
+    }
+    state.inbox = state.inbox.filter((item) => !keys.includes(keyOf(item)));
+    toast(`${label}: ${GONE_NOTICE}`, [], true);
+    render(false);
+    drawStream();
+    return true;
+  }
+
+  async function reloadGone(missing, keys, label) {
+    await load();
+    if (missing === null) {
+      return;
+    }
+    const left = new Set(state.inbox.map(keyOf));
+    if (keys.some((key) => !left.has(key))) {
+      toast(`${label}: ${GONE_NOTICE}`, [], true);
+    } else {
+      toast(`${label}: not possible`, fail(missing), false);
+    }
+  }
+
   async function submit(entries, label) {
     ui.busy = true;
-    const signed = await proofFor(entries, label);
+    const keys = entries.map(keyOf);
+    let missing = null;
+    const gone = (result) => {
+      if (keys.length > 1 && result.status === 404) {
+        missing = result;
+        return true;
+      }
+      return closeGone(result, keys, label);
+    };
+    const signed = await proofFor(entries, label, gone);
     if (signed === null) {
       ui.busy = false;
-      await load();
+      await reloadGone(missing, keys, label);
       return false;
     }
     const result = await sendJson("/api/inbox/approve", {items: entries, proof: signed.proof});
     ui.busy = false;
     if (!result.ok || !result.data) {
-      toast(`${label}: not possible`, fail(result), false);
-      await load();
+      if (!gone(result)) {
+        toast(`${label}: not possible`, fail(result), false);
+      }
+      await reloadGone(missing, keys, label);
       return false;
     }
     known.batches.add(result.data.id);

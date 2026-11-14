@@ -16,12 +16,12 @@
     ui.busy = true;
     const prepared = await sendJson(`/api/rule-requests/${encodeURIComponent(item.id)}/sign`, {});
     const signed = prepared.ok && prepared.data ? await assertion(prepared.data, label) : null;
-    if (!prepared.ok || !prepared.data) {
+    if ((!prepared.ok || !prepared.data) && !closeGone(prepared, [keyOf(item)], label)) {
       toast(`${label}: not possible`, fail(prepared), false);
     }
     const result = signed ? await sendJson(`/api/rule-requests/${encodeURIComponent(item.id)}/accept`, {rule: prepared.data.payload, assertion: signed}) : null;
     ui.busy = false;
-    if (result) {
+    if (result && !closeGone(result, [keyOf(item)], label)) {
       toast(result.ok ? `Created: ${short(item.title)}` : `${label}: not created`, result.ok ? [] : fail(result), result.ok);
     }
     await load();
