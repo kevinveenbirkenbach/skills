@@ -281,7 +281,7 @@ HOME = """(async () => {@HELPERS@@PROBES@
     log: [tile("radio-log").querySelectorAll(".radio-row").length, tile("radio").querySelectorAll(".radio-row").length, document.querySelectorAll("#radio-spot .radio-row").length],
     gone: all("#main .home-tile.gone").length,
     stars: all("#main .home-tile .home-body .star").length,
-    ids: all("#main .home-tile .home-body [id]").map((node) => node.id),
+    ids: all("#main .home-tile .home-body [id]").map((node) => node.id).filter((id) => !id.startsWith("mic-field-")),
   };
   const count = (id) => tile(id).querySelectorAll(".radio-row").length;
   const before = [count("radio-log"), count("radio")];
@@ -418,7 +418,7 @@ SPOT = """(async () => {@HELPERS@@PROBES@@SPEAKING@
     states.stations.closed = [fold.open, document.activeElement === summary];
   }
   if (wanted.includes("voice")) {
-    const record = all("button", form).find((button) => button.hasAttribute("aria-pressed"));
+    const record = all("button", form).find((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic"));
     record.click();
     await sleep(1300);
     record.click();
@@ -699,7 +699,7 @@ COMPOSE_HOME = """(async () => {@HELPERS@@PROBES@
   const homeSpeak = tile("radio-speak");
   const form = (root) => root.querySelector("form.composer");
   const area = (root) => form(root).querySelector("textarea");
-  const record = (root) => all("button", form(root)).find((button) => button.hasAttribute("aria-pressed"));
+  const record = (root) => all("button", form(root)).find((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic"));
   const note = (root) => {
     const audio = form(root).querySelector(".voice-note audio");
     return audio ? audio.getAttribute("src").replace("/api/voice/", "").replace(".wav", "") : null;

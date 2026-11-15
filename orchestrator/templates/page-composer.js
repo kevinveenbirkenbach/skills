@@ -187,7 +187,7 @@
     channel.addEventListener("change", sync);
     sync();
     const form = h("form", {class: "composer"}, h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField), text, replay,
-      h("div", {class: "actions"}, record, status, hint, submit));
+      h("div", {class: "actions"}, record, micButton(text, false), status, hint, submit));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const direct = TO_ONE.some(([id]) => id === channel.value);

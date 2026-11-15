@@ -176,7 +176,7 @@ class TestLiveBubbles(HubCase):
                 stamp = time.time()
                 rows = [
                     {
-                        "ts": stamp + index / 1000,
+                        "ts": stamp - (len(cues[word]) - 1 - index) / 1000,
                         "from": sender,
                         "to": to,
                         "text": text,

@@ -78,16 +78,16 @@ class TestInboxGoneRows(HubCase):
         super().setUp()
         OUT.mkdir(parents=True, exist_ok=True)
         self.write_tree()
-        hub = self.httpd.hub
-        real = hub.render
+        frozen = type(self.httpd.hub)
+        real = frozen.render
 
-        def render(nonce: str) -> tuple[str, str]:
+        def render(hub: object, nonce: str) -> tuple[str, str]:
             self.write_council({"rasci.json": SHOWN})
-            page = real(nonce)
+            page = real(hub, nonce)
             self.write_council({"rasci.json": LEFT})
             return page
 
-        patch = mock.patch.object(hub, "render", render)
+        patch = mock.patch.object(frozen, "render", render)
         patch.start()
         self.addCleanup(patch.stop)
 

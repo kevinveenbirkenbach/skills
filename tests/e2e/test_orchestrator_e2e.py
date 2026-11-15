@@ -35,7 +35,7 @@ OUT = Path(os.environ.get("E2E_OUT", "/tmp/orchestrator-phase4-shots"))
 WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
 TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn", "3d")
-SCREENS = ["home", "stream", "tasks/operator", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS), "resources"]
+SCREENS = ["home", "stream", "tasks/operator", "tasks/match", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS), "resources"]
 SUBS = ["Firewall"]
 TABS = ["Home", "Stream", "Agents", "Artifacts", "Tasks", "Resources"]
 HELPERS = """
@@ -647,7 +647,7 @@ COMPOSE = """(async () => {@HELPERS@@SPOT_OPEN@
   channel.value = "call";
   channel.dispatchEvent(new Event("change", {bubbles: true}));
   recipient.value = "@TO@";
-  const record = all("button", form).find((button) => button.hasAttribute("aria-pressed"));
+  const record = all("button", form).find((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic"));
   record.click();
   await sleep(1500);
   const recording = record.getAttribute("aria-pressed");
@@ -839,7 +839,7 @@ SPOT_SEND = """(async () => {@HELPERS@
     inline: [getComputedStyle(spot).position, spot.getBoundingClientRect().bottom <= main.getBoundingClientRect().top, spot.parentElement.nextElementSibling === main],
     toolbar: all('#main [role="toolbar"] > *').map((node) => name(node.tagName === "DETAILS" ? node.querySelector("summary") : node)),
     channels: all("option", channel).map((option) => option.value),
-    record: all("button", form).filter((button) => button.hasAttribute("aria-pressed")).map(text),
+    record: all("button", form).filter((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic")).map(text),
     heads: all(".spot-head button", spot).map((button) => [name(button), button.title]),
     @FITS@,
   };
