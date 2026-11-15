@@ -333,7 +333,8 @@ AXIS_PROBE = """
 const fs = require("fs");
 const vm = require("vm");
 const s = (tag, attrs, ...children) => ({tag, attrs, children: children.flat(), append(...more) { this.children.push(...more); }});
-const context = {s, h: s, DAY: 86400, fixed: (value) => value.toFixed(1), stampOf: (t) => t, absolute: {format: () => "14 Nov 2026, 10:00"}, clock: {format: () => "10:00"}};
+const Resources = require(require("path").join(require("path").dirname(process.argv[1]), "resources.js"));
+const context = {s, h: s, DAY: 86400, Resources, fixed: (value) => value.toFixed(1), stampOf: (t) => t, absolute: {format: () => "14 Nov 2026, 10:00"}, clock: {format: () => "10:00"}};
 vm.runInNewContext(`${fs.readFileSync(process.argv[1], "utf8")}\\nglobalThis.frame = resourceFrame;`, context);
 const labels = (width, days) => context.frame({kind: "tokens", label: "Tokens"}, {from: 0, to: days * 86400}, {width, height: 120}, false).svg.children
   .filter((node) => node.tag === "text").map((node) => [Number(node.attrs.x), node.attrs["text-anchor"], node.children.join("")]);

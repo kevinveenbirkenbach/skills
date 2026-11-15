@@ -337,7 +337,7 @@ class TestViewDocument(unittest.TestCase):
                 valid_view(doc)
 
     def test_the_hub_digests_a_selection_exactly_as_panels_js_does(self):
-        texts = ["", "host:CPU", "burn:done\nhost:CPU", "agent:Ä€\U0001f600", "x" * 5000]
+        texts = ["", "host:CPU", "burn:done\nhost:CPU", "agent:\N{LATIN CAPITAL LETTER A WITH DIAERESIS}\N{EURO SIGN}\U0001f600", "x" * 5000]
         self.assertEqual([viewstore.digest(text) for text in texts], client_digests(*texts))
 
     def test_a_metric_pin_id_must_be_the_one_its_view_gives_so_no_view_hides_under_another_charts_id(self):

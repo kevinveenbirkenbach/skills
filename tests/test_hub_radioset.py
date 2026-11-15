@@ -250,7 +250,7 @@ function radio({running = true, hold = "", long = "", fail = 0, scale = 1000, bu
     RadioSet, Voice, radioSet: RadioSet.valid(null), state: {now: 1000, messages: [], speech: {tts: true, gate: {open: true}}},
     speech: {pending: [], busy: false, warned: 0, current: null, source: null, loading: null, timer: 0, item: null},
     settings: {bubbles, music: {on: false, volume: 0.4}}, SPEECH_QUEUE: 20, SPEECH_QUIET: 60000, SOUND_SLACK: 2, HUMAN: "Operator", Bubbles: {reading: () => 0.001},
-    keep: stub, drawRadioSet: stub, drawBubbles: stub, drawSpeaker: stub, duck: stub, clearBubbles: stub, toast: (title) => run.log.push(["toast", title]),
+    keep: stub, drawRadioSet: stub, drawBubbles: stub, drawSpeaker: stub, duck: stub, clearBubbles: stub, wordsRead: () => 0, saidOf: (item) => item.words, toast: (title) => run.log.push(["toast", title]),
     silenceBeeps: () => {
       run.beeps += 1;
     },

@@ -65,7 +65,7 @@ const Voice = (() => {
    * @param {number} start the start of its selection.
    * @param {number} end the end of its selection.
    * @param {string} text the transcript.
-   * @returns {{value: string, caret: number}} value with the trimmed transcript in place of the selection, one space on each side where a neighbour is no whitespace, and the caret right after the transcript.
+   * @returns {value: string, caret: number} value with the trimmed transcript in place of the selection, one space on each side where a neighbour is no whitespace, and the caret right after the transcript.
    */
   function spliced(value, start, end, text) {
     const words = String(text).trim();

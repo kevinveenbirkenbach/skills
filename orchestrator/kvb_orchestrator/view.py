@@ -121,10 +121,10 @@ class View:
         settings = self.settings.get()
         inbox = self.inbox(now, tasks, directory)
         queue = queue_entries(self.council, self.history.rows)
-        jobs = self.queue_order.get(live_ids(queue), now)
+        queue_jobs = self.queue_order.get(live_ids(queue), now)
         order = stored_order(self.council / AGENT_ORDER)
         rows = task_rows(tasks, queue, self.tree.get())
-        chain = grant_order(queue_chain(queue, tasks, order, now), jobs)
+        chain = grant_order(queue_chain(queue, tasks, order, now), queue_jobs)
         return {
             "settings": settings,
             "media": media_origins(settings),
@@ -153,7 +153,7 @@ class View:
             "tasks": rows,
             "task_edges": task_edges(rows, chain),
             "queue_line": queue_line(chain, queue),
-            "queue_jobs": jobs,
+            "queue_jobs": queue_jobs,
             "agent_order": agent_order(tasks, claims, order),
             "radio": radio,
             "claims": claims,

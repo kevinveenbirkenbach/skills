@@ -196,7 +196,7 @@ async function run(rule, items) {
   const sandbox = {
     Bubbles, speech, Date, settings: {bubbles: true}, radioSet: {}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0, SOUND_SLACK: 2,
     Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 1}, RadioSet: {burst: (gain) => ({gain, seconds: 0.6, frequency: 1800, q: 0.9})},
-    toast: () => null, context: () => audio, drawBubbles: () => null, performance: {now: () => 1000},
+    toast: () => null, context: () => audio, drawBubbles: () => null, wordsRead: () => 0, saidOf: (item) => item.words || Bubbles.words(item.line), performance: {now: () => 1000},
     duck: () => {
       if (rule === "transmit" && !ducked) {
         ducked = true;

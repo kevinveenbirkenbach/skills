@@ -4,9 +4,11 @@
         --agent <name> [--pages <dir>] [--rules <dir>]: adds the staged
         change of the worktree as a commit card: a review of the hub queue
         whose page holds the patch git diff --cached prints and whose tree is
-        the one git write-tree prints; <dir> is the hub's pages folder,
-        /tmp/kvb-git-diff by default, and --rules the MEDUSA rules the
-        masked card diff is built with, as approval.py request takes them.
+        the one git write-tree prints; <dir> is the folder the page is
+        written to, by default the pages folder councilroot.py dir pages of
+        kvb-org-organize makes in the council root, and --rules the MEDUSA
+        rules the masked card diff is built with, as approval.py request
+        takes them.
     add --task <operator/slug>: takes the payload files of an open operator
         row again, so its stale card turns fresh.
     list: prints one line per card; a commit card whose worktree's staged
@@ -26,6 +28,7 @@ from __future__ import annotations
 import argparse
 import html
 import importlib
+import importlib.util
 import json
 import os
 import re
@@ -36,7 +39,7 @@ from pathlib import Path
 
 PORT = 8737
 CLIENT = Path.home() / ".local" / "share" / "kvb-orchestrator" / "client"
-PAGES = Path("/tmp/kvb-git-diff")
+COUNCIL_ROOT = Path(__file__).resolve().parents[2] / "kvb-org-organize" / "scripts" / "councilroot.py"
 PATCH = re.compile(r'<pre id="patch">(.*)</pre>', re.DOTALL)
 REVIEW = re.compile(r"[0-9a-f]{16}")
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -44,6 +47,16 @@ UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 class Refused(Exception):
     pass
+
+
+def council_pages() -> Path:
+    spec = importlib.util.spec_from_file_location("kvb_match_councilroot", COUNCIL_ROOT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        return module.directory(module.root(), "pages")
+    except ValueError as error:
+        raise Refused(str(error)) from error
 
 
 def client_modules(folder: Path) -> dict:
@@ -93,7 +106,7 @@ def add_commit(args: argparse.Namespace, client: dict) -> str:
     if not patch.strip():
         raise Refused(f"nothing staged in {repo}")
     shown = patch.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
-    page = args.pages / f"match-{UNSAFE.sub('-', branch)}-{tree[:12]}.html"
+    page = (args.pages or council_pages()) / f"match-{UNSAFE.sub('-', branch)}-{tree[:12]}.html"
     page.write_text(f'<!doctype html><meta charset="utf-8"><title>{html.escape(args.title)}</title><pre id="patch">{html.escape(shown)}</pre>\n', encoding="utf-8")
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as notes:
         notes.write(f"{args.score}\n")
@@ -164,7 +177,7 @@ def parser() -> argparse.ArgumentParser:
     for name in ("--title", "--score", "--agent"):
         adding.add_argument(name)
     adding.add_argument("--gate", choices=("pass", "fail"))
-    adding.add_argument("--pages", type=Path, default=PAGES)
+    adding.add_argument("--pages", type=Path)
     adding.add_argument("--rules", type=Path)
     commands.add_parser("list")
     showing = commands.add_parser("show")

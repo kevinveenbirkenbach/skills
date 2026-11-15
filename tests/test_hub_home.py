@@ -449,7 +449,8 @@ METRIC_PROBE = """
 const fs = require("fs");
 const vm = require("vm");
 const [panelsFile, resourcesFile, homeFile] = process.argv.slice(1);
-const context = vm.createContext({ViewStore: {get: () => ({tokens: "accumulated"}), update: () => Promise.resolve(true), on: () => null}, labelOf: (key) => key, toast: () => null, console});
+const Resources = require(require("path").join(require("path").dirname(resourcesFile), "resources.js"));
+const context = vm.createContext({ViewStore: {get: () => ({tokens: "accumulated"}), update: () => Promise.resolve(true), on: () => null}, labelOf: (key) => key, toast: () => null, Resources, console});
 vm.runInContext(fs.readFileSync(panelsFile, "utf8"), context);
 vm.runInContext(`${fs.readFileSync(resourcesFile, "utf8")}\\n${fs.readFileSync(homeFile, "utf8")}\\nglobalThis.probe = {resourcePin, resourceView, Panels};`, context);
 const {resourcePin, resourceView, Panels} = context.probe;
@@ -854,7 +855,9 @@ class TestHomeBookmarks(unittest.TestCase):
 
 class TestHomeTree(HubCase):
     def served_tree(self) -> str:
-        self.tree_file.write_text(json.dumps({"generated_at": "2026-11-14T12:00:00+00:00", "delete_ready": False, "delete_reason": "Secret Service locked", "repos": long_repos()}), encoding="utf-8")
+        scanned = {"generated_at": "2026-11-14T12:00:00+00:00", "delete_ready": False, "delete_reason": "Secret Service locked", "repos": long_repos()}
+        self.tree_file.write_text(json.dumps(scanned), encoding="utf-8")
+        self.write_local_plan(scanned, {MERGED_BRANCH: {"skip": None, "actions": ["local-branch"]}})
         self.write_council({"rasci.json": {LONG_TASK: long_task(time.time())}})
         status, _, body = self.get("/api/tree")
         self.assertEqual(status, 200, body[:300])

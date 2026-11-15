@@ -18,7 +18,7 @@ DUTCH = wav_bytes(1, 2, engines.STT_RATE, b"\x02\x00" * engines.STT_RATE)
 FRENCH = wav_bytes(1, 2, engines.STT_RATE, b"\x03\x00" * engines.STT_RATE)
 HEARD = {
     "hallo-welt.wav": {"auto": ["de", "Hallo Welt."], "de": [0.9, "Hallo Welt."], "en": [0.3, "Hollow felt."]},
-    "hello-world.wav": {"auto": ["en", "Hello world."], "de": [0.2, "Hello Wörld."], "en": [0.9, "Hello world."]},
+    "hello-world.wav": {"auto": ["en", "Hello world."], "de": [0.2, "Hello W\N{LATIN SMALL LETTER O WITH DIAERESIS}rld."], "en": [0.9, "Hello world."]},
     "dutch": {"auto": ["nl", "Hallo wereld."], "de": [0.7, "Hallo Welt."], "en": [0.4, "Hello world."]},
     "french": {"auto": ["fr", "Bonjour le monde."], "de": [0.2, "Bonschur."], "en": [0.6, "Bonjour world."]},
 }

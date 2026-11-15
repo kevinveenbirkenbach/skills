@@ -20,6 +20,8 @@
   next-oldest live representative. The successor runs
   `council.py takeover <office> --work "..."` and posts the succession to the
   radio; everyone else leaves it alone.
+- Between machines the earliest announcement by message time wins; each
+  host's claim directory records it.
 - After a restart or reboot, run `council.py list --mine` and claim again
   every office you believe you hold: claims survive a reboot, but a new
   session holds none of them.

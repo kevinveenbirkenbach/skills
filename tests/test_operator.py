@@ -406,7 +406,7 @@ class TestOperator(unittest.TestCase):
         self._add("bad", self.base, "true", "r", "manual")
         code, shown, modes = self._terminal(["run"], [
             (b"Run it?", b"c\n"),
-            (b"Why cancel?", "ich hä\x7fätte gerne einen befehl bei dem ich seh was passiert\n".encode()),
+            (b"Why cancel?", "I h\N{LATIN SMALL LETTER A WITH DIAERESIS}\x7f\N{LATIN SMALL LETTER A WITH DIAERESIS}d rather see a command that shows what happens\n".encode()),
             (b"Run it?", b"c\n"),
             (b"Why cancel?", b"kaputt \xff " + "👀\n".encode()),
         ])
@@ -414,17 +414,17 @@ class TestOperator(unittest.TestCase):
         self.assertNotIn("Traceback", shown)
         self.assertEqual(modes, [True, True, True, True, False])
         register = self._register()
-        self.assertEqual(register["operator/drop"]["cancelled"], "ich hätte gerne einen befehl bei dem ich seh was passiert")
+        self.assertEqual(register["operator/drop"]["cancelled"], "I h\N{LATIN SMALL LETTER A WITH DIAERESIS}d rather see a command that shows what happens")
         self.assertEqual(register["operator/bad"]["cancelled"], "kaputt � 👀")
 
     def test_a_granted_cancel_typed_on_a_terminal_keeps_an_erased_umlaut_whole_and_restores_the_mode(self):
         self._add("paint", self.base, "true", "r", "manual")
         code, shown, modes = self._terminal(
             ["granted", "operator/paint", "--dir", str(self.base), "--check", "manual", "--", "/bin/sh", "-ic", "true"],
-            [(b"Run it?", b"c\n"), (b"Why cancel?", "ich hä\x7fätte gerne einen befehl\n".encode())],
+            [(b"Run it?", b"c\n"), (b"Why cancel?", "I h\N{LATIN SMALL LETTER A WITH DIAERESIS}\x7f\N{LATIN SMALL LETTER A WITH DIAERESIS}d rather see a command\n".encode())],
         )
         self.assertEqual((code, modes), (75, [True, True, False]), shown)
-        self.assertEqual(self._register()["operator/paint"]["cancelled"], "ich hätte gerne einen befehl")
+        self.assertEqual(self._register()["operator/paint"]["cancelled"], "I h\N{LATIN SMALL LETTER A WITH DIAERESIS}d rather see a command")
 
     def test_an_interrupt_at_a_prompt_restores_the_terminal_mode(self):
         self._add("drop", self.base, "true", "r", "manual")

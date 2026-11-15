@@ -13,7 +13,7 @@ tokens.
 1. **Depends on**: nothing. Independent of 010, 011 and quality 003.
 2. **Timing**: implementation starts once the running agent lanes are done.
 3. **Automatic per repository** (amended by the operator 2026-11-14, pick
-   "auto_index aus"): the daemon's `auto_index` stays off; the skills
+   "auto_index off"): the daemon's `auto_index` stays off; the skills
    `make install` sets `codebase-memory-mcp config set auto_index false`. The
    skills PreToolUse hook (`kvb-agent-optimize/scripts/graph.py hook`) indexes
    every git root a tool call touches, the session root included, once it has

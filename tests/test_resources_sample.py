@@ -73,6 +73,9 @@ def host_sys(root: Path) -> Path:
     return root
 
 
+NO_PRESSURE = {"psi_some": None, "psi_full": None, "swap_out_mb_min": None}
+
+
 def row(t: int, cpu: float, used: int, waiting: int, gpu: dict) -> dict:
     return {"t": t, "disks": [{"mount": "/", "used": used, "total": 1000}], "cpu": cpu, "ram": cpu / 2, "swap": 0.0, "load": cpu / 10, "gpus": [gpu], "queue": {"waiting": waiting, "active": 1}}
 
@@ -192,7 +195,7 @@ class TestPressure(unittest.TestCase):
             row(NOW + 60, 1.0, 1, 0, asleep) | {"psi_some": 2.0, "psi_full": 1.004, "swap_out_mb_min": 100.0},
             row(NOW + 120, 1.0, 1, 0, asleep) | {"psi_some": 4.5, "psi_full": None, "swap_out_mb_min": 301.0},
         ]
-        mean = sampler.mean_row(NOW, rows)
+        mean = sampler.mean_row(NOW, sampler.BUCKET, rows)
         self.assertEqual((mean["psi_some"], mean["psi_full"], mean["swap_out_mb_min"]), (3.25, 1.0, 200.5))
 
 
@@ -251,7 +254,7 @@ class TestRetention(unittest.TestCase):
         ]
         kept = sampler.retain(rows, NOW)
         self.assertEqual([entry["t"] for entry in kept], [day, NOW - 30 * DAY, bucket, bucket + 900, NOW - 60])
-        self.assertEqual(kept[0], {**row(day, 5.0, 1, 0, asleep), "queue": {"waiting": 0.0, "active": 1.0}, "span": 60, "width": DAY})
+        self.assertEqual(kept[0], {**row(day, 5.0, 1, 0, asleep), **NO_PRESSURE, "queue": {"waiting": 0.0, "active": 1.0}, "span": 60, "width": DAY})
         self.assertEqual(kept[1], {**mean, "span": sampler.BUCKET, "width": sampler.BUCKET})
         self.assertEqual(kept[2], {
             "t": bucket, "disks": [{"mount": "/", "used": 200, "total": 1000}, {"mount": "/mnt", "used": 10, "total": 20}], "cpu": 30.0, "ram": 15.0, "swap": 0.0, "load": 3.0,
@@ -273,7 +276,7 @@ class TestRetention(unittest.TestCase):
         kept = sampler.retain([ancient, *means, late, recent], NOW)
         self.assertEqual([entry["t"] for entry in kept], [day - 1000 * DAY, day, edge + sampler.BUCKET, NOW - 60])
         self.assertEqual(kept[0], ancient)
-        self.assertEqual(kept[1], {**row(day, 30.0, 100, 0, asleep), "load": 3.0, "queue": {"waiting": 0.0, "active": 1.0}, "span": 3 * sampler.BUCKET, "width": DAY})
+        self.assertEqual(kept[1], {**row(day, 30.0, 100, 0, asleep), **NO_PRESSURE, "load": 3.0, "queue": {"waiting": 0.0, "active": 1.0}, "span": 3 * sampler.BUCKET, "width": DAY})
         self.assertEqual(kept[2:], [late, recent])
         self.assertEqual(sampler.retain(kept, NOW), kept)
         later = sampler.retain(kept, NOW + 2 * DAY)

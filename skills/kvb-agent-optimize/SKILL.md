@@ -37,15 +37,10 @@ installed, whether the daemon's `auto_index` is off, and the state of the shared
   (additional working directories, worktrees, submodules), once it has no
   graph. It indexes nothing until `~/.config/kvb-code-graph/config.json`
   sets `queue_file_threshold` and `queue_task` (no defaults; the operator
-  sets both, the hook says so once per session). A root with more files
-  than the threshold (tracked plus untracked, not ignored), with a
-  `.gitmodules` file or a nested repository, or whose count git cannot give
-  within 2 s is enqueued once through `kvb-org-queue` under `queue_task`,
-  never started by the hook; a smaller one starts a detached helper
-  (`index_repository`, `async: true`, mode `full`) only while no other
-  helper runs and `kvb-org-organize` reports the memory stage ok. Git runs
-  with repository hooks and fsmonitor off. A failed or refused index is
-  retried after 6 hours at the earliest. `make install` also enables
+  sets both, the hook says so once per session). A root over the threshold
+  is enqueued once through `kvb-org-queue` under `queue_task`, never started
+  by the hook; the `graph.py` docstring holds every size, memory, git and
+  retry gate. `make install` also enables
   `kvb-code-graph.service`, which keeps a permanent daemon so each watch
   outlives the last session; while the unit is inactive, the hook prints
   the enable command once per session and records it once as a

@@ -21,14 +21,14 @@ request and stop, or, ordered here by the operator, first
 
 Read-only, parallel, sized, only in the agent write scope (Claude Code:
 `sandbox.filesystem.allowWrite`) and session scratch dirs, never another
-user's files. Prefer project cleanup and teardown targets; obey bans on raw
-commands.
+user's files. Prefer project cleanup and teardown targets; obey raw-command
+bans.
 
 - **/tmp**: `pkgmgr gc --report --docker --root /tmp --root <write dir>`,
   else `du -sh` per own entry; never system entries (`.*-unix`,
   `systemd-private-*`, `ssh-*`, `tmux-*`, sockets).
 - **Docker**, **worktrees**: read `docker.md` (its `⚠ Volumes` checklist
-  joins Step 4) and `worktrees.md` next to this file when present.
+  joins Step 4) and `worktrees.md` here when present.
 - **Agent dirs**: pip, npm, pre-commit, act, gh, buildx caches; Ansible and
   build temp dirs.
 - **Council root** (`~/.local/state/agents-shared`): `archive/` only.
@@ -52,7 +52,7 @@ go on meanwhile.
 ## Step 3: classify
 
 First match wins: claimed by a peer, `keep`; in a register task not `done`,
-`stopped` or `stale` (a branch merged into the default branch makes it
+`stopped` or `stale` (a branch merged into the default makes it
 `stale`; an ended task's items are its worker's candidates), `keep (task <task>)`; a
 running deploy, gate, test, swarm or build, `keep (running)`; a silent peer's,
 `keep (no answer from <peer>)`, silence is not consent; sandboxed, touched

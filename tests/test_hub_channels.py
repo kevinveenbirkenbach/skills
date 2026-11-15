@@ -55,7 +55,7 @@ function spoken(aloud, bubbles) {
     state: {now: 1000, messages: [], speech: {tts: true, gate: {open: true}}}, settings: {bubbles, channels: {...ON, aloud}},
   };
   vm.runInNewContext(speechCode, sandbox);
-  sandbox.say = (item) => said.push(item.silent);
+  sandbox.say = (...items) => said.push(...items.map((item) => item.silent));
   sandbox.speakRows([{ts: 1000, from: "Stage", to: [], class: "security", source: "s2", voice: "v2", word: "W", rest: "R", text: "rotate keys now"}]);
   return said;
 }

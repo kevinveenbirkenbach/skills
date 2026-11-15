@@ -62,7 +62,7 @@
     return h("tr", {class: "match-mark", "data-line": mark.line}, h("td", {colspan: columns}, icon("bi-chat-square-text"), h("span", {class: "match-mark-text"}, revealed(mark.comment))));
   }
 
-  function fileRows(card, file) {
+  function matchFileRows(card, file) {
     const commit = card.kind === "commit";
     const rows = commit ? (file.patch ? Diffs.rows(file.patch).map(patchRow) : []) : file.state === "read" ? contentRows(file.content) : [];
     const columns = commit ? 4 : 2;
@@ -93,7 +93,7 @@
 
   function fileBlock(card, file, index) {
     const opened = matchView.opened.has(card.id) ? matchView.opened.get(card.id).has(file.path) : index === 0;
-    const rows = fileRows(card, file);
+    const rows = matchFileRows(card, file);
     const table = rows.length ? h("div", {class: "diff-scroll"}, h("table", {class: "diff"}, h("tbody", {}, rows))) : h("p", {class: "muted"}, card.kind === "commit" ? "No patch shipped for this file." : "Not read.");
     const block = h("details", {class: "match-file", "data-path": file.path, "data-state": card.kind === "command" ? file.state : null, open: opened}, fileHead(card, file), table);
     block.addEventListener("toggle", () => remember(card, block));

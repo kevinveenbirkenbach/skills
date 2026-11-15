@@ -184,11 +184,11 @@ class TestQueueOrderRuns(unittest.TestCase):
 
     def test_the_run_sees_the_council_and_the_state_home_and_nothing_of_the_hub_environment(self):
         order = self.order(NEW_QUEUE, ROWS)
-        with mock.patch.dict(os.environ, {"KVB_HUB_SECRET": "x"}):
+        with mock.patch.dict(os.environ, {"KVB_ORCHESTRATOR_SECRET": "x"}):
             order.get(frozenset({"q-1"}), 1000.0)
         seen = json.loads(order.script.with_suffix(".env").read_text(encoding="utf-8"))
         self.assertEqual((seen["HOME"], seen["AGENTS_COUNCIL_ROOT"], seen["PATH"]), (str(self.base / "home"), str(self.base / "council"), "/usr/local/bin:/usr/bin:/bin"))
-        self.assertNotIn("KVB_HUB_SECRET", seen)
+        self.assertNotIn("KVB_ORCHESTRATOR_SECRET", seen)
 
 
 class TestHubQueueOverlay(HubCase):

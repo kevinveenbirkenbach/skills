@@ -3,6 +3,9 @@
 `kvb-org-coordinate`, `kvb-ci-triage`, `kvb-code-tune`, `kvb-org-swarm`,
 `kvb-org-unify` and `kvb-cleanup` follow these steps.
 
+Every `call`: one batched message per peer per event, terse, no greeting, at
+most five lines unless evidence needs more, nothing already acknowledged.
+
 1. **Look**: `council.py list`, the `kvb-org-rasci` register, the radio,
    `hotfix.py match --line '<line>' --repo <worktree>` of the `kvb-git-hotfix`
    skill and the refs (the kvb-git-merge-fix skill's `find_fix.py`). A claim,

@@ -23,7 +23,9 @@ LIVE_MEMORY = {
 SHIPPED = ORGANIZE / "config.default.json"
 DEFAULT = json.loads(SHIPPED.read_text(encoding="utf-8"))
 ROW_MEMORY = DEFAULT["memory_limits"]
-HOME_TOOLS = ("bash", "cp", "dirname", "find", "install", "ln", "mkdir", "rm")
+HOME_TOOLS = ("bash", "cp", "dirname", "find", "install", "ln", "mkdir", "python3", "rm")
+COUNCIL_PARTS = ("scripts/orchestrator.sh", "skills/kvb-org-organize/scripts/councilroot.py", "skills/kvb-org-organize/scripts/nofollow.py")
+AGENT_ROOTS = {"sandbox": {"filesystem": {"allowWrite": ["~/.local/state/agents-shared", "~/.local/state/agents-release/**"]}}}
 CGROUP_KILL = """
 case "$*" in *try-restart*kvb-code-graph*)
   unit=$(while IFS= read -r line; do echo "$line"; done < "$HOME/.config/systemd/user/kvb-code-graph.service")
@@ -117,6 +119,9 @@ class TestInstall(unittest.TestCase):
         repo, stubs, home = root / "repo", root / "bin", root / "home"
         (repo / "scripts").mkdir(parents=True)
         shutil.copy(INSTALL, repo / "scripts" / "install.sh")
+        for part in COUNCIL_PARTS:
+            (repo / part).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(REPO_ROOT / part, repo / part)
         for unit in HOME_UNITS:
             (repo / "skills" / unit).parent.mkdir(parents=True, exist_ok=True)
             (repo / "skills" / unit).write_text("[Unit]\n", encoding="utf-8")
@@ -136,6 +141,8 @@ class TestInstall(unittest.TestCase):
             (stubs / name).write_text(body, encoding="utf-8")
             (stubs / name).chmod(0o755)
         home.mkdir()
+        (home / ".claude").mkdir()
+        (home / ".claude" / "settings.json").write_text(json.dumps(AGENT_ROOTS), encoding="utf-8")
         if binary:
             (home / ".local" / "bin").mkdir(parents=True)
             shutil.copy(stubs / "codebase-memory-mcp", home / ".local" / "bin" / "codebase-memory-mcp")
@@ -144,7 +151,7 @@ class TestInstall(unittest.TestCase):
             (home / ".config" / "kvb-code-graph" / "config.json").write_text(
                 '{"queue_file_threshold": 2000, "queue_task": "work/code-graph-index"}\n', encoding="utf-8"
             )
-        env = {"PATH": str(stubs), "TARGET": str(home), "HOME": str(home)}
+        env = {"PATH": str(stubs), "TARGET": str(home), "HOME": str(home), "AGENTS_COUNCIL_LEGACY": str(root / "legacy")}
         done = subprocess.run(["/bin/bash", str(repo / "scripts" / "install.sh")], env=env, capture_output=True, text=True, check=False)
         return done, read_lines(log), read_lines(cbm)
 
