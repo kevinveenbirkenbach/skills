@@ -11,9 +11,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
+import hub_e2e_kit as base
 import test_home_bookmarks_e2e as bm
 import test_home_dashboard_e2e as dash
-import test_orchestrator_e2e as base
 import test_resources_view_e2e as res
 import test_workbench_w4_e2e as w4
 from hub_case import HubCase
@@ -179,9 +179,9 @@ def landing(key: str) -> tuple[str, str]:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestHomeTileOpen(HubCase):
-    seed = base.TestOrchestratorE2E.seed
-    subagents = base.TestOrchestratorE2E.subagents
-    drive = base.TestOrchestratorE2E.drive
+    seed = base.OrchestratorE2ECase.seed
+    subagents = base.OrchestratorE2ECase.subagents
+    drive = base.OrchestratorE2ECase.drive
     sample = w4.TestWorkbenchResources.sample
 
     def setUp(self):

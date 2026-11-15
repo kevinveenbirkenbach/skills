@@ -13,7 +13,7 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 from hub_support import iso
 
@@ -108,8 +108,8 @@ PROBE = """(async () => {@HELPERS@
     shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium"
 )
 class TestLiveBubbles(HubCase):
-    drive = base.TestOrchestratorE2E.drive
-    beside = base.TestOrchestratorE2E.beside
+    drive = base.OrchestratorE2ECase.drive
+    beside = base.OrchestratorE2ECase.beside
 
     def setUp(self):
         super().setUp()

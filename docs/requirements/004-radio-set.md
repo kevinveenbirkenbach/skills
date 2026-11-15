@@ -314,9 +314,10 @@ flowchart TD
   each against the contract of its side of decision 11, in six
   states on the real code paths (idle, stations open, a recorded voice
   note, a real reading through the mocked synthesizer, MAYDAY banner with a
-  short and a long text) after the view transition settles, the station
-  popover's placement, whole rows, Escape and outside click in the spot and
-  on the Home tiles at 1366, 1280 and 390 px, and where the focus lands
+  short and a long text) after the view transition settles;
+  `tests/e2e/test_radio_focus_e2e.py` measures the station popover's
+  placement, whole rows, Escape and outside click in the spot and on the
+  Home tiles at 1366, 1280 and 390 px, and where the focus lands
   after mouse presses on a History tab and on blank `#main` with Day/Night
   or the stations open at 1366 and 390 px in both browsers, the focus on
   a keyboard-focused row button and tab across new rows and a forced minute

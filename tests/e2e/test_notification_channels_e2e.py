@@ -10,7 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 from hub_support import ASK
 from kvb_orchestrator import settings
@@ -86,8 +86,8 @@ def fill(probe: str) -> str:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestNotificationChannels(HubCase):
-    drive = base.TestOrchestratorE2E.drive
-    authenticator = base.TestOrchestratorE2E.authenticator
+    drive = base.OrchestratorE2ECase.drive
+    authenticator = base.OrchestratorE2ECase.authenticator
 
     def setUp(self):
         super().setUp()

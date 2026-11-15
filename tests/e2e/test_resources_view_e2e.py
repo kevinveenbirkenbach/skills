@@ -11,7 +11,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 import test_workbench_w4_e2e as w4
 from hub_case import HubCase
 from hub_support import iso
@@ -93,7 +93,7 @@ def probe(template: str) -> str:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestResourcesView(HubCase):
-    drive = base.TestOrchestratorE2E.drive
+    drive = base.OrchestratorE2ECase.drive
     sample = w4.TestWorkbenchResources.sample
 
     def setUp(self):

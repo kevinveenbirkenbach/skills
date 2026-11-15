@@ -13,7 +13,7 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 from hub_support import HUB, iso
 
@@ -287,9 +287,9 @@ def probe(template: str) -> str:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestHomeDashboard(HubCase):
-    seed = base.TestOrchestratorE2E.seed
-    subagents = base.TestOrchestratorE2E.subagents
-    drive = base.TestOrchestratorE2E.drive
+    seed = base.OrchestratorE2ECase.seed
+    subagents = base.OrchestratorE2ECase.subagents
+    drive = base.OrchestratorE2ECase.drive
 
     def setUp(self):
         super().setUp()
