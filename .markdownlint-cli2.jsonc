@@ -8,6 +8,8 @@
   "ignores": [
     "node_modules",
     ".agents",
-    ".claude"
+    ".claude",
+    ".continue",
+    ".state"
   ]
 }
