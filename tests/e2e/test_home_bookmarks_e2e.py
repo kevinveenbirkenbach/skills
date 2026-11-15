@@ -24,6 +24,7 @@ from hub_support import (
     LONG_TASK,
     LONG_VOLUME,
     LONG_WORKTREE,
+    MERGED_BRANCH,
     iso,
     long_repos,
     long_task,
@@ -322,6 +323,7 @@ class TestHomeBookmarks(HubCase):
         scan = json.loads(self.tree_file.read_text(encoding="utf-8"))
         scan["repos"] += long_repos()
         self.tree_file.write_text(json.dumps(scan), encoding="utf-8")
+        self.write_local_plan(scan, {MERGED_BRANCH: {"skip": None, "actions": ["local-branch"]}})
 
     def vanish(self) -> None:
         register = self.council / "rasci.json"

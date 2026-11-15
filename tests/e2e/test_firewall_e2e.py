@@ -220,7 +220,7 @@ class TestFirewallE2E(HubCase):
         self.writer = writer_host.Writer(trust, home, tree)
         self.spool = self.state / "firewall"
         verifier.write_private(self.spool / "view.json", self.writer.view())
-        self.local = f"http://localhost:{self.port}/"
+        self.page_url = f"http://localhost:{self.port}/"
 
     def host_unit(self) -> None:
         if any((self.spool / "jobs").iterdir()):
@@ -235,7 +235,7 @@ class TestFirewallE2E(HubCase):
         steps = []
         for index, (width, height) in enumerate(base.WIDTHS):
             values = {"SECRET": SECRET, "FILE": str(self.settings), "ENTRY": f"Bash(make lint-{width}:*)", "REMOVE": "true" if index == 0 else "false"}
-            steps.append({"width": width, "height": height, "url": f"{self.local}?{width}#stream/rules", "wait": 1500, "probe": probe(SHOW, values), "shot": str(OUT / f"chromium-{width}-firewall.png")})
+            steps.append({"width": width, "height": height, "url": f"{self.page_url}?{width}#stream/rules", "wait": 1500, "probe": probe(SHOW, values), "shot": str(OUT / f"chromium-{width}-firewall.png")})
             steps.append({"width": width, "height": height, "url": None, "wait": 0, "probe": probe(SIGN, values), "shot": str(OUT / f"chromium-{width}-firewall-signed.png")})
         data = self.drive(steps, authenticator)
         (OUT / "chromium-firewall.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
@@ -282,7 +282,7 @@ class TestFirewallE2E(HubCase):
 
     def test_chromium_names_a_group_and_signs_a_rule_for_it(self):
         authenticator = self.authenticator()
-        steps = [{"width": 1366, "height": 768, "url": f"{self.local}#stream/rules", "wait": 1500, "probe": probe(GROUP_RULE, {}), "shot": str(OUT / "chromium-1366-firewall-group-rule.png")}]
+        steps = [{"width": 1366, "height": 768, "url": f"{self.page_url}#stream/rules", "wait": 1500, "probe": probe(GROUP_RULE, {}), "shot": str(OUT / "chromium-1366-firewall-group-rule.png")}]
         data = self.drive(steps, authenticator)
         (OUT / "chromium-firewall-group.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])

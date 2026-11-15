@@ -228,7 +228,7 @@ COMPOSE_HOME = """(async () => {@HELPERS@@PROBES@
   const homeSpeak = tile("radio-speak");
   const form = (root) => root.querySelector("form.composer");
   const area = (root) => form(root).querySelector("textarea");
-  const record = (root) => all("button", form(root)).find((button) => button.hasAttribute("aria-pressed"));
+  const record = (root) => all("button", form(root)).find((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic"));
   const note = (root) => {
     const audio = form(root).querySelector(".voice-note audio");
     return audio ? audio.getAttribute("src").replace("/api/voice/", "").replace(".wav", "") : null;

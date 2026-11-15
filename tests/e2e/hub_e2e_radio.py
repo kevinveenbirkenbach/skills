@@ -178,7 +178,7 @@ COMPOSE = """(async () => {@HELPERS@@SPOT_OPEN@
   channel.value = "call";
   channel.dispatchEvent(new Event("change", {bubbles: true}));
   recipient.value = "@TO@";
-  const record = all("button", form).find((button) => button.hasAttribute("aria-pressed"));
+  const record = all("button", form).find((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic"));
   record.click();
   await sleep(1500);
   const recording = record.getAttribute("aria-pressed");
@@ -265,7 +265,7 @@ SPOT_SEND = """(async () => {@HELPERS@
     inline: [getComputedStyle(spot).position, spot.getBoundingClientRect().bottom <= main.getBoundingClientRect().top, spot.parentElement.nextElementSibling === main],
     toolbar: all('#main [role="toolbar"] > *').map((node) => name(node.tagName === "DETAILS" ? node.querySelector("summary") : node)),
     channels: all("option", channel).map((option) => option.value),
-    record: all("button", form).filter((button) => button.hasAttribute("aria-pressed")).map(text),
+    record: all("button", form).filter((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic")).map(text),
     heads: all(".spot-head button", spot).map((button) => [name(button), button.title]),
     @FITS@,
   };
