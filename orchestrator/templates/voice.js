@@ -79,7 +79,7 @@ const Voice = (() => {
     return {value: `${before}${lead}${words}${tail}${after}`, caret: before.length + lead.length + words.length};
   }
 
-  return {FIELDS, toneOf, loudness, beep, enqueue, frames, wav, spliced};
+  return {FIELDS, toneOf, loudness, beep, rank, enqueue, frames, wav, spliced};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Voice;

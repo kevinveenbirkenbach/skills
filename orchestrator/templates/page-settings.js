@@ -152,6 +152,7 @@
         channels: Object.fromEntries(CHANNEL_CHOICES.map(([id]) => [id, channels[id].checked])),
         streams: settings.streams,
         speech: settings.speech,
+        morse: settings.morse,
         space: savedSpace(),
         estimation: settings.estimation,
         trend: settings.trend,

@@ -46,8 +46,19 @@
    */
   function say(...items) {
     speech.pending = items.reduce((pending, item) => Voice.enqueue(pending, item, SPEECH_QUEUE), speech.pending);
+    preempt();
     pump();
     drawBubbles();
+  }
+
+  function preempt() {
+    const {item, source} = speech;
+    const [first] = speech.pending;
+    if (item && source && item.playing === "morse" && first && Voice.rank(first) < Voice.rank(item)) {
+      speech.item = null;
+      speech.pending = Voice.enqueue(speech.pending, item, SPEECH_QUEUE);
+      source.stop();
+    }
   }
 
   /**
@@ -213,19 +224,28 @@
         await burst(audio, item);
         continue;
       }
+      if (step.kind === "morse") {
+        voiced = (await keyMorse(audio, item, step)) || voiced;
+        done -= Number(item.cut);
+        continue;
+      }
       const failed = await spoken(audio, item, step, done);
       if (failed === "dropped") {
         done -= 1;
         continue;
       }
       voiced = voiced || (!failed && step.kind === "speech");
-      if (failed && failed !== "held") {
-        speechFailed([failed]);
-      }
-      if (failed && step.kind === "speech" && speech.item === item && allows(stepOf(item, done), "burst")) {
-        item.playing = "burst";
-        await burst(audio, item);
-      }
+      await fellBack(audio, item, step, done, failed);
+    }
+  }
+
+  async function fellBack(audio, item, step, done, failed) {
+    if (failed && failed !== "held") {
+      speechFailed([failed]);
+    }
+    if (failed && step.kind === "speech" && speech.item === item && allows(stepOf(item, done), "burst")) {
+      item.playing = "burst";
+      await burst(audio, item);
     }
   }
 

@@ -41,7 +41,7 @@ const fs = require("fs");
 const vm = require("vm");
 const Receipts = require(process.argv[1]);
 const RadioSet = require(process.argv[2]);
-const code = ["page-dom.js", "page-stream.js", "page-radioview.js", "page-agent.js"].map((name) => fs.readFileSync(`${process.argv[3]}/${name}`, "utf8")).join("\\n");
+const code = ["page-dom.js", "page-stream.js", "page-radioview.js", "page-radiolog.js", "page-agent.js"].map((name) => fs.readFileSync(`${process.argv[3]}/${name}`, "utf8")).join("\\n");
 const input = JSON.parse(process.argv[4]);
 class Node {
   constructor(tag) {

@@ -595,7 +595,7 @@ class TestTransmit(unittest.TestCase):
         self.assertEqual(self.data["stalled"], {"before": [False, True], "after": [True, None], "waits": [2500], "stops": 1})
 
     def test_every_mode_button_keeps_the_mode_before_it_resumes_the_audio_context(self):
-        self.assertEqual(self.data["pressed"], [{"mode": "auto"}, "context", {"mode": "quiet"}, "context", {"mode": "silence"}, "context"])
+        self.assertEqual(self.data["pressed"], [{"mode": "auto"}, "context", {"mode": "quiet"}, "context", {"mode": "silence"}, "context", {"mode": "morse"}, "context"])
 
 
 class TestSpeechModes(unittest.TestCase):

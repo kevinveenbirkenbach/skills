@@ -88,6 +88,23 @@ class TestCpuGate(unittest.TestCase):
             stale.admit(LINE)
         self.assertEqual((held.exception.reason, stale.state()["open"]), ("unknown", False))
 
+    def test_one_hundred_percent_keeps_the_gate_open_and_zero_percent_keeps_it_shut(self):
+        now = 1_800_000_000.0
+        for rows in ([{"t": now - 1, "cpu": 100.0}], [{"t": now - 1, "cpu": 99.9}], [{"t": now - 121, "cpu": 5.0}], []):
+            with self.subTest(threshold=100, rows=rows):
+                gate = gate_over(rows, 100, now)
+                self.assertTrue(gate.state()["open"])
+                self.assertIsNone(gate.admit(LINE))
+        for rows, reason in (([{"t": now - 1, "cpu": 0.0}], "busy"), ([{"t": now - 1, "cpu": 12.0}], "busy"), ([], "unknown")):
+            with self.subTest(threshold=0, rows=rows):
+                gate = gate_over(rows, 0, now)
+                self.assertFalse(gate.state()["open"])
+                with self.assertRaises(errors.Held) as held:
+                    gate.admit(LINE)
+                self.assertEqual(held.exception.reason, reason)
+        self.assertEqual(gate_over([{"t": now - 1, "cpu": 89.0}], 90, now).state()["open"], True)
+        self.assertEqual(gate_over([{"t": now - 1, "cpu": 90.0}], 90, now).state()["open"], False)
+
     def test_a_procedure_word_line_passes_under_load_and_without_a_sample(self):
         now = 1_800_000_000.0
         for rows in ([{"t": now - 1, "cpu": 99.0}], []):
@@ -121,12 +138,13 @@ class TestProcedureWords(unittest.TestCase):
 
 
 class TestThresholdSetting(unittest.TestCase):
-    def test_only_thirty_to_ninety_in_steps_of_ten_and_fifty_by_default(self):
+    def test_only_zero_to_one_hundred_in_steps_of_ten_and_fifty_by_default(self):
         self.assertEqual(settings.SETTINGS["speech"], {"threshold": 50})
-        for value in (30, 40, 50, 60, 70, 80, 90):
+        self.assertEqual(settings.THRESHOLDS, (0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100))
+        for value in (0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100):
             with self.subTest(value=value):
                 self.assertEqual(settings.speech_setting({"threshold": value}), {"threshold": value})
-        for value in (20, 25, 35, 95, 100, 0, 50.0, True, "50", None, [50]):
+        for value in (-10, 5, 25, 35, 95, 110, 50.0, True, False, "50", None, [50]):
             with self.subTest(value=value), self.assertRaises(errors.ToolError):
                 settings.speech_setting({"threshold": value})
         for raw in ({}, {"threshold": 50, "on": True}, "50"):
@@ -149,6 +167,13 @@ class TestThresholdSetting(unittest.TestCase):
         kept = {**legacy, "speech": {"on": False, "classes": ["mayday"], "muted": [], "threshold": 70}}
         (folder / "settings.json").write_text(json.dumps(kept), encoding="utf-8")
         self.assertEqual(settings.Settings(folder / "settings.json").get()["speech"], {"threshold": 70})
+
+    def test_every_threshold_stored_before_the_widening_still_loads(self):
+        folder = scratch()
+        for value in (30, 40, 50, 60, 70, 80, 90):
+            with self.subTest(value=value):
+                (folder / "settings.json").write_text(json.dumps({**settings.SETTINGS, "speech": {"threshold": value}}), encoding="utf-8")
+                self.assertEqual(settings.Settings(folder / "settings.json").get()["speech"], {"threshold": value})
 
 
 class TestHandedVoices(unittest.TestCase):
@@ -272,7 +297,7 @@ class TestSpeechGateHttp(HubCase):
         self.assertEqual((status, json.loads(body)["settings"]["speech"]), (200, {"threshold": 70}), body)
         self.assertEqual(self.snapshot()["speech"]["gate"]["threshold"], 70)
         self.assertEqual(settings.Settings(self.state / "settings.json").get()["speech"], {"threshold": 70})
-        for wrong in (35, 100, 20, "70", 70.0):
+        for wrong in (35, 110, -10, "70", 70.0):
             with self.subTest(wrong=wrong):
                 self.assertEqual(self.post_json("/api/settings/sign", {**current, "speech": {"threshold": wrong}}, good)[0], 400)
         self.host_cpu(60.0, 5)

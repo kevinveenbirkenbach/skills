@@ -15,6 +15,7 @@ from .council import (
     silence_of,
 )
 from .crons import queue_entries
+from .engines import pitch_of
 from .errors import ToolError
 from .events import KINDS, VIEWS
 from .fields import decode, instant, single
@@ -107,8 +108,9 @@ class View:
             source = directory.key(row["from"], row["ts"])
             targets = [directory.key(name, row["ts"]) for name in row["to"]]
             called = [directory.at(key, row["ts"]) or name for key, name in zip(targets, row["to"], strict=True)]
-            word, rest = phrase_parts(row["class"], directory.at(source, row["ts"]) or row["from"], called, row["text"])
-            spoken = {"speech": joined((word, rest)), "word": word, "rest": rest, "voice": self.speech.voice_of(source)}
+            speaker = directory.at(source, row["ts"]) or row["from"]
+            word, rest = phrase_parts(row["class"], speaker, called, row["text"])
+            spoken = {"speech": joined((word, rest)), "word": word, "rest": rest, "voice": self.speech.voice_of(source), "pitch": pitch_of(source), "speaker": speaker, "called": called}
             read = read_of(inlined, row["ts"])
             radio.append({**row, "source": source, "targets": targets, "now": directory.now(source), **spoken, **read})
         grant_rows = [{**grant, "target": directory.key(grant["to"], grant["ts"])} for grant in grants(history, (begin, end), claims, tasks)]
