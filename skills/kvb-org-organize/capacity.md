@@ -34,7 +34,11 @@ step inside it, or a process its own ended session left behind, once at least
 child process, no network traffic, CPU time not moving). It secures the live
 state first, then reports the timestamp, the step, the probe and the command.
 A peer's hung job goes to its owner, and to the operator when the owner does
-not answer.
+not answer. `queue.py hold` does this itself for a queued job: after 60
+minutes without CPU, I/O or new process in its tree, no stopped member and no
+docker, podman or ssh client, it records the stuck processes, ends the tree
+and exits 124; `queue.py list` marks a run past three times its longest
+learned one `suspect hung`.
 
 ## Resource watch
 
