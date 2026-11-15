@@ -60,7 +60,7 @@ const Morse = (() => {
   /**
    * @param {Array<Array<string>>} signs words of letter codes, as words and joined give them.
    * @param {number} wpm the speed in words per minute.
-   * @returns {{tones: Array<Array<number>>, ms: number}} every tone as [start, length] in ms and the whole length in ms, each word closed by the gap between words as PARIS counts it.
+   * @returns {object} tones, every tone as [start, length] in ms, and ms, the whole length in ms, each word closed by the gap between words as PARIS counts it.
    */
   function timeline(signs, wpm) {
     const tones = [];

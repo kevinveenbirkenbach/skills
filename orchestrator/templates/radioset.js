@@ -75,7 +75,7 @@ const RadioSet = (() => {
 
   /**
    * @param {object} row a radio row of the state with class, called, speaker, pitch and text.
-   * @returns {{kind: string, sign: string, joined: boolean, text: string, pitch: number}} the whole row keyed in Morse: the class prosign, or the called stations of a call, then DE with the sender's clear name and the full text without the hub's message mark, in the sender's pitch.
+   * @returns {object} the whole row keyed in Morse as kind "morse", sign, joined, text and pitch: the class prosign, or the called stations of a call, then DE with the sender's clear name and the full text without the hub's message mark, in the sender's pitch.
    */
   function morse(row) {
     const {sign, joined, called} = PROSIGNS[row.class];
