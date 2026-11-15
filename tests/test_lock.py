@@ -26,7 +26,7 @@ class TestSkillsLock(unittest.TestCase):
         self.lock = json.loads(LOCK_FILE.read_text(encoding="utf-8"))
 
     def test_version_is_supported(self):
-        self.assertEqual(self.lock.get("version"), 1)
+        self.assertEqual(self.lock.get("version"), 2)
 
     def test_skills_present(self):
         self.assertTrue(self.lock.get("skills"), "lock holds no skills")

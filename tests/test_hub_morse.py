@@ -188,7 +188,7 @@ class TestMorseCode(unittest.TestCase):
             [radio_row("mayday", TEXT), radio_set("morse", ["s1"]), offline],
             [radio_row("broadcast", "word " * 600), radio_set("morse", []), offline],
         ]
-        words = ["PARIS", "paris", "Grüße, Ëva! 😀 ~ À ÿ"]
+        words = ["PARIS", "paris", "Gr\u00fc\u00dfe, Ëva! 😀 ~ À ÿ"]
         cls.data = node(CODES_PROBE, str(MORSE), str(RADIOSET), json.dumps({"words": words, "plans": plans}))
 
     def test_paris_at_20_wpm_lasts_exactly_50_dot_units_of_60_ms(self):

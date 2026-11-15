@@ -350,8 +350,9 @@ flowchart TD
    MAYDAY keys SOS as one sign, PAN-PAN "PAN PAN", SÉCURITÉ "SECURITE",
    broadcast and newsletter CQ, post KA as one sign, and a call the called
    stations' clear names in place of a prosign, so it keys
-   `<called> DE <sender> <text>`. Letters are case-folded; Ä, Ö, Ü and the
-   other accented letters with a Morse code of their own key that code, any
+   `<called> DE <sender> <text>`. Letters are case-folded; A, O and U with
+   umlaut and the other accented letters with a Morse code of their own key
+   that code, any
    other accented letter keys its base letter, and every other character
    without a code is skipped.
 3. **Speed**: a hub setting `morse.wpm`, whole numbers from 5 to 40, default
