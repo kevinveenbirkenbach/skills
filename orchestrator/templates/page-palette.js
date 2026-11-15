@@ -1,20 +1,24 @@
+  /**
+   * @returns every command: {label, hint, run, scope, face, id}; scope is "general", a tab id of Nav.TABS, or an element
+   * kind of CTX_KINDS, which the item carries with the id of the one element it belongs to, such as an agent key.
+   */
   function paletteItems() {
     return [
-      ...Nav.TABS.flatMap(([id, label], index) => [{label: `View: ${label}`, hint: String(index + 1), run: () => go(id, null)}, ...(Nav.SUBS[id] || []).map(([sub, name]) => ({label: `View: ${label} › ${name}`, hint: Nav.hashOf(sub, null), run: () => go(sub, null)}))]),
-      ...["agents", "artifacts", "tasks"].flatMap((screen) => Nav.viewsOf(screen).map(([id, name]) => ({label: `${Nav.TABS.find(([tab]) => tab === screen)[1]}: ${name}`, hint: Nav.hashOf(screen, id), run: () => go(screen, id)}))),
-      ...Object.entries(state.views).map(([id, view]) => ({label: `Stream: ${view.label}`, hint: "Category", run: () => useView(id)})),
-      ...userViews.map((view) => ({label: `Stream: ${view.name}`, hint: "saved view", run: () => useSaved(view)})),
-      ...agentNames().map((name) => ({label: name, hint: "Agent", face: name, run: () => openAgent(name)})),
-      {label: "Radio …", hint: "Post, Call, Newsletter, Broadcast, Pan-Pan, Security, Mayday; the gear holds tones and read aloud", run: openRadio},
-      ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Day/Night", run: () => confirmAct(id, [])})),
-      {label: "Priority …", hint: "agent order in the hierarchy", run: openAgentOrder},
-      {label: "Firewall …", hint: "automatic grants", run: () => go("rules", null)},
-      {label: "Settings …", hint: "Ambience, location, colors, music, notifications, internet radio", run: settingsSheet},
-      {label: settings.music.on ? "Music off" : "Music on", hint: "Ambience", run: toggleMusic},
-      {label: space.look ? "Leave the sky" : "Look at the sky", hint: "h", run: () => skyLook(!space.look)},
-      {label: "Toggle control room", hint: "Ambience", run: toggleLeitstand},
-      {label: "Enable notifications", hint: "Ambience", run: askNotify},
-      {label: "Keyboard shortcuts", hint: "?", run: helpSheet},
+      ...Nav.TABS.flatMap(([id, label], index) => [{label: `View: ${label}`, hint: String(index + 1), scope: "general", run: () => go(id, null)}, ...(Nav.SUBS[id] || []).map(([sub, name]) => ({label: `View: ${label} › ${name}`, hint: Nav.hashOf(sub, null), scope: id, run: () => go(sub, null)}))]),
+      ...["agents", "artifacts", "tasks"].flatMap((screen) => Nav.viewsOf(screen).map(([id, name]) => ({label: `${Nav.TABS.find(([tab]) => tab === screen)[1]}: ${name}`, hint: Nav.hashOf(screen, id), scope: screen, run: () => go(screen, id)}))),
+      ...Object.entries(state.views).map(([id, view]) => ({label: `Stream: ${view.label}`, hint: "Category", scope: "stream", run: () => useView(id)})),
+      ...userViews.map((view) => ({label: `Stream: ${view.name}`, hint: "saved view", scope: "stream", run: () => useSaved(view)})),
+      ...agentNames().map((name) => ({label: name, hint: "Agent", face: name, scope: "agent", id: agentKey(name), run: () => openAgent(name)})),
+      {label: "Radio …", hint: "Post, Call, Newsletter, Broadcast, Pan-Pan, Security, Mayday; the gear holds tones and read aloud", scope: "general", run: openRadio},
+      ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Day/Night", scope: "general", run: () => confirmAct(id, [])})),
+      {label: "Priority …", hint: "agent order in the hierarchy", scope: "agents", run: openAgentOrder},
+      {label: "Firewall …", hint: "automatic grants", scope: "stream", run: () => go("rules", null)},
+      {label: "Settings …", hint: "Ambience, location, colors, music, notifications, internet radio", scope: "general", run: settingsSheet},
+      {label: settings.music.on ? "Music off" : "Music on", hint: "Ambience", scope: "general", run: toggleMusic},
+      {label: space.look ? "Leave the sky" : "Look at the sky", hint: "h", scope: "general", run: () => skyLook(!space.look)},
+      {label: "Toggle control room", hint: "Ambience", scope: "general", run: toggleLeitstand},
+      {label: "Enable notifications", hint: "Ambience", scope: "general", run: askNotify},
+      {label: "Keyboard shortcuts", hint: "?", scope: "general", run: helpSheet},
     ];
   }
 

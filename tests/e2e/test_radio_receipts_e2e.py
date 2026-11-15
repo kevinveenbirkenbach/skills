@@ -12,7 +12,7 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 from kvb_orchestrator import receipts
 from kvb_orchestrator.presence import SNAPSHOT
@@ -74,9 +74,9 @@ PROBE = """(async () => {@HELPERS@
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestRadioReceipts(HubCase):
-    drive = base.TestOrchestratorE2E.drive
-    authenticator = base.TestOrchestratorE2E.authenticator
-    beside = base.TestOrchestratorE2E.beside
+    drive = base.OrchestratorE2ECase.drive
+    authenticator = base.OrchestratorE2ECase.authenticator
+    beside = base.OrchestratorE2ECase.beside
 
     def setUp(self):
         super().setUp()

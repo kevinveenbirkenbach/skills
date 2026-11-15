@@ -138,7 +138,7 @@
     return button;
   }
 
-  const MENUS = "details.menu, details.radio-station";
+  const MENUS = "details.menu, details.radio-station, .ctx-menu";
 
   function closeMenus(keep) {
     for (const menu of document.querySelectorAll(MENUS)) {
@@ -150,6 +150,7 @@
         }
       }
     }
+    ctxDismiss(keep);
   }
 
   function openSheet(title, body, wide) {

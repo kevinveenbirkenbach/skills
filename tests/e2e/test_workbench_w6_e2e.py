@@ -13,7 +13,7 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 from hub_support import iso
 
@@ -224,7 +224,7 @@ def quiet(found: dict) -> dict:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestWorkbenchBubbles(HubCase):
-    drive = base.TestOrchestratorE2E.drive
+    drive = base.OrchestratorE2ECase.drive
 
     def setUp(self):
         super().setUp()

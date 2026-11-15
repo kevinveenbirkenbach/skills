@@ -12,7 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 from hub_support import REPO_ROOT, iso
 
@@ -213,9 +213,9 @@ def probe(template: str) -> str:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestWorkbenchArtifacts(HubCase):
-    drive = base.TestOrchestratorE2E.drive
-    authenticator = base.TestOrchestratorE2E.authenticator
-    subagents = base.TestOrchestratorE2E.subagents
+    drive = base.OrchestratorE2ECase.drive
+    authenticator = base.OrchestratorE2ECase.authenticator
+    subagents = base.OrchestratorE2ECase.subagents
 
     def setUp(self):
         super().setUp()

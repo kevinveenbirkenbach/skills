@@ -12,7 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 from hub_support import ASK, verifier
 from test_settings_writer import ORIGINAL
@@ -199,9 +199,9 @@ def probe(template: str, values: dict[str, str]) -> str:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestFirewallE2E(HubCase):
-    drive = base.TestOrchestratorE2E.drive
-    beside = base.TestOrchestratorE2E.beside
-    authenticator = base.TestOrchestratorE2E.authenticator
+    drive = base.OrchestratorE2ECase.drive
+    beside = base.OrchestratorE2ECase.beside
+    authenticator = base.OrchestratorE2ECase.authenticator
 
     def setUp(self):
         super().setUp()

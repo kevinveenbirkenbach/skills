@@ -11,7 +11,7 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 from hub_support import ASK, PAGE
 from kvb_orchestrator import batches, skill_scripts
@@ -105,9 +105,12 @@ FEEDBACK = """(async () => {@HELPERS@@UNLABELLED@
   const nearby = Boolean(floating && !floating.hidden);
   rows[1].querySelector("td.code").dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true, clientX: box.left + 4, clientY: box.top + 4}));
   await sleep(200);
-  const menu = floating && floating.getAttribute("role");
-  const labels = {float: floating ? unlabelled(floating) : null};
-  floating.querySelector("button").click();
+  const context = document.querySelector(".ctx-menu:not([hidden])");
+  const menu = context && context.getAttribute("role");
+  const labels = {float: floating ? unlabelled(floating) : null, menu: context ? unlabelled(context) : null};
+  const first = context && context.querySelector('[role="menuitem"]');
+  const item = first ? text(first.querySelector(".ctx-label")) : null;
+  first.click();
   const sheet = await until(() => document.querySelector(".sheet-box textarea"), 4000);
   const writing = document.querySelector("#sheet .sheet-box");
   labels.sheet = writing ? unlabelled(writing) : null;
@@ -132,7 +135,7 @@ FEEDBACK = """(async () => {@HELPERS@@UNLABELLED@
   keyed.value = "key f note";
   all(".sheet-box button").find((button) => name(button) === "Send feedback").click();
   await sleep(1500);
-  return {nearby, menu, title, range, keyRange, labels, shown: shown || "", posted: window.e2eFeedback, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
+  return {nearby, menu, item, title, range, keyRange, labels, shown: shown || "", posted: window.e2eFeedback, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
 })()"""
 
 
@@ -142,8 +145,8 @@ def probe(template: str, tag: str, signs: bool) -> str:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestWorkbenchOperatorTasks(HubCase):
-    drive = base.TestOrchestratorE2E.drive
-    authenticator = base.TestOrchestratorE2E.authenticator
+    drive = base.OrchestratorE2ECase.drive
+    authenticator = base.OrchestratorE2ECase.authenticator
 
     def setUp(self):
         super().setUp()
@@ -183,7 +186,7 @@ class TestWorkbenchOperatorTasks(HubCase):
                 self.assertNotIn("error", tasks, tasks)
                 self.assertNotIn("error", feedback, feedback)
                 self.assertEqual(tasks["unlabelled"], {"main": [], "sheet": []})
-                self.assertEqual(feedback["labels"], {"float": [], "sheet": []})
+                self.assertEqual(feedback["labels"], {"float": [], "menu": [], "sheet": []})
             with self.subTest(browser=browser, width=width):
                 self.assertNotIn("error", tasks, tasks)
                 self.assertEqual((tasks["hash"], tasks["tabs"], tasks["subs"], tasks["streamInbox"], tasks["current"]), ("#tasks/operator", base.TABS, ["Firewall"], False, ["Tasks"]))
@@ -202,7 +205,7 @@ class TestWorkbenchOperatorTasks(HubCase):
                 self.assertEqual(tasks["posted"], [["/api/sign", kinds], *([["/api/inbox/approve", kinds]] if signs else [])])
                 self.assertFalse(tasks["wide"])
                 self.assertNotIn("error", feedback, feedback)
-                self.assertEqual((feedback["nearby"], feedback["menu"], feedback["title"]), (True, "menu", "Feedback"))
+                self.assertEqual((feedback["nearby"], feedback["menu"], feedback["item"], feedback["title"]), (True, "menu", "Feedback", "Feedback"))
                 self.assertEqual((feedback["range"], feedback["keyRange"]), ("src/app.py:2-2", "/repo:1-1"))
                 ref = f"review:{self.reviews[(tag, 'second')]}"
                 texts = [text for path, text in feedback["posted"] if path == "/api/messages/sign"]

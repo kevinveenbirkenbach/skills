@@ -113,9 +113,9 @@
     diffView.picked = null;
   }
 
-  function showFeedback(picked, x, y, menu) {
+  function showFeedback(picked, x, y) {
     if (!diffView.float) {
-      diffView.float = h("div", {class: "feedback-float", hidden: true},
+      diffView.float = h("div", {class: "feedback-float", role: "toolbar", hidden: true},
         h("button", {type: "button", class: "btn small primary icon-only", ...named("Feedback", "Feedback (f): a post with the selected lines to the requesting agent"), on: {
           mousedown: (event) => event.preventDefault(),
           click: () => diffView.picked && feedbackSheet(diffView.picked),
@@ -123,8 +123,6 @@
       document.body.append(diffView.float);
     }
     diffView.picked = picked;
-    diffView.float.setAttribute("role", menu ? "menu" : "toolbar");
-    diffView.float.firstChild.setAttribute("role", menu ? "menuitem" : "button");
     diffView.float.style.left = `${Math.max(Math.min(x, window.innerWidth - 44), 4)}px`;
     diffView.float.style.top = `${Math.max(Math.min(y, window.innerHeight - 44), 4)}px`;
     diffView.float.hidden = false;
@@ -135,21 +133,20 @@
     diffView.timer = window.setTimeout(() => {
       const picked = selectionFeedback();
       if (picked) {
-        showFeedback(picked, picked.rect.right + 4, picked.rect.bottom + 4, false);
+        showFeedback(picked, picked.rect.right + 4, picked.rect.bottom + 4);
       } else if (!diffView.float || !diffView.float.contains(document.activeElement)) {
         hideFeedback();
       }
     }, 120);
   }
 
-  function feedbackMenu(event) {
+  /**
+   * @returns the context menu items of a [data-path] region, a diff file or a command: Feedback while lines of one are
+   * selected.
+   */
+  function feedbackItems() {
     const picked = selectionFeedback();
-    if (!picked || !(event.target instanceof Element) || !event.target.closest("[data-path]")) {
-      return;
-    }
-    event.preventDefault();
-    showFeedback(picked, event.clientX, event.clientY, true);
-    diffView.float.firstChild.focus();
+    return picked ? [{label: "Feedback", hint: "f: a post with the selected lines to the requesting agent", run: () => feedbackSheet(picked)}] : [];
   }
 
   function feedbackKey() {

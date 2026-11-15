@@ -10,7 +10,7 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
-import test_orchestrator_e2e as base
+import hub_e2e_kit as base
 from hub_case import HubCase
 
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/inbox-gone-rows-shots"))
@@ -72,7 +72,7 @@ def probe(template: str) -> str:
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
 class TestInboxGoneRows(HubCase):
-    drive = base.TestOrchestratorE2E.drive
+    drive = base.OrchestratorE2ECase.drive
 
     def setUp(self):
         super().setUp()
