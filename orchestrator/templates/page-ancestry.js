@@ -51,10 +51,13 @@
     }));
   }
 
+  function glossarySections() {
+    return Glossary.explain().map(([heading, rows]) => h("section", {}, h("h4", {}, heading),
+      h("dl", {class: "glossary"}, rows.map(([term, meaning]) => h("div", {}, h("dt", {}, term), h("dd", {}, meaning))))));
+  }
+
   function gateExplain() {
-    return h("details", {class: "gate-explain"}, h("summary", {title: "Explain: what each mark of this branch means"}, icon("bi-question-circle"), "Explain"),
-      Glossary.explain().map(([heading, rows]) => h("section", {}, h("h4", {}, heading),
-        h("dl", {class: "glossary"}, rows.map(([term, meaning]) => h("div", {}, h("dt", {}, term), h("dd", {}, meaning)))))));
+    return h("details", {class: "gate-explain"}, h("summary", {title: "Explain: what each mark of this branch means"}, icon("bi-question-circle"), "Explain"), glossarySections());
   }
 
   function gateApply() {

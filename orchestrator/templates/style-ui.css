@@ -240,3 +240,12 @@ body.fit .spot-host { flex: none; }
   .radio-spot .radio-tabs button { padding-block: 1px; }
   .radio-spot .radio-logbox :is(.radio-filters .field, input[type="search"]) { padding-block: 1px; }
 }
+.ctx-menu { position: fixed; z-index: 55; display: grid; gap: 2px; width: max-content; min-width: min(220px, calc(100vw - 16px)); max-width: min(360px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); padding: 4px; overflow-y: auto; overscroll-behavior: contain; background: var(--glass-card); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow-lift); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+.ctx-menu[hidden] { display: none; }
+.ctx-group { display: grid; min-width: 0; }
+.ctx-head { padding: 4px 10px 2px; overflow: hidden; color: var(--muted); font-size: var(--fs-xs); font-weight: 650; letter-spacing: .04em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.ctx-rule { height: 1px; margin: 2px 6px; background: var(--line); }
+.ctx-item { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 10px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.ctx-item:is(:hover, :focus) { background: var(--accent-soft); color: var(--accent); outline: none; }
+.ctx-item .ctx-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-item .muted { flex: 0 1 auto; max-width: 45%; overflow: hidden; font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }

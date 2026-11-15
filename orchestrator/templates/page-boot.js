@@ -28,7 +28,8 @@
   document.addEventListener("keydown", context, {once: true});
   document.addEventListener("pointerdown", unlock);
   document.addEventListener("keydown", keyboard);
-  document.addEventListener("contextmenu", feedbackMenu);
+  document.addEventListener("keydown", ctxKeydown);
+  document.addEventListener("contextmenu", ctxContextMenu);
   document.addEventListener("selectionchange", feedbackButton);
   document.addEventListener("visibilitychange", refresh);
   window.addEventListener("focus", refresh);
