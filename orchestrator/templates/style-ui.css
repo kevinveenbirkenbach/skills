@@ -112,6 +112,9 @@ body.fit .spot-host { flex: none; }
 .knob-test { grid-column: 5; }
 .radio-read { display: grid; gap: var(--sp-2); }
 .radio-read .chips { margin-bottom: 0; }
+.morse-speed { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
+.morse-speed .knob { flex: 1 1 8rem; width: auto; }
+.morse-rate { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .radio-station { position: relative; min-width: 0; padding-top: var(--sp-2); border-top: 1px solid var(--line); }
 .radio-station > summary { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 30px; cursor: pointer; list-style: none; }
 .radio-station > summary::-webkit-details-marker { display: none; }
@@ -165,6 +168,9 @@ body.fit .spot-host { flex: none; }
   .radio-grid { grid-template-columns: minmax(0, 1fr); }
   .radio-home-radio > .radio-grid { flex: none; grid-template-rows: none; }
   .radio-home-radio .radio-log { flex: none; height: auto; overflow: visible; }
+}
+@container radio (max-width: 60rem) {
+  .radio-modes button { gap: 4px; padding-inline: 7px; }
 }
 @container history (max-width: 34rem) {
   .radio-row, .radio-pick { gap: 4px; }

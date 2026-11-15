@@ -35,7 +35,7 @@ that someone transmits without the speech engine loading a busy host.
    hub settings (one passkey per button press).
 6. **Threshold**: adjustable in the panel, 30 to 90 % in steps of 10, default
    50 %; a signed hub setting `speech.threshold`, since the server enforces
-   it. Rejected: a fixed 50 %.
+   it. Rejected: a fixed 50 %. Widened to 0 to 100 % by Morse decision 5.
 7. **Log**: tabs Sent (from the operator), Received (to the operator or to
    all) and All (every radio row the hub logs); filter chips class, sender,
    recipient and agent plus text search, combined with AND, newest first.
@@ -117,7 +117,8 @@ flowchart TD
 - [x] `GET /api/state` carries `speech.gate` with `threshold`, `cpu` and
       `open`.
 - [x] `speech.threshold` accepts only 30 to 90 in steps of 10, default 50,
-      and changes only with a valid passkey signature.
+      and changes only with a valid passkey signature (0 to 100 since
+      Morse decision 5).
 
 ### Sound
 
@@ -327,3 +328,106 @@ flowchart TD
   both browsers, and drives
   two composers, Reply and Cancel mayday from Home copies in Chromium at
   1366 and 390 px.
+
+## Morse
+
+### Decisions (operator-confirmed 2026-11-15; do not re-litigate)
+
+1. **Morse mode**: a fourth mode beside Auto, Quiet and Silence. In Morse
+   every row the read-aloud filters pick is keyed in Morse by WebAudio,
+   always whole with no cap: the class prosign, then DE and the sender's
+   clear name (never its session id), then the full text without the hub's
+   message mark. The prosign stands in for the procedure word of decision 4;
+   the hub renders no speech line, so the CPU gate does not apply. Stop
+   speaking cuts the keying at once, and a mode change cuts it and replans
+   the row. A row of a higher class (MAYDAY, then PAN-PAN, then SÉCURITÉ)
+   arriving while a row keys cuts that row, which keys again whole after it,
+   so a MAYDAY never waits behind a long message (skeptic finding, open for
+   operator feedback). Rejected: a capped text, the spoken procedure word
+   before the keying. Out of scope: Gibberlink and a fallback selector (a
+   later item).
+2. **Prosigns**: one table in `radioset.js`, open for operator feedback:
+   MAYDAY keys SOS as one sign, PAN-PAN "PAN PAN", SÉCURITÉ "SECURITE",
+   broadcast and newsletter CQ, post KA as one sign, and a call the called
+   stations' clear names in place of a prosign, so it keys
+   `<called> DE <sender> <text>`. Letters are case-folded; Ä, Ö, Ü and the
+   other accented letters with a Morse code of their own key that code, any
+   other accented letter keys its base letter, and every other character
+   without a code is skipped.
+3. **Speed**: a hub setting `morse.wpm`, whole numbers from 5 to 40, default
+   20, saved without a passkey since no server gate depends on it, and set
+   in the radio gear beside the read-aloud filters, shown as
+   `<n> WPM (<n × 50> dots/min)`. Timing after PARIS: a dot lasts
+   1200 / WPM ms, a dash 3 dots, the gap inside a letter 1, between letters
+   3 and between words 7. A page loaded before the speed existed keeps the
+   saved speed when it saves other settings.
+4. **Pitch**: each sender keys its own stable tone from 550 to 850 Hz,
+   picked by the same sha256 slot of its directory key that picks its voice
+   (`engines.slot`), so there is no second agent mapping; every radio row
+   of `/api/state` carries it as `pitch`, beside `speaker` (the clear name)
+   and `called` (the called stations' clear names). Rejected: an agent table
+   in the browser, one fixed 700 Hz tone.
+5. **Threshold 0 to 100 %**: decision 6 widens to 0 to 100 % in steps of 10,
+   default 50 %. The gate is open while the CPU lies below the threshold;
+   at 100 % it is always open, also without a fresh CPU sample, and at 0 %
+   never. The threshold label reads "speak while CPU < X %", "always" at
+   100 % and "never" at 0 %. Stored values from 30 to 90 stay valid.
+
+### Morse Acceptance Criteria
+
+- [ ] Auto, Quiet, Silence and Morse form the mode group (`aria-pressed`);
+      Morse survives a reload and the display line shows "Morse".
+- [ ] In Morse a row of every class plans exactly one Morse step with its
+      prosign of Morse decision 2, `DE <speaker> <text>` and the row's pitch,
+      whether the hub speaks or not; the page sends no `/api/tts` request;
+      the read-aloud filters hold and a MAYDAY always keys.
+- [ ] "PARIS" at 20 WPM lasts 50 dot units of 60 ms, 3000 ms with the
+      closing word gap; a dot lasts 240 ms at 5 WPM and 30 ms at 40 WPM.
+- [ ] SOS keyed as one sign lasts 30 dot units, keyed as letters 34.
+- [ ] A text of 1000 characters keys whole: one sine oscillator at the
+      row's pitch, its scheduled stop at the end of the whole timeline.
+- [ ] Stop speaking stops the oscillator at once and puts the TX/RX lamp out;
+      a mode change while keying stops it and plays the new mode's plan.
+- [ ] A MAYDAY arriving while a post keys stops that oscillator at once,
+      keys next, and the post waits in the queue to key again whole; a
+      PAN-PAN or a post arriving while a MAYDAY keys waits for its end.
+- [ ] `morse.wpm` accepts only whole numbers from 5 to 40, default 20;
+      a bool, a float, a string, an extra key or a missing value is refused
+      with a ToolError (400); a save needs no passkey, survives a reload, and
+      a settings sheet without `morse` keeps the saved speed.
+- [ ] The radio gear holds a Morse speed slider from 5 to 40 in steps of 1
+      whose label `<n> WPM (<n × 50> dots/min)` follows the drag and is
+      saved on release.
+- [ ] Every radio row carries `pitch` from 550 to 850 Hz, the same for the
+      same sender and equal to `engines.pitch_of(source)`, `speaker` with the
+      clear name and `called`; 200 senders spread over at least 120 pitches
+      from below 575 to above 825 Hz; voice and pitch both take
+      `engines.slot`.
+- [ ] `speech.threshold` accepts 0 to 100 in steps of 10; at 100 the gate
+      is open with any sample and without one; at 0 it is shut, busy with a
+      sample and unknown without; stored values 30 to 90 load unchanged.
+- [ ] The threshold slider runs from 0 to 100 in steps of 10 and its label
+      reads "speak while CPU < X %", "always" at 100 % and "never" at 0 %.
+- [ ] At 1920, 1366 and 390 px in Chromium and Firefox the Morse mode, the
+      gear with the speed and the keying caption cause no horizontal scroll.
+
+### Morse Tests
+
+- **Unit**: `tests/test_hub_morse.py`: PARIS timing at three speeds, case
+  folding, umlauts and skipped characters, SOS as one sign, the speed label,
+  the plan of every class with its prosign, DE with the clear name, the
+  whole text, the filters, the threshold labels, and in a vm sandbox of
+  `page-speech.js` with `page-morse.js` the oscillator at the row's pitch
+  and speed, Stop and a mode change; the pitch range, spread and shared
+  slot; `morse.wpm` validation and `completed`.
+  `tests/test_hub_speech_gate.py`: thresholds 0 to 100, the gate at 0 and
+  100 %, stored values 30 to 90.
+- **Integration**: hub HTTP tests: `morse.wpm` refused out of range, saved
+  without a passkey, kept by a sheet without it; `/api/state` rows carry
+  `pitch`, `speaker` and `called`.
+- **E2E**: `tests/e2e/test_radio_set_e2e.py` in Chromium and Firefox at
+  1920, 1366 and 390 px: Morse pressed, the speed slider and its label, the
+  saved speed, one sine oscillator at the sender's pitch and no `/api/tts`
+  request, Stop cuts it; screenshots `<browser>-<width>-radio-morse-keying`
+  and `-stopped` under `E2E_OUT` for operator feedback; the faceplate step
+  checks the four modes and the threshold slider from 0 to 100.

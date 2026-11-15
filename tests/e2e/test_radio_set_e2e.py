@@ -16,7 +16,7 @@ import hub_e2e_kit as base
 from hub_case import HubCase
 from hub_engines import log_rows
 from hub_support import iso
-from kvb_orchestrator import errors, phrasing, speechgate
+from kvb_orchestrator import engines, errors, phrasing, speechgate
 from radio_set_kit import (
     BURST,
     BURST_DONE,
@@ -26,6 +26,9 @@ from radio_set_kit import (
     LIGHT,
     LOG,
     LOG_KEPT,
+    MORSE,
+    MORSE_SPY,
+    MORSE_STOP,
     OUT,
     SOUND,
     SOUND_KEPT,
@@ -33,6 +36,7 @@ from radio_set_kit import (
     THRESHOLD,
     THRESHOLDS,
     WORD,
+    WPMS,
     probe,
 )
 
@@ -132,12 +136,13 @@ class TestRadioSet(HubCase):
                 self.assertEqual(face["display"]["mode"], "Auto")
                 self.assertEqual((face["display"]["cpu"], face["display"]["lamp"]), ("CPU 10 %", ["RX", "false"]), face)
                 self.assertTrue(face["display"]["cls"], face)
-                self.assertEqual([mode_[:2] for mode_ in face["modes"]], [["Auto", "true"], ["Quiet", "false"], ["Silence", "false"]])
+                self.assertEqual([mode_[:2] for mode_ in face["modes"]], [["Auto", "true"], ["Quiet", "false"], ["Silence", "false"], ["Morse", "false"]])
                 self.assertTrue(all(mode_[2] and mode_[3] for mode_ in face["modes"]), face["modes"])
                 self.assertEqual([knob[0] for knob in face["knobs"]], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio", "Squelch", "Threshold"])
-                self.assertEqual(face["knobs"][-1][1:], ["30", "90", "10", "50" if index == 0 or not signed else str(THRESHOLDS[base.WIDTHS[index - 1][0]])])
+                shown = "50" if index == 0 or not signed else str(THRESHOLDS[base.WIDTHS[index - 1][0]])
+                self.assertEqual(face["knobs"][-1][1:], ["0", "100", "10", shown])
                 self.assertEqual(len(face["toneToggles"]), 4)
-                self.assertEqual([label["text"] for label in face["labels"]], [knob[0] for knob in face["knobs"]])
+                self.assertEqual([label["text"] for label in face["labels"]], [*(knob[0] for knob in face["knobs"][:-1]), f"speak while CPU < {shown} %"])
                 for label in face["labels"]:
                     self.assertEqual((label["title"], label["row"]), (label["text"], True), label)
                     self.assertTrue(label["whole"] or width == 390, label)
@@ -217,7 +222,7 @@ class TestRadioSet(HubCase):
                 if signed:
                     self.assertEqual(threshold["after"], [value, threshold["before"][1] + 1], threshold)
                     self.assertEqual(threshold["shown"], f"{value} %")
-                    self.assertIn(f"below {value} %", threshold["title"])
+                    self.assertIn(f"speak while CPU < {value} %", threshold["title"])
                 else:
                     self.assertEqual(threshold["after"], [threshold["before"][0], threshold["before"][1]], threshold)
                     self.assertIn("Settings: not signed", threshold["toasts"])
@@ -227,6 +232,54 @@ class TestRadioSet(HubCase):
         words = [row for row in log_rows(self.engines.scratch / "piper.jsonl") if row["text"] == f"{WORD}\n"]
         self.assertEqual(len(words), 1, "the procedure word line of one voice renders once and then hits the cache")
         self.assertEqual(self.httpd.hub.settings.get()["speech"]["threshold"], THRESHOLDS[390] if signed else 50)
+
+    def morse_steps(self, browser: str) -> list[dict]:
+        steps = []
+        for width, height in base.WIDTHS:
+            shot = str(OUT / f"{browser}-{width}-radio-morse")
+            steps += [
+                {"width": width, "height": height, "url": f"{self.base}?{width}-morse#stream", "wait": 1200, "probe": probe(MORSE).replace("@WPM@", str(WPMS[width])), "shot": f"{shot}-keying.png", "gesture": True},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(MORSE_STOP), "shot": f"{shot}-stopped.png", "gesture": True},
+            ]
+        return steps
+
+    def check_morse(self, data: dict, browser: str) -> None:
+        results = iter(data["results"])
+        before = 20
+        for width, _ in base.WIDTHS:
+            keying, stopped = next(results), next(results)
+            wpm = WPMS[width]
+            with self.subTest(browser=browser, width=width, part="morse keying"):
+                self.assertNotIn("error", keying, keying)
+                self.assertEqual(keying["mode"][:2], [["morse"], "Morse"], keying)
+                self.assertIn("SOS", keying["mode"][2])
+                self.assertEqual(keying["before"], ["5", "40", "1", str(before), f"{before} WPM ({before * 50} dots/min)"], keying)
+                self.assertEqual((keying["dragged"], keying["toast"], keying["saved"]), (f"{wpm} WPM ({wpm * 50} dots/min)", True, [str(wpm), f"{wpm} WPM ({wpm * 50} dots/min)"]), keying)
+                self.assertTrue(keying["playing"], keying)
+                self.assertEqual([(entry["frequency"], entry["type"]) for entry in keying["keyed"]], [(engines.pitch_of("s2"), "sine")], keying)
+                self.assertEqual(keying["tts"], 0, "Morse mode asks the hub for no speech line")
+                self.assertEqual(keying["lamp"], ["RX", "true"])
+                self.assertFalse(keying["caption"][0])
+                self.assertTrue(keying["caption"][1].startswith("Stage"), keying)
+                self.assertEqual((keying["gearFits"], keying["fits"]), ({"page": True, "panel": True}, {"page": True, "panel": True}), keying)
+            with self.subTest(browser=browser, width=width, part="morse stop"):
+                self.assertNotIn("error", stopped, stopped)
+                self.assertEqual(stopped, {"before": [True, "true", False], "cut": True, "quiet": True, "hidden": True, "later": 0}, stopped)
+            before = wpm
+        self.assertEqual(self.httpd.hub.settings.get()["morse"], {"wpm": WPMS[390]})
+
+    def test_chromium_keys_every_row_whole_in_morse_at_the_hub_speed_in_its_sender_pitch_and_stop_cuts_it_at_three_widths(self):
+        data = self.drive(self.morse_steps("chromium"), None, init=MORSE_SPY)
+        (OUT / "chromium-radio-morse.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        self.check_morse(data, "chromium")
+
+    @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
+    def test_firefox_keys_every_row_whole_in_morse_at_the_hub_speed_in_its_sender_pitch_and_stop_cuts_it_at_three_widths(self):
+        data = self.drive(self.morse_steps("firefox"), None, "bidi.mjs", os.environ.get("FIREFOX", "firefox"), init=MORSE_SPY)
+        (OUT / "firefox-radio-morse.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])
+        self.check_morse(data, "firefox")
 
     def test_chromium_plays_the_radio_set_modes_burst_and_procedure_words_and_filters_the_log_at_three_widths(self):
         data = self.drive(self.steps("chromium", True), self.authenticator(), init=SPY)

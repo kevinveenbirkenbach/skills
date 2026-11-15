@@ -12,6 +12,7 @@ from .records import READ_FLAGS, epoch, parse_line
 
 FRESH = 120
 TAIL = 1 << 16
+ALWAYS = 100
 
 
 def tail_lines(path: Path, size: int) -> list[str]:
@@ -65,12 +66,14 @@ class CpuGate:
 
     def state(self) -> dict:
         """Returns:
-            {"threshold", "cpu", "open"}: open only while the latest fresh
-            sample lies below the threshold; cpu None without one.
+            {"threshold", "cpu", "open"}: open while the latest fresh sample
+            lies below the threshold, and at a threshold of ALWAYS even
+            without one, so a threshold of 0 never opens; cpu None without a
+            fresh sample.
         """
         cpu = latest_cpu(self.samples, self.clock())
         limit = self.threshold()
-        return {"threshold": limit, "cpu": cpu, "open": cpu is not None and cpu < limit}
+        return {"threshold": limit, "cpu": cpu, "open": limit >= ALWAYS or (cpu is not None and cpu < limit)}
 
     def admit(self, line: str) -> None:
         """Args:
@@ -79,14 +82,12 @@ class CpuGate:
                 same few lines per voice and outlives the cache trim.
 
         Returns:
-            None when the line may render; otherwise it raises Held busy
-            while the latest fresh sample is at or above the threshold and
-            Held unknown without a fresh sample.
+            None when the line may render; otherwise, while the gate is shut,
+            it raises Held unknown without a fresh sample and Held busy with
+            one.
         """
         if line in PROCEDURE_LINES:
             return
         gate = self.state()
-        if gate["cpu"] is None:
-            raise Held("unknown")
         if not gate["open"]:
-            raise Held("busy")
+            raise Held("unknown" if gate["cpu"] is None else "busy")

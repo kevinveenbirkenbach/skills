@@ -277,6 +277,71 @@ LIGHT = """(async () => {@HELPERS@@RADIO@
   await sleep(1500);
   return {violations: window.e2eViolations};
 })()"""
+WPMS = {1920: 12, 1366: 25, 390: 40}
+MORSE_SPY = """() => {
+  (@SPY@)();
+  const keyed = window.e2eMorse = [];
+  const start = OscillatorNode.prototype.start;
+  OscillatorNode.prototype.start = function keying(...args) {
+    this.e2e = {frequency: this.frequency.value, type: this.type, start: args[0], stop: null, cut: false};
+    keyed.push(this.e2e);
+    return start.apply(this, args);
+  };
+  const stop = OscillatorNode.prototype.stop;
+  OscillatorNode.prototype.stop = function unkeying(...args) {
+    if (this.e2e && args[0] === undefined) {
+      this.e2e.cut = true;
+    } else if (this.e2e) {
+      this.e2e.stop = args[0];
+    }
+    return stop.apply(this, args);
+  };
+}""".replace("@SPY@", SPY)
+MORSE_KEYED = """
+  const keyed = () => window.e2eMorse.filter((entry) => entry.stop !== null && entry.stop - entry.start > 1);
+  const speed = () => spot.querySelector('#radio-gear input[aria-label="Morse speed"]');
+  const rate = () => text(spot.querySelector("#radio-gear .morse-rate"));
+  const gear = () => all(".spot-head button", spot).find((button) => name(button) === "Read aloud");
+"""
+MORSE = """(async () => {@HELPERS@@RADIO@@KEYED@
+  press("morse");
+  await sleep(200);
+  const mode = [pressed(), field("mode"), spot.querySelector('.radio-modes button[data-mode="morse"]').title];
+  if (gear().getAttribute("aria-expanded") !== "true") {
+    gear().click();
+    await sleep(200);
+  }
+  const before = [speed().min, speed().max, speed().step, speed().value, rate()];
+  speed().value = "@WPM@";
+  speed().dispatchEvent(new Event("input", {bubbles: true}));
+  const dragged = rate();
+  speed().dispatchEvent(new Event("change", {bubbles: true}));
+  const toast = await until(() => all("#toasts .toast strong").map(text).includes("Morse speed saved"), 15000);
+  await sleep(300);
+  const saved = [speed().value, rate()];
+  const gearFits = fits();
+  gear().click();
+  await sleep(200);
+  const at = {tts: audio().tts.length, keyed: keyed().length};
+  await cue("alarm");
+  refreshNow();
+  const playing = await until(() => keyed().length > at.keyed && lamp().dataset.lit === "true", 20000);
+  const caption = spot.querySelector(".radio-caption");
+  return {
+    mode, before, dragged, toast: Boolean(toast), saved, gearFits, playing: Boolean(playing), keyed: keyed().slice(at.keyed), tts: audio().tts.length - at.tts,
+    lamp: [text(lamp()), lamp().dataset.lit], caption: [caption.hidden, text(caption.querySelector("strong"))], fits: fits(),
+  };
+})()""".replace("@KEYED@", MORSE_KEYED)
+MORSE_STOP = """(async () => {@HELPERS@@RADIO@@KEYED@
+  const last = keyed()[keyed().length - 1];
+  const caption = spot.querySelector(".radio-caption");
+  const stop = all("button", caption).find((button) => name(button) === "Stop speaking");
+  const before = [Boolean(stop), lamp().dataset.lit, last.cut];
+  stop.click();
+  const quiet = Boolean(await until(() => lamp().dataset.lit === "false", 2000));
+  await sleep(500);
+  return {before, cut: last.cut, quiet, hidden: caption.hidden, later: keyed().filter((entry) => !entry.cut).length};
+})()""".replace("@KEYED@", MORSE_KEYED)
 
 
 def probe(template: str) -> str:

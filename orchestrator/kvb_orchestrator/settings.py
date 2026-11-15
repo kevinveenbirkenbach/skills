@@ -11,12 +11,15 @@ from .errors import ToolError
 from .fields import FIELDS, NAME_LIMIT, expect
 from .rates import METRICS, PERIOD_NAMES
 from .records import read_json, write_atomic
+from .speechgate import ALWAYS
 
 THEMES = ("sky", "light", "dark", "custom")
 ESTIMATIONS = ("none", "points")
 TRENDS = ("off", "regression", "velocity")
 TREND_DAYS = (1, 365)
-THRESHOLDS = tuple(range(30, 91, 10))
+THRESHOLDS = tuple(range(0, ALWAYS + 1, 10))
+WPM = (5, 40)
+LATE = ("rates", "morse")
 RADIO_MOVED = ("sounds", "squelch")
 SPEECH_MOVED = ("on", "classes", "muted")
 COLOR = re.compile(r"#[0-9a-f]{6}")
@@ -37,6 +40,7 @@ SETTINGS = {
     "channels": {"browser": True, "sounds": True, "aloud": True, "title": True},
     "streams": [],
     "speech": {"threshold": 50},
+    "morse": {"wpm": 20},
     "space": {
         "graph": {"axis": "none", "yaw": 30.0, "pitch": 20.0, "zoom": 1.0, "pan_x": 0.0, "pan_y": 0.0},
         "sky": {"azimuth": 180.0, "altitude": 0.0, "fov": 180.0},
@@ -154,6 +158,15 @@ def speech_setting(raw: object) -> dict:
     return {"threshold": threshold}
 
 
+def morse_setting(raw: object) -> dict:
+    entry = section(raw, "morse", tuple(SETTINGS["morse"]))
+    low, high = WPM
+    wpm = entry["wpm"]
+    if isinstance(wpm, bool) or not isinstance(wpm, int) or not low <= wpm <= high:
+        raise ToolError(f"morse.wpm must be a whole number from {low} to {high} words per minute")
+    return {"wpm": wpm}
+
+
 def space_setting(raw: object) -> dict:
     entry = section(raw, "space", tuple(SETTINGS["space"]))
     graph = section(entry["graph"], "space.graph", tuple(SETTINGS["space"]["graph"]))
@@ -205,6 +218,7 @@ def valid_settings(raw: object) -> dict:
         "channels": channels_setting(data["channels"]),
         "streams": [stream_entry(entry, index) for index, entry in enumerate(data["streams"])],
         "speech": speech_setting(data["speech"]),
+        "morse": morse_setting(data["morse"]),
         "space": space_setting(data["space"]),
         "estimation": data["estimation"],
         "trend": trend_setting(data["trend"]),
@@ -215,10 +229,11 @@ def valid_settings(raw: object) -> dict:
 
 def completed(raw: object, saved: dict) -> object:
     """Returns:
-        raw with the saved rates when it names none, as a page loaded before
-        the rates chip existed sends it; anything else unchanged.
+        raw with the saved value of each LATE section it names none of, as a
+        page loaded before the rates chip or the Morse speed existed sends
+        it; anything else unchanged.
     """
-    return {**raw, "rates": saved["rates"]} if isinstance(raw, dict) and "rates" not in raw else raw
+    return {**{key: saved[key] for key in LATE if key not in raw}, **raw} if isinstance(raw, dict) else raw
 
 
 def radio_moved(stored: object) -> object:

@@ -44,6 +44,7 @@ HEARING_HOUR = 3600
 HEARING_BUDGET = 5 * STT_SECONDS
 NOISE = re.compile(r"\[[^\]\n]{0,40}\]")
 PLACEHOLDERS = frozenset({0, 0xFFFFFFFF})
+PITCH = (550, 850)
 
 
 def voice_models(folder: Path) -> list[Path]:
@@ -92,6 +93,18 @@ def unreachable(path: Path, part: str, mode: int, ability: str) -> str:
     return f"{part} {path} is missing or not {ability}"
 
 
+def slot(key: str, count: int) -> int:
+    """Args:
+        key: the speaker's session id or directory key.
+        count: how many slots there are, at least 1.
+
+    Returns:
+        The slot sha256(key) picks from count: the one mapping from a speaker
+        to its voice and to its Morse pitch.
+    """
+    return int(digest(key), 16) % count
+
+
 def voice_of(key: str, pool: list[str], operator: str) -> str:
     """Args:
         key: the speaker's session id or directory key; HUMAN is the operator.
@@ -101,11 +114,24 @@ def voice_of(key: str, pool: list[str], operator: str) -> str:
 
     Returns:
         operator for HUMAN or when the pool is empty, otherwise the voice
-        sha256(key) picks from the pool.
+        the speaker's slot picks from the pool.
     """
     if key == HUMAN or not pool:
         return operator
-    return pool[int(digest(key), 16) % len(pool)]
+    return pool[slot(key, len(pool))]
+
+
+def pitch_of(key: str) -> int:
+    """Args:
+        key: the speaker's session id or directory key, as voice_of takes it.
+
+    Returns:
+        The speaker's Morse tone in Hz from PITCH[0] to PITCH[1], picked by
+        the same slot as its voice, so the same speaker always keys the same
+        tone, installed voices or not.
+    """
+    low, high = PITCH
+    return low + slot(key, high - low + 1)
 
 
 def wav_seconds(body: bytes, seconds: int) -> float:

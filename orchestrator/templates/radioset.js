@@ -1,7 +1,7 @@
 const RadioSet = (() => {
   "use strict";
   const KEY = "kvb-orchestrator.radio";
-  const MODES = ["auto", "quiet", "silence"];
+  const MODES = ["auto", "quiet", "silence", "morse"];
   const TONES = ["mayday", "review", "direct", "radio"];
   const CLASSES = ["post", "call", "newsletter", "broadcast", "mayday", "pan-pan", "security"];
   const TO_ALL = new Set(["newsletter", "broadcast", "mayday", "pan-pan", "security"]);
@@ -11,6 +11,17 @@ const RadioSet = (() => {
   const MUTED_LIMIT = 200;
   const BURST = {seconds: 0.6, frequency: 1800, q: 0.9};
   const MARK = /\[kvb-orchestrator msg ([0-9a-f]{16})\]/;
+  const MARKS = new RegExp(MARK.source, "g");
+  const GATE = {min: 0, max: 100, step: 10};
+  const PROSIGNS = {
+    mayday: {sign: "SOS", joined: true, called: false},
+    "pan-pan": {sign: "PAN PAN", joined: false, called: false},
+    security: {sign: "SECURITE", joined: false, called: false},
+    broadcast: {sign: "CQ", joined: false, called: false},
+    newsletter: {sign: "CQ", joined: false, called: false},
+    call: {sign: "", joined: false, called: true},
+    post: {sign: "KA", joined: true, called: false},
+  };
   const DEFAULTS = {
     mode: "auto",
     sounds: {mayday: {on: true, volume: 0.9}, review: {on: true, volume: 0.6}, direct: {on: true, volume: 0.5}, radio: {on: false, volume: 0.25}},
@@ -63,14 +74,26 @@ const RadioSet = (() => {
   }
 
   /**
-   * @param {object} row a radio row of the state with word, rest and voice.
+   * @param {object} row a radio row of the state with class, called, speaker, pitch and text.
+   * @returns {{kind: string, sign: string, joined: boolean, text: string, pitch: number}} the whole row keyed in Morse: the class prosign, or the called stations of a call, then DE with the sender's clear name and the full text without the hub's message mark, in the sender's pitch.
+   */
+  function morse(row) {
+    const {sign, joined, called} = PROSIGNS[row.class];
+    return {kind: "morse", sign: called ? row.called.join(" ") : sign, joined, text: `DE ${row.speaker} ${row.text.replace(MARKS, " ")}`, pitch: row.pitch};
+  }
+
+  /**
+   * @param {object} row a radio row of the state with word, rest, voice and the Morse fields.
    * @param {object} set the radio set.
    * @param {Object<string, boolean>} live tts and open: whether the hub speaks at all and whether its CPU gate is open.
-   * @returns {Array<{kind: string, text: (string|undefined)}>} what plays, in order: the procedure word line in every mode, then the spoken rest in Auto below the threshold, else the noise burst, nothing more in Silence.
+   * @returns {Array<{kind: string, text: (string|undefined)}>} what plays, in order: in Morse the whole row keyed once; else the procedure word line in every mode, then the spoken rest in Auto below the threshold, else the noise burst, nothing more in Silence.
    */
   function plan(row, set, live) {
     if (!picked(row, set)) {
       return [];
+    }
+    if (set.mode === "morse") {
+      return [morse(row)];
     }
     const word = live.tts && row.voice && row.word ? [{kind: "word", text: row.word}] : [];
     if (set.mode === "silence") {
@@ -86,6 +109,17 @@ const RadioSet = (() => {
    */
   function burst(loudness) {
     return {...BURST, gain: loudness};
+  }
+
+  /**
+   * @param {number} threshold the speech threshold in percent.
+   * @returns {string} the threshold as the radio labels it: always at the top of the range, never at its bottom, else the CPU percent speech stays below.
+   */
+  function gateLabel(threshold) {
+    if (threshold >= GATE.max) {
+      return "always";
+    }
+    return threshold <= GATE.min ? "never" : `speak while CPU < ${threshold} %`;
   }
 
   function toAll(row) {
@@ -167,7 +201,7 @@ const RadioSet = (() => {
     return {...entry, chips: Object.fromEntries(CHIPS.map((name) => [name, ""])), q: ""};
   }
 
-  return {KEY, MODES, TONES, CLASSES, TABS, CHIPS, DEFAULTS, valid, picked, plan, burst, toAll, ledgerOf, logRows, counts, choices, cleared};
+  return {KEY, MODES, TONES, CLASSES, TABS, CHIPS, DEFAULTS, GATE, PROSIGNS, valid, picked, plan, burst, gateLabel, toAll, ledgerOf, logRows, counts, choices, cleared};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = RadioSet;

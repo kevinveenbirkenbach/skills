@@ -304,7 +304,7 @@ class TestHubRadio(base.OrchestratorE2ECase):
                     self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [mayday] if run["cls"] == "mayday" else [], ""), run)
                     self.assertTrue((run["toast"] or "").startswith(f"{labels[run['cls']]} to {'Stage' if direct else 'all'}: sent"), run)
                 self.assertEqual((saved["expanded"], saved["clashes"]), ("true", [{"found": [], "outside": []}] * 2))
-                self.assertEqual(saved["tones"], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio", "Squelch", "Threshold"])
+                self.assertEqual(saved["tones"], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio", "Squelch", "speak while CPU < 50 %"])
                 self.assertEqual([entry[0] for entry in saved["classes"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
                 self.assertEqual([entry[1:] for entry in saved["classes"] if entry[0] == "MAYDAY"], [["true", True]])
                 self.assertEqual((saved["kept"], saved["after"]), ([float(squelch), tone == "true", post == "true"], ["false", False]))
