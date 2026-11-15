@@ -6,7 +6,9 @@ and the copy the kvb-org-organize watch hook keeps in ~/.local/state.
 A row: id, kind, signature, workdir, start, end (epoch seconds), minutes, exit,
 free_before_gb, min_free_gb, disk_gb (free_before_gb - min_free_gb, at least
 0), mem_before, mem_max, cpu_before, cpu_max (percent), concurrent (other
-active jobs at the grant).
+active jobs at the grant), and HUNG ({cpu_s, read_bytes, written_bytes,
+still_min, members, tree}, the report of standstill.py) only on a run hold
+ended for standing still, whose exit is 124.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ NAME_KEY = operator.itemgetter("signature")
 KIND_KEY = operator.itemgetter("kind")
 ANY_KIND = "*"
 RAM_CAP = "ram_cap_percent"
+HUNG = "hung"
 SIGNATURE_HEADER = ("Signature", "Kind", "Runs", "Median min", "p90 disk GB", "p90 RAM %", "Need GB")
 KIND_HEADER = ("Kind", "Runs", "p90 RAM share %", "Median CPU share %", "Slot limit", "Source")
 
@@ -156,11 +159,12 @@ def grouped(rows: list[dict], key: Callable[[dict], Hashable]) -> dict[Hashable,
 
 
 def command_stats(rows: list[dict]) -> dict:
-    stats = {"runs": len(rows), "minutes": None, "disk_gb": None, "ram_share": None, "cpu_share": None, "need_gb": None}
+    stats = {"runs": len(rows), "minutes": None, "longest": None, "disk_gb": None, "ram_share": None, "cpu_share": None,
+             "need_gb": None}
     if len(rows) >= MIN_RUNS:
         disk = p90([r["disk_gb"] for r in rows])
         stats.update(
-            minutes=statistics.median(r["minutes"] for r in rows), disk_gb=disk,
+            minutes=statistics.median(r["minutes"] for r in rows), longest=max(r["minutes"] for r in rows), disk_gb=disk,
             ram_share=p90(shares(rows, "mem")), cpu_share=statistics.median(shares(rows, "cpu")),
             need_gb=math.ceil(disk + DISK_MARGIN_GB),
         )
@@ -186,7 +190,8 @@ def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[tuple[str, str]
     """Derive disk need per command and slot limit per kind from recent rows.
 
     Args:
-      rows: history rows, as read() returns them.
+      rows: history rows, as read() returns them; HUNG rows are ignored, as
+        their standstill would stretch the minutes and the shares.
       now: epoch seconds; rows that ended more than WINDOW_SECONDS earlier are
         ignored.
       cfg: the config; load_limits.mem_percent and cpu_percent bound a limit,
@@ -195,19 +200,20 @@ def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[tuple[str, str]
 
     Returns:
       (signatures, kinds). signatures: {(kind, signature): {runs, minutes,
-      disk_gb, ram_share, cpu_share, need_gb}}, and {(ANY_KIND, signature):
+      longest, disk_gb, ram_share, cpu_share, need_gb}}, and {(ANY_KIND, signature):
       ...} over the rows of every kind with that signature, which is what a
       queue before the per-kind learning booked; kinds: {kind: {runs,
       ram_share, cpu_share, limit, light, ram_cap}}, ram_cap None without a
       cap. With fewer than MIN_RUNS rows every value but runs, light and
       ram_cap is None.
-      minutes is the median, disk_gb and ram_share the p90 of the disk taken
+      minutes is the median and longest the largest minutes, disk_gb and
+      ram_share the p90 of the disk taken
       and of max minus before in percentage points, cpu_share the median of
       max minus before; need_gb is ceil(disk_gb + DISK_MARGIN_GB); limit is
       max(1, min over RAM and CPU of floor((load limit - median before) /
       max(share, MIN_SHARE_PERCENT))).
     """
-    recent = [r for r in rows if now - r["end"] <= WINDOW_SECONDS]
+    recent = [r for r in rows if now - r["end"] <= WINDOW_SECONDS and HUNG not in r]
     light = set(cfg.get("light_kinds", []))
     caps = cfg.get(RAM_CAP, {})
     signatures = {(ANY_KIND, name): command_stats(group) for name, group in grouped(recent, NAME_KEY).items()}

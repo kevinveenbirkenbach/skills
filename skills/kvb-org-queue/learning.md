@@ -2,7 +2,8 @@
 
 Every finished job appends a row (signature such as `<repo>: make <target>`,
 kind, minutes, disk, RAM and CPU) to `queue-history.jsonl`; the
-`kvb-org-organize` watch hook keeps it across reboots.
+`kvb-org-organize` watch hook keeps it across reboots. The row of a run
+hold ended for standing still (exit 124, a `hung` probe) teaches nothing.
 
 From the last 30 days, once 5 runs exist:
 

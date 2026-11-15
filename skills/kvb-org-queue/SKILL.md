@@ -77,12 +77,12 @@ queue.py cancel <id>
 
 - Never ask the chair for a heavy slot or announce a grant; the chair handles
   only a stuck queue or hung job (`capacity.md` of `kvb-org-organize`).
-- A running job is never cut short for the queue; only the operator orders
-  one down, and `kvb-git-hotfix` may void a gate. `kvb-org-queue-cleanup`
+- Only the operator, a `kvb-git-hotfix` gate void, or hold after 60 minutes
+  of tree standstill (exit 124) cut a job short. `kvb-org-queue-cleanup`
   deletes only entries whose lock no living process holds.
 - With `queue_enforce: true`, the `block` hook (PreToolUse on Bash) refuses
   `heavy_commands`, image builds, `make install|test*|quality*|verify-*`,
   tests beyond one unit file and `gate.py run|hold` outside `queue.py hold`.
 - Without the config, hold exits 2: tell the operator, ask the chair
-  (`kvb-org-organize`). A waiting hold rereads it every poll
-  (a broken file keeps the last good one).
+  (`kvb-org-organize`). Waiting holds reread it every poll, keeping the
+  last good one.

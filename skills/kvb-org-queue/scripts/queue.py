@@ -41,9 +41,10 @@ Args:
         proposing it (latched()); measure disk, RAM and CPU, run
         CMD in the current directory with inherited stdio in a session of its
         own, forward SIGINT and SIGTERM to its process group, measure every
-        POLL_SECONDS and at its end, record its history row and leave the
-        queue. The entry carries its code (a hash of this file and the
-        SIBLINGS); a poll that finds other code installed in
+        POLL_SECONDS and at its end, end its process tree once the tree stood
+        still for standstill.HUNG_SECONDS (supervise()), record its history
+        row and leave the queue. The entry carries its code (a hash of this
+        file and the SIBLINGS); a poll that finds other code installed in
         ~/.agents/skills leaves the queue ungranted and restarts the same hold
         with the installed queue.py, which keeps its entry id, place and
         enqueue time (hand_over()).
@@ -74,7 +75,9 @@ Args:
         poll, host load included, such as `waits in line behind <id>` or
         `drained for <id>`, the head's after `escalated <step>: ` once the
         stall reached it; `backfilled` for a job started past a blocked one;
-        prefixed when the entry runs other code than the installed one).
+        led by `suspect hung (<runtime> min)` for an active job past
+        standstill.suspect_seconds() (suspected()); prefixed when the entry
+        runs other code than the installed one).
         Entries of dead holders are dropped first.
         --json: print the same rows as a JSON list (listed()), each with
             the trace of the evaluate() pass that set its reason.
@@ -109,7 +112,8 @@ watch.py documents them. A signature is `<repository>: <command signature>`
 (aliases()).
 
 Exit codes:
-    hold: the command's exit code unchanged, 128+N when signal N ended it;
+    hold: the command's exit code unchanged, 128+N when signal N ended it,
+        standstill.HUNG_EXIT (124) when hold ended it for standing still;
         a command exiting 75 (EX_TEMPFAIL: it did no work, such as a declined
         `operator.py granted`) leaves no history row;
         before the command started 2 on a usage or config error or when it
@@ -154,6 +158,7 @@ SIBLINGS = {
     "council": SKILLS / "kvb-org-organize" / "scripts" / "council.py",
     "rasci": SKILLS / "kvb-org-rasci" / "scripts" / "rasci.py",
     "history": Path(__file__).resolve().parent / "history.py",
+    "standstill": Path(__file__).resolve().parent / "standstill.py",
     "nofollow": SKILLS / "kvb-org-organize" / "scripts" / "nofollow.py",
     "councilroot": SKILLS / "kvb-org-organize" / "scripts" / "councilroot.py",
 }
@@ -228,6 +233,7 @@ def sibling(name: str) -> ModuleType:
 
 watch = sibling("watch")
 history = sibling("history")
+standstill = sibling("standstill")
 nofollow = sibling("nofollow")
 STORE = watch.ROOT / "queue.json"
 LOCK = watch.ROOT / "queue.lock"
@@ -1444,23 +1450,54 @@ def measure(cfg: dict) -> dict[str, float]:
     return {"free_gb": free, "mem": mem, "cpu": cpu}
 
 
-def supervise(cfg: dict, child: subprocess.Popen, samples: list[dict[str, float]]) -> int:
+def supervise(cfg: dict, child: subprocess.Popen, samples: list[dict[str, float]]) -> tuple[int, dict | None]:
     """Wait for the child, measuring every POLL_SECONDS and once at its end.
 
     Args:
       cfg: the config.
-      child: the running command.
+      child: the running command, leading a session of its own.
       samples: the measurements so far; each new one is appended.
 
     Returns:
-      The child's return code.
+      (the child's return code, None); (standstill.HUNG_EXIT, the probe of
+      standstill.Clock.report()) once its process tree stood still for
+      standstill.HUNG_SECONDS and stop() ended it.
     """
+    clock = standstill.Clock(child.pid)
     code = None
     while code is None:
         with contextlib.suppress(subprocess.TimeoutExpired):
             code = child.wait(timeout=POLL_SECONDS)
         samples.append(measure(cfg))
-    return code
+        if code is None and clock.hung() and child.poll() is None:
+            probe = clock.report()
+            print(f"queue: {standstill.told(probe)}; ending the tree", file=sys.stderr, flush=True)
+            return stop(child), probe
+    return code, None
+
+
+def stop(child: subprocess.Popen) -> int:
+    """SIGTERM every process of the child's tree (standstill.members()), of
+    the sessions its members lead and the descendants those have now,
+    SIGKILL the ones still there after standstill.KILL_GRACE_SECONDS and
+    those standstill.settle() found during it, again at each pass of the
+    SIGKILL grace, a recorded member only while its start time matches; the
+    child's process group (send()) when /proc does not show the child. A
+    process that leaves the tree and every recorded session between two
+    passes (setsid, then its parent dies) escapes; only a subreaper or a
+    cgroup per job would hold it.
+
+    Returns:
+        standstill.HUNG_EXIT, also when a process outlives SIGKILL by another
+        grace (uninterruptible sleep), so hold never waits on it.
+    """
+    targets = standstill.members(child.pid)
+    for signum, repeat in ((signal.SIGTERM, None), (signal.SIGKILL, signal.SIGKILL)):
+        living = standstill.signal_all(targets, signum)
+        if child.pid not in living:
+            send(child, signum)
+        targets = standstill.settle(targets | living, child.poll, repeat)
+    return standstill.HUNG_EXIT
 
 
 def keep(row: dict) -> None:
@@ -1582,10 +1619,10 @@ def cmd_hold(args: argparse.Namespace) -> int:
             for signum in caught:
                 send(child, signum)
             update(entry["id"], child=child.pid, child_start=identity(child.pid))
-            code = supervise(cfg, child, samples)
+            code, hung = supervise(cfg, child, samples)
             code = code if code >= 0 else 128 - code
             job = {"id": f"{entry['id']}-{time.time_ns()}", "kind": args.kind, "signature": names[0],
-                   "workdir": entry["workdir"]}
+                   "workdir": entry["workdir"], **({} if hung is None else {history.HUNG: hung})}
             record(job, start, code, samples, concurrent)
             keep_receipt(gates, args, here, before, code)
             return code
@@ -1607,7 +1644,8 @@ def cmd_list(args: argparse.Namespace) -> int:
     by_id = {e["id"]: e for e in entries}
     running = [(key_of(e), e["granted"]) for e in entries if e["status"] == "active"]
     rows = [
-        (None, e, history.eta(signatures, [(key_of(e), e["granted"])], [], now), e.get("reason") or "-", e.get("trace", []))
+        (None, e, history.eta(signatures, [(key_of(e), e["granted"])], [], now), suspected(e, e.get("reason"), signatures, now) or "-",
+         e.get("trace", []))
         for e in entries if e["status"] == "active"
     ]
     ahead: list[tuple[str, str]] = []
@@ -1631,6 +1669,20 @@ def cmd_list(args: argparse.Namespace) -> int:
              "-" if eta is None else f"{eta:.0f}", e["workdir"], reason]
         ))
     return 0
+
+
+def suspected(entry: dict, reason: str | None, signatures: dict[tuple[str, str], dict], now: float) -> str | None:
+    """Returns:
+        reason led by `suspect hung (<runtime> min)` once the active entry
+        runs past standstill.suspect_seconds() of the longest run its
+        signature learned (history.learned_value()), else reason.
+    """
+    longest = history.learned_value(signatures, entry["kind"], aliases_of(entry), "longest")
+    runtime = now - entry["granted"]
+    if runtime < standstill.suspect_seconds(longest):
+        return reason
+    mark = f"suspect hung ({runtime / 60:.0f} min)"
+    return mark if reason is None else f"{mark}; {reason}"
 
 
 def stamped(entry: dict, reason: str, host: str) -> str:
