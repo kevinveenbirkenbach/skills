@@ -256,7 +256,10 @@ class TestHubBoard(HubCase):
             {"name": "view", "arguments": {"name": "funk"}},
             {"name": "snooze", "arguments": {"ids": [ask_id], "hours": 2}},
             {"name": "approve", "arguments": {"ids": ["ffffffffffffffff"]}},
-            {"name": "reject", "arguments": {"ids": [decision_id]}},
+            {"name": "reject", "arguments": {"ids": [decision_id], "reason": ""}},
+            {"name": "reject", "arguments": {"ids": [review_id]}},
+            {"name": "reject", "arguments": {"ids": [review_id], "reason": "x" * 2001}},
+            {"name": "reject", "arguments": {"ids": [review_id, ask_id], "reason": " rebase\n first "}},
             {"name": "message", "arguments": {"to": "Nobody", "text": "x"}},
             {"name": "shutdown", "arguments": {}},
             {"name": "snooze", "arguments": {"ids": [ask_id], "hours": 500}},
@@ -265,10 +268,13 @@ class TestHubBoard(HubCase):
         status, _, body = self.post_json("/api/nl", {"text": "approve everything green"}, self.guard(self.host))
         self.assertEqual(status, 200, body)
         result = json.loads(body)
-        self.assertEqual([action["name"] for action in result["actions"]], ["approve", "choose", "message", "view", "snooze"])
+        self.assertEqual([action["name"] for action in result["actions"]], ["approve", "choose", "message", "view", "snooze", "reject"])
         self.assertEqual(result["actions"][0]["args"]["items"], [self.entry("review", review_id, "", ""), self.entry("decision", decision_id, "Merge now", "")])
         self.assertEqual(result["actions"][4]["args"], {"keys": [{"kind": "ask", "id": ask_id}], "hours": 2})
-        self.assertEqual(len(result["rejected"]), 6)
+        denied = result["actions"][5]
+        self.assertEqual([(item["kind"], item["verb"], item["channel"], item["reason"]) for item in denied["args"]["items"]], [("review", "reject", "post", " rebase\n first ")] + [("ask", "reject", "post", " rebase\n first ")])
+        self.assertEqual(denied["summary"].splitlines()[-1], "Reason: rebase first")
+        self.assertEqual(len(result["rejected"]), 8)
         path, key, sent = seen[-1]
         self.assertEqual((path, key, sent["model"]), ("/v1/chat/completions", "Bearer k", "m"))
         self.assertNotIn("SECRET-TRANSCRIPT", json.dumps(sent))

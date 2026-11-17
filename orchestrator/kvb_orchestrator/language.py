@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from . import transport
 from .council import NEWS, ordered, read_claims
-from .denying import DENIABLE
+from .denying import DENIABLE, NOTED, REASON_LIMIT
 from .errors import ToolError
 from .events import VIEWS
 from .fields import bounded, decode, expect, message_text
@@ -20,9 +20,10 @@ LLM_TIMEOUT = 60
 LLM_REPLY = 1 << 20
 SCREENS = ("stream", "inbox", "rules", "agents", "artifacts", "tasks")
 IDS = {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Ids from items."}
+REASON = {"type": "string", "maxLength": REASON_LIMIT, "description": "Why, in the operator's words, for the requesting agent; empty when the operator gave none."}
 NL_ACTIONS = [
     {"name": "approve", "description": "Approve inbox items; a decision takes its recommended option.", "parameters": {"ids": IDS}},
-    {"name": "reject", "description": "Reject reviews, or deny asks, operator rows and rule requests; the requesting agent gets a post.", "parameters": {"ids": IDS}},
+    {"name": "reject", "description": "Reject reviews, or deny asks, operator rows and rule requests; the requesting agent gets a post with the reason.", "parameters": {"ids": IDS, "reason": REASON}},
     {"name": "choose", "description": "Pick an option label of a decision.", "parameters": {"id": {"type": "string"}, "label": {"type": "string"}}},
     {"name": "snooze", "description": "Hide inbox items for some hours.", "parameters": {"ids": IDS, "hours": {"type": "number", "minimum": 1, "maximum": 192}}},
     {"name": "pin", "description": "Pin inbox items to the top.", "parameters": {"ids": IDS}},
@@ -54,9 +55,9 @@ def nl_ids(arguments: dict, items: dict[str, dict]) -> list[dict]:
     return [items[ident] for ident in ids]
 
 
-def nl_item(item: dict, verb: str, label: str) -> dict:
+def nl_item(item: dict, verb: str, label: str, reason: str) -> dict:
     entry = {"kind": item["kind"], "id": item["id"], "verb": verb, "label": label, "sha256": item["sha256"]}
-    return {**entry, "channel": "post", "reason": "", "to": item["to"]} if verb == "reject" and item["kind"] in DENIABLE else entry
+    return {**entry, "channel": "post", "reason": reason, "to": item["to"]} if verb == "reject" and item["kind"] in (*DENIABLE, *NOTED) else entry
 
 
 def nl_action(raw: object, items: dict[str, dict], agents: list[str]) -> dict:
@@ -77,15 +78,19 @@ def nl_action(raw: object, items: dict[str, dict], agents: list[str]) -> dict:
             raise ToolError("a decision without a recommended option needs choose")
         if name == "approve" and any(item["kind"] == "operator" and not item["runnable"] for item in picked):
             raise ToolError("that operator row holds no command to run")
-        chosen = [nl_item(item, "approve" if name == "approve" else "reject", item["recommended"] if item["kind"] == "decision" else "") for item in picked]
+        reason = arguments["reason"] if name == "reject" else ""
+        if not isinstance(reason, str) or len(reason) > REASON_LIMIT:
+            raise ToolError(f"reason must be text of at most {REASON_LIMIT} characters")
+        chosen = [nl_item(item, "approve" if name == "approve" else "reject", item["recommended"] if item["kind"] == "decision" else "", reason) for item in picked]
         lines = [f"{item['kind']} {item['id']}: {item['command'] if item['kind'] == 'operator' else item['title']}" for item in picked]
         verb = "Grant" if name == "approve" else "Deny"
-        return {"name": name, "summary": f"{verb}:\n" + "\n".join(lines), "args": {"items": chosen}}
+        because = [f"Reason: {' '.join(reason.split())}"] if reason.strip() else []
+        return {"name": name, "summary": f"{verb}:\n" + "\n".join([*lines, *because]), "args": {"items": chosen}}
     if name == "choose":
         item = items.get(arguments["id"]) if isinstance(arguments["id"], str) else None
         if item is None or item["kind"] != "decision" or arguments["label"] not in [option["label"] for option in item["options"]]:
             raise ToolError("choose takes a decision id and one of its option labels")
-        return {"name": name, "summary": f"Decide: {item['title']} → {arguments['label']}", "args": {"items": [nl_item(item, "approve", arguments["label"])]}}
+        return {"name": name, "summary": f"Decide: {item['title']} → {arguments['label']}", "args": {"items": [nl_item(item, "approve", arguments["label"], "")]}}
     if name in ("snooze", "pin"):
         picked = nl_ids(arguments, items)
         hours = arguments.get("hours")
