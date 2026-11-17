@@ -32,15 +32,14 @@ LINT_CODE = re.compile(r"^[A-Z]{1,4}\d{3,4}\b")
 LINT_ARROW = re.compile(r"^-->\s+\S+:\d+:\d+")
 SIGNAL = re.compile(r"\b(ERROR|Error|FAILED|FAIL|fatal|Exception|failed)\b")
 TASK = re.compile(r"^TASK \[")
+RESULT = re.compile(r"^(ok|changed|fatal|failed|skipping): \[")
+TOLERATED = re.compile(r"""\bfailed_when_result["']?\s*:\s*false\b""", re.IGNORECASE)
+IGNORING = "...ignoring"
 REFUSAL = "terminal escape sequences"
 
 
 def run(*cmd: str) -> subprocess.CompletedProcess:
     return subprocess.run(list(cmd), capture_output=True, text=True, check=False)
-
-
-def clean(line: str) -> str:
-    return STAMP.sub("", ANSI.sub("", line)).strip()
 
 
 def normalise(line: str) -> str:
@@ -50,19 +49,38 @@ def normalise(line: str) -> str:
 
 
 def output_lines(text: str) -> list[tuple[str, str]]:
+    """Returns:
+        The (task, line) pairs that can carry a job's error: without command
+        echo, generic make and retry lines, Ansible results a
+        `failed_when: false` tolerated and every result of a task that
+        `ignore_errors` let pass (`...ignoring`).
+    """
     kept, echo, task = [], False, ""
+    started, block, tolerated = 0, None, False
     for raw in text.splitlines():
-        line = clean(raw)
+        body = STAMP.sub("", ANSI.sub("", raw))
+        line = body.strip()
         if PROCESS_END.search(line):
             break
-        if line.startswith("##[group]Run "):
+        if block is not None and line and not body[:1].isspace():
+            if tolerated:
+                del kept[block:]
+            block = None
+        if line == IGNORING:
+            del kept[started:]
+        elif line.startswith("##[group]Run "):
             echo = True
         elif line.startswith("##[endgroup]"):
             echo = False
         elif TASK.match(line):
-            task = line
+            task, started = line, len(kept)
         elif line and not echo and not GENERIC.search(line):
+            if RESULT.match(line):
+                block, tolerated = len(kept), False
+            tolerated = tolerated or (block is not None and bool(TOLERATED.search(line)))
             kept.append((task, line))
+    if block is not None and tolerated:
+        del kept[block:]
     return kept
 
 

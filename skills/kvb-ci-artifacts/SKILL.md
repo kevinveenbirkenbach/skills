@@ -5,8 +5,7 @@ description: >
   cause-holding artifacts. Trigger to explain a CI failure, and from triage.
 ---
 
-A job log tells you what broke. An artifact tells you why. Investigating a CI
-failure without downloading its artifacts is guessing with extra steps.
+A job log tells you what broke. An artifact tells you why.
 
 ## Getting the log
 
@@ -17,11 +16,12 @@ For a GitHub Actions run, one call does it:
 It prints how far HEAD moved since the run's commit, saves every finished
 failed job's log to `/tmp/ci-logs-<run>/` (colour stripped, even while the run
 is still in progress), and clusters the jobs by the normalised error line that
-ended them. Jobs still running are listed, not fetched: their API log can stop hours
-early. The clustering is a heuristic; check each boundary against the logs.
+ended them. Results that `failed_when: false` or `ignore_errors` tolerate never
+end a job. Jobs still running are listed, not fetched: their API log can stop
+hours early. The clustering is a heuristic; check each boundary against the
+logs.
 
-Grep the saved files repeatedly. Re-fetching a log to find the line you just
-lost costs minutes; grepping the saved copy costs milliseconds.
+Grep the saved files repeatedly instead of re-fetching a log.
 
 ## Getting the artifacts
 

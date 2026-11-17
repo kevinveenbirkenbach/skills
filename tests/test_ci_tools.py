@@ -68,6 +68,48 @@ class TestCiFailures(unittest.TestCase):
         text = "Error: disk full\n##[error]Process completed with exit code 1.\n"
         self.assertEqual(self.ci.signature(text), "Error: disk full")
 
+    def test_results_a_failed_when_false_tolerated_never_become_the_signature(self):
+        stamp = "2026-11-17T16:00:00.1Z "
+        text = (
+            f"{stamp}TASK [svc-db-redis : Pull image] ****\n"
+            f"{stamp}Error: image pull timed out\n"
+            f"{stamp}TASK [svc-db-redis : Probe the container] ****\n"
+            f'{stamp}ok: [localhost] => {{"changed": false, "failed_when_result": false, "rc": 1, '
+            '"stderr": "Error response from daemon: No such container: redis-central"}\n'
+            f"{stamp}TASK [web-app-discourse : Probe the container] ****\n"
+            f"{stamp}ok: [localhost] => changed=false\n"
+            f"{stamp}  failed_when_result: false\n"
+            f"{stamp}  stderr: 'Error response from daemon: No such container: discourse'\n"
+            f"{stamp}PLAY RECAP\n"
+            "##[error]Process completed with exit code 2.\n"
+        )
+        self.assertEqual(self.ci.signature(text), "Error: image pull timed out")
+
+    def test_results_ignore_errors_let_pass_never_become_the_signature(self):
+        text = (
+            "TASK [web-app-x : Wait for health] ****\n"
+            'fatal: [localhost]: FAILED! => {"msg": "timeout 120"}\n'
+            "TASK [svc-ai-hermes : Probe the container] ****\n"
+            'failed: [localhost] (item=hermes) => {"stderr": "Error: No such container: hermes"}\n'
+            'fatal: [localhost]: FAILED! => {"msg": "One or more items failed"}\n'
+            "...ignoring\n"
+            "##[error]Process completed with exit code 2.\n"
+        )
+        self.assertEqual(
+            self.ci.signature(text),
+            'TASK [web-app-x : Wait for health] **** fatal: [localhost]: FAILED! => {"msg": "timeout <n>"}',
+        )
+
+    def test_a_failed_result_without_tolerance_stays_the_signature(self):
+        text = (
+            "TASK [svc-db-redis : Probe the container] ****\n"
+            "fatal: [localhost]: FAILED! => changed=false\n"
+            "  failed_when_result: true\n"
+            "  stderr: 'No such container: redis-central'\n"
+            "##[error]Process completed with exit code 2.\n"
+        )
+        self.assertEqual(self.ci.signature(text), "TASK [svc-db-redis : Probe the container] **** fatal: [localhost]: FAILED! => changed=false")
+
 
 @unittest.skipUnless(shutil.which("git"), "git not installed")
 class TestFindFix(unittest.TestCase):
