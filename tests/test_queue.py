@@ -1803,11 +1803,12 @@ class TestQueueCommands(unittest.TestCase):
     def test_a_waiting_hold_is_granted_once_the_config_it_waits_on_changes(self):
         self.cfg["slot_limits"]["deploy"] = 0
         self.write_config()
-        hold, _ = self.blocked_hold("true")
+        hold, err = self.blocked_hold("true")
         self.cfg["slot_limits"]["deploy"] = 1
         self.write_config()
         self.assertEqual(hold.wait(timeout=60), 0)
         self.assertEqual(self.entries(), [])
+        self.assertEqual(err.read_text(encoding="utf-8").splitlines()[-1], "queue: deploy-1 granted after waiting; running true")
 
     def test_fresh_takes_the_new_config_and_keeps_the_last_good_one_on_a_broken_or_partial_file(self):
         queue = _load(QUEUE)

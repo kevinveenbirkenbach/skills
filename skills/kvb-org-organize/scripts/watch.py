@@ -366,6 +366,7 @@ KNOWN = INERT | DIRECTORY_CHANGES | frozenset({
     "git", "gh", "pip", "pip3", "pipx", "apt", "apt-get", "pacman", "brew", "dnf", "bash", "sh", "zsh", "dash",
 })
 HEAVY_MAKE = ("test", "quality", "verify-")
+TEARDOWN_MAKE = "-down"
 LIGHT_KIND = "test-nostack"
 HEAVY_KIND = "test"
 PYTEST_VALUE_OPTIONS = frozenset({
@@ -1519,7 +1520,9 @@ def dry_run(args: list[str]) -> bool:
 
 def heavy_make(args: list[str]) -> bool:
     targets = make_targets(args)
-    return not dry_run(args) and (not targets or any(target == "install" or target.startswith(HEAVY_MAKE) for target in targets))
+    return not dry_run(args) and (not targets or any(
+        target == "install" or (target.startswith(HEAVY_MAKE) and not target.endswith(TEARDOWN_MAKE)) for target in targets
+    ))
 
 
 def heavy_compose(args: list[str]) -> bool:

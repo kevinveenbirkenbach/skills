@@ -1420,6 +1420,8 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
                                **{GRANTED_MEM: mem, FROZEN: footprint(mine[0], signatures, kinds)})
                 data[GRANTED] = now
                 data.pop(STALL, None)
+                if shown is not None:
+                    print(f"queue: {entry_id} granted after waiting; running {mine[0]['cmd']}", file=sys.stderr, flush=True)
                 return None, concurrent
             sends, clean, log = stalled(data, order, verdicts, cfg["thresholds_gb"]["stop"], free,
                                         functools.partial(cleanup_outcome, now), now)

@@ -368,6 +368,8 @@ class TestHeavy(unittest.TestCase):
             "pytest tests/fifo.py",
             "make install-skills",
             "make -n test",
+            "make test-runner-down",
+            "make -C core quality-stack-down",
             "ruff check skills tests",
         ):
             with self.subTest(command=command):
