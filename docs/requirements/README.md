@@ -21,3 +21,4 @@ skill defines the format.
 - [015 - Time Range in the Rates Panel](015-rates-time-range.md)
 - [016 - Agents Controls in the View Row](016-agents-controls-row.md)
 - [017 - Legend Toggle](017-legend-toggle.md)
+- [018 - Gibberlink](018-gibberlink.md)
