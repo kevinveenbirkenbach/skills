@@ -28,6 +28,13 @@ keyboard on a desktop and on a small screen.
    works with mouse, touch and keyboard.
 7. **Order**: built in parallel with 012 in its own sidetree; 012's
    feedback popup and marks get the microphone through the shared component.
+8. **German fixture (operator-confirmed 2026-11-17)**: the local small model
+   detects a two-word "hallo welt" clip as English, recorded and spoken by
+   espeak-ng alike, while it detects a German sentence as German; the
+   German fixture is the espeak-ng sentence "Hallo Welt, heute teste ich die
+   Spracheingabe." and its criterion checks the language and the start of
+   the transcript. Rejected: a recording by the operator, keeping the
+   two-word fixture with an open criterion.
 
 ## Approach
 
@@ -60,8 +67,10 @@ flowchart TD
 
 ### Transcription
 
-- [ ] A POST of the German fixture WAV to `/api/stt` returns "hallo welt",
-      the English fixture returns "hello world".
+- [ ] A POST of the German fixture WAV, the sentence "Hallo Welt, heute
+      teste ich die Spracheingabe." spoken by espeak-ng, to `/api/stt`
+      returns language `de` and a transcript starting with "hallo welt"; the
+      English fixture returns language `en` and "hello world".
 - [ ] The transcription's temp directory is empty after each request,
       including a failed one.
 - [ ] A request from another origin, without the CSRF token, over 60 s or

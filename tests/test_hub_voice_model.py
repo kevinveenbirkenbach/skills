@@ -25,11 +25,12 @@ class TestVoiceModel(HubCase):
     def test_the_real_model_transcribes_the_german_and_the_english_fixture(self):
         speech = self.httpd.hub.speech
         with mock.patch.object(speech, "engines", dataclasses.replace(speech.engines, whisper=WHISPER, whisper_model=MODEL)):
-            for name, words in (("hallo-welt.wav", "hallo welt"), ("hello-world.wav", "hello world")):
+            for name, language, words in (("hallo-welt.wav", "de", "hallo welt"), ("hello-world.wav", "en", "hello world")):
                 with self.subTest(name=name):
                     status, _, body = self.call("POST", "/api/stt", (FIXTURES / name).read_bytes(), {**self.guard(self.host), "Content-Type": "audio/wav"})
                     self.assertEqual(status, 200, body)
-                    self.assertEqual(spoken(json.loads(body)["text"]), words)
+                    found = json.loads(body)
+                    self.assertEqual((found["language"], spoken(found["text"]).startswith(words)), (language, True), found)
 
 
 if __name__ == "__main__":
