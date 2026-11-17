@@ -316,6 +316,7 @@ JS_TAIL = 64
 SOURCE_BYTES = 1 << 20
 JS_RUNNERS = frozenset({"node", "deno", "bun"})
 JS_VALUE_OPTIONS = frozenset({"-r", "--require", "--import", "--loader", "-e", "--eval", "-p", "--print", "-c", "--config"})
+NODE_CHECK = frozenset({"--check", "-c"})
 PACKAGE_RUNNERS = frozenset({"npm", "pnpm", "yarn", "bun"})
 FOLDER_OPTIONS = frozenset({"--cwd", "-C", "--dir", "--prefix"})
 PACKAGE_OPTIONS = {
@@ -914,11 +915,22 @@ def tool(run: list[str]) -> tuple[str, list[str]]:
     return os.path.basename(target), rest
 
 
+def node_check(run: list[str]) -> bool:
+    """Returns:
+        Whether run is `node --check FILE` or `node -c FILE`: node only
+        parses the file and runs none of it.
+    """
+    return os.path.basename(run[0]) == "node" and len(run) == 3 and run[1] in NODE_CHECK and not run[2].startswith("-")
+
+
 def launched(run: list[str]) -> str:
     """Returns:
         The script or `-m` module a python call starts, or the script of a
-        node, deno or bun call (after a `run`); "" for none.
+        node, deno or bun call (after a `run`); "" for none and for
+        node_check().
     """
+    if node_check(run):
+        return ""
     name = os.path.basename(run[0])
     if PYTHON.fullmatch(name):
         return python_target(run[1:])[0]
@@ -1890,7 +1902,7 @@ def light_program(run: list[str], words: list[str], base: str | None) -> bool:
         return cargo_allowed(run, assignments(words))
     if name == "find":
         return not FIND_EXEC.intersection(args)
-    return name in LIGHT_TOOLS or light_test(name, args, base)
+    return name in LIGHT_TOOLS or node_check(run) or light_test(name, args, base)
 
 
 def light_python(run: list[str], base: str | None) -> bool:
@@ -1922,7 +1934,7 @@ def light(command: str, cwd: str | None) -> bool:
         Whether every simple command of it is a recognised small form: cd,
         pushd or popd, or behind nothing but SAFE_PREFIXES and INERT_ENV or
         LC_* assignments a LIGHT_TOOLS program (find without -exec), a
-        cargo_allowed() call, `python -m` of LIGHT_MODULES, `sh -c` of a
+        cargo_allowed() call, node_check(), `python -m` of LIGHT_MODULES, `sh -c` of a
         light command, or light_test(); test files resolve relative to cwd
         moved by every cd and env -C. A substitution, heredoc, background
         job, unbalanced quote or second test run (test_runs()) makes it not
