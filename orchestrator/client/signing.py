@@ -107,6 +107,15 @@ def operator_item(task: str, command: str, directory: str) -> dict:
     return {"kind": "operator", "id": task, "command": command, "directory": directory}
 
 
+def match_item(card_id: str, payload: str) -> dict:
+    """Args:
+        card_id: the Match card of an operator command, operator:<task>.
+        payload: the payload hash the card showed: command, directory and
+            the state of every file the command names.
+    """
+    return {"kind": "match", "id": card_id, "hash": payload}
+
+
 def cleanup_item(repository: str, branch: str, worktree: str, tip: str) -> dict:
     return {"kind": "cleanup", "repository": repository, "branch": branch, "worktree": worktree, "tip": tip}
 

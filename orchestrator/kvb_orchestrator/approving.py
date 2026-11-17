@@ -6,7 +6,14 @@ import time
 from .asking import ask_state
 from .choosing import answer_signed
 from .cleanup import cleanup_request
-from .denying import DENIABLE, DENY_KEYS, denial_note, request_status, request_words
+from .denying import (
+    DENIABLE,
+    DENY_KEYS,
+    NOTED,
+    denial_note,
+    request_status,
+    request_words,
+)
 from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field, visible
 from .firewall import settings_request
@@ -46,10 +53,18 @@ def inbox_item(raw: dict, label: str, title: str, gate: str, subject: dict | Non
         The batch item. A denial of a deniable kind signs its own item and
         carries the note that tells the requesting agent.
     """
-    note = denial_note(raw, requester) if raw["verb"] == "reject" and raw["kind"] in DENIABLE else None
+    note = denial_note(raw, requester) if raw["verb"] == "reject" and "channel" in raw else None
     signed = subject if raw["verb"] == "approve" else None if note is None else signing.denial_item(subject, note["channel"], note["reason"], note["to"])
     sha256 = raw["sha256"] if raw["kind"] == "operator" else ""
     return {"kind": raw["kind"], "id": raw["id"], "verb": raw["verb"], "label": label, "sha256": sha256, "title": shown(title)[:200], "gate": gate, "signed": signed, "note": note}
+
+
+def signed_of(items: list[dict]) -> list[dict]:
+    """Returns:
+        Every item the approval of items must list: each item's own signed
+        item and the payload bindings of operator commands.
+    """
+    return [entry for item in items for entry in ([item["signed"]] if item["signed"] is not None else []) + item.get("bound", [])]
 
 
 class Approving:
@@ -164,6 +179,8 @@ class Approving:
         if item["note"] is not None:
             return self.deny(item, proof)
         if item["kind"] == "operator":
+            if not all(self.payload_holds(bound) for bound in item.get("bound", [])):
+                return "refused: a payload file changed since the release"
             return self.queue_job(item, proof)
         if item["kind"] == "ask":
             record = self.asks.get(item["id"])
@@ -188,7 +205,7 @@ class Approving:
             Conflict when it is no longer the one the inbox showed the
             operator, sent back as raw["to"].
         """
-        if raw["verb"] != "reject" or raw["kind"] not in DENIABLE:
+        if raw["verb"] != "reject" or "channel" not in raw:
             return ""
         name = self.addressee(who)[0]
         if raw["to"] != name:
@@ -214,13 +231,16 @@ class Approving:
             raise Conflict({"id": row["task"], "status": "changed"})
         if row["task"] in self.open_jobs():
             raise Conflict({"id": row["task"], "status": "queued"})
-        return inbox_item(raw, "", row["command"], "", operator_signed(row), self.requester(raw, adder(tasks[row["task"]])))
+        bound = self.payload_bound(row, raw["payload"]) if "payload" in raw else []
+        return {**inbox_item(raw, "", row["command"], "", operator_signed(row), self.requester(raw, adder(tasks[row["task"]]))), "bound": bound}
 
     def item_of(self, raw: object, tasks: dict[str, dict]) -> dict:
         if not isinstance(raw, dict):
             raise ToolError("every item must be an object with kind, id, verb, label and sha256, and a denial also channel, reason and to")
         kind_name, verb = raw.get("kind"), raw.get("verb")
-        expect(raw, (*ITEM_KEYS, *DENY_KEYS) if verb == "reject" and kind_name in DENIABLE else ITEM_KEYS)
+        noted = verb == "reject" and (kind_name in DENIABLE or kind_name in NOTED and "channel" in raw)
+        shown = ("payload",) if kind_name == "operator" and verb == "approve" and "payload" in raw else ()
+        expect(raw, (*ITEM_KEYS, *DENY_KEYS) if noted else (*ITEM_KEYS, *shown))
         if kind_name not in INBOX_KINDS or verb not in VERBS or not isinstance(raw["label"], str) or not isinstance(raw["sha256"], str):
             raise ToolError(f"kind must be one of {', '.join(INBOX_KINDS)}, verb approve or reject, label and sha256 text")
         if kind_name == "operator":
@@ -243,7 +263,7 @@ class Approving:
             return inbox_item(raw, "", f"Rule {request_words(record)}", "", request_signed(record), self.requester(raw, record["agent"]))
         title = {"review": record.get("title"), "ask": f"{record.get('tool')} {record.get('command')}", "decision": record.get("question")}[kind_name]
         subject = {"review": review_signed, "ask": ask_signed}[kind_name](record) if kind_name != "decision" else answer_signed(record, label)
-        return inbox_item(raw, label, title, record.get("gate", ""), subject, self.requester(raw, record["session"] if kind_name == "ask" else ""))
+        return inbox_item(raw, label, title, record.get("gate", ""), subject, self.requester(raw, record["session"] if kind_name == "ask" else record.get("agent", "")))
 
     def checked(self, raw: object) -> list[dict]:
         if not isinstance(raw, list) or not 1 <= len(raw) <= BATCH_LIMIT:
@@ -277,14 +297,14 @@ class Approving:
             signed = self.enable_items(raw)
             return {**self.challenge_for(signed), "enables": signed[0]["rule"]}
         else:
-            signed = [item["signed"] for item in self.checked(raw) if item["signed"] is not None]
+            signed = signed_of(self.checked(raw))
         return self.challenge_for(signed)
 
     def approve(self, body: bytes) -> dict:
         payload = decode(body)
         expect(payload, ("items", "proof"))
         items = self.checked(payload["items"])
-        proof = self.covered(payload["proof"], [item["signed"] for item in items if item["signed"] is not None], time.time())
+        proof = self.covered(payload["proof"], signed_of(items), time.time())
         return self.batches.add(items, "operator", proof, self.apply)
 
     def undo(self, batch_id: str) -> dict:

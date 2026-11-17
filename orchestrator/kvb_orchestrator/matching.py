@@ -3,8 +3,9 @@ from __future__ import annotations
 import time
 
 from .council import read_claims
+from .denying import requester_of
 from .diffs import stored_diff
-from .errors import Missing, ToolError
+from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field
 from .payloads import denied_roots, payload_files, payload_hash
 from .records import digest, iso_epoch
@@ -45,7 +46,7 @@ class Matching:
         claims = read_claims(self.council)
         names = self.names.listed()
         reviews = self.reviews.pending()
-        cards = [self.commit_card(review, reviews, born_of(review.get("agent", ""), names, claims)) for review in reviews]
+        cards = [{**self.commit_card(review, reviews, born_of(review.get("agent", ""), names, claims)), "to": requester_of(claims, review.get("agent", ""))[0]} for review in reviews]
         tasks = read_register(self.council / REGISTER)
         held = self.open_jobs()
         rows = [row for row in operator_rows(tasks) if row["check"] != "decision" and row["task"] not in held]
@@ -53,7 +54,7 @@ class Matching:
         scan = self.tree.get()
         for row in rows:
             agent = adder(tasks[row["task"]])
-            cards.append(self.command_card(row, agent, born_of(agent, names, claims), roots, scan))
+            cards.append({**self.command_card(row, agent, born_of(agent, names, claims), roots, scan), "to": requester_of(claims, agent)[0]})
         listed = {card["id"] for card in cards}
         for snapshot in self.match_snapshots.listed():
             if snapshot["id"] not in listed:
@@ -91,6 +92,35 @@ class Matching:
             "stale_reason": "a payload file changed since it was added" if stale else "", "files": snapshot["files"], "command": row["command"], "directory": row["directory"],
             "reason": row["why"], "sha256": digest(row["command"]),
         }
+
+    def live_payload(self, row: dict) -> str:
+        files = payload_files(row["command"], row["directory"], denied_roots(self.settings_files()[0]))
+        return payload_hash(row["command"], row["directory"], files)
+
+    def payload_bound(self, row: dict, shown: object) -> list[dict]:
+        """Args:
+            row: the open operator row a Match release approves.
+            shown: the payload hash its card showed the operator.
+
+        Returns:
+            The match item binding the approval to that hash.
+
+        Raises:
+            ToolError for a hash that is no hex digest; Conflict when the
+            card's snapshot is gone or retaken, or a payload file changed
+            since the card showed it.
+        """
+        if not isinstance(shown, str) or not signing.HASH.fullmatch(shown):
+            raise ToolError("payload must be the hash the card showed")
+        snapshot = self.match_snapshots.get(f"operator:{row['task']}")
+        if snapshot is None or snapshot["command_sha256"] != digest(row["command"]) or snapshot["hash"] != shown or self.live_payload(row) != shown:
+            raise Conflict({"id": row["task"], "status": "stale"})
+        return [signing.match_item(f"operator:{row['task']}", shown)]
+
+    def payload_holds(self, bound: dict) -> bool:
+        task = bound["id"].removeprefix("operator:")
+        row = next((row for row in operator_rows(read_register(self.council / REGISTER)) if row["task"] == task), None)
+        return row is not None and self.live_payload(row) == bound["hash"]
 
     def match_stale(self, body: bytes) -> dict:
         """Args:

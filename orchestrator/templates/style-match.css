@@ -38,7 +38,22 @@
 .match-actions .btn { width: 56px; height: 56px; border-radius: 50%; }
 .match-reject { color: var(--bad); }
 .match-accept { color: var(--ok); }
-.match-accept:disabled { opacity: 0.4; cursor: not-allowed; }
+.match-accept:disabled, .match-later:disabled { opacity: 0.4; cursor: not-allowed; }
+.match-head { touch-action: pan-y; cursor: grab; }
+.match-card.front[data-leaning] { transition: none; }
+.match-card.front[data-leaning="accept"] { box-shadow: inset 0 0 0 3px var(--ok); }
+.match-card.front[data-leaning="reject"] { box-shadow: inset 0 0 0 3px var(--bad); }
+.match-open-overview { display: inline-flex; align-items: center; gap: 4px; }
+.match-tally { min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: var(--fs-xs); text-align: center; }
+.match-feedback { width: 100%; font-family: var(--mono); resize: vertical; }
+.match-overview { grid-row: 1 / -1; display: grid; align-content: start; gap: var(--sp-2); min-height: 0; overflow: auto; }
+.match-overview .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.match-decisions { display: grid; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
+.match-decision { display: grid; gap: 4px; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.match-decision > .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.match-decision-title { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match-decision-feedback { margin: 0; padding: 6px 8px; border-radius: 8px; background: var(--sunken); font-family: var(--mono); font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.match-release-block { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--warn); font-size: var(--fs-sm); }
 @media (max-width: 640px) {
   .match-place { grid-template-columns: minmax(0, 1fr); }
   .match-head { padding: var(--sp-2); }

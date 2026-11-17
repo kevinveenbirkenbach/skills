@@ -70,6 +70,8 @@
       }
     } else if (event.key === "f" && feedbackKey()) {
       event.preventDefault();
+    } else if (event.key.startsWith("Arrow") && (target === document.body || (target instanceof Element && target.closest(".match-stack"))) && matchKey(event.key)) {
+      event.preventDefault();
     } else if (event.key === "Enter" && current && target === document.body) {
       event.preventDefault();
       openItem(current);

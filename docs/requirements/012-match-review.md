@@ -14,8 +14,10 @@ terminal prompts.
    every file the command reads (an issue body, a script, a list file).
    Rejected: staged commits only; decision rows as cards (they keep their own
    pick view).
-2. **Place**: a Match view under the Tasks tab; the Tasks tab carries a badge
-   with the number of waiting cards.
+2. **Place**: a Match view under the Tasks tab; the Tasks tab badge counts
+   every waiting entry as 001 defines it, the cards included (operator
+   2026-11-17: asks and decisions stay visible in the badge). Rejected: a
+   badge of the cards alone.
 3. **Card layout**: on top the agent's face, below it the agent's name and
    its age in days (since its first session), then repository, branch and
    worktree; below them the affected files, each collapsed, opening one
@@ -132,7 +134,8 @@ flowchart TD
 - [ ] After a release, each accepted command runs once and its result is
       shown; each rejected card's agent receives a radio call whose text
       contains the feedback.
-- [ ] The Tasks tab badge equals the number of waiting cards.
+- [ ] The Tasks tab badge equals the number of waiting inbox entries, every
+      waiting card among them.
 
 ### Tests
 

@@ -11,6 +11,7 @@ from .signed import operator_signed, signing
 from .skill_scripts import RASCI
 
 DENIABLE = ("ask", "operator", "rule")
+NOTED = ("review",)
 DENY_KEYS = ("channel", "reason", "to")
 DENY_CHANNELS = {**DIRECT, **{name: words for name, words in TO_ALL.items() if name != "mayday"}}
 REASON_LIMIT = 2000
@@ -84,6 +85,14 @@ class Denying:
                 return f"failed: {run['command']} → {run['code']}"
             command, directory = row["command"][:200], row["directory"]
             return f"stopped · {self.tell(item, proof, adder(tasks[item['id']]), f'operator command {command} in {directory}')}"
+        if item["kind"] == "review":
+            record, changed = self.reviews.decide(item["id"], {"status": "rejected", "proof": proof, **note})
+            if record is None:
+                return "unknown"
+            if not changed:
+                return f"already {record['status']}"
+            title, branch = record["title"][:200], record["branch"]
+            return f"rejected · {self.tell(item, proof, record.get('agent', ''), f'commit {title} on {branch}')}"
         ledger = self.asks if item["kind"] == "ask" else self.rule_requests
         record = ledger.get(item["id"])
         if record is None:
