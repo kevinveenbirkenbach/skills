@@ -43,6 +43,13 @@ background without carrying its code twice.
    set the cosmos repository ships (`cosmos.js`, `LICENSE`, `NOTICE.md`).
    This replaces the music, orbit and 3D parts of decisions 1 and 3.
    Rejected: removing the music, moving the 3D views.
+10. **Hand-over (operator-confirmed 2026-11-17)**: cosmos requirement 001
+    (`docs/requirements/001-cosmos.md` in the cosmos repository) leads; its
+    decision 6 replaces decision 6 here. The holder of `work/cosmos`
+    extracts the sky and switches the orchestrator to a pinned cosmos tag
+    in a skills worktree; Skills only reviews that switch. While the claim
+    has no live holder, 002 waits. Rejected: Skills taking the switch over,
+    closing 002 as superseded.
 
 ## Approach
 

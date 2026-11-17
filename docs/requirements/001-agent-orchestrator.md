@@ -834,7 +834,12 @@ Replaced by [003 W4 Resources](003-operator-workbench.md#w4-resources).
 - [x] With a configured `svc-ai-speech` URL the hub sends STT and TTS there;
       without it the in-container engines answer (unit test with a stub).
 - [ ] `make orchestrator-install` succeeds in a scratch HOME without any core
-      stack.
+      stack: `tests/test_orchestrator_migration.py` runs the install there
+      with stub docker, claude and systemctl, and `docker build` of
+      `orchestrator/` without `INFINITO_ARTEFACT_BASE` builds the image from
+      the upstream URLs alone (operator 2026-11-17; a real install in a
+      scratch HOME would replace the live hub's compose project, image and
+      port).
 
 ### Phase 6: Gantt, estimates, burndown and burnup (S5)
 

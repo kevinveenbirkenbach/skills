@@ -47,7 +47,12 @@ file is never scanned twice across branches and sessions.
    `docker_compose_scanner` runs in the file's folder. `medusa scan` has no
    flag that selects scanners, so a file that `FILE_SCANNERS` routes to a
    cross-file scanner stays in a per-diff group, keyed like today minus the
-   expiry. The check is an acceptance criterion.
+   expiry. The check is an acceptance criterion. Operator 2026-11-17:
+   semgrep and gitleaks run over the whole tree but match within one file,
+   so they count as file-local once `test_findings_file_local` shows it;
+   their configuration files (`.semgrepignore`, `.gitleaks.toml`,
+   `.gitleaksignore`) join `CROSS_FILE`. Rejected: semgrep and gitleaks as
+   cross-file routes, which would leave nearly every code file per diff.
 7. **Through the quality store**: entries are written and read with
    `quality store put` and `get` (quality 003) under tool `medusa`;
    `<council root>/security-cache/` goes away. A payload holds per finding
@@ -108,9 +113,10 @@ flowchart TD
       findings scanned inside the full fixture tree; every route where they
       differ is listed in `CROSS_FILE` in `security.py`.
 - [ ] `CROSS_FILE` holds the routes of `trivy_scanner`, `rust_scanner` and
-      `docker_compose_scanner` and the configuration names that
-      `_find_config_file` looks up, unless `test_findings_file_local` proves
-      one of them file-local.
+      `docker_compose_scanner`, the configuration names that
+      `_find_config_file` looks up and `.semgrepignore`, `.gitleaks.toml` and
+      `.gitleaksignore`, unless `test_findings_file_local` proves one of them
+      file-local; the semgrep and gitleaks routes themselves are not in it.
 - [ ] `test_cross_file_group_rescans`: changing a sibling of a file in the
       per-diff group (a `Cargo.toml` next to a `.rs` file) rescans the group.
 
