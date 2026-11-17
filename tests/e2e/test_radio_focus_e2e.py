@@ -44,6 +44,16 @@ class TestRadioFocus(kit.RadioLayoutCase):
                  "probe": probe(POP.replace("@VIEW@", view).replace("@PINS@", pins).replace("@ROOTS@", roots).replace("@SPOT@", spot)), "shot": str(OUT / f"{browser}-{width}-pop-{name}.png")}
                 for width, height in POPOVER_SIZES for name, view, pins, roots, spot in places]
 
+    def check_side(self, opened: dict) -> None:
+        self.assertLessEqual(opened["height"], opened["cap"], opened)
+        above, below, need = opened["above"], opened["below"], opened["need"]
+        if above >= need:
+            self.assertEqual(opened["side"], "up", opened)
+        elif below >= need:
+            self.assertEqual(opened["side"], "down", opened)
+        else:
+            self.assertEqual(opened["side"], "up" if above >= below else "down", opened)
+
     def check_popover(self, data: dict, browser: str) -> None:
         results = iter(data["results"])
         for width, _ in POPOVER_SIZES:
@@ -55,6 +65,7 @@ class TestRadioFocus(kit.RadioLayoutCase):
                         self.assertNotIn("error", fold, fold)
                         self.assertEqual((fold["opened"]["open"], fold["opened"]["outside"]), (True, []), fold)
                         self.assertGreaterEqual(fold["opened"]["whole"], 1, fold)
+                        self.check_side(fold["opened"])
                         self.assertEqual(fold["escape"], [False, True], fold)
                         self.assertEqual(fold["again"], {"open": True, "outside": []}, fold)
                         self.assertEqual(fold["click"], [False, False, True], fold)

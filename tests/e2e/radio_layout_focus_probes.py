@@ -39,7 +39,16 @@ POP = """(async () => {@HELPERS@@PROBES@
     summary.click();
     await sleep(300);
     const whole = all(".station", layer).filter((row) => box(row).top >= box(layer).top - 1 && box(row).bottom <= box(layer).bottom + 1).length;
-    const opened = {open: fold.open, side: fold.dataset.side, height: Math.round(box(layer).height), outside: outside(layer), whole};
+    const cap = Math.min(12 * parseFloat(getComputedStyle(document.documentElement).fontSize), 0.28 * innerHeight);
+    let [top, bottom] = [0, innerHeight];
+    for (let node = fold.parentElement; node && node !== document.documentElement; node = node.parentElement) {
+      const look = getComputedStyle(node);
+      if (look.overflowX !== "visible" || look.overflowY !== "visible") {
+        [top, bottom] = [Math.max(top, box(node).top), Math.min(bottom, box(node).bottom)];
+      }
+    }
+    const room = {above: Math.floor(box(fold).top - top), below: Math.floor(bottom - box(fold).bottom), need: Math.floor(Math.min(layer.scrollHeight + layer.offsetHeight - layer.clientHeight, cap))};
+    const opened = {open: fold.open, side: fold.dataset.side, height: Math.round(box(layer).height), cap: Math.ceil(cap), ...room, outside: outside(layer), whole};
     layer.querySelector(".station button").focus();
     document.activeElement.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
     await sleep(200);

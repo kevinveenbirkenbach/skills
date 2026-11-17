@@ -52,8 +52,10 @@ PROBE = """(async () => {@HELPERS@
   const poll = () => window.dispatchEvent(new Event("focus"));
   const cleared = () => until(() => !layer.querySelector(".speech-bubble"), 30000);
   document.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true}));
-  toggle.click();
-  const on = Boolean(await until(() => toggle.getAttribute("aria-pressed") === "true" && !layer.hidden, 8000));
+  if (toggle.getAttribute("aria-pressed") !== "true") {
+    toggle.click();
+  }
+  const on =Boolean(await until(() => toggle.getAttribute("aria-pressed") === "true" && !layer.hidden, 8000));
   await sleep(1500);
   poll();
   await sleep(3000);
@@ -204,18 +206,24 @@ class TestLiveBubbles(HubCase):
         )
         return [
             {
-                "width": 1366,
-                "height": 768,
-                "url": f"{self.base}#stream",
+                "width": width,
+                "height": height,
+                "url": f"{self.base}?{width}#stream",
                 "wait": 1200,
                 "probe": probe,
-                "shot": str(OUT / f"{browser}-1366-live-bubbles.png"),
+                "shot": str(OUT / f"{browser}-{width}-live-bubbles.png"),
                 "gesture": True,
             }
+            for width, height in base.WIDTHS
         ]
 
     def check(self, data: dict) -> None:
-        found = data["results"][0]
+        self.assertEqual(len(data["results"]), len(base.WIDTHS), data)
+        for (width, _), found in zip(base.WIDTHS, data["results"], strict=True):
+            with self.subTest(width=width):
+                self.check_width(found)
+
+    def check_width(self, found: dict) -> None:
         self.assertNotIn("error", found, found)
         self.assertTrue(found["on"], found)
         self.assertEqual(

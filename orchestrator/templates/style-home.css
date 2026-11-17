@@ -30,6 +30,7 @@
 .home-inbox .msg-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .leaf > .star-row { order: 1; margin-inline-start: auto; }
 @media (max-width: 640px) {
+  .home-grid { grid-auto-rows: 88px; }
   .home-tile { grid-column: 1 / -1; }
   .legend[data-star-slot] > .star { order: 1; }
   .legend[data-star-slot] > .muted { order: 2; }
