@@ -106,7 +106,7 @@
     const mode = h("span", {});
     const picks = h("div", {class: "night-picks", role: "group", "aria-label": "Agents"});
     const nightButtons = ACTIONS.slice(1).map(([id]) => actionButton(id, "btn small", null, nightChosen));
-    const night = h("details", {class: "menu"}, h("summary", named("Day/Night"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box"}, mode, picks,
+    const night = h("details", {class: "menu"}, h("summary", named("Day/Night"), icon("bi-moon-stars"), caret()), h("div", {class: "menu-box end"}, mode, picks,
       h("div", {class: "actions"}, nightButtons)));
     const bar = h("div", {class: "toolbar", role: "toolbar", "aria-label": "Controls"}, iconBtn("bi-sort-down", "Priority", "btn small", openAgentOrder, "Priority: agent order in the hierarchy"), night, statusMenu());
     return {bar, mode, picks, nightButtons, agents: ""};
@@ -126,7 +126,7 @@
 
   function statusMenu() {
     return h("details", {class: "menu"}, h("summary", named("Status", "Status: which agent states show their symbol, and faces in 3D"), icon("bi-activity"), caret()),
-      h("div", {class: "menu-box"}, h("h3", {}, "Agent states"),
+      h("div", {class: "menu-box end"}, h("h3", {}, "Agent states"),
         Object.entries(PRESENCE).map(([id, [label]]) => lookBox(id, label, !look.hidden.has(id), (on) => setLook(() => (on ? look.hidden.delete(id) : look.hidden.add(id))))),
         h("h3", {}, "3D"),
         lookBox("faces", "Faces in 3D", look.faces, (on) => setLook(() => {
