@@ -31,9 +31,9 @@ keyboard on a desktop and on a small screen.
 8. **German fixture (operator-confirmed 2026-11-17)**: the local small model
    detects a two-word "hallo welt" clip as English, recorded and spoken by
    espeak-ng alike, while it detects a German sentence as German; the
-   German fixture is the espeak-ng sentence "Hallo Welt, heute teste ich die
-   Spracheingabe." and its criterion checks the language and the start of
-   the transcript. Rejected: a recording by the operator, keeping the
+   German fixture `tests/fixtures/voice/hallo-welt.wav` is a full German
+   sentence spoken by espeak-ng that starts with "hallo welt", and its
+   criterion checks the language and the start of the transcript. Rejected: a recording by the operator, keeping the
    two-word fixture with an open criterion.
 
 ## Approach
@@ -67,8 +67,8 @@ flowchart TD
 
 ### Transcription
 
-- [ ] A POST of the German fixture WAV, the sentence "Hallo Welt, heute
-      teste ich die Spracheingabe." spoken by espeak-ng, to `/api/stt`
+- [ ] A POST of the German fixture WAV, a full German sentence starting
+      with "hallo welt" spoken by espeak-ng, to `/api/stt`
       returns language `de` and a transcript starting with "hallo welt"; the
       English fixture returns language `en` and "hello world".
 - [ ] The transcription's temp directory is empty after each request,

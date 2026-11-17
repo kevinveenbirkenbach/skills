@@ -113,7 +113,7 @@ flowchart TD
       of at most 140 UTF-8 bytes; frame 1 starts with the full key and
       ` 1/m `, every later frame with the first 8 characters and ` n/m `; the
       frame texts joined give the message without the hub's mark.
-- [ ] A message with `ä`, `€` and an emoji at a frame edge splits between
+- [ ] A message with "ä", "€" and an emoji at a frame edge splits between
       characters, never inside one.
 - [ ] Every speaker gets one stable protocol of the four and one stable
       stereo position from its speaker slot; four speakers in four distinct
