@@ -37,10 +37,9 @@ hotfix.py void --repo <worktree> --target <t> [--target ...]
    chain the `kvb-org-swarm` skill records as `base` (open rows of this
    repository), then the flow's `pull` list (`pkgmgr worktree flow --json`),
    each with `--no-verify` and the `Created-with` trailer. It needs the
-   task's branch checked out,
-   a clean tracked tree, a valid flow and the worktree lock free; exit 2
-   names the blocker. Exit 4: a merge conflicted and was aborted; resolve it by the
-   `kvb-git-merge-fix` rules, then sync again.
+   task's branch checked out, a clean tracked tree, a valid flow and a free
+   worktree lock; exit 2 names the blocker. Exit 4: a merge conflicted and
+   was aborted; resolve it per `kvb-git-merge-fix`, then sync.
 2. `pending`: exit 0 means every merged hotfix is in HEAD. `open, not
    merged` is reported, never merged.
    `not on origin/<default>` or exit 2: tell its A to correct the row.

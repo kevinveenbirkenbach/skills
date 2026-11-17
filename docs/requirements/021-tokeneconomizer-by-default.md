@@ -46,7 +46,7 @@ tool silently disappearing from an agent.
    (`/hooks`, Trust all); the install prints that step in one line.
    Rejected: editing Codex's trust store by script.
 9. **Local security patch until upstream fixes it** (operator pick
-   2026-11-17 "1 und 2", after the review in decision 2): the pin carries
+   2026-11-17: both fixes, after the review in decision 2): the pin carries
    two holes. `context.py` starts `python -m tokeneconomizer.plugin.cli`
    with the repository as cwd, so a `json.py` or `tokeneconomizer/`
    planted there runs outside the sandbox; `write_json` and `_write_text`
