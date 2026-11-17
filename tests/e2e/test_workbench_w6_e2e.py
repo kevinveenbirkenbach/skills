@@ -108,6 +108,10 @@ BUBBLES_ON = """(async () => {@HELPERS@@READ@
       });
     }
   }).observe(layer, {subtree: true, childList: true, attributes: true, attributeFilter: ["class", "data-state", "data-words", "data-read"]});
+  const speaker = document.querySelector('[data-face="@FACE@"]');
+  if (speaker && !visible(speaker.getBoundingClientRect())) {
+    speaker.scrollIntoView({block: "center", inline: "center"});
+  }
   toggle.click();
   const on = Boolean(await until(() => toggle.getAttribute("aria-pressed") === "true" && !layer.hidden, 8000));
   await cue("@CUE@");
@@ -217,6 +221,10 @@ def probe(template: str, cue: str = CUE) -> str:
     return template.replace("@HELPERS@", base.HELPERS).replace("@READ@", READ).replace("@UNLABELLED@", base.UNLABELLED).replace("@CUE@", cue).replace("@FADE@", str(FADE_MS))
 
 
+def spoken(cue: str, face: str) -> str:
+    return probe(BUBBLES_ON, cue).replace("@FACE@", face)
+
+
 def quiet(found: dict) -> dict:
     violations = found["violations"]
     return {**found, "violations": None if violations is None else [seen for seen in violations if not seen.endswith("/favicon.ico")]}
@@ -271,7 +279,7 @@ class TestWorkbenchBubbles(HubCase):
             cue = f"{CUE}-docs" if SECOND_FROM[width] == "Docs" else CUE
             shot = str(OUT / f"{browser}-{width}-bubbles")
             steps += [
-                {"width": width, "height": height, "url": f"{self.base}?{width}#{view}", "wait": 1200, "probe": probe(BUBBLES_ON, cue), "shot": f"{shot}-pair.png", "media": media},
+                {"width": width, "height": height, "url": f"{self.base}?{width}#{view}", "wait": 1200, "probe": spoken(cue, self.keys["Stage"]), "shot": f"{shot}-pair.png", "media": media},
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(BUBBLES_GROW), "shot": f"{shot}-grown.png", "media": media},
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(BUBBLES_DONE), "shot": None, "media": media},
             ]
@@ -282,7 +290,7 @@ class TestWorkbenchBubbles(HubCase):
             steps.append({"width": width, "height": height, "url": f"{self.base}?{width}-reloaded#{view}", "wait": 1200, "probe": probe(BUBBLES_KEPT), "shot": f"{shot}-off.png", "media": media})
             if width == 1366:
                 steps += [
-                    {"width": width, "height": height, "url": f"{self.base}?{width}-stream#stream", "wait": 1200, "probe": probe(BUBBLES_ON), "shot": f"{shot}-stream.png", "media": media},
+                    {"width": width, "height": height, "url": f"{self.base}?{width}-stream#stream", "wait": 1200, "probe": spoken(CUE, ""), "shot": f"{shot}-stream.png", "media": media},
                     {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(BUBBLES_DONE), "shot": None, "media": media},
                     {"width": width, "height": height, "url": f"{self.base}?{width}-stream-reloaded#stream", "wait": 1200, "probe": probe(BUBBLES_KEPT), "shot": None, "media": media},
                 ]

@@ -173,6 +173,9 @@ body.fit .spot-host { flex: none; }
   .radio-modes button { gap: 4px; padding-inline: 7px; }
 }
 @container history (max-width: 34rem) {
+  .radio-logbox > .radio-card-head { gap: 4px; }
+  .radio-logbox > .radio-card-head .group-title { margin-inline-end: 0; }
+  .radio-logbox .radio-tabs button { padding-inline: 7px; }
   .radio-row, .radio-pick { gap: 4px; }
   .radio-pick { padding-inline-start: 6px; }
   .radio-pick > time { flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: var(--fs-xs); text-overflow: ellipsis; }

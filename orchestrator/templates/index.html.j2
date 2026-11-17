@@ -328,7 +328,7 @@ textarea + .mic-auto { display: flex; margin: 4px 0 0 auto; }
 .mic-live[hidden] { display: none; }
 .mic-live::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: #fff; animation: mic-pulse 1s ease-in-out infinite; }
 @keyframes mic-pulse { 50% { opacity: .45; } }
-@media (max-width: 640px) { .mic { min-width: 44px; min-height: 44px; } }
+@media (max-width: 640px) { .btn.small.mic { min-width: 44px; min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .mic[aria-pressed="true"], .mic-live::before { animation: none; } }
 .palette-list { max-height: 55vh; margin: 0; padding: 6px; overflow: auto; list-style: none; }
 .palette-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
