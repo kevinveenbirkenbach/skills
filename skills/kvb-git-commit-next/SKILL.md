@@ -21,8 +21,8 @@ description: >
    kvb-check-score commit table of 📁 worktree,
    🌿 branch, 📊 diff stat, scores with 🛡️ security and gate, then
    `git commit --no-verify`, exact staging index only, its message carrying
-   the `score.py --message-block` paragraph right before the
-   `Co-Authored-By` line as one `-m` argument, then the table again with the
+   the `score.py --message-block` paragraph as one `-m` argument, then its
+   trailers, then the table again with the
    hash). Its approval-prompt duty is binding: the commit call's approval
    prompt names worktree, branch, diff stat and the score values with
    🛡️ security, and the message holds the block, or the call is not sent.

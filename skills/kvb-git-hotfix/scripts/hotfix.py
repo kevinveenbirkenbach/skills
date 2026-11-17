@@ -146,6 +146,7 @@ ORIGIN_HEAD = "refs/remotes/origin/HEAD"
 GIT = ("git", "-c", "maintenance.auto=false")
 FETCH = ("fetch", "--quiet", "--no-auto-maintenance", "origin")
 FETCH_SECONDS = 120
+CREATED_WITH = "Created-with: https://s.veen.world/skills"
 PKGMGR_FLOW = ("pkgmgr", "worktree", "flow")
 FLOW_FILE = ("pkgmgr", "flow.yml")
 FLOW_SECONDS = 60
@@ -943,7 +944,9 @@ def cmd_sync(rasci: ModuleType, args: argparse.Namespace) -> int:
             if ancestor(repo, ref, "HEAD"):
                 print(f"contained\t{shown}")
                 continue
-            result = git(repo, "merge", "--no-verify", "--no-edit", ref)
+            result = git(repo, "merge", "--no-verify", "--no-commit", ref)
+            if result.returncode == 0 and git(repo, "rev-parse", "--verify", "--quiet", "MERGE_HEAD").returncode == 0:
+                result = git(repo, "commit", "--no-verify", "--no-edit", "--trailer", CREATED_WITH)
             if result.returncode == 0:
                 print(f"merged\t{shown}\t{git_out(repo, 'rev-parse', 'HEAD').strip()}")
                 continue

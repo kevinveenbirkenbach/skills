@@ -562,6 +562,8 @@ class TestHotfix(unittest.TestCase):
         for name in ("db.txt", "line2.txt", "side.txt"):
             self.assertTrue((self.work / name).is_file(), name)
         self.assertEqual(self.git(self.work, "rev-list", "--count", "--merges", "HEAD").strip(), "2")
+        self.assertEqual(self.git(self.work, "log", "--merges", "--format=%(trailers:key=Created-with,valueonly)").split(),
+                         ["https://s.veen.world/skills"] * 2)
         self.assertEqual(self.merges(self.sync(self.work, "work/side")), [["contained", "origin/main"],
                                                                             ["contained", "line"]])
 

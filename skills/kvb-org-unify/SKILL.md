@@ -38,7 +38,8 @@ busy.
 
 A worktree in a released directory on `unify/<goal>` from `<line>`. Merge the
 ready branches, highest register priority first, with
-`git merge --no-ff --no-verify <branch>`. A conflict: `git merge --abort`, and
+`git merge --no-ff --no-commit <branch>`, then the `kvb-git-commit-no-verify`
+commit. A conflict: `git merge --abort`, and
 the branch becomes a proposal naming the conflicting files.
 
 ## Step 3: gate

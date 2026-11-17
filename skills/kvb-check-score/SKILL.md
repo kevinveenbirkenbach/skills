@@ -59,7 +59,7 @@ The second line is the verdict, first match wins:
 ## Tables and message block
 
 Every commit block is the `--commit-table` and every commit message carries
-the `--message-block` paragraph right before the `Co-Authored-By` line.
+the `--message-block` paragraph right before the trailers.
 Read `tables.md` next to this file before using `--table`,
 `--commit-table`, `--message-block` or `--value`.
 

@@ -21,7 +21,8 @@ confirms it.
    <branch>` shows the branch's head commit.
 4. **Body**, written to a scratch file: what changed and why, the test
    evidence, the score block, and one `Closes #<n>` line per issue the
-   branch fixes, each verified as the `kvb-git-issue-close` skill does.
+   branch fixes, each verified as the `kvb-git-issue-close` skill does, and
+   last the `kvb-git-commit-no-verify` `Created with` line.
 5. **Confirm** with one `AskUserQuestion`: title (Conventional Commits),
    base, state and labels. The state follows the bar of the `kvb-org-swarm`
    skill (fix confidence ≥ 90 %, break risk ≤ 5 %, tokens and velocity
