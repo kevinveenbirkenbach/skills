@@ -56,8 +56,9 @@ class TestHubConsole(HubCase):
         self.register("done")
         kept = self.item("operator/greet")
         self.assertEqual((kept["kind"], kept["title"], kept["command"], kept["directory"], kept["runnable"], kept["deniable"]), ("operator", COMMAND, COMMAND, str(self.outside), False, False))
-        self.assertEqual(kept["job"]["output"], "line 1\nline 2\n")
-        self.assertEqual(self.snapshot()["badges"]["tasks"], 1)
+        self.assertEqual((kept["job"]["output"], kept["settled"]), ("line 1\nline 2\n", True))
+        self.assertEqual(self.snapshot()["badges"]["tasks"], 0)
+        self.assertIn("<title>Agent Orchestrator</title>", self.index())
         for payload in ({"id": "nope"}, {"id": job["id"], "extra": 1}, {}, [job["id"]]):
             with self.subTest(payload=payload):
                 self.assertEqual(self.dismiss(payload, self.guard(self.host)), 400)

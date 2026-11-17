@@ -19,7 +19,7 @@ SNOOZE_LIMIT = 8 * 86400
 class Inbox:
     def inbox(self, now: float, tasks: dict[str, dict], directory: Directory) -> list[dict]:
         claims = read_claims(self.council)
-        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None}
+        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False}
         items = []
         for review in self.reviews.pending():
             created = iso_epoch(review["created"]) or now
@@ -46,7 +46,7 @@ class Inbox:
         listed = {row["task"] for row in rows}
         for task, job in consoles.items():
             if task not in listed:
-                fields = {"title": job["command"], "command": job["command"], "directory": job["directory"], "job": console_of(job)}
+                fields = {"title": job["command"], "command": job["command"], "directory": job["directory"], "job": console_of(job), "settled": True}
                 items.append({**base, "kind": "operator", "id": task, "ts": job["created_ts"], **fields})
         items += self.request_items(base, now, claims)
         for item in items:
