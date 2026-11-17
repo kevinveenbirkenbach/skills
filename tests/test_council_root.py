@@ -527,6 +527,7 @@ class TestInstall(Settings):
         for part in ("scripts/install.sh", "scripts/orchestrator.sh", "skills/kvb-org-organize/scripts/councilroot.py", "skills/kvb-org-organize/scripts/nofollow.py"):
             (self.repo / part).parent.mkdir(parents=True, exist_ok=True)
             (self.repo / part).write_bytes((REPO_ROOT / part).read_bytes())
+        (self.repo / "scripts" / "tokeneconomizer.sh").write_text("exit 0\n", encoding="utf-8")
         stubs = self.base / "bin"
         stubs.mkdir()
         (stubs / "npx").write_text(NPX_STUB, encoding="utf-8")

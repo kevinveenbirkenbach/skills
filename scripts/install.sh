@@ -168,6 +168,10 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	else
 		warn "skills: docker not found; skipped the Agent Orchestrator."
 	fi
+	if ! bash "${REPO_ROOT}/scripts/tokeneconomizer.sh" "${REPO_ROOT}/plugins-lock.json" "${HOME}/Repositories/github.com/microsoft/TokenEconomizer"; then
+		warn "skills: TokenEconomizer is not installed on its pin (see above); make install again once that is fixed."
+		status=1
+	fi
 	log "skills: installing or updating the codebase-memory-mcp code graph for every detected agent"
 	if ! curl -fsSL --proto '=https' https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash; then
 		warn "skills: the codebase-memory-mcp installer failed; the code graph keeps its previous setup."

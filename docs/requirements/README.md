@@ -22,3 +22,4 @@ skill defines the format.
 - [016 - Agents Controls in the View Row](016-agents-controls-row.md)
 - [017 - Legend Toggle](017-legend-toggle.md)
 - [018 - Gibberlink](018-gibberlink.md)
+- [021 - TokenEconomizer by default](021-tokeneconomizer-by-default.md)

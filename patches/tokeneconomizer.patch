@@ -1,0 +1,48 @@
+diff --git a/tokeneconomizer/plugin/context.py b/tokeneconomizer/plugin/context.py
+index 85865d3..431115b 100644
+--- a/tokeneconomizer/plugin/context.py
++++ b/tokeneconomizer/plugin/context.py
+@@ -81,6 +81,9 @@ class LiveContext:
+                                     else "")
+         # It reads session logs and the agents' output, which are UTF-8 whatever the locale.
+         env["PYTHONUTF8"] = "1"
++        # `-m` with cwd at the repository root would put that root first on sys.path, so a
++        # json.py or tokeneconomizer/ planted in the repository would run in this process.
++        env["PYTHONSAFEPATH"] = "1"
+         cmd = [sys.executable, "-m", "tokeneconomizer.plugin.cli", *argv,
+                "--host", self.host.name, "--cwd", self.repo.root]
+         self.store.ensure()
+diff --git a/tokeneconomizer/plugin/denylist.py b/tokeneconomizer/plugin/denylist.py
+index 003891a..98c77d3 100644
+--- a/tokeneconomizer/plugin/denylist.py
++++ b/tokeneconomizer/plugin/denylist.py
+@@ -121,10 +121,19 @@ def _guard_target(repo_root, path):
+                            "leads out of the repository")
+ 
+ 
++def _open_tmp(tmp):
++    # A planted symlink at the temporary name would carry the write out of the repository:
++    # drop whatever is there and create the file new, never following a link.
++    if os.path.lexists(tmp):
++        os.unlink(tmp)
++    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
++    return os.fdopen(os.open(tmp, flags, 0o666), "w", encoding="utf-8")
++
++
+ def write_json(path, obj):
+     os.makedirs(os.path.dirname(path), exist_ok=True)
+     tmp = path + ".te.tmp"
+-    with open(tmp, "w", encoding="utf-8") as fh:
++    with _open_tmp(tmp) as fh:
+         json.dump(obj, fh, indent=2)
+         fh.write("\n")
+     os.replace(tmp, path)
+@@ -133,7 +142,7 @@ def write_json(path, obj):
+ def _write_text(path, text):
+     os.makedirs(os.path.dirname(path), exist_ok=True)
+     tmp = path + ".te.tmp"
+-    with open(tmp, "w", encoding="utf-8") as fh:
++    with _open_tmp(tmp) as fh:
+         fh.write(text)
+     os.replace(tmp, path)
+ 

@@ -24,7 +24,10 @@ SHIPPED = ORGANIZE / "config.default.json"
 DEFAULT = json.loads(SHIPPED.read_text(encoding="utf-8"))
 ROW_MEMORY = DEFAULT["memory_limits"]
 HOME_TOOLS = ("bash", "cp", "dirname", "find", "install", "ln", "mkdir", "python3", "rm")
-COUNCIL_PARTS = ("scripts/orchestrator.sh", "skills/kvb-org-organize/scripts/councilroot.py", "skills/kvb-org-organize/scripts/nofollow.py")
+COUNCIL_PARTS = (
+    "scripts/orchestrator.sh", "scripts/tokeneconomizer.sh", "plugins-lock.json",
+    "skills/kvb-org-organize/scripts/councilroot.py", "skills/kvb-org-organize/scripts/nofollow.py",
+)
 AGENT_ROOTS = {"sandbox": {"filesystem": {"allowWrite": ["~/.local/state/agents-shared", "~/.local/state/agents-release/**"]}}}
 CGROUP_KILL = """
 case "$*" in *try-restart*kvb-code-graph*)
@@ -208,6 +211,13 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertFalse([call for call in calls if "kvb-code-graph" in call])
             self.assertIn("graphs keep their watch only while a session runs", done.stderr)
+
+    def test_the_home_install_runs_the_tokeneconomizer_step_and_a_host_without_git_skips_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            done, _, _ = self.home_install(Path(tmp), binary=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("skills: git or python3 not found; skipped TokenEconomizer.", done.stderr)
+            self.assertFalse((Path(tmp) / "home" / "Repositories").exists())
 
     def test_reinstall_empties_the_skill_directories_in_place(self):
         with tempfile.TemporaryDirectory() as tmp:

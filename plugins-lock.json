@@ -1,0 +1,7 @@
+{
+  "tokeneconomizer": {
+    "source": "https://github.com/microsoft/TokenEconomizer.git",
+    "commit": "b57d03f81585a18b936a0eaecbd1eb51cdcecf71",
+    "patch": "patches/tokeneconomizer.patch"
+  }
+}
