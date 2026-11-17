@@ -5,3 +5,4 @@
 .legend-chip:hover { border-color: var(--line-strong); }
 .legend-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .legend-chip[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; opacity: 0.5; }
+[data-legend="hidden"] :is(.res-legend, .home-metric > .legend-chips), [data-legend="hidden"] .legend:not(:has(> .star)), [data-legend="hidden"] .legend > :not(.star, .legend-toggle) { display: none; }

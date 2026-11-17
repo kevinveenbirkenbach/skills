@@ -53,6 +53,7 @@
   announce();
   measure();
   homeBoot();
+  legendBoot();
   apply();
   drawTime();
   motion.asOf = ui.asOf;

@@ -16,6 +16,7 @@ from kvb_orchestrator.errors import Conflict, ToolError
 from kvb_orchestrator.handler import BODY_LIMIT
 from kvb_orchestrator.viewstore import (
     CHANGE_LIMIT,
+    LEGEND_PANELS,
     VIEW,
     VIEW_LIMIT,
     ViewStore,
@@ -33,6 +34,7 @@ FULL = {
     "burn": {"overlays": ["fix", "score"]},
     "home": {"pins": [{"kind": "panel", "id": "resources-hardware", "w": 12, "h": 4}, {"kind": "task", "id": "work/feature", "w": 1, "h": 12}]},
     "kanban": {"hidden": ["line"]},
+    "legend": {"views": {"resources-tokens": False, "tasks/burn": True}, "tiles": {"panel:resources-hardware": False}},
 }
 PIN ={"kind": "panel", "id": "resources-hardware", "w": 6, "h": 3}
 EMBEDDED = re.compile(r'<script nonce="[^"]+" id="view" type="application/json">(.*?)</script>')
@@ -289,7 +291,7 @@ class TestViewDocument(unittest.TestCase):
     def test_the_defaults_and_a_full_document_pass_unchanged(self):
         self.assertEqual(valid_view(copy.deepcopy(VIEW)), VIEW)
         self.assertEqual(valid_view(copy.deepcopy(FULL)), FULL)
-        self.assertEqual(VIEW, {"resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []}, "burn": {"overlays": []}, "home": {"pins": []}, "kanban": {"hidden": []}})
+        self.assertEqual(VIEW, {"resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []}, "burn": {"overlays": []}, "home": {"pins": []}, "kanban": {"hidden": []}, "legend": {"views": {}, "tiles": {}}})
 
     def test_unknown_or_missing_keys_and_malformed_values_are_refused(self):
         def changed(section: str | None, key: str | None, value: object) -> dict:
@@ -331,10 +333,27 @@ class TestViewDocument(unittest.TestCase):
             "pin id too long": changed("home", "pins", [{**pin, "id": "i" * 201}]),
             "pin unknown key": changed("home", "pins", [{**pin, "x": 1}]),
             "pin twice": changed("home", "pins", [pin, dict(pin)]),
+            "legend section missing": {key: value for key, value in FULL.items() if key != "legend"},
+            "legend unknown key": changed("legend", "pins", {}),
+            "legend views not a map": changed("legend", "views", ["tasks/burn"]),
+            "legend of an unknown panel": changed("legend", "views", {"stream": False}),
+            "legend of a panel without one": changed("legend", "views", {"agents/3d": False}),
+            "legend shown as a number": changed("legend", "views", {"tasks/burn": 0}),
+            "legend shown as text": changed("legend", "tiles", {"panel:resources-hardware": "false"}),
+            "legend tile key without kind": changed("legend", "tiles", {"resources-hardware": False}),
+            "legend tile key with a space": changed("legend", "tiles", {"panel:resources hardware": False}),
         }
         for name, doc in cases.items():
             with self.subTest(case=name), self.assertRaises(ToolError):
                 valid_view(doc)
+
+    def test_every_legend_panel_keeps_its_flag_and_a_tile_flag_leaves_with_its_pin(self):
+        doc = copy.deepcopy(FULL)
+        doc["legend"]["views"] = dict.fromkeys(LEGEND_PANELS, False)
+        doc["legend"]["tiles"] = {"panel:resources-hardware": False, "task:work/feature": True, "panel:stream": False}
+        self.assertEqual(valid_view(doc)["legend"], {"views": dict.fromkeys(LEGEND_PANELS, False), "tiles": {"panel:resources-hardware": False, "task:work/feature": True}})
+        doc["home"]["pins"] = doc["home"]["pins"][1:]
+        self.assertEqual(valid_view(doc)["legend"]["tiles"], {"task:work/feature": True})
 
     def test_the_hub_digests_a_selection_exactly_as_panels_js_does(self):
         texts = ["", "host:CPU", "burn:done\nhost:CPU", "agent:\N{LATIN CAPITAL LETTER A WITH DIAERESIS}\N{EURO SIGN}\U0001f600", "x" * 5000]
@@ -715,6 +734,19 @@ class TestHubView(HubCase):
         embedded = EMBEDDED.search(self.index())
         self.assertIsNotNone(embedded)
         self.assertEqual(json.loads(embedded.group(1)), FULL)
+
+    def test_legend_flags_answer_400_for_an_unknown_panel_or_a_non_boolean_and_a_tile_flag_leaves_with_its_pin(self):
+        for views in ({"stream": False}, {"tasks/burn": "hidden"}, {"tasks/burn": None}):
+            with self.subTest(views=views):
+                status, body = self.write({"legend.views": views})
+                self.assertEqual(status, 400, body)
+        self.assertEqual(self.view(), VIEW)
+        self.assertEqual(self.write({"home.pins": [PIN], "legend.views": {"tasks/burn": False}})[0], 200)
+        self.assertEqual(self.write({"legend.tiles": {"panel:resources-hardware": False}})[0], 200)
+        self.reopen()
+        self.assertEqual(self.view()["legend"], {"views": {"tasks/burn": False}, "tiles": {"panel:resources-hardware": False}})
+        self.assertEqual(self.write({"home.pins": []})[0], 200)
+        self.assertEqual(self.view()["legend"], {"views": {"tasks/burn": False}, "tiles": {}})
 
     def test_a_broken_stored_file_falls_back_to_the_defaults(self):
         (self.state / "view.json").write_text('{"resources": {"hidden": ["bad id"]}}', encoding="utf-8")

@@ -4,6 +4,7 @@ import copy
 import json
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from .errors import Conflict, ToolError
@@ -18,7 +19,13 @@ VIEW = {
     "burn": {"overlays": []},
     "home": {"pins": []},
     "kanban": {"hidden": []},
+    "legend": {"views": {}, "tiles": {}},
 }
+LEGEND_PANELS = (
+    "agents/orbit", "agents/chord", "agents/swimlane", "artifacts/orbit", "artifacts/chord", "artifacts/swimlane",
+    "tasks/rasci", "tasks/gantt", "tasks/burn", "resources-hardware", "resources-tokens", "resources-combined",
+)
+PIN_KEY = re.compile(r"[A-Za-z0-9:_./-]{1,32}:[A-Za-z0-9:_./-]{1,200}")
 VIEW_PATH = re.compile(r"[A-Za-z]{1,32}(?:\.[A-Za-z]{1,32})?")
 SERIES_ID = re.compile(r"[A-Za-z0-9:_./-]{1,200}")
 PIN_KIND = re.compile(r"[A-Za-z0-9:_./-]{1,32}")
@@ -136,21 +143,42 @@ def pins(value: object) -> list[dict]:
     return found
 
 
+def legend_flags(value: object, name: str, known: Callable[[str], object], what: str) -> dict[str, bool]:
+    """Args:
+        value: a map of legend owners to whether their legend shows.
+        name: where the map sits, for the error message.
+        known: true for a key that may own a legend.
+        what: the keys known accepts, for the error message.
+
+    Returns:
+        The map; a key known refuses or a value other than true or false
+        raises ToolError.
+    """
+    if not isinstance(value, dict) or not all(isinstance(key, str) and known(key) for key in value):
+        raise ToolError(f"{name} must map {what} to true or false")
+    return {key: flag(shown, f"{name}.{key}") for key, shown in value.items()}
+
+
 def valid_view(raw: object) -> dict:
     """Args:
         raw: the whole view document as the page sent it.
 
     Returns:
         The document with every key of VIEW and nothing else; any other
-        key, a missing one or a malformed value raises ToolError.
+        key, a missing one or a malformed value raises ToolError. The
+        legend state of a tile whose pin left Home is dropped.
     """
     data = section(raw, "view", tuple(VIEW))
     resources = section(data["resources"], "resources", tuple(VIEW["resources"]))
     burn = section(data["burn"], "burn", tuple(VIEW["burn"]))
     home = section(data["home"], "home", tuple(VIEW["home"]))
     kanban = section(data["kanban"], "kanban", tuple(VIEW["kanban"]))
+    legend = section(data["legend"], "legend", tuple(VIEW["legend"]))
     if not isinstance(resources["tokens"], str) or resources["tokens"] not in TOKEN_MODES:
         raise ToolError(f"resources.tokens must be one of {', '.join(TOKEN_MODES)}")
+    pinned = pins(home["pins"])
+    keys = {f"{pin['kind']}:{pin['id']}" for pin in pinned}
+    tiles = legend_flags(legend["tiles"], "legend.tiles", PIN_KEY.fullmatch, "pin keys kind:id")
     return {
         "resources": {
             "hidden": series_ids(resources["hidden"], "resources.hidden"),
@@ -159,8 +187,12 @@ def valid_view(raw: object) -> dict:
             "combinedHidden": series_ids(resources["combinedHidden"], "resources.combinedHidden"),
         },
         "burn": {"overlays": members(burn["overlays"], "burn.overlays", "metrics", OVERLAYS)},
-        "home": {"pins": pins(home["pins"])},
+        "home": {"pins": pinned},
         "kanban": {"hidden": members(kanban["hidden"], "kanban.hidden", "layers", KANBAN_LAYERS)},
+        "legend": {
+            "views": legend_flags(legend["views"], "legend.views", LEGEND_PANELS.__contains__, f"panels of {', '.join(LEGEND_PANELS)}"),
+            "tiles": {key: shown for key, shown in tiles.items() if key in keys},
+        },
     }
 
 
