@@ -1781,7 +1781,8 @@ def permission(commands: list[str], project: Path) -> str | None:
     settings = []
     for path in settings_files(project):
         with contextlib.suppress(FileNotFoundError):
-            settings.append(json.loads(path.read_text(encoding="utf-8")).get("permissions") or {})
+            text = path.read_text(encoding="utf-8")
+            settings.append((json.loads(text).get("permissions") or {}) if text.strip() else {})
     for decision in ("deny", "ask"):
         rules = [bash_rule(rule) for permissions in settings for rule in permissions.get(decision) or []]
         if any(rule and rule.fullmatch(command) for rule in rules for command in commands):

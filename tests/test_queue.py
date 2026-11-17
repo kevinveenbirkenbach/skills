@@ -2325,6 +2325,23 @@ class TestQueueCommands(unittest.TestCase):
                 allowed = self.hook(json.dumps({"tool_input": {"command": command}}))
                 self.assertEqual((allowed.returncode, allowed.stdout), (0, ""))
 
+    def test_block_reads_an_empty_read_only_settings_file_as_no_rules(self):
+        project = self.base / "project"
+        (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "settings.json").write_text(
+            json.dumps({"permissions": {"deny": ["Bash(git push *)"]}}), encoding="utf-8"
+        )
+        local = project / ".claude" / "settings.local.json"
+        local.write_text("", encoding="utf-8")
+        local.chmod(0o444)
+        self.env["CLAUDE_PROJECT_DIR"] = str(project)
+        hold = "python3 /x/queue.py hold --kind deploy --task work/a -- "
+        allowed = self.hook(json.dumps({"tool_input": {"command": hold + "make test"}}))
+        self.assertEqual((allowed.returncode, allowed.stdout), (0, ""), allowed.stderr)
+        denied = self.hook(json.dumps({"tool_input": {"command": hold + "git push origin main"}}))
+        self.assertEqual(denied.returncode, 2)
+        self.assertIn("deny rule", denied.stderr)
+
     def test_block_refuses_a_hold_it_cannot_check(self):
         hold = "python3 /x/queue.py hold --kind deploy --task work/a -- "
         unchecked = {"unbalanced quote": (hold + "echo 'x", self.env)}
