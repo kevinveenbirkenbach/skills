@@ -103,6 +103,17 @@ tokens.
     `allowWrite`; opening `_config.db` read-only works there. Checks read the
     setting read-only or ask the daemon (`index_status`), never through
     `config get` from the sandbox.
+12. **Watch after the helper waits for upstream (operator-confirmed
+    2026-11-17)**: the real test measured that codebase-memory-mcp 0.12.1,
+    the newest release (2026-10-16), drops a root's watch when the helper's
+    session closes, even under `daemon start` (`watcher.watch` then
+    `watcher.unwatch` in `cbm-daemon.log`); the code that keeps it on a
+    permanent daemon exists only on upstream main. The watch criterion of
+    Other repositories and `test_code_graph_helper_watch` stay open until a
+    release after 0.12.1; meanwhile a session root stays watched by its own
+    MCP session. Rejected: the hook re-indexing on a moved HEAD, a
+    supervisor holding one idle session per root (both workarounds), an
+    unreleased upstream build.
 
 ## Approach
 
