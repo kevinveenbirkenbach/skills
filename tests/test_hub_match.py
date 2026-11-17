@@ -13,7 +13,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import APPROVAL, GIT_ENV, HUB, REPO_ROOT, key, signing
-from kvb_orchestrator import batches, payloads, skill_scripts
+from kvb_orchestrator import batches, payloads, scores, skill_scripts
 
 MATCH = REPO_ROOT / "skills" / "kvb-match" / "scripts" / "match.py"
 CLIENT = HUB / "client"
@@ -166,6 +166,11 @@ class TestMatchRelease(MatchCase):
     def verify(self, repo: Path, review: str) -> subprocess.CompletedProcess:
         argv = ["verify", "--port", str(self.port), "--approvers", str(self.approvers), "--replay", str(self.replay / "commit.json"), "--review", review, "--gate", "pass"]
         return subprocess.run([sys.executable, str(APPROVAL), *argv], cwd=repo, env={**os.environ, **GIT_ENV}, capture_output=True, text=True, timeout=60, check=False)
+
+    def test_a_commit_card_lists_its_score_line_as_metric_chips_and_a_command_card_none(self):
+        _, review = self.stack()
+        chips = {card["ref"]: [(metric["id"], metric["value"]) for metric in card["metrics"]] for card in self.cards()}
+        self.assertEqual(chips, {review: [("fix", "95"), ("break", "3")], "operator/ship": []})
 
     def test_every_card_names_the_addressee_its_inbox_entry_shows(self):
         _, review = self.stack()
@@ -343,6 +348,23 @@ class TestPayloadHash(unittest.TestCase):
     def test_named_paths_come_from_words_and_option_values_resolved_in_the_directory(self):
         named = payloads.named_paths("gh issue create --body-file /tmp/x/body.md --list=list.txt scripts/run.sh 'quoted file.md' https://example.org/a.md", "/repo")
         self.assertEqual(named, ["/tmp/x/body.md", "/repo/list.txt", "/repo/scripts/run.sh", "/repo/quoted file.md"])
+
+
+class TestMetricChips(unittest.TestCase):
+    def test_score_lines_of_every_shape_give_one_chip_per_metric_in_label_order(self):
+        labels = scores.score_labels(REPO_ROOT / "skills")
+        line = scores.metric_chips("🎯 fix 94 % · 💥 break 4 % · 💸 tokens 100 % · ⏱️ velocity 100 % · 🛡️ security 100 % · 🏆 score 90", labels)
+        self.assertEqual([(chip["id"], chip["emoji"], chip["label"], chip["value"]) for chip in line], [
+            ("fix", "🎯", "Fix", "94 %"), ("break", "💥", "Break", "4 %"), ("tokens", "💸", "Tokens", "100 %"),
+            ("velocity", "⏱️", "Velocity", "100 %"), ("security", "🛡️", "Security", "100 %"), ("score", "🏆", "Score", "90"),
+        ])
+        block = scores.metric_chips("🎯 Fix: 85 %\n💥 Break: 5 %\n⏱ Speed: new\n🏆 Score: 81\n🚦 Gate: ⛔ fix 85 % < 90", labels)
+        self.assertEqual([(chip["id"], chip["value"]) for chip in block], [("fix", "85 %"), ("break", "5 %"), ("velocity", "new"), ("score", "81")])
+        self.assertEqual([(chip["id"], chip["value"]) for chip in scores.metric_chips("Fix 92% Break 2.5%", labels)], [("fix", "92%"), ("break", "2.5%")])
+        for text in ("", "looks good", "🎯 high", "prefix 90 %"):
+            with self.subTest(text=text):
+                self.assertEqual(scores.metric_chips(text, labels), [])
+        self.assertEqual(scores.metric_chips("🎯 95 💥 3", None), [])
 
 
 if __name__ == "__main__":

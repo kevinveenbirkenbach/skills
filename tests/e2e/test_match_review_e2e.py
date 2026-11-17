@@ -32,6 +32,8 @@ CARD = """
   const head = () => ({
     card: card().dataset.card, kind: card().dataset.kind, stale: card().dataset.stale, face: Boolean(card().querySelector(".match-who .avatar svg")),
     name: text(card().querySelector(".match-name")), age: text(card().querySelector(".match-age")),
+    metrics: all(".match-metric", card()).map((chip) => [chip.dataset.metric, text(chip.querySelector("strong"))]),
+    under: Boolean(card().querySelector(".match-metrics")) && card().querySelector(".match-metrics").getBoundingClientRect().top >= card().querySelector(".match-name").getBoundingClientRect().bottom - 1,
     place: all(".match-place dt", card()).map(text).map((label, index) => [label, text(all(".match-place dd", card())[index])]),
     files: all(".match-file", card()).map((file) => file.dataset.path), accept: card().closest(".match-stack").querySelector(".match-accept").disabled,
     reason: text(card().querySelector(".match-stale")), peeks: all("#main .match-peek").map((tab) => tab.dataset.card),
@@ -115,6 +117,9 @@ class TestMatchReview(HubCase):
 
     def setUp(self):
         super().setUp()
+        self.cards()
+
+    def cards(self) -> None:
         work = tempfile.TemporaryDirectory()
         self.addCleanup(work.cleanup)
         self.work = Path(work.name)
@@ -171,6 +176,7 @@ class TestMatchReview(HubCase):
                 stack = next(results)
                 self.assertEqual((stack["card"], stack["kind"], stack["stale"], stack["face"]), (f"review:{self.commit}", "commit", "false", True), stack)
                 self.assertEqual((stack["name"], stack["age"]), ("Skills", "3 days"), stack)
+                self.assertEqual((stack["metrics"], stack["under"]), ([["fix", "95"], ["break", "3"]], True), stack)
                 self.assertEqual(stack["place"], [["Repository", "/repo"], ["Branch", "feature/match"], ["Worktree", "/repo/.worktrees/feature/match"]], stack)
                 self.assertEqual(stack["files"], order)
                 self.assertEqual(stack["peeks"], ["operator:operator/issue", f"review:{self.stale}"], stack)

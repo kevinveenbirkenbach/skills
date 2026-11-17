@@ -202,10 +202,13 @@
 
   function matchHead(card) {
     const [kindName, kindTone, kindIcon] = MATCH_KINDS[card.kind] || [card.kind, "neutral", "bi-collection"];
+    const metrics = card.metrics || [];
     return h("header", {class: "match-head"},
       h("div", {class: "match-who"}, face(card.agent || "-", true), h("strong", {class: "match-name"}, revealed(card.agent || "unknown agent")), h("span", {class: "match-age"}, ageWords(card.born))),
+      metrics.length ? h("ul", {class: "match-metrics", "aria-label": "Scores"}, metrics.map((metric) => h("li", {class: "match-metric", "data-metric": metric.id, title: revealed(`${metric.label}: ${metric.value}`)},
+        h("span", {"aria-hidden": "true"}, metric.emoji), h("span", {class: "match-metric-label"}, metric.label), h("strong", {}, revealed(metric.value))))) : null,
       h("div", {class: "states"}, h("span", {class: "pill", "data-tone": kindTone}, icon(kindIcon), kindName), card.gate ? pill(`gate ${card.gate}`, card.gate === "pass" ? "ok" : "bad") : null,
-        card.score ? h("span", {class: "pill", "data-tone": "neutral"}, revealed(card.score)) : null, card.stale ? h("span", {class: "pill match-stale-pill", "data-tone": "bad"}, icon("bi-hourglass-split"), "stale") : null),
+        card.score && !metrics.length ? h("span", {class: "pill", "data-tone": "neutral"}, revealed(card.score)) : null, card.stale ? h("span", {class: "pill match-stale-pill", "data-tone": "bad"}, icon("bi-hourglass-split"), "stale") : null),
       h("dl", {class: "meta match-place"}, [["Repository", card.repo], ["Branch", card.branch], ["Worktree", card.worktree]].map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, h("code", {title: value ? revealed(value) : null}, revealed(dash(value))))))),
       h("h2", {class: "match-title"}, revealed(card.title)),
       card.stale ? h("p", {class: "match-stale"}, icon("bi-exclamation-triangle"), revealed(card.stale_reason)) : null);

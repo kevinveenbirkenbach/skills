@@ -26,12 +26,22 @@ FLOW = """(async () => {@HELPERS@
     navigator.credentials.get = () => Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
   }
   const posted = [];
+  const statuses = [];
+  let tamper = @SIGNS@ && @RELEASE@;
   const send = window.fetch.bind(window);
-  window.fetch = (path, init) => {
-    if (["/api/sign", "/api/inbox/approve"].includes(String(path))) {
-      posted.push([String(path), JSON.parse(init.body).items.map((item) => [item.kind, item.id, item.verb, item.channel || null, item.reason || null, item.to || null])]);
+  window.fetch = async (path, init) => {
+    if (!["/api/sign", "/api/inbox/approve"].includes(String(path))) {
+      return send(path, init);
     }
-    return send(path, init);
+    let body = JSON.parse(init.body);
+    if (String(path) === "/api/inbox/approve" && tamper) {
+      tamper = false;
+      body = {...body, items: body.items.map((item) => (item.verb === "reject" ? {kind: item.kind, id: item.id, verb: "approve", label: item.label, sha256: item.sha256} : item))};
+    }
+    posted.push([String(path), body.items.map((item) => [item.kind, item.id, item.verb, item.channel || null, item.reason || null, item.to || null])]);
+    const response = await send(path, {...init, body: JSON.stringify(body)});
+    statuses.push(response.status);
+    return response;
   };
   const card = () => document.querySelector("#main .match-card.front");
   const front = () => (card() ? card().dataset.card : null);
@@ -82,11 +92,19 @@ FLOW = """(async () => {@HELPERS@
   const release = document.querySelector("#main .match-release");
   const found = {order, prefill, leaned, short, stayed, rows, label: text(release), disabled: release.disabled, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
   if (@RELEASE@) {
-    const shown = new Set(all("#toasts .toast"));
-    release.click();
-    found.toast = await until(() => all("#toasts .toast").filter((node) => !shown.has(node)).map(text).find((entry) => entry.startsWith("Release")), 15000);
+    const toastAfter = async (click) => {
+      const shown = new Set(all("#toasts .toast"));
+      click();
+      return until(() => all("#toasts .toast").filter((node) => !shown.has(node)).map(text).find((entry) => entry.startsWith("Release")), 15000);
+    };
+    if (@SIGNS@) {
+      found.tampered = await toastAfter(() => release.click());
+      found.kept = all("#main .match-decision").length;
+    }
+    found.toast = await toastAfter(() => document.querySelector("#main .match-release").click());
     found.emptied = @SIGNS@ ? Boolean(await until(() => document.querySelector("#main .match-stack .empty"), 15000)) : false;
     found.posted = posted;
+    found.statuses = statuses;
   }
   return found;
 })()"""
@@ -173,11 +191,17 @@ class TestMatchRelease(HubCase):
 
     def test_chromium_swipes_three_cards_rejects_with_feedback_and_releases_with_one_signature(self):
         released = self.run_flow("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"), signs=True)
+        self.assertTrue(released["tampered"].startswith("Release: 3 decisions: not possible"), released)
+        self.assertIn("list every approved item", released["tampered"], released)
+        self.assertEqual(released["kept"], 3, released)
         self.assertTrue(released["toast"].startswith("Release: 3 decisions"), released)
+        self.assertNotIn("not possible", released["toast"], released)
         self.assertTrue(released["emptied"], released)
         posted = [path for path, _ in released["posted"]]
-        self.assertEqual(posted, ["/api/sign", "/api/inbox/approve"])
-        items = sorted(released["posted"][1][1])
+        self.assertEqual(posted, ["/api/sign", "/api/inbox/approve"] * 2)
+        self.assertEqual(released["statuses"], [200, 400, 200, 202], released)
+        self.assertIn(["review", self.rejected, "approve", None, None, None], released["posted"][1][1])
+        items = sorted(released["posted"][3][1])
         told = f"{FIRST}:3: rename it\nalso add a test"
         self.assertEqual(items, sorted([["review", self.rejected, "reject", "call", told, "Skills"], ["review", self.accepted, "approve", None, None, None], ["operator", "operator/ship", "approve", None, None, None]]))
         stored = self.httpd.hub.reviews.get(self.rejected)

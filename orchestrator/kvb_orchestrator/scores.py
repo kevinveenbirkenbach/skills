@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .records import epoch, parse_line, read_json, read_regular
@@ -7,6 +8,8 @@ from .records import epoch, parse_line, read_json, read_regular
 SCORES = "scores.jsonl"
 LABELS = "kvb-check-score/labels.json"
 FILE_LIMIT = 64 << 20
+VARIATION = "️"
+VALUE = r"([0-9]+(?:\.[0-9]+)?(?:\s*%)?|–|-|new)(?![0-9.])"
 
 
 def checked(labels: object) -> dict | None:
@@ -51,4 +54,30 @@ def scored(council: Path, skills: Path, span: tuple[float, float]) -> dict:
     """
     begin, end = span
     inside = [row for row in journal(council) if (moment := epoch(row.get("time"))) is not None and begin <= moment <= end]
-    return {"since": begin, "until": end, "labels": checked(read_json(skills / LABELS)), "rows": sorted(inside, key=lambda row: row["time"])}
+    return {"since": begin, "until": end, "labels": score_labels(skills), "rows": sorted(inside, key=lambda row: row["time"])}
+
+
+def score_labels(skills: Path) -> dict | None:
+    return checked(read_json(skills / LABELS))
+
+
+def metric_chips(score: str, labels: dict | None) -> list[dict]:
+    """Args:
+        score: an agent's free score line, such as line 1 or the message
+            block of score.py.
+        labels: the label file as checked() returns it, or None.
+
+    Returns:
+        In label order, per metric whose emoji (with or without its
+        variation selector) or label or former label stands right before a
+        value in score, the first such value: {"id", "emoji", "label",
+        "value"}; none without labels.
+    """
+    found = []
+    for key, metric in (labels or {}).get("metrics", {}).items():
+        emoji = re.escape(metric["emoji"].removesuffix(VARIATION)) + f"{VARIATION}?"
+        names = "|".join(re.escape(name) for name in (metric["label"], *metric.get("former", [])))
+        match = re.search(rf"(?:{emoji}\s*(?:(?:{names})\s*:?\s*)?|\b(?:{names})\s*:?\s*){VALUE}", score, re.IGNORECASE)
+        if match:
+            found.append({"id": key, "emoji": metric["emoji"], "label": metric["label"], "value": " ".join(match.group(1).split())})
+    return found

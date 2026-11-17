@@ -10,6 +10,7 @@ from .fields import decode, expect, field
 from .payloads import denied_roots, payload_files, payload_hash
 from .records import digest, iso_epoch
 from .register import REGISTER, adder, operator_rows, read_register
+from .scores import metric_chips, score_labels
 from .signed import signing
 from .tree import inside
 
@@ -46,7 +47,8 @@ class Matching:
         claims = read_claims(self.council)
         names = self.names.listed()
         reviews = self.reviews.pending()
-        cards = [{**self.commit_card(review, reviews, born_of(review.get("agent", ""), names, claims)), "to": requester_of(claims, review.get("agent", ""))[0]} for review in reviews]
+        labels = score_labels(self.scripts.skills)
+        cards = [{**self.commit_card(review, reviews, born_of(review.get("agent", ""), names, claims), labels), "to": requester_of(claims, review.get("agent", ""))[0]} for review in reviews]
         tasks = read_register(self.council / REGISTER)
         held = self.open_jobs()
         rows = [row for row in operator_rows(tasks) if row["check"] != "decision" and row["task"] not in held]
@@ -61,7 +63,7 @@ class Matching:
                 self.match_snapshots.remove(snapshot["id"])
         return {"now": now, "cards": cards}
 
-    def commit_card(self, review: dict, reviews: list[dict], born: float | None) -> dict:
+    def commit_card(self, review: dict, reviews: list[dict], born: float | None, labels: dict | None) -> dict:
         newer = [other["id"] for other in reviews if other["created"] > review["created"] and (other["worktree"], other["branch"]) == (review["worktree"], review["branch"])]
         live = review.get("live_tree")
         reason = f"added again as review:{newer[-1]}" if newer else "the staged tree changed since it was added" if live not in (None, review["tree"]) else ""
@@ -72,7 +74,8 @@ class Matching:
         place = {"repo": repository_of(review.get("repo", "")), "branch": review["branch"], "worktree": review["worktree"]}
         return {
             "id": f"review:{review['id']}", "kind": "commit", "ref": review["id"], "agent": review.get("agent", ""), "born": born, "created_ts": iso_epoch(review["created"]),
-            **place, "title": review["title"], "score": review.get("score", ""), "gate": review.get("gate", ""), "hash": review["tree"], "live_hash": live or review["tree"],
+            **place, "title": review["title"], "score": review.get("score", ""), "metrics": metric_chips(review.get("score", ""), labels), "gate": review.get("gate", ""),
+            "hash": review["tree"], "live_hash": live or review["tree"],
             "stale": bool(reason), "stale_reason": reason, "files": files, "command": "", "directory": review["worktree"], "reason": "",
         }
 
@@ -88,7 +91,7 @@ class Matching:
         repo, branch, worktree = place_of(row["directory"], scan)
         return {
             "id": card_id, "kind": "command", "ref": row["task"], "agent": agent, "born": born, "created_ts": snapshot["taken"], "repo": repo, "branch": branch, "worktree": worktree,
-            "title": row["command"], "score": "", "gate": "", "hash": snapshot["hash"], "live_hash": live, "stale": stale,
+            "title": row["command"], "score": "", "metrics": [], "gate": "", "hash": snapshot["hash"], "live_hash": live, "stale": stale,
             "stale_reason": "a payload file changed since it was added" if stale else "", "files": snapshot["files"], "command": row["command"], "directory": row["directory"],
             "reason": row["why"], "sha256": digest(row["command"]),
         }
