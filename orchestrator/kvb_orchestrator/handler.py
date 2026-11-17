@@ -137,7 +137,7 @@ class Handler(Exchange):
         elif path == "/api/scores":
             self.answer(lambda: scored(hub.council, hub.scripts.skills, hub.span(self.query(), time.time())), HTTPStatus.OK)
         elif path == "/api/rates":
-            self.answer(lambda: rated(hub.council, hub.kept, time.time()), HTTPStatus.OK)
+            self.answer(lambda: rated(hub.council, hub.kept, (now := time.time()), hub.span(self.query(), now)), HTTPStatus.OK)
         elif path == VIEW_ROUTE:
             self.answer(hub.view_store.get, HTTPStatus.OK)
         elif path == "/api/subagents":
