@@ -67,6 +67,7 @@ SETTINGS_SIGN_ROUTE = "/api/settings/sign"
 CHOICES_ROUTE = "/api/choices"
 CHOICES_SIGN_ROUTE = "/api/choices/sign"
 DIFF_ROUTE = re.compile(r"/api/diffs/(review|ask)/([0-9a-f]{16})")
+REVEAL_ROUTE = re.compile(r"/api/diffs/(review|ask)/([0-9a-f]{16})/reveal(/sign)?")
 FIREWALL_ROUTE = "/api/firewall"
 FIREWALL_POSTS = {"/api/firewall/preview": "settings_preview", "/api/firewall/settings": "change_settings", "/api/firewall/groups": "add_group", "/api/firewall/sets": "add_set"}
 FIREWALL_STATE = re.compile(r"/api/firewall/settings/([0-9a-f]{16})")
@@ -175,6 +176,10 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.sign_board(body), HTTPStatus.OK)
         if board:
             return lambda body: self.answer(lambda: hub.board(board.group(1), body), HTTPStatus.OK)
+        reveal = REVEAL_ROUTE.fullmatch(path)
+        if reveal:
+            method = hub.sign_reveal if reveal.group(3) else hub.reveal
+            return lambda body: self.answer(lambda: method(reveal.group(1), reveal.group(2), body), HTTPStatus.OK)
         return self.inbox_action(path)
 
     def inbox_action(self, path: str) -> Callable[[bytes], None] | None:
@@ -252,7 +257,7 @@ class Handler(Exchange):
         return None
 
     def posted(self, path: str) -> bool:
-        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE, FIREWALL_DROP))
+        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE, FIREWALL_DROP, REVEAL_ROUTE))
 
     def runner(self, path: str, body: bytes) -> None:
         hub = self.server.hub

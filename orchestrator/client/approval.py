@@ -15,9 +15,10 @@
         with the repository, worktree, branch and tree as git prints them
         here, the notes file's text (refused past NOTES_LIMIT characters),
         and the diff of the tree git write-tree prints against HEAD
-        (staged_diff.tree_diff, content withheld per the MEDUSA rules under
-        <dir>, by default those of the pipx install); without the diff when
-        the body would pass DIFF_BODY_LIMIT.
+        (staged_diff.tree_diff, secrets masked per the MEDUSA rules under
+        <dir>, by default those of the pipx install) with the sealed clear
+        patches of its masked files apart; without either when the body
+        would pass DIFF_BODY_LIMIT.
 
 Returns:
     pin: exit code 0 and the pinned credential on stdout; 1 and the reason
@@ -89,14 +90,14 @@ def request_review(args: argparse.Namespace) -> str:
     item = staged(cwd, "0" * 16)
     try:
         notes = args.notes.read_text(encoding="utf-8")
-        diff = staged_diff.tree_diff(cwd, item["tree"], args.rules or staged_diff.rules_root())
+        diff, sealed = staged_diff.tree_diff(cwd, item["tree"], args.rules or staged_diff.rules_root())
     except (OSError, ValueError, staged_diff.DiffError) as error:
         raise Refused(f"the review cannot be prepared: {error}") from error
     if len(notes) > NOTES_LIMIT:
         raise Refused(f"the notes hold {len(notes)} characters, the hub takes at most {NOTES_LIMIT}")
     arguments = {key: item[key] for key in ("repo", "worktree", "branch", "tree")}
     arguments.update(title=args.title, page=str(args.page), notes=notes, gate=args.gate, score=args.score, agent=args.agent)
-    body = review_body({**arguments, "diff": diff})
+    body = review_body({**arguments, "diff": diff, "sealed": sealed})
     if len(body) > DIFF_BODY_LIMIT:
         print(f"approval: the review goes without its diff, its {len(body)} bytes pass the hub's {DIFF_BODY_LIMIT}", file=sys.stderr)
         body = review_body(arguments)

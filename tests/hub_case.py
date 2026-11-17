@@ -143,6 +143,14 @@ class HubCase(unittest.TestCase):
         self.assertEqual(status, 200, body)
         return signer.proof(json.loads(body)["payload"], self.origin)
 
+    def reveal_proof(self, kind: str, item_id: str, paths: list[str], signer: Key) -> dict:
+        status, _, body = self.post_json(f"/api/diffs/{kind}/{item_id}/reveal/sign", {"paths": paths}, self.guard(self.host))
+        self.assertEqual(status, 200, body)
+        return signer.proof(json.loads(body)["payload"], self.origin)
+
+    def reveal(self, kind: str, item_id: str, paths: list[str], proof: object) -> tuple[int, dict, bytes]:
+        return self.post_json(f"/api/diffs/{kind}/{item_id}/reveal", {"paths": paths, "proof": proof}, self.guard(self.host))
+
     def say(self, payload: dict, signer: Key) -> tuple[int, dict, bytes]:
         proof = self.message_proof({"upload": "", "voice": "", **payload}, signer)
         return self.post_json("/api/messages", {"upload": "", "voice": "", **payload, "proof": proof}, self.guard(self.host))

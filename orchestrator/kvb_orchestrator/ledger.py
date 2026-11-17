@@ -6,6 +6,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from .diffs import SEALED_SUFFIX
 from .records import read_json, stamp, write_atomic
 
 
@@ -101,11 +102,28 @@ class Ledger:
             return dict(self.items[item_id])
 
 
-class Reviews(Ledger):
+class Sealed(Ledger):
+    def __init__(self, file: Path, pages: Path, suffix: str) -> None:
+        """Args:
+            pages: the folder holding each item's sealed clear patches.
+            suffix: the name suffix of an item's sealed file there; it is
+                deleted once the item leaves pending.
+        """
+        super().__init__(file)
+        self.pages = pages
+        self.sealed_suffix = suffix
+
+    def transition(self, item_id: str, before: str, changes: dict) -> tuple[dict | None, bool]:
+        record, changed = super().transition(item_id, before, changes)
+        if changed and record is not None and record.get("status") != "pending":
+            (self.pages / f"{item_id}{self.sealed_suffix}").unlink(missing_ok=True)
+        return record, changed
+
+
+class Reviews(Sealed):
     def __init__(self, state: Path) -> None:
-        super().__init__(state / "reviews.json")
-        self.pages = state / "pages"
-        self.pages.mkdir(exist_ok=True)
+        (state / "pages").mkdir(exist_ok=True)
+        super().__init__(state / "reviews.json", state / "pages", SEALED_SUFFIX["review"])
 
     def stored(self, review_id: str, suffix: str) -> Path:
         return self.pages / f"{review_id}{suffix}"

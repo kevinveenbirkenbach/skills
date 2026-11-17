@@ -17,6 +17,9 @@
 .diff-file .diff-head .mode { color: var(--warn); font-size: var(--fs-xs); }
 .diff-file .diff-head .note .bi { margin-right: 4px; vertical-align: -2px; }
 .diff-file .diff-head .note { display: inline-flex; align-items: center; color: var(--warn); font-size: var(--fs-xs); }
+.diff-file .diff-head .note.revealed { color: var(--ok); }
+.diff-file .diff-head .reveal { flex: none; }
+.diff-files .reveal-all { display: flex; justify-content: flex-end; }
 .feedback-list { display: grid; gap: 4px; margin: var(--sp-1) 0 0; padding: 0; list-style: none; }
 .feedback-list li { display: flex; align-items: baseline; gap: 6px; padding: 4px 8px; border-radius: 8px; background: var(--info-soft); font-size: var(--fs-sm); }
 .feedback-list .text { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }

@@ -28,6 +28,10 @@ PAGE_MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-diff
 SECRET = 'api_key = "plain-example-words"'
 ARMOURED = "before\n-----BEGIN EXAMPLE-----\nplain words only\n-----END EXAMPLE-----\nafter\n"
 WITHHELD = "content withheld"
+MASKED = "masked"
+MASK = "••••"
+APP_CLEAR = f"@@ -1,2 +1,4 @@\n keep = 1\n-old = 2\n+new = 3\n+{SECRET}\n+print(1)"
+APP_SHOWN = f"@@ -1,2 +1,4 @@\n keep = 1\n-old = 2\n+new = 3\n+{MASK}\n+print(1)"
 ALLOW = {"behavior": "allow"}
 RULES = """
 rules:
@@ -83,7 +87,7 @@ class El extends Node {
   contains() { return false; }
   querySelector() { return null; }
   querySelectorAll() { return []; }
-  click() { for (const run of this.listeners.click || []) { run({target: this, preventDefault() {}}); } }
+  click() { for (const run of this.listeners.click || []) { run({target: this, preventDefault() {}, stopPropagation() {}}); } }
 }
 const elements = new Map();
 const document = {
@@ -100,7 +104,7 @@ document.getElementById("emoji-bases").textContent = "[]";
 const all =(node) => (typeof node === "string" ? [] : [node, ...node.children.flatMap(all)]);
 const classes = (node) => String(node.className || node.attrs.class || "").split(" ").filter(Boolean);
 const labels = (node) => all(node).filter((el) => el.tag === "button").map((el) => el.getAttribute("aria-label") || el.textContent);
-const calls = {proofs: [], posts: [], sheets: [], radio: []};
+const calls = {proofs: [], posts: [], sheets: [], radio: [], signs: []};
 const now = 1_800_000_000;
 const base = {agent: "Skills", to: "Skills", detail: "", green: true, gate: "", score: "", warnings: [], options: [], recommended: "", command: "", directory: "", sha256: "", runnable: false, deniable: false, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now - 60};
 const operator = {...base, kind: "operator", id: "operator/ship", title: "make ship", command: "make ship", directory: "/repo", detail: "release the build", runnable: true, deniable: true, green: false, sha256: "abc"};
@@ -116,7 +120,11 @@ const context = {
   KINDS: [["operator", "Operator"], ["review", "Review"]], speech: {current: null}, look: {hidden: new Set()}, settings: {channels: {title: true}}, known: {batches: new Set()},
   relative: new Intl.RelativeTimeFormat("en"), absolute: new Intl.DateTimeFormat("en"), calm: {matches: true}, drawn: {screen: "", sig: ""},
   proofFor: async (entries, label) => { calls.proofs.push({entries, label}); return {proof: {payload: "p", assertion: "a"}}; },
-  sendJson: async (path, body) => { calls.posts.push({path, body}); return {ok: true, data: {id: "b1", due: now + 3}}; },
+  sendJson: async (path, body) => {
+    calls.posts.push({path, body});
+    return path.endsWith("/reveal") ? {ok: true, data: {kind: "review", id: "3123456789abcdef", patches: {"conf.py": "@@ -1 +1 @@\n-a\n+clear-token", "late.py": "@@ -0,0 +1 @@\n+clear-late"}}} : {ok: true, data: {id: "b1", due: now + 3}};
+  },
+  signedProof: async (path, fields, label) => { calls.signs.push([path, fields.paths, label]); return {proof: {payload: "p", assertion: "a"}}; },
   radioSend: async (message) => { calls.radio.push(message); return true; },
   load: async () => {}, toast: () => {}, fail: () => [], undoToast: () => {},
   jobOpen: () => false, dismissJob: () => {}, consoleOf: () => null, settleConsoles: () => {}, repaintConsoles: () => {},
@@ -196,7 +204,33 @@ setTimeout(() => {
   results.proofs = calls.proofs.map((call) => call.entries.map((entry) => [entry.kind, entry.verb, entry.label]));
   results.posts = calls.posts.map((call) => [call.path, call.body.items.length, call.body.proof !== null]);
   results.radio = calls.radio;
-  console.log(JSON.stringify(results));
+  drawInbox = () => {};
+  drawStream = () => {};
+  const secret = {...review, id: "3123456789abcdef", diff: 2};
+  diffView.cache.set("review:3123456789abcdef", [
+    {path: "conf.py", status: "M", mode: "100644", additions: 1, deletions: 1, patch: "@@ -1 +1 @@\\n-a\\n+••••", note: "masked"},
+    {path: "late.py", status: "A", mode: "100644", additions: 1, deletions: 0, patch: "", note: "content withheld"},
+  ]);
+  state.inbox = [...state.inbox, secret];
+  const hiddenOf = (card) => ({
+    hidden: all(card).filter((el) => classes(el).includes("diff-file")).map((el) => el.dataset.hidden || null),
+    buttons: labels(card).filter((label) => label.startsWith("Reveal")),
+    code: all(card).filter((el) => el.tag === "td" && classes(el).includes("code")).map((el) => el.textContent),
+  });
+  const secretCard = inboxItem(secret, 3);
+  results.reveal = {before: hiddenOf(secretCard)};
+  all(secretCard).find((el) => el.tag === "button" && el.getAttribute("aria-label") === "Reveal all 2").click();
+  setTimeout(() => {
+    results.reveal.after = hiddenOf(inboxItem(secret, 3));
+    results.reveal.signs = calls.signs;
+    results.reveal.posts = calls.posts.filter((call) => call.path.endsWith("/reveal")).map((call) => [call.path, call.body.paths, call.body.proof !== null]);
+    forgetRevealed();
+    results.reveal.kept = diffView.revealed.size;
+    state.inbox = state.inbox.filter((item) => item !== secret);
+    forgetRevealed();
+    results.reveal.forgotten = [diffView.revealed.size, hiddenOf(inboxItem(secret, 3)).hidden];
+    console.log(JSON.stringify(results));
+  }, 20);
 }, 20);
 `;
 vm.runInNewContext(`${source}\n${probe}`, {...context, setTimeout, Element: El, HTMLElement: El, now, operator, review, ask, decision, calls, all, classes, labels});
@@ -319,6 +353,14 @@ class TestOperatorPage(unittest.TestCase):
         self.assertEqual((files[0]["note"], files[0]["mode"], files[0]["stat"]), ([], [], ["+2", "-1"]))
         self.assertEqual((files[2]["mode"], files[3]["note"], files[3]["stat"]), (["100644 => 100755"], [WITHHELD], ["+9", "-0"]))
 
+    def test_a_hidden_file_offers_its_reveal_and_the_signed_reveal_shows_the_clear_patch_until_the_item_leaves(self):
+        reveal = self.data["reveal"]
+        self.assertEqual(reveal["before"], {"hidden": [MASKED, WITHHELD], "buttons": ["Reveal all 2", "Reveal", "Reveal"], "code": ["@@ -1 +1 @@", "a", MASK]})
+        self.assertEqual(reveal["signs"], [["/api/diffs/review/3123456789abcdef/reveal/sign", ["conf.py", "late.py"], "Reveal 2 files"]])
+        self.assertEqual(reveal["posts"], [["/api/diffs/review/3123456789abcdef/reveal", ["conf.py", "late.py"], True]])
+        self.assertEqual(reveal["after"], {"hidden": ["revealed", "revealed"], "buttons": [], "code": ["@@ -1 +1 @@", "a", "clear-token", "@@ -0,0 +1 @@", "clear-late"]})
+        self.assertEqual((reveal["kept"], reveal["forgotten"]), (1, [0, [MASKED, WITHHELD]]))
+
     def test_a_commit_ask_shows_its_diff_like_a_review_and_its_command_and_files_take_feedback(self):
         ask = self.data["ask"]
         self.assertEqual((ask["ref"], ask["to"], ask["files"]), ("ask:1123456789abcdef", "Skills", [["src/app.py", 3]]))
@@ -355,18 +397,29 @@ class TestStagedDiff(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def test_the_staged_diff_lists_each_file_once_and_a_file_matching_a_secret_rule_ships_only_its_counts_and_the_note(self):
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo,self.rules)}
+    def test_the_staged_diff_lists_each_file_once_masks_only_the_secret_rule_hit_and_seals_the_clear_patch_apart(self):
+        diff, sealed = staged_diff.review_diff(self.repo, self.rules)
+        found = {entry["path"]: entry for entry in diff}
         self.assertEqual(sorted(found), ["added.txt", "app.py", "gone.txt", "logo.png"])
         self.assertEqual({path: (entry["status"], entry["mode"], entry["additions"], entry["deletions"], entry["note"]) for path, entry in found.items()}, {
-            "added.txt": ("A", "100644", 1, 0, ""), "app.py": ("M", "100644", 3, 1, WITHHELD), "gone.txt": ("D", "100644", 0, 1, ""), "logo.png": ("B", "100644", 0, 0, ""),
+            "added.txt": ("A", "100644", 1, 0, ""), "app.py": ("M", "100644", 3, 1, MASKED), "gone.txt": ("D", "100644", 0, 1, ""), "logo.png": ("B", "100644", 0, 0, ""),
         })
-        self.assertEqual([found[path]["patch"] for path in ("added.txt", "app.py", "gone.txt", "logo.png")], ["@@ -0,0 +1 @@\n+fresh", "", "@@ -1 +0,0 @@\n-bye", ""])
-        self.assertNotIn("plain-example", json.dumps(list(found.values())))
-        self.assertFalse(hasattr(staged_diff, "masked"))
-        self.assertEqual(diffs.valid_diff(list(found.values())), [found[path] for path in sorted(found)])
+        self.assertEqual([found[path]["patch"] for path in ("added.txt", "app.py", "gone.txt", "logo.png")], ["@@ -0,0 +1 @@\n+fresh", APP_SHOWN, "@@ -1 +0,0 @@\n-bye", ""])
+        self.assertNotIn("plain-example", json.dumps(diff))
+        self.assertEqual(sealed, {"app.py": APP_CLEAR})
+        self.assertEqual(diffs.valid_diff(diff), [found[path] for path in sorted(found)])
+        self.assertEqual(diffs.valid_sealed(sealed, diff), sealed)
 
-    def test_an_armour_line_in_the_old_or_the_new_blob_withholds_the_whole_file(self):
+    def test_only_the_span_a_secret_rule_matches_is_masked_across_lines_and_the_rest_of_the_file_shows(self):
+        (self.repo / "app.py").write_text(f'lead = 1; {SECRET}; tail = 2\napi_key =\n    "plain-other-words"\nprint(2)\n', encoding="utf-8")
+        git(self.repo, "add", "app.py")
+        diff, sealed = staged_diff.review_diff(self.repo, self.rules)
+        app = next(entry for entry in diff if entry["path"] == "app.py")
+        self.assertEqual((app["note"], app["patch"].split("\n")), (MASKED, ["@@ -1,2 +1,4 @@", "-keep = 1", "-old = 2", f"+lead = 1; {MASK}; tail = 2", f"+{MASK}", f"+{MASK}", "+print(2)"]))
+        self.assertNotIn("plain-", json.dumps(diff))
+        self.assertEqual(sealed["app.py"].split("\n")[3:6], [f"+lead = 1; {SECRET}; tail = 2", "+api_key =", '+    "plain-other-words"'])
+
+    def test_an_armour_block_in_the_old_or_the_new_blob_is_masked_from_its_begin_through_its_end_line(self):
         (self.repo / "key.txt").write_text(ARMOURED, encoding="utf-8")
         (self.repo / "plain.txt").write_text("plain\n", encoding="utf-8")
         git(self.repo, "add", "key.txt", "plain.txt")
@@ -375,26 +428,37 @@ class TestStagedDiff(unittest.TestCase):
         (self.repo / "plain.txt").write_text("plain\n-----BEGIN lowercase is no armour-----\n", encoding="utf-8")
         (self.repo / "fresh.txt").write_text(ARMOURED, encoding="utf-8")
         git(self.repo, "add", "key.txt", "plain.txt", "fresh.txt")
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo,self.rules)}
-        self.assertEqual([(found[path]["patch"], found[path]["note"], found[path]["deletions"]) for path in ("key.txt", "fresh.txt")], [("", WITHHELD, 3), ("", WITHHELD, 0)])
+        diff, sealed = staged_diff.review_diff(self.repo, self.rules)
+        found = {entry["path"]: entry for entry in diff}
+        self.assertEqual([(found[path]["patch"], found[path]["note"], found[path]["deletions"]) for path in ("key.txt", "fresh.txt")], [
+            (f"@@ -1,5 +1,2 @@\n before\n-{MASK}\n-{MASK}\n-{MASK}\n after", MASKED, 3), (f"@@ -0,0 +1,5 @@\n+before\n+{MASK}\n+{MASK}\n+{MASK}\n+after", MASKED, 0),
+        ])
         self.assertEqual((found["plain.txt"]["note"], found["plain.txt"]["additions"]), ("", 1))
-        self.assertNotIn("plain words only", json.dumps(list(found.values())))
+        self.assertNotIn("plain words only", json.dumps(diff))
+        self.assertEqual(sorted(sealed), ["fresh.txt", "key.txt"])
+        self.assertIn("-plain words only", sealed["key.txt"].split("\n"))
 
-    def test_past_the_cap_the_rest_is_listed_by_stat_only(self):
+    def test_past_the_cap_the_rest_is_listed_by_stat_only_and_a_masked_file_stays_sealed(self):
         with mock.patch.object(staged_diff, "DIFF_LIMIT", 40):
-            found = staged_diff.review_diff(self.repo,self.rules)
-        self.assertEqual([(entry["path"], bool(entry["patch"]), entry["note"]) for entry in found], [("added.txt", True, ""), ("app.py", False, WITHHELD), ("gone.txt", False, ""), ("logo.png", False, "")])
+            found, sealed = staged_diff.review_diff(self.repo, self.rules)
+        self.assertEqual([(entry["path"], bool(entry["patch"]), entry["note"]) for entry in found], [("added.txt", True, ""), ("app.py", False, MASKED), ("gone.txt", False, ""), ("logo.png", False, "")])
         self.assertEqual([(entry["additions"], entry["deletions"]) for entry in found], [(1, 0), (3, 1), (0, 1), (0, 0)])
+        self.assertEqual(sealed, {"app.py": APP_CLEAR})
 
-    def test_without_secret_rules_or_with_a_broken_rule_file_every_text_file_is_withheld(self):
+    def test_without_secret_rules_or_with_a_broken_rule_file_every_text_file_is_withheld_and_sealed(self):
         broken = self.root / "broken-rules"
         broken.mkdir()
         (broken / "bad.yaml").write_text("cwe: CWE-798\nrules: [unclosed\n", encoding="utf-8")
         for rules in (None, self.root / "missing", broken):
             with self.subTest(rules=str(rules)):
-                found = staged_diff.review_diff(self.repo,rules)
+                found, sealed = staged_diff.review_diff(self.repo, rules)
                 self.assertEqual([(entry["patch"], entry["note"]) for entry in found], [("", WITHHELD)] * 3 + [("", "")])
+                self.assertEqual(sealed, {"added.txt": "@@ -0,0 +1 @@\n+fresh", "app.py": APP_CLEAR, "gone.txt": "@@ -1 +0,0 @@\n-bye"})
         self.assertIsNone(staged_diff.secret_rules(broken))
+
+    def test_the_sealed_patches_stop_at_their_own_limit(self):
+        with mock.patch.object(staged_diff, "SEALED_LIMIT", 30):
+            self.assertEqual(staged_diff.review_diff(self.repo, None)[1], {"added.txt": "@@ -0,0 +1 @@\n+fresh"})
 
     def test_the_diff_fails_past_the_file_cap_or_the_path_limit_instead_of_the_hub_refusing_it(self):
         for name, value in (("FILE_CAP", 3), ("PATH_LIMIT", 8)):
@@ -430,13 +494,13 @@ class TestStagedDiff(unittest.TestCase):
         (self.repo / "open.txt").write_text("seen = 1\n", encoding="utf-8")
         git(self.repo, "add", "vault", "open.txt")
         write_settings(self.repo / ".claude" / "settings.local.json", deny(["~/repo/vault"]))
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)[0]}
         self.assertEqual([found[path]["patch"] for path in ("vault/key", "open.txt")], ["", "@@ -0,0 +1 @@\n+seen = 1"])
         self.assertNotIn("stolen", json.dumps(list(found.values())))
 
     def test_the_staged_diff_without_any_settings_file_diffs_normal_files(self):
         self.assertEqual([file for file, _ in sandbox_paths.settings_files(self.repo) if file.exists()], [])
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)[0]}
         self.assertEqual((found["added.txt"]["patch"], found["app.py"]["additions"]), ("@@ -0,0 +1 @@\n+fresh", 3))
 
     def test_a_planted_empty_deny_read_list_still_leaves_the_floor_unread(self):
@@ -446,7 +510,7 @@ class TestStagedDiff(unittest.TestCase):
         git(self.repo, "add", ".ssh", "notes.txt")
         write_settings(self.repo / ".claude" / "settings.json", deny([]))
         with mock.patch.dict(os.environ, {"HOME": str(self.repo)}):
-            found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)}
+            found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)[0]}
         self.assertEqual([found[path]["patch"] for path in (".ssh/id_ed25519", "notes.txt")], ["", "@@ -0,0 +1 @@\n+seen = 1"])
         self.assertNotIn("stolen", json.dumps(list(found.values())))
 
@@ -463,7 +527,7 @@ class TestStagedDiff(unittest.TestCase):
         (self.repo / "vault" / "key").write_text("stolen = 1\n", encoding="utf-8")
         git(self.repo, "add", "vault")
         write_settings(self.repo / ".claude" / "settings.json", deny(["vault"]))
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo,self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo,self.rules)[0]}
         self.assertEqual((found["vault/key"]["status"], found["vault/key"]["patch"], found["added.txt"]["patch"]), ("A", "", "@@ -0,0 +1 @@\n+fresh"))
 
     def test_the_session_project_settings_and_read_rules_add_denies(self):
@@ -474,7 +538,7 @@ class TestStagedDiff(unittest.TestCase):
         write_settings(self.root / "project" / ".claude" / "settings.local.json", deny(["~/repo/vault"]))
         write_settings(self.repo / ".claude" / "settings.json", {"permissions": {"deny": ["Read(/notes.txt)", "Bash(rm:*)"]}})
         write_settings(self.root / ".claude" / "settings.json", {"permissions": {"deny": ["Read(*.pem)"]}})
-        found = {entry["path"]: entry["patch"] for entry in staged_diff.review_diff(self.repo, self.rules)}
+        found = {entry["path"]: entry["patch"] for entry in staged_diff.review_diff(self.repo, self.rules)[0]}
         self.assertEqual([found[path] for path in ("vault/key", "notes.txt", "deep.pem", "open.txt")], ["", "", "", "@@ -0,0 +1 @@\n+seen = 1"])
 
     def test_each_settings_scope_resolves_relative_entries_from_its_own_folder_and_read_rules_like_claude_code(self):
@@ -498,14 +562,14 @@ class TestStagedDiff(unittest.TestCase):
         self.assertFalse(sandbox_paths.denied(str(self.repo / "env.txt"), roots))
         (self.repo / ".env").write_text("hidden = 1\n", encoding="utf-8")
         git(self.repo, "add", ".env")
-        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)}
+        found = {entry["path"]: entry for entry in staged_diff.review_diff(self.repo, self.rules)[0]}
         self.assertEqual((found[".env"]["patch"], found["added.txt"]["patch"]), ("", "@@ -0,0 +1 @@\n+fresh"))
 
     def test_an_allow_turns_into_a_deny_when_the_staged_tree_changed_since_the_preview_even_in_a_file_it_withholds(self):
         ask = {**ASK, "tool": "Bash", "command": "git commit -m x", "cwd": str(self.repo)}
         changed = {"behavior": "deny", "message": "staged tree changed since the preview"}
         edits = {
-            "withheld content": lambda: (self.repo / "app.py").write_text(f"{SECRET}\nslipped in\n", encoding="utf-8"),
+            "masked content": lambda: (self.repo / "app.py").write_text(f"{SECRET}\nslipped in\n", encoding="utf-8"),
             "mode only": lambda: (self.repo / "added.txt").chmod(0o755),
             "binary": lambda: (self.repo / "logo.png").write_bytes(b"\x89PNG\x00\x03"),
         }
@@ -514,7 +578,8 @@ class TestStagedDiff(unittest.TestCase):
                 git(self.repo, "add", "-A")
                 pinned, shown = permission_hook.commit_diff(ask, self.rules)
                 index = subprocess.run(["git", "ls-files", "-s", "-z"], cwd=self.repo, capture_output=True, check=True).stdout
-                self.assertEqual((pinned, shown["diff"]), (hashlib.sha256(index).hexdigest(), staged_diff.review_diff(self.repo,self.rules)))
+                diff, sealed = staged_diff.review_diff(self.repo, self.rules)
+                self.assertEqual((pinned, shown), (hashlib.sha256(index).hexdigest(), {"diff": diff, "sealed": sealed}))
                 self.assertEqual(permission_hook.bound(ALLOW, ask, pinned), ALLOW)
                 edit()
                 self.assertEqual(permission_hook.bound(ALLOW, ask, pinned), ALLOW)
@@ -553,12 +618,12 @@ class TestStagedDiff(unittest.TestCase):
         empty = self.root / "empty-rules"
         empty.mkdir()
         (empty / "none.yaml").write_text("rules: []\n", encoding="utf-8")
-        self.assertEqual({(entry["patch"], entry["note"]) for entry in staged_diff.review_diff(self.repo,empty)}, {("", WITHHELD), ("", "")})
+        self.assertEqual({(entry["patch"], entry["note"]) for entry in staged_diff.review_diff(self.repo,empty)[0]}, {("", WITHHELD), ("", "")})
 
     def test_a_file_name_that_is_no_utf8_ships_as_backslash_escapes(self):
         (self.repo / os.fsdecode(b"caf\xe9.txt")).write_text("x\n", encoding="utf-8")
         git(self.repo, "add", "-A")
-        found = staged_diff.review_diff(self.repo,self.rules)
+        found = staged_diff.review_diff(self.repo,self.rules)[0]
         self.assertIn("caf\\xe9.txt", [entry["path"] for entry in found])
         json.dumps(found, ensure_ascii=False).encode("utf-8")
 
@@ -566,7 +631,7 @@ class TestStagedDiff(unittest.TestCase):
         tree = git(self.repo, "rev-parse", "HEAD^{tree}").strip()
         (self.repo / "added.txt").write_text("one\x0ctwo\n", encoding="utf-8")
         git(self.repo, "add", "added.txt")
-        self.assertEqual(next(entry for entry in staged_diff.review_diff(self.repo,self.rules) if entry["path"] == "added.txt")["additions"], 1)
+        self.assertEqual(next(entry for entry in staged_diff.review_diff(self.repo,self.rules)[0] if entry["path"] == "added.txt")["additions"], 1)
         (self.repo / ".git" / "objects" / tree[:2] / tree[2:]).unlink()
         with self.assertRaises(staged_diff.DiffError):
             staged_diff.review_diff(self.repo,self.rules)
@@ -577,7 +642,7 @@ class TestStagedDiff(unittest.TestCase):
         git(fresh, "init", "-q", "-b", "main")
         (fresh / "one.txt").write_text("one\n", encoding="utf-8")
         git(fresh, "add", "one.txt")
-        self.assertEqual([(entry["path"], entry["status"]) for entry in staged_diff.review_diff(fresh, self.rules)], [("one.txt", "A")])
+        self.assertEqual([(entry["path"], entry["status"]) for entry in staged_diff.review_diff(fresh, self.rules)[0]], [("one.txt", "A")])
         commit = git(self.repo, "rev-parse", "HEAD").strip()
         (self.repo / ".git" / "objects" / commit[:2] / commit[2:]).unlink()
         with self.assertRaises(staged_diff.DiffError):
@@ -680,8 +745,14 @@ class TestHubOperatorTasks(HubCase):
         status, _, body = self.get(f"/api/diffs/review/{answer['id']}")
         self.assertEqual(status, 200, body)
         shipped = json.loads(body)["diff"]
-        self.assertEqual([(entry["path"], entry["status"], entry["note"]) for entry in shipped], [("added.txt", "A", ""), ("app.py", "M", WITHHELD), ("gone.txt", "D", ""), ("logo.png", "B", "")])
+        self.assertEqual([(entry["path"], entry["status"], entry["note"]) for entry in shipped], [("added.txt", "A", ""), ("app.py", "M", MASKED), ("gone.txt", "D", ""), ("logo.png", "B", "")])
+        self.assertEqual(shipped[1]["patch"], APP_SHOWN)
         self.assertNotIn(b"plain-example", body)
+        self.assertNotIn("plain-example", json.dumps(self.snapshot()))
+        sealed = self.state / "pages" / f"{answer['id']}.review-sealed.json"
+        self.assertEqual(sealed.stat().st_mode & 0o777, 0o600)
+        status, _, body = self.reveal("review", answer["id"], ["app.py"], self.reveal_proof("review", answer["id"], ["app.py"], self.pin()))
+        self.assertEqual((status, json.loads(body)["patches"]), (200, {"app.py": APP_CLEAR}), body)
         self.assertEqual(self.tool("review_status", {"id": answer["id"]})["structuredContent"]["tree"], git(repo, "write-tree").strip())
         for path in ("/api/diffs/review/0123456789abcdef", f"/api/diffs/ask/{answer['id']}", f"/api/diffs/decision/{answer['id']}"):
             with self.subTest(path=path):
@@ -694,8 +765,13 @@ class TestHubOperatorTasks(HubCase):
         self.assertFalse(result["isError"], result)
         self.assertEqual(len(json.loads(self.get(f"/api/diffs/review/{result['structuredContent']['id']}")[2])["diff"]), 5)
         good = {"path": "a", "status": "M", "mode": "100644 => 100755", "additions": 1, "deletions": 0, "patch": "@@ -1 +1 @@\n+x", "note": ""}
-        self.assertFalse(self.tool("review_request", {**arguments, "diff": [good, {**good, "path": "b", "patch": "", "note": WITHHELD}]})["isError"])
-        for broken in ([{**good, "status": "X"}], [{**good, "status": "B"}], [{**good, "mode": "755"}], [{**good, "note": "masked"}], [{**good, "note": WITHHELD}], [{**good, "masked": []}],
+        hidden = [good, {**good, "path": "b", "patch": "", "note": WITHHELD}, {**good, "path": "c", "note": MASKED}]
+        self.assertFalse(self.tool("review_request", {**arguments, "diff": hidden, "sealed": {"b": "@@ -1 +1 @@\n+y", "c": "@@ -1 +1 @@\n+z"}})["isError"])
+        for sealed in ({"a": "x"}, {"b": 1}, ["b"], {"b": "x" * (hub_limits.SEALED_LIMIT + 1)}):
+            with self.subTest(sealed=str(sealed)[:60]):
+                self.assertTrue(self.tool("review_request", {**arguments, "diff": hidden, "sealed": sealed})["isError"])
+        self.assertTrue(self.tool("review_request", {**{key: value for key, value in arguments.items() if key != "diff"}, "sealed": {"b": "x"}})["isError"])
+        for broken in ([{**good, "status": "X"}], [{**good, "status": "B"}], [{**good, "mode": "755"}], [{**good, "note": "hidden"}], [{**good, "note": WITHHELD}], [{**good, "masked": []}],
                        [{**good, "extra": 1}], [{**good, "additions": -1}], {"a": 1}, [{**good, "path": "p" * (hub_limits.PATH_LIMIT + 1)}], [good] * (hub_limits.FILE_CAP + 1),
                        [{**good, "patch": "x" * (diffs.DIFF_LIMIT + 1)}]):
             with self.subTest(broken=str(broken)[:60]):
@@ -726,6 +802,10 @@ class TestHubOperatorTasks(HubCase):
         self.assertEqual((item["kind"], item["diff"]), ("ask", 4))
         status, _, body = self.get(f"/api/diffs/ask/{ask_id}")
         self.assertEqual((status, [entry["status"] for entry in json.loads(body)["diff"]]), (200, ["A", "M", "D", "B"]))
+        self.assertEqual((attached["sealed"], json.loads(body)["diff"][1]["patch"]), ({"app.py": APP_CLEAR}, APP_SHOWN))
+        self.assertEqual((self.state / "pages" / f"{ask_id}.ask-sealed.json").stat().st_mode & 0o777, 0o600)
+        status, _, body = self.reveal("ask", ask_id, ["app.py"], self.reveal_proof("ask", ask_id, ["app.py"], self.pin()))
+        self.assertEqual((status, json.loads(body)["patches"]), (200, {"app.py": APP_CLEAR}), body)
         plain = self.create_ask(ASK)
         self.assertIsNone(next(item for item in self.snapshot()["inbox"] if item["id"] == plain)["diff"])
         self.assertEqual(self.post_json("/api/asks", {**ASK, "diff": [{"path": "a"}]}, self.local())[0], 400)
@@ -759,7 +839,8 @@ class TestSharedLimits(unittest.TestCase):
         self.assertEqual(Path(signed.limits.__file__).resolve(), (HUB / "client" / "hub_limits.py").resolve())
         self.assertEqual((staged_diff.DIFF_LIMIT, diffs.DIFF_LIMIT, reviewing.NOTES_LIMIT), (hub_limits.DIFF_LIMIT, hub_limits.DIFF_LIMIT, hub_limits.NOTES_LIMIT))
         self.assertEqual((diffs.DIFF_BODY_LIMIT, diffs.FILE_CAP, diffs.PATH_LIMIT, fields.PATH_LIMIT, permission_hook.PATH_LIMIT), (hub_limits.DIFF_BODY_LIMIT, hub_limits.FILE_CAP, *[hub_limits.PATH_LIMIT] * 3))
-        self.assertEqual((staged_diff.WITHHELD, diffs.NOTES), (WITHHELD, ("", WITHHELD)))
+        self.assertEqual((staged_diff.WITHHELD, staged_diff.MASKED, staged_diff.MASK, diffs.NOTES), (WITHHELD, MASKED, MASK, ("", WITHHELD, MASKED)))
+        self.assertEqual((staged_diff.SEALED_LIMIT, diffs.SEALED_LIMIT), (hub_limits.SEALED_LIMIT, hub_limits.SEALED_LIMIT))
         self.assertTrue(fields.PATH.fullmatch("/" + "p" * (hub_limits.PATH_LIMIT - 1)))
         self.assertFalse(fields.PATH.fullmatch("/" + "p" * hub_limits.PATH_LIMIT))
 

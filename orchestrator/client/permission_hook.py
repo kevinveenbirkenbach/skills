@@ -18,9 +18,10 @@ Returns:
         takes or a hub that is down, so Claude Code shows its own dialog.
         The exit code is 0. An ask for a Bash git commit of exactly the
         staged index (staged_diff.commit_of) carries the diff staged_diff.py
-        builds of the tree its directory stages, content withheld per the
-        MEDUSA rules of the pipx install; none when it cannot be built or
-        the body would pass DIFF_BODY_LIMIT. An allow of such an ask turns
+        builds of the tree its directory stages, secrets masked per the
+        MEDUSA rules of the pipx install, and the sealed clear patches of
+        its masked files apart; neither when it cannot be built or the body
+        would pass DIFF_BODY_LIMIT. An allow of such an ask turns
         into a deny with CHANGED when what the commit records
         (staged_diff.binding) differs right before answering from the
         preview's, and with UNBOUND when either cannot be read. Any other
@@ -88,8 +89,9 @@ def unapprovable(ask: dict) -> bool:
 def commit_diff(ask: dict, rules: Path | None) -> tuple[str | None, dict]:
     """Returns:
         For a commit ask, what the commit records (staged_diff.binding, None
-        when it cannot be read) and {"diff": the preview of exactly that},
-        {} when it cannot be built; None and {} for any other ask.
+        when it cannot be read) and {"diff": the preview of exactly that,
+        "sealed": the clear patches of its masked files}, {} when it cannot
+        be built; None and {} for any other ask.
     """
     target = commit_target(ask)
     if target is None:
@@ -100,7 +102,8 @@ def commit_diff(ask: dict, rules: Path | None) -> tuple[str | None, dict]:
         print(f"kvb-orchestrator: the ask goes without its diff and an allow of it turns into a deny: {error}", file=sys.stderr)
         return None, {}
     try:
-        return pinned, {"diff": staged_diff.bound_diff(target, pinned, rules)}
+        diff, sealed = staged_diff.bound_diff(target, pinned, rules)
+        return pinned, {"diff": diff, "sealed": sealed}
     except FAILURES as error:
         print(f"kvb-orchestrator: the ask goes without its diff: {error}", file=sys.stderr)
         return pinned, {}

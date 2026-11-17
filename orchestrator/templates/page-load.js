@@ -21,6 +21,7 @@
       const previous = state.now;
       const resumed = ui.offline;
       state = next;
+      forgetRevealed();
       ui.offline = false;
       if (JSON.stringify(state.settings) !== settingsSig) {
         adoptSettings(state.settings);

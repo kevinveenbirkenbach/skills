@@ -6,7 +6,15 @@ import stat
 import time
 from pathlib import Path
 
-from .diffs import DIFF_SUFFIX, diff_bytes, stored_diff, valid_diff
+from .diffs import (
+    DIFF_SUFFIX,
+    SEALED_SUFFIX,
+    diff_bytes,
+    sealed_bytes,
+    stored_diff,
+    valid_diff,
+    valid_sealed,
+)
 from .errors import Conflict, Missing, ToolError
 from .fields import WAIT_CAP, bounded, decode, expect, field, seconds
 from .review_page import review_files
@@ -17,7 +25,7 @@ NOTES_LIMIT = limits.NOTES_LIMIT
 SCORE_LIMIT = 500
 GATES = ("pass", "fail")
 REQUEST = ("repo", "worktree", "branch", "tree", "title", "page", "notes", "gate", "score")
-OPTIONAL = ("agent", "diff")
+OPTIONAL = ("agent", "diff", "sealed")
 LISTED = ("id", "created", "worktree", "branch", "tree", "title")
 STATE = ("id", "status", "tree", "decided")
 
@@ -67,9 +75,12 @@ class Reviewing:
         score = " ".join(bounded(arguments, "score", SCORE_LIMIT).split())
         agent = field(arguments, "agent").strip() if "agent" in arguments else ""
         diff = valid_diff(arguments["diff"]) if "diff" in arguments else None
+        sealed = valid_sealed(arguments["sealed"], diff) if "sealed" in arguments else {}
         page = self.read_page(field(arguments, "page"))
         extra = {"notes": notes, "gate": arguments["gate"], "score": score, "agent": agent, "diff_files": None if diff is None else len(diff)}
         attached = {} if diff is None else {DIFF_SUFFIX["review"]: diff_bytes(diff)}
+        if sealed:
+            attached[SEALED_SUFFIX["review"]] = sealed_bytes(sealed)
         review = self.reviews.submit({**fields, "title": fields["title"].strip(), **extra}, page, review_files(page), attached)
         self.automate("review", review)
         return {"id": review["id"], "status": review["status"], "url": self.url()}

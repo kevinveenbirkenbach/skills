@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from .choosing import EVERYONE, answer_text
-from .diffs import store_diff, valid_diff
+from .diffs import sealed_file, store_diff, store_sealed, valid_diff, valid_sealed
 from .errors import Conflict, Missing, ToolError
 from .fields import (
     COMMAND_LIMIT,
@@ -65,16 +65,20 @@ class Asking:
     def ask(self, body: bytes) -> dict:
         payload = decode(body)
         diff = valid_diff(payload.pop("diff")) if "diff" in payload else None
+        sealed = valid_sealed(payload.pop("sealed"), diff) if "sealed" in payload else {}
         expect(payload, ("tool", *ASK_TEXTS, "timeout"))
         values = {name: bounded(payload, name, limit) for name, limit in ASK_TEXTS.items()}
         visible(values)
         lifetime = seconds(payload, "timeout", ASK_LIFETIME)
         created = time.time()
         fields = {**values, "tool": field(payload, "tool").strip(), "status": "pending", "decided": None, "proof": None, "diff_files": None if diff is None else len(diff)}
-        ask_id = self.asks.fresh()
-        if diff is not None:
-            store_diff(self.reviews.pages, "ask", ask_id, diff)
-        record = self.asks.insert(ask_id, {**fields, "created_ts": created, "expires": created + lifetime})
+        with self.asks.changed:
+            ask_id = self.asks.fresh()
+            if diff is not None:
+                store_diff(self.reviews.pages, "ask", ask_id, diff)
+            if sealed:
+                store_sealed(self.reviews.pages, "ask", ask_id, sealed)
+            record = self.asks.insert(ask_id, {**fields, "created_ts": created, "expires": created + lifetime})
         self.automate("ask", record)
         return {"id": record["id"], "status": record["status"]}
 
@@ -85,7 +89,10 @@ class Asking:
             raise Missing(ask_id)
         left = max(record["expires"] - time.time(), 0.0)
         record = self.asks.wait(ask_id, min(wait or 0.0, WAIT_CAP, left))
-        return ask_state(record, time.time())
+        state = ask_state(record, time.time())
+        if state["status"] == "expired":
+            sealed_file(self.reviews.pages, "ask", ask_id).unlink(missing_ok=True)
+        return state
 
     def settle(self, kind_name: str, item_id: str, verb: str, body: bytes) -> dict:
         if kind_name == "asks" and verb in ANSWERS:

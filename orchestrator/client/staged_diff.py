@@ -6,19 +6,24 @@
     pinned: for bound_diff, what binding returned for the same cwd.
 
 Returns:
-    review_diff, tree_diff, bound_diff: the review diff of requirement 003
-        of the staged tree against HEAD (git diff --cached), one {path,
-        status, mode, additions, deletions, patch, note} per changed path,
-        sorted by path, status A, M, D or B (binary); path is the file name
-        with bytes that are no UTF-8 written as backslash escapes; mode the
-        git file mode, "old => new" when it changed. patch holds the unified
-        hunks; it is empty for a binary file, a gitlink, a side over
-        BLOB_LIMIT bytes (counted 0/0), a path sandbox_paths denies (its
-        FLOOR and the settings' deny lists) and every file past DIFF_LIMIT
-        bytes of JSON-encoded patch text. A file whose old or new content
-        holds an ARMOUR line or matches a MEDUSA secret rule for its name,
-        and every file when no secret rule pattern loads, ships no patch,
-        only its counts and the note WITHHELD. The diff fails when more
+    review_diff, tree_diff, bound_diff: (diff, sealed). diff is the review
+        diff of requirement 003 of the staged tree against HEAD (git diff
+        --cached), one {path, status, mode, additions, deletions, patch,
+        note} per changed path, sorted by path, status A, M, D or B
+        (binary); path is the file name with bytes that are no UTF-8
+        written as backslash escapes; mode the git file mode, "old => new"
+        when it changed. patch holds the unified hunks; it is empty for a
+        binary file, a gitlink, a side over BLOB_LIMIT bytes (counted 0/0),
+        a path sandbox_paths denies (its FLOOR and the settings' deny lists)
+        and every file past DIFF_LIMIT bytes of JSON-encoded patch text. In
+        a shown line every match of a MEDUSA secret rule for the file's name
+        and every line from an ARMOUR line through its ARMOUR_END line reads
+        MASK, and the file carries the note MASKED; when no secret rule
+        pattern loads, every text file ships no patch, only its counts and
+        the note WITHHELD. sealed maps the path of each MASKED or WITHHELD
+        file to its clear patch, while their JSON-encoded text stays within
+        SEALED_LIMIT bytes; diff never holds a masked span in clear. The
+        diff fails when more
         than FILE_CAP paths changed or one is longer than PATH_LIMIT, a
         settings file sandbox_paths reads is unreadable, the working tree
         lies under a denied path, HEAD exists but its tree cannot be listed,
@@ -46,9 +51,11 @@ is read.
 
 from __future__ import annotations
 
+import bisect
 import difflib
 import fnmatch
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -63,6 +70,9 @@ DIFF_LIMIT = hub_limits.DIFF_LIMIT
 FILE_CAP = hub_limits.FILE_CAP
 PATH_LIMIT = hub_limits.PATH_LIMIT
 WITHHELD = hub_limits.WITHHELD
+MASKED = hub_limits.MASKED
+MASK = hub_limits.MASK
+SEALED_LIMIT = hub_limits.SEALED_LIMIT
 BLOB_LIMIT = 2 << 20
 BINARY_PROBE = 8000
 CONTEXT = 3
@@ -100,8 +110,11 @@ SHORT_ARGS = set("mFcCtuSU")
 KEPT_VARS = {"GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "GIT_PAGER", "GIT_TERMINAL_PROMPT", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE"}
 ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=.*")
 ARMOUR = re.compile(r"-----BEGIN [A-Z0-9 ]+-----")
+ARMOUR_END = re.compile(r"-----END [A-Z0-9 ]+-----")
+HUNK = re.compile(r"@@ -([0-9]+)(?:,[0-9]+)? \+([0-9]+)(?:,[0-9]+)? @@")
 Patterns = list[re.Pattern]
 Rules = list[tuple[tuple[str, ...], Patterns]]
+Spans = list[list[tuple[int, int]]]
 
 
 class DiffError(Exception):
@@ -200,7 +213,7 @@ def binding(cwd: Path) -> str:
     return hashlib.sha256(staged(toplevel(cwd))).hexdigest()
 
 
-def bound_diff(cwd: Path, pinned: str, rules: Path | None) -> list[dict]:
+def bound_diff(cwd: Path, pinned: str, rules: Path | None) -> tuple[list[dict], dict[str, str]]:
     index = staged(toplevel(cwd))
     if hashlib.sha256(index).hexdigest() != pinned:
         raise DiffError("the staged tree changed while its preview was read")
@@ -325,32 +338,114 @@ def rule_patterns(path: str, rules: Rules) -> Patterns:
     return [pattern for globs, found in rules if any(fnmatch.fnmatchcase(name, glob.lower()) for glob in globs) for pattern in found]
 
 
-def withheld(path: str, texts: tuple[str, str], rules: Rules | None) -> bool:
-    if not rules or not any(patterns for _, patterns in rules):
-        return True
-    patterns = [ARMOUR, *rule_patterns(path, rules)]
-    return any(pattern.search(text) for text in texts for pattern in patterns)
+def any_pattern(rules: Rules | None) -> bool:
+    return bool(rules) and any(patterns for _, patterns in rules)
 
 
-def entry(head: dict, before: bytes | None, after: bytes | None, rules: Rules | None) -> tuple[dict, list[str]]:
+def armour_lines(lines: list[str]) -> set[int]:
+    """Returns:
+        The numbers (from 0) of every line from an ARMOUR line through its
+        ARMOUR_END line, through the last line when no end follows.
+    """
+    found, inside = set(), False
+    for number, line in enumerate(lines):
+        inside = inside or ARMOUR.search(line) is not None
+        if inside:
+            found.add(number)
+            inside = ARMOUR_END.search(line) is None
+    return found
+
+
+def hit_spans(text: str, patterns: Patterns) -> Spans:
+    """Returns:
+        Per line of text (text_lines), the [start, end) columns that a match
+        of a pattern covers, the whole line inside an armour block.
+    """
+    lines = text_lines(text)
+    spans: Spans = [[] for _ in lines]
+    starts = list(itertools.accumulate((len(line) + 1 for line in lines), initial=0))
+    for number in armour_lines(lines):
+        spans[number].append((0, len(lines[number])))
+    for pattern in patterns:
+        for match in pattern.finditer(text):
+            for number in range(bisect.bisect_right(starts, match.start()) - 1, len(lines)):
+                if starts[number] >= match.end():
+                    break
+                begin, end = max(match.start(), starts[number]) - starts[number], min(match.end(), starts[number] + len(lines[number])) - starts[number]
+                if end > begin:
+                    spans[number].append((begin, end))
+    return spans
+
+
+def merged(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    found: list[tuple[int, int]] = []
+    for begin, end in sorted(spans):
+        if found and begin <= found[-1][1]:
+            found[-1] = (found[-1][0], max(found[-1][1], end))
+        else:
+            found.append((begin, end))
+    return found
+
+
+def masked(line: str, spans: list[tuple[int, int]]) -> str:
+    parts, at = [], 0
+    for begin, end in merged(spans):
+        parts += [line[at:begin], MASK]
+        at = end
+    return "".join([*parts, line[at:]])
+
+
+def masked_patch(lines: list[str], old: Spans, new: Spans) -> list[str]:
+    """Args:
+        lines: unified diff lines from the first hunk header on.
+        old, new: hit_spans() of the old and the new text.
+
+    Returns:
+        The lines with every span of their old or new line masked; a
+        context line takes the spans of both sides.
+    """
+    found, before, after = [], 0, 0
+    for line in lines:
+        hunk = HUNK.match(line)
+        if hunk:
+            before, after = int(hunk.group(1)) - 1, int(hunk.group(2)) - 1
+            found.append(line)
+            continue
+        sign, spans = line[:1], []
+        if sign in " -":
+            spans += old[before]
+            before += 1
+        if sign in " +":
+            spans += new[after]
+            after += 1
+        found.append(sign + masked(line[1:], spans) if spans else line)
+    return found
+
+
+def entry(head: dict, before: bytes | None, after: bytes | None, rules: Rules | None) -> tuple[dict, list[str], list[str] | None]:
     """Args:
         head: the entry's path, status and mode.
 
     Returns:
-        The diff entry without its patch, and the patch lines; no lines for
-        a binary side, one over BLOB_LIMIT or content withheld.
+        The diff entry without its patch, the patch lines to show, and the
+        clear lines when they differ from those shown (masked or withheld),
+        else None; no lines for a binary side or one over BLOB_LIMIT.
     """
     found = {**head, "additions": 0, "deletions": 0, "note": ""}
     if before is None or after is None:
-        return found, []
+        return found, [], None
     if b"\0" in before[:BINARY_PROBE] or b"\0" in after[:BINARY_PROBE]:
-        return {**found, "status": "B"}, []
+        return {**found, "status": "B"}, [], None
     texts = (before.decode("utf-8", "replace"), after.decode("utf-8", "replace"))
     lines = list(difflib.unified_diff(*map(text_lines, texts), lineterm="", n=CONTEXT))[2:]
     found.update(additions=sum(1 for line in lines if line.startswith("+")), deletions=sum(1 for line in lines if line.startswith("-")))
-    if withheld(head["path"], texts, rules):
-        return {**found, "note": WITHHELD}, []
-    return found, lines
+    if not any_pattern(rules):
+        return {**found, "note": WITHHELD}, [], lines or None
+    patterns = rule_patterns(head["path"], rules)
+    shown = masked_patch(lines, *(hit_spans(text, patterns) for text in texts))
+    if shown == lines:
+        return found, lines, None
+    return {**found, "note": MASKED}, shown, lines
 
 
 def content_of(side: tuple[str, str] | None, gitlink: bool, contents: dict[str, bytes | None]) -> bytes | None:
@@ -359,11 +454,11 @@ def content_of(side: tuple[str, str] | None, gitlink: bool, contents: dict[str, 
     return None if gitlink else contents.get(side[1])
 
 
-def review_diff(cwd: Path, rules: Path | None) -> list[dict]:
+def review_diff(cwd: Path, rules: Path | None) -> tuple[list[dict], dict[str, str]]:
     return built(cwd, sides(cwd, None, None), rules)
 
 
-def tree_diff(cwd: Path, tree: str, rules: Path | None) -> list[dict]:
+def tree_diff(cwd: Path, tree: str, rules: Path | None) -> tuple[list[dict], dict[str, str]]:
     return built(cwd, sides(cwd, tree, None), rules)
 
 
@@ -380,7 +475,7 @@ def shown_path(path: str) -> str:
     return shown
 
 
-def path_entry(path: str, before: tuple[str, str] | None, after: tuple[str, str] | None, contents: dict[str, bytes | None], rules: Rules | None) -> tuple[dict, list[str]]:
+def path_entry(path: str, before: tuple[str, str] | None, after: tuple[str, str] | None, contents: dict[str, bytes | None], rules: Rules | None) -> tuple[dict, list[str], list[str] | None]:
     status = "A" if before is None else "D" if after is None else "M"
     gitlink = any(side is not None and side[0] == GITLINK for side in (before, after))
     modes = list(dict.fromkeys(side[0] for side in (before, after) if side is not None))
@@ -388,7 +483,11 @@ def path_entry(path: str, before: tuple[str, str] | None, after: tuple[str, str]
     return entry(head, content_of(before, gitlink, contents), content_of(after, gitlink, contents), rules)
 
 
-def built(cwd: Path, found_sides: tuple[dict, dict, dict[str, bytes | None]], rules: Path | None) -> list[dict]:
+def encoded_size(text: str) -> int:
+    return len(json.dumps(text, ensure_ascii=False).encode("utf-8"))
+
+
+def built(cwd: Path, found_sides: tuple[dict, dict, dict[str, bytes | None]], rules: Path | None) -> tuple[list[dict], dict[str, str]]:
     old, new, contents = found_sides
     changed = sorted(path for path in {*old, *new} if old.get(path) != new.get(path))
     if len(changed) > FILE_CAP:
@@ -397,18 +496,21 @@ def built(cwd: Path, found_sides: tuple[dict, dict, dict[str, bytes | None]], ru
         shown_path(path)
     fetched(cwd, old, new, changed, contents)
     secrets = secret_rules(rules)
-    diff, spent, full = [], 0, False
+    diff, sealed, spent, kept, full = [], {}, 0, 0, False
     for path in changed:
-        found, lines = path_entry(path, old.get(path), new.get(path), contents, secrets)
+        found, lines, clear = path_entry(path, old.get(path), new.get(path), contents, secrets)
         patch = "\n".join(lines)
-        size = len(json.dumps(patch, ensure_ascii=False).encode("utf-8"))
+        size = encoded_size(patch)
         full = full or spent + size > DIFF_LIMIT
         if full:
             patch = ""
         else:
             spent += size
         diff.append({**found, "patch": patch})
-    return diff
+        if clear is not None and kept + encoded_size("\n".join(clear)) <= SEALED_LIMIT:
+            sealed[found["path"]] = "\n".join(clear)
+            kept += encoded_size(sealed[found["path"]])
+    return diff, sealed
 
 
 def names_commit(command: str) -> bool:

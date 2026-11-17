@@ -1,5 +1,44 @@
   const DIFF_TONES = {A: "ok", M: "info", D: "bad", R: "violet", B: "neutral"};
-  const diffView = {cache: new Map(), version: 0, float: null, picked: null, timer: 0};
+  const HIDDEN_NOTES = new Set(["masked", "content withheld"]);
+  const diffView = {cache: new Map(), revealed: new Map(), version: 0, float: null, picked: null, timer: 0};
+  const revealedOf = (item) => diffView.revealed.get(keyOf(item)) || new Map();
+  const hiddenFile = (item, file) => HIDDEN_NOTES.has(file.note) && !revealedOf(item).has(file.path);
+
+  function forgetRevealed() {
+    const waiting = new Set(state.inbox.map(keyOf));
+    for (const key of [...diffView.revealed.keys()]) {
+      if (!waiting.has(key)) {
+        diffView.revealed.delete(key);
+      }
+    }
+  }
+
+  async function revealFiles(item, paths) {
+    const route = `/api/diffs/${item.kind}/${encodeURIComponent(item.id)}/reveal`;
+    const label = paths.length === 1 ? `Reveal: ${short(paths[0])}` : `Reveal ${paths.length} files`;
+    const signed = await signedProof(`${route}/sign`, {paths}, label, null);
+    if (!signed || !signed.proof) {
+      return;
+    }
+    const result = await sendJson(route, {paths, proof: signed.proof});
+    if (!result.ok || !result.data) {
+      toast(`${label}: not possible`, fail(result), false);
+      return;
+    }
+    diffView.revealed.set(keyOf(item), new Map([...revealedOf(item), ...Object.entries(result.data.patches)]));
+    diffView.version += 1;
+    drawInbox();
+    drawStream();
+  }
+
+  function revealButton(item, paths, words) {
+    const hint = `${words}: your passkey signs the reveal; the clear text stays in this page only and the reveal is logged`;
+    return h("button", {type: "button", class: "btn small ghost reveal", ...named(words, hint), on: {click: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      revealFiles(item, paths);
+    }}}, icon("bi-eye"), words);
+  }
 
   function diffOf(item) {
     if (!item || typeof item.diff !== "number" || !["review", "ask"].includes(item.kind)) {
@@ -30,17 +69,23 @@
       h("td", {class: "num"}, row.old), h("td", {class: "num"}, row.new), h("td", {class: "sign"}, SIGNS[row.kind] || " "), h("td", {class: "code"}, revealed(row.text)));
   }
 
-  function diffBlock(file) {
+  function diffBlock(item, raw) {
+    const clear = revealedOf(item).get(raw.path);
+    const hidden = hiddenFile(item, raw);
+    const file = clear === undefined ? raw : {...raw, patch: clear, note: ""};
     const tone = DIFF_TONES[file.status] || "neutral";
     const head = [h("span", {class: "letter", "data-tone": tone}, file.status), h("code", {class: "path"}, revealed(file.path)),
       file.mode && file.mode !== "100644" ? h("code", {class: "mode", title: `mode: ${file.mode}`}, file.mode) : null, h("span", {class: "spacer"}),
       file.note ? h("span", {class: "note", title: file.note}, icon("bi-eye-slash"), file.note) : null,
+      hidden ? revealButton(item, [file.path], "Reveal") : null,
+      clear === undefined ? null : h("span", {class: "note revealed", title: "revealed by your passkey, kept in this page only"}, icon("bi-eye"), "revealed"),
       file.status === "B" ? icon("bi-file-earmark-binary") : h("span", {class: "stat"}, h("span", {class: "add"}, `+${file.additions}`), h("span", {class: "del"}, `-${file.deletions}`))];
+    const shown = clear === undefined ? (hidden ? raw.note : null) : "revealed";
     if (file.status === "B" || !file.patch) {
-      return h("section", {class: "diff-file", "data-path": file.path, "data-status": file.status, "data-patch": "none"}, h("div", {class: "diff-head"}, head));
+      return h("section", {class: "diff-file", "data-path": file.path, "data-status": file.status, "data-patch": "none", "data-hidden": shown}, h("div", {class: "diff-head"}, head));
     }
     const table = h("table", {class: "diff"}, h("tbody", {}, Diffs.rows(file.patch).map(patchRow)));
-    return h("section", {class: "diff-file", "data-path": file.path, "data-status": file.status},
+    return h("section", {class: "diff-file", "data-path": file.path, "data-status": file.status, "data-hidden": shown},
       h("details", {open: !Diffs.collapsed(file)}, h("summary", {class: "diff-head"}, head), h("div", {class: "diff-scroll"}, table)));
   }
 
@@ -52,7 +97,10 @@
     if (found === "loading") {
       return h("p", {class: "muted"}, "…");
     }
-    return h("div", {class: "diff-files", "aria-label": `Diff: ${found.length}`}, found.map(diffBlock));
+    const hidden = found.filter((file) => hiddenFile(item, file)).map((file) => file.path);
+    return h("div", {class: "diff-files", "aria-label": `Diff: ${found.length}`},
+      hidden.length > 1 ? h("div", {class: "reveal-all"}, revealButton(item, hidden, `Reveal all ${hidden.length}`)) : null,
+      found.map((file) => diffBlock(item, file)));
   }
 
   function feedbackList(ref) {

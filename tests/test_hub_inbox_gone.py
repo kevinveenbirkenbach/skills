@@ -43,7 +43,7 @@ const context = {
   state: {inbox: [], radio: [], settings: {}, now},
   ui: {screen: "inbox", busy: false, selected: new Set(), cursor: 0, snoozed: false, asOf: null, playing: false, offline: false},
   known: {batches: new Set()}, motion: {current: new Map([["x", {}]]), asOf: null}, settingsSig: "{}",
-  windowQuery: () => "", adoptSettings: () => {}, tuneMusic: () => {}, drawSky: () => {}, announce: () => {}, drawTime: () => {}, drawAgent: () => {}, relayout: () => {}, pulses: () => {}, tick: () => {},
+  windowQuery: () => "", adoptSettings: () => {}, tuneMusic: () => {}, drawSky: () => {}, announce: () => {}, drawTime: () => {}, drawAgent: () => {}, relayout: () => {}, pulses: () => {}, tick: () => {}, forgetRevealed: () => {},
   GONE, items, now,
 };
 const source = names.map((name) => fs.readFileSync(`${dir}/${name}`, "utf8")).join("\n");

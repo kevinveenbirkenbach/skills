@@ -301,7 +301,7 @@ class TestBindingMatchesWriteTree(Repos):
                 mutate(repo)
                 after = self.ids(repo)
                 self.assertEqual(before[1] != after[1], before[0] != after[0])
-                self.assertEqual(shown(staged_diff.bound_diff(repo, after[1], None)), shown(staged_diff.tree_diff(repo, after[0], None)))
+                self.assertEqual(shown(staged_diff.bound_diff(repo, after[1], None)[0]), shown(staged_diff.tree_diff(repo, after[0], None)[0]))
 
     def test_the_preview_lists_exactly_what_git_commit_records(self):
         for name, setup in {"intent-to-add new file": intend_new, **UNREAD_CASES}.items():
@@ -309,7 +309,7 @@ class TestBindingMatchesWriteTree(Repos):
                 repo = self.fresh(name.replace(" ", "-"))
                 stage_a(repo)
                 setup(repo)
-                preview = shown(staged_diff.bound_diff(repo, staged_diff.binding(repo), None))
+                preview = shown(staged_diff.bound_diff(repo, staged_diff.binding(repo), None)[0])
                 git(repo, "commit", "-q", "-m", "x")
                 self.assertEqual(preview, self.recorded(repo))
 
@@ -442,7 +442,7 @@ class TestHookGitEnvironment(Isolated):
         ask = {"tool": "Bash", "command": "git commit -m x", "cwd": str(repo), "session": "s", "agent": ""}
         with mock.patch.dict(os.environ, {name: str(path) for name, path in decoys.items()}), mock.patch.object(subprocess, "run", spy):
             pinned = staged_diff.binding(repo)
-            preview = shown(staged_diff.bound_diff(repo, pinned, None))
+            preview = shown(staged_diff.bound_diff(repo, pinned, None)[0])
             chosen = permission_hook.bound(ALLOW, ask, permission_hook.commit_diff(ask, None)[0])
         self.assertEqual((pinned, preview, chosen), (expected, [("added.txt", "A"), ("base.txt", "M")], ALLOW))
         self.assertTrue(seen)

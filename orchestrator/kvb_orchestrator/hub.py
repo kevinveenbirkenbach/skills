@@ -17,6 +17,7 @@ from .choosing import Choosing
 from .cleanup import Cleaning, Spool
 from .crons import History, queue_live
 from .denying import Denying
+from .diffs import SEALED_SUFFIX
 from .engines import Engines, Speech
 from .events import Log, Watch
 from .firewall import Firewall
@@ -25,7 +26,7 @@ from .icons import sheet
 from .inbox import Inbox
 from .jobs import Jobs
 from .language import Language, Model
-from .ledger import Ledger, Marks, Reviews
+from .ledger import Ledger, Marks, Reviews, Sealed
 from .matching import Matching
 from .mcp import Mcp
 from .messaging import Messaging
@@ -45,6 +46,7 @@ from .receipts import (
 from .redirects import Redirects
 from .requesting import Requesting
 from .resources import RESOURCES, SAMPLES
+from .revealing import Revealing
 from .reviewing import Reviewing
 from .rules import Offers, Rules
 from .settings import Settings
@@ -84,7 +86,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Firewall, Inbox, Matching, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Firewall, Inbox, Matching, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -202,7 +204,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         pages=pages,
         public_port=public_port,
         reviews=reviews,
-        asks=Ledger(state / "asks.json"),
+        asks=Sealed(state / "asks.json", reviews.pages, SEALED_SUFFIX["ask"]),
         decisions=Ledger(state / "decisions.json"),
         messages=messages,
         rule_requests=Ledger(state / "rule-requests.json"),

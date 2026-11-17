@@ -77,6 +77,7 @@ class View:
         if sampled not in (None, "1"):
             raise ToolError("track must be 1 or left out")
         self.tree.beat()
+        self.sweep_sealed()
         return self.state(begin, end, now, TRACK_STEPS if sampled else 0)
 
     def inlined(self, news: list[dict], window: tuple[float, float], now: float) -> dict[float, dict]:
