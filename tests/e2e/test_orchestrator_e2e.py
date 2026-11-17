@@ -144,7 +144,7 @@ class TestOrchestratorE2E(base.OrchestratorE2ECase):
                 self.assertEqual(probe["badges"], {"tab-home": None, "tab-stream": None, "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": "2", "tab-resources": None})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")
                 self.assertFalse(probe["rail"])
-                self.assertEqual((probe["time"], probe["replay"]), ("24 h ▾", True))
+                self.assertEqual((probe["time"], probe["replay"]), ("24 h · /h", True))
                 self.assertGreater(probe["icons"], 8)
                 self.assertEqual(labelled(probe), {"unlabelled": [], "broken": []})
                 self.assertFalse(probe["wide"], "the page scrolls sideways")

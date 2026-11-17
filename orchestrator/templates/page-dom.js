@@ -50,7 +50,7 @@
   const counter = (value) => h("span", {class: "count"}, String(value));
   const meta = (pairs) => h("dl", {class: "meta"}, pairs.map(([label, value, title]) => h("div", {}, h("dt", {}, label), h("dd", {}, h("code", {title: title ? revealed(title) : null}, revealed(dash(value)))))));
   const emptyState = (title, text) => h("div", {class: "empty"}, h("div", {class: "empty-mark", "aria-hidden": "true"}), h("h2", {}, title), h("p", {}, text));
-  const live = () => ui.preset !== -1 && ui.asOf === null;
+  const live = () => ui.asOf === null;
   const alarmRows = () => state.radio.filter((row) => (row.class === "mayday" || row.class === "pan-pan") && row.ts >= state.alarm_since).reverse();
   const keyOf = (item) => `${item.kind}:${item.id}`;
   const visibleInbox = () => state.inbox.filter((item) => ui.snoozed || !item.until);

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -17,11 +16,10 @@ GAUGES = ("cpu", "ram", "vram", "swap", "disk")
 METRICS = (*COUNTS, *GAUGES)
 HOST = ("cpu", "ram", "swap")
 TOKEN_FIELDS = ("input", "output", "cache_read", "cache_write")
-FINEST = {"tokens": HOUR}
+FINEST = {"tasks": 0, "commits": 0, "krs": 0, "tokens": HOUR}
 INTERVAL = 60
 DONE = "done"
 DIGITS = 4
-TOTAL = "total"
 
 NUMBERS = (int, float)
 LIMIT = 1e18
@@ -99,87 +97,32 @@ def share(piece: Piece, begin: float, now: float) -> float:
     return amount * inside / (end - start) if inside > 0 else 0.0
 
 
-def sums(pieces: list[Piece], now: float, finest: float) -> dict[str, float | None]:
+def counted(pieces: list[Piece], window: tuple[float, float], first: float | None, finest: float) -> dict[str, dict]:
     """Args:
-        pieces: (start, end, amount) per event; start None for one without
-            a time, end equal to start for an instant.
-        now: the end of every window.
-        finest: the shortest window the pieces resolve; a shorter one holds
-            no event of its own.
+        pieces: (start, end, amount) per event of one kind; start None for
+            one without a time, end equal to start for an instant.
+        window: (begin, end) the rates cover, in epoch seconds.
+        first: the first time the records of the kind hold, None without any.
+        finest: the shortest span the kind's pieces resolve.
 
     Returns:
-        Per period the amount inside its window, None below finest; total
-        holds every piece.
+        Per period {value, approx, covered}: covered the seconds of the
+        window from first on; total the amount inside the window, every
+        other period that amount per its seconds of covered; value None
+        where no record covers the window; approx where the window is
+        shorter than finest, and for every period but total where it starts
+        before first.
     """
-    found: dict[str, float | None] = {}
-    for name, seconds in PERIODS:
-        if seconds is None:
-            found[name] = sum(piece[2] for piece in pieces)
-        else:
-            found[name] = None if seconds < finest else sum(share(piece, now - seconds, now) for piece in pieces)
-    return found
-
-
-def lengths(now: float, since: float | None) -> dict[str, float | None]:
-    total = now - since if since is not None and now > since else None
-    return {name: total if seconds is None else float(seconds) for name, seconds in PERIODS}
-
-
-def held(now: float, since: float | None, begins: float | None) -> dict[str, float | None]:
-    """Args:
-        now: the end of every window.
-        since: the first time any record holds.
-        begins: the first time the records of one kind hold, None when they
-            reach back as far as any record.
-
-    Returns:
-        Per period the seconds now - begins where other records reach
-        further back into its window than this kind's, else None.
-    """
-    if since is None or begins is None:
-        return dict.fromkeys(PERIOD_NAMES)
-    return {name: now - begins if begins > (since if seconds is None else max(now - seconds, since)) else None for name, seconds in PERIODS}
-
-
-def estimate(own: dict[str, float | None], length: dict[str, float | None], partial: dict[str, float | None], index: int) -> tuple[float, str | None]:
-    """Returns:
-        (value, source) of the period at index in PERIODS: its own amount
-        when partial holds no seconds for it and it holds any or is total;
-        its own amount scaled from the partial seconds to the part of its
-        window any record covers when it holds any, source total; else the
-        shortest longer window that holds any, scaled to the period's length
-        (at most its whole amount), source that window, or total when
-        partial holds seconds for that window and those scale it; 0 without
-        any.
-    """
-    name, seconds = PERIODS[index]
-    value = own[name]
-    if partial[name] is None and (value or seconds is None):
-        return value or 0.0, None
-    if value and partial[name]:
-        return value * min(length[name], length[TOTAL]) / partial[name], TOTAL
-    for other, _ in PERIODS[index + 1:]:
-        if own[other] and length[other]:
-            covered = partial[other] or length[other]
-            return own[other] * min(1.0, (seconds or covered) / covered), TOTAL if partial[other] else other
-    return 0.0, None
-
-
-def extrapolated(own: dict[str, float | None], length: dict[str, float | None], partial: dict[str, float | None]) -> dict[str, dict]:
-    """Args:
-        own: sums() of one kind.
-        length: lengths() of the windows.
-        partial: held() of the kind.
-
-    Returns:
-        Per period {value, approx, source} of estimate(); approx whenever it
-        names a source.
-    """
-    found = {}
-    for index, name in enumerate(PERIOD_NAMES):
-        value, source = estimate(own, length, partial, index)
-        found[name] = {"value": precise(value), "approx": source is not None, "source": source}
-    return found
+    begin, end = window
+    covered = end - max(begin, first) if first is not None else 0.0
+    if covered <= 0:
+        return {name: {"value": None, "approx": False, "covered": None} for name in PERIOD_NAMES}
+    amount = sum(share(piece, begin, end) for piece in pieces)
+    short, early = end - begin < finest, begin < first
+    return {
+        name: {"value": precise(amount if seconds is None else amount * seconds / covered), "approx": short or (early and seconds is not None), "covered": covered}
+        for name, seconds in PERIODS
+    }
 
 
 def precise(value: float) -> float:
@@ -205,10 +148,6 @@ def placed(row: dict) -> Placed | None:
 
 def blank() -> dict:
     return {**{key: [0.0, 0.0] for key in HOST}, "vram": [0.0, 0.0, 0.0], "disks": {}}
-
-
-def copied(tally: dict) -> dict:
-    return {**{key: list(tally[key]) for key in (*HOST, "vram")}, "disks": {mount: list(cell) for mount, cell in tally["disks"].items()}}
 
 
 def add_vram(cell: list[float], gpus: object, weight: float) -> None:
@@ -258,30 +197,16 @@ def add(tally: dict, row: dict, part: float) -> None:
     add_disks(tally["disks"], row.get("disks"), weight)
 
 
-def tallies(items: list[Placed], begins: list[float]) -> list[dict]:
-    """Args:
-        items: placed() of every sample row, newest first.
-        begins: the start of every window, latest first; every window ends
-            at the newest row or later.
-
-    Returns:
-        Per window the add() of every row inside it, a row whose bucket
-        straddles its start by the share inside, in one pass over items.
+def tally(items: list[Placed], window: tuple[float, float]) -> dict:
+    """Returns:
+        The add() of every placed() row inside the window, a row whose
+        bucket straddles either end by its share inside.
     """
-    widest = max((item[1] for item in items), default=0.0)
-    running, index, found = blank(), 0, []
-    for begin in begins:
-        while index < len(items) and items[index][0] >= begin:
-            add(running, items[index][2], 1.0)
-            index += 1
-        tally = copied(running)
-        cursor = index
-        while cursor < len(items) and items[cursor][0] > begin - widest:
-            t, width, row = items[cursor]
-            if t + width > begin:
-                add(tally, row, (t + width - begin) / width)
-            cursor += 1
-        found.append(tally)
+    found = blank()
+    for t, width, row in items:
+        part = share((t, t + width, 1.0), *window)
+        if part:
+            add(found, row, part)
     return found
 
 
@@ -311,40 +236,38 @@ def gauges(tally: dict) -> dict[str, dict]:
     found = {key: {"value": rounded(mean(tally[key], 1), 1)} for key in HOST}
     found["vram"] = {"value": rounded(mean(tally["vram"], 1), 1), "used": rounded(mean(tally["vram"], 2), 0)}
     found["disk"] = fullest(tally["disks"])
-    return {key: {**entry, "approx": False, "source": None} for key, entry in found.items()}
+    return {key: {**entry, "approx": False} for key, entry in found.items()}
 
 
-def rated(council: Path, kept: Path, now: float) -> dict:
+def rated(council: Path, kept: Path, now: float, window: tuple[float, float]) -> dict:
     """Args:
         council: the council directory holding the register and the score
             journal, read through scores.journal().
         kept: the directory holding the host sampler's resources folder.
-        now: the end of every window in epoch seconds.
+        now: the present in epoch seconds; the current token hour ends here.
+        window: (begin, end) the rates cover, end at most now.
 
     Returns:
-        {"now", "since", "periods", "rates"}: since the first time any record
-        holds; periods [{name, seconds}], total without seconds; rates per
-        period per metric {value, approx, source}: the done tasks, the
-        commits, the key results met and the tokens inside the window ending
-        now, extrapolated() where it holds none or, for tokens, where it
-        reaches back before the first token row, and the gauges() of the
-        samples inside it; total spans every record.
+        {"now", "since", "from", "to", "periods", "rates"}: since the first
+        time any record holds; periods [{name, seconds}], total without
+        seconds; rates per period per metric: counted() of the done tasks,
+        the commits, the key results met and the tokens, each kind covered
+        from since on, tokens from their first row, and the gauges() of the
+        samples inside the window, the same in every period.
     """
     tasks = read_register(council / REGISTER)
     folder = kept / RESOURCES
-    items = sorted(filter(None, map(placed, rows_between(folder / SAMPLES, 0, now, 0))), key=lambda item: item[0], reverse=True)
-    counted = {
+    items = list(filter(None, map(placed, rows_between(folder / SAMPLES, 0, now, 0))))
+    pieces = {
         "tasks": points(task_times(tasks)),
         "commits": points(commit_times(journal(council))),
         "krs": points(kr_times(tasks)),
         "tokens": token_pieces(rows_between(folder / TOKENS, 0, now, HOUR), now),
     }
-    starts = {kind: [piece[0] for piece in pieces if piece[0] is not None] for kind, pieces in counted.items()}
-    times = [*(t for found in starts.values() for t in found), *(item[0] for item in items)]
-    since = min(times) if times else None
-    length = lengths(now, since)
-    begins = {"tokens": min(starts["tokens"], default=None)}
-    counts = {kind: extrapolated(sums(pieces, now, FINEST.get(kind, 0)), length, held(now, since, begins.get(kind))) for kind, pieces in counted.items()}
-    measured = tallies(items, [-math.inf if seconds is None else now - seconds for _, seconds in PERIODS])
-    shown = {name: {**{kind: counts[kind][name] for kind in COUNTS}, **gauges(tally)} for name, tally in zip(PERIOD_NAMES, measured, strict=True)}
-    return {"now": now, "since": since, "periods": [{"name": name, "seconds": seconds} for name, seconds in PERIODS], "rates": shown}
+    starts = {kind: [piece[0] for piece in found if piece[0] is not None] for kind, found in pieces.items()}
+    since = min([*(t for found in starts.values() for t in found), *(item[0] for item in items)], default=None)
+    firsts = {**dict.fromkeys(COUNTS, since), "tokens": min(starts["tokens"], default=None)}
+    counts = {kind: counted(found, window, firsts[kind], FINEST[kind]) for kind, found in pieces.items()}
+    measured = gauges(tally(items, window))
+    shown = {name: {**{kind: counts[kind][name] for kind in COUNTS}, **measured} for name in PERIOD_NAMES}
+    return {"now": now, "since": since, "from": window[0], "to": window[1], "periods": [{"name": name, "seconds": seconds} for name, seconds in PERIODS], "rates": shown}

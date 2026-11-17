@@ -48,7 +48,7 @@
   syncBubbles();
   syncMusic();
   syncRadio();
-  timeBar();
+  ratesBar();
   notifyLabel();
   announce();
   measure();

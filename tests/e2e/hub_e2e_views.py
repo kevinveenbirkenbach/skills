@@ -25,8 +25,8 @@ PROBE = """(async () => {@HELPERS@
     layouts: all('#main [aria-label="Layout"] button').map(name),
     chips: all('#main [aria-label="Categories"] button').map(name),
     menus: all("#main details.menu > summary").map(name),
-    time: text(document.querySelector("#time > summary")),
-    replay: Boolean(document.querySelector("#time .replay input[type=range]")),
+    time: text(document.querySelector("#rates .rate-window")),
+    replay: Boolean(document.querySelector("#rates .span-slider input[type=range]")),
     custom: Boolean(document.querySelector('#main details.menu input[type="datetime-local"]')),
     toolbar: all('#main [role="toolbar"] > *').map((node) => name(node.tagName === "DETAILS" ? node.querySelector("summary") : node.querySelector("button") || node)),
     spot: (() => {

@@ -5,7 +5,7 @@ import unittest
 
 from hub_case import HubCase
 from hub_support import STREAMS, Key, key
-from kvb_orchestrator import settings
+from kvb_orchestrator import rates, settings
 
 
 class TestHubSettings(HubCase):
@@ -199,13 +199,13 @@ class TestHubSettings(HubCase):
         self.assertEqual((settings.SETTINGS["rates"], self.snapshot()["settings"]["rates"]), (default, default))
         good = self.guard(self.host)
         wrongs = [{"period": period, "metrics": ["tasks", "cpu"]} for period in ("second", "Hour", "", None, 1)]
-        wrongs += [{"period": "day", "metrics": metrics} for metrics in (["tasks"], [], ["tasks", "cpu", "ram", "swap"], ["tasks", "tasks"], ["tasks", "gpu"], [1, 2], "tasks,cpu", None)]
+        wrongs += [{"period": "day", "metrics": metrics} for metrics in (["tasks"], [], [*rates.METRICS, "tasks"], ["tasks", "tasks"], ["tasks", "gpu"], [1, 2], "tasks,cpu", None)]
         wrongs += [{"period": "day"}, {"metrics": ["tasks", "cpu"]}, {**default, "extra": 1}, "day", ["day"]]
         for wrong in wrongs:
             with self.subTest(wrong=wrong):
                 self.assertEqual(self.post_json("/api/settings", {**settings.SETTINGS, "rates": wrong}, good)[0], 400)
         self.assertEqual(self.snapshot()["settings"]["rates"], default)
-        for chosen in ({"period": "minute", "metrics": ["commits", "krs"]}, {"period": "total", "metrics": ["disk", "vram", "swap"]}, {"period": "week", "metrics": ["ram", "tokens"]}):
+        for chosen in ({"period": "minute", "metrics": ["commits", "krs"]}, {"period": "total", "metrics": list(reversed(rates.METRICS))}, {"period": "week", "metrics": ["ram", "tokens"]}):
             with self.subTest(chosen=chosen):
                 self.assertIsNone(self.prepared({**self.snapshot()["settings"], "rates": chosen})["payload"])
                 status, _, body = self.post_json("/api/settings", {**self.snapshot()["settings"], "rates": chosen, "proof": None}, good)

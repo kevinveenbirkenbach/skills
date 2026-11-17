@@ -4,7 +4,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 
 // Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, probe, shot, media, gesture},
-// keys being real key presses (Enter, Tab) on the focused element before the probe and gesture running the probe with a
+// keys being real key presses (Enter, Tab, ArrowLeft, ArrowRight) on the focused element before the probe and gesture running the probe with a
 // user activation like a click, an optional init, the text of a function every new document runs before its own scripts,
 // and an optional authenticator {credentialId, privateKey, rpId}: base64 id and PKCS#8 key of a passkey the page may sign with.
 // Prints {results, errors}: one probe value per step and every uncaught page exception.
@@ -17,7 +17,7 @@ const profile = mkdtempSync(join(tmpdir(), "cdp-"));
 const flags = ["--headless", "--no-sandbox", "--disable-gpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-certificate-errors", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "about:blank"];
 const browser = spawn(binary, flags, {stdio: ["ignore", "ignore", "pipe"]});
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const KEYS = {Enter: [13, "\r"], Tab: [9, ""]};
+const KEYS = {Enter: [13, "\r"], Tab: [9, ""], ArrowLeft: [37, ""], ArrowRight: [39, ""]};
 
 const address = await new Promise((resolve, reject) => {
   let text = "";

@@ -4,14 +4,15 @@ import {createServer} from "node:net";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 
-// Args: <firefox binary> <plan.json>; the plan lists steps {width, height, url, wait, probe, shot, gesture} and an optional
-// init like cdp.mjs.
+// Args: <firefox binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, probe, shot, gesture} and an
+// optional init like cdp.mjs.
 // Prints {results, errors}: one probe value per step and every JavaScript error the page logged.
 const [binary, planFile] = process.argv.slice(2);
 const plan = JSON.parse(readFileSync(planFile, "utf8"));
 const profile = mkdtempSync(join(tmpdir(), "bidi-"));
 writeFileSync(join(profile, "user.js"), ['user_pref("media.navigator.streams.fake", true);', 'user_pref("media.navigator.permission.disabled", true);', ""].join("\n"));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const KEYS = {Enter: "", Tab: "", ArrowLeft: "", ArrowRight: ""};
 const port = await new Promise((resolve) => {
   const probe = createServer().listen(0, "127.0.0.1", () => {
     const {port: free} = probe.address();
@@ -81,6 +82,10 @@ try {
       await send("browsingContext.navigate", {context, url: step.url, wait: "complete"});
     }
     await sleep(step.wait);
+    for (const key of step.keys || []) {
+      await send("input.performActions", {context, actions: [{type: "key", id: "keyboard", actions: [{type: "keyDown", value: KEYS[key]}, {type: "keyUp", value: KEYS[key]}]}]});
+      await sleep(250);
+    }
     let value = null;
     if (step.probe) {
       const answer = await send("script.evaluate", {expression: `(async () => JSON.stringify(await ${step.probe}))()`, target: {context}, awaitPromise: true, resultOwnership: "none", userActivation: Boolean(step.gesture)});

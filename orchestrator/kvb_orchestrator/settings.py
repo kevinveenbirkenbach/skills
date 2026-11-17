@@ -50,7 +50,7 @@ SETTINGS = {
     "bubbles": False,
     "rates": {"period": "hour", "metrics": ["tasks", "tokens", "cpu"]},
 }
-RATE_CHIP = (2, 3)
+RATE_CHIP = (2, 9)
 SPACE_AXES = ("none", "time", "spawn")
 SPACE_LIMITS = {
     "graph": {"yaw": (-180.0, 180.0), "pitch": (-90.0, 90.0), "zoom": (0.25, 4.0), "pan_x": (-2000.0, 2000.0), "pan_y": (-2000.0, 2000.0)},

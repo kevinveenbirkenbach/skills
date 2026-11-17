@@ -8,7 +8,7 @@
   };
   const RESOURCE_BURN = {done: "Done", scope: "Scope"};
   const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0, series: {}};
-  const resourceKey = () => JSON.stringify([ui.preset, ui.from, ui.to, ui.asOf]);
+  const resourceKey = () => JSON.stringify([ui.preset, ui.asOf]);
   const resourcesStale = () => resourceKey() !== resourceView.key || nowSeconds() - resourceView.at >= RESOURCE.stale;
   const compactCount = Resources.compact;
   const resourceLabel = (line) => (line.kind === "vram" ? `${line.name} VRAM` : line.name);

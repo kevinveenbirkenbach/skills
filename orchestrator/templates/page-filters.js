@@ -23,9 +23,6 @@
   }
 
   function windowKey() {
-    if (ui.preset === -1) {
-      return `custom:${ui.from}:${ui.to}`;
-    }
     return `${ui.preset}:${ui.asOf === null ? "live" : ui.asOf}`;
   }
 

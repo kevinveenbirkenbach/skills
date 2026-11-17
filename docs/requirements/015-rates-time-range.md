@@ -38,8 +38,9 @@ control instead of three.
    lacks room the chip shows as many as fit and `+n`. Rejected: a limit of 3
    or 5.
 6. **Persistence**: unit and chip metrics persist in the hub settings
-   `rates` without a passkey, as today; the window stays page state, 1 h
-   live on load, as today.
+   `rates` without a passkey, as today; the window stays page state, 24 h
+   live on load, as today (corrected 2026-11-17: the draft named 1 h, but
+   the page loads 24 h).
 7. **Timing**: implemented after every other open skills requirement.
 
 ## Approach
@@ -96,7 +97,7 @@ flowchart TD
       the window's token sum divided by 7.
 - [ ] With 9 metrics chosen the chip shows every one at 1920 and `+n` at
       390, and the header never grows wider than the viewport.
-- [ ] Unit and metrics survive a reload; the window returns to 1 h live.
+- [ ] Unit and metrics survive a reload; the window returns to 24 h live.
 
 ### Tests
 
