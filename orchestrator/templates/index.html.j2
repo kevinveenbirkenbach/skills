@@ -59,6 +59,10 @@ h1 { margin: 0; font-size: var(--fs-lg); font-weight: 680; letter-spacing: -.01e
 .badge.urgent { background: var(--accent); color: var(--on-accent); }
 .badge.alarm { background: var(--alarm); color: #fff; }
 .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.grant-bar, .grant-tray { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.grant-tray[hidden] { display: none; }
+.grant-bar .segmented button { display: inline-flex; align-items: center; gap: 6px; }
+.grant-count { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .banner { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-5); background: var(--alarm); color: #fff; font-weight: 650; }
 .banner[hidden] { display: none; }
 .banner .text { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -86,6 +90,7 @@ main { min-width: 0; min-height: calc(100vh - var(--head) - var(--sp-6) - var(--
   .sheet { padding: 0; }
   .sheet-box { min-height: 100%; border-radius: 0; }
   .settings .grid { grid-template-columns: minmax(0, 1fr); }
+  .grant-label { display: none; }
 }
 .stack { display: grid; gap: 26px; }
 .group-title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-sm); font-weight: 650; color: var(--muted); letter-spacing: .02em; text-transform: uppercase; }
@@ -165,6 +170,11 @@ pre.notes { max-height: 260px; margin: 12px 0 0; padding: 10px 12px; overflow: a
 .diff-head .path { overflow-wrap: anywhere; font-weight: 600; }
 .pad { margin: 0; padding: 18px 16px; }
 .diff-scroll { overflow: auto; max-height: 70vh; }
+.review-stack { position: relative; overflow: auto; max-height: 70vh; overscroll-behavior: contain; }
+.review-file + .review-file { border-top: 1px solid var(--line); }
+.review-file > summary.diff-head { position: sticky; top: 0; z-index: 1; cursor: pointer; list-style: none; }
+.review-file > summary.diff-head::-webkit-details-marker { display: none; }
+.diff-wide { overflow-x: auto; }
 table.diff { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; }
 table.diff td { padding: 0 10px; vertical-align: top; }
 table.diff td.num { width: 1%; min-width: 44px; color: var(--faint); text-align: right; user-select: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -457,6 +467,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <header class="top">
   <div class="brand"><span class="logo" aria-hidden="true"></span><div class="brand-text"><h1>Agent Orchestrator</h1><span class="sky-note" id="sky-note"></span></div></div>
   <div class="tools">
+    <div class="grant-bar" id="grant-bar"></div>
     <button type="button" class="btn small ghost icon-only spot-toggle" id="radio-open" title="Radio: post, call or a message to all, with Record, the radio settings and the stations" aria-label="Radio" aria-controls="radio-spot" aria-expanded="false"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-broadcast-pin"></use></svg></button>
     <button type="button" class="btn small ghost icon-only" id="bubbles-toggle" title="Speech bubbles" aria-label="Speech bubbles" aria-pressed="false" aria-controls="bubbles"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-chat-quote"></use></svg></button>
     <button type="button" class="btn small ghost icon-only" id="palette-open" title="Commands (Ctrl+K)" aria-label="Commands"><svg class="bi" aria-hidden="true" focusable="false"><use href="#bi-command"></use></svg></button>
@@ -557,6 +568,8 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 
 {% include "page-inbox.js" %}
 
+{% include "page-grant.js" %}
+
 {% include "page-console.js" %}
 
 {% include "page-deny.js" %}
@@ -646,6 +659,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-home.js" %}
 
 {% include "page-legend.js" %}
+
 {% include "page-rules.js" %}
 
 {% include "page-firewall.js" %}

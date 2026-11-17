@@ -50,8 +50,7 @@ class TestHubInbox(base.OrchestratorE2ECase):
     def layout(self, probe: dict) -> None:
         self.assertNotIn("error", probe)
         self.assertEqual(sorted(probe["kinds"]), ["Ask", "Operator", "Operator", "Review", "Rule request"])
-        self.assertIn(["Deny", "Deny via …"], probe["splits"])
-        self.assertEqual(len(probe["splits"]), 4)
+        self.assertEqual(probe["splits"], [["Deny", "Deny via …"]] * 5)
         self.assertEqual(probe["fields"], ["Kind", "Tool (glob)", "Pattern (glob)", "Directory (glob)", "Expires on"])
         self.assertEqual(probe["dry"], "Dry run: the rule would have granted 1 of 1 asks from the last 7 days.")
         self.assertEqual(probe["accept"], 1)
@@ -163,9 +162,9 @@ class TestHubInbox(base.OrchestratorE2ECase):
                 self.assertGreater(found["before"], 0, found)
                 self.assertEqual((found["moved"], found["focused"], found["wide"]), (0, True, False), found)
                 self.assertTrue({"Grant selection (1)", "Deny selection (2)"} <= set(found["buttons"]), found["buttons"])
-                self.assertEqual((sorted(found["listed"]), found["label"]), (sorted([found["title"], "pick a name"]), "Deny 2"))
+                self.assertEqual((sorted(found["listed"]), found["label"], found["reasoned"]), (sorted([found["title"], "pick a name"]), "Deny 2", True))
                 task = f"operator/row-{found['title'][-2:]}"
-                items = sorted([[task, "reject", "post"], ["operator/name", "reject", "post"]])
+                items = sorted([[task, "reject", "post", "rebase first"], ["operator/name", "reject", "post", "rebase first"]])
                 self.assertEqual([[path, sorted(entries)] for path, entries in found["posted"]], [["/api/sign", items], *([["/api/inbox/approve", items]] if signs else [])])
                 self.assertIn("takes effect" if signs else "not signed", found["toast"])
                 denied += [task, "operator/name"]

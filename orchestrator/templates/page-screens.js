@@ -95,6 +95,7 @@
     drawHierarchy(force);
     drawToolbar();
     drawInbox();
+    drawGrant();
     drawRadio();
     drawTasks();
     drawMatch(false);

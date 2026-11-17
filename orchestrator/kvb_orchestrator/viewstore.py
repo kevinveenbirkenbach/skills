@@ -20,7 +20,9 @@ VIEW = {
     "home": {"pins": []},
     "kanban": {"hidden": []},
     "legend": {"views": {}, "tiles": {}},
+    "approval": {"mode": "direct"},
 }
+APPROVAL_MODES = ("direct", "select")
 LEGEND_PANELS = (
     "agents/orbit", "agents/chord", "agents/swimlane", "artifacts/orbit", "artifacts/chord", "artifacts/swimlane",
     "tasks/rasci", "tasks/gantt", "tasks/burn", "resources-hardware", "resources-tokens", "resources-combined",
@@ -174,8 +176,11 @@ def valid_view(raw: object) -> dict:
     home = section(data["home"], "home", tuple(VIEW["home"]))
     kanban = section(data["kanban"], "kanban", tuple(VIEW["kanban"]))
     legend = section(data["legend"], "legend", tuple(VIEW["legend"]))
+    approval = section(data["approval"], "approval", tuple(VIEW["approval"]))
     if not isinstance(resources["tokens"], str) or resources["tokens"] not in TOKEN_MODES:
         raise ToolError(f"resources.tokens must be one of {', '.join(TOKEN_MODES)}")
+    if not isinstance(approval["mode"], str) or approval["mode"] not in APPROVAL_MODES:
+        raise ToolError(f"approval.mode must be one of {', '.join(APPROVAL_MODES)}")
     pinned = pins(home["pins"])
     keys = {f"{pin['kind']}:{pin['id']}" for pin in pinned}
     tiles = legend_flags(legend["tiles"], "legend.tiles", PIN_KEY.fullmatch, "pin keys kind:id")
@@ -193,6 +198,7 @@ def valid_view(raw: object) -> dict:
             "views": legend_flags(legend["views"], "legend.views", LEGEND_PANELS.__contains__, f"panels of {', '.join(LEGEND_PANELS)}"),
             "tiles": {key: shown for key, shown in tiles.items() if key in keys},
         },
+        "approval": {"mode": approval["mode"]},
     }
 
 

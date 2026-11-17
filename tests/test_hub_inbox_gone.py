@@ -7,7 +7,7 @@ import unittest
 from hub_support import HUB
 
 TEMPLATES = HUB / "templates"
-MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-api.js", "page-passkey.js", "page-inbox.js", "page-console.js", "page-rule-request.js", "page-load.js"]
+MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-api.js", "page-passkey.js", "page-inbox.js", "page-grant.js", "page-console.js", "page-rule-request.js", "page-load.js"]
 GONE = "operator/gui-agentbox-merge-push"
 NOTICE = "already done or removed elsewhere"
 PROBE = r"""
@@ -95,7 +95,7 @@ const grantBoth = () => submit(state.inbox.map((item) => entryOf(item, "approve"
 (async () => {
   await scenario("run_sign_404", ["gone", "kept"], {"/api/sign": missing}, () => approveOne(state.inbox[0]));
   await scenario("run_approve_404", ["gone", "kept"], {"/api/sign": reply(200, '{"payload": null}'), "/api/inbox/approve": missing}, () => approveOne(state.inbox[0]));
-  await scenario("deny_404", ["gone", "kept"], {"/api/sign": missing}, () => rejectOne(state.inbox[0]));
+  await scenario("deny_404", ["gone", "kept"], {"/api/sign": missing}, () => submit([denialOf(state.inbox[0], "")], "Denial: " + short(state.inbox[0].title)));
   await scenario("dismiss_404", ["closed", "kept"], {"/api/inbox/dismiss": missing}, () => dismissJob(state.inbox[0].job));
   await scenario("rule_404", ["rule", "kept"], {["/api/rule-requests/" + items.rule.id + "/sign"]: missing}, () => acceptRule(state.inbox[0]));
   await scenario("run_409", ["gone", "kept"], {"/api/sign": reply(409, '{"id": "operator/kept", "status": "changed"}')}, () => approveOne(state.inbox[1]));

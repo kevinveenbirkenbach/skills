@@ -33,7 +33,7 @@ INBOX_PICK = """(async () => {@HELPERS@
   const send = window.fetch.bind(window);
   window.fetch = (path, init) => {
     if (["/api/sign", "/api/inbox/approve"].includes(String(path))) {
-      posted.push([String(path), JSON.parse(init.body).items.map((item) => [item.id, item.verb, item.channel || null])]);
+      posted.push([String(path), JSON.parse(init.body).items.map((item) => [item.id, item.verb, item.channel || null, item.reason])]);
     }
     return send(path, init);
   };
@@ -62,12 +62,15 @@ INBOX_PICK = """(async () => {@HELPERS@
   all("#main .inbox-actions button").find((button) => name(button).startsWith("Deny selection")).click();
   await until(() => document.querySelector(".sheet-box .actions"), 4000);
   const listed = all(".sheet-box ul.mini > li strong").map(text);
+  const reason = document.querySelector(".sheet-box .deny-reason textarea");
+  const reasoned = Boolean(reason && document.activeElement === reason);
+  reason.value = "rebase first";
   const confirm = all(".sheet-box .actions button").find((button) => text(button).startsWith("Deny "));
   const label = text(confirm);
   const shown = new Set(all("#toasts .toast"));
   confirm.click();
   const toast = await until(() => all("#toasts .toast").filter((node) => !shown.has(node)).map(text).find((entry) => entry.startsWith("Deny selection")), 15000);
-  return {title, before, moved: Math.abs(after - before), focused, buttons, listed, label, toast, posted, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
+  return {title, before, moved: Math.abs(after - before), focused, buttons, listed, label, reasoned, toast, posted, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
 })()""".replace("@HELPERS@", HELPERS)
 LAYOUT = """(async () => {@HELPERS@@LABELS@
   await until(() => document.querySelector("#main .console") && rowOf("Rule request"), 8000);

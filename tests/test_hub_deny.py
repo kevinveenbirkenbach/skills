@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from hub_case import HubCase
-from hub_support import ASK, CLIENT, Key, key, signing, verifier
+from hub_support import ASK, CLIENT, PAGE, Key, key, signing, verifier
 from kvb_orchestrator import batches, skill_scripts
 
 PUSH = "git push"
@@ -90,21 +90,22 @@ class TestHubDeny(HubCase):
         row = {"title": PUSH, "workdir": "/repo", "description": "ship", "check": "manual", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
         self.write_council({"rasci.json": {"operator/push": row}})
         ask_id = self.create_ask(ASK)
-        review_id = self.request("feat: deny me", "")
+        review_id = self.tool("review_request", {**self.arguments("feat: deny me", "", self.page("bundle.html", PAGE)), "agent": "Skills"})["structuredContent"]["id"]
         digest = hashlib.sha256(PUSH.encode()).hexdigest()
         entries = [
             self.denial("ask", ask_id, "", "post", ""),
             self.denial("operator", "operator/push", digest, "post", ""),
-            {**self.entry("review", review_id, "", ""), "verb": "reject"},
+            self.denial("review", review_id, "", "post", "rebase first"),
         ]
         with mock.patch.object(batches, "UNDO", 0.05):
             self.assertEqual(self.approve(entries, self.signed(entries, self.pin()))[0], 202)
             self.settle(lambda: self.ask_status(ask_id, "0") == "denied")
         self.settle(lambda: (skill_scripts.RASCI, ["set", "operator/push", "--status", "stopped"]) in self.scripts.calls)
         self.settle(lambda: self.tool("review_wait", {"id": review_id, "timeout_seconds": 0})["structuredContent"]["status"] == "rejected")
-        self.settle(lambda: len(self.radio()) >= 2)
-        self.assertEqual(sorted(sent[:3] for sent in self.radio()), [["post", "--to", "Skills session"]] * 2)
+        self.settle(lambda: len(self.radio()) >= 3)
+        self.assertEqual(sorted(sent[:3] for sent in self.radio()), [["post", "--to", "Skills session"]] * 3)
         self.assertTrue(all("Denied by the operator: " in sent[-1] for sent in self.radio()), self.radio())
+        self.assertIn("Denied by the operator: commit feat: deny me", next(sent[-1] for sent in self.radio() if "Reason: rebase first" in sent[-1]))
         self.assertFalse({ask_id, review_id} & {item["id"] for item in self.snapshot()["inbox"]})
 
     def test_every_class_but_mayday_reaches_the_agent_or_all(self):

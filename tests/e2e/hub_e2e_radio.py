@@ -324,7 +324,7 @@ CANCELED = """() => {
 }"""
 JUMPED = {
     "hash": "#stream", "focused": True, "tabs": [[tab, True, True] for tab in ("#home", "#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list", "#resources")], "closed": [True, "false"],
-    "header": [["radio-open", "Radio", ""], ["bubbles-toggle", "Speech bubbles", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
+    "header": [["grant-direct", "Direct", "Direct"], ["grant-select", "Select", "Select"], ["radio-open", "Radio", ""], ["bubbles-toggle", "Speech bubbles", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
 }
 GEAR_SAVE = """(async () => {@HELPERS@@CLASHES@
   const spot = document.getElementById("radio-spot");

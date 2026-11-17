@@ -40,6 +40,27 @@
     }}}, icon("bi-eye"), words);
   }
 
+  /**
+   * @param {Element} body the scrolling element that holds the files.
+   * @param {string} selector the files: details elements in reading order.
+   * Opens the first closed file once the open file before it ends inside the visible part of body.
+   */
+  function openOnScroll(body, selector) {
+    const files = [...body.querySelectorAll(selector)];
+    const view = body.getBoundingClientRect();
+    for (let index = 0; index < files.length - 1; index += 1) {
+      const file = files[index];
+      if (!file.open) {
+        return;
+      }
+      const next = files[index + 1];
+      if (!next.open && file.getBoundingClientRect().bottom <= view.bottom + 8) {
+        next.open = true;
+        return;
+      }
+    }
+  }
+
   function diffOf(item) {
     if (!item || typeof item.diff !== "number" || !["review", "ask"].includes(item.kind)) {
       return null;

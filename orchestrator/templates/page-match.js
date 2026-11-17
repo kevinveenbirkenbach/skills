@@ -118,22 +118,6 @@
     }
   }
 
-  function openOnScroll(body) {
-    const files = [...body.querySelectorAll(".match-file")];
-    const view = body.getBoundingClientRect();
-    for (let index = 0; index < files.length - 1; index += 1) {
-      const file = files[index];
-      if (!file.open) {
-        return;
-      }
-      const next = files[index + 1];
-      if (!next.open && file.getBoundingClientRect().bottom <= view.bottom + 8) {
-        next.open = true;
-        return;
-      }
-    }
-  }
-
   function closeComment(card) {
     const open = card.querySelector(".match-comment");
     if (open) {
@@ -228,11 +212,11 @@
     const files = card.files || [];
     const list = files.length ? h("ol", {class: "match-files", "aria-label": `Files: ${files.length}`}, files.map((file, index) => fileBlock(card, file, index))) : h("p", {class: "muted"}, card.kind === "commit" ? "No diff shipped with this stage." : "Its command names no file.");
     const body = h("div", {class: "match-body"}, matchCommand(card), list);
-    body.addEventListener("scroll", () => openOnScroll(body), {passive: true});
+    body.addEventListener("scroll", () => openOnScroll(body, ".match-file"), {passive: true});
     const article = h("article", {class: "card match-card front", "data-card": card.id, "data-kind": card.kind, "data-stale": String(Boolean(card.stale)), "aria-label": `${card.kind} card of ${card.agent || "an agent"}`},
       matchHead(card), body);
     markable(article, card);
-    window.setTimeout(() => openOnScroll(body), 0);
+    window.setTimeout(() => openOnScroll(body, ".match-file"), 0);
     return article;
   }
 

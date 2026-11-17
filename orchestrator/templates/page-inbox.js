@@ -87,6 +87,10 @@
   }
 
   function approveOne(item) {
+    if (collecting(item)) {
+      collect(item);
+      return null;
+    }
     if (item.kind === "rule") {
       return acceptRule(item);
     }
@@ -100,14 +104,14 @@
     return submit([entryOf(item, "approve", "")], `${item.kind === "operator" ? "Run" : "Grant"}: ${short(item.title)}`);
   }
 
-  const rejectOne = (item) => submit([entryOf(item, "reject", "")], `Denial: ${short(item.title)}`);
   const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Choice: ${label}`);
 
-  const denialOf = (item) => (item.deniable ? {...entryOf(item, "reject", ""), channel: "post", reason: "", to: item.to} : item.kind === "review" ? entryOf(item, "reject", "") : null);
-  const pickable = (item) => !item.held && (selectable(item) || denialOf(item) !== null);
+  const deniable = (item) => item.deniable || item.kind === "review";
+  const denialOf = (item, reason) => ({...entryOf(item, "reject", ""), channel: "post", reason, to: item.to});
+  const pickable = (item) => !item.held && (selectable(item) || deniable(item));
 
   function bulk(items, label, deny) {
-    const usable = items.filter(deny ? (item) => denialOf(item) !== null : selectable);
+    const usable = items.filter(deny ? deniable : selectable);
     if (!usable.length) {
       toast(`${label}: nothing to ${deny ? "deny" : "grant"}`, [], false);
       return;
@@ -119,15 +123,29 @@
       item.kind === "operator" ? h("span", {class: "muted"}, revealed(`in ${item.directory}`)) : null,
       item.kind === "ask" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null));
     const confirm = h("button", {type: "button", class: deny ? "btn danger" : "btn primary"}, `${deny ? "Deny" : "Grant"} ${usable.length}`);
+    const reason = deny ? h("textarea", {class: "field", maxlength: DENY_REASON, rows: 3, placeholder: "e.g. make the gate green first"}) : null;
     confirm.addEventListener("click", () => {
       closeSheet();
-      submit(usable.map((item) => (deny ? denialOf(item) : entryOf(item, "approve", item.kind === "decision" ? item.recommended : ""))), `${label}: ${usable.length} entries`);
+      submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", item.kind === "decision" ? item.recommended : ""))), `${label}: ${usable.length} entries`);
     });
     const note = deny
-      ? "Every entry and every full command that gets denied; each requester gets its denial by post. After the click the passkey signs the whole selection once; then 3 s remain to undo."
+      ? "Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click the passkey signs the whole selection once; then 3 s remain to undo."
       : "Every entry and every full command that gets granted. After the click the passkey signs the whole selection once; then 3 s remain to undo.";
-    openSheet(label, [h("p", {class: "muted"}, note), h("ul", {class: "mini"}, rows), h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
-    confirm.focus();
+    openSheet(label, [h("p", {class: "muted"}, note), h("ul", {class: "mini"}, rows), ...(deny ? [h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
+      h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
+    (reason || confirm).focus();
+  }
+
+  function selectionButtons(items) {
+    const green = items.filter(isGreen);
+    const chosen = items.filter((item) => ui.selected.has(keyOf(item)));
+    const denials = chosen.filter(deniable);
+    const grantable = chosen.filter(selectable);
+    return [
+      h("button", {type: "button", class: "btn small soft", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection", false)}}, icon("bi-check2-square"), String(grantable.length)),
+      h("button", {type: "button", class: "btn small danger", ...named(`Deny selection (${denials.length})`, `Deny selection (${denials.length}): each requester gets its denial and an optional reason by post, one passkey signature, 3 s to undo`), disabled: !denials.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), String(denials.length)),
+      h("button", {type: "button", class: "btn small primary", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), String(green.length)),
+    ];
   }
 
   async function mark(item, until, pinned) {
@@ -168,16 +186,18 @@
       return [h("span", {class: "muted"}, "takes effect …")];
     }
     const buttons = [];
+    const grant = (button) => buttons.push(grantPress(button, item));
     if (item.kind === "review") {
-      buttons.push(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)), iconBtn("bi-x-lg", "Deny", "btn small danger", () => rejectOne(item)));
+      grant(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
+      buttons.push(denySplit(item));
     } else if (item.kind === "ask") {
-      buttons.push(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
+      grant(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "decision" && item.recommended) {
-      buttons.push(h("button", {type: "button", class: "btn small primary", ...named(revealed(`Recommendation: ${item.recommended}`)), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), revealed(item.recommended)));
+      grant(h("button", {type: "button", class: "btn small primary", ...named(revealed(`Recommendation: ${item.recommended}`)), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), revealed(item.recommended)));
     } else if (item.kind === "operator" && item.runnable) {
-      buttons.push(iconBtn("bi-play-fill", "Run", "btn small primary", () => approveOne(item)));
+      grant(iconBtn("bi-play-fill", "Run", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "rule") {
-      buttons.push(h("button", {type: "button", class: "btn small primary", ...named("Accept", "Accept: the passkey signs exactly this rule, then it applies"), on: {click: () => approveOne(item)}}, icon("bi-shield-check"), "Accept"));
+      grant(h("button", {type: "button", class: "btn small primary", ...named("Accept", "Accept: the passkey signs exactly this rule, then it applies"), on: {click: () => approveOne(item)}}, icon("bi-shield-check"), "Accept"));
     }
     if (item.deniable) {
       buttons.push(denySplit(item));
@@ -248,28 +268,22 @@
         ui.selected.delete(key);
       }
     }
-    const sig = JSON.stringify([items.map(withoutOutput), [...ui.selected], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
+    const mode = grantMode();
+    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
     if (sig === inboxSig) {
       repaintConsoles(items);
       return;
     }
     inboxSig = sig;
-    const green = items.filter(isGreen);
-    const chosen = items.filter((item) => ui.selected.has(keyOf(item)));
     const hidden = state.inbox.length - waitingCount();
     const snoozed = h("input", {type: "checkbox", checked: ui.snoozed, on: {change: (event) => {
       ui.snoozed = event.target.checked;
       drawInbox();
     }}});
-    const deniable = chosen.filter((item) => denialOf(item) !== null);
-    const grantable = chosen.filter(selectable);
-    const choose = h("button", {type: "button", class: "btn small soft", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection", false)}}, icon("bi-check2-square"), String(grantable.length));
-    const deny = h("button", {type: "button", class: "btn small danger", ...named(`Deny selection (${deniable.length})`, `Deny selection (${deniable.length}): each requester gets its denial by post, one passkey signature, 3 s to undo`), disabled: !deniable.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), String(deniable.length));
-    const all = h("button", {type: "button", class: "btn small primary", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), String(green.length));
     Panels.keepFocus(inboxSlot, () => inboxDom.replaceChildren(
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Waits on Operator", counter(waitingCount())), h("span", {class: "spacer"}),
         hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null, inboxSlot),
-      h("div", {class: "inbox-actions"}, choose, deny, all),
+      mode === GRANT_SELECT ? null : h("div", {class: "inbox-actions"}, selectionButtons(items)),
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
       items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now.")));
     settleConsoles(items);

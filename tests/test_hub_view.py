@@ -35,6 +35,7 @@ FULL = {
     "home": {"pins": [{"kind": "panel", "id": "resources-hardware", "w": 12, "h": 4}, {"kind": "task", "id": "work/feature", "w": 1, "h": 12}]},
     "kanban": {"hidden": ["line"]},
     "legend": {"views": {"resources-tokens": False, "tasks/burn": True}, "tiles": {"panel:resources-hardware": False}},
+    "approval": {"mode": "select"},
 }
 PIN ={"kind": "panel", "id": "resources-hardware", "w": 6, "h": 3}
 EMBEDDED = re.compile(r'<script nonce="[^"]+" id="view" type="application/json">(.*?)</script>')
@@ -291,7 +292,7 @@ class TestViewDocument(unittest.TestCase):
     def test_the_defaults_and_a_full_document_pass_unchanged(self):
         self.assertEqual(valid_view(copy.deepcopy(VIEW)), VIEW)
         self.assertEqual(valid_view(copy.deepcopy(FULL)), FULL)
-        self.assertEqual(VIEW, {"resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []}, "burn": {"overlays": []}, "home": {"pins": []}, "kanban": {"hidden": []}, "legend": {"views": {}, "tiles": {}}})
+        self.assertEqual(VIEW, {"resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []}, "burn": {"overlays": []}, "home": {"pins": []}, "kanban": {"hidden": []}, "legend": {"views": {}, "tiles": {}}, "approval": {"mode": "direct"}})
 
     def test_unknown_or_missing_keys_and_malformed_values_are_refused(self):
         def changed(section: str | None, key: str | None, value: object) -> dict:
@@ -342,6 +343,10 @@ class TestViewDocument(unittest.TestCase):
             "legend shown as text": changed("legend", "tiles", {"panel:resources-hardware": "false"}),
             "legend tile key without kind": changed("legend", "tiles", {"resources-hardware": False}),
             "legend tile key with a space": changed("legend", "tiles", {"panel:resources hardware": False}),
+            "approval section missing": {key: value for key, value in FULL.items() if key != "approval"},
+            "approval unknown key": changed("approval", "batch", True),
+            "approval mode unknown": changed("approval", "mode", "auto"),
+            "approval mode not text": changed("approval", "mode", True),
         }
         for name, doc in cases.items():
             with self.subTest(case=name), self.assertRaises(ToolError):

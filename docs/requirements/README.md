@@ -23,4 +23,5 @@ skill defines the format.
 - [017 - Legend Toggle](017-legend-toggle.md)
 - [018 - Gibberlink](018-gibberlink.md)
 - [019 - Reveal withheld diff content](019-reveal-withheld-diff.md)
+- [020 - Bulk grant mode and continuous diff](020-bulk-grant-mode.md)
 - [021 - TokenEconomizer by default](021-tokeneconomizer-by-default.md)

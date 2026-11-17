@@ -1,3 +1,5 @@
+  const REVIEW_FILE = ".review-file";
+
   function fileList(id) {
     if (!files.has(id)) {
       files.set(id, "loading");
@@ -77,7 +79,7 @@
     return h("span", {class: "stat"}, h("span", {class: "add"}, `+${file.added}`), h("span", {class: "del"}, `-${file.removed}`));
   }
 
-  function pick(index, list) {
+  function markFile(index) {
     ui.file = index;
     for (const entry of reviewDom.tree.querySelectorAll(".file-entry")) {
       if (Number(entry.dataset.index) === index) {
@@ -86,7 +88,26 @@
         entry.removeAttribute("aria-current");
       }
     }
-    reviewDom.diff.replaceChildren(diffPane(list));
+  }
+
+  function pick(index) {
+    const stack = reviewDom.diff.querySelector(".review-stack");
+    const file = stack ? stack.querySelector(`${REVIEW_FILE}[data-index="${index}"]`) : null;
+    if (file) {
+      file.open = true;
+      stack.scrollTop = file.offsetTop;
+      markFile(index);
+    }
+  }
+
+  function followScroll(stack) {
+    openOnScroll(stack, REVIEW_FILE);
+    const top = stack.getBoundingClientRect().top;
+    const files = [...stack.querySelectorAll(REVIEW_FILE)];
+    const shown = files.filter((file) => file.getBoundingClientRect().top <= top + 24).pop() || files[0];
+    if (shown && Number(shown.dataset.index) !== ui.file) {
+      markFile(Number(shown.dataset.index));
+    }
   }
 
   function branch(node, list) {
@@ -105,7 +126,7 @@
       const [letter, tone] = FILE_STATUS[file.status] || ["?", "neutral"];
       items.push(h("li", {}, h("button", {
         type: "button", class: "file-entry", "data-index": index, "aria-current": index === ui.file ? "true" : null,
-        title: file.old ? `${file.old} → ${file.path}` : file.path, on: {click: () => pick(index, list)},
+        title: file.old ? `${file.old} → ${file.path}` : file.path, on: {click: () => pick(index)},
       }, h("span", {class: "letter", "data-tone": tone}, letter), h("span", {class: "name"}, name), stat(file))));
     }
     return h("ul", {class: "tree-list"}, items);
@@ -135,15 +156,20 @@
     if (!Array.isArray(list) || !list.length) {
       return h("p", {class: "muted pad"}, list === "loading" ? "Loading changes …" : "No diff available.");
     }
-    const file = list[Math.min(ui.file, list.length - 1)];
+    const stack = h("div", {class: "review-stack"}, list.map((file, index) => reviewFile(file, index)));
+    stack.addEventListener("scroll", () => followScroll(stack), {passive: true});
+    return stack;
+  }
+
+  function reviewFile(file, index) {
     const [letter, tone] = FILE_STATUS[file.status] || ["?", "neutral"];
-    return h("div", {},
-      h("div", {class: "diff-head"},
+    return h("details", {class: "review-file", "data-index": index, open: index === ui.file},
+      h("summary", {class: "diff-head"},
         h("span", {class: "letter", "data-tone": tone}, letter),
         h("code", {class: "path"}, file.old ? `${file.old} → ${file.path}` : file.path),
         file.tags.map((tag) => pill(tag, "neutral")),
         h("span", {class: "spacer"}),
         stat(file)),
       file.detail ? h("p", {class: "muted pad"}, file.detail) : null,
-      file.lines.length ? h("div", {class: "diff-scroll"}, h("table", {class: "diff"}, h("tbody", {}, file.lines.map(diffRow)))) : null);
+      file.lines.length ? h("div", {class: "diff-wide"}, h("table", {class: "diff"}, h("tbody", {}, file.lines.map(diffRow)))) : null);
   }

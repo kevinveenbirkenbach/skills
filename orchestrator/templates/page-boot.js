@@ -51,6 +51,7 @@
   ratesBar();
   notifyLabel();
   announce();
+  grantBoot();
   measure();
   homeBoot();
   legendBoot();
