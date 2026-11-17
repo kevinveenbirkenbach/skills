@@ -18,3 +18,6 @@ skill defines the format.
 - [012 - Match Review](012-match-review.md)
 - [013 - Voice Input](013-voice-input.md)
 - [014 - Header Rates](014-header-rates.md)
+- [015 - Time Range in the Rates Panel](015-rates-time-range.md)
+- [016 - Agents Controls in the View Row](016-agents-controls-row.md)
+- [017 - Legend Toggle](017-legend-toggle.md)
