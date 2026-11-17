@@ -1,7 +1,10 @@
 const RadioSet = (() => {
   "use strict";
   const KEY = "kvb-orchestrator.radio";
-  const MODES = ["auto", "quiet", "silence", "morse"];
+  const MODES = ["auto", "quiet", "silence", "morse", "gibberlink"];
+  const FALLBACKS = ["gibberlink", "morse", "burst"];
+  const KEYED = ["morse", "gibberlink"];
+  const FRAME = {bytes: 140, prefix: 8, key: 64};
   const TONES = ["mayday", "review", "direct", "radio"];
   const CLASSES = ["post", "call", "newsletter", "broadcast", "mayday", "pan-pan", "security"];
   const TO_ALL = new Set(["newsletter", "broadcast", "mayday", "pan-pan", "security"]);
@@ -24,6 +27,7 @@ const RadioSet = (() => {
   };
   const DEFAULTS = {
     mode: "auto",
+    fallback: "gibberlink",
     sounds: {mayday: {on: true, volume: 0.9}, review: {on: true, volume: 0.6}, direct: {on: true, volume: 0.5}, radio: {on: false, volume: 0.25}},
     squelch: 1,
     classes: ["mayday", "pan-pan", "security"],
@@ -61,6 +65,7 @@ const RadioSet = (() => {
     const muted = Array.isArray(raw.muted) ? raw.muted.filter((key) => typeof key === "string" && key && key.length <= TEXT_LIMIT) : [];
     return {
       mode: MODES.includes(raw.mode) ? raw.mode : DEFAULTS.mode,
+      fallback: FALLBACKS.includes(raw.fallback) ? raw.fallback : DEFAULTS.fallback,
       sounds: Object.fromEntries(TONES.map((name) => [name, tone(sounds[name], DEFAULTS.sounds[name])])),
       squelch: level(raw.squelch, DEFAULTS.squelch),
       classes: CLASSES.filter((name) => name === "mayday" || classes.includes(name)),
@@ -82,11 +87,74 @@ const RadioSet = (() => {
     return {kind: "morse", sign: called ? row.called.join(" ") : sign, joined, text: `DE ${row.speaker} ${row.text.replace(MARKS, " ")}`, pitch: row.pitch};
   }
 
+  const utf8 = (char) => {
+    const point = char.codePointAt(0);
+    return point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+  };
+
+  function fitting(chars, at, room) {
+    let end = at;
+    for (let left = room; end < chars.length && utf8(chars[end]) <= left; end += 1) {
+      left -= utf8(chars[end]);
+    }
+    return end;
+  }
+
+  function split(key, chars, count) {
+    const own = Array.from(key);
+    const full = own.slice(0, fitting(own, 0, FRAME.key)).join("");
+    const prefix = own.slice(0, FRAME.prefix).join("");
+    const out = [];
+    let at = 0;
+    do {
+      const head = `${out.length ? prefix : full} ${out.length + 1}/${count} `;
+      const end = fitting(chars, at, FRAME.bytes - Array.from(head).reduce((sum, char) => sum + utf8(char), 0));
+      out.push(head + chars.slice(at, end).join(""));
+      at = end;
+    } while (at < chars.length);
+    return out;
+  }
+
   /**
-   * @param {object} row a radio row of the state with word, rest, voice and the Morse fields.
+   * @param {string} key the sender's session key, the row's source; its first 64 bytes head frame 1.
+   * @param {string} text the message without the hub's mark.
+   * @returns {Array<string>} the frames of at most 140 UTF-8 bytes, each split between characters: frame 1 the key, `1/m` and text, every later frame the key's first 8 characters, `n/m` and text.
+   */
+  function frames(key, text) {
+    const chars = Array.from(text);
+    for (let count = 1; ;) {
+      const out = split(key, chars, count);
+      if (out.length === count) {
+        return out;
+      }
+      count = out.length;
+    }
+  }
+
+  /**
+   * @param {object} row a radio row with source, text, protocol and pan.
+   * @returns {object} the whole row as kind "gibberlink": its frames, the sender's ggwave protocol and its stereo position.
+   */
+  function gibberlink(row) {
+    return {kind: "gibberlink", frames: frames(row.source, row.text.replace(MARKS, "").trim()), protocol: row.protocol, pan: row.pan};
+  }
+
+  const STAND_INS = {gibberlink, morse, burst: () => ({kind: "burst"})};
+
+  /**
+   * @param {object} row a radio row of the state.
+   * @param {object} set the radio set.
+   * @returns {object} the step its fallback pick plays where speech cannot: Gibberlink frames, Morse keying or the burst.
+   */
+  function standIn(row, set) {
+    return STAND_INS[set.fallback](row);
+  }
+
+  /**
+   * @param {object} row a radio row of the state with word, rest, voice, the Morse and the Gibberlink fields.
    * @param {object} set the radio set.
    * @param {Object<string, boolean>} live tts and open: whether the hub speaks at all and whether its CPU gate is open.
-   * @returns {Array<{kind: string, text: (string|undefined)}>} what plays, in order: in Morse the whole row keyed once; else the procedure word line in every mode, then the spoken rest in Auto below the threshold, else the noise burst, nothing more in Silence.
+   * @returns {Array<{kind: string, text: (string|undefined)}>} what plays, in order: in Morse the whole row keyed once; else the procedure word line in every mode, then in Gibberlink the frames of the whole row, in Auto below the threshold the spoken rest, else the fallback pick, nothing more in Silence.
    */
   function plan(row, set, live) {
     if (!picked(row, set)) {
@@ -99,8 +167,11 @@ const RadioSet = (() => {
     if (set.mode === "silence") {
       return word;
     }
+    if (set.mode === "gibberlink") {
+      return [...word, gibberlink(row)];
+    }
     const spoken = set.mode === "auto" && live.tts && live.open && row.voice && row.rest;
-    return [...word, spoken ? {kind: "speech", text: row.rest} : {kind: "burst"}];
+    return [...word, spoken ? {kind: "speech", text: row.rest} : standIn(row, set)];
   }
 
   /**
@@ -201,7 +272,7 @@ const RadioSet = (() => {
     return {...entry, chips: Object.fromEntries(CHIPS.map((name) => [name, ""])), q: ""};
   }
 
-  return {KEY, MODES, TONES, CLASSES, TABS, CHIPS, DEFAULTS, GATE, PROSIGNS, valid, picked, plan, burst, gateLabel, toAll, ledgerOf, logRows, counts, choices, cleared};
+  return {KEY, MODES, FALLBACKS, KEYED, FRAME, TONES, CLASSES, TABS, CHIPS, DEFAULTS, GATE, PROSIGNS, valid, picked, frames, standIn, plan, burst, gateLabel, toAll, ledgerOf, logRows, counts, choices, cleared};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = RadioSet;

@@ -142,6 +142,8 @@ FACE = """(async () => {@HELPERS@@RADIO@
   gear.click();
   await sleep(200);
   const groups =Object.fromEntries(all("#radio-gear .chips", spot).map((group) => [group.getAttribute("aria-label"), all(".chip", group).map((chipNode) => [text(chipNode), chipNode.getAttribute("aria-pressed"), chipNode.disabled])]));
+  all('#radio-gear .chips[aria-label="Fallback"] .chip', spot).find((chipNode) => text(chipNode) === "Hiss").click();
+  await sleep(150);
   const stationsHead = text(spot.querySelector(".radio-station .group-title"));
   const ptt = spot.querySelector('form.composer button[type="submit"]');
   const pageFits = fits();

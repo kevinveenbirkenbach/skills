@@ -119,7 +119,7 @@ const row = {class: "security", source: "s1", voice: "v1", word: "W", rest: "R",
 async function queued(flip) {
   const heard = [];
   const sandbox = {
-    RadioSet, radioSet: RadioSet.valid({mode: "auto"}), state: {speech: {tts: true, gate: {open: true}}},
+    RadioSet, radioSet: RadioSet.valid({mode: "auto", fallback: "burst"}), state: {speech: {tts: true, gate: {open: true}}},
     speech: {pending: [], busy: false, current: null, source: null, item: null, timer: 0}, settings: {bubbles: false}, SPEECH_QUEUE: 9,
     Voice: {enqueue: (pending, next) => [...pending, next]}, drawBubbles: stub, drawSpeaker: stub,
   };
@@ -128,7 +128,7 @@ async function queued(flip) {
   sandbox.spoken = async (audio, item, step) => {
     heard.push(step.text);
     if (heard.length === 1 && flip) {
-      sandbox.radioSet = RadioSet.valid({mode: flip});
+      sandbox.radioSet = RadioSet.valid({mode: flip, fallback: "burst"});
     }
     return "";
   };
@@ -248,7 +248,7 @@ function radio({running = true, hold = "", long = "", fail = 0, scale = 1000, bu
     decodeAudioData: async (data) => ({duration: data.text === long ? 60 : 1, text: data.text}),
   };
   const sandbox = {
-    RadioSet, Voice, radioSet: RadioSet.valid(null), state: {now: 1000, messages: [], speech: {tts: true, gate: {open: true}}},
+    RadioSet, Voice, radioSet: RadioSet.valid({fallback: "burst"}), state: {now: 1000, messages: [], speech: {tts: true, gate: {open: true}}},
     speech: {pending: [], busy: false, warned: 0, current: null, source: null, loading: null, timer: 0, item: null},
     settings: {bubbles, music: {on: false, volume: 0.4}}, SPEECH_QUEUE: 20, SPEECH_QUIET: 60000, SOUND_SLACK: 2, HUMAN: "Operator", Bubbles: {reading: () => 0.001},
     keep: stub, drawRadioSet: stub, drawBubbles: stub, drawSpeaker: stub, duck: stub, clearBubbles: stub, wordsRead: () => 0, saidOf: (item) => item.words, toast: (title) => run.log.push(["toast", title]),
@@ -437,7 +437,7 @@ def run(calls: dict[str, list[list]]) -> dict:
 class TestRadioSetModule(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        defaults = {"mode": "auto", "classes": ["mayday", "pan-pan", "security"], "muted": ["s9"], "sounds": {}, "squelch": 1, "log": {}}
+        defaults = {"mode": "auto", "fallback": "burst", "classes": ["mayday", "pan-pan", "security"], "muted": ["s9"], "sounds": {}, "squelch": 1, "log": {}}
         modes = ("auto", "quiet", "silence")
         lives = ({"tts": True, "open": True}, {"tts": True, "open": False}, {"tts": False, "open": True})
         plans = [["plan", ROWS[name], {**defaults, "mode": mode}, live] for mode in modes for live in lives for name in ROWS]
@@ -596,7 +596,7 @@ class TestTransmit(unittest.TestCase):
         self.assertEqual(self.data["stalled"], {"before": [False, True], "after": [True, None], "waits": [2500], "stops": 1})
 
     def test_every_mode_button_keeps_the_mode_before_it_resumes_the_audio_context(self):
-        self.assertEqual(self.data["pressed"], [{"mode": "auto"}, "context", {"mode": "quiet"}, "context", {"mode": "silence"}, "context", {"mode": "morse"}, "context"])
+        self.assertEqual(self.data["pressed"], [{"mode": "auto"}, "context", {"mode": "quiet"}, "context", {"mode": "silence"}, "context", {"mode": "morse"}, "context", {"mode": "gibberlink"}, "context"])
 
 
 class TestSpeechModes(unittest.TestCase):

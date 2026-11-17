@@ -1,10 +1,16 @@
   const STATION_TONES = {playing: "ok", loading: "info", reload: "info", blocked: "warn", error: "bad", due: "teal", stopped: "neutral", idle: "neutral", off: "neutral"};
   const NOTE_ID = /^[0-9a-f]{16}$/;
   const MODE_LABELS = {
-    auto: ["bi-volume-up", "Auto", "Auto: speech while the host CPU lies below the threshold, otherwise the noise burst"],
-    quiet: ["bi-soundwave", "Quiet", "Quiet: the noise burst only, never speech; MAYDAY, PAN-PAN and Sécurité still sound their procedure word"],
+    auto: ["bi-volume-up", "Auto", "Auto: speech while the host CPU lies below the threshold, otherwise the fallback picked under Read aloud"],
+    quiet: ["bi-soundwave", "Quiet", "Quiet: the fallback picked under Read aloud, never speech; MAYDAY, PAN-PAN and Sécurité still sound their procedure word"],
     silence: ["bi-volume-mute", "Silence", "Silence: no sound, bubbles and log only; MAYDAY, PAN-PAN and Sécurité still sound their procedure word"],
     morse: ["bi-three-dots", "Morse", "Morse: every message keyed whole in Morse, in its sender's own pitch, at the hub's Morse speed; MAYDAY keys SOS"],
+    gibberlink: ["bi-robot", "Gibberlink", "Gibberlink: every message sent whole as ggwave data sound a machine can decode, in its sender's own protocol and stereo position; MAYDAY, PAN-PAN and Sécurité still sound their procedure word"],
+  };
+  const FALLBACK_LABELS = {
+    gibberlink: ["Gibberlink", "Where speech cannot play, send the rest as ggwave data sound"],
+    morse: ["Morse", "Where speech cannot play, key the whole message in Morse"],
+    burst: ["Hiss", "Where speech cannot play, play the short noise burst"],
   };
   const radioParts = {bars: [], devices: [], logs: [], speaks: []};
   const liveParts = (kind) => radioParts[kind].filter((part) => part.root.isConnected);
@@ -89,7 +95,7 @@
       mode.textContent = MODE_LABELS[radioSet.mode][1];
       cpu.textContent = gate.cpu === null ? "CPU ?" : `CPU ${Math.round(gate.cpu)} %`;
       cpu.dataset.open = String(gate.open);
-      cpu.title = `${gate.cpu === null ? "No host CPU sample of the last two minutes" : `Host CPU ${fixed(gate.cpu)} %`}, threshold: ${RadioSet.gateLabel(gate.threshold)}${gate.open ? "" : ", so the hub renders no new speech line and the radio plays the burst"}`;
+      cpu.title = `${gate.cpu === null ? "No host CPU sample of the last two minutes" : `Host CPU ${fixed(gate.cpu)} %`}, threshold: ${RadioSet.gateLabel(gate.threshold)}${gate.open ? "" : ", so the hub renders no new speech line and the radio plays the fallback"}`;
     }
   }
 
@@ -293,10 +299,15 @@
       keepRadio({muted: radioSet.muted.includes(key) ? radioSet.muted.filter((name) => name !== key) : [...radioSet.muted, key]});
       redrawFilters();
     }, false));
+    const fallbacks = RadioSet.FALLBACKS.map((id) => chip(FALLBACK_LABELS[id][0], radioSet.fallback === id, FALLBACK_LABELS[id][1], () => {
+      keepRadio({fallback: id});
+      redrawFilters();
+    }, false));
     return h("div", {class: "radio-read", "aria-label": "Read aloud"},
-      h("p", {class: "muted"}, state.speech.tts ? "The radio sounds for these classes and agents, each speaker with its own voice; MAYDAY always sounds." : `The hub speaks no line: ${state.speech.tts_off}. The burst and the procedure words stand in.`),
+      h("p", {class: "muted"}, state.speech.tts ? "The radio sounds for these classes and agents, each speaker with its own voice; MAYDAY always sounds." : `The hub speaks no line: ${state.speech.tts_off}. The fallback and the procedure words stand in.`),
       h("div", {class: "chips", role: "group", "aria-label": "Classes"}, classes),
       agents.length ? h("div", {class: "chips", role: "group", "aria-label": "Agents"}, agents) : null,
+      h("div", {class: "chips radio-fallback", role: "group", "aria-label": "Fallback", title: "Fallback: what plays in Auto above the threshold and in Quiet, kept in this browser"}, h("span", {class: "chips-label"}, "Fallback"), fallbacks),
       morseSpeed());
   }
 

@@ -20,7 +20,7 @@ class TestHubPage(HubCase):
         review_id = self.request("feat: csp", "")
         status, headers, _ = self.get(f"/reviews/{review_id}/page")
         self.assertEqual(status, 200)
-        self.assertEqual(headers["content-security-policy"], "sandbox allow-scripts")
+        self.assertEqual(headers["content-security-policy"], "sandbox allow-scripts; frame-ancestors 'none'")
         self.assertEqual(headers["x-content-type-options"], "nosniff")
         status, headers, body = self.get("/")
         csp = headers["content-security-policy"]

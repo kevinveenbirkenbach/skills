@@ -136,7 +136,9 @@ class TestRadioSet(HubCase):
                 self.assertEqual(face["display"]["mode"], "Auto")
                 self.assertEqual((face["display"]["cpu"], face["display"]["lamp"]), ("CPU 10 %", ["RX", "false"]), face)
                 self.assertTrue(face["display"]["cls"], face)
-                self.assertEqual([mode_[:2] for mode_ in face["modes"]], [["Auto", "true"], ["Quiet", "false"], ["Silence", "false"], ["Morse", "false"]])
+                self.assertEqual([mode_[:2] for mode_ in face["modes"]], [["Auto", "true"], ["Quiet", "false"], ["Silence", "false"], ["Morse", "false"], ["Gibberlink", "false"]])
+                hiss = "false" if index == 0 else "true"
+                self.assertEqual(face["groups"]["Fallback"], [["Gibberlink", "true" if index == 0 else "false", False], ["Morse", "false", False], ["Hiss", hiss, False]])
                 self.assertTrue(all(mode_[2] and mode_[3] for mode_ in face["modes"]), face["modes"])
                 self.assertEqual([knob[0] for knob in face["knobs"]], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio", "Squelch", "Threshold"])
                 shown = "50" if index == 0 or not signed else str(THRESHOLDS[base.WIDTHS[index - 1][0]])

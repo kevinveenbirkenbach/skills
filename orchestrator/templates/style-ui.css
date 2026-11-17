@@ -112,6 +112,7 @@ body.fit .spot-host { flex: none; }
 .knob-test { grid-column: 5; }
 .radio-read { display: grid; gap: var(--sp-2); }
 .radio-read .chips { margin-bottom: 0; }
+.radio-fallback .chips-label { color: var(--muted); font-size: var(--fs-sm); }
 .morse-speed { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
 .morse-speed .knob { flex: 1 1 8rem; width: auto; }
 .morse-rate { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }

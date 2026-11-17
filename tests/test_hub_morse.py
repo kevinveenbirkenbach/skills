@@ -137,7 +137,7 @@ const ons = (run) => run.gains[0].filter(([kind, value]) => kind === "ramp" && v
   const switched = radio(false);
   switched.say(row("s1", 640, "security", "E"));
   await settle();
-  switched.sandbox.keepRadio({mode: "quiet"});
+  switched.sandbox.keepRadio({mode: "quiet", fallback: "burst"});
   await settle();
   const urgent = radio(false);
   urgent.say(row("s1", 600, "post", "E ".repeat(200)));
@@ -231,7 +231,7 @@ class TestMorseCode(unittest.TestCase):
 
     def test_morse_is_a_fourth_mode_and_the_threshold_labels_read_never_and_always_at_the_ends(self):
         constants = self.data["constants"]
-        self.assertEqual((constants["modes"], constants["kept"]), (["auto", "quiet", "silence", "morse"], "morse"))
+        self.assertEqual((constants["modes"][:4], constants["kept"]), (["auto", "quiet", "silence", "morse"], "morse"))
         self.assertEqual(constants["gate"], {"min": settings.THRESHOLDS[0], "max": settings.THRESHOLDS[-1], "step": settings.THRESHOLDS[1] - settings.THRESHOLDS[0]})
         self.assertEqual(self.data["gates"], ["never", "speak while CPU < 10 %", "speak while CPU < 50 %", "speak while CPU < 90 %", "always"])
 

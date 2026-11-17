@@ -19,6 +19,7 @@ VENDORED = {
     "3d-force-graph/3d-force-graph.min.js": ("13088340aad408156064fd120c3bc3a47c93a3cc45b8f132d6284b20e2223be9", "Copyright (c) 2017 Vasco Asturiano"),
     "three/three.module.js": ("9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea", "Copyright © 2010-2026 three.js authors"),
     "three/three.core.js": ("9edde002b066a9a05676a6127f67735b62baf399bdea529f2f7e31657da769e6", "Copyright © 2010-2026 three.js authors"),
+    "ggwave/ggwave.js": ("f3792b5c185345a35a935ca68a5064b97f979d13fbba0062ff16f6b3b31a6113", "Copyright (c) 2020 Georgi Gerganov"),
 }
 VERSIONS = {"3d-force-graph/3d-force-graph.min.js": "Version 1.80.1", "three/three.core.js": "REVISION = '186'"}
 

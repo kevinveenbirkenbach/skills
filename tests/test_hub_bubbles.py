@@ -144,7 +144,7 @@ async function failed(bubbles, item, cancel) {
   };
   vm.runInNewContext(`${code}\\nsay(item);`, {
     Bubbles, speech, fetch, item, Date, settings: {bubbles}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0, radioSet: {},
-    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 0}, RadioSet: {burst: (gain) => ({gain})},
+    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 0}, RadioSet: {KEYED: ["morse", "gibberlink"], FALLBACKS: ["gibberlink", "morse", "burst"], burst: (gain) => ({gain})},
     toast: (title, lines) => shown.push(`${title}: ${lines.join(" ")}`),
     context: () => ({}), drawBubbles: draw, drawSpeaker: draw, wordsRead: () => 0,
     performance: {now: () => 1000}, window: {setTimeout: () => 7, clearTimeout: () => {}},
@@ -195,7 +195,7 @@ async function run(rule, items) {
   };
   const sandbox = {
     Bubbles, speech, Date, settings: {bubbles: true}, radioSet: {}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0, SOUND_SLACK: 2,
-    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 1}, RadioSet: {burst: (gain) => ({gain, seconds: 0.6, frequency: 1800, q: 0.9})},
+    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 1}, RadioSet: {KEYED: ["morse", "gibberlink"], FALLBACKS: ["gibberlink", "morse", "burst"], burst: (gain) => ({gain, seconds: 0.6, frequency: 1800, q: 0.9})},
     toast: () => null, context: () => audio, drawBubbles: () => null, wordsRead: () => 0, saidOf: (item) => item.words || Bubbles.words(item.line), performance: {now: () => 1000},
     duck: () => {
       if (rule === "transmit" && !ducked) {
@@ -343,7 +343,7 @@ async function transmitted(steps, cut, row = ROW, broken = "") {
     fetch: async (url, options) => (JSON.parse(options.body).text === "fails"
       ? {ok: false, status: 500, headers: {get: () => "text/plain"}, text: async () => "tts down"}
       : {ok: true, status: 200, headers: {get: () => "audio/wav"}, arrayBuffer: async () => ({})}),
-    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 1}, RadioSet: {burst: (gain) => ({gain, seconds: 0.6, frequency: 1800, q: 0.9})},
+    Voice: {enqueue: (pending, next) => [...pending, next], loudness: () => 1}, RadioSet: {KEYED: ["morse", "gibberlink"], FALLBACKS: ["gibberlink", "morse", "burst"], burst: (gain) => ({gain, seconds: 0.6, frequency: 1800, q: 0.9})},
   };
   vm.runInNewContext(`${code}
 function drawSpeaker() {

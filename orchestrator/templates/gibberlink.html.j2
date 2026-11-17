@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gibberlink encoder</title>
+<script nonce="{{ nonce }}" src="/vendor/ggwave.js"></script>
+<script nonce="{{ nonce }}">
+{% include "gibberlink.js" %}
+{# ggwave fetches its embedded data: wasm first and decodes the bytes itself when that fails; rejecting at once keeps connect-src 'none' from logging a violation #}
+window.fetch = () => Promise.reject(new TypeError("the Gibberlink encoder has no network"));
+Gibberlink.serve(window, ggwave_factory({print: () => undefined, printErr: () => undefined}));
+</script>
+</head>
+<body></body>
+</html>

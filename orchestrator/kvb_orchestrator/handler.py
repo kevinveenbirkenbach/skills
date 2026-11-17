@@ -16,7 +16,7 @@ from .scores import scored
 
 BODY_LIMIT = 1 << 20
 UPLOAD_LIMIT = 50 << 20
-PAGE_CSP = "sandbox allow-scripts"
+PAGE_CSP = "sandbox allow-scripts; frame-ancestors 'none'"
 SETTINGS_ROUTE = "/api/settings"
 TTS_ROUTE = "/api/tts"
 WAV_TYPE = "audio/wav"
@@ -50,6 +50,7 @@ TASKS_ROUTE = "/api/tasks"
 GATES_ROUTE = "/api/gates"
 TOKEN_ROUTE = "/api/cleanup/token"
 VIEW_ROUTE = "/api/view"
+ENCODER_ROUTE = "/gibberlink"
 VENDOR_ROUTE = re.compile(r"/vendor/([a-z0-9.-]{1,64})")
 SCRIPT_TYPE = "text/javascript; charset=utf-8"
 FONT_TYPE = "font/woff2"
@@ -57,6 +58,7 @@ VENDOR = {
     "3d-force-graph.min.js": ("3d-force-graph/3d-force-graph.min.js", SCRIPT_TYPE),
     "three.module.js": ("three/three.module.js", SCRIPT_TYPE),
     "three.core.js": ("three/three.core.js", SCRIPT_TYPE),
+    "ggwave.js": ("ggwave/ggwave.js", SCRIPT_TYPE),
     "comic-neue.woff2": ("comic-neue/comic-neue-latin-400-normal.woff2", FONT_TYPE),
 }
 VOICE_ROUTE = "/api/voice"
@@ -107,6 +109,8 @@ class Handler(Exchange):
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden host")
         elif path == "/":
             self.index()
+        elif path == ENCODER_ROUTE:
+            self.encoder()
         elif firewall:
             self.answer(firewall, HTTPStatus.OK)
         elif diff:
@@ -330,6 +334,10 @@ class Handler(Exchange):
         page, csp = self.server.hub.render(nonce)
         headers = {"Content-Security-Policy": csp, "X-Frame-Options": "DENY"}
         self.send(HTTPStatus.OK, "text/html; charset=utf-8", page.encode("utf-8"), headers)
+
+    def encoder(self) -> None:
+        page, csp = self.server.hub.encoder(secrets.token_urlsafe(18))
+        self.send(HTTPStatus.OK, "text/html; charset=utf-8", page.encode("utf-8"), {"Content-Security-Policy": csp})
 
     def vendored(self, name: str, content_type: str) -> None:
         headers = {"Content-Security-Policy": PLAIN_CSP, "Cache-Control": "private, max-age=86400"}

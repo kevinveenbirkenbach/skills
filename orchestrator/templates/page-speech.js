@@ -27,11 +27,11 @@
 
   /**
    * @param {object|undefined} step the step the radio set plans now at the index that plays.
-   * @param {string} kind word, speech or burst: what plays or is about to play there.
-   * @returns {boolean} whether that sound may play: the planned kind, or the burst standing in for a planned speech line.
+   * @param {string} kind word, speech, or a fallback kind (gibberlink, morse, burst): what plays or is about to play there.
+   * @returns {boolean} whether that sound may play: the planned kind, or a fallback standing in for a planned speech line.
    */
   function allows(step, kind) {
-    return Boolean(step) && (step.kind === kind || (kind === "burst" && step.kind === "speech"));
+    return Boolean(step) && (step.kind === kind || (RadioSet.FALLBACKS.includes(kind) && step.kind === "speech"));
   }
 
   function speechFailed(lines) {
@@ -54,7 +54,7 @@
   function preempt() {
     const {item, source} = speech;
     const [first] = speech.pending;
-    if (item && source && item.playing === "morse" && first && Voice.rank(first) < Voice.rank(item)) {
+    if (item && source && RadioSet.KEYED.includes(item.playing) && first && Voice.rank(first) < Voice.rank(item)) {
       speech.item = null;
       speech.pending = Voice.enqueue(speech.pending, item, SPEECH_QUEUE);
       source.stop();
@@ -224,8 +224,8 @@
         await burst(audio, item);
         continue;
       }
-      if (step.kind === "morse") {
-        voiced = (await keyMorse(audio, item, step)) || voiced;
+      if (RadioSet.KEYED.includes(step.kind)) {
+        voiced = (await keyed(audio, item, step)) || voiced;
         done -= Number(item.cut);
         continue;
       }
@@ -244,9 +244,14 @@
       speechFailed([failed]);
     }
     if (failed && step.kind === "speech" && speech.item === item && allows(stepOf(item, done), "burst")) {
-      item.playing = "burst";
-      await burst(audio, item);
+      const stand = item.row ? RadioSet.standIn(item.row, radioSet) : {kind: "burst"};
+      item.playing = stand.kind;
+      await (stand.kind === "burst" ? burst(audio, item) : keyed(audio, item, stand));
     }
+  }
+
+  function keyed(audio, item, step) {
+    return step.kind === "morse" ? keyMorse(audio, item, step) : keyGibberlink(audio, item, step);
   }
 
   async function pump() {

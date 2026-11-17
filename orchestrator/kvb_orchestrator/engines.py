@@ -45,6 +45,8 @@ HEARING_BUDGET = 5 * STT_SECONDS
 NOISE = re.compile(r"\[[^\]\n]{0,40}\]")
 PLACEHOLDERS = frozenset({0, 0xFFFFFFFF})
 PITCH = (550, 850)
+GIBBERLINK = ("AUDIBLE_NORMAL", "AUDIBLE_FAST", "AUDIBLE_FASTEST", "DT_FASTEST")
+PANS = (-0.8, -0.4, 0.0, 0.4, 0.8)
 
 
 def voice_models(folder: Path) -> list[Path]:
@@ -132,6 +134,20 @@ def pitch_of(key: str) -> int:
     """
     low, high = PITCH
     return low + slot(key, high - low + 1)
+
+
+def sound_of(key: str) -> dict[str, str | float]:
+    """Args:
+        key: the speaker's session id or directory key, as pitch_of takes it.
+
+    Returns:
+        protocol: the ggwave protocol of GIBBERLINK, the four of the vendored
+        ggwave 0.4.0 whose frames decode at every length up to 140 bytes;
+        pan: the stereo position of PANS. One slot picks both, so the
+        speakers of distinct slots get distinct pairs.
+    """
+    picked = slot(key, len(GIBBERLINK) * len(PANS))
+    return {"protocol": GIBBERLINK[picked % len(GIBBERLINK)], "pan": PANS[picked // len(GIBBERLINK)]}
 
 
 def wav_seconds(body: bytes, seconds: int) -> float:

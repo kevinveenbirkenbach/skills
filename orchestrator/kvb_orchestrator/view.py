@@ -15,7 +15,7 @@ from .council import (
     silence_of,
 )
 from .crons import queue_entries
-from .engines import pitch_of
+from .engines import pitch_of, sound_of
 from .errors import ToolError
 from .events import KINDS, VIEWS
 from .fields import decode, instant, single
@@ -47,8 +47,12 @@ RADIO_WINDOW = 86400
 JOBS_SHOWN = 20
 ACTIVE = 900
 INDEX_CSP = (
-    "default-src 'none'; script-src 'nonce-{0}'; style-src 'nonce-{0}'; connect-src 'self'; media-src {1}; "
+    "default-src 'none'; script-src 'nonce-{0}'; style-src 'nonce-{0}'; connect-src 'self'; media-src {1}; frame-src 'self'; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+ENCODER_CSP = (
+    "sandbox allow-scripts; default-src 'none'; script-src 'nonce-{0}' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'none'; "
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 )
 
 
@@ -111,7 +115,7 @@ class View:
             called = [directory.at(key, row["ts"]) or name for key, name in zip(targets, row["to"], strict=True)]
             speaker = directory.at(source, row["ts"]) or row["from"]
             word, rest = phrase_parts(row["class"], speaker, called, row["text"])
-            spoken = {"speech": joined((word, rest)), "word": word, "rest": rest, "voice": self.speech.voice_of(source), "pitch": pitch_of(source), "speaker": speaker, "called": called}
+            spoken = {"speech": joined((word, rest)), "word": word, "rest": rest, "voice": self.speech.voice_of(source), "pitch": pitch_of(source), **sound_of(source), "speaker": speaker, "called": called}
             read = read_of(inlined, row["ts"])
             radio.append({**row, "source": source, "targets": targets, "now": directory.now(source), **spoken, **read})
         grant_rows = [{**grant, "target": directory.key(grant["to"], grant["ts"])} for grant in grants(history, (begin, end), claims, tasks)]
@@ -235,3 +239,15 @@ class View:
         state = self.state(now - RADIO_WINDOW, now, now, 0)
         page = self.templates.get_template("index.html.j2").render(nonce=nonce, state=state, view=self.view_store.get(), icons=self.icons, emoji_bases=sorted(signing.EMOJI_BASES))
         return page, INDEX_CSP.format(nonce, " ".join(["'self'", *state["media"]]))
+
+    def encoder(self, nonce: str) -> tuple[str, str]:
+        """Args:
+            nonce: the response's script nonce.
+
+        Returns:
+            The Gibberlink encoder page and its own CSP: the vendored ggwave
+            needs eval and WebAssembly, which the hub page never allows, so
+            the server sandboxes it into an opaque origin however it loads,
+            with no connection at all.
+        """
+        return self.templates.get_template("gibberlink.html.j2").render(nonce=nonce), ENCODER_CSP.format(nonce)
