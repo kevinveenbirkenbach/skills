@@ -4,8 +4,8 @@ import {createServer} from "node:net";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 
-// Args: <firefox binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, probe, shot, gesture} and an
-// optional init like cdp.mjs.
+// Args: <firefox binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, drag, probe, shot, gesture} and
+// an optional init like cdp.mjs.
 // Prints {results, errors}: one probe value per step and every JavaScript error the page logged.
 const [binary, planFile] = process.argv.slice(2);
 const plan = JSON.parse(readFileSync(planFile, "utf8"));
@@ -84,6 +84,12 @@ try {
     await sleep(step.wait);
     for (const key of step.keys || []) {
       await send("input.performActions", {context, actions: [{type: "key", id: "keyboard", actions: [{type: "keyDown", value: KEYS[key]}, {type: "keyUp", value: KEYS[key]}]}]});
+      await sleep(250);
+    }
+    if (step.drag) {
+      const [[x0, y0], [x1, y1]] = step.drag;
+      const moves = [{type: "pointerMove", x: x0, y: y0}, {type: "pointerDown", button: 0}, {type: "pointerMove", x: x1, y: y1}, {type: "pointerUp", button: 0}];
+      await send("input.performActions", {context, actions: [{type: "pointer", id: "mouse", parameters: {pointerType: "mouse"}, actions: moves}]});
       await sleep(250);
     }
     let value = null;

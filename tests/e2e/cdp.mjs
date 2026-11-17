@@ -3,8 +3,9 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 
-// Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, probe, shot, media, gesture},
-// keys being real key presses (Enter, Tab, ArrowLeft, ArrowRight) on the focused element before the probe and gesture running the probe with a
+// Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, drag, probe, shot, media, gesture},
+// keys being real key presses (Enter, Tab, ArrowLeft, ArrowRight) on the focused element before the probe, drag
+// [[x, y], [x, y]] a real left mouse drag between two viewport points after the keys, and gesture running the probe with a
 // user activation like a click, an optional init, the text of a function every new document runs before its own scripts,
 // and an optional authenticator {credentialId, privateKey, rpId}: base64 id and PKCS#8 key of a passkey the page may sign with.
 // Prints {results, errors}: one probe value per step and every uncaught page exception.
@@ -91,6 +92,14 @@ try {
       const [code, text] = KEYS[key];
       await page("Input.dispatchKeyEvent", {type: "keyDown", key, code: key, windowsVirtualKeyCode: code, text});
       await page("Input.dispatchKeyEvent", {type: "keyUp", key, code: key, windowsVirtualKeyCode: code});
+      await sleep(250);
+    }
+    if (step.drag) {
+      const [[x0, y0], [x1, y1]] = step.drag;
+      await page("Input.dispatchMouseEvent", {type: "mouseMoved", x: x0, y: y0});
+      await page("Input.dispatchMouseEvent", {type: "mousePressed", x: x0, y: y0, button: "left", buttons: 1, clickCount: 1});
+      await page("Input.dispatchMouseEvent", {type: "mouseMoved", x: x1, y: y1, button: "left", buttons: 1});
+      await page("Input.dispatchMouseEvent", {type: "mouseReleased", x: x1, y: y1, button: "left", buttons: 0, clickCount: 1});
       await sleep(250);
     }
     let value = null;
