@@ -5,10 +5,12 @@
         <file>, written with mode 0600. Run it on the host, outside every
         sandbox, e.g. --approvers ~/.config/kvb-orchestrator/approvers.json.
     verify --port <port> --approvers <file> --replay <file> --review <id>
-        --gate <pass|fail>: run in the worktree right before the commit;
-        fetches the review's signature from the Agent Orchestrator on 127.0.0.1:<port>
-        and checks it against the repository, worktree, branch and the tree
-        git write-tree prints, as this process sees them.
+        --gate <pass|fail> [--record <file>]: run in the worktree right before
+        the commit; fetches the review's signature from the Agent Orchestrator
+        on 127.0.0.1:<port>, or reads it from <file>, the JSON object the MCP
+        tool review_wait or review_status answered, where a sandbox blocks
+        that port; checks it against the repository, worktree, branch and
+        the tree git write-tree prints, as this process sees them.
     request --port <port> --title <subject> --page <file> --notes <file>
         --gate <pass|fail> --score <line> --agent <name> [--rules <dir>]:
         run in the worktree; asks the operator to approve the staged tree,
@@ -71,8 +73,18 @@ def fetch(port: int, path: str) -> dict:
     return data
 
 
+def recorded(path: Path, review_id: str) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError) as error:
+        raise Refused(f"the record {path} cannot be read as JSON: {error}") from error
+    if not isinstance(data, dict) or data.get("id") != review_id:
+        raise Refused(f"the record {path} is not review {review_id}")
+    return data
+
+
 def verify_commit(args: argparse.Namespace) -> str:
-    review = fetch(args.port, f"/api/reviews/{args.review}")
+    review = recorded(args.record, args.review) if args.record else fetch(args.port, f"/api/reviews/{args.review}")
     if review.get("status") != "approved":
         raise Refused(f"the review is {review.get('status')}, not approved")
     item = staged(Path.cwd(), args.review)
@@ -140,6 +152,7 @@ def main() -> int:
     verifying.add_argument("--replay", type=Path, required=True)
     verifying.add_argument("--review", type=review_id, required=True)
     verifying.add_argument("--gate", choices=("pass", "fail"), required=True)
+    verifying.add_argument("--record", type=Path)
     requesting = commands.add_parser("request")
     requesting.add_argument("--port", type=int, required=True)
     for name in ("--title", "--score", "--agent"):

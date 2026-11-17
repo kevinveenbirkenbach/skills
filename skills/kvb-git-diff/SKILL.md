@@ -30,10 +30,9 @@ once the operator's pinned passkey signature over it verifies here.
    ```
 
    Only a `pass` review can be approved in bulk or by a rule. Tell the
-   operator in one line that the review waits in the hub at the `url` it
-   prints, written out as plain text: chat links do not open for this
-   operator. Without the script, the MCP tool `review_request` takes the
-   same fields without the diff.
+   operator the `url` it prints in one plain-text line; chat links do not
+   open for this operator. Without the script or port 8737, the MCP tool
+   `review_request` takes the same fields without the diff.
 3. Call `review_wait` with its `id` and `timeout_seconds` 240 until the
    status is no longer `pending`.
 4. `approved`: in the worktree, verify the operator's passkey signature
@@ -43,9 +42,10 @@ once the operator's pinned passkey signature over it verifies here.
    python3 ~/.local/share/kvb-orchestrator/client/approval.py verify --port 8737 --approvers ~/.config/kvb-orchestrator/approvers.json --replay <approvals>/commit.json --review <id> --gate <gate>
    ```
 
+   Sandboxed without port 8737: save `review_wait`'s answer under `/tmp`,
+   add `--record <file>`.
    Exit 0 only: commit as the calling skill says. Any other exit,
    `rejected`, or the tree changed: no commit; report the printed reason.
 
-The hub is unreachable (no kvb-orchestrator tools, or a call cannot connect), or the
-verify step refused: ask the calling skill's normal approval question in
-chat instead.
+No kvb-orchestrator tools, or the verify step refused: ask the calling
+skill's approval question in chat.

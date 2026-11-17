@@ -40,6 +40,10 @@ def state_of(review: dict) -> dict:
     return {key: review[key] for key in STATE}
 
 
+def proven(review: dict) -> dict:
+    return {**state_of(review), "proof": review.get("proof")}
+
+
 def review_row(review: dict) -> dict:
     created = datetime.datetime.fromisoformat(review["created"]).timestamp()
     return {**{key: review[key] for key in LISTED}, "notes": review["notes"], "created_ts": created, "files": review.get("files")}
@@ -92,7 +96,7 @@ class Reviewing:
         review = self.reviews.get(review_id)
         if review is None:
             raise Missing(review_id)
-        return {**state_of(review), "proof": review.get("proof")}
+        return proven(review)
 
     def verdict(self, review_id: str, status: str, body: bytes) -> dict:
         review = self.reviews.get(review_id)
@@ -111,13 +115,13 @@ class Reviewing:
     def status(self, arguments: dict) -> dict:
         expect(arguments, ("id",))
         review_id = field(arguments, "id")
-        return state_of(found(self.reviews.get(review_id), review_id))
+        return proven(found(self.reviews.get(review_id), review_id))
 
     def wait(self, arguments: dict) -> dict:
         expect(arguments, ("id", "timeout_seconds"))
         review_id = field(arguments, "id")
         timeout = seconds(arguments, "timeout_seconds", WAIT_CAP)
-        return state_of(found(self.reviews.wait(review_id, timeout), review_id))
+        return proven(found(self.reviews.wait(review_id, timeout), review_id))
 
     def pending(self, arguments: dict) -> dict:
         expect(arguments, ())

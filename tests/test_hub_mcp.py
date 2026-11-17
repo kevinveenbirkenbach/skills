@@ -32,7 +32,7 @@ class TestHubMcp(HubCase):
         self.assertRegex(review_id, r"^[0-9a-f]{16}$")
         state = self.tool("review_status", {"id": review_id})
         self.assertEqual(json.loads(state["content"][0]["text"]), state["structuredContent"])
-        self.assertEqual(state["structuredContent"], {"id": review_id, "status": "pending", "tree": TREE, "decided": None})
+        self.assertEqual(state["structuredContent"], {"id": review_id, "status": "pending", "tree": TREE, "decided": None, "proof": None})
         listed = self.tool("review_list", {})["structuredContent"]["reviews"]
         self.assertEqual([(r["id"], r["title"], r["tree"]) for r in listed], [(review_id, "feat: hub", TREE)])
         self.assertEqual(self.rpc("resources/list", {})["error"]["code"], -32601)

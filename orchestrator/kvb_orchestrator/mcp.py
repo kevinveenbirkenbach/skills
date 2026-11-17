@@ -55,7 +55,7 @@ class Mcp:
                     "score": text_property("The kvb-check-score line of the commit, one line."),
                 },
             ),
-            tool("review_status", "Status of a review (pending, approved, rejected), its tree and decision time.", {"id": review_id}),
+            tool("review_status", "Status of a review (pending, approved, rejected), its tree, decision time and the passkey proof that approval.py verify --record checks.", {"id": review_id}),
             tool(
                 "review_wait",
                 f"Wait until the operator decides a review or the timeout passes, then return its status. "

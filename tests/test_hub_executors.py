@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import hub_support
@@ -214,7 +215,7 @@ class TestHubExecutors(HubCase):
         self.assertFalse(rules.rule_matches({**stored, "proof": None}, "ask", subject, now))
         self.assertFalse(rules.rule_matches(stored, "ask", subject, stored["proof"]["payload"]["expires"] + 1))
 
-    def test_the_commit_check_verifies_the_staged_tree_before_a_commit(self):
+    def staged_review(self) -> tuple[Path, str, str]:
         repo = self.outside / "repo"
         repo.mkdir()
         self.git(repo, "init", "--quiet", "--initial-branch", "feature/x")
@@ -224,20 +225,29 @@ class TestHubExecutors(HubCase):
         common = self.git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
         top = self.git(repo, "rev-parse", "--show-toplevel").strip()
         arguments = {**self.arguments("feat: signed", "", self.page("signed.html", PAGE)), "repo": common, "worktree": top, "tree": tree}
-        review_id = self.tool("review_request", arguments)["structuredContent"]["id"]
+        return repo, self.tool("review_request", arguments)["structuredContent"]["id"], tree
 
-        def verify(gate: str) -> subprocess.CompletedProcess:
-            argv = ["verify", "--port", str(self.port), "--approvers", str(self.approvers), "--replay", str(self.replay / "commit.json"), "--review", review_id, "--gate", gate]
-            return subprocess.run([sys.executable, str(APPROVAL), *argv], cwd=repo, env={**os.environ, **GIT_ENV}, capture_output=True, text=True, timeout=60, check=False)
-
-        done = verify("pass")
-        self.assertEqual(done.returncode, 1, done.stdout)
-        self.assertIn("the review is pending", done.stderr)
+    def approve_review(self, review_id: str) -> None:
         signer = self.pin()
         entries = [self.entry("review", review_id, "", "")]
         with mock.patch.object(batches, "UNDO", 0.05):
             self.assertEqual(self.approve(entries, self.signed(entries, signer))[0], 202)
             self.settle(lambda: self.status(review_id) == "approved")
+
+    def verify(self, repo: Path, review_id: str, *extra: str) -> subprocess.CompletedProcess:
+        argv = ["verify", "--port", str(self.port), "--approvers", str(self.approvers), "--review", review_id, *extra]
+        return subprocess.run([sys.executable, str(APPROVAL), *argv], cwd=repo, env={**os.environ, **GIT_ENV}, capture_output=True, text=True, timeout=60, check=False)
+
+    def test_the_commit_check_verifies_the_staged_tree_before_a_commit(self):
+        repo, review_id, tree = self.staged_review()
+
+        def verify(gate: str) -> subprocess.CompletedProcess:
+            return self.verify(repo, review_id, "--replay", str(self.replay / "commit.json"), "--gate", gate)
+
+        done = verify("pass")
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("the review is pending", done.stderr)
+        self.approve_review(review_id)
         (repo / "a.txt").write_text("two\n", encoding="utf-8")
         self.git(repo, "add", "a.txt")
         done = verify("pass")
@@ -251,6 +261,29 @@ class TestHubExecutors(HubCase):
         done = verify("pass")
         self.assertEqual(done.returncode, 1, done.stdout)
         self.assertIn("already used", done.stderr)
+
+    def test_a_sandboxed_agent_verifies_the_record_the_mcp_tool_answered(self):
+        repo, review_id, tree = self.staged_review()
+        record = self.outside / "record.json"
+        replay = ("--replay", str(self.replay / "record.json"), "--gate", "pass", "--record", str(record))
+        self.assertIsNone(self.tool("review_status", {"id": review_id})["structuredContent"]["proof"])
+        self.approve_review(review_id)
+        answered = self.tool("review_wait", {"id": review_id, "timeout_seconds": 1})["structuredContent"]
+        self.assertEqual((answered["status"], answered["tree"]), ("approved", tree))
+        for content, reason in (
+            ("{not json", "cannot be read as JSON"),
+            (json.dumps({**answered, "id": "0" * 16}), f"is not review {review_id}"),
+            (json.dumps({**answered, "proof": None}), "no signature"),
+        ):
+            with self.subTest(reason=reason):
+                record.write_text(content, encoding="utf-8")
+                done = self.verify(repo, review_id, *replay)
+                self.assertEqual(done.returncode, 1, done.stdout)
+                self.assertIn(reason, done.stderr)
+        record.write_text(json.dumps(answered), encoding="utf-8")
+        done = self.verify(repo, review_id, *replay)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(f"tree {tree} on feature/x", done.stdout)
 
 
 if __name__ == "__main__":
