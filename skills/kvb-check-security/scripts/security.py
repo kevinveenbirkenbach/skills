@@ -23,7 +23,7 @@ Scan:
     The regular files `git diff <ref>` names plus untracked ones, symlinks left
     out, copied to a temporary tree and scanned once with
     `medusa scan <tree> --format json -o <dir> --no-cache --workers <w>`, w the
-    files scanned but at most WORKERS, HOME pointing into the temporary
+    files scanned but at most host_workers(), HOME pointing into the temporary
     directory because medusa creates ~/.medusa on start and KNOB set to
     --timeout (a medusa that ignores KNOB keeps its own cap), read from
     `<dir>/medusa-scan-*.json`: a `findings` list whose entries carry
@@ -137,7 +137,8 @@ WEIGHTS = {"critical": 50, "high": 25, "medium": 10, "low": 2, "info": 0}
 SAFE = 100
 SHOWN = 5
 REACH = 2
-WORKERS = 4
+CORE_SHARE = 0.95
+CPUINFO = Path("/proc/cpuinfo")
 KNOB = "MEDUSA_SCANNER_TIMEOUT"
 TIMEOUT = 900
 DEADLINE = 3600
@@ -211,6 +212,37 @@ class Rules(NamedTuple):
     line_limit: int
     paths: tuple
     files: tuple
+
+
+def physical_cores(cpuinfo: str) -> int:
+    """Returns:
+        The distinct physical id and core id pairs cpuinfo lists, else the
+        logical CPU count.
+    """
+    pairs, socket = set(), ""
+    for line in cpuinfo.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "physical id":
+            socket = value.strip()
+        elif key.strip() == "core id":
+            pairs.add((socket, value.strip()))
+    return len(pairs) or os.cpu_count() or 1
+
+
+def scan_workers(cores: int) -> int:
+    """Returns:
+        CORE_SHARE of the cores rounded down, at least one core left free and
+        at least one worker.
+    """
+    return max(1, min(int(cores * CORE_SHARE), cores - 1))
+
+
+def host_workers() -> int:
+    try:
+        cpuinfo = CPUINFO.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        cpuinfo = ""
+    return scan_workers(physical_cores(cpuinfo))
 
 
 def fail(message: str) -> None:
@@ -758,7 +790,7 @@ def scan(
             return scanned, hit, missed
         code, out, lasted = medusa_run(
             [medusa, "scan", str(tree), "--format", "json", "-o", str(reports), "--no-cache",
-             "--workers", str(min(scanned, WORKERS))],
+             "--workers", str(min(scanned, host_workers()))],
             work, env, deadline,
         )
         try:

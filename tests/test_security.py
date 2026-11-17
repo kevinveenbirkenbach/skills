@@ -111,6 +111,28 @@ def ended(pids: list[int]) -> None:
                 pass
 
 
+def security_module():
+    spec = importlib.util.spec_from_file_location("kvb_check_security_workers", SECURITY)
+    security = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(security)
+    return security
+
+
+class TestScanWorkers(unittest.TestCase):
+    def test_medusa_takes_95_percent_of_the_physical_cores_and_leaves_one_free(self):
+        security = security_module()
+        for cores, workers in ((1, 1), (2, 1), (4, 3), (14, 13), (20, 19), (40, 38), (100, 95)):
+            with self.subTest(cores=cores):
+                self.assertEqual(security.scan_workers(cores), workers)
+
+    def test_physical_cores_count_core_ids_per_socket_and_skip_hyperthreads(self):
+        security = security_module()
+        block = "processor\t: {n}\nphysical id\t: {socket}\ncore id\t\t: {core}\n\n"
+        cpuinfo = "".join(block.format(n=n, socket=n // 4, core=n % 2) for n in range(8))
+        self.assertEqual(security.physical_cores(cpuinfo), 4)
+        self.assertEqual(security.physical_cores(""), os.cpu_count())
+
+
 class TestSecurity(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -199,7 +221,8 @@ class TestSecurity(unittest.TestCase):
         self.assertEqual(result.returncode, 3, result.stderr)
         argv = json.loads((self.bin / "argv.json").read_text(encoding="utf-8"))
         self.assertEqual(
-            [argv[0], *argv[2:4], argv[4], *argv[6:]], ["scan", "--format", "json", "-o", "--no-cache", "--workers", "2"]
+            [argv[0], *argv[2:4], argv[4], *argv[6:]],
+            ["scan", "--format", "json", "-o", "--no-cache", "--workers", str(min(2, security_module().host_workers()))],
         )
         result = self.scan("--json", env=self.env)
         self.assertNotIn(PLACEHOLDER, result.stdout + result.stderr)
