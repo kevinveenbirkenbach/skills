@@ -51,13 +51,17 @@ tool silently disappearing from an agent.
    with the repository as cwd, so a `json.py` or `tokeneconomizer/`
    planted there runs outside the sandbox; `write_json` and `_write_text`
    in `denylist.py` follow a symlink planted at the `.te.tmp` name.
-   `patches/tokeneconomizer.patch` sets `PYTHONSAFEPATH=1` for that child
-   and creates the temporary file with `O_CREAT|O_EXCL|O_NOFOLLOW`; the
-   install applies it on top of the pin, and a clone that differs from pin
-   plus patch is refused, left as found. Both holes go to Microsoft through
-   its private channel (aka.ms/SECURITY.md), never a public issue; the
+   `patches/tokeneconomizer.patch` is the diff of upstream PR #261
+   (microsoft/TokenEconomizer, fixes issue #260; operator 2026-11-17 chose
+   the public issue and PR over the private channel): the child starts as
+   `python -E -s -X utf8 -c` with the plugin directory first on
+   `sys.path`, the aider probe runs in an empty directory, and temporary
+   and settings files open with `O_NOFOLLOW` (the temporary one also
+   `O_CREAT|O_EXCL`). The install applies it on top of the pin, and a
+   clone that differs from pin plus patch is refused, left as found; the
    patch is dropped once a fixed upstream commit is pinned. Rejected:
-   parking the rollout until upstream fixes it; installing unpatched.
+   parking the rollout until upstream fixes it; installing unpatched;
+   `PYTHONSAFEPATH=1`, which an empty `PYTHONPATH` element bypasses.
 
 ## Approach
 
@@ -99,11 +103,12 @@ flowchart TD
   `.state/evidence/tokeneconomizer/` and reports no critical finding, or the
   rollout stopped with the finding reported.
 - [ ] kvb-check-legal names the MIT licence of the pinned commit.
-- [ ] Under `.state/evidence/tokeneconomizer/`, a probe shows the planted
-  `json.py` running under plain `python -m` and not under
-  `PYTHONSAFEPATH=1`, and the unpatched `write_json` overwriting a
-  symlinked victim while the patched one leaves it untouched.
-- [ ] The private vulnerability report is drafted for the operator to send.
+- [ ] The regression tests of PR #261 (`tests/test_live_safety.py`) pass on
+  pin plus patch and fail on the bare pin: planted `json.py`, `runpy.py`,
+  `sitecustomize.py` and `tokeneconomizer/` with no, an empty and a `.`
+  `PYTHONPATH` element, a planted `aider/`, and symlinked temporary and
+  settings files.
+- [ ] Issue #260 and PR #261 are open on microsoft/TokenEconomizer.
 
 ### Install
 

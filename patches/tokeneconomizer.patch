@@ -1,31 +1,192 @@
+diff --git a/tests/test_live_safety.py b/tests/test_live_safety.py
+index 838c74c..135be75 100644
+--- a/tests/test_live_safety.py
++++ b/tests/test_live_safety.py
+@@ -1,20 +1,25 @@
+ """What the plugin writes stays where it belongs and stays private.
+ 
+   * A checkout decides what `.claude`, `.codex`, `.github` and `.git` are, so a write the
+-    deny list makes must not follow a symlink, or a `.git` file, out of the repository.
++    deny list makes must not follow a symlink, or a `.git` file, out of the repository; nor
++    must its temporary file, nor the read of the file before it.
+   * A settings file the plugin cannot parse is the person's: refused, never written over.
+   * The state root holds what was derived from the agents' private session logs, and the
+     launcher the slash commands run: it is private to its owner.
++  * The `te` a hook starts in the background runs in the repository but imports only the
++    plugin's own code, never a module the checkout carries, whatever PYTHONPATH it inherits;
++    nor does the Python it probes for aider.
+ """
+ import json
+ import os
+ import stat
+ import subprocess
+ import sys
++from types import SimpleNamespace
+ 
+ import pytest
+ 
+-from tokeneconomizer.plugin import denylist, toolcheck
++from tokeneconomizer.plugin import context, denylist, repomap, toolcheck, winspawn
+ from tokeneconomizer.plugin.paths import ensure_launcher, secure_root
+ from tokeneconomizer.plugin.store import Store
+ from tests.conftest import git_sh, symlink_or_skip
+@@ -82,6 +87,80 @@ def test_a_symlinked_exclude_file_is_not_written_through(repo, tmp_path):
+     assert victim.read_text() == "keep\n"
+ 
+ 
++@pytest.mark.parametrize("write", [
++    lambda path: denylist.write_json(path, {"permissions": {"deny": ["Workflow"]}}),
++    lambda path: denylist._write_text(path, '{"permissions": {"deny": ["Workflow"]}}\n'),
++], ids=["write_json", "_write_text"])
++def test_a_symlink_at_the_temporary_name_is_not_written_through(repo, tmp_path, write):
++    victim = tmp_path / "victim.json"
++    victim.write_text('{"keep": true}\n')
++    path = os.path.join(repo, ".claude", "settings.local.json")
++    os.makedirs(os.path.dirname(path))
++    symlink_or_skip(victim, path + ".te.tmp")
++    write(path)
++    assert victim.read_text() == '{"keep": true}\n'
++    assert json.load(open(path)) == {"permissions": {"deny": ["Workflow"]}}
++    assert not os.path.lexists(path + ".te.tmp")
++
++
++@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="no O_NOFOLLOW on this system")
++def test_a_settings_file_swapped_for_a_symlink_after_the_guard_is_not_read(repo, tmp_path):
++    victim = tmp_path / "settings.json"
++    victim.write_text('{"hooks": {"Stop": []}}\n')
++    path = os.path.join(repo, ".claude", "settings.local.json")
++    os.makedirs(os.path.dirname(path))
++    symlink_or_skip(victim, path)
++    with pytest.raises(RuntimeError, match="cannot read"):
++        denylist._read_settings(path)
++
++
++def _plant(repo, tmp_path, modules):
++    """Each module of `modules` (a path relative to `repo`) creates its marker when it runs;
++    returns the markers by module."""
++    planted = {}
++    for module in modules:
++        planted[module] = tmp_path / ("planted-" + module.replace(os.sep, "-"))
++        os.makedirs(os.path.dirname(os.path.join(repo, module)) or repo, exist_ok=True)
++        open(os.path.join(repo, module), "w").write(
++            f"open({str(planted[module])!r}, 'w').close()\n")
++    return planted
++
++
++@pytest.mark.parametrize("inherited", [None, os.pathsep + "elsewhere", "."],
++                         ids=["no PYTHONPATH", "PYTHONPATH with an empty element", "PYTHONPATH ."])
++def test_the_background_te_imports_nothing_the_repository_carries(repo, tmp_path, monkeypatch,
++                                                                    inherited):
++    planted = _plant(repo, tmp_path, ["json.py", "runpy.py", "sitecustomize.py",
++                                      os.path.join("tokeneconomizer", "__init__.py")])
++    started = []
++    monkeypatch.setattr(context.subprocess, "Popen", lambda cmd, **kw: started.append((cmd, kw)))
++    monkeypatch.setattr(winspawn, "spawn", lambda cmd, cwd, env, log: started.append(
++        (cmd, {"cwd": cwd, "env": env})) or True)
++    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONSAFEPATH", "PYTHONPATH")}
++    if inherited is not None:
++        env["PYTHONPATH"] = inherited
++    ctx = SimpleNamespace(env=env, host=SimpleNamespace(name="claude"),
++                          repo=SimpleNamespace(root=repo), store=Store(str(tmp_path / "st")))
++    context.LiveContext.spawn(ctx, ["--help"], "spawn.log")
++    monkeypatch.undo()
++    (cmd, kw), = started
++    assert kw["cwd"] == repo
++    done = subprocess.run(cmd, cwd=kw["cwd"], env=kw["env"], capture_output=True, text=True,
++                          timeout=120)
++    assert [module for module, marker in planted.items() if marker.exists()] == []
++    assert done.returncode == 0, done.stderr
++    assert "usage" in done.stdout
++
++
++def test_the_aider_probe_imports_no_aider_the_repository_carries(repo, tmp_path, monkeypatch):
++    planted = _plant(repo, tmp_path, [os.path.join("aider", "__init__.py"),
++                                      os.path.join("aider", "repomap.py")])
++    monkeypatch.chdir(repo)
++    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONSAFEPATH", "PYTHONPATH")}
++    repomap._has_aider(sys.executable, env)
++    assert [module for module, marker in planted.items() if marker.exists()] == []
++
++
+ @pytest.mark.skipif(os.name == "nt",
+                     reason="POSIX permission bits: Windows keeps a profile private by ACL")
+ def test_a_loose_state_root_is_made_private_and_the_launcher_is_owner_only(tmp_path):
 diff --git a/tokeneconomizer/plugin/context.py b/tokeneconomizer/plugin/context.py
-index 85865d3..431115b 100644
+index 85865d3..0771631 100644
 --- a/tokeneconomizer/plugin/context.py
 +++ b/tokeneconomizer/plugin/context.py
-@@ -81,6 +81,9 @@ class LiveContext:
+@@ -9,6 +9,17 @@ from .config import LiveConfig, load_config
+ from .paths import RepoId, repo_identity, repo_state_dir, state_root
+ from .store import Store
+ 
++# The background `te` runs in the repository, and a checkout decides what sits there: with
++# `python -m` the working directory came first on sys.path, and an inherited PYTHONPATH with an
++# empty, `.` or relative element puts it there too, so a `json.py`, `runpy.py`,
++# `sitecustomize.py` or `tokeneconomizer/` it carries would run with the plugin's rights,
++# outside the agent's sandbox. `-E` ignores every PYTHON* variable (UTF-8 mode comes from
++# `-X utf8` instead), `-s` the user site, and the bootstrap drops the empty entry `-c` adds
++# and puts the plugin's own directory, its first argument, in front before anything is
++# imported. `-P` would do the last part only from Python 3.11 on.
++_RUN_CLI = ("import sys; sys.path[:] = [sys.argv.pop(1)] + [p for p in sys.path if p]; "
++            "import runpy; "
++            "runpy.run_module('tokeneconomizer.plugin.cli', run_name='__main__', alter_sys=True)")
+ 
+ @dataclass
+ class LiveContext:
+@@ -80,8 +91,9 @@ class LiveContext:
+         env["PYTHONPATH"] = core + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH")
                                      else "")
          # It reads session logs and the agents' output, which are UTF-8 whatever the locale.
++        # Both variables stay for what it starts in turn; `te` itself ignores them (`-E`).
          env["PYTHONUTF8"] = "1"
-+        # `-m` with cwd at the repository root would put that root first on sys.path, so a
-+        # json.py or tokeneconomizer/ planted in the repository would run in this process.
-+        env["PYTHONSAFEPATH"] = "1"
-         cmd = [sys.executable, "-m", "tokeneconomizer.plugin.cli", *argv,
+-        cmd = [sys.executable, "-m", "tokeneconomizer.plugin.cli", *argv,
++        cmd = [sys.executable, "-E", "-s", "-X", "utf8", "-c", _RUN_CLI, core, *argv,
                 "--host", self.host.name, "--cwd", self.repo.root]
          self.store.ensure()
+         if os.name == "nt":
 diff --git a/tokeneconomizer/plugin/denylist.py b/tokeneconomizer/plugin/denylist.py
-index 003891a..98c77d3 100644
+index 003891a..25a932b 100644
 --- a/tokeneconomizer/plugin/denylist.py
 +++ b/tokeneconomizer/plugin/denylist.py
-@@ -121,10 +121,19 @@ def _guard_target(repo_root, path):
+@@ -86,13 +86,22 @@ def settings_path(repo_root, host="claude"):
+     return os.path.join(repo_root, _SETTINGS.get(host, SETTINGS_REL))
+ 
+ 
++def _read_text(path):
++    """The text of the settings file at `path`, read without following a symlink there.
++
++    `_guard_target` looks at the path first, but the checkout can swap the file for a link to
++    a user-level configuration before it is read, and what is read is written back."""
++    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
++    with os.fdopen(os.open(path, flags), encoding="utf-8") as fh:
++        return fh.read()
++
++
+ def _read_settings(path):
+     """The settings object at `path`: {} when there is no file. A file that is there but is not
+     a JSON object is refused rather than written over -- it is the person's, and a parse error
+     is no reason to replace what they had in it."""
+     try:
+-        with open(path, encoding="utf-8") as fh:
+-            text = fh.read()
++        text = _read_text(path)
+     except FileNotFoundError:
+         return {}
+     except OSError as e:
+@@ -121,10 +130,23 @@ def _guard_target(repo_root, path):
                             "leads out of the repository")
  
  
 +def _open_tmp(tmp):
-+    # A planted symlink at the temporary name would carry the write out of the repository:
-+    # drop whatever is there and create the file new, never following a link.
++    """Open the temporary file `tmp` for writing, never through a link.
++
++    `_guard_target` checks the final path, and a checkout decides what sits at the temporary
++    name too: a symlink planted there would carry the write to its target, a user-level
++    configuration for one. An old entry is removed and a new file created exclusively."""
 +    if os.path.lexists(tmp):
 +        os.unlink(tmp)
-+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
++    flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
++             | getattr(os, "O_BINARY", 0))
 +    return os.fdopen(os.open(tmp, flags, 0o666), "w", encoding="utf-8")
 +
 +
@@ -37,7 +198,7 @@ index 003891a..98c77d3 100644
          json.dump(obj, fh, indent=2)
          fh.write("\n")
      os.replace(tmp, path)
-@@ -133,7 +142,7 @@ def write_json(path, obj):
+@@ -133,7 +155,7 @@ def write_json(path, obj):
  def _write_text(path, text):
      os.makedirs(os.path.dirname(path), exist_ok=True)
      tmp = path + ".te.tmp"
@@ -45,4 +206,50 @@ index 003891a..98c77d3 100644
 +    with _open_tmp(tmp) as fh:
          fh.write(text)
      os.replace(tmp, path)
+ 
+@@ -423,7 +445,7 @@ def _apply_codex(repo_root, capabilities, store):
+         raise RuntimeError(f"{path} is committed in this repository; the plugin will not edit a "
+                            "shared file. Add the toggles by hand, or keep them in your own "
+                            "copy of it.")
+-    original = open(path, encoding="utf-8").read() if not created else ""
++    original = _read_text(path) if not created else ""
+     text = original
+     added = []
+     for cap in capabilities:
+@@ -461,7 +483,7 @@ def _restore_codex(repo_root, store, capabilities):
+     path = settings_path(repo_root, "codex")
+     _guard_target(repo_root, path)
+     if os.path.exists(path):
+-        text = _toml_remove(open(path, encoding="utf-8").read(),
++        text = _toml_remove(_read_text(path),
+                             [f"{MARK}:{c}" for c in target])
+         if text.strip():
+             _write_text(path, text)
+diff --git a/tokeneconomizer/plugin/repomap.py b/tokeneconomizer/plugin/repomap.py
+index 9d4cbc3..809f3e2 100644
+--- a/tokeneconomizer/plugin/repomap.py
++++ b/tokeneconomizer/plugin/repomap.py
+@@ -29,6 +29,7 @@ import re
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ import time
+ 
+ 
+@@ -83,9 +84,13 @@ def head_commit(root):
+ 
+ 
+ def _has_aider(python, env):
++    # `-c` puts the working directory first on sys.path, and the background `te` runs in the
++    # repository: an `aider/` the checkout carries would be the one imported, and run. An empty
++    # directory instead; `-I` would also hide an aider installed in the user site.
+     try:
+-        return subprocess.run([python, "-c", PROBE], capture_output=True, timeout=60,
+-                              env=env).returncode == 0
++        with tempfile.TemporaryDirectory(prefix="te-aider-probe-") as empty:
++            return subprocess.run([python, "-c", PROBE], capture_output=True, timeout=60,
++                                  env=env, cwd=empty).returncode == 0
+     except (OSError, subprocess.SubprocessError):
+         return False
  
