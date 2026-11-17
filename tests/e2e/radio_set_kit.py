@@ -132,10 +132,16 @@ FACE = """(async () => {@HELPERS@@RADIO@
     const label = row.querySelector(".knob-label");
     return {text: text(label), title: label.title, whole: label.scrollWidth <= label.clientWidth + 1, row: row.scrollWidth <= row.clientWidth + 1};
   });
+  const testButtons = all(".radio-knobs .knob-row", spot).map((row) => (row.querySelector(".knob-test") ? name(row.querySelector(".knob-test")) : null));
+  const atTest = mark();
+  all(".radio-knobs .knob-test", spot).find((button) => name(button) === "Test Squelch").click();
+  const squelchLit = Boolean(await until(() => lamp().dataset.lit === "true" && audio().filters.length > atTest.filters, 6000));
+  const squelch = {lit: squelchLit, filters: since(atTest).filters.map(([type]) => type), tts: since(atTest).tts};
+  await until(() => lamp().dataset.lit === "false", 6000);
   const gear = all(".spot-head button", spot).find((button) => name(button) === "Read aloud");
   gear.click();
   await sleep(200);
-  const groups = Object.fromEntries(all("#radio-gear .chips", spot).map((group) => [group.getAttribute("aria-label"), all(".chip", group).map((chipNode) => [text(chipNode), chipNode.getAttribute("aria-pressed"), chipNode.disabled])]));
+  const groups =Object.fromEntries(all("#radio-gear .chips", spot).map((group) => [group.getAttribute("aria-label"), all(".chip", group).map((chipNode) => [text(chipNode), chipNode.getAttribute("aria-pressed"), chipNode.disabled])]));
   const stationsHead = text(spot.querySelector(".radio-station .group-title"));
   const ptt = spot.querySelector('form.composer button[type="submit"]');
   const pageFits = fits();
@@ -149,7 +155,7 @@ FACE = """(async () => {@HELPERS@@RADIO@
   const stations = [document.querySelector("#sheet .sheet-box").getAttribute("aria-label"), all("#sheet .settings h3").map(text)];
   all("#sheet .sheet-head button").find((button) => name(button) === "Close").click();
   await sleep(200);
-  return {display, modes, knobs, toneToggles, labels, groups, stationsHead, ptt: [text(ptt), ptt.title], sections, stations, fits: pageFits, unlabelled: unlabelled(), palette: getComputedStyle(document.documentElement).getPropertyValue("--panel").trim(), violations: window.e2eViolations};
+  return {display, modes, knobs, toneToggles, testButtons, squelch, labels, groups, stationsHead, ptt: [text(ptt), ptt.title], sections, stations, fits: pageFits, unlabelled: unlabelled(), palette: getComputedStyle(document.documentElement).getPropertyValue("--panel").trim(), violations: window.e2eViolations};
 })()"""
 LOG = """(async () => {@HELPERS@@RADIO@
   await until(() => rows().length, 8000);

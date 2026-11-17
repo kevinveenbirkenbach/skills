@@ -155,6 +155,7 @@
   function knobs() {
     const tones = SOUND_KINDS.map(([id, label]) => toneKnob(id, label));
     const squelch = knob("Squelch", "Squelch: scales every tone, the speech and the burst; 0 plays none", {min: 0, max: 1, step: 0.05}, (value) => keepRadio({squelch: value}));
+    squelch.row.append(iconBtn("bi-play-fill", "Test Squelch", "btn small ghost knob-test", () => say({steps: [{kind: "burst"}], voice: "", tone: "radio", cls: "post", who: HUMAN, sent: true, line: "squelch test"}), "Test: play the burst of a radio row, at the All radio volume times the squelch"));
     const threshold = knob("Threshold", "Speech threshold: the hub renders new speech only while the host CPU lies below it, always at 100 %, never at 0 %; your passkey signs each change", RadioSet.GATE, (value) => drawGate(threshold, value));
     threshold.input.addEventListener("change", (event) => setThreshold(Number(event.target.value)));
     const check = iconBtn("bi-broadcast", "Radio check", "btn small ghost radio-check", () => say({steps: [{kind: "speech", text: state.speech.sample}], voice: state.speech.operator, tone: "direct", cls: "newsletter", who: HUMAN, sent: true, line: "radio check"}), "Radio check: hear the operator's voice once");

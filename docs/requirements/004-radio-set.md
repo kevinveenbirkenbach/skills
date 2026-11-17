@@ -160,8 +160,10 @@ flowchart TD
 ### Layout and history rows (operator 2026-11-14)
 
 - [ ] The radio shows a Device card on the left (display line, Auto, Quiet
-      and Silence, the six level sliders one per row with label, slider,
-      value and test button, the internet stations folded in a details) and,
+      and Silence, the six level sliders one per row with label, slider and
+      value, a test button on the four tone rows and on Squelch, which plays
+      the burst of a radio row, none on the speech threshold (operator
+      2026-11-17), the internet stations folded in a details) and,
       on the right, the Speak card above the History card.
 - [ ] Every knob label starts at the same x position (one label column).
 - [ ] At 1920, 1366, 960 and 390 px the document's `scrollWidth` is at most

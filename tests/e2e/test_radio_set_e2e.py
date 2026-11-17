@@ -142,6 +142,8 @@ class TestRadioSet(HubCase):
                 shown = "50" if index == 0 or not signed else str(THRESHOLDS[base.WIDTHS[index - 1][0]])
                 self.assertEqual(face["knobs"][-1][1:], ["0", "100", "10", shown])
                 self.assertEqual(len(face["toneToggles"]), 4)
+                self.assertEqual(face["testButtons"], [*(f"Test {knob[0]}" for knob in face["knobs"][:-1]), None])
+                self.assertEqual(face["squelch"], {"lit": True, "filters": ["bandpass"], "tts": []}, face)
                 self.assertEqual([label["text"] for label in face["labels"]], [*(knob[0] for knob in face["knobs"][:-1]), f"speak while CPU < {shown} %"])
                 for label in face["labels"]:
                     self.assertEqual((label["title"], label["row"]), (label["text"], True), label)
