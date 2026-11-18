@@ -223,6 +223,27 @@ class TestDefaults(unittest.TestCase):
         self.assertEqual(self._hits(), (0, []))
         self.assertEqual(self._hits("--file", "extra.py"), (1, [("extra.py:1", "python", "g(x=1)", False, False)]))
 
+    def test_a_call_in_a_ternary_branch_is_no_method_and_a_typed_method_still_is(self):
+        self._write({
+            "tern.js": (
+                "const page = {\n"
+                "  getByText: (text) =>\n"
+                '    text === "OpenID"\n'
+                "      ? control(() => true, {\n"
+                "          click: async () => {\n"
+                "            state.url = `${ISSUER}/auth`;\n"
+                "          },\n"
+                "        })\n"
+                "      : hidden,\n"
+                "  getByLabel: (pattern) => pattern,\n"
+                "};\n"
+            ),
+            "typed.ts": "class A {\n  m(a = 1): (x: number) => void { return; }\n}\n",
+        })
+        self.assertEqual(
+            self._hits("--file", "tern.js", "--file", "typed.ts"), (1, [("typed.ts:2", "ts", "a = 1", False, False)])
+        )
+
     def test_text_output_marks_justified_and_candidate(self):
         self._write({"t.sh": "# the probe needs a fixed port\necho ${A:-b}\n", "t.ts": "x = y ?? 1;\n"})
         result = self._run("--repo", str(self.repo), "--file", "t.sh", "--file", "t.ts")
