@@ -720,6 +720,78 @@ class TestStagedDiff(unittest.TestCase):
                 found = staged_diff.commit_of(command, "/w")
                 self.assertEqual(None if found is None else str(found), expected)
 
+    def test_only_a_single_git_commit_tree_of_full_object_ids_names_its_tree_and_parents(self):
+        tree, parent, other = "a" * 40, "b" * 40, "c" * 64
+        cases = {
+            f"git commit-tree {tree} -p {parent} -m 'feat: x' -m body": ("/w", tree, [parent]),
+            f"git -C sub commit-tree -p{parent} -p {other} -S -mx {tree}": ("/w/sub", tree, [parent, other]),
+            f"env --chdir=sub git commit-tree {tree} --gpg-sign=KEY -F msg.txt": ("/w/sub", tree, []),
+            f"git commit-tree {tree} --no-gpg-sign -m 'fix commit'": ("/w", tree, []),
+            f"git commit-tree HEAD^{{tree}} -p {parent} -m x": None,
+            f"git commit-tree {tree} -p HEAD -m x": None,
+            f"git commit-tree {tree[:12]} -m x": None,
+            f"git commit-tree {tree} {other} -m x": None,
+            f"git commit-tree {tree} -p": None,
+            f"git commit-tree {tree} --frobnicate -m x": None,
+            f"git commit-tree {tree} -- -m x": None,
+            "git commit-tree -m x": None,
+            f"GIT_DIR=/tmp/other git commit-tree {tree} -m x": None,
+            f"git commit-tree {tree} -m x && git push": None,
+            f"git commit {tree} -m x": None,
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                found = staged_diff.tree_of(command, "/w")
+                self.assertEqual(None if found is None else (str(found[0]), found[1], found[2]), expected)
+        self.assertIsNone(staged_diff.commit_of(f"git commit-tree {tree} -m x", "/w"))
+
+    def test_only_a_single_git_merge_of_a_full_object_id_names_its_directory_and_target(self):
+        target = "d" * 40
+        cases = {
+            f"git merge --ff-only {target}": ("/w", target),
+            f"git -C sub merge --no-ff --no-edit -m 'merge it' -S {target}": ("/w/sub", target),
+            f"git merge --message=x --no-verify -mx {target}": ("/w", target),
+            "git merge --ff-only origin/main": None,
+            f"git merge {target} {'e' * 40}": None,
+            f"git merge -s ours {target}": None,
+            f"git merge -X theirs {target}": None,
+            f"git merge --allow-unrelated-histories {target}": None,
+            "git merge -m": None,
+            f"git merge {target} && git push": None,
+            f"GIT_DIR=/tmp/x git merge {target}": None,
+            f"git merge-base HEAD {target}": None,
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                found = staged_diff.merge_of(command, "/w")
+                self.assertEqual(None if found is None else (str(found[0]), found[1]), expected)
+
+    def test_a_merge_preview_shows_the_target_tree_against_its_merge_base_with_head(self):
+        base = git(self.repo, "rev-parse", "HEAD").strip()
+        git(self.repo, "commit", "-q", "-m", "next")
+        target = git(self.repo, "rev-parse", "HEAD").strip()
+        git(self.repo, "reset", "-q", "--hard", base)
+        found = staged_diff.merge_preview(self.repo, target, self.rules)
+        tree = git(self.repo, "rev-parse", f"{target}^{{tree}}").strip()
+        self.assertEqual(found, {"head": base, "base": base, "target": target, "diff": staged_diff.tree_diff(self.repo, tree, self.rules)[0]})
+        self.assertEqual(staged_diff.head_of(self.repo), base)
+        with self.assertRaises(staged_diff.DiffError):
+            staged_diff.merge_preview(self.repo, "0" * 40, self.rules)
+
+    def test_a_commit_tree_ask_ships_its_tree_against_the_first_parent_and_its_allow_needs_no_binding(self):
+        tree = git(self.repo, "write-tree").strip()
+        head = git(self.repo, "rev-parse", "HEAD").strip()
+        ask = {**ASK, "tool": "Bash", "command": f"git commit-tree {tree} -p {head} -m 'fix commit'", "cwd": str(self.repo)}
+        diff, sealed = staged_diff.tree_diff(self.repo, tree, self.rules)
+        self.assertEqual(permission_hook.commit_diff(ask, self.rules), (None, {"diff": diff, "sealed": sealed}))
+        self.assertFalse(permission_hook.unapprovable(ask))
+        self.assertEqual(permission_hook.bound(ALLOW, ask, None), ALLOW)
+        root = permission_hook.commit_diff({**ask, "command": f"git commit-tree {tree} -m root"}, self.rules)[1]["diff"]
+        self.assertEqual([(entry["path"], entry["status"]) for entry in root], [("added.txt", "A"), ("app.py", "A"), ("logo.png", "B")])
+        for command in (f"git commit-tree {head} -p {tree} -m x", f"git commit-tree {'0' * 40} -m x"):
+            with self.subTest(command=command):
+                self.assertEqual(permission_hook.commit_diff({**ask, "command": command}, self.rules), (None, {}))
+
 
 class TestHubOperatorTasks(HubCase):
     def scratch(self) -> tuple[Path, Path, dict]:

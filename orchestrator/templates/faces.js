@@ -88,7 +88,7 @@ const Faces = (() => {
     return {pick, parts};
   }
 
-  return {SIZE, COUNTS, COMBINATIONS, of};
+  return {SIZE, COUNTS, COMBINATIONS, of, hash};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Faces;

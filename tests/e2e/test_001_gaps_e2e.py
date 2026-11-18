@@ -273,7 +273,7 @@ class TestOrchestratorGaps(HubCase):
             self.assertNotIn("error", sweep[0], sweep[0])
             self.assertEqual(sorted(sweep[0]["expected"]), sorted(f"#{screen}" for screen in base.SCREENS))
             self.assertEqual([target for target in sweep[0]["nav"] if not any(f"#{screen}" == target or f"#{screen}".startswith(f"{target}/") for screen in base.SCREENS)], [])
-            self.assertEqual(sorted({view for found in sweep for view in found["views"]}), sorted(sweep[0]["viewNames"]))
+            self.assertEqual(sorted({view for found in sweep for view in found["views"]}), sorted([*sweep[0]["viewNames"], "Match"]))
         for found, screen, width in zip(sweep, screens, widths, strict=True):
             with self.subTest(screen=screen, width=width):
                 self.assertNotIn("error", found, found)

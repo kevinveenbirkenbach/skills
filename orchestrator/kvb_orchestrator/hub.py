@@ -35,6 +35,7 @@ from .messaging import Messaging
 from .names import Names
 from .offices import Offices
 from .presence import SNAPSHOT
+from .previewing import Previewing
 from .queue_order import QUEUE_SCRIPT, QueueOrder
 from .receipts import (
     NAMES,
@@ -88,7 +89,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Firewall, Inbox, Matching, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Firewall, Inbox, Matching, Previewing, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -136,6 +137,7 @@ class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Den
     queue_order: QueueOrder
     view_store: ViewStore
     match_snapshots: Ledger
+    merge_previews: Ledger
     live_state: LiveState
 
     def hosts(self) -> tuple[str, str]:
@@ -206,6 +208,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         replay=state / "replay" / "messages.json",
         view_store=ViewStore(state / "view.json"),
         match_snapshots=Ledger(state / "match.json"),
+        merge_previews=Ledger(state / "previews.json"),
         live_state=LiveState(live_ttl),
         rules=Ledger(state / "rules.json"),
         offers=Offers(),

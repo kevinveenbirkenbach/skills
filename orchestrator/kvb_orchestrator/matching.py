@@ -8,6 +8,7 @@ from .diffs import stored_diff
 from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field
 from .payloads import denied_roots, payload_files, payload_hash
+from .previewing import merge_hash
 from .records import digest, iso_epoch
 from .register import REGISTER, adder, operator_rows, read_register
 from .scores import metric_chips, score_labels
@@ -58,9 +59,10 @@ class Matching:
             agent = adder(tasks[row["task"]])
             cards.append({**self.command_card(row, agent, born_of(agent, names, claims), roots, scan), "to": requester_of(claims, agent)[0]})
         listed = {card["id"] for card in cards}
-        for snapshot in self.match_snapshots.listed():
-            if snapshot["id"] not in listed:
-                self.match_snapshots.remove(snapshot["id"])
+        for store in (self.match_snapshots, self.merge_previews):
+            for snapshot in store.listed():
+                if snapshot["id"] not in listed:
+                    store.remove(snapshot["id"])
         return {"now": now, "cards": cards}
 
     def commit_card(self, review: dict, reviews: list[dict], born: float | None, labels: dict | None) -> dict:
@@ -79,26 +81,38 @@ class Matching:
             "stale": bool(reason), "stale_reason": reason, "files": files, "command": "", "directory": review["worktree"], "reason": "",
         }
 
+    def card_payload(self, row: dict, roots: list[str] | None) -> tuple[list[dict], str, dict | None]:
+        """Returns:
+            What a command card shows and is bound to: the runner's merge
+            preview diff and merge_hash() for a git merge it previewed, else
+            the named payload files and payload_hash(); and the preview.
+        """
+        preview = self.preview_of(row)
+        if preview is not None:
+            return preview.get("diff", []), merge_hash(row, preview), preview
+        files = payload_files(row["command"], row["directory"], roots)
+        return files, payload_hash(row["command"], row["directory"], files), None
+
     def command_card(self, row: dict, agent: str, born: float | None, roots: list[str] | None, scan: dict) -> dict:
         card_id = f"operator:{row['task']}"
-        files = payload_files(row["command"], row["directory"], roots)
-        live = payload_hash(row["command"], row["directory"], files)
+        files, live, preview = self.card_payload(row, roots)
         snapshot = self.match_snapshots.get(card_id)
-        if snapshot is None or snapshot["command_sha256"] != digest(row["command"]):
+        if snapshot is None or snapshot["command_sha256"] != digest(row["command"]) or (preview is not None and not snapshot.get("previewed")):
             self.match_snapshots.remove(card_id)
-            snapshot = self.match_snapshots.insert(card_id, {"command_sha256": digest(row["command"]), "hash": live, "files": files, "taken": time.time()})
+            snapshot = self.match_snapshots.insert(card_id, {"command_sha256": digest(row["command"]), "hash": live, "files": files, "previewed": preview is not None, "taken": time.time()})
         stale = snapshot["hash"] != live
+        moved = "HEAD or the merge base moved since it was added" if preview is not None else "a payload file changed since it was added"
+        merge = None if preview is None else {key: preview.get(key, "") for key in ("head", "base", "target", "error")}
         repo, branch, worktree = place_of(row["directory"], scan)
         return {
             "id": card_id, "kind": "command", "ref": row["task"], "agent": agent, "born": born, "created_ts": snapshot["taken"], "repo": repo, "branch": branch, "worktree": worktree,
             "title": row["command"], "score": "", "metrics": [], "gate": "", "hash": snapshot["hash"], "live_hash": live, "stale": stale,
-            "stale_reason": "a payload file changed since it was added" if stale else "", "files": snapshot["files"], "command": row["command"], "directory": row["directory"],
-            "reason": row["why"], "sha256": digest(row["command"]),
+            "stale_reason": moved if stale else "", "files": snapshot["files"], "command": row["command"], "directory": row["directory"],
+            "reason": row["why"], "sha256": digest(row["command"]), "merge": merge,
         }
 
     def live_payload(self, row: dict) -> str:
-        files = payload_files(row["command"], row["directory"], denied_roots(self.settings_files()[0]))
-        return payload_hash(row["command"], row["directory"], files)
+        return self.card_payload(row, denied_roots(self.settings_files()[0]))[1]
 
     def payload_bound(self, row: dict, shown: object) -> list[dict]:
         """Args:

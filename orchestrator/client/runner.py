@@ -30,7 +30,12 @@ Returns:
     changes without --rasci and --council or into a council that is a
     symlink or another uid's, gate changes without --gates, and every other
     job. Posts the last 200 output lines
-    back while it runs and the exit code at its end. The exit code is 0.
+    back while it runs and the exit code at its end. Before every poll it
+    posts, for each open operator row that is a git merge of a full commit
+    id (staged_diff.merge_of) whose HEAD differs from the preview the hub
+    holds, staged_diff.merge_preview, which its Match card shows; such a
+    merge whose job names the previewed HEAD is refused once HEAD moved. The
+    exit code is 0.
 """
 
 from __future__ import annotations
@@ -53,10 +58,15 @@ from pathlib import Path
 from typing import NamedTuple
 
 import hub_api
+import hub_limits
 import signing
+import staged_diff
 import verifier
 
 LINES = 200
+PREVIEWS = "/api/runner/previews"
+ERROR_LIMIT = 500
+PREVIEW_FAILURES = (OSError, ValueError, staged_diff.DiffError)
 BEAT = 2.0
 SAFE_PATH = "/usr/bin:/bin"
 TASK_JOB = "task"
@@ -140,6 +150,64 @@ def gate_refusal(job: dict, trust: verifier.Trust, now: float) -> str | None:
     except (signing.Refused, OSError) as error:
         return f"{REFUSED}: {error}"
     return None
+
+
+def moved(job: dict) -> str | None:
+    """Args:
+        job: a claimed operator command; head, when set, is the HEAD its
+            Match card previewed the merge against.
+
+    Returns:
+        Why a git merge (staged_diff.merge_of) must not run because HEAD is
+        no longer that commit or cannot be read; None otherwise.
+    """
+    found = staged_diff.merge_of(job["command"], job["directory"]) if job.get("head") else None
+    if found is None:
+        return None
+    try:
+        head = staged_diff.head_of(found[0])
+    except PREVIEW_FAILURES as error:
+        return f"refused: HEAD cannot be read, so the merge is not the one previewed: {error}"
+    return None if head == job["head"] else f"refused: HEAD moved from {job['head'][:12]} to {head[:12]} since the Match card previewed the merge"
+
+
+def preview(row: dict, rules: Path | None) -> dict | None:
+    """Args:
+        row: an open operator row with task, command, directory and head,
+            the HEAD of the preview the hub holds, None for none.
+        rules: the MEDUSA rules directory.
+
+    Returns:
+        The preview to post for a git merge row whose HEAD differs from the
+        hub's: staged_diff.merge_preview, or {head, error} when it cannot be
+        built; None for every other row.
+    """
+    found = staged_diff.merge_of(row["command"], row["directory"])
+    if found is None:
+        return None
+    try:
+        head = staged_diff.head_of(found[0])
+    except PREVIEW_FAILURES as error:
+        head, shown = "", {"error": str(error)[:ERROR_LIMIT]}
+    else:
+        shown = None
+    if head == row["head"]:
+        return None
+    if shown is None:
+        try:
+            shown = staged_diff.merge_preview(found[0], found[1], rules)
+        except PREVIEW_FAILURES as error:
+            shown = {"error": str(error)[:ERROR_LIMIT]}
+    return {"task": row["task"], "command": row["command"], "head": head, **shown}
+
+
+def previews(base: str, rules: Path | None) -> None:
+    for row in call(base, PREVIEWS, None)["rows"]:
+        shown = preview(row, rules)
+        if shown is not None and len(json.dumps(shown).encode()) > hub_limits.DIFF_BODY_LIMIT:
+            shown = {"task": row["task"], "command": row["command"], "head": shown["head"], "error": f"the preview passes the hub's {hub_limits.DIFF_BODY_LIMIT} bytes"}
+        if shown is not None:
+            call(base, PREVIEWS, shown)
 
 
 def council_refusal(council: Path) -> str | None:
@@ -283,7 +351,7 @@ def cycle(base: str, trust: verifier.Trust, register: Register | None, gates: Pa
         elif kind == GATE_JOB:
             reason = UNGATED if gates is None else gate_refusal(claimed, trust, time.time())
         else:
-            reason = refusal(claimed, trust, time.time())
+            reason = refusal(claimed, trust, time.time()) or moved(claimed)
         if reason is not None:
             send({"output": reason, "code": None, "refused": True})
         elif kind == TASK_JOB:
@@ -308,7 +376,15 @@ def main() -> int:
     base = hub_api.base_url(args.port)
     trust = verifier.Trust(approvers=args.approvers, replay=args.replay, origin=signing.origin_of(args.port))
     register = Register(rasci=args.rasci, council=args.council) if args.rasci and args.council else None
+    rules, told = staged_diff.rules_root(), ""
     while True:
+        try:
+            previews(base, rules)
+            told = ""
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            if str(error) != told:
+                print(f"runner: no merge previews: {error}", file=sys.stderr)
+            told = str(error)
         try:
             cycle(base, trust, register, args.gates)
         except (OSError, ValueError, KeyError, TypeError):

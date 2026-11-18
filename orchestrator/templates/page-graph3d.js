@@ -424,10 +424,10 @@
     place(data.nodes, layout);
     g3.badges = new Map();
     g3.faces = new Set();
-    g3.graph.width(box.clientWidth).height(box.clientHeight).graphData(data);
-    drawPlanes(layout, data.nodes);
     const words = `${data.nodes.length} nodes · ${data.links.length} edges · ${LAYOUTS.find(([id]) => id === layout)[1]}${calm.matches ? " · without motion (prefers-reduced-motion)" : ""}`;
     host.replaceChildren(box, h("div", {class: "space-note"}, words));
+    g3.graph.width(box.clientWidth).height(box.clientHeight).graphData(data);
+    drawPlanes(layout, data.nodes);
     window.requestAnimationFrame(() => g3.host === host && g3.fit && fit3d(0));
   }
 

@@ -180,6 +180,7 @@
   Panels.panel("artifacts/tree", "Artifacts: tree", () => homeTree(() => h("div", {class: "repos"}, treeCards("", true).nodes)));
   Panels.panel("agents/order", "Agents: priority", homeOrder);
   Panels.panel("tasks/operator", "Tasks: Waits on Operator", homeInbox);
+  Panels.panel("tasks/match", "Tasks: Match", () => homeMatch(), "", [6, 8]);
   Panels.item("metric", (id, view) => metricTitle(view), (size, id, view) => homeMetric(id, view));
   Panels.capture("resources-hardware", () => resourcePin("hardware"));
   Panels.capture("resources-tokens", () => resourcePin("tokens"));

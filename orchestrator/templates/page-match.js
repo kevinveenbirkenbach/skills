@@ -7,7 +7,9 @@
   const SWIPE_SHARE = 0.25;
   const SWIPE_UP = 80;
   const FEEDBACK_LIMIT = 2000;
-  const matchView = {cards: null, order: [], marks: new Map(), opened: new Map(), decisions: new Map(), overview: false, front: null, drag: null, dom: null, sig: "", fetched: 0, loading: false, press: null};
+  const FLY_MS = 400;
+  const CONFETTI = 28;
+  const matchView = {cards: null, order: [], marks: new Map(), opened: new Map(), decisions: new Map(), overview: false, front: null, drag: null, dom: null, sig: "", fetched: 0, loading: false, press: null, flying: false, openBefore: 0};
 
   async function fetchMatch() {
     if (matchView.loading) {
@@ -68,10 +70,12 @@
     return h("tr", {class: "match-mark", "data-line": mark.line}, h("td", {colspan: columns}, icon("bi-chat-square-text"), h("span", {class: "match-mark-text"}, revealed(mark.comment))));
   }
 
+  const patched = (card) => card.kind === "commit" || Boolean(card.merge);
+
   function matchFileRows(card, file) {
-    const commit = card.kind === "commit";
-    const rows = commit ? (file.patch ? Diffs.rows(file.patch).map(patchRow) : []) : file.state === "read" ? contentRows(file.content) : [];
-    const columns = commit ? 4 : 2;
+    const diffed = patched(card);
+    const rows = diffed ? (file.patch ? Diffs.rows(file.patch).map(patchRow) : []) : file.state === "read" ? contentRows(file.content) : [];
+    const columns = diffed ? 4 : 2;
     const marks = marksOf(card).filter((mark) => mark.path === file.path);
     return rows.flatMap((row) => {
       const line = row.dataset.line;
@@ -86,7 +90,7 @@
   function fileHead(card, file) {
     const count = marksOf(card).filter((mark) => mark.path === file.path).length;
     const marks = count ? h("span", {class: "match-marks", title: `${count} marks`}, String(count)) : null;
-    if (card.kind === "commit") {
+    if (patched(card)) {
       const tone = DIFF_TONES[file.status] || "neutral";
       const stat = file.status === "B" ? icon("bi-file-earmark-binary") : h("span", {class: "stat"}, h("span", {class: "add"}, `+${file.additions}`), h("span", {class: "del"}, `-${file.deletions}`));
       return h("summary", {class: "diff-head"}, h("span", {class: "letter", "data-tone": tone}, file.status), h("code", {class: "path"}, revealed(file.path)), h("span", {class: "spacer"}),
@@ -100,8 +104,8 @@
   function fileBlock(card, file, index) {
     const opened = matchView.opened.has(card.id) ? matchView.opened.get(card.id).has(file.path) : index === 0;
     const rows = matchFileRows(card, file);
-    const table = rows.length ? h("div", {class: "diff-scroll"}, h("table", {class: "diff"}, h("tbody", {}, rows))) : h("p", {class: "muted"}, card.kind === "commit" ? "No patch shipped for this file." : "Not read.");
-    const block = h("details", {class: "match-file", "data-path": file.path, "data-state": card.kind === "command" ? file.state : null, open: opened}, fileHead(card, file), table);
+    const table = rows.length ? h("div", {class: "diff-scroll"}, h("table", {class: "diff"}, h("tbody", {}, rows))) : h("p", {class: "muted"}, patched(card) ? "No patch shipped for this file." : "Not read.");
+    const block = h("details", {class: "match-file", "data-path": file.path, "data-state": patched(card) ? null : file.state, open: opened}, fileHead(card, file), table);
     block.addEventListener("toggle", () => remember(card, block));
     return h("li", {}, block);
   }
@@ -202,19 +206,25 @@
     if (card.kind !== "command") {
       return null;
     }
+    const merge = card.merge;
+    const short = (oid) => oid.slice(0, 12);
+    const preview = merge ? h("p", {class: "match-merge", "data-error": String(Boolean(merge.error))}, icon(merge.error ? "bi-exclamation-triangle" : "bi-sign-merge-left"),
+      merge.error ? `No merge preview: ${merge.error}` : `Brings in ${short(merge.base)} → ${short(merge.target)}, onto HEAD ${short(merge.head)}`) : null;
     return h("section", {class: "match-payload"},
       h("pre", {class: "match-command"}, h("code", {}, revealed(card.command))),
       h("p", {class: "match-directory"}, revealed(card.directory)),
-      card.reason && card.reason !== "-" ? h("p", {class: "match-reason"}, revealed(card.reason)) : null);
+      card.reason && card.reason !== "-" ? h("p", {class: "match-reason"}, revealed(card.reason)) : null, preview);
   }
 
   function matchCard(card) {
     const files = card.files || [];
-    const list = files.length ? h("ol", {class: "match-files", "aria-label": `Files: ${files.length}`}, files.map((file, index) => fileBlock(card, file, index))) : h("p", {class: "muted"}, card.kind === "commit" ? "No diff shipped with this stage." : "Its command names no file.");
+    const none = card.kind === "commit" ? "No diff shipped with this stage." : card.merge ? (card.merge.error ? "No diff to show." : "The merge brings no change.") : "Its command names no file.";
+    const list = files.length ? h("ol", {class: "match-files", "aria-label": `Files: ${files.length}`}, files.map((file, index) => fileBlock(card, file, index))) : h("p", {class: "muted"}, none);
     const body = h("div", {class: "match-body"}, matchCommand(card), list);
     body.addEventListener("scroll", () => openOnScroll(body, ".match-file"), {passive: true});
     const article = h("article", {class: "card match-card front", "data-card": card.id, "data-kind": card.kind, "data-stale": String(Boolean(card.stale)), "aria-label": `${card.kind} card of ${card.agent || "an agent"}`},
       matchHead(card), body);
+    article.style.setProperty("--agent-hue", String(Faces.hash(card.agent) % 360));
     markable(article, card);
     window.setTimeout(() => openOnScroll(body, ".match-file"), 0);
     return article;
@@ -236,9 +246,51 @@
     return marksOf(card).map((mark) => `${mark.path}:${mark.line}: ${mark.comment}`).join("\n");
   }
 
+  /**
+   * @param {string} verdict accept, reject or later: the way the front card flies off, its stamp shown on the way.
+   * @param {Function} then runs once the card is gone; at once without a front card or under reduced motion, never
+   * while another card still flies.
+   */
+  function flyOff(verdict, then) {
+    const front = matchView.dom && matchView.dom.stack.querySelector(".match-card.front");
+    if (matchView.flying) {
+      return;
+    }
+    if (!front || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      then();
+      return;
+    }
+    matchView.flying = true;
+    let landed = false;
+    const land = () => {
+      if (!landed) {
+        landed = true;
+        matchView.flying = false;
+        then();
+      }
+    };
+    front.dataset.leaning = verdict;
+    front.dataset.fly = verdict;
+    front.addEventListener("animationend", (event) => event.target === front && land());
+    window.setTimeout(land, FLY_MS);
+  }
+
   function decide(card, verdict, feedback) {
-    matchView.decisions.set(cardKey(card), {verdict, feedback});
-    drawMatch(true);
+    flyOff(verdict, () => {
+      matchView.decisions.set(cardKey(card), {verdict, feedback});
+      drawMatch(true);
+    });
+  }
+
+  function confetti() {
+    return h("div", {class: "match-confetti", "aria-hidden": "true"}, Array.from({length: CONFETTI}, (_, index) => {
+      const bit = h("i", {});
+      bit.style.setProperty("--x", `${(index * 37) % 100}%`);
+      bit.style.setProperty("--c", String((index * 47) % 360));
+      bit.style.setProperty("--r", `${(index % 2 ? 1 : -1) * (180 + index * 23)}deg`);
+      bit.style.setProperty("--d", `${(index % 7) * 0.06}s`);
+      return bit;
+    }));
   }
 
   function acceptCard(card) {
@@ -264,8 +316,10 @@
   }
 
   function laterCard(card) {
-    matchView.order = [...matchView.order.filter((id) => id !== card.id), card.id];
-    drawMatch(true);
+    flyOff("later", () => {
+      matchView.order = [...matchView.order.filter((id) => id !== card.id), card.id];
+      drawMatch(true);
+    });
   }
 
   /**
@@ -275,7 +329,7 @@
    */
   function matchKey(key) {
     const card = matchView.front;
-    if (!card || !matchView.dom || !matchView.dom.stack.isConnected) {
+    if (!card || ui.screen !== "match" || !matchView.dom || !matchView.dom.stack.isConnected) {
       return false;
     }
     const act = {ArrowRight: acceptCard, ArrowLeft: rejectCard, ArrowUp: laterCard}[key];
@@ -291,8 +345,10 @@
       const drag = matchView.drag;
       if (drag && drag.id === event.pointerId) {
         const [dx, dy] = [event.clientX - drag.x, event.clientY - drag.y];
+        const up = -dy > Math.abs(dx);
         article.style.transform = `translate(${dx}px, ${Math.min(0, dy)}px) rotate(${dx / 40}deg)`;
-        article.dataset.leaning = dx > 0 ? "accept" : dx < 0 ? "reject" : "";
+        article.dataset.leaning = up ? "later" : dx > 0 ? "accept" : dx < 0 ? "reject" : "";
+        article.style.setProperty("--lean", String(Math.min(1, up ? -dy / SWIPE_UP : Math.abs(dx) / (SWIPE_SHARE * article.getBoundingClientRect().width))));
       }
     };
     const release = (event) => {
@@ -301,18 +357,18 @@
         return;
       }
       drag.end();
-      article.style.removeProperty("transform");
-      delete article.dataset.leaning;
       const [dx, dy] = [event.clientX - drag.x, event.clientY - drag.y];
       const far = SWIPE_SHARE * article.getBoundingClientRect().width;
-      if (event.type === "pointercancel" || !article.isConnected) {
+      const swiped = event.type === "pointercancel" ? "" : Math.abs(dx) >= far && Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "accept" : "reject") : -dy >= SWIPE_UP && -dy > Math.abs(dx) ? "later" : "";
+      article.style.removeProperty("--lean");
+      if (!((swiped === "accept" && !card.stale) || swiped === "later")) {
+        article.style.removeProperty("transform");
+        delete article.dataset.leaning;
+      }
+      if (!article.isConnected) {
         return;
       }
-      if (Math.abs(dx) >= far && Math.abs(dx) > Math.abs(dy)) {
-        (dx > 0 ? acceptCard : rejectCard)(card);
-      } else if (-dy >= SWIPE_UP && -dy > Math.abs(dx)) {
-        laterCard(card);
-      }
+      ({accept: acceptCard, reject: rejectCard, later: laterCard}[swiped] || (() => null))(card);
     };
     head.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || matchView.drag || (event.target instanceof Element && event.target.closest("button, a, input, textarea, select"))) {
@@ -422,9 +478,26 @@
       matchView.drag.end();
     }
     const bar = h("div", {class: "card controls task-toolbar", role: "toolbar", "aria-label": "Match"}, h("strong", {}, icon("bi-stack"), "Match"), count, h("span", {class: "spacer"}), decisions,
-      iconBtn("bi-list-check", "Tasks", "btn small soft", () => go("tasks", null), "Tasks: back to the task list"));
+      iconBtn("bi-list-check", "Tasks", "btn small soft", () => go("tasks", null), "Tasks: back to the task list"), h("span", {"data-star-slot": ""}));
     fetchMatch();
-    return h("div", {class: "graph tasks match"}, bar, stack);
+    return h("div", {class: "graph tasks match", "data-panel": "tasks/match"}, bar, stack);
+  }
+
+  /**
+   * @returns {Element} the Match stack for a Home tile, kept while it still holds the live stack, without the
+   * data-panel and star slot of the screen.
+   */
+  function homeMatch() {
+    const kept = homeView.hosts.get("tasks/match");
+    if (kept && matchView.dom && kept.contains(matchView.dom.stack)) {
+      return kept;
+    }
+    const host = h("div", {class: "match-home"}, matchScreen());
+    host.querySelectorAll("[data-panel]").forEach((node) => node.removeAttribute("data-panel"));
+    host.querySelectorAll("[data-star-slot]").forEach((node) => node.removeAttribute("data-star-slot"));
+    homeView.hosts.set("tasks/match", host);
+    window.setTimeout(() => drawMatch(true), 0);
+    return host;
   }
 
   function drawMatch(force) {
@@ -454,6 +527,8 @@
       return;
     }
     matchView.sig = sig;
+    const cleared = matchView.openBefore > 0 && !open.length;
+    matchView.openBefore = open.length;
     dom.count.textContent = open.length === 1 ? "1 card waits" : `${open.length} cards wait`;
     dom.tally.textContent = String(matchView.decisions.size);
     dom.decisions.hidden = !matchView.decisions.size || shownOverview;
@@ -464,14 +539,20 @@
     }
     if (shownOverview) {
       matchView.front = null;
-      dom.stack.replaceChildren(overview(cards, open.length));
+      const shown = overview(cards, open.length);
+      if (cleared) {
+        shown.prepend(confetti());
+      }
+      dom.stack.replaceChildren(shown);
       return;
     }
     const [front, ...rest] = open;
     matchView.front = front;
-    const accept = h("button", {type: "button", class: "btn match-accept", disabled: Boolean(front.stale), ...named("Accept", front.stale ? `Accept: refused while the card is stale (${front.stale_reason})` : "Accept (right arrow, swipe right)"), on: {click: () => acceptCard(front)}}, icon("bi-check-lg"));
-    const reject = h("button", {type: "button", class: "btn match-reject", ...named("Reject", "Reject with feedback (left arrow, swipe left)"), on: {click: () => rejectCard(front)}}, icon("bi-x-lg"));
-    const later = h("button", {type: "button", class: "btn match-later", disabled: !rest.length, ...named("Later", "Later: to the back of the stack (up arrow, swipe up)"), on: {click: () => laterCard(front)}}, icon("bi-arrow-up"));
+    const act = (cls, iconName, word, hint, disabled, run) => h("button", {type: "button", class: `match-act ${cls}`, disabled, ...named(word, hint), on: {click: run}},
+      h("span", {class: "match-act-face", "aria-hidden": "true"}, icon(iconName)), h("span", {class: "match-act-label"}, word));
+    const accept = act("match-accept", "bi-check-lg", "Accept", front.stale ? `Accept: refused while the card is stale (${front.stale_reason})` : "Accept (right arrow, swipe right)", Boolean(front.stale), () => acceptCard(front));
+    const reject = act("match-reject", "bi-x-lg", "Reject", "Reject with feedback (left arrow, swipe left)", false, () => rejectCard(front));
+    const later = act("match-later", "bi-arrow-up", "Later", "Later: to the back of the stack (up arrow, swipe up)", !rest.length, () => laterCard(front));
     const peeks = rest.length ? h("div", {class: "match-peeks", role: "group", "aria-label": `${rest.length} more cards`}, rest.map(peekTab)) : null;
     const behind = rest.slice(0, MATCH_PEEKS).map((card, index) => {
       const sheet = h("div", {class: "match-behind", "aria-hidden": "true"});
@@ -481,7 +562,8 @@
     const before = dom.stack.querySelector(".match-card.front");
     const scrolled = before && before.dataset.card === front.id ? before.querySelector(".match-body").scrollTop : 0;
     const shown = matchCard(front);
+    shown.dataset.fresh = String(!before || before.dataset.card !== front.id);
     draggable(shown, front);
-    dom.stack.replaceChildren(peeks, h("div", {class: "match-deck"}, behind, shown), h("div", {class: "match-actions"}, reject, later, accept));
+    dom.stack.replaceChildren(peeks || h("div", {class: "match-peeks"}), h("div", {class: "match-deck"}, behind, shown), h("div", {class: "match-actions"}, reject, later, accept));
     shown.querySelector(".match-body").scrollTop = scrolled;
   }

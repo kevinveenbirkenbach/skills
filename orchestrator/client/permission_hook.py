@@ -24,10 +24,13 @@ Returns:
         would pass DIFF_BODY_LIMIT. An allow of such an ask turns
         into a deny with CHANGED when what the commit records
         (staged_diff.binding) differs right before answering from the
-        preview's, and with UNBOUND when either cannot be read. Any other
-        Bash command that may run git commit (-a, --all, -i, -o, -p, a
-        pathspec, a chain, a wrapper) is not approvable: no ask reaches the
-        hub, stderr gets WORKTREE and Claude Code shows its own dialog.
+        preview's, and with UNBOUND when either cannot be read. An ask for
+        a Bash git commit-tree of full object ids (staged_diff.tree_of)
+        carries the diff of its tree against its first parent the same way.
+        Any other Bash command that may run git commit (-a, --all, -i, -o,
+        -p, a pathspec, a chain, a wrapper) is not approvable: no ask
+        reaches the hub, stderr gets WORKTREE and Claude Code shows its own
+        dialog.
 """
 
 from __future__ import annotations
@@ -82,8 +85,24 @@ def commit_target(ask: dict) -> Path | None:
     return staged_diff.commit_of(ask["command"], ask["cwd"]) if ask["tool"] == "Bash" and ask["cwd"] else None
 
 
+def tree_target(ask: dict) -> tuple[Path, str, list[str]] | None:
+    return staged_diff.tree_of(ask["command"], ask["cwd"]) if ask["tool"] == "Bash" and ask["cwd"] else None
+
+
 def unapprovable(ask: dict) -> bool:
-    return ask["tool"] == "Bash" and staged_diff.names_commit(ask["command"]) and commit_target(ask) is None
+    return ask["tool"] == "Bash" and staged_diff.names_commit(ask["command"]) and commit_target(ask) is None and tree_target(ask) is None
+
+
+def tree_preview(ask: dict, rules: Path | None) -> dict:
+    found = tree_target(ask)
+    if found is None:
+        return {}
+    try:
+        diff, sealed = staged_diff.commit_tree_diff(*found, rules)
+        return {"diff": diff, "sealed": sealed}
+    except FAILURES as error:
+        print(f"kvb-orchestrator: the ask goes without its diff: {error}", file=sys.stderr)
+        return {}
 
 
 def commit_diff(ask: dict, rules: Path | None) -> tuple[str | None, dict]:
@@ -91,11 +110,13 @@ def commit_diff(ask: dict, rules: Path | None) -> tuple[str | None, dict]:
         For a commit ask, what the commit records (staged_diff.binding, None
         when it cannot be read) and {"diff": the preview of exactly that,
         "sealed": the clear patches of its masked files}, {} when it cannot
-        be built; None and {} for any other ask.
+        be built; for a commit-tree ask None and its tree_preview, which
+        needs no binding: its object ids name content no write can change;
+        None and {} for any other ask.
     """
     target = commit_target(ask)
     if target is None:
-        return None, {}
+        return None, tree_preview(ask, rules)
     try:
         pinned = staged_diff.binding(target)
     except FAILURES as error:

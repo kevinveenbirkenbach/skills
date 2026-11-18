@@ -27,6 +27,7 @@ ENTRY = re.compile(r"/api/stream/([0-9]{1,12})")
 BOARD = re.compile(r"/api/board/([a-z-]{1,32})")
 UPLOADS = "/api/uploads"
 MATCH_ROUTE = "/api/match"
+PREVIEWS_ROUTE = "/api/runner/previews"
 MATCH_POSTS = {"/api/match/stale": "match_stale", "/api/match/snapshot": "match_snapshot"}
 POSTS = ("/api/asks", UPLOADS, "/api/messages", *MATCH_POSTS)
 STORED = {
@@ -147,9 +148,9 @@ class Handler(Exchange):
             self.answer(hub.view_store.get, HTTPStatus.OK)
         elif path == "/api/subagents":
             self.answer(lambda: hub.subagents(self.query()), HTTPStatus.OK)
-        elif path == "/api/runner/jobs":
+        elif path in ("/api/runner/jobs", PREVIEWS_ROUTE):
             if self.client():
-                self.answer(hub.runner_jobs, HTTPStatus.OK)
+                self.answer(hub.runner_jobs if path == "/api/runner/jobs" else hub.preview_rows, HTTPStatus.OK)
             else:
                 self.send_text(HTTPStatus.FORBIDDEN, "forbidden: the runner calls with the X-Kvb-Orchestrator header and no origin only")
         elif entry:
@@ -266,7 +267,9 @@ class Handler(Exchange):
     def runner(self, path: str, body: bytes) -> None:
         hub = self.server.hub
         route = RUNNER_ROUTE.fullmatch(path)
-        if route.group(2) == "claim":
+        if route is None:
+            self.answer(lambda: hub.record_preview(body), HTTPStatus.OK)
+        elif route.group(2) == "claim":
             self.answer(lambda: hub.claim(route.group(1)), HTTPStatus.OK)
         else:
             self.answer(lambda: hub.report(route.group(1), body), HTTPStatus.OK)
@@ -285,7 +288,7 @@ class Handler(Exchange):
                 return lambda body: self.answer(lambda: receive(body), HTTPStatus.OK if path in MATCH_POSTS else HTTPStatus.CREATED)
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden: local POST with the X-Kvb-Orchestrator header and no foreign origin only")
             return None
-        if RUNNER_ROUTE.fullmatch(path):
+        if RUNNER_ROUTE.fullmatch(path) or path == PREVIEWS_ROUTE:
             if self.client():
                 return lambda body: self.runner(path, body)
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden: the runner calls with the X-Kvb-Orchestrator header and no origin only")
@@ -303,7 +306,7 @@ class Handler(Exchange):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: INPUT_LIMIT, VOICE_ROUTE: STT_LIMIT, "/mcp": DIFF_BODY_LIMIT, "/api/asks": DIFF_BODY_LIMIT}.get(path, BODY_LIMIT))
+        length = self.body_length({UPLOADS: UPLOAD_LIMIT, STT_ROUTE: INPUT_LIMIT, VOICE_ROUTE: STT_LIMIT, "/mcp": DIFF_BODY_LIMIT, "/api/asks": DIFF_BODY_LIMIT, PREVIEWS_ROUTE: DIFF_BODY_LIMIT}.get(path, BODY_LIMIT))
         if length is None:
             return
         host = self.host()

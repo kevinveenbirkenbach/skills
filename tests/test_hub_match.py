@@ -39,6 +39,28 @@ def staged_repo(root: Path) -> Path:
     return repo
 
 
+def merge_repo(root: Path) -> tuple[Path, str]:
+    repo = root / "merge"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    (repo / "app.py").write_text("keep = 1\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "base")
+    git(repo, "checkout", "-q", "-b", "feature")
+    (repo / "app.py").write_text("keep = 1\nadded = 2\n", encoding="utf-8")
+    git(repo, "commit", "-q", "-am", "feature")
+    target = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "checkout", "-q", "main")
+    return repo, target
+
+
+def move_head(repo: Path) -> str:
+    (repo / "other.txt").write_text("moved\n", encoding="utf-8")
+    git(repo, "add", "other.txt")
+    git(repo, "commit", "-q", "-m", "moved")
+    return git(repo, "rev-parse", "HEAD").strip()
+
+
 class MatchCase(HubCase):
     def setUp(self):
         super().setUp()
@@ -334,6 +356,69 @@ class TestCommandCards(MatchCase):
         for words in (command, f"in {self.work}", "line two", "refused"):
             with self.subTest(words=words):
                 self.assertIn(words, shown.stdout)
+
+
+class TestMergeCards(MatchCase):
+    def merge_row(self) -> tuple[Path, str, str]:
+        repo, target = merge_repo(self.work)
+        command = f"git merge --ff-only {target}"
+        self.operator_row("operator/merge", command, str(repo))
+        return repo, target, command
+
+    def released(self) -> tuple[Path, str, dict]:
+        repo, target, _ = self.merge_row()
+        self.card("operator:operator/merge")
+        self.run_runner(register=False)
+        card = self.card("operator:operator/merge")
+        entry = {"kind": "operator", "id": "operator/merge", "verb": "approve", "label": "", "sha256": card["sha256"], "payload": card["hash"]}
+        with mock.patch.object(batches, "UNDO", 0.05):
+            self.assertEqual(self.approve([entry], self.signed([entry], self.pin()))[0], 202)
+            self.settle(lambda: self.httpd.hub.jobs.listed() != [])
+        self.assertEqual([job["head"] for job in self.runner_jobs()], [card["merge"]["head"]])
+        return repo, target, card
+
+    def test_the_runner_previews_a_merge_row_and_its_card_turns_stale_once_head_moves(self):
+        repo, target, command = self.merge_row()
+        self.assertIsNone(self.card("operator:operator/merge")["merge"])
+        self.run_runner(register=False)
+        card = self.card("operator:operator/merge")
+        head = git(repo, "rev-parse", "HEAD").strip()
+        self.assertEqual((card["merge"], card["stale"]), ({"head": head, "base": head, "target": target, "error": ""}, False))
+        shown = {"": "@@ -1 +1,2 @@\n keep = 1\n+added = 2", "content withheld": ""}
+        self.assertEqual([(entry["path"], entry["status"], entry["additions"], entry["patch"] == shown[entry["note"]]) for entry in card["files"]], [("app.py", "M", 1, True)])
+        status, _, body = self.call("GET", "/api/runner/previews", None, self.client())
+        self.assertEqual((status, json.loads(body)["rows"]), (200, [{"task": "operator/merge", "command": command, "directory": str(repo), "head": head}]))
+        taken = self.httpd.hub.merge_previews.get("operator:operator/merge")["taken"]
+        self.run_runner(register=False)
+        self.assertEqual(self.httpd.hub.merge_previews.get("operator:operator/merge")["taken"], taken)
+        moved = move_head(repo)
+        self.run_runner(register=False)
+        after = self.card("operator:operator/merge")
+        self.assertEqual((after["stale"], after["stale_reason"], after["merge"]["head"]), (True, "HEAD or the merge base moved since it was added", moved))
+
+    def test_only_the_runner_posts_a_preview_and_only_for_an_open_row_and_its_command(self):
+        _, target, command = self.merge_row()
+        shown = {"task": "operator/merge", "command": command, "head": "a" * 40, "base": "a" * 40, "target": target, "diff": []}
+        self.assertEqual(self.post_json("/api/runner/previews", shown, self.guard(self.host))[0], 403)
+        self.assertEqual(self.call("GET", "/api/runner/previews", None, self.guard(self.host))[0], 403)
+        for bad, code in (({**shown, "command": "git merge main"}, 409), ({**shown, "task": "operator/gone"}, 404), ({**shown, "head": "HEAD"}, 400), ({**shown, "diff": "x"}, 400)):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.post_json("/api/runner/previews", bad, self.client())[0], code)
+        self.assertEqual(self.post_json("/api/runner/previews", shown, self.client())[0], 200)
+
+    def test_a_released_merge_runs_while_head_stays_the_previewed_one(self):
+        repo, target, _ = self.released()
+        self.run_runner(register=False)
+        self.settle(lambda: self.httpd.hub.jobs.listed()[0]["status"] == "done")
+        self.assertEqual(git(repo, "rev-parse", "HEAD").strip(), target)
+
+    def test_a_released_merge_is_refused_once_head_moved_after_the_preview(self):
+        repo, _, card = self.released()
+        moved = move_head(repo)
+        self.run_runner(register=False)
+        job = self.httpd.hub.jobs.listed()[0]
+        self.assertEqual((job["status"], git(repo, "rev-parse", "HEAD").strip()), ("refused", moved))
+        self.assertIn(f"HEAD moved from {card['merge']['head'][:12]} to {moved[:12]}", job["output"])
 
 
 class TestPayloadHash(unittest.TestCase):

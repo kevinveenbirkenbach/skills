@@ -4,9 +4,13 @@
         HEAD instead of the live index.
     rules: the MEDUSA rules directory, None when MEDUSA is not installed.
     pinned: for bound_diff, what binding returned for the same cwd.
+    parents: for commit_tree_diff, the parent commits git commit-tree
+        records; the tree is diffed against the first one's tree, against
+        nothing without one.
 
 Returns:
-    review_diff, tree_diff, bound_diff: (diff, sealed). diff is the review
+    review_diff, tree_diff, bound_diff, commit_tree_diff: (diff, sealed).
+        diff is the review
         diff of requirement 003 of the staged tree against HEAD (git diff
         --cached), one {path, status, mode, additions, deletions, patch,
         note} per changed path, sorted by path, status A, M, D or B
@@ -27,23 +31,31 @@ Returns:
         than FILE_CAP paths changed or one is longer than PATH_LIMIT, a
         settings file sandbox_paths reads is unreadable, the working tree
         lies under a denied path, HEAD exists but its tree cannot be listed,
-        HEAD is neither a commit nor unborn, or for bound_diff, the index no
-        longer matches pinned.
+        HEAD is neither a commit nor unborn, for bound_diff, the index no
+        longer matches pinned, or for commit_tree_diff, the tree is no tree
+        or a parent no commit of the repository.
     binding: what a commit records, for the permission hook to bind an
         allow to: the sha256 of staged() (the mode, object id and name of
         every index entry git write-tree records, so no intent-to-add one;
         an index with unmerged paths fails).
     commit_of: the directory of a single git commit that records exactly
         the staged index, None for any other command.
+    tree_of: (directory, tree, parents) of a single git commit-tree whose
+        tree and parents are full object ids, which no later write can
+        change; None for any other command.
+    merge_of: (directory, target) of a single git merge of one full object
+        id; merge_preview: what that merge brings in; head_of: the commit
+        HEAD names.
     names_commit: whether a command may run git commit anywhere in it.
 
 Every git call runs GIT with core.fsmonitor, core.hooksPath, lazy fetching,
 the system and the global config off, and an environment of only PASSED_ENV
-and FIXED_ENV (PATH set to TRUSTED_PATH). The permission hook path
-(binding, bound_diff, commit_of) runs only plumbing that writes nothing
-(rev-parse, symbolic-ref, ls-tree, ls-files, cat-file); only approval.py, run
+and FIXED_ENV (PATH set to TRUSTED_PATH). The permission hook and runner path
+(binding, bound_diff, commit_tree_diff, merge_preview, head_of, commit_of,
+tree_of, merge_of) runs only plumbing that writes nothing (rev-parse,
+merge-base, symbolic-ref, ls-tree, ls-files, cat-file); only approval.py, run
 inside the sandbox, adds git write-tree. The diff itself is computed here:
-the permission hook calls this outside the sandbox in a directory the agent
+the permission hook and the runner call this outside the sandbox in a directory the agent
 chose, where a planted repository config, hook, filter, diff driver, promisor
 remote or program on PATH must start nothing, and nothing in the working tree
 is read.
@@ -90,6 +102,16 @@ FIXED_ENV = {"GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1", "GIT_CONFIG_NO
 INTENT_TO_ADD = 0x20000000
 DEBUG_LINES = 5
 NAMES_COMMIT = re.compile(r"(?<![\w.-])git(?![\w.-]).*(?<![\w-])commit(?![\w-])", re.DOTALL)
+VERBS = ("commit", "commit-tree", "merge")
+OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+TREE_ARGS = ("-m", "-F", "-p")
+SIGNING = ("--gpg-sign", "--no-gpg-sign")
+MERGE_ARGS = ("-m", "-F")
+MERGE_VALUED = ("-S", "--gpg-sign=", "--message=", "--file=")
+MERGE_FLAGS = frozenset({
+    "--ff-only", "--ff", "--no-ff", "--edit", "--no-edit", "--verify", "--no-verify", "--commit", "--no-commit", "--squash", "--no-squash", "-q", "--quiet",
+    "-v", "--verbose", "--stat", "--no-stat", "-n", "--log", "--no-log", "--signoff", "--no-signoff", "--progress", "--no-progress", *SIGNING,
+})
 LAYOUT = "unexpected ls-files --debug layout"
 RECORD = re.compile(rb"[0-7]{6} (?:[0-9a-f]{40}|[0-9a-f]{64}) [0-3]\t.+", re.DOTALL)
 FLAGS_LINE = re.compile(rb"  size: [0-9]+\tflags: ([0-9a-f]+)")
@@ -220,10 +242,10 @@ def bound_diff(cwd: Path, pinned: str, rules: Path | None) -> tuple[list[dict], 
     return built(cwd, sides(cwd, None, index), rules)
 
 
-def sides(cwd: Path, tree: str | None, index: bytes | None) -> tuple[dict, dict, dict[str, bytes | None]]:
+def sides(cwd: Path, tree: str | None, index: bytes | None, parents: list[str] | None = None) -> tuple[dict, dict, dict[str, bytes | None]]:
     top = toplevel(cwd)
     roots = denied_roots(top)
-    old = head_tree(top)
+    old = head_tree(top) if parents is None else parent_tree(top, parents)
     if tree is not None:
         new = listed(git(top, ["ls-tree", "-r", "-z", "--full-tree", tree], None), 2)
     else:
@@ -257,6 +279,10 @@ def head_tree(top: Path) -> dict[str, tuple[str, str]]:
         git(top, ["symbolic-ref", "-q", "HEAD"], None)
         return {}
     return listed(git(top, ["ls-tree", "-r", "-z", "--full-tree", "HEAD"], None), 2)
+
+
+def parent_tree(top: Path, parents: list[str]) -> dict[str, tuple[str, str]]:
+    return listed(git(top, ["ls-tree", "-r", "-z", "--full-tree", parents[0]], None), 2) if parents else {}
 
 
 def text_lines(text: str) -> list[str]:
@@ -462,6 +488,31 @@ def tree_diff(cwd: Path, tree: str, rules: Path | None) -> tuple[list[dict], dic
     return built(cwd, sides(cwd, tree, None), rules)
 
 
+def commit_tree_diff(cwd: Path, tree: str, parents: list[str], rules: Path | None) -> tuple[list[dict], dict[str, str]]:
+    ids = [tree, *parents]
+    kinds = git(toplevel(cwd), ["cat-file", "--batch-check=%(objecttype)"], "".join(f"{oid}\n" for oid in ids).encode()).decode("ascii").split("\n")[:-1]
+    if kinds != ["tree", *["commit"] * len(parents)]:
+        raise DiffError("git commit-tree names a tree that is no tree or a parent that is no commit here")
+    return built(cwd, sides(cwd, tree, None, parents), rules)
+
+
+def head_of(cwd: Path) -> str:
+    return git(toplevel(cwd), ["rev-parse", "--verify", "HEAD^{commit}"], None).decode("ascii").strip()
+
+
+def merge_preview(cwd: Path, target: str, rules: Path | None) -> dict:
+    """Returns:
+        {head, base, target, diff}: what git merge of the commit target
+        brings into HEAD, the tree of target against its merge base with
+        HEAD, secrets masked; the sealed clear patches stay behind.
+    """
+    top = toplevel(cwd)
+    head = head_of(top)
+    base = git(top, ["merge-base", head, target], None).decode("ascii").strip()
+    tree = git(top, ["rev-parse", "--verify", f"{target}^{{tree}}"], None).decode("ascii").strip()
+    return {"head": head, "base": base, "target": target, "diff": commit_tree_diff(top, tree, [base], rules)[0]}
+
+
 def fetched(cwd: Path, old: dict, new: dict, changed: list[str], contents: dict[str, bytes | None]) -> None:
     needed = {side[path][1] for side in (old, new) for path in changed if path in side and side[path][0] != GITLINK and side[path][1] not in contents}
     sizes = blob_sizes(cwd, needed)
@@ -526,6 +577,46 @@ def commit_of(command: str, cwd: str) -> Path | None:
         match (-a, --all, --amend, a pathspec, -o, -i, -p, --no-all, an unknown or
         ambiguous long option, git -c, or a GIT_ variable outside KEPT_VARS).
     """
+    found = git_words(command, cwd)
+    return found[0] if found and found[1][0] == "commit" and index_only(found[1][1:]) else None
+
+
+def tree_of(command: str, cwd: str) -> tuple[Path, str, list[str]] | None:
+    found = git_words(command, cwd)
+    if not found or found[1][0] != "commit-tree":
+        return None
+    named = tree_words(found[1][1:])
+    return None if named is None else (found[0], *named)
+
+
+def merge_of(command: str, cwd: str) -> tuple[Path, str] | None:
+    """Returns:
+        The directory and target of one git merge, behind what commit_of
+        passes, of exactly one commit named by its full OBJECT_ID with no
+        option outside MERGE_FLAGS, MERGE_ARGS and MERGE_VALUED; None for any
+        other command.
+    """
+    found = git_words(command, cwd)
+    if not found or found[1][0] != "merge":
+        return None
+    targets, rest = [], iter(found[1][1:])
+    for word in rest:
+        if word[:2] in MERGE_ARGS:
+            if not word[2:] and next(rest, None) is None:
+                return None
+        elif word.startswith("-") and word not in MERGE_FLAGS and not word.startswith(MERGE_VALUED):
+            return None
+        elif not word.startswith("-"):
+            targets.append(word)
+    return (found[0], targets[0]) if len(targets) == 1 and OBJECT_ID.fullmatch(targets[0]) else None
+
+
+def git_words(command: str, cwd: str) -> tuple[Path, list[str]] | None:
+    """Returns:
+        For a command that is one git VERBS call, optionally behind what
+        commit_of passes, the directory it runs in and its words from the
+        verb on; None for any other command.
+    """
     try:
         words = shlex.split(command)
     except ValueError:
@@ -536,7 +627,31 @@ def commit_of(command: str, cwd: str) -> Path | None:
     if not words or Path(words[0]).name != "git":
         return None
     place, rest = past_git_options(place, words[1:])
-    return place if rest and index_only(rest[1:]) else None
+    return (place, rest) if rest else None
+
+
+def tree_words(words: list[str]) -> tuple[str, list[str]] | None:
+    """Returns:
+        The tree and the parents of git commit-tree with these words; None
+        for an option outside TREE_ARGS, -S and SIGNING, a missing option
+        argument, not exactly one tree, or a tree or parent that is no
+        full OBJECT_ID.
+    """
+    trees, parents, rest = [], [], iter(words)
+    for word in rest:
+        if word[:2] in TREE_ARGS:
+            value = word[2:] or next(rest, None)
+            if value is None:
+                return None
+            if word[:2] == "-p":
+                parents.append(value)
+        elif word.startswith("-") and not (word.startswith(("-S", "--gpg-sign=")) or word in SIGNING):
+            return None
+        elif not word.startswith("-"):
+            trees.append(word)
+    if len(trees) != 1 or not all(OBJECT_ID.fullmatch(oid) for oid in [*trees, *parents]):
+        return None
+    return trees[0], parents
 
 
 def launched(place: Path, words: list[str]) -> tuple[Path, list[str]]:
@@ -573,7 +688,7 @@ def past_env_options(place: Path, words: list[str]) -> tuple[Path, list[str]]:
 
 
 def past_git_options(place: Path, rest: list[str]) -> tuple[Path, list[str]]:
-    while rest and rest[0] != "commit":
+    while rest and rest[0] not in VERBS:
         if rest[0] == "-C" and len(rest) > 1:
             place, rest = place / rest[1], rest[2:]
         elif rest[0] in ("--no-pager", "-P", "--no-optional-locks"):

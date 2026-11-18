@@ -153,7 +153,7 @@
   function taskViewSwitch(inbox) {
     return h("div", {class: "segmented", role: "group", "aria-label": "View"}, Nav.TASK_VIEWS.map(([id, name]) => h("button", {
       type: "button", class: "icon-only", ...named(name), "aria-pressed": String(!inbox && ui.views.tasks === id), on: {click: () => go("tasks", id)},
-    }, icon(Nav.ICONS[id]))));
+    }, icon(Nav.ICONS[id]))), h("button", {type: "button", class: "icon-only", ...named("Match"), "aria-pressed": "false", on: {click: () => go("match", null)}}, icon(Nav.ICONS.match)));
   }
 
   function tasksScreen() {

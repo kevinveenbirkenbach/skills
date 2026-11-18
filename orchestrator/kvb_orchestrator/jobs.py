@@ -19,12 +19,14 @@ USAGE = 2
 
 def runner_job(job: dict) -> dict:
     """Returns:
-        What the runner claims: an operator command, or a task or gate change
-        with kind and argv; a runner that predates such changes verifies them
-        as an operator command and refuses them.
+        What the runner claims: an operator command, with head when a Match
+        release bound it to a merge preview of that HEAD, or a task or gate
+        change with kind and argv; a runner that predates such changes
+        verifies them as an operator command and refuses them.
     """
     change = {"kind": job["kind"], "argv": job["argv"]} if job.get("kind") in CHANGES else {}
-    return {**{key: job[key] for key in ("id", "task", "command", "directory", "sha256")}, **change, "proof": job.get("proof")}
+    head = {"head": job["head"]} if job.get("head") else {}
+    return {**{key: job[key] for key in ("id", "task", "command", "directory", "sha256")}, **change, **head, "proof": job.get("proof")}
 
 
 def console_of(job: dict | None) -> dict | None:
@@ -60,7 +62,8 @@ class Jobs:
             return "refused: the row changed since the grant"
         if item["id"] in self.open_jobs():
             return "already running"
-        job = {"task": row["task"], "command": row["command"], "directory": row["directory"], "sha256": item["sha256"], "status": "queued", "proof": proof}
+        head = self.previewed_head(row["task"], row["command"]) if item.get("bound") else ""
+        job = {"task": row["task"], "command": row["command"], "directory": row["directory"], "sha256": item["sha256"], "status": "queued", "proof": proof, "head": head}
         self.jobs.add({**job, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None, "dismissed": False})
         return "handed to the runner"
 
