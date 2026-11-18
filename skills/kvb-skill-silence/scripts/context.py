@@ -2,7 +2,8 @@
 """Report how much context agent sessions re-read per turn, from Claude Code's session transcripts.
 
 Args:
-    --root: transcripts root, e.g. ~/.claude/projects (every */*.jsonl below).
+    --root: transcripts root, e.g. ~/.claude/projects (every session transcript
+        */*.jsonl and every subagent transcript */*/subagents/*.jsonl below).
     --days: how many days back, one row per day, newest last.
     --threshold: a context size in tokens; per threshold the report adds the
         share of turns above it and the share of context tokens above it.
@@ -34,10 +35,21 @@ def fail(message: str) -> None:
     sys.exit(2)
 
 
+def transcripts(root: Path) -> list[Path]:
+    """Args:
+        root: the transcripts root, e.g. ~/.claude/projects.
+
+    Returns:
+        Every session transcript <project>/<session>.jsonl and every subagent
+        transcript <project>/<session>/subagents/<agent>.jsonl below it.
+    """
+    return [*root.glob("*/*.jsonl"), *root.glob("*/*/subagents/*.jsonl")]
+
+
 def scan(root: Path, since: float) -> tuple[dict[str, tuple[str, int]], dict[str, int]]:
     turns: dict[str, tuple[str, int]] = {}
     compactions: dict[str, int] = {}
-    for path in root.glob("*/*.jsonl"):
+    for path in transcripts(root):
         if path.stat().st_mtime < since:
             continue
         with path.open(encoding="utf-8", errors="ignore") as handle:

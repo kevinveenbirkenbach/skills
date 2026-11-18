@@ -21,10 +21,10 @@ coach.py --profile <same> show [--json]
 Areas: `psyche`, `body`, `sleep`, `food`, `tasks`, `delegate`. Every coaching
 skill beyond this one is named `kvb-coach-<name>`.
 
-`hooks/reminder.sh` triggers the short form at the first prompt of every full
-hour, once across all agents (stamped in `~/.claude/.coach-hours/`): at most
-three lines, the most urgent area first, then the agent continues with the
-operator's request.
+`hooks/reminder.sh` prints one fixed tip at the first prompt of every full
+hour, once across all agents (stamped in `~/.claude/.coach-hours/`), chosen
+by the hour: sleep late, food at meal times, else moving. The agent passes
+it on in one line without loading this skill.
 
 ## Step 1: read the situation
 

@@ -36,6 +36,9 @@ class TestContext(unittest.TestCase):
         ]
         (self.root / "project").mkdir()
         (self.root / "project" / "session.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        subagents = self.root / "project" / "session" / "subagents"
+        subagents.mkdir(parents=True)
+        (subagents / "agent-a1.jsonl").write_text(turn(self.today, "s1", 0) + "\n", encoding="utf-8")
 
     def _run(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -52,7 +55,7 @@ class TestContext(unittest.TestCase):
         )
         self.assertEqual(
             (today["day"], today["turns"], today["tokens"], today["compactions"], today["over"]["300000"]),
-            (self.today, 2, 450_100, 1, {"turns": 50, "tokens": 22}),
+            (self.today, 3, 450_200, 1, {"turns": 33, "tokens": 22}),
         )
 
     def test_usage_errors_exit_2(self):

@@ -858,7 +858,7 @@ class TestGuard(unittest.TestCase):
         self.assertEqual(hits, [])
 
     def test_the_agent_root_is_named_where_it_is_inventoried_or_mounted(self):
-        self.assertIn("~/.local/state/agents-shared", (REPO_ROOT / "skills" / "kvb-cleanup" / "SKILL.md").read_text(encoding="utf-8"))
+        self.assertIn("~/.local/state/agents-shared", (REPO_ROOT / "skills" / "kvb-cleanup" / "plan.md").read_text(encoding="utf-8"))
         self.assertIn("~/.local/state/agents-shared.", (CLIENT / "offices.py").read_text(encoding="utf-8"))
         mounts = (REPO_ROOT / "docs" / "requirements" / "003-operator-workbench.md").read_text(encoding="utf-8").split("- **Mounts**:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("`~/.local/state/agents-shared`", mounts)

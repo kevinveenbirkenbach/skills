@@ -27,8 +27,9 @@ per day and never changes the exit code; pass its quotient or `?` to
 `kvb-check-score --value`.
 
 - **Cost**: listing words delta x 1.33 x requests x 0.1 (cached) plus each
-  changed `SKILL.md`'s tokens delta x its invocations, per day of the last
-  7 days' transcripts (other runtimes: JSONL of that shape). A new skill
+  changed `SKILL.md`'s tokens delta x (its invocations + 0.1 x the later
+  turns it stays resident), per day of the last 7 days' session and
+  subagent transcripts (other runtimes: JSONL of that shape). A new skill
   takes its category's median, named in the line.
 - **Value**: tokens/day saved, derived by one `--evidence` line, e.g.
   `"3829 SendMessage wakes/day x 10 % avoided x 43k"`; else `?:?`.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -222,6 +223,35 @@ class TestSettingsRegistration(unittest.TestCase):
         result = subprocess.run(["sh", "-c", gate["command"]], capture_output=True, check=False)
         self.assertEqual(result.returncode, 1)
 
+    def test_a_hook_runs_its_script_as_main_from_cached_bytecode_and_keeps_its_exit_code(self):
+        (gate,) = self._hooks(self._patch(), "PreToolUse", "kvb-org-queue/scripts/queue.py")
+        script = Path(self.tmp.name) / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("import sys\nprint(__name__, sys.argv[1:], sys.argv[0] == __file__)\nsys.exit(3)\n", encoding="utf-8")
+        runs = [subprocess.run(["sh", "-c", gate["command"]], capture_output=True, text=True, check=False) for _ in range(2)]
+        self.assertEqual([(run.returncode, run.stdout) for run in runs], [(3, "__main__ ['block'] True\n")] * 2)
+        self.assertEqual([path.name.split(".")[0] for path in (script.parent / "__pycache__").iterdir()], ["queue"])
+
+    def test_every_bash_gate_answers_under_the_cached_loader_as_it_does_started_directly(self):
+        data = self._patch()
+        (Path(self.tmp.name) / "skills").symlink_to(REPO_ROOT / "skills")
+
+        def answer(command: str, home: Path) -> tuple:
+            home.mkdir()
+            env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "AGENTS_COUNCIL_ROOT": str(home / "council"), "XDG_STATE_HOME": str(home / "state")}
+            payload = json.dumps({"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": "/"})
+            done = subprocess.run(["sh", "-c", command], input=payload, cwd="/", env=env, capture_output=True, text=True, timeout=60, check=False)
+            return done.returncode, done.stdout.replace(str(home), "~"), done.stderr.replace(str(home), "~")
+
+        bash = [entry for entry in data["hooks"]["PreToolUse"] if "matcher" not in entry or "Bash" in entry["matcher"].split("|")]
+        gates = [re.search(r' ("[^"]+\.py") (\w+)$', hook["command"]) for entry in bash for hook in entry["hooks"] if "importlib" in hook["command"]]
+        self.assertEqual(len(gates), 4)
+        for n, gate in enumerate(gates):
+            with self.subTest(script=gate[1]):
+                cached = answer(gate.string, Path(self.tmp.name) / f"cached-{n}")
+                direct = answer(f"/usr/bin/python3 -I {gate[1]} {gate[2]}", Path(self.tmp.name) / f"direct-{n}")
+                self.assertEqual(cached, direct)
+
     def test_news_hook_moves_to_radio(self):
         base = Path(self.tmp.name) / "skills"
         self.settings.write_text(
@@ -243,14 +273,16 @@ class TestSettingsRegistration(unittest.TestCase):
             encoding="utf-8",
         )
         data = self._patch()
-        self.assertNotIn("codebase-memory@codebase-memory", data["enabledPlugins"])
+        self.assertIs(data["enabledPlugins"]["codebase-memory@codebase-memory"], False)
         self.assertNotIn("codebase-memory", data["extraKnownMarketplaces"])
         self.assertTrue(data["enabledPlugins"]["caveman@caveman"])
+        self.settings.write_text("{}", encoding="utf-8")
+        self.assertIs(self._patch()["enabledPlugins"]["codebase-memory@codebase-memory"], False)
 
     def test_compact_window_is_set_once_and_never_overwritten(self):
-        self.assertEqual(self._patch()["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "500000")
-        self.settings.write_text(json.dumps({"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"}}), encoding="utf-8")
         self.assertEqual(self._patch()["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "300000")
+        self.settings.write_text(json.dumps({"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000"}}), encoding="utf-8")
+        self.assertEqual(self._patch()["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "500000")
 
     def test_hooks_run_the_system_python_isolated_and_old_entries_move_to_it(self):
         old = f'[ -f "{self.tmp.name}/skills/kvb-org-queue/scripts/queue.py" ] && python3 "{self.tmp.name}/skills/kvb-org-queue/scripts/queue.py" block'
@@ -266,7 +298,8 @@ class TestSettingsRegistration(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn("/usr/bin/python3 -I ", command)
                 self.assertNotRegex(command, r"(^|&& )python3 ")
-        self.assertEqual(len(self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py")), 1)
+        (gate,) = self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py")
+        self.assertIn("spec_from_file_location", gate["command"])
 
     def test_reminders_run_the_system_bash_and_old_entries_move_to_it(self):
         old = f'bash "{self.tmp.name}/skills/kvb-dream/hooks/reminder.sh"'

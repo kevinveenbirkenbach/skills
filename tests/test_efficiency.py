@@ -29,7 +29,7 @@ BUDGET = REPO_ROOT / "scripts" / "budget.py"
 SKILL_A = "---\nname: kvb-a\ndescription: >\n  one two three\n---\n"
 SKILL_B = "---\nname: kvb-b\ndescription: >\n  four five\n---\n"
 NO_VALUE = "💰 value ?:? (cost 0/day; pass --value with evidence)"
-NEW_B = "💰 value ?:? (cost 0/day; pass --value with evidence; kvb-b new: all skills median 0 invocations/day)"
+NEW_B = "💰 value ?:? (cost 0/day; pass --value with evidence; kvb-b new: all skills median 0 invocations/day, 0 resident turns/day)"
 CHEAP = "print('cheap')\n"
 COSTLY = "data = list(range(2_000_000))\nprint(sum(data))\n"
 LINE = re.compile(
@@ -149,6 +149,7 @@ class TestTokens(GitRepo):
                     "evidence": None,
                     "requests_per_day": 0,
                     "invocations_per_day": {"kvb-b": 0},
+                    "resident_turns_per_day": {"kvb-b": 0},
                     "median_for_new": {"kvb-b": "all skills"},
                 },
             },
@@ -194,13 +195,13 @@ class TestTokens(GitRepo):
             result.stdout.splitlines(),
             [
                 "💸 tokens 869 % (skills 13→113 tokens; listing 3→5 words)",
-                "💰 value ?:? (cost 203/day; pass --value with evidence)",
+                "💰 value ?:? (cost 333/day; pass --value with evidence)",
             ],
         )
         self.assertEqual(result.returncode, 3)
         for value, line in (
-            ("4053", "💰 value 1:20 (cost 203/day, value 4053/day; 4053 tokens/day saved)"),
-            ("50", "💰 value 4.1:1 (cost 203/day, value 50/day; 4053 tokens/day saved)"),
+            ("4053", "💰 value 1:12 (cost 333/day, value 4053/day; 4053 tokens/day saved)"),
+            ("50", "💰 value 6.7:1 (cost 333/day, value 50/day; 4053 tokens/day saved)"),
         ):
             with self.subTest(value=value):
                 result = self.tokens("--value", value, "--evidence", "4053 tokens/day saved")
@@ -209,15 +210,29 @@ class TestTokens(GitRepo):
         self.assertEqual(
             found,
             {
-                "quotient": "1:20",
-                "cost": 202.66,
+                "quotient": "1:12",
+                "cost": 332.66,
                 "value": 4053,
                 "evidence": "e",
                 "requests_per_day": 10,
                 "invocations_per_day": {"kvb-a": 2},
+                "resident_turns_per_day": {"kvb-a": 13},
                 "median_for_new": {},
             },
         )
+
+    def test_subagent_transcripts_count_and_an_invoked_skill_stays_resident(self):
+        subagent = self.base / "projects" / "project" / "session" / "subagents" / "agent-a1.jsonl"
+        subagent.parent.mkdir(parents=True)
+        lines = [assistant("s0", self.recent, ("u0", "kvb-a")), *(assistant(f"s{n}", self.recent) for n in range(1, 14))]
+        subagent.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.write("skills/kvb-a/SKILL.md", SKILL_A.ljust(452, "y"))
+        found = json.loads(self.tokens("--json").stdout)["value"]
+        self.assertEqual(
+            (found["requests_per_day"], found["invocations_per_day"], found["resident_turns_per_day"]),
+            (2, {"kvb-a": round(1 / 7, 2)}, {"kvb-a": round(13 / 7, 2)}),
+        )
+        self.assertEqual(found["cost"], round(100 * (1 / 7 + 0.1 * 13 / 7), 2))
 
     def test_new_skill_takes_its_category_median(self):
         self.write("skills/kvb-c-one/SKILL.md", skill_md("kvb-c-one", "one"))
@@ -231,7 +246,7 @@ class TestTokens(GitRepo):
         result = self.tokens()
         self.assertEqual(
             result.stdout.splitlines()[1],
-            "💰 value ?:? (cost 202/day; pass --value with evidence; kvb-c-new new: kvb-c median 2 invocations/day)",
+            "💰 value ?:? (cost 1872/day; pass --value with evidence; kvb-c-new new: kvb-c median 2 invocations/day, 167 resident turns/day)",
         )
         self.assertEqual(result.returncode, 3)
 

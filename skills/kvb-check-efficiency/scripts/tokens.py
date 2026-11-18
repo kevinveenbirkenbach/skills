@@ -4,9 +4,12 @@
 Args:
     --repo: skills repository root; its scripts/budget.py counts the listing.
     --base: git ref the change starts from; the working tree is the after side.
-    --transcripts: Claude Code transcripts root, e.g. ~/.claude/projects; every */*.jsonl of the
-        last 7 days gives the requests (unique assistant message ids) and the invocations per skill
-        (unique Skill tool_use ids, a `<scope>:` prefix stripped). Read only; no text is printed.
+    --transcripts: Claude Code transcripts root, e.g. ~/.claude/projects; every session and
+        subagent transcript of the last 7 days (context.py of kvb-skill-silence lists them) gives
+        the requests (unique assistant message ids), the invocations per skill (unique Skill
+        tool_use ids, a `<scope>:` prefix stripped) and per skill its resident turns: every later
+        request of the same transcript, once per invocation, as Claude Code keeps an invoked
+        skill in context and re-injects it after a compaction. Read only; no text is printed.
     --value: tokens per day the change saves; needs --evidence.
     --evidence: one line that derives --value.
     --json: print the figures as JSON instead of the lines.
@@ -23,10 +26,11 @@ Output:
     Line 2: `💰 value 1:<n> (cost <c>/day, value <v>/day; <evidence>)` when the value is at least
     the cost, `<n>:1` below it, `0:1` without a cost, `1:0` without a value; without --value
     `💰 value ?:? (cost <c>/day; pass --value with evidence)`. Cost per day = listing words delta
-    * 1.33 tokens * requests per day * 0.1 (cached) + per changed SKILL.md its tokens delta * the
-    skill's invocations per day. A skill without a base SKILL.md takes the median invocations of
-    its category's base skills (the name up to its second dash; all base skills when it has
-    none), and the line names it.
+    * 1.33 tokens * requests per day * 0.1 (cached) + per changed SKILL.md its tokens delta *
+    (the skill's invocations per day + 0.1 * its resident turns per day). A skill without a base
+    SKILL.md takes the median invocations and the median resident turns of its category's base
+    skills (the name up to its second dash; all base skills when it has none), and the line
+    names them.
     --json prints efficiency (null when new), the skills and listing totals, the tokens per skill
     and the value figures.
     value: `💰 measured value <v>/day (median daily context <b>→<a> tokens over <n> active days
@@ -49,6 +53,7 @@ import math
 import statistics
 import subprocess
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 
@@ -192,55 +197,86 @@ def skill_uses(message: dict) -> list[tuple[str, str]]:
     return found
 
 
-def usage(root: Path, since: float) -> tuple[int, dict[str, int]]:
+def entries(path: Path, since: float):
+    """Args:
+        path: one transcript.
+        since: the epoch second the window starts.
+
+    Returns:
+        The assistant messages of the window, in transcript order.
+    """
+    with path.open(encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if '"assistant"' not in line:
+                continue
+            try:
+                entry = json.loads(line)
+                stamp = datetime.datetime.fromisoformat(entry["timestamp"]).timestamp()
+            except (ValueError, KeyError, TypeError):
+                continue
+            message = entry.get("message")
+            if entry.get("type") == "assistant" and stamp >= since and isinstance(message, dict):
+                yield message
+
+
+def usage(root: Path, since: float) -> tuple[int, dict[str, int], dict[str, int]]:
+    """Args:
+        root: the transcripts root.
+        since: the epoch second the window starts.
+
+    Returns:
+        The requests, per skill its invocations, and per skill its resident turns.
+    """
+    listed = load(CONTEXT, "context", "lists the transcripts").transcripts(root)
     requests: set[str] = set()
     invocations: dict[str, set[str]] = {}
-    for path in root.glob("*/*.jsonl"):
+    resident: Counter[str] = Counter()
+    for path in listed:
         if path.stat().st_mtime < since:
             continue
-        with path.open(encoding="utf-8", errors="ignore") as handle:
-            for line in handle:
-                if '"assistant"' not in line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                    stamp = datetime.datetime.fromisoformat(entry["timestamp"]).timestamp()
-                except (ValueError, KeyError, TypeError):
-                    continue
-                message = entry.get("message")
-                if entry.get("type") != "assistant" or stamp < since or not isinstance(message, dict):
-                    continue
-                if message.get("id"):
-                    requests.add(str(message["id"]))
-                for skill, use in skill_uses(message):
-                    invocations.setdefault(skill, set()).add(use)
-    return len(requests), {skill: len(uses) for skill, uses in invocations.items()}
+        live: Counter[str] = Counter()
+        for message in entries(path, since):
+            request = str(message.get("id") or "")
+            if request and request not in requests:
+                requests.add(request)
+                resident.update(live)
+            for skill, use in skill_uses(message):
+                seen = invocations.setdefault(skill, set())
+                if use not in seen:
+                    seen.add(use)
+                    live[skill] += 1
+    return len(requests), {skill: len(uses) for skill, uses in invocations.items()}, resident
 
 
 def weigh(root: Path, listing_delta: int, body: dict[str, int], new: set[str], base_skills: list[str]) -> dict:
-    requests, invocations = usage(root, datetime.datetime.now(datetime.UTC).timestamp() - DAYS * 86400)
-    per_day = {skill: count / DAYS for skill, count in invocations.items()}
-    rates, assumed = {}, {}
+    requests, invocations, resident = usage(root, datetime.datetime.now(datetime.UTC).timestamp() - DAYS * 86400)
+    per_day = defaultdict(float, {skill: count / DAYS for skill, count in invocations.items()})
+    held = defaultdict(float, {skill: turns / DAYS for skill, turns in resident.items()})
+    rates, kept, assumed = {}, {}, {}
     for skill in body:
         if skill in new:
             peers = [peer for peer in base_skills if category(peer) == category(skill)]
             assumed[skill] = category(skill) if peers else ALL_SKILLS
-            pool = [per_day.get(peer, 0.0) for peer in peers or base_skills]
-            rates[skill] = statistics.median(pool) if pool else 0.0
+            pool = peers or base_skills
+            rates[skill] = statistics.median([per_day[peer] for peer in pool]) if pool else 0.0
+            kept[skill] = statistics.median([held[peer] for peer in pool]) if pool else 0.0
         else:
-            rates[skill] = per_day.get(skill, 0.0)
+            rates[skill] = per_day[skill]
+            kept[skill] = held[skill]
     listing = listing_delta * TOKENS_PER_WORD * (requests / DAYS) * CACHE_FACTOR
     return {
-        "cost": listing + sum(delta * rates[skill] for skill, delta in body.items()),
+        "cost": listing + sum(delta * (rates[skill] + CACHE_FACTOR * kept[skill]) for skill, delta in body.items()),
         "requests_per_day": requests / DAYS,
         "invocations_per_day": rates,
+        "resident_turns_per_day": kept,
         "median_for_new": assumed,
     }
 
 
 def value_line(weighed: dict, value: float | None, evidence: str | None) -> tuple[str, str]:
     notes = [
-        f"{skill} new: {group} median {figure(weighed['invocations_per_day'][skill])} invocations/day"
+        f"{skill} new: {group} median {figure(weighed['invocations_per_day'][skill])} invocations/day, "
+        f"{figure(weighed['resident_turns_per_day'][skill])} resident turns/day"
         for skill, group in sorted(weighed["median_for_new"].items())
     ]
     cost = weighed["cost"]
@@ -331,6 +367,7 @@ def check(argv: list[str]) -> int:
                 "evidence": args.evidence,
                 "requests_per_day": round(weighed["requests_per_day"], 2),
                 "invocations_per_day": {s: round(r, 2) for s, r in weighed["invocations_per_day"].items()},
+                "resident_turns_per_day": {s: round(r, 2) for s, r in weighed["resident_turns_per_day"].items()},
                 "median_for_new": weighed["median_for_new"],
             },
         }))

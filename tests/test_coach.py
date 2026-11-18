@@ -89,6 +89,12 @@ class TestCoachHour(unittest.TestCase):
         self.assertIn("kvb-coach", self._run("2026-11-03T15"))
         self.assertEqual(sorted(p.name for p in self.hours.iterdir()), ["2026-11-03T15"])
 
+    def test_the_hour_picks_one_fixed_tip_and_loads_no_skill(self):
+        tips = {hour: self._run(f"2026-11-03T{hour}").splitlines() for hour in ("23", "04", "12", "19", "09", "16")}
+        firsts = {hour: lines[1].split(" ", 1)[0] for hour, lines in tips.items()}
+        self.assertEqual(firsts, {"23": "😴", "04": "😴", "12": "🥗", "19": "🥗", "09": "🚶", "16": "🚶"})
+        self.assertTrue(all(len(lines) == 2 and "load no skill" in lines[0] for lines in tips.values()))
+
     def test_a_binary_planted_on_the_inherited_path_never_runs(self):
         planted = Path(self.tmp.name) / "planted"
         planted.mkdir()
