@@ -351,6 +351,24 @@ class TestRedirectSettings(HubCase):
         self.assertEqual([stream["via"] for stream in retried["settings"]["streams"]], [["https://*.cdn.test"], ["https://*.cdn.test"]])
         self.assertEqual(retried["problems"], [])
 
+    def test_an_unresolved_station_heals_without_a_save_once_due(self):
+        saved = self.signed_and_saved([self.station(STATION, [])])["settings"]
+        cdn().httpd.broken.add("station.radio.test")
+        self.addCleanup(cdn().httpd.broken.discard, "station.radio.test")
+        other = "https://station.radio.test/other"
+        self.signed_and_saved([*saved["streams"], self.station(other, [])])
+        hub = self.httpd.hub
+        before = self.dials()
+        self.assertEqual((hub.retry_stations(), self.dials() - before), ([], 0))
+        hub.redirects.tried[other] -= RETRY_SECONDS
+        self.assertEqual(hub.retry_stations(), ["DLF: answers 302 without a Location"])
+        self.assertIsNone(hub.settings.get()["streams"][1]["via"])
+        cdn().httpd.broken.discard("station.radio.test")
+        hub.redirects.tried[other] -= RETRY_SECONDS
+        self.assertEqual(hub.retry_stations(), [])
+        self.assertEqual([stream["via"] for stream in hub.settings.get()["streams"]], [["https://*.cdn.test"], ["https://*.cdn.test"]])
+        self.assertIn("https://*.cdn.test", self.media_src())
+
     def test_a_save_that_lands_while_another_resolves_makes_that_one_fail(self):
         saved = self.signed_and_saved([self.station(STATION, [])])["settings"]
         slow = [*saved["streams"], self.station("https://drip.radio.test/", [])]

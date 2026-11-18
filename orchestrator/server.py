@@ -77,9 +77,10 @@ from kvb_orchestrator.engines import Engines
 from kvb_orchestrator.errors import ToolError
 from kvb_orchestrator.exchange import HubServer
 from kvb_orchestrator.handler import Handler
-from kvb_orchestrator.hub import Places, open_hub, sighting
+from kvb_orchestrator.hub import Places, open_hub, sighting, stations
 from kvb_orchestrator.keys import key_from
 from kvb_orchestrator.language import Model
+from kvb_orchestrator.livestate import LIVE_TTL
 from kvb_orchestrator.redirects import TIMEOUT, Redirects, dial
 from kvb_orchestrator.skill_scripts import Scripts
 from kvb_orchestrator.speechservice import Service
@@ -119,12 +120,14 @@ def main() -> int:
             ),
             approvers=args.approvers,
             redirects=Redirects(tls=ssl.create_default_context(), dial=dial, timeout=TIMEOUT),
+            live_ttl=LIVE_TTL,
         )
     except ToolError as error:
         parser.error(str(error))
     server = HubServer((args.bind, args.listen_port), Handler)
     server.hub = hub
     sighting(hub, threading.Event())
+    stations(hub, threading.Event())
     print(f"{NAME}: listening on {args.bind}:{args.listen_port}, public port {args.public_port}", flush=True)
     server.serve_forever()
     return 0

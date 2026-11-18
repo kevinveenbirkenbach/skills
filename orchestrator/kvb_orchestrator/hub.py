@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from .inbox import Inbox
 from .jobs import Jobs
 from .language import Language, Model
 from .ledger import Ledger, Marks, Reviews, Sealed
+from .livestate import LiveState
 from .matching import Matching
 from .mcp import Mcp
 from .messaging import Messaging
@@ -43,7 +45,7 @@ from .receipts import (
     sight,
     sighting_pass,
 )
-from .redirects import Redirects
+from .redirects import RETRY_SECONDS, Redirects
 from .requesting import Requesting
 from .resources import RESOURCES, SAMPLES
 from .revealing import Revealing
@@ -134,6 +136,7 @@ class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Den
     queue_order: QueueOrder
     view_store: ViewStore
     match_snapshots: Ledger
+    live_state: LiveState
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -158,7 +161,29 @@ def sighting(hub: Hub, stop: threading.Event) -> threading.Thread:
     return thread
 
 
-def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_state: Path, transcripts: Path, scripts: Runner, templates: Path, places: Places, model: Model, engines: Engines, approvers: Path, redirects: Redirects) -> Hub:
+def stations(hub: Hub, stop: threading.Event) -> threading.Thread:
+    """Args:
+        hub: the hub whose unresolved stations are retried.
+        stop: ends the thread once set.
+
+    Returns:
+        The started daemon thread that runs retry_stations() at the start and
+        every RETRY_SECONDS, printing why a station still does not resolve.
+    """
+
+    def run() -> None:
+        while True:
+            for problem in hub.retry_stations():
+                print(f"station redirect: {problem}", file=sys.stderr, flush=True)
+            if stop.wait(RETRY_SECONDS):
+                return
+
+    thread = threading.Thread(target=run, name="station redirects", daemon=True)
+    thread.start()
+    return thread
+
+
+def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_state: Path, transcripts: Path, scripts: Runner, templates: Path, places: Places, model: Model, engines: Engines, approvers: Path, redirects: Redirects, live_ttl: float) -> Hub:
     uploads = state / "uploads"
     uploads.mkdir(exist_ok=True)
     reviews = Reviews(state)
@@ -181,6 +206,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         replay=state / "replay" / "messages.json",
         view_store=ViewStore(state / "view.json"),
         match_snapshots=Ledger(state / "match.json"),
+        live_state=LiveState(live_ttl),
         rules=Ledger(state / "rules.json"),
         offers=Offers(),
         jobs=Ledger(state / "jobs.json"),

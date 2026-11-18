@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bisect
 import itertools
 import json
 import math
@@ -27,13 +28,14 @@ class Directory:
             if entry["session"] in holders:
                 holders.remove(entry["session"])
             holders.append(entry["session"])
+        self.times = {session: [entry["first_seen"] for entry in own] for session, own in self.by_session.items()}
 
     def at(self, session: str, ts: float) -> str:
         own = self.by_session.get(session)
         if not own:
             return ""
-        valid = [entry for entry in own if entry["first_seen"] <= ts]
-        return (valid[-1] if valid else own[0])["name"]
+        index = bisect.bisect_right(self.times[session], ts)
+        return own[index - 1 if index else 0]["name"]
 
     def now(self, session: str) -> str:
         own = self.by_session.get(session)
@@ -57,8 +59,18 @@ class Directory:
     def names(self, key: str) -> list[str]:
         return list(dict.fromkeys(entry["name"] for entry in self.by_session.get(key, [])))
 
-    def timeline(self, key: str) -> list[dict]:
-        return [{"name": entry["name"], "since": entry["first_seen"]} for entry in self.by_session.get(key, [])]
+    def timeline(self, key: str, begin: float | None = None) -> list[dict]:
+        """Args:
+            key: the session.
+            begin: when given, the names between the first one and the last
+                one seen at or before begin are left out; the first stays as
+                the session's birth.
+        """
+        own = self.by_session.get(key, [])
+        if begin is not None and own:
+            start = bisect.bisect_right(self.times[key], begin) - 1
+            own = own[:1] + own[max(start, 1):]
+        return [{"name": entry["name"], "since": entry["first_seen"]} for entry in own]
 
     def aliases(self, name: str) -> set[str]:
         return set(self.by_name.get(name, []))
@@ -103,6 +115,8 @@ class Names:
         entries, observed = self.data.get("entries"), self.data.get("observed")
         self.entries = [entry for entry in entries if valid_entry(entry)] if isinstance(entries, list) else []
         self.observed: dict[str, str] = {key: name for key, name in observed.items() if isinstance(name, str)} if isinstance(observed, dict) else {}
+        self.version = 0
+        self.cached: tuple[int, Directory] | None = None
 
     def payload(self) -> dict:
         return {"entries": self.entries, "observed": self.observed}
@@ -136,12 +150,23 @@ class Names:
                 floor = history[-1]["first_seen"] if history else -math.inf
                 first = seen if seen is not None and seen > floor else max(now, floor)
                 self.entries.append({"session": session, "name": name, "first_seen": first, "source": source})
+                self.version += 1
             if changed:
                 self.save()
 
     def listed(self) -> list[dict]:
         with self.lock:
             return [dict(entry) for entry in self.entries]
+
+    def directory(self) -> Directory:
+        """Returns:
+            The Directory of the current entries, rebuilt only after observe()
+            added one; it shares the entry dicts, which nothing mutates.
+        """
+        with self.lock:
+            if self.cached is None or self.cached[0] != self.version:
+                self.cached = (self.version, Directory(list(self.entries)))
+            return self.cached[1]
 
     def due(self, now: float) -> bool:
         with self.lock:

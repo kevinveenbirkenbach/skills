@@ -20,7 +20,7 @@ def office_request(raw: object) -> bool:
 
 class Offices:
     def office_sessions(self, claims: list[dict]) -> set[str]:
-        named = {entry["session"] for entry in self.names.listed()} | {claim["session"] for claim in claims}
+        named = set(self.names.directory().by_session) | {claim["session"] for claim in claims}
         return {session for session in named if signing.SESSION.fullmatch(session) and session != HUMAN}
 
     def appointable(self, raw: object) -> list[dict]:

@@ -44,7 +44,8 @@ def edges(radio: list[dict], grant_rows: list[dict], chair: str) -> list[dict]:
     return [{"source": s, "target": t, "class": c, "count": n} for (s, t, c), n in sorted(counts.items())]
 
 
-def graph(radio: list[dict], grant_rows: list[dict], tasks: dict[str, dict], claims: list[dict], end: float, directory: Directory) -> dict:
+def graph(radio: list[dict], grant_rows: list[dict], tasks: dict[str, dict], claims: list[dict], span: tuple[float, float], directory: Directory) -> dict:
+    begin, end = span
     current = {task: row for task, row in sorted(tasks.items()) if status_of(row) not in ENDED}
     chair = chair_of(claims, directory, end)
     top = chair or HUMAN
@@ -82,7 +83,7 @@ def graph(radio: list[dict], grant_rows: list[dict], tasks: dict[str, dict], cla
             "parent": parent,
             "label": label,
             "names": directory.names(key) or [label],
-            "timeline": directory.timeline(key) or [{"name": label, "since": end}],
+            "timeline": directory.timeline(key, begin) or [{"name": label, "since": end}],
             "tasks": list(holders.get(key, {}).values()),
             "claims": [claim for claim in claims if claim["session"] == key],
         }

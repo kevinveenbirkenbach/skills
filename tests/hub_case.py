@@ -77,6 +77,7 @@ class HubCase(unittest.TestCase):
             engines=self.engines,
             approvers=self.approvers,
             redirects=self.redirects(),
+            live_ttl=self.live_ttl(),
         )
         self.httpd = httpd
         self.origin = signing.origin_of(self.port)
@@ -89,6 +90,13 @@ class HubCase(unittest.TestCase):
 
     def redirects(self) -> Redirects:
         return offline_redirects()
+
+    def live_ttl(self) -> float:
+        """Returns:
+            0, so a test that writes council files directly reads them in the
+            next state; a case testing the live cache overrides it.
+        """
+        return 0.0
 
     def call(self, method: str, path: str, body: bytes | None, headers: dict[str, str]) -> tuple[int, dict, bytes]:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)

@@ -34,7 +34,7 @@ class Sources:
         sightings = title_sightings(self.transcripts.root, claimed, now) if self.names.due(now) else []
         sightings += [(claim["session"], claim["agent"], iso_epoch(claim["since"]), "claim") for claim in claims if claim["agent"] and claim["session"] != "-"]
         self.names.observe(sorted(sightings, key=lambda sighting: (sighting[2] is None, sighting[2] or 0.0)), now)
-        known = {entry["name"] for entry in self.names.listed()}
+        known = set(self.names.directory().by_name)
         radio = []
         for row in news:
             name, ts = agent(row.get("from")), epoch(row.get("ts"))
@@ -42,7 +42,7 @@ class Sources:
                 radio.append((f"{PSEUDO}{name}", name, ts, "radio"))
                 known.add(name)
         self.names.observe(radio, now)
-        return Directory(self.names.listed())
+        return self.names.directory()
 
     def repositories(self) -> dict:
         tasks = read_register(self.council / REGISTER)

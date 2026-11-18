@@ -75,12 +75,17 @@ class View:
         return begin, end
 
     def window(self, query: dict[str, list[str]]) -> dict:
-        now = time.time()
-        begin, end = self.span(query, now)
         sampled = single(query, "track")
         if sampled not in (None, "1"):
             raise ToolError("track must be 1 or left out")
         self.tree.beat()
+        if "from" in query or "to" in query:
+            return self.built(query, sampled)
+        return self.live_state.shared(sampled, lambda: self.built(query, sampled))
+
+    def built(self, query: dict[str, list[str]], sampled: str | None) -> dict:
+        now = time.time()
+        begin, end = self.span(query, now)
         self.sweep_sealed()
         return self.state(begin, end, now, TRACK_STEPS if sampled else 0)
 
@@ -121,7 +126,7 @@ class View:
         grant_rows = [{**grant, "target": directory.key(grant["to"], grant["ts"])} for grant in grants(history, (begin, end), claims, tasks)]
         self.watch.see(tasks, now)
         jobs = [{**{key: value for key, value in job.items() if key != "proof"}, "output": job["output"][-OUTPUT_LIMIT:]} for job in self.jobs.listed()[-JOBS_SHOWN:]]
-        drawn = graph(radio, grant_rows, tasks, claims, end, directory)
+        drawn = graph(radio, grant_rows, tasks, claims, (begin, end), directory)
         first = self.first(news, history, claims, now)
         drawn["track"] = track(drawn["nodes"], radio, tasks, claims, (min(max(begin, first), end), end), directory, steps)
         people = {node["id"]: {"name": node["label"], "now": directory.now(node["id"]) or node["label"], "names": node["names"]} for node in drawn["nodes"] if node["kind"] != "subagent"}
@@ -214,6 +219,23 @@ class View:
                 problems.append(f"{stream['name']}: {problem}")
             streams.append({**stream, "via": via})
         return {**settings, "streams": streams}, problems
+
+    def retry_stations(self) -> list[str]:
+        """Returns:
+            Why a station's redirect chain still does not resolve. A station
+            whose via is None is resolved again once Redirects.due allows,
+            without waiting for a save; a save that lands meanwhile wins.
+        """
+        saved = self.settings.get()
+        if not any(stream["via"] is None and self.redirects.due(stream["url"]) for stream in saved["streams"]):
+            return []
+        resolved, problems = self.resolved(saved, saved)
+        if resolved != saved:
+            try:
+                self.settings.put(resolved, saved)
+            except ToolError as error:
+                problems.append(str(error))
+        return problems
 
     def sign_settings(self, body: bytes) -> dict:
         saved = self.settings.get()

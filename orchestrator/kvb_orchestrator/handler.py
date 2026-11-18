@@ -312,7 +312,10 @@ class Handler(Exchange):
             return
         receive = self.receiver(path, host)
         if receive is not None:
-            receive(self.rfile.read(length))
+            try:
+                receive(self.rfile.read(length))
+            finally:
+                self.server.hub.live_state.invalidate()
 
     def do_PATCH(self) -> None:
         path = urlsplit(self.path).path
@@ -328,6 +331,7 @@ class Handler(Exchange):
             if length is not None:
                 body = self.rfile.read(length)
                 self.answer(lambda: self.server.hub.view_store.patch(body), HTTPStatus.OK)
+                self.server.hub.live_state.invalidate()
 
     def index(self) -> None:
         nonce = secrets.token_urlsafe(18)

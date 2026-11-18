@@ -82,6 +82,7 @@ class Transcripts:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.lock = threading.Lock()
+        self.scanning = threading.Lock()
         self.offsets: dict[Path, int] = {}
         self.entries: deque[dict] = deque(maxlen=STREAM_KEEP)
         self.crons: dict[str, dict] = {}
@@ -89,7 +90,8 @@ class Transcripts:
         self.scanned = -math.inf
 
     def refresh(self) -> None:
-        with self.lock:
+        # Trip-wire: a first scan reads hundreds of MiB; only the per-file add takes self.lock, which /api/state also needs.
+        with self.scanning:
             if time.monotonic() - self.scanned < STREAM_SCAN:
                 return
             self.scanned = time.monotonic()
@@ -98,7 +100,10 @@ class Transcripts:
             except OSError:
                 paths = []
             for path in paths:
-                self.read(path)
+                rows = self.read(path)
+                with self.lock:
+                    for row in rows:
+                        self.add(path, row)
 
     def start(self, path: Path, info: os.stat_result) -> int:
         offset = self.offsets.get(path)
@@ -107,7 +112,7 @@ class Transcripts:
             return max(info.st_size - STREAM_FIRST, 0) if recent else info.st_size
         return 0 if info.st_size < offset else offset
 
-    def read(self, path: Path) -> None:
+    def read(self, path: Path) -> list[dict]:
         try:
             info = path.stat()
             begin = self.start(path, info)
@@ -115,13 +120,11 @@ class Transcripts:
                 handle.seek(begin)
                 data = handle.read(max(info.st_size - begin, 0))
         except OSError:
-            return
+            return []
         end = data.rfind(b"\n") + 1
         self.offsets[path] = begin + end
-        for raw in data[:end].splitlines():
-            row = parse_line(raw.decode("utf-8", errors="replace"))
-            if row is not None:
-                self.add(path, row)
+        rows = (parse_line(raw.decode("utf-8", errors="replace")) for raw in data[:end].splitlines())
+        return [row for row in rows if row is not None]
 
     def add(self, path: Path, row: dict) -> None:
         ts = iso_epoch(row.get("timestamp"))

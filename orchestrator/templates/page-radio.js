@@ -53,7 +53,7 @@
 
   function redirectNote(stream) {
     if (stream && stream.via === null) {
-      return "The server has not resolved this station's redirect yet; saving after ten minutes tries again.";
+      return "The hub has not resolved this station's redirect yet; it tries again every ten minutes by itself, the hub log names why it failed.";
     }
     const released = stream ? stream.via : [];
     const unloaded = released.filter((origin) => !pageMedia.has(origin));

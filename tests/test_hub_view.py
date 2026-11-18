@@ -579,7 +579,7 @@ class TestHubView(HubCase):
             council=self.council, pages=self.pages, public_port=self.port, state=self.state, host_state=HOST_STATE, transcripts=self.projects, scripts=self.scripts,
             templates=HUB / "templates",
             places=server.Places(tree_file=self.tree_file, timers=self.timers, vendor=HUB / "vendor", cleanup=self.cleanup, offices=self.offices, kept=self.kept),
-            model=server.Model(url="", model="", key=""), engines=self.engines, approvers=self.approvers, redirects=self.redirects(),
+            model=server.Model(url="", model="", key=""), engines=self.engines, approvers=self.approvers, redirects=self.redirects(), live_ttl=self.live_ttl(),
         )
 
     def test_a_get_and_a_patch_round_trip_and_the_file_is_private(self):

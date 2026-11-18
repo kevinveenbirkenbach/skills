@@ -7,7 +7,6 @@ import time
 from .council import read_claims
 from .errors import Conflict, Missing, ToolError
 from .fields import COMMAND_LIMIT, PATH_LIMIT, bounded, decode, expect, visible
-from .names import Directory
 from .signed import ask_signed, passkey, review_signed, signing, verifier
 
 RULE_KINDS = ("ask", "review", "decision")
@@ -155,7 +154,7 @@ class Rules:
         """
         if kind_name != "decision":
             return set()
-        directory = Directory(self.names.listed())
+        directory = self.names.directory()
         holders = {session for session in directory.aliases(record["agent"]) if directory.now(session) == record["agent"]}
         return holders if len(holders) == 1 else set()
 
