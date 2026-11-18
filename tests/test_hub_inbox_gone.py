@@ -55,7 +55,7 @@ let renders = [];
 let atLoad = null;
 let loads = 0;
 let reloaded = null;
-let answers = {};
+let replies = {};
 toast = (title, lines, good) => { toasts.push([title, lines, good]); return {remove() {}}; };
 render = (force) => { renders.push(force); };
 drawStream = () => {};
@@ -68,7 +68,7 @@ load = async () => {
 };
 fetch = async (path) => {
   posts.push(path);
-  const answer = answers[path] || [500, "unexpected " + path];
+  const answer = replies[path] || [500, "unexpected " + path];
   if (answer === "offline") {
     throw new TypeError("Failed to fetch");
   }
@@ -87,7 +87,7 @@ async function scenario(name, shown, given, act, after) {
   atLoad = null;
   loads = 0;
   reloaded = after || null;
-  answers = given;
+  replies = given;
   await act();
   results[name] = {inbox: state.inbox.map((item) => item.id), atLoad, loads, renders: renders.length, toasts: [...toasts], posts: [...posts], busy: ui.busy};
 }
@@ -106,7 +106,7 @@ const grantBoth = () => submit(state.inbox.map((item) => entryOf(item, "approve"
   await scenario("bulk_409", ["gone", "kept"], {"/api/sign": reply(409, '{"status": "held"}')}, grantBoth, ["kept"]);
   state.inbox = [items.gone, items.kept, items.later].map((item) => ({...item}));
   renders = [];
-  answers = {"/api/state?": reply(200, JSON.stringify({inbox: [items.kept], radio: [], settings: {}, now: now + 10}))};
+  replies = {"/api/state?": reply(200, JSON.stringify({inbox: [items.kept], radio: [], settings: {}, now: now + 10}))};
   await fresh();
   results.refresh = {inbox: state.inbox.map((item) => item.id), renders, offline: ui.offline};
   console.log(JSON.stringify(results));
