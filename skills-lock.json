@@ -3,84 +3,98 @@
   "skills": {
     "archify": {
       "source": "tt-a1i/archify",
+      "commit": "a7ed6fd6657da90414831d1d42cf95987188750c",
       "sourceType": "github",
       "skillPath": "archify/SKILL.md",
       "computedHash": "dcc4821a0dd36701d56e571910de4e20ca99a036810a3ba4d4261b0f078ad7a1"
     },
     "cavecrew": {
       "source": "JuliusBrussee/caveman",
+      "commit": "9b243662ff98d392bc0a95b865a554583d71be75",
       "sourceType": "github",
       "skillPath": "skills/cavecrew/SKILL.md",
       "computedHash": "e851caf8480d3ddf5de7fe490cbb2cda8840df760b3851510a24d605147d29e2"
     },
     "caveman": {
       "source": "JuliusBrussee/caveman",
+      "commit": "9b243662ff98d392bc0a95b865a554583d71be75",
       "sourceType": "github",
       "skillPath": "skills/caveman/SKILL.md",
       "computedHash": "b51af74aacdadbc3c2d6bb79f05db58dc521854b87f7ffabd48faf286a81ed31"
     },
     "caveman-commit": {
       "source": "JuliusBrussee/caveman",
+      "commit": "9b243662ff98d392bc0a95b865a554583d71be75",
       "sourceType": "github",
       "skillPath": "skills/caveman-commit/SKILL.md",
       "computedHash": "2c1472fb59eedd3cfba0b6512dc470a00287343ade421db55c21a6fb52afbe86"
     },
     "caveman-compress": {
       "source": "JuliusBrussee/caveman",
+      "commit": "9b243662ff98d392bc0a95b865a554583d71be75",
       "sourceType": "github",
       "skillPath": "skills/caveman-compress/SKILL.md",
       "computedHash": "1f627a3ac239baa859918cf64a5e89619c162e1e9787c6d97ad41c5a1cc2fdb9"
     },
     "caveman-help": {
       "source": "JuliusBrussee/caveman",
+      "commit": "9b243662ff98d392bc0a95b865a554583d71be75",
       "sourceType": "github",
       "skillPath": "skills/caveman-help/SKILL.md",
       "computedHash": "6a3e3d37fa03b4aa0622a6aec14446a243619c1539ad419e065dc8b1cd70aacd"
     },
     "caveman-review": {
       "source": "JuliusBrussee/caveman",
+      "commit": "9b243662ff98d392bc0a95b865a554583d71be75",
       "sourceType": "github",
       "skillPath": "skills/caveman-review/SKILL.md",
       "computedHash": "c55908f8ee0dca0e59690e939dfd4a877bd9361897ae5fced096274a77509154"
     },
     "caveman-stats": {
       "source": "JuliusBrussee/caveman",
+      "commit": "9b243662ff98d392bc0a95b865a554583d71be75",
       "sourceType": "github",
       "skillPath": "skills/caveman-stats/SKILL.md",
       "computedHash": "d47db80af9353f411b5840fa207ac10c883f04576cd280b135e3a44a0ff86285"
     },
     "ponytail": {
       "source": "DietrichGebert/ponytail",
+      "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
       "sourceType": "github",
       "skillPath": "skills/ponytail/SKILL.md",
       "computedHash": "56d72677aca02689ac89bd48734e8c19b40ab86716d1257eaf5f1238b43cda6b"
     },
     "ponytail-audit": {
       "source": "DietrichGebert/ponytail",
+      "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
       "sourceType": "github",
       "skillPath": "skills/ponytail-audit/SKILL.md",
       "computedHash": "20dca08a5d047285c61702d496317eb84f501bbd573a45f3c8f93fdb3cecde4c"
     },
     "ponytail-debt": {
       "source": "DietrichGebert/ponytail",
+      "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
       "sourceType": "github",
       "skillPath": "skills/ponytail-debt/SKILL.md",
       "computedHash": "6bcafbbd5d7ab3c09fbe1b040c2c8f3d0aae3c7e6e24339be253af354ab5cacd"
     },
     "ponytail-gain": {
       "source": "DietrichGebert/ponytail",
+      "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
       "sourceType": "github",
       "skillPath": "skills/ponytail-gain/SKILL.md",
       "computedHash": "8dc7d5a5314e0720ff2e2b740486314b4607765181ede820f6b7e86a3d5fd814"
     },
     "ponytail-help": {
       "source": "DietrichGebert/ponytail",
+      "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
       "sourceType": "github",
       "skillPath": "skills/ponytail-help/SKILL.md",
       "computedHash": "decfe28950443ddc04cf06badab1ebe325d149bc7dccdd3ce43ff8be27d92103"
     },
     "ponytail-review": {
       "source": "DietrichGebert/ponytail",
+      "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
       "sourceType": "github",
       "skillPath": "skills/ponytail-review/SKILL.md",
       "computedHash": "fe7b781db99ce79d931cdc798b3fbccd84b82538de4a3fc5f6d9d466946d1458"
