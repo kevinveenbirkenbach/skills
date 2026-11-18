@@ -9,6 +9,7 @@
     mayday: "MAYDAY: all agents pause writing steps until you cancel it.",
   };
   const VOICE_POLL = 700;
+  const HOLD_MS = 350;
   const composer = {live: null};
 
   function confirmMayday() {
@@ -71,6 +72,8 @@
   }
 
   async function keepRecording(blob, parts) {
+    const held = parts.ptt === "released";
+    parts.ptt = "";
     parts.record.disabled = true;
     try {
       const sound = context();
@@ -94,6 +97,9 @@
       parts.text.dispatchEvent(new Event("input", {bubbles: true}));
       parts.text.focus();
       parts.status.textContent = note.text ? "Check the text, then send." : "Nothing understood: write the text yourself.";
+      if (held && note.text) {
+        parts.text.form.requestSubmit();
+      }
     } catch (error) {
       parts.status.textContent = "";
       toast("Recording failed", [String(error.message || error)], false);
@@ -150,6 +156,9 @@
     composer.live = parts;
     recorder.start();
     recordLabel(parts, true);
+    if (parts.ptt === "released") {
+      stopRecording(parts);
+    }
     parts.timer = window.setInterval(() => {
       const seconds = Math.floor((Date.now() - parts.started) / 1000);
       parts.status.textContent = `Recording ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} of at most ${state.speech.seconds} s`;
@@ -167,17 +176,31 @@
     const replay = h("div", {class: "voice-note", hidden: true});
     const hint = h("span", {class: "muted composer-hint"});
     const status = h("span", {class: "muted composer-status", "aria-live": "polite"});
-    const record = h("button", {type: "button", class: "btn small", "aria-pressed": "false", title: "Record: one click starts, another stops; the hub transcribes, you check the text before sending"});
+    const record = h("button", {type: "button", class: "btn small", "aria-pressed": "false", title: "Record: one click starts, another stops, you check the text before sending; hold it to talk, release to send"});
     const submit = h("button", {type: "submit", class: "btn primary ptt", title: "PTT: push to transmit the message; your passkey signs it"}, icon("bi-broadcast-pin"), "PTT");
     const attach = h("input", {type: "checkbox", title: "Attach recording: the agents get the path of the sound file; otherwise only the checked text goes out"});
-    const parts = {record, status, text, replay, attach, voice: "", recorder: null, timer: 0, started: 0};
+    const parts = {record, status, text, replay, attach, voice: "", recorder: null, timer: 0, started: 0, ptt: "", hold: 0, swallow: false};
     recordLabel(parts, false);
     const gap = micGap();
     if (gap) {
       record.disabled = true;
       record.title = `Record: ${gap}`;
     }
-    record.addEventListener("click", () => (parts.recorder ? stopRecording(parts) : startRecording(parts)));
+    holdToTalk(parts);
+    record.addEventListener("click", () => {
+      if (parts.swallow) {
+        parts.swallow = false;
+        return;
+      }
+      parts.ptt = "";
+      if (parts.recorder) {
+        stopRecording(parts);
+      } else {
+        startRecording(parts);
+      }
+    });
+    const [, cancel, , cancelHint] = actionOf("clear-mayday");
+    const clear = h("button", {type: "button", class: "btn small danger radio-cancel", hidden: !state.silence, ...named(cancel, cancelHint), on: {click: () => confirmAct("clear-mayday", [])}}, icon("bi-life-preserver"), cancel);
     const sync = () => {
       const direct = TO_ONE.some(([id]) => id === channel.value);
       toField.hidden = !direct;
@@ -187,7 +210,7 @@
     channel.addEventListener("change", sync);
     sync();
     const form = h("form", {class: "composer"}, h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField), text, replay,
-      h("div", {class: "actions"}, record, micButton(text, false), status, hint, submit));
+      h("div", {class: "actions"}, record, micButton(text, false), status, hint, clear, h("div", {class: "ptt-split", role: "group", "aria-label": "Send"}, submit, testMenu(text, channel))));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const direct = TO_ONE.some(([id]) => id === channel.value);
@@ -207,5 +230,45 @@
       submit.disabled = false;
     });
     attachVoice(parts, "");
-    return {form, recipient, text, channel};
+    return {form, recipient, text, channel, clear};
+  }
+
+  function holdToTalk(parts) {
+    const {record} = parts;
+    record.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || record.disabled || parts.recorder) {
+        return;
+      }
+      parts.hold = window.setTimeout(() => {
+        parts.ptt = "holding";
+        startRecording(parts);
+      }, HOLD_MS);
+    });
+    const release = () => {
+      window.clearTimeout(parts.hold);
+      if (parts.ptt === "holding") {
+        Object.assign(parts, {ptt: "released", swallow: true});
+        stopRecording(parts);
+      }
+    };
+    for (const kind of ["pointerup", "pointercancel", "pointerleave"]) {
+      record.addEventListener(kind, release);
+    }
+  }
+
+  /**
+   * @param {Element} text the message field.
+   * @param {Element} channel the class select.
+   * @returns {Element} the ▾ of PTT: a menu whose item reads the message, or a sample line, aloud here only, so nothing leaves the browser.
+   */
+  function testMenu(text, channel) {
+    const item = h("button", {type: "button", class: "menu-item", ...named("Test message", "Test message: hear it here as the radio reads it aloud; nothing is sent, nothing is signed"), on: {click: (event) => {
+      event.currentTarget.closest("details").open = false;
+      if (!state.speech.tts) {
+        toast("No test message", [`The hub speaks no line: ${state.speech.tts_off}.`], false);
+        return;
+      }
+      say({steps: [{kind: "speech", text: text.value.trim() || state.speech.sample}], voice: state.speech.operator, tone: "direct", cls: channel.value, who: HUMAN, sent: true, line: "test message"});
+    }}}, icon("bi-play-fill"), "Test message");
+    return h("details", {class: "menu ptt-menu"}, h("summary", {class: "btn primary ptt-more", ...named("More send options", "More: send a test message only you hear")}, caret()), h("div", {class: "menu-box end"}, item));
   }

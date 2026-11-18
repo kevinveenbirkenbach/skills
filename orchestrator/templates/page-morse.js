@@ -44,7 +44,7 @@
     if (wpm !== settings.morse.wpm && await saveSettings({...settings, space: savedSpace(), morse: {wpm}})) {
       toast("Morse speed saved", [`The radio keys Morse at ${Morse.rate(wpm)}.`], true);
     }
-    redrawFilters();
+    redrawModeMenus();
   }
 
   function morseSpeed() {

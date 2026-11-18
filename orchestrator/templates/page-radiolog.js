@@ -48,6 +48,7 @@
     const [name, label] = sent ? ["bi-arrow-up-right", "Sent"] : ["bi-arrow-down-left", "Received"];
     const first = firstLine(row.text);
     const line = h("li", {class: "radio-row", "data-key": row.key, "data-dir": sent ? "sent" : "received", "data-class": row.class, "data-ts": row.ts, on: {click: (event) => openRadioRow(event.currentTarget.row, event.currentTarget)}},
+      row.source && !sent && row.from !== HUMAN ? muteFace(row.source, row.from) : null,
       h("button", {type: "button", class: "radio-pick", "aria-haspopup": "dialog", title: first},
         when(row.ts),
         h("span", {class: "radio-dir", role: "img", ...named(label)}, icon(name)),
@@ -73,8 +74,24 @@
     for (const node of [...kept.children].filter((child) => child !== pick)) {
       node.remove();
     }
-    kept.append(...[...fresh.children].filter((child) => child !== twin));
+    const parts = [...fresh.children];
+    const at = parts.indexOf(twin);
+    pick.before(...parts.slice(0, at));
+    pick.after(...parts.slice(at + 1));
     return kept;
+  }
+
+  /**
+   * @param {string} key the sender's session key.
+   * @param {string} name the sender's name.
+   * @returns {Element} the sender's avatar as a button that mutes or unmutes the sender on the radio, without opening the row.
+   */
+  function muteFace(key, name) {
+    const muted = radioSet.muted.includes(key);
+    return h("button", {type: "button", class: "radio-mute", "aria-pressed": String(muted), ...named(`Mute ${name}`, muted ? `Muted: a press lets the radio read ${name} aloud again` : `Mute ${name}: the radio stops reading this agent aloud`), on: {click: (event) => {
+      event.stopPropagation();
+      keepRadio(RadioSet.muting(radioSet, key));
+    }}}, face(key, false));
   }
 
   function patchList(list, lines) {
@@ -188,7 +205,7 @@
 
   function drawLog() {
     const entry = radioSet.log;
-    const sig = JSON.stringify([state.radio.length, state.radio.length ? state.radio[state.radio.length - 1].ts : 0, state.messages.length, Receipts.signature(state.radio), Receipts.signature(state.messages), entry, Math.floor(Date.now() / 60000)]);
+    const sig = JSON.stringify([state.radio.length, state.radio.length ? state.radio[state.radio.length - 1].ts : 0, state.messages.length, Receipts.signature(state.radio), Receipts.signature(state.messages), entry, radioSet.muted, Math.floor(Date.now() / 60000)]);
     for (const dom of liveParts("logs")) {
       if (sig !== dom.sig) {
         dom.sig = sig;

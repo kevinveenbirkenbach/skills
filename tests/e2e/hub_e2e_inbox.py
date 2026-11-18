@@ -58,8 +58,10 @@ INBOX_PICK = """(async () => {@HELPERS@
   const focused = Boolean(holder && text(holder.querySelector(".command code")) === title && document.activeElement.checked);
   all("#main .inbox-list > li").find((li) => li.textContent.includes("pick a name")).querySelector("input").click();
   await sleep(300);
-  const buttons = all("#main .inbox-actions button").map(name);
-  all("#main .inbox-actions button").find((button) => name(button).startsWith("Deny selection")).click();
+  const buttons = all("#grant-bar .grant-split button").map(name);
+  document.querySelector("#grant-bar details.grant-menu > summary").click();
+  await until(() => document.querySelector("#grant-bar details.grant-menu[open]"), 2000);
+  all("#grant-bar .grant-split button").find((button) => name(button).startsWith("Deny selection")).click();
   await until(() => document.querySelector(".sheet-box .actions"), 4000);
   const listed = all(".sheet-box ul.mini > li strong").map(text);
   const reason = document.querySelector(".sheet-box .deny-reason textarea");

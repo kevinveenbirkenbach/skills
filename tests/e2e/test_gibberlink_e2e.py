@@ -47,15 +47,8 @@ GIBBER_SPY = """() => {
   };
 }""".replace("@SPY@", SPY)
 GIBBER_KIT = """
-  const gear = () => all(".spot-head button", spot).find((button) => name(button) === "Read aloud");
-  const fallbacks = () => all('#radio-gear .chips[aria-label="Fallback"] .chip', spot);
+  const fallbacks = () => all('.radio-mode-menu .chips[aria-label="Fallback"] .chip', spot);
   const kept = () => JSON.parse(localStorage.getItem("kvb-orchestrator.radio") || "{}").fallback || null;
-  const opened = async (open) => {
-    if ((gear().getAttribute("aria-expanded") === "true") !== open) {
-      gear().click();
-      await sleep(200);
-    }
-  };
   const sent = async (count) => {
     await cue("alarm");
     refreshNow();
@@ -70,11 +63,9 @@ GIBBER_KIT = """
   };
 """
 GIBBER = """(async () => {@HELPERS@@RADIO@@KIT@
-  press("gibberlink");
+  press("quiet");
   await sleep(200);
-  const button = spot.querySelector('.radio-modes button[data-mode="gibberlink"]');
-  const mode = [pressed(), field("mode"), button.title, Boolean(button.querySelector("svg.bi"))];
-  await opened(true);
+  await modeMenu("quiet", true);
   const before = fallbacks().map((chip) => [text(chip), chip.getAttribute("aria-pressed")]);
   fallbacks().find((chip) => text(chip) === "Morse").click();
   await sleep(150);
@@ -82,9 +73,12 @@ GIBBER = """(async () => {@HELPERS@@RADIO@@KIT@
   fallbacks().find((chip) => text(chip) === "Gibberlink").click();
   await sleep(150);
   const back = [fallbacks().map((chip) => chip.getAttribute("aria-pressed")), kept()];
-  const label = text(spot.querySelector("#radio-gear .radio-fallback .chips-label"));
+  const label = text(spot.querySelector(".radio-mode-menu .radio-fallback .chips-label"));
   const gearFits = fits();
-  await opened(false);
+  press("gibberlink");
+  await sleep(200);
+  const button = spot.querySelector('.radio-modes button[data-mode="gibberlink"]');
+  const mode = [pressed(), field("mode"), button.title, Boolean(button.querySelector("svg.bi")), Boolean(spot.querySelector(".radio-mode-menu:not([hidden])"))];
   const at = {captured: window.e2eGibber.length, pans: window.e2ePans.length};
   const playing = await sent(at.captured);
   await sleep(300);
@@ -201,6 +195,7 @@ class TestGibberlink(HubCase):
                 self.assertEqual(played["mode"][:2], [["gibberlink"], "Gibberlink"], played["mode"])
                 self.assertIn("MAYDAY", played["mode"][2])
                 self.assertTrue(played["mode"][3])
+                self.assertFalse(played["mode"][4], "switching to Gibberlink closes the Quiet fallback menu")
                 self.assertEqual(played["before"], [["Gibberlink", "true"], ["Morse", "false"], ["Hiss", "false"]])
                 self.assertEqual((played["morse"], played["back"], played["label"]), ([["false", "true", "false"], "morse"], [["true", "false", "false"], "gibberlink"], "Fallback"))
                 self.assertEqual((played["gearFits"], played["fits"]), ({"page": True, "panel": True}, {"page": True, "panel": True}))

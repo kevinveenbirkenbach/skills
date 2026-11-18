@@ -21,6 +21,8 @@ import hub_e2e_kit as base
 from hub_e2e_kit import CHOICE_CHANNELS, OUT, WIDTHS, tone
 from hub_e2e_radio import (
     ADD_STATION,
+    BELL_READ,
+    BELL_SAVE,
     CALL,
     CANCELED,
     CLEAR_MAYDAY,
@@ -28,8 +30,6 @@ from hub_e2e_radio import (
     COMPOSE_SEND,
     DLF_NODE,
     DLF_PATH,
-    GEAR_READ,
-    GEAR_SAVE,
     JUMPED,
     MEDIA_LOG,
     RADIO_CLICK,
@@ -45,6 +45,8 @@ from hub_e2e_radio import (
 )
 from hub_support import HOST_STATE
 from kvb_orchestrator import skill_scripts
+
+SEND_GROUP = [["PTT", "PTT: push to transmit the message; your passkey signs it"], ["More send options", "More: send a test message only you hear"]]
 
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
@@ -260,23 +262,23 @@ class TestHubRadio(base.OrchestratorE2ECase):
             with self.subTest(width=width):
                 self.assertNotIn("error", result)
                 self.assertEqual(result["toolbar"], ["Priority", "Day/Night", "Drain", "Suspend", "Resume", "Status"])
-                self.assertEqual((result["title"], result["shown"]), ("Cancel mayday: lift the radio silence so the agents write again; your passkey signs it", ""))
+                self.assertEqual((result["title"], result["shown"]), ("Cancel mayday: lift the radio silence so the agents write again; your passkey signs it", "Cancel mayday"))
                 self.assertEqual(result["declined"], {"question": [question], "posted": [], "toasts": []})
                 self.assertEqual(result["accepted"], {"question": [question], "posted": ["/api/board/sign", "/api/board/clear-mayday"]})
                 self.assertTrue((result["done"] or "").startswith("Cancel mayday: done"), result)
         self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["clear", "--force", "--session", "Operator"])] * len(WIDTHS))
 
-    def test_chromium_sends_every_class_from_the_radio_spot_and_keeps_its_gear_settings_through_a_reload_at_three_widths(self):
+    def test_chromium_sends_every_class_from_the_radio_spot_and_keeps_its_bells_through_a_reload_at_three_widths(self):
         local = f"http://localhost:{self.port}/"
-        values = {1920: ("0.35", "false", "true"), 1366: ("0.45", "true", "false"), 390: ("0.55", "false", "true")}
+        values = {1920: ("0.35", "off", "speak"), 1366: ("0.45", "speak", "tone"), 390: ("0.55", "tone", "speak")}
         steps = [{"width": width, "height": height, "url": f"{local}?{width}-jump#stream/radio", "wait": 1200, "probe": RADIO_JUMP, "shot": self.shot(f"{width}-radio-header-spot-every-tab")} for width, height in WIDTHS]
         for width, height in WIDTHS:
-            squelch, tone, post = values[width]
-            gear = GEAR_SAVE.replace("@SQUELCH@", squelch).replace("@TONE@", tone).replace("@POST@", post)
+            squelch, radio_bell, post = values[width]
+            bells = BELL_SAVE.replace("@SQUELCH@", squelch).replace("@RADIO@", radio_bell).replace("@POST@", post)
             steps += [
                 {"width": width, "height": height, "url": f"{local}?{width}#agents/orbit", "wait": 1200, "probe": SPOT_SEND.replace("@TEXT@", f"spot {width}"), "shot": self.shot(f"{width}-radio-spot-sent")},
-                {"width": width, "height": height, "url": None, "wait": 0, "probe": gear, "shot": None},
-                {"width": width, "height": height, "url": f"{local}?{width}-reloaded#agents/orbit", "wait": 1200, "probe": GEAR_READ, "shot": self.shot(f"{width}-radio-spot-gear")},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": bells, "shot": None},
+                {"width": width, "height": height, "url": f"{local}?{width}-reloaded#agents/orbit", "wait": 1200, "probe": BELL_READ, "shot": self.shot(f"{width}-radio-spot-bells")},
             ]
         data = self.drive(steps, self.authenticator())
         (OUT / "chromium-radio-spot.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
@@ -289,28 +291,27 @@ class TestHubRadio(base.OrchestratorE2ECase):
                 self.assertEqual(jump, JUMPED)
         for index, (width, _) in enumerate(WIDTHS):
             sent, saved, read = walked[3 * index : 3 * (index + 1)]
-            squelch, tone, post = values[width]
+            squelch, radio_bell, post = values[width]
             with self.subTest(width=width):
                 for probe in (sent, saved, read):
                     self.assertNotIn("error", probe)
                 self.assertEqual((sent["closed"], sent["open"]), ([True, "false"], [False, "true", True]))
                 self.assertEqual(sent["inline"], ["static", True, True])
                 self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
-                self.assertEqual(sent["heads"], [["Read aloud", "Read aloud: the classes and agents the radio sounds for"], ["Cancel mayday", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"]])
+                self.assertEqual((sent["heads"], sent["send"], sent["cancel"]), (0, SEND_GROUP, True))
                 self.assertEqual((sent["tall"], sent["wide"]), (width == 390, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
                 for run in sent["runs"]:
                     direct = run["cls"] in ("post", "call")
                     self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [mayday] if run["cls"] == "mayday" else [], ""), run)
                     self.assertTrue((run["toast"] or "").startswith(f"{labels[run['cls']]} to {'Stage' if direct else 'all'}: sent"), run)
-                self.assertEqual((saved["expanded"], saved["clashes"]), ("true", [{"found": [], "outside": []}] * 2))
+                self.assertEqual(saved["clashes"], [{"found": [], "outside": []}])
                 self.assertEqual(saved["tones"], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio", "Squelch", "speak while CPU < 50 %"])
-                self.assertEqual([entry[0] for entry in saved["classes"]], ["Post", "Call", "Newsletter", "Broadcast", "MAYDAY", "PAN-PAN", "Sécurité"])
-                self.assertEqual([entry[1:] for entry in saved["classes"] if entry[0] == "MAYDAY"], [["true", True]])
-                self.assertEqual((saved["kept"], saved["after"]), ([float(squelch), tone == "true", post == "true"], ["false", False]))
+                self.assertEqual(saved["bells"], ["MAYDAY / PAN-PAN tone", "Reviews, asks, decisions tone", "Post and calls to you tone", "All radio tone"])
+                self.assertEqual((saved["kept"], saved["after"]), ([float(squelch), radio_bell != "off", post == "speak"], [radio_bell, post]))
                 self.assertEqual(saved["general"], {"sections": ["Ambience", "Location", "Appearance", "Music", "Notifications", "Passkey"], "radio": 0})
                 self.assertEqual((saved["tall"], saved["wide"]), (width == 390, False))
-                self.assertEqual(read, {"squelch": float(squelch), "tone": tone == "true", "post": post == "true", "tall": width == 390, "wide": False})
+                self.assertEqual(read, {"squelch": float(squelch), "radio": radio_bell, "post": post, "tall": width == 390, "wide": False})
         heads = {"post": ["post", "--to", "Stage"], "call": ["send", "call", "--to", "Stage"], "newsletter": ["post"]}
         radio = [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
         sends = [(width, cls) for width, _ in WIDTHS for cls in CHOICE_CHANNELS]
@@ -348,7 +349,7 @@ class TestHubRadio(base.OrchestratorE2ECase):
                 self.assertNotIn("error", sent, sent)
                 self.assertEqual((sent["closed"], sent["open"], sent["inline"]), ([True, "false"], [False, "true", True], ["static", True, True]))
                 self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
-                self.assertEqual(sent["heads"], [["Read aloud", "Read aloud: the classes and agents the radio sounds for"], ["Cancel mayday", hint]])
+                self.assertEqual((sent["heads"], sent["send"], sent["cancel"]), (0, SEND_GROUP, True))
                 self.assertEqual((sent["tall"], sent["wide"]), (width == 390, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
                 for run in sent["runs"]:
@@ -356,10 +357,10 @@ class TestHubRadio(base.OrchestratorE2ECase):
                     self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [mayday] if run["cls"] == "mayday" else [], f"spot {width} {run['cls']}"), run)
                     self.assertTrue((run["toast"] or "").startswith(f"{labels[run['cls']]} to {'Stage' if direct else 'all'}: not signed"), run)
                     self.assertIn("NotAllowedError", run["toast"], run)
-            with self.subTest(browser="firefox", width=width, part="icon-only cancel mayday unsigned"):
+            with self.subTest(browser="firefox", width=width, part="cancel mayday next to PTT unsigned"):
                 self.assertNotIn("error", cleared, cleared)
                 self.assertEqual(cleared["toolbar"], ["Priority", "Day/Night", "Drain", "Suspend", "Resume", "Status"])
-                self.assertEqual((cleared["title"], cleared["shown"]), (hint, ""))
+                self.assertEqual((cleared["title"], cleared["shown"]), (hint, "Cancel mayday"))
                 self.assertEqual(cleared["declined"], {"question": [question], "posted": [], "toasts": []})
                 self.assertEqual(cleared["accepted"], {"question": [question], "posted": ["/api/board/sign"]})
                 self.assertTrue((cleared["done"] or "").startswith("Cancel mayday: not signed"), cleared)

@@ -60,7 +60,7 @@ OPERATOR = """(async () => {@HELPERS@@UNLABELLED@
   ["@TAG@ review", "@TAG@ ship", "@TAG@ commit"].forEach((words) => mine(words).querySelector('input[type="checkbox"]').click());
   await sleep(300);
   found.unlabelled = {main: unlabelled(document.getElementById("main"))};
-  const grant = all("#main .inbox-actions button").find((button) => name(button).startsWith("Grant selection"));
+  const grant = all("#grant-bar .grant-split button").find((button) => name(button).startsWith("Grant selection"));
   found.grant = name(grant);
   grant.click();
   await until(() => document.querySelector(".sheet-box .actions"), 4000);

@@ -66,7 +66,7 @@ const find = (node, test, out = []) => {
   return out;
 };
 const sandbox = {
-  Receipts, RadioSet, Node, NS: "svg", HUMAN: "Operator", DAY: 86400, WEEKDAYS: [], revealed: String,
+  Receipts, RadioSet, radioSet: RadioSet.valid({muted: ["s2"]}), Node, NS: "svg", HUMAN: "Operator", DAY: 86400, WEEKDAYS: [], revealed: String,
   document: {createElement: (tag) => new Node(tag), createElementNS: (ns, tag) => new Node(tag)},
   relative: {format: () => "ago"}, absolute: {format: (date) => `at ${date.getTime() / 1000}`},
   Faces: {of: () => ({parts: []}), SIZE: 10}, speech: {current: null}, look: {hidden: new Set()}, PRESENCE: {}, STATUS: {},
@@ -82,6 +82,7 @@ const shape = (node) => ({
   })),
   more: find(node, (item) => item.attrs.class === "readers-more").map((item) => ({text: text(item), title: item.attrs.title})),
   groups: find(node, (item) => item.attrs.class === "readers").map((item) => item.attrs["aria-label"]),
+  mutes: find(node, (item) => item.attrs.class === "radio-mute").map((item) => [item.attrs["aria-label"], item.attrs["aria-pressed"], find(item, (part) => part.attrs["data-face"] !== undefined).map((part) => part.attrs["data-face"])]),
 });
 console.log(JSON.stringify({
   events: input.events.map((entry) => shape(sandbox.probe.eventRow(entry))),
@@ -885,7 +886,7 @@ class TestReceiptsPage(unittest.TestCase):
         cls.data = page({
             "people": {"s2": {"name": "Two", "now": "Two", "names": ["Two"]}},
             "events": [call, crowd, unnamed],
-            "logs": [log, {**log, "readers": [], "acks": []}, {**log, "readers": readers(9), "acks": []}],
+            "logs": [log, {**log, "readers": [], "acks": []}, {**log, "readers": readers(9), "acks": []}, {**log, "from": "Two", "source": "s2"}, {**log, "source": "s5"}],
             "strips": [{"readers": readers(8), "acks": ["r7", "gone"]}, {"readers": readers(9), "acks": []}, {}],
             "labels": [{"name": "Two", "read": 1004, "acked": True}, {"name": "Three", "read": None, "acked": False}, {"name": "Four", "read": 1007, "approximate": True, "acked": False}],
             "signatures": [
@@ -912,11 +913,14 @@ class TestReceiptsPage(unittest.TestCase):
         self.assertEqual([reader["label"] for reader in call["readers"]], [reader["title"] for reader in call["readers"]])
         self.assertEqual([reader["face"] for reader in call["readers"]], [["s2"], ["Three"]])
         self.assertEqual((call["groups"], call["more"]), (["Read by 2"], []))
-        log, silent, _ = self.data["logs"]
+        log, silent = self.data["logs"][:2]
         self.assertEqual([(reader["session"], reader["badges"]) for reader in log["readers"]], [("s2", 1), ("s3", 0)])
         self.assertEqual(log["routes"], ["Skills → Main"])
         self.assertEqual((silent["readers"], silent["groups"]), ([], []))
         self.assertEqual(self.data["events"][2]["readers"], [])
+
+    def test_a_log_row_from_an_agent_leads_with_its_avatar_that_mutes_it(self):
+        self.assertEqual([row["mutes"] for row in self.data["logs"]], [[], [], [], [["Mute Two", "true", ["s2"]]], [["Mute Skills", "false", ["s5"]]]])
 
     def test_more_than_eight_readers_collapse_into_plus_n_with_the_full_list_on_hover(self):
         crowd = self.data["events"][1]

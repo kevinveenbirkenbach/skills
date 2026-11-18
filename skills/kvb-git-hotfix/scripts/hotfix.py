@@ -228,7 +228,7 @@ def resolves(where: str, ref: str) -> bool:
 
 
 def task_of(rasci: ModuleType, slug: str) -> str:
-    if not rasci.TASK.match(slug):
+    if not rasci.TASK.fullmatch(slug):
         fail(f"invalid slug {slug!r}; use lowercase letters, digits, '.', '_', '-' and '/'")
     return PREFIX + slug
 

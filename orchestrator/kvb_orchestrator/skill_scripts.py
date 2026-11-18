@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import importlib.util
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -48,6 +49,19 @@ def script_module(script: Path) -> ModuleType | None:
     except OSError:
         return None
     return loaded(script, changed)
+
+
+def task_pattern(skills: Path) -> re.Pattern[str] | None:
+    """Args:
+        skills: the installed skills directory, the hub's --skills mount.
+
+    Returns:
+        TASK of the installed kvb-org-rasci rasci.py, the one rule for
+        register task ids; None when the script is missing, does not load or
+        holds no compiled pattern.
+    """
+    found = getattr(script_module(skills / RASCI), "TASK", None)
+    return found if isinstance(found, re.Pattern) else None
 
 
 @functools.cache

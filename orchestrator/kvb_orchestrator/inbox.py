@@ -12,6 +12,7 @@ from .names import Directory
 from .records import digest, iso_epoch
 from .register import adder, operator_rows, runnable
 from .signed import signing
+from .skill_scripts import task_pattern
 
 SNOOZE_LIMIT = 8 * 86400
 
@@ -19,7 +20,7 @@ SNOOZE_LIMIT = 8 * 86400
 class Inbox:
     def inbox(self, now: float, tasks: dict[str, dict], directory: Directory) -> list[dict]:
         claims = read_claims(self.council)
-        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False}
+        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False}
         items = []
         for review in self.reviews.pending():
             created = iso_epoch(review["created"]) or now
@@ -37,10 +38,11 @@ class Inbox:
             items.append({**base, "kind": "decision", "id": decision["id"], "ts": decision["created_ts"], **fields})
         held = self.open_jobs()
         consoles = self.consoles()
-        rows = operator_rows(tasks)
+        pattern = task_pattern(self.scripts.skills)
+        rows = [row for row in operator_rows(tasks) if pattern is not None and pattern.fullmatch(row["task"])]
         for row in rows:
             busy = row["task"] in held
-            fields = {"title": row["command"], "detail": row["why"], "agent": adder(tasks[row["task"]]), "to": requester_of(claims, adder(tasks[row["task"]]))[0], "command": row["command"], "directory": row["directory"], "sha256": digest(row["command"])}
+            fields = {"title": row["command"], "detail": row["why"], "agent": adder(tasks[row["task"]]), "to": requester_of(claims, adder(tasks[row["task"]]))[0], "command": row["command"], "directory": row["directory"], "sha256": digest(row["command"]), "check": row["check"], "options": row["options"], "recommended": row["recommended"]}
             state = {"runnable": runnable(row) and not busy, "deniable": not busy, "job": console_of(consoles.get(row["task"]))}
             items.append({**base, "kind": "operator", "id": row["task"], "ts": self.watch.first(row["task"], now), **fields, **state})
         listed = {row["task"] for row in rows}

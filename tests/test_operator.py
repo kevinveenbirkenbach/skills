@@ -184,6 +184,26 @@ class TestOperator(unittest.TestCase):
     def _register(self) -> dict[str, dict]:
         return json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
 
+    def test_a_decision_row_keeps_its_options_and_pick_and_a_re_add_without_them_drops_both(self):
+        question = ["add", "pick", "--dir", str(self.base), "--command", "decide: keep or remove it", "--reason", "only the operator may", "--check", "decision"]
+        self._out(*question, "--option", "Keep=ships with the PR", "--option", "Remove = drop it first", "--recommended", "Remove")
+        row = self._register()["operator/pick"]
+        self.assertEqual((row["options"], row["recommended"]), ([{"label": "Keep", "description": "ships with the PR"}, {"label": "Remove", "description": "drop it first"}], "Remove"))
+        self._out(*question)
+        self.assertEqual({"options", "recommended"} & set(self._register()["operator/pick"]), set())
+
+    def test_options_need_a_decision_row_distinct_labels_and_a_known_pick(self):
+        add = ["add", "bad", "--dir", str(self.base), "--command", "decide: x", "--reason", "r"]
+        refused = {
+            "manual": self._run(*add[:-2], "--command", "echo hi", "--reason", "r", "--check", "manual", "--option", "A"),
+            "twice": self._run(*add, "--check", "decision", "--option", "A=x", "--option", "A=y"),
+            "unknown pick": self._run(*add, "--check", "decision", "--option", "A", "--recommended", "B"),
+            "pick alone": self._run(*add, "--check", "decision", "--recommended", "A"),
+            "empty label": self._run(*add, "--check", "decision", "--option", "=only text"),
+        }
+        self.assertEqual({name: result.returncode for name, result in refused.items()}, dict.fromkeys(refused, 2))
+        self.assertNotIn("operator/bad", self._register() if (self.root / "rasci.json").exists() else {})
+
     def _session(self, sid: str, name: str) -> None:
         (self.home / ".claude" / "sessions" / f"{sid}.json").write_text(json.dumps({"sessionId": sid, "name": name}), encoding="utf-8")
 

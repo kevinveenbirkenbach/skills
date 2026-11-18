@@ -38,6 +38,7 @@ const source = given.files.map((name) => fs.readFileSync(`${dir}/${name}`, "utf8
 class FakeNode {
   constructor(tag) { this.tag = tag; this.attrs = {}; this.children = []; }
   setAttribute(key, value) { this.attrs[key] = value; }
+  getAttribute(key) { return key in this.attrs ? this.attrs[key] : null; }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   addEventListener() {}

@@ -120,7 +120,14 @@ RADIO = """
     spot.querySelector(`.radio-tabs [data-tab="${id}"]`).click();
     await sleep(150);
   };
-  const unlabelled = () => all(".radio-face :is(button, select, input), #radio-gear :is(button, select, input), .radio-logbox :is(button, select, input), .radio-station button", spot).filter((node) => node.getClientRects().length && !node.getAttribute("aria-label") && !text(node)).length;
+  const modeMenu = async (mode, open) => {
+    const button = spot.querySelector(`.radio-modes button[data-mode="${mode}"]`);
+    if ((button.getAttribute("aria-expanded") === "true") !== open) {
+      button.click();
+      await sleep(200);
+    }
+  };
+  const unlabelled = () => all(".radio-face :is(button, select, input), .radio-logbox :is(button, select, input), .radio-station button, form.composer :is(button, summary)", spot).filter((node) => node.getClientRects().length && !node.getAttribute("aria-label") && !text(node)).length;
 """.replace("@CUES@", ", ".join(f'"{name}": "{ident}"' for name, ident in CUES.items()))
 FACE = """(async () => {@HELPERS@@RADIO@
   await cpuShown("CPU 10 %");
@@ -138,12 +145,15 @@ FACE = """(async () => {@HELPERS@@RADIO@
   const squelchLit = Boolean(await until(() => lamp().dataset.lit === "true" && audio().filters.length > atTest.filters, 6000));
   const squelch = {lit: squelchLit, filters: since(atTest).filters.map(([type]) => type), tts: since(atTest).tts};
   await until(() => lamp().dataset.lit === "false", 6000);
-  const gear = all(".spot-head button", spot).find((button) => name(button) === "Read aloud");
-  gear.click();
-  await sleep(200);
-  const groups =Object.fromEntries(all("#radio-gear .chips", spot).map((group) => [group.getAttribute("aria-label"), all(".chip", group).map((chipNode) => [text(chipNode), chipNode.getAttribute("aria-pressed"), chipNode.disabled])]));
-  all('#radio-gear .chips[aria-label="Fallback"] .chip', spot).find((chipNode) => text(chipNode) === "Hiss").click();
+  const bells = all(".radio-knobs .knob-toggle", spot).map((button) => [name(button), button.dataset.bell]);
+  await modeMenu("auto", true);
+  const caret = all(".radio-modes .mode-caret", spot).filter((node) => node.getClientRects().length).map((node) => node.closest("button").dataset.mode);
+  const groups = Object.fromEntries(all(".radio-mode-menu .chips", spot).map((group) => [group.getAttribute("aria-label"), all(".chip", group).map((chipNode) => [text(chipNode), chipNode.getAttribute("aria-pressed"), chipNode.disabled])]));
+  all('.radio-mode-menu .chips[aria-label="Fallback"] .chip', spot).find((chipNode) => text(chipNode) === "Hiss").click();
   await sleep(150);
+  const menuFits = fits();
+  await modeMenu("auto", false);
+  const send = [name(spot.querySelector("form.composer .ptt-more")), spot.querySelector("form.composer .radio-cancel").hidden];
   const stationsHead = text(spot.querySelector(".radio-station .group-title"));
   const ptt = spot.querySelector('form.composer button[type="submit"]');
   const pageFits = fits();
@@ -157,7 +167,7 @@ FACE = """(async () => {@HELPERS@@RADIO@
   const stations = [document.querySelector("#sheet .sheet-box").getAttribute("aria-label"), all("#sheet .settings h3").map(text)];
   all("#sheet .sheet-head button").find((button) => name(button) === "Close").click();
   await sleep(200);
-  return {display, modes, knobs, toneToggles, testButtons, squelch, labels, groups, stationsHead, ptt: [text(ptt), ptt.title], sections, stations, fits: pageFits, unlabelled: unlabelled(), palette: getComputedStyle(document.documentElement).getPropertyValue("--panel").trim(), violations: window.e2eViolations};
+  return {display, modes, knobs, toneToggles, testButtons, squelch, labels, bells, caret, groups, menuFits, send, stationsHead, ptt: [text(ptt), ptt.title], sections, stations, fits: pageFits, unlabelled: unlabelled(), palette: getComputedStyle(document.documentElement).getPropertyValue("--panel").trim(), violations: window.e2eViolations};
 })()"""
 LOG = """(async () => {@HELPERS@@RADIO@
   await until(() => rows().length, 8000);
@@ -183,6 +193,15 @@ LOG = """(async () => {@HELPERS@@RADIO@
   all(".radio-filters button", spot).find((button) => name(button) === "Clear filters").click();
   await sleep(150);
   const clearedChips = [chips(), search().value, rows().length];
+  const muteOf = () => spot.querySelector(".radio-row .radio-mute");
+  const sender = name(muteOf());
+  muteOf().click();
+  await sleep(150);
+  const stored = () => JSON.parse(localStorage.getItem("kvb-orchestrator.radio") || "{}").muted || [];
+  const muted = [sender, muteOf().getAttribute("aria-pressed"), stored().length, document.getElementById("popup").open];
+  muteOf().click();
+  await sleep(150);
+  const unmuted = [muteOf().getAttribute("aria-pressed"), stored().length];
   spot.querySelector(".radio-row .radio-pick").click();
   const full = await until(() => document.getElementById("popup").open && document.querySelector("#popup .radio-full"), 4000);
   const opened = [document.getElementById("popup").open, text(full)];
@@ -195,7 +214,7 @@ LOG = """(async () => {@HELPERS@@RADIO@
   await sleep(200);
   spot.querySelector(".radio-logbox").scrollIntoView({block: "start"});
   await sleep(200);
-  return {counts, sent, received, every, posts, fromStage, narrowed, none, clearedChips, opened, kept: rows(), fits: fits()};
+  return {counts, sent, received, every, posts, fromStage, narrowed, none, clearedChips, muted, unmuted, opened, kept: rows(), fits: fits()};
 })()"""
 LOG_KEPT = """(async () => {@HELPERS@@RADIO@
   await until(() => spot.querySelector(".radio-tabs [role=tab]"), 8000);
@@ -307,18 +326,14 @@ MORSE_SPY = """() => {
 }""".replace("@SPY@", SPY)
 MORSE_KEYED = """
   const keyed = () => window.e2eMorse.filter((entry) => entry.stop !== null && entry.stop - entry.start > 1);
-  const speed = () => spot.querySelector('#radio-gear input[aria-label="Morse speed"]');
-  const rate = () => text(spot.querySelector("#radio-gear .morse-rate"));
-  const gear = () => all(".spot-head button", spot).find((button) => name(button) === "Read aloud");
+  const speed = () => spot.querySelector('.radio-mode-menu input[aria-label="Morse speed"]');
+  const rate = () => text(spot.querySelector(".radio-mode-menu .morse-rate"));
 """
 MORSE = """(async () => {@HELPERS@@RADIO@@KEYED@
   press("morse");
   await sleep(200);
   const mode = [pressed(), field("mode"), spot.querySelector('.radio-modes button[data-mode="morse"]').title];
-  if (gear().getAttribute("aria-expanded") !== "true") {
-    gear().click();
-    await sleep(200);
-  }
+  await modeMenu("morse", true);
   const before = [speed().min, speed().max, speed().step, speed().value, rate()];
   speed().value = "@WPM@";
   speed().dispatchEvent(new Event("input", {bubbles: true}));
@@ -327,16 +342,15 @@ MORSE = """(async () => {@HELPERS@@RADIO@@KEYED@
   const toast = await until(() => all("#toasts .toast strong").map(text).includes("Morse speed saved"), 15000);
   await sleep(300);
   const saved = [speed().value, rate()];
-  const gearFits = fits();
-  gear().click();
-  await sleep(200);
+  const menuFits = fits();
+  await modeMenu("morse", false);
   const at = {tts: audio().tts.length, keyed: keyed().length};
   await cue("alarm");
   refreshNow();
   const playing = await until(() => keyed().length > at.keyed && lamp().dataset.lit === "true", 20000);
   const caption = spot.querySelector(".radio-caption");
   return {
-    mode, before, dragged, toast: Boolean(toast), saved, gearFits, playing: Boolean(playing), keyed: keyed().slice(at.keyed), tts: audio().tts.length - at.tts,
+    mode, before, dragged, toast: Boolean(toast), saved, menuFits, playing: Boolean(playing), keyed: keyed().slice(at.keyed), tts: audio().tts.length - at.tts,
     lamp: [text(lamp()), lamp().dataset.lit], caption: [caption.hidden, text(caption.querySelector("strong"))], fits: fits(),
   };
 })()""".replace("@KEYED@", MORSE_KEYED)

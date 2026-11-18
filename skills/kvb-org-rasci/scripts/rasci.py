@@ -55,7 +55,7 @@ def fail(message: str) -> None:
 
 
 def check_task(task: str) -> None:
-    if not TASK.match(task):
+    if not TASK.fullmatch(task):
         fail(f"invalid task {task!r}; use a slug like work/<slug>")
 
 

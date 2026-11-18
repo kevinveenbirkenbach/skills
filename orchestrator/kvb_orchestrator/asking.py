@@ -7,6 +7,8 @@ from .diffs import sealed_file, store_diff, store_sealed, valid_diff, valid_seal
 from .errors import Conflict, Missing, ToolError
 from .fields import (
     COMMAND_LIMIT,
+    DESCRIPTION_LIMIT,
+    OPTION_LIMIT,
     PATH_LIMIT,
     WAIT_CAP,
     bounded,
@@ -21,8 +23,7 @@ from .fields import (
 from .signed import ask_signed
 
 ASK_LIFETIME = 3600
-DESCRIPTION_LIMIT = 1000
-OPTION_LIMIT = 12
+PREVIEW_LIMIT = 4000
 ASK_TEXTS = {"command": COMMAND_LIMIT, "cwd": PATH_LIMIT, "session": 200, "agent": 200}
 ANSWERS = {"allow": "allowed", "deny": "denied"}
 
@@ -52,13 +53,22 @@ def decision_row(decision: dict) -> dict:
 
 
 def option_of(option: object) -> dict:
+    """Args:
+        option: {"label", "description"} and an optional "preview", a
+            multi-line mockup, snippet or table shown beside the options.
+
+    Returns:
+        The option with its texts stripped; "preview" only when it was given
+        and is not empty.
+    """
     if not isinstance(option, dict):
         raise ToolError("every option must be an object with label and description")
-    expect(option, ("label", "description"))
+    expect(option, ("label", "description", *(("preview",) if "preview" in option else ())))
     label = field(option, "label").strip()
     description = bounded(option, "description", DESCRIPTION_LIMIT).strip()
-    visible({"description": description})
-    return {"label": label, "description": description}
+    preview = bounded(option, "preview", PREVIEW_LIMIT).rstrip() if "preview" in option else ""
+    visible({"description": description, "preview": preview})
+    return {"label": label, "description": description, **({"preview": preview} if preview.strip() else {})}
 
 
 class Asking:

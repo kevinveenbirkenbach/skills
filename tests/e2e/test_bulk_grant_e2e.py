@@ -22,12 +22,20 @@ FILES = ("src/app.py", "src/view.js", "docs/notes.md")
 ROWS = 80
 COMMON = """
   const row = (ref) => document.querySelector(`#main .inbox-list > li[data-ref="${ref}"]`);
-  const modeButton = (mode) => document.querySelector(`#grant-bar button[data-mode="${mode}"]`);
-  const tray = () => document.querySelector("#grant-bar .grant-tray");
-  const count = () => text(document.querySelector("#grant-bar .grant-count"));
+  const split = () => document.querySelector("#grant-bar .grant-split");
+  const menu = () => document.querySelector("#grant-bar details.grant-menu");
+  const main = () => split() && split().firstElementChild;
+  const count = () => menu() && menu().querySelector("summary").getAttribute("aria-label");
+  const openMenu = async () => {
+    if (!menu().open) {
+      menu().querySelector("summary").click();
+    }
+    await until(() => menu().open, 2000);
+    await sleep(100);
+  };
   const grantOf = (ref) => row(ref) && row(ref).querySelector(".item-actions button.primary");
   const wide = () => document.documentElement.scrollWidth > innerWidth + 1;
-  const switchState = () => [modeButton("direct").getAttribute("aria-pressed"), modeButton("select").getAttribute("aria-pressed"), tray().hidden, Boolean(document.querySelector("#main .inbox-actions"))];
+  const switchState = () => [name(main()), count(), document.querySelector("#grant-bar #grant-direct") ? "select" : "direct"];
   const storedMode = async (mode) => {
     const end = Date.now() + 6000;
     while (Date.now() < end) {
@@ -75,9 +83,9 @@ MODE = """(async () => {@HELPERS@@COMMON@
   key("Escape");
   await until(() => document.getElementById("sheet").hidden, 4000);
   const before = switchState();
-  modeButton("select").click();
+  main().click();
   const kept = await storedMode("select");
-  await until(() => !tray().hidden, 4000);
+  await until(() => switchState()[2] === "select", 4000);
   return {before, kept, after: switchState(), wide: wide()};
 })()"""
 COLLECT = """(async () => {@HELPERS@@COMMON@
@@ -89,20 +97,25 @@ COLLECT = """(async () => {@HELPERS@@COMMON@
     }
     return send(path, init);
   };
-  if (!(await until(() => row("@REVIEW@") && row("@ASK@") && row("@RUN@") && !tray().hidden, 8000))) {
+  if (!(await until(() => row("@REVIEW@") && row("@ASK@") && row("@RUN@") && switchState()[2] === "select", 8000))) {
     return {error: text(document.getElementById("main"))};
   }
   const restored = switchState();
   const counts = [];
-  const press = async (ref, expected) => {
-    grantOf(ref).click();
+  const settle = async (expected) => {
     await until(() => count() === expected, 3000);
     counts.push(count());
   };
-  await press("@REVIEW@", "1 selected");
-  await press("@ASK@", "2 selected");
-  await press("@REVIEW@", "1 selected");
-  await press("@REVIEW@", "2 selected");
+  grantOf("@REVIEW@").click();
+  await settle("1 selected");
+  const pale = [grantOf("@REVIEW@").disabled, grantOf("@REVIEW@").classList.contains("picked")];
+  grantOf("@ASK@").click();
+  await settle("2 selected");
+  await openMenu();
+  all("#grant-bar .grant-picked button").find((button) => name(button).startsWith("Remove feat: three files")).click();
+  await settle("1 selected");
+  grantOf("@REVIEW@").click();
+  await settle("2 selected");
   if (document.activeElement) {
     document.activeElement.blur();
   }
@@ -114,12 +127,13 @@ COLLECT = """(async () => {@HELPERS@@COMMON@
   key("a");
   await until(() => count() === "3 selected", 3000);
   counts.push(count());
-  const pressed = ["@REVIEW@", "@ASK@", "@RUN@"].map((ref) => grantOf(ref).getAttribute("aria-pressed"));
-  const labels = all("#grant-bar .grant-tray button").map(name);
-  return {restored, counts, pressed, labels, posted, wide: wide()};
+  const pressed = ["@REVIEW@", "@ASK@", "@RUN@"].map((ref) => [grantOf(ref).getAttribute("aria-pressed"), grantOf(ref).disabled]);
+  await openMenu();
+  const labels = all("#grant-bar .grant-split button").map(name);
+  return {restored, pale, counts, pressed, labels, posted, wide: wide()};
 })()"""
 SHEET = """(async () => {@HELPERS@@COMMON@
-  all("#grant-bar .grant-tray button").find((button) => name(button) === "Grant selection (3)").click();
+  main().click();
   await until(() => document.querySelector(".sheet-box .actions"), 4000);
   const confirm = all(".sheet-box .actions button").find((button) => text(button).startsWith("Grant "));
   return {listed: all(".sheet-box ul.mini > li strong").map(text), label: text(confirm), wide: wide()};
@@ -150,9 +164,10 @@ DIRECT = """(async () => {@HELPERS@@COMMON@
     }
     return send(path, init);
   };
-  modeButton("direct").click();
+  await openMenu();
+  document.querySelector("#grant-bar #grant-direct").click();
   const kept = await storedMode("direct");
-  await until(() => tray().hidden && document.querySelector("#main .inbox-actions"), 4000);
+  await until(() => switchState()[2] === "direct", 4000);
   const spare = await until(() => grantOf("@SPARE@"), 4000);
   const pressed = spare.getAttribute("aria-pressed");
   spare.click();
@@ -229,18 +244,21 @@ class TestBulkGrant(base.OrchestratorE2ECase):
                 self.assertEqual(diff["ended"]["opened"], [True, True, False], diff)
                 self.assertEqual(diff["second"], {"opened": [True, True, False], "marked": [1]}, diff)
                 self.assertEqual(diff["jumped"], {"opened": [True, True, True], "marked": [2], "atTop": True}, diff)
-                self.assertEqual((mode["before"], mode["kept"], mode["after"]), (["true", "false", True, True], True, ["false", "true", False, False]), mode)
+                selecting = ["Grant selection (0)", "0 selected", "select"]
+                self.assertEqual((mode["before"], mode["kept"], mode["after"]), (["Select", "0 selected", "direct"], True, selecting), mode)
                 self.assertNotIn("error", collect, collect)
-                self.assertEqual(collect["restored"], ["false", "true", False, False], collect)
+                self.assertEqual(collect["restored"], selecting, collect)
+                self.assertEqual(collect["pale"], [True, True], collect)
                 self.assertEqual(collect["counts"], ["1 selected", "2 selected", "1 selected", "2 selected", "3 selected"], collect)
-                self.assertEqual((collect["pressed"], collect["posted"]), (["true"] * 3, []), collect)
-                self.assertEqual((collect["labels"][0], collect["labels"][-1]), ("Grant selection (3)", "Clear"), collect)
+                self.assertEqual((collect["pressed"], collect["posted"]), ([["true", True]] * 3, []), collect)
+                self.assertEqual((collect["labels"][0], collect["labels"][-1]), ("Grant selection (3)", "Direct"), collect)
+                self.assertEqual(sum(label.startswith("Remove ") for label in collect["labels"]), 3, collect)
                 self.assertEqual((sheet["label"], len(sheet["listed"])), ("Grant 3", 3), sheet)
                 items = sorted(f"{ref}:approve" for ref in ids.values())
                 self.assertEqual(confirm["posted"], [["/api/sign", items], *([["/api/inbox/approve", items]] if signs else [])], confirm)
                 self.assertEqual(confirm["count"], "0 selected" if signs else "3 selected", confirm)
                 self.assertEqual(direct["kept"], True, direct)
-                self.assertEqual(direct["after"], ["true", "false", True, True], direct)
+                self.assertEqual(direct["after"], ["Select", "0 selected", "direct"] if signs else ["Grant selection (3)", "3 selected", "direct"], direct)
                 self.assertEqual((direct["pressed"], direct["posted"]), (None, [[self.spare]]), direct)
                 self.assertFalse(any(found["wide"] for found in (diff, mode, collect, sheet, confirm, direct)), width)
 

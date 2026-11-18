@@ -147,20 +147,20 @@ HOME = """(async () => {@HELPERS@@PROBES@
   }));
   const fresh = measure();
   const whole = tile("radio");
-  const bar = whole.querySelector(".spot-head");
-  const gear = bar ? all("button", bar).find((button) => button.getAttribute("aria-label") === "Read aloud") : null;
-  const clear = bar ? all("button", bar).find((button) => button.getAttribute("aria-label") === "Cancel mayday") : null;
-  if (gear) {
-    gear.click();
+  const active = whole.querySelector('.radio-modes button[aria-pressed="true"]');
+  const opens = Boolean(active && active.querySelector(".mode-caret"));
+  if (opens) {
+    active.click();
     await sleep(200);
   }
-  const filters = whole.querySelector(".radio-gear .radio-read");
+  const menu = whole.querySelector(".radio-mode-menu:not([hidden])");
+  const cancel = whole.querySelector("form.composer .radio-cancel");
   const tools = {
-    gear: gear ? [gear.getAttribute("aria-expanded"), Boolean(filters), filters ? box(filters).bottom <= box(whole).bottom + 1 : null] : null,
-    clear: clear ? [clear.disabled, clear.title] : null,
+    menu: opens ? [active.getAttribute("aria-expanded"), Boolean(menu), menu ? box(menu).bottom <= box(whole).bottom + 1 : null] : null,
+    cancel: cancel ? [cancel.hidden, cancel.title] : null,
   };
-  if (gear) {
-    gear.click();
+  if (opens) {
+    active.click();
   }
   const content = {
     tiles: all("#main .home-tile").map((node) => node.dataset.pin),

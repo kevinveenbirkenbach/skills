@@ -15,9 +15,14 @@ Environment:
 
 Args:
     add <slug> --dir <abs dir> --command "<cmd>" --reason "<why>"
-        --check <kind>[:<arg>] [--session <id>]: record a command, or update
+        --check <kind>[:<arg>] [--option "<label>=<description>" ...]
+        [--recommended <label>] [--session <id>]: record a command, or update
         the row of that slug, as queued with Operator R and the adder A, its
-        session id under `sessions`.
+        session id under `sessions`. --option, only with --check decision
+        and at most OPTION_LIMIT times, gives the answers the Agent
+        Orchestrator shows as buttons beside a free answer; the operator's
+        pick arrives as a signed post to the adder. --recommended names one
+        of them.
         Kinds, never a shell command:
             pushed:<repo dir>  `git rev-list --count @{u}..HEAD` is 0 there;
                 no upstream counts as open.
@@ -168,6 +173,8 @@ INTERRUPTED = 130
 SUDO = re.compile(r"\bsudo\b")
 PREFIX = "operator/"
 KINDS = ("pushed", "installed", "binary", "absent", "manual", "decision")
+OPTION_LIMIT = 12
+LABEL_LIMIT = 80
 OPEN = ("queued", "blocked")
 META = re.compile(r"[\s|&;()<>$`\\\"'*?\[\]{}~!#]")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
@@ -201,7 +208,7 @@ def module(name: str, path: Path) -> ModuleType:
 
 
 def task_of(rasci: ModuleType, slug: str) -> str:
-    if not rasci.TASK.match(slug):
+    if not rasci.TASK.fullmatch(slug):
         fail(f"invalid slug {slug!r}; use lowercase letters, digits, '.', '_', '-' and '/'")
     return PREFIX + slug
 
@@ -299,6 +306,41 @@ def cell(text: object) -> str:
     return visible(" ".join(str(text).split()), "").replace("|", "\\|")
 
 
+def choices(raw: list[str] | None, recommended: str | None, check: str) -> list[dict]:
+    """Args:
+        raw: the --option values, each "<label>=<description>" or "<label>".
+        recommended: the --recommended label, or None.
+        check: the row's --check kind.
+
+    Returns:
+        [{"label", "description"}] in the given order; [] without options.
+        Exits 2 when options come with another check than decision, exceed
+        OPTION_LIMIT, repeat a label, hold an empty, multi-line or longer
+        than LABEL_LIMIT label, or when --recommended names no option.
+    """
+    if not raw:
+        if recommended:
+            fail("--recommended needs --option")
+        return []
+    if check != "decision":
+        fail("--option is only for --check decision")
+    if len(raw) > OPTION_LIMIT:
+        fail(f"at most {OPTION_LIMIT} --option values")
+    options = []
+    for text in raw:
+        label, _, description = text.partition("=")
+        label = label.strip()
+        if not label or not label.isprintable() or len(label) > LABEL_LIMIT:
+            fail(f"--option {text!r} needs a label of one line and at most {LABEL_LIMIT} characters before the =")
+        options.append({"label": label, "description": " ".join(description.split())})
+    labels = [option["label"] for option in options]
+    if len(set(labels)) != len(labels):
+        fail("--option labels must be distinct")
+    if recommended and recommended not in labels:
+        fail(f"--recommended {recommended!r} names none of {', '.join(labels)}")
+    return options
+
+
 def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
     task = task_of(rasci, args.slug)
     for error in (path_problem(args.dir, "--dir"), problem(args.check)):
@@ -313,6 +355,7 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
     refused = None if args.check == "decision" else unrunnable(command, args.dir)
     if refused:
         fail(f"--command {command!r} {refused}; write the real command, or record the step with --check decision")
+    options = choices(args.option, args.recommended, args.check)
     council = module("council", rasci.COUNCIL)
     sid, _ = council.caller(args.session)
     party = council.live_sessions().get(sid) or sid
@@ -322,8 +365,10 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
         entry = tasks.setdefault(task, {})
         entry.setdefault("seq", seq)
         entry.update(title=command, workdir=args.dir, description=reason, check=args.check)
-        entry.pop("cancelled", None)
-        entry.pop("failed", None)
+        for name in ("cancelled", "failed", "options", "recommended"):
+            entry.pop(name, None)
+        if options:
+            entry.update(options=options, recommended=args.recommended or "")
         roles = {p: v.replace("A", "") for p, v in entry.get("roles", {}).items()}
         roles[rasci.OPERATOR] = rasci.letters_of(roles.get(rasci.OPERATOR, ""), "R")
         roles[party] = rasci.letters_of(roles.get(party, ""), "A")
@@ -1011,6 +1056,8 @@ def main() -> int:
     p.add_argument("slug")
     for flag in ("--dir", "--command", "--reason", "--check"):
         p.add_argument(flag, required=True)
+    p.add_argument("--option", action="append")
+    p.add_argument("--recommended")
     p.add_argument("--session")
     p.set_defaults(func=cmd_add)
     p = sub.add_parser("list")

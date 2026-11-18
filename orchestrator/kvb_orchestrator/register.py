@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from .council import HUMAN, agent, ordered
-from .fields import ORDER_NAME
+from .fields import DESCRIPTION_LIMIT, OPTION_LIMIT, ORDER_NAME
 from .records import read_json, shown
+
+LABEL_LIMIT = 80
 
 REGISTER = "rasci.json"
 AGENT_ORDER = "agent-order.json"
@@ -53,19 +55,46 @@ def is_open(task: str, row: dict, operator: bool) -> bool:
     return task.startswith(OPERATOR) == operator and status_of(row) not in ENDED
 
 
+def row_options(row: dict) -> list[dict]:
+    """Args:
+        row: an operator row of the register, which agents write.
+
+    Returns:
+        A decision row's options as {"label", "description"}, at most
+        OPTION_LIMIT, each label one non-empty line of at most LABEL_LIMIT
+        characters and unique; [] for any other row or malformed options.
+    """
+    raw = row.get("options")
+    if row.get("check") != "decision" or not isinstance(raw, list):
+        return []
+    options = []
+    for option in raw[:OPTION_LIMIT]:
+        label = option.get("label") if isinstance(option, dict) else None
+        description = option.get("description", "") if isinstance(option, dict) else None
+        if isinstance(label, str) and isinstance(description, str) and label.strip() and label.isprintable() and len(label) <= LABEL_LIMIT:
+            options.append({"label": label.strip(), "description": " ".join(description.split())[:DESCRIPTION_LIMIT]})
+    labels = [option["label"] for option in options]
+    return options if len(set(labels)) == len(labels) else []
+
+
 def operator_rows(tasks: dict[str, dict]) -> list[dict]:
-    return [
-        {
+    rows = []
+    for task, row in sorted(tasks.items()):
+        if not is_open(task, row, True):
+            continue
+        options = row_options(row)
+        recommended = row.get("recommended")
+        rows.append({
             "task": task,
             "command": shown(row.get("title")),
             "directory": shown(row.get("workdir")),
             "why": shown(row.get("description")),
             "check": shown(row.get("check")),
             "status": status_of(row),
-        }
-        for task, row in sorted(tasks.items())
-        if is_open(task, row, True)
-    ]
+            "options": options,
+            "recommended": recommended if recommended in [option["label"] for option in options] else "",
+        })
+    return rows
 
 
 def runnable(row: dict) -> bool:

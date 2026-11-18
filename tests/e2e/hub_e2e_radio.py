@@ -229,9 +229,9 @@ CLEAR_MAYDAY = """(async () => {@HELPERS@
   };
   await until(() => document.querySelector('#main [role="toolbar"]'), 8000);
   const toolbar = all('#main [role="toolbar"] button, #main [role="toolbar"] summary').map(name);@SPOT_OPEN@
-  const button = await until(() => spot && all(".spot-head button", spot).find((node) => name(node) === "Cancel mayday" && !node.disabled), 8000);
+  const button = await until(() => spot && all("form.composer .radio-cancel", spot).find((node) => name(node) === "Cancel mayday" && !node.hidden), 8000);
   if (!button) {
-    return {error: "no enabled Cancel mayday button in the radio spot", toolbar};
+    return {error: "no shown Cancel mayday button next to PTT", toolbar};
   }
   const shown = new Set(all("#toasts .toast"));
   const fresh = () => all("#toasts .toast").filter((node) => !shown.has(node)).map(text);
@@ -266,7 +266,9 @@ SPOT_SEND = """(async () => {@HELPERS@
     toolbar: all('#main [role="toolbar"] > *').map((node) => name(node.tagName === "DETAILS" ? node.querySelector("summary") : node)),
     channels: all("option", channel).map((option) => option.value),
     record: all("button", form).filter((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic")).map(text),
-    heads: all(".spot-head button", spot).map((button) => [name(button), button.title]),
+    heads: all(".spot-head button", spot).length,
+    send: all(".ptt-split :is(button, summary)", form).filter((node) => !node.closest(".menu-box")).map((node) => [name(node), node.title]),
+    cancel: form.querySelector(".radio-cancel").hidden,
     @FITS@,
   };
   await until(() => [...recipient.options].some((option) => option.value === "Stage"), 8000);
@@ -310,7 +312,7 @@ RADIO_JUMP = """(async () => {@HELPERS@
   await sleep(200);
   return {
     hash: "#stream", focused, tabs, closed: [spot.hidden, toggle.getAttribute("aria-expanded")],
-    header: all("header.top button").map((button) => [button.id, name(button), text(button)]), radioTab: Boolean(document.getElementById("tab-radio")),
+    header: all("header.top button[id]").map((button) => [button.id, name(button), text(button)]), radioTab: Boolean(document.getElementById("tab-radio")),
   };
 })()""".replace("@HELPERS@", HELPERS)
 CANCELED = """() => {
@@ -324,63 +326,53 @@ CANCELED = """() => {
 }"""
 JUMPED = {
     "hash": "#stream", "focused": True, "tabs": [[tab, True, True] for tab in ("#home", "#stream/inbox", "#agents/orbit", "#artifacts/tree", "#tasks/list", "#resources")], "closed": [True, "false"],
-    "header": [["grant-direct", "Direct", "Direct"], ["grant-select", "Select", "Select"], ["radio-open", "Radio", ""], ["bubbles-toggle", "Speech bubbles", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
+    "header": [["grant-select", "Select", "Select"], ["radio-open", "Radio", ""], ["bubbles-toggle", "Speech bubbles", ""], ["palette-open", "Commands", ""], ["settings-open", "Settings", ""]], "radioTab": False,
 }
-GEAR_SAVE = """(async () => {@HELPERS@@CLASHES@
+BELLS = """
+  const bell = (label) => spot.querySelector(`.radio-face button[aria-label="${label} tone"]`);
+  const ring = async (label, want) => {
+    for (let press = 0; press < 3 && bell(label).dataset.bell !== want; press += 1) {
+      bell(label).click();
+      await sleep(100);
+    }
+  };
+"""
+BELL_SAVE = """(async () => {@HELPERS@@CLASHES@@BELLS@
   const spot = document.getElementById("radio-spot");
   const face = spot.querySelector(".radio-face");
-  const gear = all(".spot-head button", spot).find((button) => name(button) === "Read aloud");
-  gear.click();
-  const box = await until(() => spot.querySelector("#radio-gear .radio-read"), 4000);
-  if (!box) {
-    return {error: "no read-aloud filters behind the gear"};
-  }
-  const chips = () => all('#radio-gear [aria-label="Classes"] button', spot);
-  const post = () => chips().find((chip) => text(chip) === "Post");
   const found = {
-    expanded: gear.getAttribute("aria-expanded"),
     tones: all(".radio-knobs .knob-label", face).map(text),
-    classes: chips().map((chip) => [text(chip), chip.getAttribute("aria-pressed"), chip.disabled]),
-    clashes: [clashes(face), clashes(spot.querySelector("#radio-gear"))],
+    bells: all(".radio-knobs .knob-toggle", face).map((button) => name(button)),
+    clashes: [clashes(face)],
     @FITS@,
   };
   const squelch = face.querySelector('input[aria-label="Squelch"]');
   squelch.value = "@SQUELCH@";
   squelch.dispatchEvent(new Event("input", {bubbles: true}));
-  const tone = face.querySelector('button[aria-label="All radio tone"]');
-  if (tone.getAttribute("aria-pressed") !== "@TONE@") {
-    tone.click();
-  }
-  if (post().getAttribute("aria-pressed") !== "@POST@") {
-    post().click();
-  }
+  await ring("All radio", "@RADIO@");
+  await ring("Post and calls to you", "@POST@");
   await sleep(200);
   const kept = JSON.parse(localStorage.getItem("kvb-orchestrator.radio"));
   found.kept = [kept.squelch, kept.sounds.radio.on, kept.classes.includes("post")];
-  gear.click();
-  await sleep(200);
-  found.after = [gear.getAttribute("aria-expanded"), Boolean(spot.querySelector("#radio-gear .radio-read"))];
+  found.after = [bell("All radio").dataset.bell, bell("Post and calls to you").dataset.bell];
   document.getElementById("settings-open").click();
   const sheet = await until(() => document.querySelector(".sheet-box form.settings"), 4000);
   found.general = {sections: all("section > h3", sheet).map(text), radio: all('[aria-label="Squelch"], [aria-label="Classes"], [aria-label="Speakers"], [aria-label="Mode"], .sound-row, .stream-row', sheet).length};
   document.querySelector(".sheet-head button").click();
   return found;
-})()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP).replace("@FITS@", FITS)
-GEAR_READ = """(async () => {@HELPERS@@SPOT_OPEN@
-  const gear = spot ? all(".spot-head button", spot).find((button) => name(button) === "Read aloud") : null;
-  if (!gear) {
+})()""".replace("@HELPERS@", HELPERS).replace("@CLASHES@", OVERLAP).replace("@BELLS@", BELLS).replace("@FITS@", FITS)
+BELL_READ = """(async () => {@HELPERS@@SPOT_OPEN@@BELLS@
+  const face = spot ? spot.querySelector(".radio-face") : null;
+  if (!face) {
     return {error: text(document.getElementById("main"))};
   }
-  gear.click();
-  await until(() => spot.querySelector("#radio-gear .radio-read"), 4000);
-  const face = spot.querySelector(".radio-face");
   return {
     squelch: Number(face.querySelector('input[aria-label="Squelch"]').value),
-    tone: face.querySelector('button[aria-label="All radio tone"]').getAttribute("aria-pressed") === "true",
-    post: all('#radio-gear [aria-label="Classes"] button', spot).find((chip) => text(chip) === "Post").getAttribute("aria-pressed") === "true",
+    radio: bell("All radio").dataset.bell,
+    post: bell("Post and calls to you").dataset.bell,
     @FITS@,
   };
-})()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN).replace("@FITS@", FITS)
+})()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN).replace("@BELLS@", BELLS).replace("@FITS@", FITS)
 
 
 class Station(http.server.BaseHTTPRequestHandler):

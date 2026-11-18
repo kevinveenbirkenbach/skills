@@ -105,6 +105,59 @@
   }
 
   const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Choice: ${label}`);
+  const asked = (item) => item.kind === "operator" && item.check === "decision";
+  const answers = new Map();
+
+  async function answerRow(item, answer) {
+    if (!item.agent) {
+      toast("Answer: no agent to send it to", ["The row names no adding agent; answer in its session."], false);
+      return;
+    }
+    if (await radioSend({to: item.agent, text: `Decision ${item.id}\nAnswer: ${answer}`, cls: "post", upload: "", voice: ""})) {
+      answers.set(keyOf(item), answer);
+      drawInbox();
+    }
+  }
+
+  function otherAnswer(item) {
+    const input = h("input", {class: "field", type: "text", placeholder: "Other answer …", "aria-label": `Other answer to ${item.id}`, disabled: answers.has(keyOf(item))});
+    const form = h("form", {class: "option other"}, input,
+      h("button", {type: "submit", class: "btn small", disabled: answers.has(keyOf(item)), ...named("Send", revealed(`Send: your passkey signs this answer, a post to ${item.agent}`))}, icon("bi-send"), "Send"));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (input.value.trim()) {
+        answerRow(item, input.value.trim());
+      }
+    });
+    return form;
+  }
+
+  function choicePanel(item, pick, other) {
+    const done = answers.has(keyOf(item));
+    const pane = item.options.some((option) => option.preview) ? h("pre", {class: "choice-preview", "aria-label": "Preview"}) : null;
+    const show = (option) => {
+      if (pane) {
+        pane.textContent = revealedLines(option.preview || "");
+      }
+    };
+    const buttons = item.options.map((option) => h("button", {
+      type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, title: revealed(`${option.label}: your passkey signs this answer, a post to ${item.agent}`), disabled: item.held || done,
+      on: {click: () => pick(option.label), focus: () => show(option), mouseenter: () => show(option)},
+    }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null));
+    show(item.options.find((option) => option.label === item.recommended) || item.options[0] || {});
+    const list = h("div", {class: "options"}, buttons, other || null);
+    return pane ? h("div", {class: "choice"}, list, pane) : list;
+  }
+
+  const choiceOf = (item, after) => item.kind === "decision"
+    ? choicePanel(item, (label) => { after(); chooseOne(item, label); })
+    : asked(item) ? [answerTo(item), choicePanel(item, (label) => { after(); answerRow(item, label); }, otherAnswer(item))] : null;
+
+  /**
+   * @param {Object} item a decision row of the register.
+   * @returns {HTMLElement} who receives the answer: the row's first agent with role A, which any agent can set, so the operator sees it before signing.
+   */
+  const answerTo = (item) => h("p", {class: "muted answer-to"}, item.agent ? ["Your answer goes to ", h("strong", {}, revealed(item.agent)), " as a passkey-signed post, with the row id and your answer only."] : "No agent holds role A on this row: answer in its session.");
 
   const deniable = (item) => item.deniable || item.kind === "review";
   const denialOf = (item, reason) => ({...entryOf(item, "reject", ""), channel: "post", reason, to: item.to});
@@ -136,16 +189,20 @@
     (reason || confirm).focus();
   }
 
-  function selectionButtons(items) {
+  /**
+   * @returns {object} the picked items as chosen, and the grant, deny and grant-all-green controls of the Grant menu.
+   */
+  function selectionActions(items) {
     const green = items.filter(isGreen);
     const chosen = items.filter((item) => ui.selected.has(keyOf(item)));
     const denials = chosen.filter(deniable);
     const grantable = chosen.filter(selectable);
-    return [
-      h("button", {type: "button", class: "btn small soft", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection", false)}}, icon("bi-check2-square"), String(grantable.length)),
-      h("button", {type: "button", class: "btn small danger", ...named(`Deny selection (${denials.length})`, `Deny selection (${denials.length}): each requester gets its denial and an optional reason by post, one passkey signature, 3 s to undo`), disabled: !denials.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), String(denials.length)),
-      h("button", {type: "button", class: "btn small primary", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), String(green.length)),
-    ];
+    return {
+      chosen,
+      grant: h("button", {type: "button", class: "btn small primary", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection", false)}}, icon("bi-check2-square"), `Grant ${grantable.length}`),
+      deny: h("button", {type: "button", class: "menu-item danger", ...named(`Deny selection (${denials.length})`, `Deny selection (${denials.length}): each requester gets its denial and an optional reason by post, one passkey signature, 3 s to undo`), disabled: !denials.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), `Deny ${denials.length}`),
+      green: h("button", {type: "button", class: "menu-item", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), `Grant all green ${green.length}`),
+    };
   }
 
   async function mark(item, until, pinned) {
@@ -175,6 +232,7 @@
     }
     ui.cursor = Math.max(visibleInbox().findIndex((entry) => keyOf(entry) === key), 0);
     drawInbox();
+    drawGrant();
     const box = inboxDom.querySelector(`.item[data-index="${ui.cursor}"] > input[type="checkbox"]`);
     if (refocus && box) {
       box.focus({preventScroll: true});
@@ -214,14 +272,15 @@
 
   function inboxItem(item, index) {
     const red = item.kind === "review" && item.gate !== "pass";
-    const commanded = item.kind === "ask" || item.kind === "operator";
+    const commanded = item.kind === "ask" || (item.kind === "operator" && !asked(item));
     const classes = ["item", "entry", `k-${item.kind}`, "waiting", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
     const box = h("input", {type: "checkbox", "aria-label": `Select ${item.title}`, checked: ui.selected.has(keyOf(item)), disabled: !pickable(item), on: {change: () => toggle(item, true)}});
     return h("li", {class: classes, "data-index": index, "data-ref": keyOf(item), "data-to": item.to || null},
       box,
       h("div", {class: "msg-meta"},
         when(item.ts),
-        pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
+        asked(item) ? pill("Decision", KIND_TONES.decision) : pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
+        answers.has(keyOf(item)) ? pill(revealed(`answered: ${answers.get(keyOf(item))}`), "ok") : null,
         item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
         item.warnings.map((warning) => pill(warning, "bad")),
         item.pinned ? pill("pinned", "violet") : null,
@@ -233,13 +292,12 @@
         item.kind === "review" ? h("div", {class: "muted"}, revealed(item.detail), item.score ? revealed(` · ${item.score}`) : "") : null,
         commanded ? h("div", {class: "command", "data-path": item.directory || "-"}, h("code", {}, revealed(item.command)), copyButton(item.command)) : null,
         commanded ? h("span", {class: "muted"}, revealed(`in ${dash(item.directory)}`)) : null,
+        asked(item) ? h("p", {class: "text question"}, revealed(item.title)) : null,
         item.kind === "operator" && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, revealed(item.detail)) : null,
         diffBlocks(item),
         item.job ? consoleOf(item.job) : null,
         item.kind === "rule" ? ruleRequestBody(item) : null,
-        item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
-          type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, title: revealed(`${option.label}: your passkey signs this answer, a post to ${item.agent}`), disabled: item.held, on: {click: () => chooseOne(item, option.label)},
-        }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null))) : null,
+        choiceOf(item, () => {}),
         feedbackList(keyOf(item))),
       h("div", {class: "item-actions line-actions"},
         actionsFor(item),
@@ -269,7 +327,7 @@
       }
     }
     const mode = grantMode();
-    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
+    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], [...answers], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
     if (sig === inboxSig) {
       repaintConsoles(items);
       return;
@@ -283,7 +341,6 @@
     Panels.keepFocus(inboxSlot, () => inboxDom.replaceChildren(
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Waits on Operator", counter(waitingCount())), h("span", {class: "spacer"}),
         hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null, inboxSlot),
-      mode === GRANT_SELECT ? null : h("div", {class: "inbox-actions"}, selectionButtons(items)),
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
       items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now.")));
     settleConsoles(items);
@@ -304,15 +361,11 @@
     const body = [
       h("div", {class: "who"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? face(item.agent, false) : null, item.agent ? person(item.agent) : null, when(item.ts)),
       h("p", {class: "text"}, revealed(item.title)),
-      item.command ? h("div", {class: "command"}, h("code", {}, revealed(item.command)), copyButton(item.command)) : null,
+      item.command && !asked(item) ? h("div", {class: "command"}, h("code", {}, revealed(item.command)), copyButton(item.command)) : null,
+      asked(item) && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, revealed(item.detail)) : null,
       item.kind === "rule" ? ruleRequestBody(item) : null,
       meta([["Directory", item.directory], ["Warnings", item.warnings.join(", ")], ["Id", item.id]]),
-      item.kind === "decision" ? h("div", {class: "options"}, item.options.map((option) => h("button", {
-        type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, disabled: item.held, on: {click: () => {
-          closeSheet();
-          chooseOne(item, option.label);
-        }},
-      }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null))) : null,
+      choiceOf(item, closeSheet),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), actionsFor(item).map((node) => {
         node.addEventListener("click", closeSheet);
         return node;

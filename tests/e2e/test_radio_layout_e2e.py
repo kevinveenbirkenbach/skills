@@ -114,8 +114,8 @@ class TestRadioLayout(kit.RadioLayoutCase):
                         self.assertGreaterEqual(found["rows"], 2, home[moment])
                         self.assertTrue(found["inside"], home[moment])
                         self.assertTrue(found["filled"], home[moment])
-        self.assertEqual(home["tools"]["gear"], ["true", True, True], home)
-        self.assertEqual(home["tools"]["clear"], [True, "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"], home)
+        self.assertEqual(home["tools"]["menu"], ["true", True, True], home)
+        self.assertEqual(home["tools"]["cancel"], [True, "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"], home)
         content = home["content"]
         self.assertEqual(content["tiles"], [f"panel:{part}" for part in PARTS], home)
         self.assertEqual(content["radio"], [True, True, True], home)

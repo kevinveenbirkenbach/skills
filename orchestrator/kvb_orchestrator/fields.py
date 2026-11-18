@@ -12,6 +12,8 @@ TEXT_LIMIT = 20_000
 COMMAND_LIMIT = 4000
 PATH_LIMIT = limits.PATH_LIMIT
 NAME_LIMIT = 120
+DESCRIPTION_LIMIT = 1000
+OPTION_LIMIT = 12
 COUNT = re.compile(r"[0-9]{1,12}")
 PATH = re.compile(rf"/[^\x00-\x1f\x7f]{{0,{PATH_LIMIT - 1}}}")
 LINE = r"(?=[^\x00-\x1f\x7f]*\S)[^\x00-\x1f\x7f]{{1,{0}}}"

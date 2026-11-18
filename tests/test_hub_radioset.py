@@ -161,20 +161,60 @@ async function stalled() {
   await settle();
   return {before, after: [done, sandbox.speech.source], waits: waits.map((wait) => wait.ms), stops};
 }
-function pressed() {
+function element(tag, attrs, ...children) {
+  return {
+    tag, attrs: attrs || {}, children: children.flat().filter((child) => child !== null), dataset: {mode: (attrs || {})["data-mode"]}, hidden: Boolean((attrs || {}).hidden),
+    setAttribute(key, value) {
+      this.attrs[key] = value;
+    },
+    replaceChildren(...nodes) {
+      this.children = nodes;
+    },
+    querySelectorAll() {
+      return this.children.filter((child) => child.dataset && child.dataset.mode);
+    },
+  };
+}
+function faced(mode) {
   const calls = [];
-  const sandbox = {RadioSet, h: (tag, attrs, ...children) => ({tag, attrs: attrs || {}, children: children.flat()}), icon: (name) => name, named: (label, hint) => ({"aria-label": label, title: hint})};
+  const sandbox = {RadioSet, radioSet: RadioSet.valid({mode, fallback: "morse"}), settings: {morse: {wpm: 18}}, h: element, icon: (name) => name, named: (label, hint) => ({"aria-label": label, title: hint})};
   vm.runInNewContext(viewCode, sandbox);
   sandbox.knobs = () => [];
+  sandbox.morseSpeed = () => element("label", {class: "morse-speed"});
   sandbox.context = () => calls.push("context");
   sandbox.keepRadio = (change) => calls.push(change);
-  const modes = sandbox.faceplate({}).children.find((child) => child.attrs["aria-label"] === "Mode");
+  const part = {};
+  const face = sandbox.faceplate(part);
+  const modes = face.children.find((child) => child.attrs["aria-label"] === "Mode");
+  const button = (id) => modes.children.find((child) => child.dataset.mode === id);
+  return {calls, part, modes, button, carets: modes.children.filter((child) => child.children.some((node) => node.attrs && node.attrs.class === "mode-caret")).map((child) => child.dataset.mode)};
+}
+function pressed() {
+  const {calls, modes} = faced("silence");
   modes.children.forEach((button) => button.attrs.on.click());
   return calls;
 }
+function menus() {
+  const out = {};
+  for (const mode of ["auto", "quiet", "morse"]) {
+    const {calls, part, button, carets} = faced(mode);
+    button(mode).attrs.on.click();
+    const opened = {calls: calls.splice(0), menuFor: part.menuFor, hidden: part.face.menu.hidden, shown: part.face.menu.children.map((node) => node.attrs.class), expanded: button(mode).attrs["aria-expanded"]};
+    button(mode).attrs.on.click();
+    const closed = {menuFor: part.menuFor, hidden: part.face.menu.hidden};
+    out[mode] = {carets, opened, closed};
+  }
+  const {calls, part, button} = faced("auto");
+  button("auto").attrs.on.click();
+  const picks = part.face.menu.children[0].children.filter((node) => node.tag === "button").map((node) => [node.attrs["aria-label"], node.attrs["aria-pressed"]]);
+  part.face.menu.children[0].children.find((node) => node.attrs["aria-label"] === "Hiss").attrs.on.click();
+  button("morse").attrs.on.click();
+  out.picks = {picks, calls, menuFor: part.menuFor};
+  return out;
+}
 (async () => {
   console.log(JSON.stringify({
-    auto: await queued(""), silence: await queued("silence"), quiet: await queued("quiet"), stalled: await stalled(), pressed: pressed(),
+    auto: await queued(""), silence: await queued("silence"), quiet: await queued("quiet"), stalled: await stalled(), pressed: pressed(), menus: menus(),
   }));
 })();
 """
@@ -429,6 +469,14 @@ MESSAGES = [
 TWINS = [*LOG, {"ts": 90, "from": "Docs", "to": [], "class": "newsletter", "text": "twin one"}, {"ts": 90, "from": "Docs", "to": [], "class": "broadcast", "text": "twin two"}]
 
 
+TONES = ("mayday", "review", "direct", "radio")
+BELL_SET = {
+    "sounds": {"mayday": {"on": True, "volume": 0.9}, "review": {"on": True, "volume": 0.6}, "direct": {"on": True, "volume": 0.5}, "radio": {"on": False, "volume": 0.25}},
+    "classes": ["mayday", "pan-pan", "security", "newsletter"],
+    "muted": ["s1"],
+}
+
+
 def run(calls: dict[str, list[list]]) -> dict:
     done = subprocess.run(["node", "-e", PROBE, str(RADIOSET), json.dumps(calls)], capture_output=True, text=True, timeout=60, check=True)
     return json.loads(done.stdout)
@@ -468,6 +516,9 @@ class TestRadioSetModule(unittest.TestCase):
             "choices": [["choices", LOG]],
             "cleared": [["cleared", entries[8]]],
             "bursts": [["burst", 0.45], ["burst", 0]],
+            "bells": [["bell", BELL_SET, tone] for tone in TONES] + [["bell", {**BELL_SET, "classes": ["mayday", "post"]}, "direct"]],
+            "rings": [["ring", BELL_SET, tone] for tone in TONES],
+            "mutes": [["muting", BELL_SET, "s1"], ["muting", BELL_SET, "s2"]],
         })
         cls.modes, cls.lives = modes, lives
 
@@ -506,6 +557,21 @@ class TestRadioSetModule(unittest.TestCase):
                     self.assertEqual(self.plan(mode, live, "muted"), [])
                     self.assertEqual(self.plan(mode, live, "voiceless"), [])
         self.assertNotEqual(self.plan("auto", 0, "security"), [])
+
+    def test_each_row_bell_reads_off_tone_or_speak_from_its_tone_and_classes(self):
+        self.assertEqual(self.data["bells"], ["speak", "tone", "tone", "off", "tone"])
+
+    def test_a_bell_press_moves_off_to_tone_to_speak_and_a_row_without_classes_skips_speak(self):
+        mayday, review, direct, radio = self.data["rings"]
+        sounds = BELL_SET["sounds"]
+        self.assertEqual((mayday["sounds"]["mayday"], mayday["classes"]), ({**sounds["mayday"], "on": False}, ["newsletter"]))
+        self.assertEqual((review["sounds"]["review"]["on"], review["classes"]), (False, BELL_SET["classes"]))
+        self.assertEqual((direct["sounds"]["direct"]["on"], direct["classes"]), (True, [*BELL_SET["classes"], "post", "call"]))
+        self.assertEqual((radio["sounds"]["radio"], radio["classes"]), ({**sounds["radio"], "on": True}, ["mayday", "pan-pan", "security"]))
+        self.assertEqual(mayday["sounds"]["review"], sounds["review"])
+
+    def test_muting_toggles_one_agent_and_keeps_the_others(self):
+        self.assertEqual(self.data["mutes"], [{"muted": []}, {"muted": ["s1", "s2"]}])
 
     def test_the_burst_is_band_passed_noise_of_about_0_6_seconds_at_the_given_loudness(self):
         loud, silent = self.data["bursts"]
@@ -597,6 +663,22 @@ class TestTransmit(unittest.TestCase):
 
     def test_every_mode_button_keeps_the_mode_before_it_resumes_the_audio_context(self):
         self.assertEqual(self.data["pressed"], [{"mode": "auto"}, "context", {"mode": "quiet"}, "context", {"mode": "silence"}, "context", {"mode": "morse"}, "context", {"mode": "gibberlink"}, "context"])
+
+    def test_a_second_press_on_auto_quiet_or_morse_opens_its_setting_instead_of_switching(self):
+        shown = {"auto": ["chips radio-fallback"], "quiet": ["chips radio-fallback"], "morse": ["morse-speed"]}
+        for mode, menu in self.data["menus"].items():
+            if mode == "picks":
+                continue
+            with self.subTest(mode=mode):
+                self.assertEqual(menu["carets"], ["auto", "quiet", "morse"])
+                self.assertEqual(menu["opened"], {"calls": [], "menuFor": mode, "hidden": False, "shown": shown[mode], "expanded": "true"})
+                self.assertEqual(menu["closed"], {"menuFor": "", "hidden": True})
+
+    def test_the_fallback_menu_picks_the_fallback_and_another_mode_closes_it(self):
+        picks = self.data["menus"]["picks"]
+        self.assertEqual(picks["picks"], [["Gibberlink", "false"], ["Morse", "true"], ["Hiss", "false"]])
+        self.assertEqual(picks["calls"], [{"fallback": "burst"}, {"mode": "morse"}, "context"])
+        self.assertEqual(picks["menuFor"], "")
 
 
 class TestSpeechModes(unittest.TestCase):

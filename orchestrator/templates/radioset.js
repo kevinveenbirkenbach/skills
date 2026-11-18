@@ -7,6 +7,7 @@ const RadioSet = (() => {
   const FRAME = {bytes: 140, prefix: 8, key: 64};
   const TONES = ["mayday", "review", "direct", "radio"];
   const CLASSES = ["post", "call", "newsletter", "broadcast", "mayday", "pan-pan", "security"];
+  const SPOKEN = {mayday: ["mayday", "pan-pan", "security"], review: [], direct: ["post", "call"], radio: ["newsletter", "broadcast"]};
   const TO_ALL = new Set(["newsletter", "broadcast", "mayday", "pan-pan", "security"]);
   const TABS = ["sent", "received", "all"];
   const CHIPS = ["class", "from", "to", "agent"];
@@ -76,6 +77,37 @@ const RadioSet = (() => {
 
   function picked(row, set) {
     return row.class === "mayday" || (set.classes.includes(row.class) && !set.muted.includes(row.source));
+  }
+
+  /**
+   * @param {object} set the radio set.
+   * @param {string} tone one of TONES.
+   * @returns {string} the bell of that row: off while its tone is off, speak while every class it speaks is read aloud, else tone.
+   */
+  function bell(set, tone) {
+    if (!set.sounds[tone].on) {
+      return "off";
+    }
+    return SPOKEN[tone].length && SPOKEN[tone].every((name) => set.classes.includes(name)) ? "speak" : "tone";
+  }
+
+  /**
+   * @param {object} set the radio set.
+   * @param {string} tone one of TONES.
+   * @returns {object} the change of sounds and classes that moves the row's bell on: off to tone to speak to off, a row that speaks no class skips speak.
+   */
+  function ring(set, tone) {
+    const now = bell(set, tone);
+    const next = now === "off" ? "tone" : now === "tone" && SPOKEN[tone].length ? "speak" : "off";
+    const rest = set.classes.filter((name) => !SPOKEN[tone].includes(name));
+    return {
+      sounds: {...set.sounds, [tone]: {...set.sounds[tone], on: next !== "off"}},
+      classes: next === "speak" ? [...rest, ...SPOKEN[tone]] : rest,
+    };
+  }
+
+  function muting(set, key) {
+    return {muted: set.muted.includes(key) ? set.muted.filter((name) => name !== key) : [...set.muted, key]};
   }
 
   /**
@@ -272,7 +304,7 @@ const RadioSet = (() => {
     return {...entry, chips: Object.fromEntries(CHIPS.map((name) => [name, ""])), q: ""};
   }
 
-  return {KEY, MODES, FALLBACKS, KEYED, FRAME, TONES, CLASSES, TABS, CHIPS, DEFAULTS, GATE, PROSIGNS, valid, picked, frames, standIn, plan, burst, gateLabel, toAll, ledgerOf, logRows, counts, choices, cleared};
+  return {KEY, MODES, FALLBACKS, KEYED, FRAME, TONES, CLASSES, SPOKEN, TABS, CHIPS, DEFAULTS, GATE, PROSIGNS, valid, picked, bell, ring, muting, frames, standIn, plan, burst, gateLabel, toAll, ledgerOf, logRows, counts, choices, cleared};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = RadioSet;

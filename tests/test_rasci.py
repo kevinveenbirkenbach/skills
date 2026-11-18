@@ -221,6 +221,8 @@ class TestRasci(unittest.TestCase):
             (("set", "work/a", "--after", "work/nope"), "no task of the register"),
             (("set", "work/new", "--after", "work/nope"), "no task of the register"),
             (("set", "work/a", "--after", "Bad Task"), "invalid task"),
+            (("set", "work/a", "--after", "work/b\n"), "invalid task"),
+            (("set", "work/new\n"), "invalid task"),
         ):
             with self.subTest(args=args):
                 result = self._run(*args)

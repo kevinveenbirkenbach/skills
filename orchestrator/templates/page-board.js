@@ -98,7 +98,6 @@
   }
 
   function drawSpot() {
-    drawBars();
     drawSpeak();
   }
 

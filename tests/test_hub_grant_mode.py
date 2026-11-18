@@ -74,8 +74,10 @@ const results = {};
 const take = () => ({selected: [...ui.selected].sort(), proofs: proofs.splice(0), accepts: accepts.splice(0), renders, streams});
 const press = (item) => {
   const first = actionsFor(item)[0];
-  return {pressed: first.getAttribute("aria-pressed"), title: first.getAttribute("title")};
+  return {pressed: first.getAttribute("aria-pressed"), title: first.getAttribute("title"), disabled: Boolean(first.disabled), picked: (first.getAttribute("class") || "").split(" ").includes("picked")};
 };
+const labels = (node) => buttons(node).map((button) => button.getAttribute("aria-label"));
+const byName = (node, label) => buttons(node).find((button) => button.getAttribute("aria-label") === label);
 (async () => {
   state.inbox = Object.values(items).map((item) => ({...item}));
   const of = (key) => state.inbox.find((item) => item.id === items[key].id);
@@ -95,17 +97,24 @@ const press = (item) => {
   results.rule = {...take(), press: press(of("rule"))};
   grantBoot();
   const bar = grantView.tray;
-  const modes = grantView.modes;
-  results.tray = {hidden: bar.hidden, text: text(bar), labels: buttons(bar).map((button) => button.getAttribute("aria-label")), modes: modes.map((button) => [button.dataset.mode, button.getAttribute("aria-pressed")]), listen: listeners.map(([path]) => path)};
-  buttons(bar).pop().click();
+  const summary = () => all(bar).find((node) => node.tag === "summary").getAttribute("aria-label");
+  results.tray = {summary: summary(), labels: labels(bar), main: buttons(bar)[0].getAttribute("aria-label"), listen: listeners.map(([path]) => path)};
+  byName(bar, "Remove make install").click();
+  results.unpicked = take();
+  byName(bar, "Clear").click();
   results.cleared = take();
-  modes[0].click();
+  byName(bar, "Direct").click();
   results.switched = sets.splice(0);
   drawGrant();
-  results.direct_tray = {hidden: bar.hidden, children: bar.children.length, modes: modes.map((button) => button.getAttribute("aria-pressed"))};
+  results.direct_tray = {summary: summary(), labels: labels(bar), main: buttons(bar)[0].getAttribute("id")};
   results.direct_press = press(of("green"));
   await approveOne(of("green"));
   results.direct = take();
+  ui.selected.add(keyOf(of("ask")));
+  results.direct_picked = press(of("ask"));
+  drawGrant();
+  results.direct_selection = {main: buttons(bar)[0].getAttribute("aria-label"), labels: labels(bar)};
+  ui.selected.clear();
   console.log(JSON.stringify(results));
 })().catch((error) => { console.error(error && error.stack || error); process.exit(1); });
 `;
@@ -132,10 +141,19 @@ class TestGrantMode(unittest.TestCase):
         self.assertEqual(self.data["collected"]["selected"], ["ask:a-1", "decision:d-1", "operator:operator/run", "review:r-green"])
         self.assertEqual(self.data["collected"]["proofs"], [])
 
-    def test_the_grant_button_shows_whether_its_item_is_selected(self):
+    def test_a_picked_item_shows_a_pale_green_disabled_grant_button(self):
         self.assertEqual(self.data["unpressed"]["pressed"], "false")
         self.assertTrue(self.data["unpressed"]["title"].startswith("Select: "), self.data["unpressed"])
-        self.assertEqual(self.data["pressed"]["pressed"], "true")
+        self.assertEqual((self.data["unpressed"]["disabled"], self.data["unpressed"]["picked"]), (False, False))
+        pressed = self.data["pressed"]
+        self.assertEqual((pressed["pressed"], pressed["disabled"], pressed["picked"]), ("true", True, True))
+        self.assertEqual(pressed["title"], "In the selection: take it out with ✕ in the Grant menu")
+
+    def test_a_checkbox_pick_in_direct_also_turns_the_button_pale_and_opens_the_grant_split(self):
+        picked = self.data["direct_picked"]
+        self.assertEqual((picked["pressed"], picked["disabled"], picked["picked"]), (None, True, True))
+        self.assertEqual(self.data["direct_selection"]["main"], "Grant selection (1)")
+        self.assertEqual(self.data["direct_selection"]["labels"][-1], "Select")
 
     def test_a_red_gate_and_a_rule_stay_direct_in_select_and_say_why(self):
         self.assertEqual(self.data["red"]["proofs"], [["review:r-red"]])
@@ -145,13 +163,20 @@ class TestGrantMode(unittest.TestCase):
         self.assertEqual(self.data["rule"]["proofs"], [])
         self.assertTrue(self.data["rule"]["press"]["title"].endswith(": acts at once, a rule is accepted one at a time"), self.data["rule"])
 
-    def test_the_tray_counts_the_selection_and_holds_its_actions(self):
+    def test_one_split_grants_the_selection_and_its_menu_holds_the_rest(self):
         tray = self.data["tray"]
-        self.assertFalse(tray["hidden"])
-        self.assertTrue(tray["text"].startswith("4 selected"), tray)
-        self.assertEqual(tray["labels"], ["Grant selection (4)", "Deny selection (2)", "Grant all green (1)", "Clear"])
-        self.assertEqual(tray["modes"], [["direct", "false"], ["select", "true"]])
+        self.assertEqual(tray["main"], "Grant selection (4)")
+        self.assertEqual(tray["summary"], "4 selected")
+        self.assertEqual(tray["labels"], [
+            "Grant selection (4)", "Deny selection (2)", "Grant all green (1)",
+            "Remove feat: green", "Remove git push: ask", "Remove make install", "Remove Which?",
+            "Clear", "Direct",
+        ])
         self.assertEqual(tray["listen"], ["approval"])
+
+    def test_a_picked_item_leaves_the_selection_through_its_menu_entry(self):
+        self.assertEqual(self.data["unpicked"]["selected"], ["ask:a-1", "decision:d-1", "review:r-green"])
+        self.assertEqual(self.data["unpicked"]["proofs"], [])
 
     def test_clear_empties_the_selection(self):
         self.assertEqual(self.data["cleared"]["selected"], [])
@@ -159,8 +184,8 @@ class TestGrantMode(unittest.TestCase):
     def test_the_switch_stores_the_mode_in_the_view_store(self):
         self.assertEqual(self.data["switched"], [["approval.mode", "direct"]])
 
-    def test_direct_hides_the_tray_and_grants_at_once(self):
-        self.assertEqual(self.data["direct_tray"], {"hidden": True, "children": 0, "modes": ["true", "false"]})
+    def test_direct_without_a_pick_shows_select_and_grants_at_once(self):
+        self.assertEqual(self.data["direct_tray"], {"summary": "0 selected", "labels": ["Select", "Deny selection (0)", "Grant all green (1)", "Clear"], "main": "grant-select"})
         self.assertEqual(self.data["direct_press"]["pressed"], None)
         self.assertEqual(self.data["direct_press"]["title"], "Grant")
         self.assertEqual(self.data["direct"]["proofs"], [["review:r-green"]])

@@ -47,7 +47,6 @@
     dead: ["Dead", "bi-x-octagon-fill", "bad"],
   };
   const SOUND_KINDS = [["mayday", "MAYDAY / PAN-PAN"], ["review", "Reviews, asks, decisions"], ["direct", "Post and calls to you"], ["radio", "All radio"]];
-  const SPEECH_CLASSES = [["post", "Post"], ["call", "Call"], ["newsletter", "Newsletter"], ["broadcast", "Broadcast"], ["mayday", "MAYDAY"], ["pan-pan", "PAN-PAN"], ["security", "Sécurité"]];
   const SPEECH_QUEUE = 20;
   const SPEECH_QUIET = 60000;
   const SPEECH_FRESH = 300;

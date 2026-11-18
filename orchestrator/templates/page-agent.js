@@ -113,7 +113,7 @@
     const life = h("span", {class: "muted"});
     const night = h("span", {});
     const claimed = nightAgents().some(([sid]) => sid === key);
-    const nightRow = h("div", {class: "actions agent-night", role: "group", "aria-label": "Day/Night"}, night, h("span", {class: "spacer"}),
+    const nightRow = h("div", {class: "actions agent-night", role: "group", "aria-label": "Day/Night"}, night, h("span", {class: "spacer"}), radioMute(key, name),
       claimed ? ACTIONS.slice(1).map(([id]) => actionButton(id, "btn small", null, () => [key])) : null);
     const former = (people()[key] || {names: []}).names.filter((entry) => entry !== name);
     openPopup(name, [
@@ -132,6 +132,22 @@
     drawAgent();
     loadSubagents(key, subs, life);
     text.focus();
+  }
+
+  function radioMute(key, name) {
+    const button = h("button", {type: "button", class: "btn small agent-mute", "aria-label": `Mute ${name}`});
+    const show = () => {
+      const muted = radioSet.muted.includes(key);
+      button.title = muted ? `Muted: the radio reads ${name} aloud again on a press` : `Mute ${name}: the radio stops reading this agent aloud`;
+      button.setAttribute("aria-pressed", String(muted));
+      button.replaceChildren(icon(muted ? "bi-volume-mute" : "bi-volume-up"), muted ? "Muted" : "Radio on");
+    };
+    button.addEventListener("click", () => {
+      keepRadio(RadioSet.muting(radioSet, key));
+      show();
+    });
+    show();
+    return button;
   }
 
   function agentNames() {

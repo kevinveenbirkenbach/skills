@@ -4,10 +4,9 @@ import json
 from http import HTTPStatus
 
 from . import NAME
-from .asking import OPTION_LIMIT
 from .choosing import CHOICE_REQUEST
 from .errors import RpcError, ToolError
-from .fields import WAIT_CAP
+from .fields import OPTION_LIMIT, WAIT_CAP
 from .requesting import AGENT_CAP
 from .reviewing import GATES
 from .rules import RULE_KINDS
@@ -34,7 +33,11 @@ class Mcp:
         wait = {"type": "number", "minimum": 0, "description": f"Seconds to wait, capped at {WAIT_CAP}."}
         option = {
             "type": "object",
-            "properties": {"label": text_property("Button text, one line."), "description": text_property("What choosing it means; may be empty.")},
+            "properties": {
+                "label": text_property("Button text, one line."),
+                "description": text_property("What choosing it means; may be empty."),
+                "preview": text_property("Optional multi-line mockup, snippet, diff or table shown in monospace beside the options while this option is focused; only for options that need a visual comparison."),
+            },
             "required": ["label", "description"],
             "additionalProperties": False,
         }
