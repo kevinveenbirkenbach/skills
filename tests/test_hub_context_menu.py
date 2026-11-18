@@ -132,7 +132,7 @@ class TestHubContextMenu(unittest.TestCase):
         self.assertEqual(self.data["operator"], "agents")
 
     def test_a_sub_screen_takes_the_items_of_its_tab(self):
-        self.assertEqual(self.data["rules"], [["stream", "Stream", ["View: Stream › Firewall", "Stream: For you", "Stream: Mine", "Firewall …"]], ["general", "General", GENERAL]])
+        self.assertEqual(self.data["rules"], [["stream", "Stream", ["View: Stream › Controls", "Stream: For you", "Stream: Mine", "Controls …"]], ["general", "General", GENERAL]])
 
     def test_every_palette_item_has_a_scope_and_the_palette_still_lists_them_all(self):
         palette = self.data["palette"]

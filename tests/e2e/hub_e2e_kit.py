@@ -26,7 +26,7 @@ WIDTHS = ((1920, 1080), (1366, 768), (390, 844))
 VIEWS = ("orbit", "chord", "swimlane", "tree", "3d")
 TASK_VIEWS = ("list", "board", "rasci", "gantt", "burn", "3d")
 SCREENS = ["home", "stream", "tasks/operator", "tasks/match", "stream/rules", *(f"{tab}/{view}" for tab in ("agents", "artifacts") for view in VIEWS), "agents/hierarchy", *(f"tasks/{view}" for view in TASK_VIEWS), "resources"]
-SUBS = ["Firewall"]
+SUBS = ["Controls"]
 TABS = ["Home", "Stream", "Agents", "Artifacts", "Tasks", "Resources"]
 HELPERS = """
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

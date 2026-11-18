@@ -147,10 +147,80 @@ def shaped_file(entry: object) -> bool:
     return isinstance(entry.get("settings"), dict) and isinstance(entry.get("sha256"), str) and (entry["sha256"] == "" or bool(HASH.fullmatch(entry["sha256"])))
 
 
+def tool_state(settings: dict, name: str, entry: str) -> bool | None:
+    """Args:
+        settings: a file's settings as signing.settings_view() keeps them.
+        name: a signing.CAPABILITIES key.
+        entry: the server name, plugin id or switch.
+
+    Returns:
+        What the file sets for entry: False for a server it blocks or a
+        switch it turns off, the boolean of a plugin, None where it sets
+        nothing that counts. Claude Code merges the deny lists of every
+        file, a false switch anywhere wins, and a project's plugin switch
+        overrides the user's.
+    """
+    if name == "deniedMcpServers":
+        return False if {"serverName": entry} in (settings.get(name) or []) else None
+    if name == "enabledPlugins":
+        on = (settings.get(name) or {}).get(entry)
+        return on if isinstance(on, bool) else None
+    return False if settings.get(entry) is False else None
+
+
+def tool_names(every: list[dict], known: dict) -> dict:
+    """Args:
+        every: the shown settings files.
+        known: the view's {"servers", "plugins"} names.
+
+    Returns:
+        Per signing.CAPABILITIES key the names its rows show: the known
+        servers and plugins plus every one a file blocks or switches, and the
+        fixed switches.
+    """
+    blocked = {rule["serverName"] for entry in every for rule in entry["settings"].get("deniedMcpServers") or []}
+    enabled = [name for entry in every for name in entry["settings"].get("enabledPlugins") or {}]
+    return {
+        "deniedMcpServers": signing.names_of([*signing.names_of(known.get("servers"), signing.MCP_NAME), *blocked], signing.MCP_NAME),
+        "enabledPlugins": signing.names_of([*signing.names_of(known.get("plugins"), signing.PLUGIN_ID), *enabled], signing.PLUGIN_ID),
+        "switches": list(signing.SWITCHES),
+    }
+
+
+def tools_of(files: list[dict], known: object) -> dict | None:
+    """Args:
+        files: the shown settings files.
+        known: the view's {"servers", "plugins"} names.
+
+    Returns:
+        {"file", "error", "groups"} for the file the view marks as
+        ~/.claude/settings.json, each group {"list", "label", "off", "rows"}
+        with off the op that turns a row off, each row {"name", "on",
+        "overrides"}: on as that file sets it, overrides every other listed
+        file that sets it differently as {"file", "on"}; None while no file
+        is marked.
+    """
+    own = next((entry for entry in files if entry.get("own") is True), None)
+    if own is None:
+        return None
+    settings = own["settings"]
+    others = [entry for entry in files if entry is not own]
+    names = tool_names([own, *others], known if isinstance(known, dict) else {})
+
+    def row(name: str, entry: str) -> dict:
+        state = tool_state(settings, name, entry)
+        on = state is True if name == "enabledPlugins" else state is None
+        overrides = [{"file": other["path"], "on": found} for other in others if (found := tool_state(other["settings"], name, entry)) is not None and found != on]
+        return {"name": entry, "on": on, "overrides": overrides}
+
+    labels = (("deniedMcpServers", "MCP servers", "add"), ("enabledPlugins", "Plugins", "remove"), ("switches", "Features", "remove"))
+    return {"file": own["path"], "error": own["error"], "groups": [{"list": name, "label": label, "off": off, "rows": [row(name, entry) for entry in names[name]]} for name, label, off in labels]}
+
+
 def section_diff(path: str, before: dict, after: dict) -> str:
     """Returns:
-        The unified diff of the permissions and sandbox sections before and
-        after the change, as the host writer applies it.
+        The unified diff of the part of the settings the view shows before
+        and after the change, as the host writer applies it.
     """
     lines = difflib.unified_diff(json.dumps(before, indent=2).splitlines(), json.dumps(after, indent=2).splitlines(), fromfile=path, tofile=path, lineterm="", n=3)
     return "\n".join(lines)
@@ -183,16 +253,16 @@ class Firewall:
     def settings_files(self) -> tuple[list[dict], dict]:
         """Returns:
             The listed settings files the host writer last read, each
-            {"path", "exists", "sha256", "error", "settings"} with settings
-            only their permissions and sandbox sections, and the view's
-            written time and error.
+            {"path", "exists", "sha256", "error", "settings", "own"} with
+            settings only the part signing.settings_view() keeps, and the
+            view's written time, error and tools_of().
         """
         view = read_json(self.firewall_spool.root / VIEW)
         files = view.get("files") if isinstance(view, dict) else None
         if not isinstance(files, list):
-            return [], {"written": None, "error": "no settings view yet: the kvb-orchestrator-firewall unit writes it on the host"}
-        shown = [{**entry, "settings": signing.settings_view(entry["settings"]), "error": str(entry.get("error") or "")} for entry in files if shaped_file(entry)]
-        return shown, {"written": view.get("written"), "error": ""}
+            return [], {"written": None, "error": "no settings view yet: the kvb-orchestrator-firewall unit writes it on the host", "tools": None}
+        shown = [{**entry, "settings": signing.settings_view(entry["settings"]), "error": str(entry.get("error") or ""), "own": entry.get("own") is True} for entry in files if shaped_file(entry)]
+        return shown, {"written": view.get("written"), "error": "", "tools": tools_of(shown, view.get("known"))}
 
     def firewall(self) -> dict:
         files, meta = self.settings_files()
@@ -216,18 +286,32 @@ class Firewall:
         files = {entry["path"]: entry for entry in self.settings_files()[0]}
         signed: list[dict] = []
         for entry in raw:
-            if not isinstance(entry, dict):
-                raise ToolError("every item must be an object with kind, file, base and changes")
-            expect(entry, ("kind", *signing.SETTINGS_KEYS))
-            order = {name: entry[name] for name in signing.SETTINGS_KEYS}
-            problem = signing.settings_problem(order)
-            if problem:
-                raise ToolError(problem)
-            self.applicable(files, order)
+            order = self.settings_order(files, entry)
             if any(item["file"] == order["file"] for item in signed):
                 raise ToolError("one item per file: list every change of a file in its changes")
             signed.append(signing.settings_item(**order))
         return signed
+
+    def settings_order(self, files: dict[str, dict], entry: object) -> dict:
+        """Args:
+            files: the listed settings files by path.
+            entry: one item of the page.
+
+        Returns:
+            Its file, base and changes once they apply to the listed file;
+            ToolError otherwise.
+        """
+        if not isinstance(entry, dict):
+            raise ToolError("every item must be an object with kind, file, base and changes")
+        expect(entry, ("kind", *signing.SETTINGS_KEYS))
+        order = {name: entry[name] for name in signing.SETTINGS_KEYS}
+        problem = signing.settings_problem(order)
+        if problem:
+            raise ToolError(problem)
+        self.applicable(files, order)
+        if not files[order["file"]]["own"] and any(change["list"] in signing.CAPABILITIES for change in order["changes"]):
+            raise ToolError("MCP servers, plugins and switches change only in ~/.claude/settings.json")
+        return order
 
     def applicable(self, files: dict[str, dict], order: dict) -> dict:
         shown = files.get(order["file"])

@@ -189,7 +189,7 @@ class TestWorkbenchOperatorTasks(HubCase):
                 self.assertEqual(feedback["labels"], {"float": [], "menu": [], "sheet": []})
             with self.subTest(browser=browser, width=width):
                 self.assertNotIn("error", tasks, tasks)
-                self.assertEqual((tasks["hash"], tasks["tabs"], tasks["subs"], tasks["streamInbox"], tasks["current"]), ("#tasks/operator", base.TABS, ["Firewall"], False, ["Tasks"]))
+                self.assertEqual((tasks["hash"], tasks["tabs"], tasks["subs"], tasks["streamInbox"], tasks["current"]), ("#tasks/operator", base.TABS, ["Controls"], False, ["Tasks"]))
                 self.assertRegex(tasks["badge"] or "", r"^[1-9][0-9]*$")
                 self.assertEqual((tasks["kinds"], tasks["boxes"]), (["k-review", "k-operator", "k-ask"], [True, True, True]))
                 operator = tasks["operator"]

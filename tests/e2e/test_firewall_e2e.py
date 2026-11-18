@@ -23,6 +23,9 @@ SECRET = ORIGINAL["env"]["EXAMPLE_FLAG"]
 ASKED = ["Bash(make deploy:*)", "Bash(make clean:*)", "Bash(git push:*)"]
 SHOW = """(async () => {@HELPERS@
   await screenShown(8000);
+  const tabs = () => all('#main [role="tab"]').map((node) => [node.dataset.tab, node.getAttribute("aria-selected"), document.getElementById(node.getAttribute("aria-controls")).hidden]);
+  const first = tabs();
+  document.querySelector('#main [role="tab"][data-tab="rules"]').click();
   const ready = await until(() => all("#main table.fw-table tbody[data-source]").length > 1, 10000);
   if (!ready) {
     return {error: text(document.getElementById("main"))};
@@ -45,6 +48,7 @@ SHOW = """(async () => {@HELPERS@
   await sleep(100);
   return {
     title: text(document.querySelector("#main h2.title")),
+    tabs: {first, picked: tabs()},
     subs: all("#tabs .subtabs button").map(name),
     sources,
     folded,
@@ -75,7 +79,7 @@ SIGN = """(async () => {@HELPERS@
   form.requestSubmit();
   await sleep(100);
   const staged = all('#main [aria-label="Staged changes"] li').map((node) => node.dataset.staged);
-  document.querySelector('#main button[aria-label="Review and sign"]').click();
+  document.querySelector("#main .apply-bar button[data-apply]").click();
   const diff = await until(() => document.querySelector('.sheet-box [aria-label="Diff"] pre.fw-diff'), 8000);
   if (!diff) {
     return {error: "no diff", toasts: all("#toasts .toast").map(text)};
@@ -89,6 +93,47 @@ SIGN = """(async () => {@HELPERS@
   shown.toasts = all("#toasts .toast").map(text);
   shown.wide = document.documentElement.scrollWidth > innerWidth + 1;
   return shown;
+})()"""
+TOOLS = """(async () => {@HELPERS@
+  await screenShown(8000);
+  const rowOf = (name) => document.querySelector(`#main .tool-row[data-tool="${name}"]`);
+  const flip = async (name, staged) => {
+    rowOf(name).querySelector("input.switch").click();
+    return until(() => rowOf(name).hasAttribute("data-staged") === staged, 4000);
+  };
+  if (!await until(() => rowOf("blender"), 10000)) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const rows = () => all("#main .tool-row").map((node) => [node.closest("[data-list]").dataset.list, node.dataset.tool, node.dataset.on, node.hasAttribute("data-staged")]);
+  const bar = () => document.querySelector("#main .apply-bar");
+  const found = {before: rows(), hidden: bar().hidden};
+  await flip("blender", true);
+  await flip("caveman@caveman", true);
+  await flip("caveman@caveman", false);
+  await flip("enableArtifact", true);
+  found.staged = {rows: rows(), apply: text(bar().querySelector("button[data-apply]")), hidden: bar().hidden, list: all("li code", bar()).map(text)};
+  found.wide = document.documentElement.scrollWidth > innerWidth + 1;
+  found.unlabelled = all("#main input.switch").filter((node) => !node.getAttribute("aria-label")).length;
+  if (!@SIGN@) {
+    bar().querySelector('button[aria-label="Discard"]').click();
+    found.discarded = {hidden: bar().hidden, rows: rows()};
+    return found;
+  }
+  bar().querySelector("button[data-apply]").click();
+  const diff = await until(() => document.querySelector('.sheet-box [aria-label="Diff"] pre.fw-diff'), 8000);
+  if (!diff) {
+    return {...found, error: "no diff", toasts: all("#toasts .toast").map(text)};
+  }
+  const lines = (cls) => all(`span.${cls}`, diff).map((node) => node.textContent.trim());
+  found.added = lines("add");
+  found.removed = lines("del");
+  document.querySelector('.sheet-box button[aria-label="Sign and apply"]').click();
+  const done = await until(() => document.querySelector(".sheet-box [data-result]"), 30000);
+  found.result = done ? done.dataset.result : null;
+  found.after = await until(() => rowOf("blender") && rowOf("blender").dataset.on === "false" && !rowOf("blender").hasAttribute("data-staged") && rows(), 15000);
+  found.barAfter = bar().hidden;
+  found.secret = document.documentElement.innerHTML.includes("fixture-secret");
+  return found;
 })()"""
 GROUP_RULE = """(async () => {@HELPERS@
   const prompts = [];
@@ -244,7 +289,8 @@ class TestFirewallE2E(HubCase):
             shown, signed = data["results"][2 * index : 2 * index + 2]
             with self.subTest(width=width):
                 self.assertNotIn("error", shown, shown)
-                self.assertEqual((shown["title"], shown["subs"]), ("Firewall", base.SUBS))
+                self.assertEqual((shown["title"], shown["subs"]), ("Controls", base.SUBS))
+                self.assertEqual(shown["tabs"], {"first": [["tools", "true", False], ["rules", "false", True], ["groups", "false", True]], "picked": [["tools", "false", True], ["rules", "true", False], ["groups", "false", True]]})
                 self.assertEqual(shown["sources"], ["hub", str(self.settings), str(self.outside / "demo" / ".claude" / "settings.json")])
                 self.assertEqual(shown["folded"], {"expanded": ["false"] * 3, "rows": 0})
                 self.assertEqual(shown["opened"], ["true"] * 3)
@@ -279,6 +325,36 @@ class TestFirewallE2E(HubCase):
         self.assertEqual({key: written[key] for key in ("model", "env", "hooks", "sandbox")}, {key: ORIGINAL[key] for key in ("model", "env", "hooks", "sandbox")})
         backups = sorted(self.settings.parent.glob("settings.json.before-firewall-*"))
         self.assertEqual((len(backups), self.settings.stat().st_mode & 0o777), (3, 0o640))
+
+    def test_chromium_switches_tools_stages_them_in_the_apply_bar_and_signs_them_at_three_widths(self):
+        home = self.settings.parent.parent
+        (home / ".claude.json").write_text(json.dumps({"mcpServers": {"blender": {"command": "fixture-secret-command"}}, "claudeAiMcpEverConnected": ["claude.ai Google Drive"]}), encoding="utf-8")
+        (home / ".claude" / "plugins").mkdir()
+        (home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps({"plugins": {"caveman@caveman": []}}), encoding="utf-8")
+        self.settings.write_text(json.dumps({**ORIGINAL, "enabledPlugins": {"caveman@caveman": True}}, indent=2) + "\n", encoding="utf-8")
+        verifier.write_private(self.spool / "view.json", self.writer.view())
+        authenticator = self.authenticator()
+        self.beside(self.host_unit)
+        steps = [{"width": width, "height": height, "url": f"{self.page_url}?{width}#stream/rules", "wait": 1500, "probe": probe(TOOLS, {"SIGN": "true" if width == 390 else "false"}), "shot": str(OUT / f"chromium-{width}-controls-tools.png")} for width, height in base.WIDTHS]
+        data = self.drive(steps, authenticator)
+        (OUT / "chromium-controls-tools.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        self.assertEqual(data["errors"], [])
+        before = [["deniedMcpServers", "blender", "true", False], ["deniedMcpServers", "claude.ai Google Drive", "true", False], ["enabledPlugins", "caveman@caveman", "true", False], ["switches", "enableArtifact", "true", False]]
+        staged = [["deniedMcpServers", "blender", "false", True], before[1], before[2], ["switches", "enableArtifact", "false", True]]
+        for (width, _), found in zip(base.WIDTHS, data["results"], strict=True):
+            with self.subTest(width=width):
+                self.assertNotIn("error", found, found)
+                self.assertEqual((found["before"], found["hidden"]), (before, True))
+                self.assertEqual(found["staged"], {"rows": staged, "apply": "Apply (2)", "hidden": False, "list": ["Block server blender", "Turn off Artifacts"]})
+                self.assertEqual((found["wide"], found["unlabelled"]), (False, 0))
+                if width != 390:
+                    self.assertEqual(found["discarded"], {"hidden": True, "rows": before})
+        signed = data["results"][-1]
+        self.assertTrue(any('"serverName": "blender"' in line for line in signed["added"]), signed["added"])
+        self.assertTrue(any('"enableArtifact": false' in line for line in signed["added"]), signed["added"])
+        self.assertEqual((signed["result"], signed["after"], signed["barAfter"], signed["secret"]), ("done", [[*row[:3], False] for row in staged], True, False), signed)
+        written = json.loads(self.settings.read_text(encoding="utf-8"))
+        self.assertEqual(written, {**ORIGINAL, "enabledPlugins": {"caveman@caveman": True}, "deniedMcpServers": [{"serverName": "blender"}], "enableArtifact": False})
 
     def test_chromium_names_a_group_and_signs_a_rule_for_it(self):
         authenticator = self.authenticator()

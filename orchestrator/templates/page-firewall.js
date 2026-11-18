@@ -14,7 +14,16 @@
   const TARGET_GONE = "gone";
   const TARGET_PICK = "";
   const SESSION_KEY = /^(?!-)[A-Za-z0-9_-]{1,128}$/;
-  const firewall = {data: null, busy: false, staged: {}, dom: null, targets: new Set(), picks: {}, shown: new Set(ROW_FILTERS.map(([id]) => id)), open: new Set()};
+  const CONTROL_TABS = [["tools", "Tools", "bi-plug"], ["rules", "Rules", "bi-shield-lock"], ["groups", "Groups", "bi-people"]];
+  const CAPABILITY_WORDS = {deniedMcpServers: ["Unblock server", "Block server"], enabledPlugins: ["Enable plugin", "Disable plugin"], switches: ["Turn on", "Turn off"]};
+  const TOOL_HINTS = {
+    deniedMcpServers: "Off blocks the server before it loads, in every session and project.",
+    enabledPlugins: "Off disables the plugin with its skills, hooks and servers.",
+    switches: "Built-in features of Claude Code.",
+  };
+  const SWITCH_TITLES = {enableArtifact: "Artifacts"};
+  const OTHER_OP = {add: "remove", remove: "add"};
+  const firewall = {data: null, busy: false, staged: {}, dom: null, targets: new Set(), picks: {}, shown: new Set(ROW_FILTERS.map(([id]) => id)), open: new Set(), tab: CONTROL_TABS[0][0]};
 
   const knownAgents = () => Object.keys(people()).filter((key) => key !== HUMAN && SESSION_KEY.test(key)).sort();
   const firewallGroups = () => (firewall.data ? firewall.data.groups : []);
@@ -171,15 +180,41 @@
     dom.sets.replaceChildren(setsCard());
     dom.patterns.replaceChildren(patternsCard());
     dom.settings.replaceChildren(settingsCard());
+    dom.tools.replaceChildren(toolsCard());
+    const count = Object.values(firewall.staged).reduce((sum, changes) => sum + changes.length, 0);
+    dom.bar.hidden = !count;
+    dom.bar.replaceChildren(...(count ? applyBar(count) : []));
   }
 
   function firewallSections() {
-    firewall.dom = {groups: h("div", {}), sets: h("div", {}), patterns: h("div", {}), settings: h("div", {})};
+    firewall.dom = {tools: h("div", {}), groups: h("div", {}), sets: h("div", {}), patterns: h("div", {}), settings: h("div", {}), bar: h("div", {class: "apply-bar", role: "region", "aria-label": "Apply changes", hidden: true})};
     window.setTimeout(() => {
       drawFirewall();
       fetchFirewall();
     }, 0);
-    return [firewall.dom.settings, firewall.dom.groups, firewall.dom.sets, firewall.dom.patterns];
+    return firewall.dom;
+  }
+
+  /**
+   * @param {Object} panels per tab of CONTROL_TABS the nodes it shows.
+   * @param {HTMLElement} bar the Apply bar every tab shares.
+   * @returns {HTMLElement} the Controls screen: title, tab list, one panel per tab, only the chosen one shown, and the bar.
+   */
+  function controlsPage(panels, bar) {
+    const views = {};
+    const tabs = {};
+    const pick = (id) => {
+      firewall.tab = id;
+      for (const [key, tab] of Object.entries(tabs)) {
+        tab.setAttribute("aria-selected", String(key === id));
+        views[key].hidden = key !== id;
+      }
+    };
+    for (const [id, label, glyph] of CONTROL_TABS) {
+      tabs[id] = h("button", {type: "button", role: "tab", id: `controls-tab-${id}`, "data-tab": id, "aria-controls": `controls-${id}`, "aria-selected": String(firewall.tab === id), on: {click: () => pick(id)}}, icon(glyph), label);
+      views[id] = h("div", {class: "stack", role: "tabpanel", id: `controls-${id}`, "aria-labelledby": `controls-tab-${id}`, hidden: firewall.tab !== id}, panels[id]);
+    }
+    return h("div", {class: "stack controls"}, h("h2", {class: "title"}, "Controls"), h("div", {class: "segmented", role: "tablist", "aria-label": "Controls"}, Object.values(tabs)), Object.values(views), bar);
   }
 
   async function firewallPost(path, payload, label) {
@@ -200,7 +235,7 @@
       await firewallPost("/api/firewall/groups", {name: name.value.trim(), members: chosen}, "Group added");
     });
     const rows = firewallGroups().map((group) => h("div", {class: "rule-row", "data-group": group.name}, h("strong", {}, revealed(group.name)), h("span", {class: "muted"}, revealed(group.members.map(labelOf).join(", "))), h("span", {class: "spacer"}),
-      iconBtn("bi-trash3", "Delete group", "btn small danger", () => firewallPost(`/api/firewall/groups/${encodeURIComponent(group.id)}/delete`, {}, "Group deleted"), `Delete group ${group.name}: rules signed for it keep their agents`)));
+      iconBtn("bi-trash3", "Delete group", "btn small danger", () => firewallPost(`/api/firewall/groups/${encodeURIComponent(group.id)}/delete`, {}, "Group deleted"), revealed(`Delete group ${group.name}: rules signed for it keep their agents`))));
     return h("section", {class: "card stack-tight", "aria-label": "Agent groups"}, h("h3", {}, "Agent groups"),
       h("p", {class: "muted"}, "A rule applies to one agent, a group or all agents. A group's members are signed into each rule when you sign it."),
       rows.length ? h("div", {class: "mini"}, rows) : h("p", {class: "muted"}, "No group yet."), form);
@@ -209,7 +244,7 @@
   function setsCard() {
     const name = h("input", {class: "field", type: "text", placeholder: "ci", "aria-label": "Set name"});
     const days = h("input", {class: "field", type: "number", min: 1, max: 366, value: 7, "aria-label": "Days"});
-    const chosen = h("select", {class: "field", multiple: true, size: Math.min(Math.max(state.rules.length, 2), 6), "aria-label": "Rules"}, state.rules.map((rule) => h("option", {value: rule.id}, `${rule.kind} ${rule.tool} ${rule.pattern}`.replace("  ", " "))));
+    const chosen = h("select", {class: "field", multiple: true, size: Math.min(Math.max(state.rules.length, 2), 6), "aria-label": "Rules"}, state.rules.map((rule) => h("option", {value: rule.id}, revealed(`${rule.kind} ${rule.tool} ${rule.pattern}`.replace("  ", " ")))));
     const form = h("form", {class: "fw-form", "aria-label": "New rule set"}, h("label", {}, "Name", name), h("label", {}, "Days", days), h("label", {}, "Rules", chosen),
       h("button", {type: "submit", class: "btn soft", ...named("Save set", "Save set: keep the chosen rules as one named rule set")}, icon("bi-collection"), "Save set"));
     form.addEventListener("submit", async (event) => {
@@ -232,7 +267,7 @@
       fillTargets(target);
     });
     const row = h("div", {class: "rule-row", "data-set": set.name}, h("strong", {}, revealed(set.name)), h("span", {class: "muted"}, `${set.rules.length} rules, ${set.days} days`), h("span", {class: "spacer"}), target, take,
-      iconBtn("bi-trash3", "Delete set", "btn small danger", () => firewallPost(`/api/firewall/sets/${encodeURIComponent(set.id)}/delete`, {}, "Rule set deleted"), `Delete set ${set.name}: its signed rules stay`));
+      iconBtn("bi-trash3", "Delete set", "btn small danger", () => firewallPost(`/api/firewall/sets/${encodeURIComponent(set.id)}/delete`, {}, "Rule set deleted"), revealed(`Delete set ${set.name}: its signed rules stay`)));
     fillTargets(target);
     return row;
   }
@@ -413,16 +448,87 @@
 
   const settingsItems = () => Object.entries(firewall.staged).filter(([file]) => settingsFile(file)).map(([file, changes]) => ({kind: "settings", file, base: settingsFile(file).sha256, changes}));
 
-  function stagedList() {
-    const rows = Object.entries(firewall.staged).flatMap(([path, changes]) => changes.map((change) => h("li", {"data-staged": `${change.op} ${change.entry}`}, h("div", {class: "row"},
-      pill(change.op === "add" ? "add" : "remove", change.op === "add" ? "ok" : "bad"), h("code", {}, revealed(`${change.list}: ${change.entry}`)), h("span", {class: "muted"}, revealed(path)), h("span", {class: "spacer"}),
-      iconBtn("bi-x-circle", "Unstage", "btn small ghost", () => unstageChange(path, change), "Unstage: drop this change")))));
-    if (!rows.length) {
-      return h("p", {class: "muted"}, "No staged change.");
+  const turnsOn = (change) => (change.list === "deniedMcpServers") !== (change.op === "add");
+  const stagedOf = (path, list, entry) => (firewall.staged[path] || []).find((change) => change.list === list && change.entry === entry);
+
+  /**
+   * @param {Object} change a staged change.
+   * @returns {Array} its pill and text: on or off with Block server x, Enable plugin y or Turn off Artifacts for a tool, add or remove with list: entry otherwise.
+   */
+  function stagedWords(change) {
+    const words = CAPABILITY_WORDS[change.list];
+    if (!words) {
+      return [pill(change.op, change.op === "add" ? "ok" : "bad"), `${change.list}: ${change.entry}`];
     }
-    const review = h("button", {type: "button", class: "btn primary", ...named("Review and sign", "Review and sign: show the diff, then sign it with your passkey")}, icon("bi-file-diff"), "Review and sign");
-    review.addEventListener("click", reviewSettings);
-    return h("div", {class: "stack-tight"}, h("ul", {class: "mini", "aria-label": "Staged changes"}, rows), h("div", {class: "actions"}, review));
+    const on = turnsOn(change);
+    return [pill(on ? "on" : "off", on ? "ok" : "bad"), `${words[on ? 0 : 1]} ${SWITCH_TITLES[change.entry] || change.entry}`];
+  }
+
+  function stagedList() {
+    return h("ul", {class: "mini", "aria-label": "Staged changes"}, Object.entries(firewall.staged).flatMap(([path, changes]) => changes.map((change) => {
+      const [state, words] = stagedWords(change);
+      return h("li", {"data-staged": `${change.op} ${change.entry}`}, h("div", {class: "row"}, state, h("code", {}, revealed(words)), h("span", {class: "muted fw-path"}, revealed(path)), settingsFile(path) ? null : pill("file gone: not applied", "bad"), h("span", {class: "spacer"}),
+        iconBtn("bi-x-circle", "Unstage", "btn small ghost", () => unstageChange(path, change), "Unstage: drop this change")));
+    })));
+  }
+
+  /**
+   * @param {number} count how many changes are staged, at least one.
+   * @returns {HTMLElement[]} the bar's content: the folded list of staged changes, Discard and Apply, which shows the diff of the changes to a listed file and signs it.
+   */
+  function applyBar(count) {
+    const ready = settingsItems().reduce((sum, item) => sum + item.changes.length, 0);
+    const apply = h("button", {type: "button", class: "btn primary", "data-apply": "", disabled: !ready, title: "Apply: show the diff of every staged change to a listed file, then sign it with your passkey", on: {click: reviewSettings}}, icon("bi-send-check"), `Apply (${ready})`);
+    const discard = iconBtn("bi-arrow-counterclockwise", "Discard", "btn ghost", () => {
+      firewall.staged = {};
+      drawFirewall();
+    }, "Discard: drop every staged change");
+    return [h("details", {class: "apply-list"}, h("summary", {}, `${count} staged ${count === 1 ? "change" : "changes"}`), stagedList()), h("span", {class: "spacer"}), discard, apply];
+  }
+
+  /**
+   * @param {string} path the settings file the tools live in.
+   * @param {Object} group a tools group: list, label, off (the op that turns a row off) and rows.
+   * @param {Object} row one server, plugin or switch: name, on as the host read it, and overrides, each other settings file that sets it differently as {file, on}.
+   * @returns {HTMLElement} the row with a pill per override and a switch that stages the flip, or drops the staged flip to turn it back.
+   */
+  function toolRow(path, group, row) {
+    const staged = stagedOf(path, group.list, row.name);
+    const on = staged ? turnsOn(staged) : row.on;
+    const title = SWITCH_TITLES[row.name] || row.name;
+    const flip = () => (staged ? unstageChange(path, staged) : stageChange(path, {list: group.list, op: row.on ? group.off : OTHER_OP[group.off], entry: row.name}));
+    const overrides = row.overrides.map((other) => h("span", {class: "pill", "data-tone": "warn", "data-override": other.file, title: revealed(`${other.file} sets it ${other.on ? "on" : "off"}, which wins in that repository`)},
+      `${other.on ? "on" : "off"} in ${revealed(other.file.split("/").slice(-3, -2)[0] || other.file)}`));
+    return h("label", {class: "tool-row", "data-tool": row.name, "data-on": String(on), "data-staged": staged ? "" : null},
+      h("span", {class: "tool-name"}, revealed(title)), overrides, staged ? pill("staged", "warn") : null, h("span", {class: "spacer"}),
+      h("input", {type: "checkbox", role: "switch", class: "switch", checked: on, "aria-label": title, on: {change: flip}}));
+  }
+
+  function blockForm(path) {
+    const name = h("input", {class: "field", type: "text", placeholder: "plugin:name:server", "aria-label": "Server name"});
+    const form = h("form", {class: "tool-add", "aria-label": "Block another MCP server"}, name,
+      h("button", {type: "submit", class: "btn soft", ...named("Block", "Block: stage a deny rule for this server name; Apply signs it")}, icon("bi-slash-circle"), "Block"));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (name.value.trim()) {
+        stageChange(path, {list: "deniedMcpServers", op: "add", entry: name.value.trim()});
+      }
+    });
+    return form;
+  }
+
+  function toolsCard() {
+    const data = firewall.data;
+    const tools = data ? data.tools : null;
+    if (!tools) {
+      return h("section", {class: "card"}, h("p", {class: "muted"}, !data ? "Loading the tools …" : data.error ? data.error : "The host view marks no ~/.claude/settings.json yet: the kvb-orchestrator-firewall unit writes it with its next run."));
+    }
+    const groups = tools.groups.map((group) => h("div", {class: "tool-group", "data-list": group.list}, h("h4", {}, group.label), h("p", {class: "muted"}, TOOL_HINTS[group.list]),
+      group.rows.length ? h("div", {class: "tool-rows"}, group.rows.map((row) => toolRow(tools.file, group, row))) : h("p", {class: "muted"}, "None known."),
+      group.list === "deniedMcpServers" ? blockForm(tools.file) : null));
+    return h("section", {class: "card stack-tight", "aria-label": "Tools"}, h("h3", {}, "Tools"),
+      h("p", {class: "muted"}, "What every agent session may load, as ~/.claude/settings.json sets it. A pill names a repository whose settings set it differently, which wins there; a .claude/settings.local.json stays unseen. A switch only stages; Apply shows the diff, you sign it with your passkey and the host writes it. Each session picks it up at its next start."),
+      tools.error ? pill(tools.error, "bad") : null, h("div", {class: "tool-groups"}, groups));
   }
 
   function settingsCard() {
@@ -434,7 +540,7 @@
     return h("section", {class: "card stack-tight fw-rules", "aria-label": "Firewall rules"}, h("h3", {}, "Firewall rules"),
       h("p", {class: "muted"}, `Every rule in one table: the hub rules and the permissions and sandbox entries of the listed settings files as the host read them, one folded group per source. Hits count the asks of the last ${data.days} days a rule matches, with the matcher of the rule request dry run; allow, deny and sandbox entries never reach the ask ledger and show not seen. A settings change shows as a diff, is signed with your passkey and is written by the host, never by an agent.`),
       data.error ? h("p", {class: "muted"}, data.error) : null,
-      filterChips(), ruleTable(), files.length ? addForm(files) : null, stagedList());
+      filterChips(), ruleTable(), files.length ? addForm(files) : null);
   }
 
   function diffLines(text) {
@@ -459,7 +565,7 @@
     });
     openSheet("Settings change", [
       h("p", {class: "muted"}, "The host writer checks your signature, refuses a file that changed since and writes exactly this change; it keeps every other key and a backup beside the file."),
-      h("div", {class: "stack-tight", "aria-label": "Diff"}, preview.data.diffs.map((entry) => h("div", {"data-diff": entry.file}, h("code", {}, revealed(entry.file)), diffLines(entry.diff)))),
+      h("div", {class: "stack-tight", "aria-label": "Diff"}, preview.data.diffs.map((entry) => h("div", {"data-diff": entry.file}, h("code", {class: "fw-path"}, revealed(entry.file)), diffLines(entry.diff)))),
       outcome,
       h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm),
     ], true);
@@ -482,7 +588,9 @@
       const {good, lines} = showJob(data, outcome, "file", SETTINGS_RESULTS);
       toast(`Settings: ${good ? "written" : "not everything written"}`, lines, good);
       if (good) {
-        firewall.staged = {};
+        for (const item of items) {
+          delete firewall.staged[item.file];
+        }
       }
       fetchFirewall();
     });

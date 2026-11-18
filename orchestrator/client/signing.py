@@ -46,6 +46,10 @@ SETTINGS_KEYS = ("file", "base", "changes")
 SETTINGS_SECTIONS = ("permissions", "sandbox")
 SETTINGS_LISTS = ("permissions.allow", "permissions.ask", "permissions.deny", "sandbox.filesystem.allowWrite", "sandbox.filesystem.denyRead", "sandbox.network.allowedDomains")
 SETTINGS_OPS = ("add", "remove")
+MCP_NAME = re.compile(r"(?=.{1,128}\Z)[A-Za-z0-9]+(?:[ ._:-][A-Za-z0-9]+)*")
+PLUGIN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}@[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+SWITCHES = ("enableArtifact",)
+CAPABILITIES = {"deniedMcpServers": MCP_NAME, "enabledPlugins": PLUGIN_ID, "switches": re.compile("|".join(SWITCHES))}
 CHANGE_KEYS = ("list", "op", "entry")
 CHANGE_LIMIT = 50
 ENTRY = re.compile(r"(?=[^\x00-\x1f\x7f\ud800-\udfff]*\S)[^\x00-\x1f\x7f\ud800-\udfff]{1,500}")
@@ -516,8 +520,11 @@ def settings_file_problem(file: object) -> str | None:
 def change_problem(change: object) -> str | None:
     if not isinstance(change, dict) or set(change) != set(CHANGE_KEYS) or not all(isinstance(change[name], str) for name in CHANGE_KEYS):
         return "a change holds exactly list, op and entry as text"
-    if change["list"] not in SETTINGS_LISTS or change["op"] not in SETTINGS_OPS:
-        return f"list must be one of {', '.join(SETTINGS_LISTS)} and op one of {', '.join(SETTINGS_OPS)}"
+    lists = (*SETTINGS_LISTS, *CAPABILITIES)
+    if change["list"] not in lists or change["op"] not in SETTINGS_OPS:
+        return f"list must be one of {', '.join(lists)} and op one of {', '.join(SETTINGS_OPS)}"
+    if change["list"] in CAPABILITIES:
+        return None if CAPABILITIES[change["list"]].fullmatch(change["entry"]) else f"entry is no valid {change['list']} name"
     return hidden_problem(change, "change") if ENTRY.fullmatch(change["entry"]) else "entry must be one line of 1 to 500 characters"
 
 
@@ -551,10 +558,39 @@ def changes_problem(changes: object) -> str | None:
 
 def settings_view(settings: dict) -> dict:
     """Returns:
-        The permissions and sandbox sections of a settings object, the only
-        part of the file the Agent Orchestrator receives.
+        The only part of a settings object the Agent Orchestrator receives:
+        the permissions and sandbox sections, the deniedMcpServers rules that
+        name a server and nothing else, the enabledPlugins entries of a
+        PLUGIN_ID and the SWITCHES. A capability key of the wrong type and a
+        plugin or switch value that is no boolean show as null, so the hub
+        refuses a change to it as switch_capability() refuses it in the file.
     """
-    return {name: settings[name] for name in SETTINGS_SECTIONS if isinstance(settings.get(name), dict)}
+    view = {name: settings[name] for name in SETTINGS_SECTIONS if isinstance(settings.get(name), dict)}
+    if "deniedMcpServers" in settings:
+        view["deniedMcpServers"] = denied_view(settings["deniedMcpServers"])
+    if "enabledPlugins" in settings:
+        view["enabledPlugins"] = plugins_view(settings["enabledPlugins"])
+    return view | {name: settings[name] if isinstance(settings[name], bool) else None for name in SWITCHES if name in settings}
+
+
+def denied_view(denied: object) -> list[dict] | None:
+    if not isinstance(denied, list):
+        return None
+    return [rule for rule in denied if isinstance(rule, dict) and list(rule) == ["serverName"] and isinstance(rule["serverName"], str) and MCP_NAME.fullmatch(rule["serverName"])]
+
+
+def plugins_view(plugins: object) -> dict | None:
+    if not isinstance(plugins, dict):
+        return None
+    return {name: on if isinstance(on, bool) else None for name, on in plugins.items() if PLUGIN_ID.fullmatch(name)}
+
+
+def names_of(found: object, pattern: re.Pattern) -> list[str]:
+    """Returns:
+        The texts among found (a list, or a dict's keys) that pattern fully
+        matches, sorted and each once; anything else is dropped.
+    """
+    return sorted({name for name in found if isinstance(name, str) and pattern.fullmatch(name)}) if isinstance(found, (list, dict)) else []
 
 
 def plain_problem(value: object, depth: int) -> str | None:
@@ -604,23 +640,86 @@ def apply_changes(settings: dict, changes: list[dict]) -> dict:
     """
     result = plain_copy(settings)
     for change in changes:
-        *path, leaf = change["list"].split(".")
-        node = result
-        for name in path:
-            node = node.setdefault(name, {})
-            if not isinstance(node, dict):
-                raise Refused(f"{name} is no object")
-        entries = node.setdefault(leaf, [])
-        if not isinstance(entries, list) or not all(isinstance(entry, str) for entry in entries):
-            raise Refused(f"{change['list']} is no list of texts")
-        listed = change["entry"] in entries
-        if listed == (change["op"] == "add"):
-            raise Refused(f"{change['list']} {'lists' if listed else 'does not list'} {change['entry']}")
-        if listed:
-            entries.remove(change["entry"])
+        if change["list"] in CAPABILITIES:
+            switch_capability(result, change["list"], change["entry"], change["op"] == "add")
         else:
-            entries.append(change["entry"])
+            change_list(result, change)
     return result
+
+
+def change_list(settings: dict, change: dict) -> None:
+    *path, leaf = change["list"].split(".")
+    node = settings
+    for name in path:
+        node = node.setdefault(name, {})
+        if not isinstance(node, dict):
+            raise Refused(f"{name} is no object")
+    entries = node.setdefault(leaf, [])
+    if not isinstance(entries, list) or not all(isinstance(entry, str) for entry in entries):
+        raise Refused(f"{change['list']} is no list of texts")
+    listed = change["entry"] in entries
+    if listed == (change["op"] == "add"):
+        raise Refused(f"{change['list']} {'lists' if listed else 'does not list'} {change['entry']}")
+    if listed:
+        entries.remove(change["entry"])
+    else:
+        entries.append(change["entry"])
+
+
+def switch_capability(settings: dict, name: str, entry: str, add: bool) -> None:
+    """Args:
+        settings: the settings copy, changed in place.
+        name: a CAPABILITIES key; add lists entry in it: a deniedMcpServers
+            rule {"serverName": entry} blocks the server before it loads, an
+            enabledPlugins entry turns true, a switch drops its false and
+            falls back to its default, on.
+        entry: the server name, plugin id or switch.
+        add: True for op add, False for op remove.
+
+    Raises:
+        Refused when the key or entry holds the wrong type or entry is in
+        the state already; removing a blocked server drops every copy of its
+        rule.
+    """
+    if name == "switches":
+        switch_feature(settings, entry, add)
+        return
+    blocked = name == "deniedMcpServers"
+    held = settings.setdefault(name, [] if blocked else {})
+    if not isinstance(held, list if blocked else dict):
+        raise Refused(f"{name} holds the wrong type")
+    (block_server if blocked else switch_plugin)(held, entry, add)
+
+
+def switch_feature(settings: dict, entry: str, add: bool) -> None:
+    held = entry in settings
+    if held and not isinstance(settings[entry], bool):
+        raise Refused(f"{entry} holds the wrong type")
+    if (not held or settings[entry]) == add:
+        raise Refused(f"{entry} is {'on' if add else 'off'} already")
+    if add:
+        del settings[entry]
+    else:
+        settings[entry] = False
+
+
+def switch_plugin(held: dict, entry: str, add: bool) -> None:
+    enabled = held.get(entry, False)
+    if not isinstance(enabled, bool):
+        raise Refused(f"{entry} holds the wrong type")
+    if enabled == add:
+        raise Refused(f"{entry} is {'enabled' if add else 'disabled'} already")
+    held[entry] = add
+
+
+def block_server(held: list, entry: str, add: bool) -> None:
+    rule = {"serverName": entry}
+    if (rule in held) == add:
+        raise Refused(f"{entry} is {'blocked' if add else 'not blocked'} already")
+    if add:
+        held.append(rule)
+    else:
+        held[:] = [kept for kept in held if kept != rule]
 
 
 def warnings(command: str) -> list[str]:

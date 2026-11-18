@@ -12,7 +12,7 @@
       {label: "Radio …", hint: "Post, Call, Newsletter, Broadcast, Pan-Pan, Security, Mayday; the gear holds tones and read aloud", scope: "general", run: openRadio},
       ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Day/Night", scope: "general", run: () => confirmAct(id, [])})),
       {label: "Priority …", hint: "agent order in the hierarchy", scope: "agents", run: openAgentOrder},
-      {label: "Firewall …", hint: "automatic grants", scope: "stream", run: () => go("rules", null)},
+      {label: "Controls …", hint: "tools, rules and groups", scope: "stream", run: () => go("rules", null)},
       {label: "Settings …", hint: "Ambience, location, colors, music, notifications, internet radio", scope: "general", run: settingsSheet},
       {label: settings.music.on ? "Music off" : "Music on", hint: "Ambience", scope: "general", run: toggleMusic},
       {label: space.look ? "Leave the sky" : "Look at the sky", hint: "h", scope: "general", run: () => skyLook(!space.look)},

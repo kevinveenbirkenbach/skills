@@ -7,7 +7,9 @@
     --results: the directory each job's result goes to as <id>.json.
     --view: the file the Firewall reads, e.g.
         ~/.local/state/kvb-orchestrator/firewall/view.json: per listed file
-        its path, sha256 and only its permissions and sandbox sections.
+        its path, sha256, whether it is ~/.claude/settings.json and only the
+        part signing.settings_view() keeps, and the names of the MCP servers
+        and plugins known() finds.
     --approvers: the pinned passkeys, e.g. ~/.config/kvb-orchestrator/approvers.json.
     --replay: this writer's replay store, outside the hub's reach, e.g.
         ~/.local/state/kvb-orchestrator-approvals/firewall.json.
@@ -21,7 +23,8 @@ Returns:
     every job in --jobs: verifies the operator's passkey signature over
     file, base and changes with the replay store; refuses a file outside the
     fixed list (~/.claude/settings.json and <repository>/.claude/settings.json
-    of every repository the tree file knows), a link or non-directory on its
+    of every repository the tree file knows), an MCP server, plugin or switch
+    change outside ~/.claude/settings.json, a link or non-directory on its
     path, a file of another uid, a non-regular file and a file whose sha256
     is no longer the signed base; then applies exactly the signed changes to
     the parsed file, keeps every other key, copies the old bytes to
@@ -57,10 +60,15 @@ DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 FILE = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
 CREATE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
 READ_LIMIT = 1 << 20
+CONFIG_LIMIT = 16 << 20
 NEW_MODE = 0o600
 BACKUP = "before-firewall"
 OUTSIDE = "an agent or its sandbox runs this: the settings writer runs only from the kvb-orchestrator-firewall unit"
 MISSING_DIRECTORY = "no directory: create it first"
+
+
+def own_file(home: Path) -> str:
+    return str(home / ".claude" / "settings.json")
 
 
 def listed(home: Path, tree: Path) -> list[str]:
@@ -68,7 +76,7 @@ def listed(home: Path, tree: Path) -> list[str]:
         The fixed list of settings files: the operator's own and those of
         every repository the tree file knows.
     """
-    own = str(home / ".claude" / "settings.json")
+    own = own_file(home)
     projects = sorted(f"{repository.rstrip('/')}{signing.SETTINGS_FILE}" for repository in tree_facts(tree)[0])
     return [own, *(path for path in projects if path != own)]
 
@@ -90,13 +98,18 @@ def parent_of(path: str) -> int:
     return fd
 
 
-def read_settings(parent: int, name: str) -> tuple[bytes | None, os.stat_result | None]:
-    """Returns:
+def read_settings(parent: int, name: str, limit: int) -> tuple[bytes | None, os.stat_result | None]:
+    """Args:
+        parent: the open directory holding the file.
+        name: the file's name in it.
+        limit: the most bytes the file may hold.
+
+    Returns:
         The file's bytes and status, None and None while it is missing.
 
     Raises:
-        signing.Refused for a link, a non-regular file or one over
-        READ_LIMIT bytes.
+        signing.Refused for a link, a non-regular file or one over limit
+        bytes.
     """
     try:
         fd = os.open(name, FILE, dir_fd=parent)
@@ -108,9 +121,9 @@ def read_settings(parent: int, name: str) -> tuple[bytes | None, os.stat_result 
         found = os.fstat(fd)
         if not stat.S_ISREG(found.st_mode):
             raise signing.Refused("the file is no regular file")
-        data = handle.read(READ_LIMIT + 1)
-    if len(data) > READ_LIMIT:
-        raise signing.Refused(f"the file is larger than {READ_LIMIT} bytes")
+        data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise signing.Refused(f"the file is larger than {limit} bytes")
     return data, found
 
 
@@ -216,12 +229,51 @@ def read_view(path: str, entry: dict) -> dict:
     except OSError as error:
         return {**entry, "error": f"a link or no directory on the path: {error.strerror}"}
     try:
-        data, _ = read_settings(parent, Path(path).name)
+        data, _ = read_settings(parent, Path(path).name, READ_LIMIT)
         return {**entry, "exists": data is not None, "sha256": digest(data), "settings": signing.settings_view(parsed(data))}
     except (OSError, Unsafe, signing.Refused) as error:
         return {**entry, "error": str(error)[:300]}
     finally:
         os.close(parent)
+
+
+def loaded(path: Path) -> dict:
+    """Returns:
+        The JSON object in path, read as read_settings() reads a settings
+        file but up to CONFIG_LIMIT bytes; {} for a file that is missing,
+        linked, no regular file, too large, unreadable or no object.
+    """
+    try:
+        parent = parent_of(str(path))
+    except OSError:
+        return {}
+    try:
+        data, _ = read_settings(parent, path.name, CONFIG_LIMIT)
+        value = json.loads(data) if data else {}
+    except (OSError, ValueError, RecursionError, signing.Refused):
+        return {}
+    finally:
+        os.close(parent)
+    return value if isinstance(value, dict) else {}
+
+
+def known(home: Path) -> dict:
+    """Returns:
+        {"servers", "plugins"}: the names of the MCP servers ~/.claude.json
+        configures for the user or a project or that claude.ai connected
+        once, and the ids of the installed plugins; names only, never a
+        value, and nothing from a file that is missing or unreadable.
+    """
+    config = loaded(home / ".claude.json")
+    projects = config.get("projects")
+    scopes = [config, *(projects.values() if isinstance(projects, dict) else [])]
+    servers = [name for scope in scopes if isinstance(scope, dict) and isinstance(scope.get("mcpServers"), dict) for name in scope["mcpServers"]]
+    connected = config.get("claudeAiMcpEverConnected")
+    plugins = loaded(home / ".claude" / "plugins" / "installed_plugins.json").get("plugins")
+    return {
+        "servers": signing.names_of([*servers, *(connected if isinstance(connected, list) else [])], signing.MCP_NAME),
+        "plugins": signing.names_of(plugins, signing.PLUGIN_ID),
+    }
 
 
 class Writer:
@@ -231,7 +283,8 @@ class Writer:
         self.tree = tree
 
     def view(self) -> dict:
-        return {"written": time.time(), "files": [view_of(path) for path in listed(self.home, self.tree)]}
+        own = own_file(self.home)
+        return {"written": time.time(), "files": [view_of(path) | {"own": path == own} for path in listed(self.home, self.tree)], "known": known(self.home)}
 
     def apply(self, item: dict, job_id: str) -> dict:
         """Args:
@@ -252,7 +305,7 @@ class Writer:
         except OSError as error:
             raise signing.Refused(f"a link or no directory on the path: {error.strerror}") from None
         try:
-            data, found = read_settings(parent, name)
+            data, found = read_settings(parent, name, READ_LIMIT)
             if found is not None and found.st_uid != os.getuid():
                 raise signing.Refused(f"the file belongs to uid {found.st_uid}, not {os.getuid()}")
             if digest(data) != item["base"]:
@@ -295,6 +348,8 @@ class Writer:
             return "refused", f"no valid operator signature: {error}", {}
         if item["file"] not in listed(self.home, self.tree):
             return "refused", "unlisted file: only ~/.claude/settings.json and the .claude/settings.json of a repository pkgmgr knows", {}
+        if item["file"] != own_file(self.home) and any(change["list"] in signing.CAPABILITIES for change in item["changes"]):
+            return "refused", "MCP servers, plugins and switches change only in ~/.claude/settings.json", {}
         try:
             written = self.apply(item, job_id)
         except signing.Refused as error:

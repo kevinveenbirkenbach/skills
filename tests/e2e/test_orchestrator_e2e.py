@@ -206,7 +206,7 @@ class TestOrchestratorE2E(base.OrchestratorE2ECase):
         self.assertEqual(actions["ambience"], ["sky-look", "music-toggle", "leitstand", "notify"])
         self.assertEqual((actions["settingsUnlabelled"], actions["popupUnlabelled"]), (0, 0))
         self.assertEqual((actions["sections"], actions["radioFields"]), (["Ambience", "Location", "Appearance", "Music", "Notifications", "Passkey"], 0))
-        for tool in ("Radio …", "Cancel mayday", "Priority …", "Drain", "Suspend", "Resume", "Firewall …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
+        for tool in ("Radio …", "Cancel mayday", "Priority …", "Drain", "Suspend", "Resume", "Controls …", "Settings …", "Look at the sky", "Toggle control room", "Enable notifications"):
             with self.subTest(tool=tool):
                 self.assertTrue(any(tool in entry for entry in actions["palette"]), actions["palette"])
         self.assertEqual(actions["popup"], [["post", True], ["call", False]])

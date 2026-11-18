@@ -66,7 +66,7 @@ class TestNavModule(unittest.TestCase):
         cls.data = json.loads(done.stdout)
 
     def test_the_navigation_has_six_entries_home_first_and_no_inbox_and_stream_keeps_only_the_firewall(self):
-        stream = ["stream", "Stream", [["rules", "Firewall"]]]
+        stream = ["stream", "Stream", [["rules", "Controls"]]]
         self.assertEqual(self.data["tabs"], [["home", "Home", []], stream, ["agents", "Agents", []], ["artifacts", "Artifacts", []], ["tasks", "Tasks", []], ["resources", "Resources", []]])
         self.assertNotIn("inbox", json.dumps(self.data["tabs"]))
 

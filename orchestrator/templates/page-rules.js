@@ -71,6 +71,7 @@
       toast(result.ok ? "Rule created" : "Rule not created", result.ok ? [] : fail(result), result.ok);
       await load();
     });
-    const [table, ...rest] = firewallSections();
-    return h("div", {class: "stack"}, h("h2", {class: "title"}, "Firewall"), table, h("div", {class: "card"}, h("h3", {}, "New hub rule for automatic grants"), hint, form), ...rest);
+    const dom = firewallSections();
+    const ruleCard = h("div", {class: "card"}, h("h3", {}, "New hub rule for automatic grants"), hint, form);
+    return controlsPage({tools: [dom.tools], rules: [dom.settings, ruleCard, dom.patterns], groups: [dom.groups, dom.sets]}, dom.bar);
   }

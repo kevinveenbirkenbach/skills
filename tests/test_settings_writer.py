@@ -461,6 +461,77 @@ class TestSettingsWriter(unittest.TestCase):
         self.assertEqual((project["exists"], project["sha256"], project["settings"]), (False, "", {}))
         self.assertNotIn("fixture-value-not-a-secret", json.dumps(view))
 
+    def test_a_signed_tool_switch_changes_only_its_key_of_the_own_file_and_never_a_project_file(self):
+        url = {"serverUrl": "https://mcp.example.org/fixture-token-not-a-secret"}
+        self.settings.write_text(json.dumps({**ORIGINAL, "deniedMcpServers": [url], "enabledPlugins": {"a@m": True, "b@m": False}}), encoding="utf-8")
+        off = [
+            {"list": "deniedMcpServers", "op": "add", "entry": "claude.ai Google Drive"},
+            {"list": "enabledPlugins", "op": "remove", "entry": "a@m"},
+            {"list": "enabledPlugins", "op": "add", "entry": "b@m"},
+            {"list": "switches", "op": "remove", "entry": "enableArtifact"},
+        ]
+        self.assertEqual(self.signed(self.item(self.settings, off))["status"], "done")
+        written = json.loads(self.settings.read_text(encoding="utf-8"))
+        self.assertEqual(written, {**ORIGINAL, "deniedMcpServers": [url, {"serverName": "claude.ai Google Drive"}], "enabledPlugins": {"a@m": False, "b@m": True}, "enableArtifact": False})
+        for name, changes in (("blocked twice", off[:1]), ("disabled twice", off[1:2]), ("off twice", off[3:])):
+            with self.subTest(name=name):
+                self.assertIn("already", self.signed(self.item(self.settings, changes))["reason"])
+        back = [{**off[0], "op": "remove"}, {**off[3], "op": "add"}]
+        self.assertEqual(self.signed(self.item(self.settings, back))["status"], "done")
+        self.assertEqual(json.loads(self.settings.read_text(encoding="utf-8")), {key: value for key, value in written.items() if key != "enableArtifact"} | {"deniedMcpServers": [url]})
+        result = self.signed({"file": str(self.project_settings), "base": "", "changes": off[3:]})
+        self.assertEqual((result["status"], result["reason"], self.project_settings.exists()), ("refused", "MCP servers, plugins and switches change only in ~/.claude/settings.json", False))
+        for name, change in (("chained name", {**off[0], "entry": "x;rm -rf /"}), ("hidden character", {**off[0], "entry": "blen\u200bder"}), ("unknown switch", {**off[3], "entry": "hooks"}), ("no plugin id", {**off[1], "entry": "a"})):
+            with self.subTest(name=name):
+                self.assertEqual(self.run_job([self.item(self.settings, [change])], None)["error"], "malformed job: refused, nothing changed")
+
+    def test_the_view_marks_the_own_file_and_names_known_servers_and_plugins_but_no_value(self):
+        config = {
+            "mcpServers": {"user-server": {"env": {"TOKEN": "fixture-secret-one"}}},
+            "projects": {"/p": {"mcpServers": {"project-server": {"command": "run --token fixture-secret-two"}}}, "/q": "junk"},
+            "claudeAiMcpEverConnected": ["claude.ai Google Drive", "hid\u200bden", 5],
+            "oauthAccount": {"key": "fixture-secret-three"},
+        }
+        (self.home / ".claude.json").write_text(json.dumps(config), encoding="utf-8")
+        (self.home / ".claude" / "plugins").mkdir()
+        (self.home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps({"plugins": {"caveman@caveman": [{"installPath": "/x"}], "no id": []}}), encoding="utf-8")
+        capabilities = {"deniedMcpServers": [{"serverName": "blender"}, {"serverUrl": "https://h/fixture-secret-four"}], "enabledPlugins": {"caveman@caveman": True, "x@y": "yes"}, "enableArtifact": False}
+        self.settings.write_text(json.dumps({**ORIGINAL, **capabilities}), encoding="utf-8")
+        view = self.writer.view()
+        self.assertEqual(view["known"], {"servers": ["claude.ai Google Drive", "project-server", "user-server"], "plugins": ["caveman@caveman"]})
+        self.assertEqual([entry["own"] for entry in view["files"]], [True, False])
+        shown = view["files"][0]["settings"]
+        self.assertEqual({name: shown[name] for name in capabilities}, {"deniedMcpServers": [{"serverName": "blender"}], "enabledPlugins": {"caveman@caveman": True, "x@y": None}, "enableArtifact": False})
+        self.assertNotIn("fixture-secret", json.dumps(view))
+        config_file = self.home / ".claude.json"
+        for name, make in (("no json", lambda: config_file.write_text("{not json", encoding="utf-8")), ("fifo", lambda: os.mkfifo(config_file)), ("link to /dev/zero", lambda: config_file.symlink_to("/dev/zero"))):
+            with self.subTest(name=name):
+                config_file.unlink()
+                make()
+                self.assertEqual(self.writer.view()["known"]["servers"], [])
+
+    def test_a_tool_value_of_the_wrong_type_is_refused_in_the_view_as_in_the_file_and_an_unblock_drops_every_copy(self):
+        for name, value, change in (
+            ("plugins null", {"enabledPlugins": None}, {"list": "enabledPlugins", "op": "add", "entry": "a@m"}),
+            ("plugins list", {"enabledPlugins": []}, {"list": "enabledPlugins", "op": "add", "entry": "a@m"}),
+            ("plugin value list", {"enabledPlugins": {"a@m": ["x"]}}, {"list": "enabledPlugins", "op": "add", "entry": "a@m"}),
+            ("servers null", {"deniedMcpServers": None}, {"list": "deniedMcpServers", "op": "add", "entry": "blender"}),
+            ("switch text", {"enableArtifact": "false"}, {"list": "switches", "op": "remove", "entry": "enableArtifact"}),
+        ):
+            with self.subTest(name=name):
+                self.settings.write_text(json.dumps({**ORIGINAL, **value}), encoding="utf-8")
+                shown = self.writer.view()["files"][0]["settings"]
+                for settings in (shown, json.loads(self.settings.read_text(encoding="utf-8"))):
+                    with self.assertRaisesRegex(signing.Refused, "holds the wrong type"):
+                        signing.apply_changes(settings, [change])
+                self.assertEqual(self.signed(self.item(self.settings, [change]))["status"], "refused")
+        self.settings.write_text(json.dumps({**ORIGINAL, "deniedMcpServers": [{"serverName": "dup"}, {"serverName": "dup"}]}), encoding="utf-8")
+        self.assertEqual(self.signed(self.item(self.settings, [{"list": "deniedMcpServers", "op": "remove", "entry": "dup"}]))["status"], "done")
+        self.assertEqual(json.loads(self.settings.read_text(encoding="utf-8"))["deniedMcpServers"], [])
+        for entry in ("https://u:tok@h/p", "a  b", "a ", "x" * 129):
+            with self.subTest(entry=entry):
+                self.assertIsNotNone(signing.change_problem({"list": "deniedMcpServers", "op": "add", "entry": entry}))
+
     def test_a_missing_directory_shows_in_the_view_as_the_writer_handles_it(self):
         self.project_settings.parent.rmdir()
         shown = self.writer.view()["files"][1]

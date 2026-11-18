@@ -240,6 +240,54 @@ class TestHubFirewall(HubCase):
                 self.assertEqual(status, 400, body)
                 self.assertIn(reason, body.decode("utf-8"))
 
+    def test_the_tools_tab_switches_servers_plugins_and_features_of_the_own_file_only(self):
+        capabilities = {"deniedMcpServers": [{"serverName": "blender"}], "enabledPlugins": {"caveman@caveman": True, "ponytail@ponytail": False}}
+        project_tools = {"deniedMcpServers": [{"serverName": "kvb-orchestrator"}], "enabledPlugins": {"ponytail@ponytail": True, "caveman@caveman": True}, "enableArtifact": False}
+        files = [{**self.home_view(), "own": True, "settings": {**self.home_view()["settings"], **capabilities}}, {"path": PROJECT_FILE, "exists": False, "sha256": "", "error": "", "settings": project_tools, "own": False}]
+        known = {"servers": ["blender", "kvb-orchestrator", "hid\u200bden", 5], "plugins": ["caveman@caveman", "tokeneconomizer@tokeneconomizer", "no id"]}
+        (self.state / "firewall" / "view.json").write_text(json.dumps({"written": time.time(), "files": files, "known": known}), encoding="utf-8")
+        tools = self.firewall()["tools"]
+        overridden = {(group["list"], row["name"]): row["overrides"] for group in tools["groups"] for row in group["rows"] if row["overrides"]}
+        self.assertEqual(overridden, {
+            ("deniedMcpServers", "kvb-orchestrator"): [{"file": PROJECT_FILE, "on": False}],
+            ("enabledPlugins", "ponytail@ponytail"): [{"file": PROJECT_FILE, "on": True}],
+            ("switches", "enableArtifact"): [{"file": PROJECT_FILE, "on": False}],
+        })
+        groups = {group["list"]: (group["off"], [(row["name"], row["on"]) for row in group["rows"]]) for group in tools["groups"]}
+        self.assertEqual(groups, {
+            "deniedMcpServers": ("add", [("blender", False), ("kvb-orchestrator", True)]),
+            "enabledPlugins": ("remove", [("caveman@caveman", True), ("ponytail@ponytail", False), ("tokeneconomizer@tokeneconomizer", False)]),
+            "switches": ("remove", [("enableArtifact", True)]),
+        })
+        changes = [{"list": "deniedMcpServers", "op": "remove", "entry": "blender"}, {"list": "enabledPlugins", "op": "add", "entry": "ponytail@ponytail"}, {"list": "switches", "op": "remove", "entry": "enableArtifact"}]
+        item = {"kind": "settings", "file": HOME_FILE, "base": SHA, "changes": changes}
+        status, body = self.post("/api/firewall/preview", {"items": [item]})
+        self.assertEqual(status, 200, body)
+        changed = {line[0] + line[1:].strip() for line in json.loads(body)["diffs"][0]["diff"].splitlines() if line[:1] in "+-" and line[:3] not in ("+++", "---")}
+        self.assertLessEqual({'-"serverName": "blender"', '-"ponytail@ponytail": false', '+"ponytail@ponytail": true', '+"enableArtifact": false'}, changed)
+        proof = self.pin().proof(self.prepare([item])["payload"], self.origin)
+        self.assertEqual(self.post("/api/firewall/settings", {"items": [item], "proof": proof})[0], 202)
+        project = {"kind": "settings", "file": PROJECT_FILE, "base": "", "changes": [{"list": "deniedMcpServers", "op": "add", "entry": "blender"}]}
+        for name, items, reason in (
+            ("project file", [project], "only in ~/.claude/settings.json"),
+            ("chained name", [{**item, "changes": [{**changes[0], "op": "add", "entry": "x;rm"}]}], "no valid deniedMcpServers name"),
+            ("unknown switch", [{**item, "changes": [{**changes[2], "entry": "hooks"}]}], "no valid switches name"),
+            ("already on", [{**item, "changes": [{**changes[1], "entry": "caveman@caveman"}]}], "enabled already"),
+        ):
+            with self.subTest(name=name):
+                status, body = self.post("/api/firewall/preview", {"items": items})
+                self.assertEqual(status, 400, body)
+                self.assertIn(reason, body.decode("utf-8"))
+        broken = {**files[0], "settings": {**files[0]["settings"], "enabledPlugins": None, "deniedMcpServers": None}}
+        (self.state / "firewall" / "view.json").write_text(json.dumps({"written": time.time(), "files": [broken], "known": known}), encoding="utf-8")
+        rows = {group["list"]: [row["name"] for row in group["rows"]] for group in self.firewall()["tools"]["groups"]}
+        self.assertEqual(rows["enabledPlugins"], ["caveman@caveman", "tokeneconomizer@tokeneconomizer"])
+        status, body = self.post("/api/firewall/preview", {"items": [{**item, "changes": changes[1:2]}]})
+        self.assertEqual(status, 400, body)
+        self.assertIn("holds the wrong type", body.decode("utf-8"))
+        (self.state / "firewall" / "view.json").write_text(json.dumps({"written": time.time(), "files": [{**files[0], "own": "yes"}], "known": known}), encoding="utf-8")
+        self.assertIsNone(self.firewall()["tools"])
+
     def test_groups_and_rule_sets_hold_known_agents_and_stored_rules(self):
         for name, payload, expected in (
             ("unknown session", {"name": "builders", "members": ["s1", "s9"]}, 400),
