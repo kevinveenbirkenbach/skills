@@ -20,3 +20,9 @@ is a defect. A decision, a browser or hardware step, or anything else
 without a shell command takes `decision`, its question or instruction as
 `--command`. Other kinds, relative paths and shell
 metacharacters exit 2.
+
+A `decision` row carries each answer as `--option "<label>=<what it
+means>"` and your pick as `--recommended`; the hub shows them as buttons,
+and the answer reaches the row's A as a passkey-signed post
+`Decision <task>` / `Answer: <answer>` to check with `operator_message`
+before acting.

@@ -38,11 +38,7 @@ before reporting it: one copy-pasteable command, its absolute directory, and
 why no agent can run it. The row gets the operator as R, your session as A,
 status `queued`. One row is one step: split a bundle such as "rotate
 leaked credentials" into one row per concrete command, and give each part
-that has no shell command its own `decision` row: the question as
-`--command`, each answer as `--option "<label>=<what it means>"`, your pick
-as `--recommended`; the hub shows them as buttons, and the answer reaches
-the row's A as a passkey-signed post `Decision <task>` / `Answer: <answer>`
-to check with `operator_message` before acting. Pick its check from
+that has no shell command its own `decision` row. Pick its check from
 `checks.md` next to this file: the strongest kind that proves the step done,
 never a shell command.
 
