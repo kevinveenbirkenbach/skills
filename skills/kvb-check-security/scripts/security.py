@@ -291,11 +291,12 @@ def copy(root: Path, paths: list[str], tree: Path) -> dict[str, str]:
         the tree path of every copied file mapped to its repository path.
     """
     names = {}
+    top = root.resolve()
     taken = set(paths) | {parent.as_posix() for name in paths for parent in Path(name).parents}
     for name in paths:
         source = root / name
-        # Trip-wire: a symlink's target may lie outside the repository; even a copied link lets the scan read it.
-        if source.is_symlink() or not source.is_file():
+        # Trip-wire: a symlink's target may lie outside the repository, also through a linked parent folder; even a copied link lets the scan read it.
+        if source.is_symlink() or not source.resolve().is_relative_to(top) or not source.is_file():
             continue
         scratch = name
         if Path(name).suffix.lower() in SKIPPED:

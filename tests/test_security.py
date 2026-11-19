@@ -609,6 +609,19 @@ class TestSecurity(unittest.TestCase):
         unread = f"{never}: medusa's own types, exclusions and limits are unreadable from its source: {HAND}"
         self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({unread})\n", 4))
 
+    def test_a_file_behind_a_symlinked_folder_is_never_copied(self):
+        self.write("dir/a.py", "x = 1\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "dir")
+        outside = self.base / "outside"
+        outside.mkdir()
+        (outside / "a.py").write_text("secret = 1  # MARK-CRITICAL\n", encoding="utf-8")
+        shutil.rmtree(self.repo / "dir")
+        (self.repo / "dir").symlink_to(outside)
+        self.write("app.py", "print(1)\nx = 1  # MARK-LOW\n")
+        found = json.loads(self.scan("--json", env=self.env).stdout)
+        self.assertEqual(([(f["path"], f["severity"]) for f in found["findings"]], found["files"]), ([("app.py", "low")], 1))
+
     def test_a_file_a_path_exclusion_drops_is_scanned_and_named_at_its_repository_path(self):
         self.write("app.py", "print(1)\nx = 1  # MARK-HIGH\n")
         self.write("utils/env/run.py", "y = 1  # MARK-LOW\n")
