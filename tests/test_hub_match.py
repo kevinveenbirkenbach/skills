@@ -12,12 +12,14 @@ from pathlib import Path
 from unittest import mock
 
 from hub_case import HubCase
-from hub_support import APPROVAL, GIT_ENV, HUB, REPO_ROOT, key, signing
+from hub_support import APPROVAL, ASK, GIT_ENV, HUB, OPTIONS, REPO_ROOT, key, signing
 from kvb_orchestrator import batches, payloads, scores, skill_scripts
 
 MATCH = REPO_ROOT / "skills" / "kvb-match" / "scripts" / "match.py"
 CLIENT = HUB / "client"
 FEEDBACK = "app.py:2: name it after what it holds\nnotes.md:3: say why"
+PICK = {"title": "Merge the hub now?", "workdir": "/repo", "description": "the gate is green", "check": "decision", "options": OPTIONS, "recommended": "Merge now", "roles": {"Skills": "A", "Operator": "R"}}
+SCORED = "git commit -m 'fix 2 tests' -m '🎯 Fix: 95 %\n💥 Break: 2 %\n💰 Value: 1:4\n🏆 Score: 93'"
 TOLD = "app.py:2: name it after what it holds notes.md:3: say why"
 
 
@@ -344,9 +346,10 @@ class TestCommandCards(MatchCase):
         self.assertFalse(fresh["stale"], fresh)
         self.assertIn("swapped", next(entry["content"] for entry in fresh["files"] if entry["path"].endswith("body.md")))
 
-    def test_decision_rows_and_rows_at_the_runner_are_no_cards(self):
-        self.write_council({"rasci.json": {"operator/pick": {"title": "-", "workdir": str(self.work), "check": "decision", "roles": {"Operator": "R"}}}})
-        self.assertEqual(self.cards(), [])
+    def test_a_command_card_shows_the_scores_its_command_carries_with_their_emoji_only(self):
+        self.operator_row("operator/commit", SCORED, str(self.work))
+        chips = [(chip["id"], chip["value"]) for chip in self.card("operator:operator/commit")["metrics"]]
+        self.assertEqual(chips, [("fix", "95 %"), ("break", "2 %"), ("score", "93"), ("value", "1:4")])
 
     def test_show_prints_the_command_and_its_payload(self):
         command = self.payload_command()
@@ -356,6 +359,75 @@ class TestCommandCards(MatchCase):
         for words in (command, f"in {self.work}", "line two", "refused"):
             with self.subTest(words=words):
                 self.assertIn(words, shown.stdout)
+
+
+class TestWaitingCards(MatchCase):
+    def radio(self) -> list[list[str]]:
+        return [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
+
+    def answered(self, task: str) -> str:
+        return next(item["answered"] for item in self.snapshot()["inbox"] if item["id"] == task)
+
+    def waiting(self) -> dict[str, str]:
+        self.claim("s1", "Skills session")
+        self.add(staged_repo(self.work))
+        self.write_council({"rasci.json": {"operator/pick": PICK, "operator/ship": {"title": "make ship", "workdir": str(self.work), "check": "done", "roles": {"Skills": "A"}}}})
+        rule = {"kind": "ask", "tool": "Bash", "pattern": "make test*", "scope": "/repo*", "expires": int(time.time()) + 86400, "agent": "Skills", "why": "the gate runs make test"}
+        requested = self.tool("rule_request", rule)
+        self.assertFalse(requested["isError"], requested)
+        return {"ask": self.create_ask({**ASK, "command": SCORED}), "decision": self.decision("Merge now"), "rule": requested["structuredContent"]["id"]}
+
+    def test_every_entry_that_waits_on_the_operator_is_one_card_of_its_kind(self):
+        ids = self.waiting()
+        cards = self.cards()
+        inbox = self.snapshot()["inbox"]
+        self.assertEqual(sorted(card["id"] for card in cards), sorted(f"{item['kind']}:{item['id']}" for item in inbox))
+        kinds = {card["id"]: (card["kind"], card["entry"]) for card in cards if "entry" in card}
+        self.assertEqual(kinds, {f"ask:{ids['ask']}": ("ask", "ask"), f"decision:{ids['decision']}": ("decision", "decision"), "operator:operator/pick": ("decision", "operator"), f"rule:{ids['rule']}": ("rule", "rule")})
+        pick = self.card("operator:operator/pick")
+        self.assertEqual((pick["options"], pick["recommended"], pick["reason"], pick["agent"], pick["to"]), (OPTIONS, "Merge now", "the gate is green", "Skills", "Skills"))
+        ask = self.card(f"ask:{ids['ask']}")
+        self.assertEqual((ask["command"], ask["directory"], ask["files"]), (SCORED, "/repo", []))
+        self.assertEqual([(chip["id"], chip["value"]) for chip in ask["metrics"]], [("fix", "95 %"), ("break", "2 %"), ("score", "93"), ("value", "1:4")])
+        rule = self.card(f"rule:{ids['rule']}")
+        self.assertEqual((rule["rule"]["pattern"], rule["reason"], rule["dry_run"]["days"]), ("make test*", "the gate runs make test", 7))
+
+    def test_a_picked_option_of_a_decision_row_is_signed_once_with_the_rest_posted_to_its_agent_and_leaves_the_stack(self):
+        ids = self.waiting()
+        pick = self.card("operator:operator/pick")
+        entries = [
+            {"kind": "operator", "id": "operator/pick", "verb": "approve", "label": "Wait", "sha256": pick["sha256"]},
+            {"kind": "decision", "id": ids["decision"], "verb": "approve", "label": "Merge now", "sha256": ""},
+            {"kind": "ask", "id": ids["ask"], "verb": "approve", "label": "", "sha256": ""},
+        ]
+        answer = signing.message_item("Skills", "post", "Decision operator/pick\nAnswer: Wait", "", "", "")
+        self.assertIn(signing.item_hash(answer), self.prepare(entries)["payload"]["items"])
+        for bad, code in (({**entries[0], "label": "Later"}, 400), ({**entries[0], "payload": "0" * 64}, 400), ({**entries[0], "sha256": "0" * 64}, 409)):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.post_json("/api/sign", {"items": [bad]}, self.guard(self.host))[0], code)
+        with mock.patch.object(batches, "UNDO", 0.4):
+            self.assertEqual(self.approve(entries, self.signed(entries, self.pin()))[0], 202)
+            self.assertNotIn("operator:operator/pick", [card["id"] for card in self.cards()])
+            self.settle(lambda: self.choice(ids["decision"]) == "Merge now" and self.ask_status(ids["ask"], "0") == "allowed")
+        self.settle(lambda: any(sent[0] == "post" and sent[-1].endswith("Decision operator/pick Answer: Wait") for sent in self.radio()))
+        sent = next(sent for sent in self.radio() if sent[-1].endswith("Answer: Wait"))
+        self.assertEqual(sent[:5], ["post", "--to", "Skills session", "--session", "Operator"])
+        self.assertNotIn((skill_scripts.RASCI, ["set", "operator/pick", "--status", "stopped"]), self.scripts.calls)
+        self.assertEqual({card["kind"] for card in self.cards()}, {"commit", "command", "rule"})
+        self.assertEqual(self.post_json("/api/sign", {"items": [entries[0]]}, self.guard(self.host))[0], 409)
+        self.assertEqual(self.answered("operator/pick"), "Wait")
+        self.write_council({"rasci.json": {"operator/pick": {**PICK, "title": "Merge the hub tonight?"}}})
+        self.assertEqual((self.card("operator:operator/pick")["title"], self.answered("operator/pick")), ("Merge the hub tonight?", ""))
+
+    def test_a_rejected_decision_row_stops_and_its_agent_hears_the_question_and_the_feedback(self):
+        self.waiting()
+        pick = self.card("operator:operator/pick")
+        entry = {"kind": "operator", "id": "operator/pick", "verb": "reject", "label": "", "sha256": pick["sha256"], "channel": "call", "reason": FEEDBACK, "to": pick["to"]}
+        with mock.patch.object(batches, "UNDO", 0.05):
+            self.assertEqual(self.approve([entry], self.signed([entry], self.pin()))[0], 202)
+            self.settle(lambda: (skill_scripts.RASCI, ["set", "operator/pick", "--status", "stopped"]) in self.scripts.calls)
+        self.settle(lambda: self.radio() != [])
+        self.assertTrue(self.radio()[0][6].endswith(f"Denied by the operator: decision operator/pick: Merge the hub now? (from Skills). Reason: {TOLD}"), self.radio())
 
 
 class TestMergeCards(MatchCase):
@@ -438,18 +510,20 @@ class TestPayloadHash(unittest.TestCase):
 class TestMetricChips(unittest.TestCase):
     def test_score_lines_of_every_shape_give_one_chip_per_metric_in_label_order(self):
         labels = scores.score_labels(REPO_ROOT / "skills")
-        line = scores.metric_chips("🎯 fix 94 % · 💥 break 4 % · 💸 tokens 100 % · ⏱️ velocity 100 % · 🛡️ security 100 % · 🏆 score 90", labels)
+        line = scores.metric_chips("🎯 fix 94 % · 💥 break 4 % · 💸 tokens 100 % · ⏱️ velocity 100 % · 🛡️ security 100 % · 🏆 score 90", labels, True)
         self.assertEqual([(chip["id"], chip["emoji"], chip["label"], chip["value"]) for chip in line], [
             ("fix", "🎯", "Fix", "94 %"), ("break", "💥", "Break", "4 %"), ("tokens", "💸", "Tokens", "100 %"),
             ("velocity", "⏱️", "Velocity", "100 %"), ("security", "🛡️", "Security", "100 %"), ("score", "🏆", "Score", "90"),
         ])
-        block = scores.metric_chips("🎯 Fix: 85 %\n💥 Break: 5 %\n⏱ Speed: new\n🏆 Score: 81\n🚦 Gate: ⛔ fix 85 % < 90", labels)
+        block = scores.metric_chips("🎯 Fix: 85 %\n💥 Break: 5 %\n⏱ Speed: new\n🏆 Score: 81\n🚦 Gate: ⛔ fix 85 % < 90", labels, True)
         self.assertEqual([(chip["id"], chip["value"]) for chip in block], [("fix", "85 %"), ("break", "5 %"), ("velocity", "new"), ("score", "81")])
-        self.assertEqual([(chip["id"], chip["value"]) for chip in scores.metric_chips("Fix 92% Break 2.5%", labels)], [("fix", "92%"), ("break", "2.5%")])
+        self.assertEqual([(chip["id"], chip["value"]) for chip in scores.metric_chips("Fix 92% Break 2.5%", labels, True)], [("fix", "92%"), ("break", "2.5%")])
         for text in ("", "looks good", "🎯 high", "prefix 90 %"):
             with self.subTest(text=text):
-                self.assertEqual(scores.metric_chips(text, labels), [])
-        self.assertEqual(scores.metric_chips("🎯 95 💥 3", None), [])
+                self.assertEqual(scores.metric_chips(text, labels, True), [])
+        self.assertEqual(scores.metric_chips("fix 2 tests, score 3 · 🏆 7", labels, False), [{"id": "score", "emoji": "🏆", "label": "Score", "value": "7"}])
+        self.assertEqual([(chip["id"], chip["value"]) for chip in scores.metric_chips("💰 Value: 1:4 · 💰 2", labels, True)], [("value", "1:4")])
+        self.assertEqual(scores.metric_chips("🎯 95 💥 3", None, True), [])
 
 
 if __name__ == "__main__":

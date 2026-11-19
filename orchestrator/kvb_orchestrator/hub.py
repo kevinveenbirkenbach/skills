@@ -96,6 +96,7 @@ class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Den
     reviews: Reviews
     asks: Ledger
     decisions: Ledger
+    answers: Ledger
     messages: Ledger
     rule_requests: Ledger
     uploads: Path
@@ -235,6 +236,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         reviews=reviews,
         asks=Sealed(state / "asks.json", reviews.pages, SEALED_SUFFIX["ask"]),
         decisions=Ledger(state / "decisions.json"),
+        answers=Ledger(state / "answers.json"),
         messages=messages,
         rule_requests=Ledger(state / "rule-requests.json"),
         uploads=uploads,

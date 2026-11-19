@@ -13,7 +13,14 @@ terminal prompts.
    their payload: the command, its directory, its reason and the content of
    every file the command reads (an issue body, a script, a list file).
    Rejected: staged commits only; decision rows as cards (they keep their own
-   pick view).
+   pick view). Amended by the operator 2026-11-19: every entry under Waits on
+   Operator is a card, so the card count equals the Tasks badge: asks,
+   choices, decision rows and rule requests join commits and commands. A
+   decision card shows its options with the recommended one marked; a pick is
+   that card's decision and goes out with the same single passkey, the hub
+   posting the answer to the row's agent. A choice cannot be rejected. A rule
+   card can be rejected with feedback; accepting opens its row, because the
+   passkey signs the rule itself.
 2. **Place**: a Match view under the Tasks tab; the Tasks tab badge counts
    every waiting entry as 001 defines it, the cards included (operator
    2026-11-17: asks and decisions stay visible in the badge). Rejected: a
@@ -53,6 +60,10 @@ terminal prompts.
 10. **Responsive**: the view works at 390 px and on desktop, with touch
     swipe and mouse drag. Reaching the hub from a phone is a separate
     requirement.
+11. **Score labels** (operator 2026-11-19): every card shows the scores its
+    text carries as labels, 💰 value included: a commit card from its score
+    line, every other card from its command, question or reason, where only
+    an emoji-led score counts, so "fix 2 tests" is no score.
 
 ## Approach
 
@@ -136,6 +147,14 @@ flowchart TD
       contains the feedback.
 - [ ] The Tasks tab badge equals the number of waiting inbox entries, every
       waiting card among them.
+- [ ] Every ask, choice, decision row and rule request under Waits on
+      Operator is a card of its kind; a decision row answered through Match
+      leaves the stack until its question changes, and its agent receives the
+      pick as a post.
+- [ ] A decision card's option buttons record the pick; a choice's reject is
+      refused; a rule card's accept opens its row and its reject carries the
+      feedback.
+- [ ] Every card shows the score labels its text carries, 💰 value included.
 
 ### Tests
 
@@ -150,3 +169,6 @@ flowchart TD
       feedback, open the list overview and release through a virtual WebAuthn
       authenticator; negative control: a decision changed after signing is
       refused.
+- [ ] E2E: Chromium at 1920, 1366 and 390 px decides an ask, a choice, a
+      decision row and a rule request and releases them with one signature
+      (`tests/e2e/test_match_waiting_e2e.py`).

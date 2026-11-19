@@ -4,7 +4,7 @@ import secrets
 import time
 
 from .asking import ask_state
-from .choosing import answer_signed
+from .choosing import answer_signed, answered, row_answer_signed
 from .cleanup import cleanup_request
 from .denying import (
     DENIABLE,
@@ -179,6 +179,8 @@ class Approving:
         if item["note"] is not None:
             return self.deny(item, proof)
         if item["kind"] == "operator":
+            if item["label"]:
+                return self.answer_row(item, proof)
             if not all(self.payload_holds(bound) for bound in item.get("bound", [])):
                 return "refused: a payload file changed since the release"
             return self.queue_job(item, proof)
@@ -225,6 +227,8 @@ class Approving:
         if row is None:
             raise Missing(str(raw["id"]))
         visible({name: row[name] for name in ("task", "command", "directory")})
+        if row["check"] == "decision" and raw["verb"] == "approve":
+            return self.row_answer_entry(raw, row, tasks)
         if raw["verb"] == "approve" and not runnable(row):
             raise ToolError("an operator row is approved only when it holds a directory and a command")
         if digest(row["command"]) != raw["sha256"]:
@@ -233,6 +237,19 @@ class Approving:
             raise Conflict({"id": row["task"], "status": "queued"})
         bound = self.payload_bound(row, raw["payload"]) if "payload" in raw else []
         return {**inbox_item(raw, "", row["command"], "", operator_signed(row), self.requester(raw, adder(tasks[row["task"]]))), "bound": bound}
+
+    def row_answer_entry(self, raw: dict, row: dict, tasks: dict[str, dict]) -> dict:
+        """Returns:
+            The signed item of a decision row answered with one of its option
+            labels: the post row_answer_signed() builds to the row's agent.
+        """
+        if raw["label"] not in [option["label"] for option in row["options"]] or "payload" in raw:
+            raise ToolError("a decision row is approved with one of its option labels and no payload")
+        if digest(row["command"]) != raw["sha256"]:
+            raise Conflict({"id": row["task"], "status": "changed"})
+        if answered(self.answers.get(row["task"]), row):
+            raise Conflict({"id": row["task"], "status": "answered"})
+        return inbox_item(raw, raw["label"], row["command"], "", row_answer_signed(row, adder(tasks[row["task"]]), raw["label"]), "")
 
     def item_of(self, raw: object, tasks: dict[str, dict]) -> dict:
         if not isinstance(raw, dict):

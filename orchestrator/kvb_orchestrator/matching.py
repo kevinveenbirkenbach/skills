@@ -1,21 +1,23 @@
 from __future__ import annotations
 
+import json
 import time
 
-from .council import read_claims
+from .council import NEWS, read_claims
 from .denying import requester_of
 from .diffs import stored_diff
 from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field
 from .payloads import denied_roots, payload_files, payload_hash
 from .previewing import merge_hash
-from .records import digest, iso_epoch
+from .records import digest, iso_epoch, read_jsonl
 from .register import REGISTER, adder, operator_rows, read_register
 from .scores import metric_chips, score_labels
 from .signed import signing
 from .tree import inside
 
 OPERATOR = "operator/"
+WAITING = ("ask", "decision", "rule")
 
 
 def repository_of(common_dir: str) -> str:
@@ -57,7 +59,13 @@ class Matching:
         scan = self.tree.get()
         for row in rows:
             agent = adder(tasks[row["task"]])
-            cards.append({**self.command_card(row, agent, born_of(agent, names, claims), roots, scan), "to": requester_of(claims, agent)[0]})
+            cards.append({**self.command_card(row, agent, born_of(agent, names, claims), roots, scan, labels), "to": requester_of(claims, agent)[0]})
+        items = self.inbox(now, tasks, self.directory(claims, read_jsonl(self.council / NEWS), now))
+        cards += [self.waiting_card(item, born_of(item["agent"], names, claims), scan, labels) for item in items if self.waits(item)]
+        asked = {row["task"] for row in operator_rows(tasks) if row["check"] == "decision"}
+        for answer in self.answers.listed():
+            if answer["id"] not in asked:
+                self.answers.remove(answer["id"])
         listed = {card["id"] for card in cards}
         for store in (self.match_snapshots, self.merge_previews):
             for snapshot in store.listed():
@@ -76,7 +84,7 @@ class Matching:
         place = {"repo": repository_of(review.get("repo", "")), "branch": review["branch"], "worktree": review["worktree"]}
         return {
             "id": f"review:{review['id']}", "kind": "commit", "ref": review["id"], "agent": review.get("agent", ""), "born": born, "created_ts": iso_epoch(review["created"]),
-            **place, "title": review["title"], "score": review.get("score", ""), "metrics": metric_chips(review.get("score", ""), labels), "gate": review.get("gate", ""),
+            **place, "title": review["title"], "score": review.get("score", ""), "metrics": metric_chips(review.get("score", ""), labels, True), "gate": review.get("gate", ""),
             "hash": review["tree"], "live_hash": live or review["tree"],
             "stale": bool(reason), "stale_reason": reason, "files": files, "command": "", "directory": review["worktree"], "reason": "",
         }
@@ -93,7 +101,48 @@ class Matching:
         files = payload_files(row["command"], row["directory"], roots)
         return files, payload_hash(row["command"], row["directory"], files), None
 
-    def command_card(self, row: dict, agent: str, born: float | None, roots: list[str] | None, scan: dict) -> dict:
+    def waits(self, item: dict) -> bool:
+        """Returns:
+            Whether an inbox item is a Match card of its own: an ask, a
+            choice, a rule request, or a decision row not yet answered with
+            its current question, none held by a release in its undo window;
+            commits and commands have their own cards.
+        """
+        if item["held"]:
+            return False
+        if item["kind"] == "operator":
+            return item["check"] == "decision" and not item["settled"] and item["job"] is None and not item["answered"]
+        return item["kind"] in WAITING
+
+    def waiting_card(self, item: dict, born: float | None, scan: dict, labels: dict | None) -> dict:
+        """Args:
+            item: an inbox item waits() keeps.
+            born: when its agent was first seen.
+            scan: the branch tree.
+            labels: the score labels.
+
+        Returns:
+            Its card: kind ask, decision (a choice or a decision row) or rule;
+            entry names the inbox kind a release signs, metrics the scores
+            its question, command or reason carries.
+        """
+        files = []
+        if item["kind"] == "ask" and item["diff"]:
+            try:
+                files = stored_diff(self.reviews.pages, "ask", item["id"])["diff"]
+            except Missing:
+                files = None
+        repo, branch, worktree = place_of(item["directory"], scan) if item["directory"] else ("", "", "")
+        shown = digest(json.dumps([item["title"], item["command"], item["detail"], item["options"], item["rule"]], sort_keys=True))
+        return {
+            "id": f"{item['kind']}:{item['id']}", "kind": "decision" if item["kind"] == "operator" else item["kind"], "entry": item["kind"], "ref": item["id"], "agent": item["agent"], "to": item["to"],
+            "born": born, "created_ts": item["ts"], "repo": repo, "branch": branch, "worktree": worktree, "title": item["title"], "score": "",
+            "metrics": metric_chips("\n".join((item["title"], item["command"], item["detail"])), labels, False), "gate": "", "hash": shown, "live_hash": shown, "stale": False, "stale_reason": "",
+            "files": files, "command": item["command"], "directory": item["directory"], "reason": item["detail"], "sha256": item["sha256"], "options": item["options"],
+            "recommended": item["recommended"], "warnings": item["warnings"], "rule": item["rule"], "dry_run": item["dry_run"],
+        }
+
+    def command_card(self, row: dict, agent: str, born: float | None, roots: list[str] | None, scan: dict, labels: dict | None) -> dict:
         card_id = f"operator:{row['task']}"
         files, live, preview = self.card_payload(row, roots)
         snapshot = self.match_snapshots.get(card_id)
@@ -106,7 +155,7 @@ class Matching:
         repo, branch, worktree = place_of(row["directory"], scan)
         return {
             "id": card_id, "kind": "command", "ref": row["task"], "agent": agent, "born": born, "created_ts": snapshot["taken"], "repo": repo, "branch": branch, "worktree": worktree,
-            "title": row["command"], "score": "", "metrics": [], "gate": "", "hash": snapshot["hash"], "live_hash": live, "stale": stale,
+            "title": row["command"], "score": "", "metrics": metric_chips(f"{row['command']}\n{row['why']}", labels, False), "gate": "", "hash": snapshot["hash"], "live_hash": live, "stale": stale,
             "stale_reason": moved if stale else "", "files": snapshot["files"], "command": row["command"], "directory": row["directory"],
             "reason": row["why"], "sha256": digest(row["command"]), "merge": merge,
         }

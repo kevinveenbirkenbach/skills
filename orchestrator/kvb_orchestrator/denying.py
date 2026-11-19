@@ -84,7 +84,8 @@ class Denying:
             if run["code"] != 0:
                 return f"failed: {run['command']} → {run['code']}"
             command, directory = row["command"][:200], row["directory"]
-            return f"stopped · {self.tell(item, proof, adder(tasks[item['id']]), f'operator command {command} in {directory}')}"
+            what = f"decision {item['id']}: {command}" if row["check"] == "decision" else f"operator command {command} in {directory}"
+            return f"stopped · {self.tell(item, proof, adder(tasks[item['id']]), what)}"
         if item["kind"] == "review":
             record, changed = self.reviews.decide(item["id"], {"status": "rejected", "proof": proof, **note})
             if record is None:

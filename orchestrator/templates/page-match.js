@@ -2,7 +2,7 @@
   const MATCH_PEEKS = 2;
   const LONG_PRESS = 550;
   const PRESS_SLOP = 10;
-  const MATCH_KINDS = {commit: ["Commit", "info", "bi-git"], command: ["Command", "warn", "bi-terminal"]};
+  const MATCH_KINDS = {commit: ["Commit", "info", "bi-git"], command: ["Command", "warn", "bi-terminal"], ask: ["Ask", "warn", "bi-shield-lock"], decision: ["Decision", "info", "bi-signpost-split"], rule: ["Rule", "neutral", "bi-shield-check"]};
   const MATCH_VERDICTS = {accept: ["Accept", "ok", "bi-check-lg"], reject: ["Reject", "bad", "bi-x-lg"]};
   const SWIPE_SHARE = 0.25;
   const SWIPE_UP = 80;
@@ -70,7 +70,9 @@
     return h("tr", {class: "match-mark", "data-line": mark.line}, h("td", {colspan: columns}, icon("bi-chat-square-text"), h("span", {class: "match-mark-text"}, revealed(mark.comment))));
   }
 
-  const patched = (card) => card.kind === "commit" || Boolean(card.merge);
+  const patched = (card) => card.kind === "commit" || card.kind === "ask" || Boolean(card.merge);
+  const pickOnly = (card) => card.kind === "decision" && card.entry === "decision";
+  const flies = (card) => !card.stale && card.kind !== "rule" && (card.kind !== "decision" || Boolean(card.recommended));
 
   function matchFileRows(card, file) {
     const diffed = patched(card);
@@ -202,7 +204,25 @@
       card.stale ? h("p", {class: "match-stale"}, icon("bi-exclamation-triangle"), revealed(card.stale_reason)) : null);
   }
 
-  function matchCommand(card) {
+  function matchOptions(card) {
+    const kept = matchView.decisions.get(cardKey(card));
+    return h("div", {class: "options match-options", role: "group", "aria-label": "Options"}, card.options.map((option) => h("button", {
+      type: "button", class: `option${option.label === card.recommended ? " recommended" : ""}`, "aria-pressed": String(Boolean(kept && kept.label === option.label)),
+      title: revealed(`${option.label}: picked now, sent to ${card.agent || "its agent"} as a post at the release`), on: {click: () => decide(card, "accept", "", option.label)},
+    }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null)));
+  }
+
+  function matchPayload(card) {
+    if (card.kind === "decision") {
+      return h("section", {class: "match-payload"}, card.reason && card.reason !== "-" ? h("p", {class: "match-reason"}, revealed(card.reason)) : null, matchOptions(card));
+    }
+    if (card.kind === "rule") {
+      return h("section", {class: "match-payload"}, ruleRequestBody({...card, detail: card.reason}));
+    }
+    if (card.kind === "ask") {
+      return h("section", {class: "match-payload"}, h("pre", {class: "match-command"}, h("code", {}, revealed(card.command))), h("p", {class: "match-directory"}, revealed(card.directory)),
+        card.warnings.length ? h("p", {class: "match-warnings"}, card.warnings.map((warning) => pill(warning, "bad"))) : null);
+    }
     if (card.kind !== "command") {
       return null;
     }
@@ -218,9 +238,9 @@
 
   function matchCard(card) {
     const files = card.files || [];
-    const none = card.kind === "commit" ? "No diff shipped with this stage." : card.merge ? (card.merge.error ? "No diff to show." : "The merge brings no change.") : "Its command names no file.";
-    const list = files.length ? h("ol", {class: "match-files", "aria-label": `Files: ${files.length}`}, files.map((file, index) => fileBlock(card, file, index))) : h("p", {class: "muted"}, none);
-    const body = h("div", {class: "match-body"}, matchCommand(card), list);
+    const none = card.kind === "commit" ? "No diff shipped with this stage." : card.kind === "ask" ? "Its tool call changes no file." : card.merge ? (card.merge.error ? "No diff to show." : "The merge brings no change.") : "Its command names no file.";
+    const list = files.length ? h("ol", {class: "match-files", "aria-label": `Files: ${files.length}`}, files.map((file, index) => fileBlock(card, file, index))) : card.kind === "decision" || card.kind === "rule" ? null : h("p", {class: "muted"}, none);
+    const body = h("div", {class: "match-body"}, matchPayload(card), list);
     body.addEventListener("scroll", () => openOnScroll(body, ".match-file"), {passive: true});
     const article = h("article", {class: "card match-card front", "data-card": card.id, "data-kind": card.kind, "data-stale": String(Boolean(card.stale)), "aria-label": `${card.kind} card of ${card.agent || "an agent"}`},
       matchHead(card), body);
@@ -275,9 +295,15 @@
     window.setTimeout(land, FLY_MS);
   }
 
-  function decide(card, verdict, feedback) {
+  /**
+   * @param {object} card the card decided.
+   * @param {string} verdict accept or reject.
+   * @param {string} feedback the rejection text, else empty.
+   * @param {string} label the picked option of a decision card, else empty.
+   */
+  function decide(card, verdict, feedback, label) {
     flyOff(verdict, () => {
-      matchView.decisions.set(cardKey(card), {verdict, feedback});
+      matchView.decisions.set(cardKey(card), {verdict, feedback, label});
       drawMatch(true);
     });
   }
@@ -298,17 +324,34 @@
       toast("Accept: refused", [`The card is stale: ${card.stale_reason}. Add it again to decide it.`], false);
       return;
     }
-    decide(card, "accept", "");
+    if (card.kind === "rule") {
+      const item = state.inbox.find((entry) => keyOf(entry) === card.id);
+      if (item) {
+        openItem(item);
+      } else {
+        toast("Accept: the rule request is gone", [], false);
+      }
+      return;
+    }
+    if (card.kind === "decision" && !card.recommended) {
+      toast("Accept: pick one of its options", ["The decision recommends none, so the card waits for your pick."], false);
+      return;
+    }
+    decide(card, "accept", "", card.kind === "decision" ? card.recommended : "");
   }
 
   function rejectCard(card) {
+    if (pickOnly(card)) {
+      toast("Reject: not possible", ["A choice is answered with one of its options."], false);
+      return;
+    }
     const kept = matchView.decisions.get(cardKey(card));
     const words = h("textarea", {class: "field match-feedback", rows: 6, maxlength: FEEDBACK_LIMIT, "aria-label": "Feedback"});
     words.value = (kept && kept.verdict === "reject" ? kept.feedback : feedbackOf(card)).slice(0, FEEDBACK_LIMIT);
     const confirm = h("button", {type: "button", class: "btn danger match-feedback-reject"}, icon("bi-x-lg"), "Reject");
     confirm.addEventListener("click", () => {
       closeSheet();
-      decide(card, "reject", words.value.trim());
+      decide(card, "reject", words.value.trim(), "");
     });
     const note = `${card.agent || "The agent"} gets this text by radio call at the release; nothing is sent before.`;
     openSheet(`Reject: ${card.title}`, [h("p", {class: "muted"}, note), words, h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
@@ -361,7 +404,7 @@
       const far = SWIPE_SHARE * article.getBoundingClientRect().width;
       const swiped = event.type === "pointercancel" ? "" : Math.abs(dx) >= far && Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "accept" : "reject") : -dy >= SWIPE_UP && -dy > Math.abs(dx) ? "later" : "";
       article.style.removeProperty("--lean");
-      if (!((swiped === "accept" && !card.stale) || swiped === "later")) {
+      if (!((swiped === "accept" && flies(card)) || swiped === "later")) {
         article.style.removeProperty("transform");
         delete article.dataset.leaning;
       }
@@ -389,17 +432,18 @@
 
   /**
    * @param {object} card a decided match card.
-   * @param {object} decision its {verdict, feedback}.
-   * @returns {object} the inbox entry the release signs: an approval of the review, or of the operator row bound to
-   * the payload hash the card showed, or its rejection carrying the feedback as a radio call to the card's agent.
+   * @param {object} decision its {verdict, feedback, label}.
+   * @returns {object} the inbox entry the release signs: an approval of the review or the ask, the picked option of a
+   * decision, the operator row bound to the payload hash the card showed, or a rejection carrying the feedback as a
+   * radio call to the card's agent.
    */
   function matchEntry(card, decision) {
-    const kind = card.kind === "commit" ? "review" : "operator";
-    const entry = {kind, id: card.ref, verb: decision.verdict === "accept" ? "approve" : "reject", label: "", sha256: kind === "operator" ? card.sha256 || "" : ""};
+    const kind = card.entry || (card.kind === "commit" ? "review" : "operator");
+    const entry = {kind, id: card.ref, verb: decision.verdict === "accept" ? "approve" : "reject", label: decision.verdict === "accept" ? decision.label || "" : "", sha256: kind === "operator" ? card.sha256 || "" : ""};
     if (decision.verdict === "reject") {
       return {...entry, channel: "call", reason: decision.feedback, to: card.to || ""};
     }
-    return kind === "operator" ? {...entry, payload: card.hash} : entry;
+    return card.kind === "command" ? {...entry, payload: card.hash} : entry;
   }
 
   function decided(cards) {
@@ -420,7 +464,7 @@
     const [kindName, kindTone, kindIcon] = MATCH_KINDS[card.kind] || [card.kind, "neutral", "bi-collection"];
     const [word, tone, mark] = MATCH_VERDICTS[decision.verdict];
     const other = decision.verdict === "accept" ? "reject" : "accept";
-    const flip = iconBtn(MATCH_VERDICTS[other][2], MATCH_VERDICTS[other][0], "btn small ghost match-flip", () => (other === "accept" ? acceptCard(card) : rejectCard(card)), `${MATCH_VERDICTS[other][0]} instead`);
+    const flip = (other === "reject" && pickOnly(card)) || (other === "accept" && !flies(card)) ? null : iconBtn(MATCH_VERDICTS[other][2], MATCH_VERDICTS[other][0], "btn small ghost match-flip", () => (other === "accept" ? acceptCard(card) : rejectCard(card)), `${MATCH_VERDICTS[other][0]} instead`);
     const back = iconBtn("bi-arrow-counterclockwise", "Back to the stack", "btn small ghost match-undecide", () => {
       matchView.decisions.delete(cardKey(card));
       matchView.overview = false;
@@ -428,7 +472,7 @@
     });
     return h("li", {class: "match-decision", "data-card": card.id, "data-verdict": decision.verdict},
       h("div", {class: "row"}, face(card.agent || "-", false), h("span", {class: "pill", "data-tone": kindTone}, icon(kindIcon), kindName), h("strong", {class: "match-decision-title"}, revealed(card.title)), h("span", {class: "spacer"}),
-        h("span", {class: "pill match-verdict", "data-tone": tone}, icon(mark), word), decision.verdict === "reject" ? iconBtn("bi-pencil", "Edit feedback", "btn small ghost match-edit", () => rejectCard(card)) : null, flip, back),
+        h("span", {class: "pill match-verdict", "data-tone": tone}, icon(mark), decision.label ? revealed(`${word}: ${decision.label}`) : word), decision.verdict === "reject" ? iconBtn("bi-pencil", "Edit feedback", "btn small ghost match-edit", () => rejectCard(card)) : null, flip, back),
       decision.verdict === "reject" ? h("pre", {class: "match-decision-feedback"}, revealedLines(decision.feedback === "" ? "no feedback text" : decision.feedback)) : null);
   }
 
@@ -458,7 +502,7 @@
     }) : null;
     return h("section", {class: "card match-overview", "aria-label": "Decisions"},
       h("h2", {class: "panel-title"}, "Decisions"),
-      h("p", {class: "muted"}, "Nothing has run yet. Accepted commits get the operator's signature for their exact tree, accepted commands run once as jobs under Waits on Operator, every rejection goes to its agent by radio call."),
+      h("p", {class: "muted"}, "Nothing has run yet. Accepted commits get the operator's signature for their exact tree, accepted commands run once as jobs under Waits on Operator, accepted asks are granted, every picked option goes to its agent as a post, every rejection goes to its agent by radio call."),
       picked.length ? h("ol", {class: "match-decisions"}, picked.map(([card, decision]) => overviewRow(card, decision))) : h("p", {class: "muted"}, "No decision yet."),
       block && picked.length ? h("p", {class: "match-release-block"}, icon("bi-exclamation-triangle"), block) : null,
       h("div", {class: "actions"}, back, h("span", {class: "spacer"}), release));
@@ -534,7 +578,7 @@
     dom.decisions.hidden = !matchView.decisions.size || shownOverview;
     if (!cards.length) {
       matchView.front = null;
-      dom.stack.replaceChildren(emptyState("No card waits", "No staged commit and no operator command waits for a decision."));
+      dom.stack.replaceChildren(emptyState("No card waits", "Nothing waits on the operator."));
       return;
     }
     if (shownOverview) {
@@ -550,8 +594,9 @@
     matchView.front = front;
     const act = (cls, iconName, word, hint, disabled, run) => h("button", {type: "button", class: `match-act ${cls}`, disabled, ...named(word, hint), on: {click: run}},
       h("span", {class: "match-act-face", "aria-hidden": "true"}, icon(iconName)), h("span", {class: "match-act-label"}, word));
-    const accept = act("match-accept", "bi-check-lg", "Accept", front.stale ? `Accept: refused while the card is stale (${front.stale_reason})` : "Accept (right arrow, swipe right)", Boolean(front.stale), () => acceptCard(front));
-    const reject = act("match-reject", "bi-x-lg", "Reject", "Reject with feedback (left arrow, swipe left)", false, () => rejectCard(front));
+    const hint = front.stale ? `Accept: refused while the card is stale (${front.stale_reason})` : front.kind === "rule" ? "Accept: opens its row, where the passkey signs exactly this rule" : front.kind === "decision" ? (front.recommended ? `Accept: ${front.recommended} (right arrow, swipe right)` : "Accept: pick one of its options") : "Accept (right arrow, swipe right)";
+    const accept = act("match-accept", "bi-check-lg", "Accept", revealed(hint), Boolean(front.stale) || (front.kind === "decision" && !front.recommended), () => acceptCard(front));
+    const reject = act("match-reject", "bi-x-lg", "Reject", pickOnly(front) ? "Reject: a choice is answered with one of its options" : "Reject with feedback (left arrow, swipe left)", pickOnly(front), () => rejectCard(front));
     const later = act("match-later", "bi-arrow-up", "Later", "Later: to the back of the stack (up arrow, swipe up)", !rest.length, () => laterCard(front));
     const peeks = rest.length ? h("div", {class: "match-peeks", role: "group", "aria-label": `${rest.length} more cards`}, rest.map(peekTab)) : null;
     const behind = rest.slice(0, MATCH_PEEKS).map((card, index) => {
