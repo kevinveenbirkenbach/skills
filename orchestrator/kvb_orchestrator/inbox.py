@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from .approving import INBOX_KINDS
+from .choosing import answered
 from .council import read_claims
 from .denying import requester_of
 from .errors import ToolError
@@ -20,7 +21,7 @@ SNOOZE_LIMIT = 8 * 86400
 class Inbox:
     def inbox(self, now: float, tasks: dict[str, dict], directory: Directory) -> list[dict]:
         claims = read_claims(self.council)
-        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False}
+        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": ""}
         items = []
         for review in self.reviews.pending():
             created = iso_epoch(review["created"]) or now
@@ -42,7 +43,8 @@ class Inbox:
         rows = [row for row in operator_rows(tasks) if pattern is not None and pattern.fullmatch(row["task"])]
         for row in rows:
             busy = row["task"] in held
-            fields = {"title": row["command"], "detail": row["why"], "agent": adder(tasks[row["task"]]), "to": requester_of(claims, adder(tasks[row["task"]]))[0], "command": row["command"], "directory": row["directory"], "sha256": digest(row["command"]), "check": row["check"], "options": row["options"], "recommended": row["recommended"]}
+            answer = self.answers.get(row["task"])
+            fields = {"answered": answer["label"] if answered(answer, row) else "", "title": row["command"], "detail": row["why"], "agent": adder(tasks[row["task"]]), "to": requester_of(claims, adder(tasks[row["task"]]))[0], "command": row["command"], "directory": row["directory"], "sha256": digest(row["command"]), "check": row["check"], "options": row["options"], "recommended": row["recommended"]}
             state = {"runnable": runnable(row) and not busy, "deniable": not busy, "job": console_of(consoles.get(row["task"]))}
             items.append({**base, "kind": "operator", "id": row["task"], "ts": self.watch.first(row["task"], now), **fields, **state})
         listed = {row["task"] for row in rows}

@@ -107,6 +107,7 @@
   const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Choice: ${label}`);
   const asked = (item) => item.kind === "operator" && item.check === "decision";
   const answers = new Map();
+  const answerOf = (item) => answers.get(keyOf(item)) || item.answered || "";
 
   async function answerRow(item, answer) {
     if (!item.agent) {
@@ -133,7 +134,7 @@
   }
 
   function choicePanel(item, pick, other) {
-    const done = answers.has(keyOf(item));
+    const done = Boolean(answerOf(item));
     const pane = item.options.some((option) => option.preview) ? h("pre", {class: "choice-preview", "aria-label": "Preview"}) : null;
     const show = (option) => {
       if (pane) {
@@ -280,7 +281,7 @@
       h("div", {class: "msg-meta"},
         when(item.ts),
         asked(item) ? pill("Decision", KIND_TONES.decision) : pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
-        answers.has(keyOf(item)) ? pill(revealed(`answered: ${answers.get(keyOf(item))}`), "ok") : null,
+        answerOf(item) ? pill(revealed(`answered: ${answerOf(item)}`), "ok") : null,
         item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
         item.warnings.map((warning) => pill(warning, "bad")),
         item.pinned ? pill("pinned", "violet") : null,

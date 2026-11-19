@@ -4,6 +4,8 @@ from .council import agent
 from .errors import ToolError
 from .fields import decode, expect, field
 from .messaging import DIRECT, EVERYONE, TO_ALL
+from .records import digest
+from .register import REGISTER, adder, operator_rows, read_register
 from .signed import signing
 
 CHOICE_REQUEST = "send me your open decisions as choices"
@@ -27,6 +29,25 @@ def answer_signed(decision: dict, label: str) -> dict:
     if EVERYONE in decision["agent"]:
         raise ToolError(f"a choice answer goes to the asking agent, never to a name with {EVERYONE}")
     return signing.message_item(agent(decision["agent"]), ANSWER_CLASS, answer_text(decision, label), "", "", "")
+
+
+def row_answer_signed(row: dict, to: str, label: str) -> dict:
+    """Args:
+        row: an open decision row of the register.
+        to: the row's adding agent.
+        label: one of the row's option labels.
+
+    Returns:
+        The post to that agent that a Match pick signs, in the words the
+        inbox's own answer sends.
+    """
+    if not to or EVERYONE in to:
+        raise ToolError(f"a decision row is answered only when an agent other than {EVERYONE} holds role A on it")
+    return signing.message_item(agent(to), ANSWER_CLASS, f"Decision {row['task']}\nAnswer: {label}", "", "", "")
+
+
+def answered(record: dict | None, row: dict) -> bool:
+    return record is not None and record["sha256"] == digest(row["command"])
 
 
 def recipients(payload: dict) -> list[str]:
@@ -98,3 +119,28 @@ class Choosing:
         run = self.radioed(message, CHANNELS[ANSWER_CLASS])
         where = f"{ANSWER_CLASS} to {message['address']}"
         return f"decided · {where}" if run["code"] == 0 else f"decided · {where} failed ({run['code']})"
+
+    def answer_row(self, item: dict, proof: dict) -> str:
+        """Args:
+            item: a checked operator item of a decision row whose label is
+                the picked option and whose signed is row_answer_signed().
+            proof: the relayed signature, verified here once, as the hub
+                sends the answer itself.
+
+        Returns:
+            The outcome words for the stream; the row stays open until its
+            agent closes it, while answers keeps it off the Match stack.
+        """
+        tasks = read_register(self.council / REGISTER)
+        row = next((row for row in operator_rows(tasks) if row["task"] == item["id"]), None)
+        if row is None or item["label"] not in [option["label"] for option in row["options"]] or row_answer_signed(row, adder(tasks[item["id"]]), item["label"]) != item["signed"]:
+            return "refused: the row changed since the release"
+        self.operator_proven(proof, item["signed"])
+        with self.answers.changed:
+            if answered(self.answers.get(item["id"]), row):
+                return "already answered"
+            message = self.stored_message(item["signed"], proof, None)
+            self.answers.insert(item["id"], {"sha256": digest(row["command"]), "label": item["label"], "message": message["id"]})
+        run = self.radioed(message, CHANNELS[ANSWER_CLASS])
+        where = f"{ANSWER_CLASS} to {message['address']}"
+        return f"answered · {where}" if run["code"] == 0 else f"answered · {where} failed ({run['code']})"

@@ -9,7 +9,8 @@ SCORES = "scores.jsonl"
 LABELS = "kvb-check-score/labels.json"
 FILE_LIMIT = 64 << 20
 VARIATION = "️"
-VALUE = r"([0-9]+(?:\.[0-9]+)?(?:\s*%)?|–|-|new)(?![0-9.])"
+VALUE = r"([0-9]+(?:\.[0-9]+)?(?:\s*%|:[0-9]+(?:\.[0-9]+)?)?|–|-|new)(?![0-9.])"
+CHIP_EXTRAS = ("value",)
 
 
 def checked(labels: object) -> dict | None:
@@ -61,23 +62,29 @@ def score_labels(skills: Path) -> dict | None:
     return checked(read_json(skills / LABELS))
 
 
-def metric_chips(score: str, labels: dict | None) -> list[dict]:
+def metric_chips(score: str, labels: dict | None, bare: bool) -> list[dict]:
     """Args:
         score: an agent's free score line, such as line 1 or the message
-            block of score.py.
+            block of score.py, or a free text that may carry one.
         labels: the label file as checked() returns it, or None.
+        bare: whether a label without its emoji counts; False for a free
+            text, where "fix 2 tests" is no score.
 
     Returns:
-        In label order, per metric whose emoji (with or without its
-        variation selector) or label or former label stands right before a
-        value in score, the first such value: {"id", "emoji", "label",
-        "value"}; none without labels.
+        In label order, then the CHIP_EXTRAS, per metric whose emoji (with or
+        without its variation selector) or label or former label stands
+        right before a value in score (the label alone only when bare), the
+        first such value: {"id", "emoji", "label", "value"}; none without
+        labels.
     """
     found = []
-    for key, metric in (labels or {}).get("metrics", {}).items():
+    extras = (labels or {}).get("extras")
+    shown = [(key, extras[key]) for key in CHIP_EXTRAS if isinstance(extras, dict) and checked({"metrics": {key: extras.get(key)}})]
+    for key, metric in [*(labels or {}).get("metrics", {}).items(), *shown]:
         emoji = re.escape(metric["emoji"].removesuffix(VARIATION)) + f"{VARIATION}?"
         names = "|".join(re.escape(name) for name in (metric["label"], *metric.get("former", [])))
-        match = re.search(rf"(?:{emoji}\s*(?:(?:{names})\s*:?\s*)?|\b(?:{names})\s*:?\s*){VALUE}", score, re.IGNORECASE)
+        alone = rf"|\b(?:{names})\s*:?\s*" if bare else ""
+        match = re.search(rf"(?:{emoji}\s*(?:(?:{names})\s*:?\s*)?{alone}){VALUE}", score, re.IGNORECASE)
         if match:
             found.append({"id": key, "emoji": metric["emoji"], "label": metric["label"], "value": " ".join(match.group(1).split())})
     return found
