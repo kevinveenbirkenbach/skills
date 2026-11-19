@@ -686,7 +686,7 @@ class TestHubView(HubCase):
         self.assertEqual(self.view()["resources"]["combinedHidden"], [])
 
     def test_a_body_beyond_the_hub_wide_limit_answers_413_and_stores_nothing(self):
-        status, _, answer = self.call("PATCH", "/api/view", b" " * (BODY_LIMIT + 1), {**self.guard(self.host), "Content-Type": "application/json"})
+        status, _, answer = self.call("PATCH", "/api/view", b"", {**self.guard(self.host), "Content-Type": "application/json", "Content-Length": str(BODY_LIMIT + 1)})
         self.assertEqual(status, 413, answer)
         self.assertFalse((self.state / "view.json").exists())
 
