@@ -3,9 +3,8 @@
 The score counts only files medusa scans; its types, exclusions and limits
 come from its source.
 
-- `not covered`: a type medusa never scans (`*.j2`, `Makefile`) or a path its
-  default exclusions drop (`env`, `build`, `dist`, `obj`, `vendor` and the
-  like). Review them by hand.
+- `not covered`: a type medusa never scans (`*.j2`, `Makefile`) or a file
+  pattern it skips (`*.min.js`, `*.map`). Review them by hand.
 - `run incomplete`: a scanner passed `--timeout` or the run `--deadline`,
   mostly on a loaded CPU or a long file. A plain `PER_SCANNER_TIMEOUT` number
   counts as ignoring `MEDUSA_SCANNER_TIMEOUT`, even if read elsewhere.

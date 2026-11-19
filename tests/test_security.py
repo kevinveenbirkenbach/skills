@@ -609,21 +609,22 @@ class TestSecurity(unittest.TestCase):
         unread = f"{never}: medusa's own types, exclusions and limits are unreadable from its source: {HAND}"
         self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({unread})\n", 4))
 
-    def test_a_path_medusa_excludes_is_listed_and_the_rest_scored(self):
+    def test_a_file_a_path_exclusion_drops_is_scanned_and_named_at_its_repository_path(self):
         self.write("app.py", "print(1)\nx = 1  # MARK-HIGH\n")
-        (self.repo / "cli" / "build").mkdir(parents=True)
-        self.write("cli/build/run.py", "y = 1  # MARK-CRITICAL\n")
-        self.write("environ.py", "z = 1  # MARK-CRITICAL\n")
-        result = self.scan(env=self.env)
-        self.assertEqual((result.stdout, result.returncode), (
-            "🛡️ security 75 % (medusa: 1 finding in 1 file: high app.py:2; not covered: cli/build/run.py, environ.py)\n",
-            3,
-        ))
-        self.write("app.py", "print(1)\n")
-        result = self.scan(env=self.env)
-        never = "medusa never covers this diff, nothing cached"
-        none = f"{never}: medusa scans none of its files, not covered: cli/build/run.py, environ.py: {HAND}"
-        self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({none})\n", 4))
+        self.write("utils/env/run.py", "y = 1  # MARK-LOW\n")
+        self.write("environ.py", "z = 1  # MARK-LOW\n")
+        self.write("build/lib.min.js", "a  // MARK-CRITICAL\n")
+        found = json.loads(self.scan("--json", env=self.env).stdout)
+        self.assertEqual(
+            sorted((f["path"], f["line"], f["severity"]) for f in found["findings"]),
+            [("app.py", 2, "high"), ("environ.py", 1, "low"), ("utils/env/run.py", 1, "low")],
+        )
+        self.assertEqual((found["files"], found["not_covered"]), (3, ["build/lib.min.js"]))
+        sha1 = next(f["sha1"] for f in found["findings"] if f["path"] == "utils/env/run.py")
+        accepted = self.accept("--rule", "FAKE-LOW", "--path", "utils/env/run.py", "--sha1", sha1, "--reason", "fixture")
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        again = json.loads(self.scan("--json", env=self.env).stdout)
+        self.assertEqual(sorted(f["path"] for f in again["findings"]), ["app.py", "environ.py"])
 
     def test_medusa_limits_come_from_its_source(self):
         mark = "y = 1  # MARK-CRITICAL\n"

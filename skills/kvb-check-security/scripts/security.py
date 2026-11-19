@@ -43,11 +43,16 @@ Scan:
     MAX_SCAN_FILE_SIZE; from scanners/base.py MAX_RULE_SCAN_LINES; from
     config.py the default exclude_paths and exclude_files. Without all of
     them no file can be proven covered and a diff with files gets no score.
-    Not covered: a copied file of a type medusa never scans, or one its
-    exclusions drop (a path part equal to or matching a path pattern, a path
-    pattern anywhere inside the path, a file pattern), is named as such and
-    left out of the score and its proof; a diff of such files only gets no
-    score.
+    Path exclusions: medusa drops a path whose part equals or matches a path
+    pattern, or that holds a path pattern anywhere inside (env drops
+    utils/env/ and environ.py alike), so a copied file they drop moves to
+    NEUTRAL/<sha1 of its repository path>/<its name>, or to
+    NEUTRAL/<that sha1><its suffix> when its name alone holds a pattern, and
+    is reported and accepted at its repository path.
+    Not covered: a copied file of a type medusa never scans, one a file
+    pattern drops, or one no NEUTRAL path makes medusa take up, is named as
+    such and left out of the score and its proof; a diff of such files only
+    gets no score.
     Coverage, checked before medusa runs: no scanned file over medusa's
     MAX_SCAN_FILE_SIZE bytes (skipped) or MAX_RULE_SCAN_LINES lines, with CR,
     CRLF and LF as breaks as its scanners read text (regex scan cut). Such a
@@ -146,6 +151,7 @@ CEILING = 86400
 SKIPPED = (".mjs", ".cjs")
 ALIAS = ".js"
 NAME_MAX = 255
+NEUTRAL = "kvb-scan"
 CACHE = "security-cache"
 CACHE_SECONDS = 24 * 3600
 NOTHING = type(None)
@@ -616,25 +622,64 @@ def medusa_run(command: list[str], work: Path, env: dict[str, str], deadline: in
     return process.returncode, out.decode(errors="replace"), time.monotonic() - start
 
 
+def typed(path: PurePosixPath, found: Rules) -> bool:
+    extension = os.path.splitext(path.name)[1].lower()
+    return (
+        extension in found.extensions or path.name in found.names or path.name.startswith(found.prefixes)
+        or path.name.endswith(found.suffix)
+        or (len(path.parts) == 2 and path.parts[0] in found.folders and extension == ".md")
+    )
+
+
+def path_dropped(name: str, found: Rules) -> bool:
+    """Returns:
+        whether a path exclusion of medusa drops this tree path: a part equal to
+        or matching a path pattern, or a path pattern anywhere inside it, as
+        medusa's find_scannable_files matches them.
+    """
+    return any(
+        part == pattern or WILD.search(pattern) and fnmatchcase(part, pattern)
+        for part in PurePosixPath(name).parts for pattern in found.paths
+    ) or any(pattern in name or WILD.search(pattern) and fnmatchcase(name, f"*{pattern}*") for pattern in found.paths)
+
+
+def file_dropped(path: PurePosixPath, found: Rules) -> bool:
+    return any(fnmatchcase(path.name, pattern) for pattern in found.files)
+
+
 def taken(name: str, found: Rules) -> bool:
     """Returns:
         whether medusa's find_scannable_files takes up a file of this tree path:
         a type it scans, and no exclusion that drops it.
     """
     path = PurePosixPath(name)
-    extension = os.path.splitext(path.name)[1].lower()
-    typed = (
-        extension in found.extensions or path.name in found.names or path.name.startswith(found.prefixes)
-        or path.name.endswith(found.suffix)
-        or (len(path.parts) == 2 and path.parts[0] in found.folders and extension == ".md")
-    )
-    dropped = (
-        any(part == pattern or WILD.search(pattern) and fnmatchcase(part, pattern)
-            for part in path.parts for pattern in found.paths)
-        or any(pattern in name or WILD.search(pattern) and fnmatchcase(name, f"*{pattern}*") for pattern in found.paths)
-        or any(fnmatchcase(path.name, pattern) for pattern in found.files)
-    )
-    return typed and not dropped
+    return typed(path, found) and not path_dropped(name, found) and not file_dropped(path, found)
+
+
+def relocated(names: dict[str, str], tree: Path, found: Rules) -> dict[str, str]:
+    """Args:
+        names: copy() of the change, tree path to repository path.
+        tree: the temporary tree medusa scans.
+        found: medusa's rules.
+
+    Returns:
+        names after each file a path exclusion drops moved in tree to
+        NEUTRAL/<sha1 of its repository path>/<its name>, or to
+        NEUTRAL/<that sha1><its suffix> where medusa takes up only that; a file
+        neither path makes taken, as one a file pattern drops, stays put.
+    """
+    moved = {}
+    for scratch, name in names.items():
+        target, path = scratch, PurePosixPath(scratch)
+        if path_dropped(scratch, found) and not file_dropped(path, found):
+            key = digest(name)
+            candidates = (f"{NEUTRAL}/{key}/{path.name}", f"{NEUTRAL}/{key}{path.suffix}")
+            target = next((candidate for candidate in candidates if taken(candidate, found)), scratch)
+        if target != scratch:
+            (tree / target).parent.mkdir(parents=True, exist_ok=True)
+            (tree / scratch).rename(tree / target)
+        moved[target] = name
+    return moved
 
 
 def sized(tree: Path) -> dict[str, tuple[int, int, int]]:
@@ -776,6 +821,7 @@ def scan(
         known = rules(folder)
         if known is None:
             raise Uncovered("medusa's own types, exclusions and limits are unreadable from its source")
+        names = relocated(names, tree, known)
         sizes = {names[scratch]: size for scratch, size in sized(tree).items() if taken(scratch, known)}
         missed = sorted(set(names.values()) - sizes.keys())
         scanned = len(sizes)
