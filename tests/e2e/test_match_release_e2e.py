@@ -101,8 +101,13 @@ FLOW = """(async () => {@HELPERS@
       found.tampered = await toastAfter(() => release.click());
       found.kept = all("#main .match-decision").length;
     }
+    const flashed = new Set();
+    const watch = window.setInterval(() => all("#main .match-card").forEach((node) => flashed.add(node.dataset.card)), 20);
     found.toast = await toastAfter(() => document.querySelector("#main .match-release").click());
     found.emptied = @SIGNS@ ? Boolean(await until(() => document.querySelector("#main .match-stack .empty"), 15000)) : false;
+    await sleep(@SIGNS@ ? 2500 : 0);
+    window.clearInterval(watch);
+    found.flashed = [...flashed];
     found.posted = posted;
     found.statuses = statuses;
   }
@@ -197,6 +202,7 @@ class TestMatchRelease(HubCase):
         self.assertTrue(released["toast"].startswith("Release: 3 decisions"), released)
         self.assertNotIn("not possible", released["toast"], released)
         self.assertTrue(released["emptied"], released)
+        self.assertEqual(released["flashed"], [], released)
         posted = [path for path, _ in released["posted"]]
         self.assertEqual(posted, ["/api/sign", "/api/inbox/approve"] * 2)
         self.assertEqual(released["statuses"], [200, 400, 200, 202], released)

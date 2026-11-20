@@ -38,17 +38,21 @@ class Pending:
 
     def fire(self, batch_id: str, apply: Callable[[dict], None]) -> None:
         with self.lock:
-            batch = self.batches.pop(batch_id, None)
-            if batch is not None:
-                self.applied.add(batch_id)
-        if batch is not None:
+            batch = self.batches.get(batch_id)
+            if batch is None:
+                return
+            self.applied.add(batch_id)
+        try:
             apply(batch)
+        finally:
+            with self.lock:
+                self.batches.pop(batch_id, None)
 
     def undo(self, batch_id: str) -> dict:
         with self.lock:
-            batch = self.batches.pop(batch_id, None)
-            if batch is None and batch_id in self.applied:
+            if batch_id in self.applied:
                 raise Conflict({"id": batch_id, "status": "applied"})
+            batch = self.batches.pop(batch_id, None)
         if batch is None:
             raise Missing(batch_id)
         batch["timer"].cancel()
@@ -59,5 +63,8 @@ class Pending:
             return any(item["kind"] == kind_name and item["id"] == item_id for batch in self.batches.values() for item in batch["items"])
 
     def listed(self) -> list[dict]:
+        """Returns:
+            The batches still in their undo window, without proof and timer.
+        """
         with self.lock:
-            return [{key: batch[key] for key in ("id", "items", "source", "due")} for batch in self.batches.values()]
+            return [{key: batch[key] for key in ("id", "items", "source", "due")} for batch in self.batches.values() if batch["id"] not in self.applied]

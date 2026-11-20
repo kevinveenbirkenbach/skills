@@ -9,24 +9,35 @@
   const FEEDBACK_LIMIT = 2000;
   const FLY_MS = 400;
   const CONFETTI = 28;
-  const matchView = {cards: null, order: [], marks: new Map(), opened: new Map(), decisions: new Map(), overview: false, front: null, drag: null, dom: null, sig: "", fetched: 0, loading: false, press: null, flying: false, openBefore: 0};
+  const matchView = {cards: null, order: [], marks: new Map(), opened: new Map(), decisions: new Map(), overview: false, front: null, drag: null, dom: null, sig: "", fetched: 0, loading: false, press: null, flying: false, openBefore: 0, epoch: 0};
 
+  /**
+   * @returns {Promise<void>} settled when this read ends, at once while another runs; a response requested before
+   * the last release (matchView.epoch) still lists the released cards, so it is dropped and read again.
+   */
   async function fetchMatch() {
     if (matchView.loading) {
       return;
     }
     matchView.loading = true;
     matchView.fetched = Date.now();
+    const epoch = matchView.epoch;
     try {
       const response = await fetch("/api/match", {cache: "no-store"});
       if (response.ok) {
         const data = await response.json();
-        matchView.cards = Array.isArray(data.cards) ? data.cards : [];
+        if (epoch === matchView.epoch) {
+          matchView.cards = Array.isArray(data.cards) ? data.cards : [];
+        }
       }
     } catch {
       matchView.cards = matchView.cards || [];
     } finally {
       matchView.loading = false;
+    }
+    if (epoch !== matchView.epoch) {
+      await fetchMatch();
+      return;
     }
     drawMatch();
   }
@@ -454,8 +465,12 @@
     const picked = decided(cards);
     const released = await submit(picked.map(([card, decision]) => matchEntry(card, decision)), `Release: ${picked.length === 1 ? "1 decision" : `${picked.length} decisions`}`);
     if (released) {
+      const gone = new Set(picked.map(([card]) => card.id));
+      matchView.epoch += 1;
+      matchView.cards = matchView.cards.filter((card) => !gone.has(card.id));
       picked.forEach(([card]) => matchView.decisions.delete(cardKey(card)));
       matchView.overview = false;
+      drawMatch(true);
       await fetchMatch();
     }
   }

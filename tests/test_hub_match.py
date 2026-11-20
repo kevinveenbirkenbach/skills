@@ -6,6 +6,7 @@ import secrets
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from unittest import mock
 from hub_case import HubCase
 from hub_support import APPROVAL, ASK, GIT_ENV, HUB, OPTIONS, REPO_ROOT, key, signing
 from kvb_orchestrator import batches, payloads, scores, skill_scripts
+from kvb_orchestrator.errors import Conflict
 
 MATCH = REPO_ROOT / "skills" / "kvb-match" / "scripts" / "match.py"
 CLIENT = HUB / "client"
@@ -190,6 +192,34 @@ class TestMatchRelease(MatchCase):
     def verify(self, repo: Path, review: str) -> subprocess.CompletedProcess:
         argv = ["verify", "--port", str(self.port), "--approvers", str(self.approvers), "--replay", str(self.replay / "commit.json"), "--review", review, "--gate", "pass"]
         return subprocess.run([sys.executable, str(APPROVAL), *argv], cwd=repo, env={**os.environ, **GIT_ENV}, capture_output=True, text=True, timeout=60, check=False)
+
+    def test_released_cards_leave_the_stack_for_the_undo_window_and_an_undo_brings_them_back_unchanged(self):
+        _, review = self.stack()
+        entries = self.decisions(review, "accept")
+        before = self.cards()
+        with mock.patch.object(batches, "UNDO", 30):
+            status, _, body = self.approve(entries, self.signed(entries, self.pin()))
+            self.assertEqual(status, 202, body)
+            self.assertEqual(self.cards(), [])
+            self.assertEqual(self.call("POST", f"/api/inbox/undo/{json.loads(body)['id']}", b"", self.guard(self.host))[0], 200)
+        self.assertEqual(self.cards(), before)
+
+    def test_a_batch_holds_its_items_until_apply_returns_and_refuses_an_undo_meanwhile(self):
+        pending = batches.Pending()
+        applying, finish = threading.Event(), threading.Event()
+
+        def apply(_batch: dict) -> None:
+            applying.set()
+            finish.wait(10)
+
+        with mock.patch.object(batches, "UNDO", 0.05):
+            batch = pending.add([{"kind": "review", "id": "r1"}], "operator", None, apply)
+        self.assertTrue(applying.wait(10))
+        self.assertEqual((pending.holds("review", "r1"), pending.listed()), (True, []))
+        with self.assertRaises(Conflict):
+            pending.undo(batch["id"])
+        finish.set()
+        self.settle(lambda: not pending.holds("review", "r1"))
 
     def test_a_commit_card_lists_its_score_line_as_metric_chips_and_a_command_card_none(self):
         _, review = self.stack()

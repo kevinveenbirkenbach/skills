@@ -46,18 +46,26 @@ def place_of(directory: str, scan: dict) -> tuple[str, str, str]:
 
 class Matching:
     def match_cards(self) -> dict:
+        """Returns:
+            {"now", "cards"}: every card waiting on the operator, none held
+            by a release in its undo window or while it applies; a held
+            command card keeps its snapshot, so an undo shows it unchanged.
+        """
         now = time.time()
         claims = read_claims(self.council)
         names = self.names.listed()
         reviews = self.reviews.pending()
         labels = score_labels(self.scripts.skills)
-        cards = [{**self.commit_card(review, reviews, born_of(review.get("agent", ""), names, claims), labels), "to": requester_of(claims, review.get("agent", ""))[0]} for review in reviews]
+        cards = [{**self.commit_card(review, reviews, born_of(review.get("agent", ""), names, claims), labels), "to": requester_of(claims, review.get("agent", ""))[0]} for review in reviews if not self.batches.holds("review", review["id"])]
         tasks = read_register(self.council / REGISTER)
         held = self.open_jobs()
         rows = [row for row in operator_rows(tasks) if row["check"] != "decision" and row["task"] not in held]
+        releasing = {f"operator:{row['task']}" for row in rows if self.batches.holds("operator", row["task"])}
         roots = denied_roots(self.settings_files()[0])
         scan = self.tree.get()
         for row in rows:
+            if f"operator:{row['task']}" in releasing:
+                continue
             agent = adder(tasks[row["task"]])
             cards.append({**self.command_card(row, agent, born_of(agent, names, claims), roots, scan, labels), "to": requester_of(claims, agent)[0]})
         items = self.inbox(now, tasks, self.directory(claims, read_jsonl(self.council / NEWS), now))
@@ -66,7 +74,7 @@ class Matching:
         for answer in self.answers.listed():
             if answer["id"] not in asked:
                 self.answers.remove(answer["id"])
-        listed = {card["id"] for card in cards}
+        listed = {card["id"] for card in cards} | releasing
         for store in (self.match_snapshots, self.merge_previews):
             for snapshot in store.listed():
                 if snapshot["id"] not in listed:
