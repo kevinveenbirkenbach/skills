@@ -17,17 +17,18 @@ FIXTURE = """
 const asleep = {name: "0000:01:00.0", asleep: true};
 const awake = (util, used) => ({name: "0000:01:00.0", util, vram_used: used, vram_total: 1000});
 const unread = {name: "0000:01:00.0", util: null, vram_used: null, vram_total: null};
-const row = (t, cpu, ram, waiting, gpu, disks) => ({t, cpu, ram, swap: 0, load: 1, disks, gpus: [gpu], queue: {waiting, active: 1}});
+const row = (t, cpu, ram, waiting, gpu, disks, queued) => ({t, cpu, ram, swap: 0, load: 1, disks, gpus: [gpu], queue: {waiting, active: 1, ...queued}});
+const head = (id, waited_s, reason) => ({id, kind: "job", waited_s, reason});
 const root = [{mount: "/", used: 250, total: 1000}];
 const samples = [
   row(T, 20, 30, 0, asleep, root),
   row(T + 60, 40, 45, 2, asleep, root),
   row(T + 120, 45, 40, 3, awake(80, 500), [...root, {mount: "/mnt", used: 1, total: 4}]),
-  row(T + 180, 70, 40, 3, awake(90, 600), root),
-  row(T + 240, 30, 30, 1, awake(10, 100), root),
-  row(T + 300, 35, 30, 0, unread, root),
-  row(T + 5000, 10, 10, 1, asleep, root),
-  row(T + 5060, 10, 10, 0, asleep, root),
+  row(T + 180, 70, 40, 3, awake(90, 600), root, {head: head("quality-high-1002", 599, "@BESIDE@")}),
+  row(T + 240, 30, 30, 1, awake(10, 100), root, {head: head("quality-high-1002", 600, "@ESCALATED@")}),
+  row(T + 300, 35, 30, 0, unread, root, {head: head("quality-high-1002", 660, "@RAM@"), hung: ["test-1001"]}),
+  row(T + 5000, 10, 10, 1, asleep, root, {hung: ["test-1001"]}),
+  row(T + 5060, 10, 10, 0, asleep, root, {head: head("deploy-1003", 1200, "@BEHIND@")}),
 ];
 const tokens = [
   {t: T, agent: "Skills", model: "opus", input: 10, output: 20, cache_read: 300, cache_write: 40},
@@ -37,6 +38,12 @@ const tokens = [
   {t: "x", agent: "Bad", model: "opus", input: 1, output: 0, cache_read: 0, cache_write: 0},
 ];
 """
+BESIDE = "quality-high runs only beside test-nostack, but test runs"
+ESCALATED = f"escalated post: {BESIDE}"
+RAM = "RAM 56 % used + 37 % still to come reach the limit 85 %"
+BEHIND = "waits in line behind test-1001"
+FIXTURE = FIXTURE.replace("@BESIDE@", BESIDE).replace("@ESCALATED@", ESCALATED).replace("@RAM@", RAM).replace("@BEHIND@", BEHIND)
+QH = "quality-high-1002"
 PROBE = """
 const R = require(process.argv[1]);
 const T = Number(process.argv[2]);
@@ -50,6 +57,11 @@ console.log(JSON.stringify({
   gpu: pick(lines.gpu),
   segments: R.segments([[T, 1], [T + 60, null], [T + 120, 3], [T + 180, 4], [T + 4000, 5]]),
   waits: R.waits(samples),
+  blocked: R.blocked(samples),
+  hung: R.hung(samples),
+  threshold: R.BLOCKED,
+  under: R.blocked([...samples.slice(0, 4), row(T + 240, 1, 1, 1, asleep, root, {head: {id: 5, waited_s: 9000}}), row(T + 300, 1, 1, 1, asleep, root, {head: {id: "x", waited_s: "900"}, hung: "test-1"})]),
+  quiet: R.hung(samples.slice(0, 5)),
   asleep: R.asleep(samples),
   unknown: R.unknown(samples),
   stack: R.stack(tokens),
@@ -106,6 +118,7 @@ const icon = (name) => make("svg", {class: "bi", "data-icon": name}, []);
 const view = {resources: {hidden: [], tokens: "interval", combined: false, combinedHidden: []}, burn: {overlays: []}, home: {pins: []}};
 const served = JSON.parse(JSON.stringify(view));
 const fetched = [];
+const sheets = [];
 const tasks = [
   {task: "a", kind: "task", status: "done", start: T - 300, end: T + 600, points: 0},
   {task: "b", kind: "task", status: "running", start: T + 1000, end: null, points: 0},
@@ -118,6 +131,7 @@ const context = {
   named: (label, hint) => ({title: hint || label, "aria-label": label}),
   iconBtn: (name, label, cls, run, hint) => make("button", {title: hint, "aria-label": label}, [icon(name)]),
   fixed: (value) => value.toFixed(1), dash: (value) => (value === null ? "–" : value), absolute: {format: () => "d"}, clock: {format: () => "c"}, stampOf: (t) => new Date(t * 1000),
+  revealed: (text) => String(text), counter: (value) => make("span", {class: "count"}, [String(value)]), openSheet: (title, body, wide) => sheets.push({title, body, wide}),
   window: {setTimeout: (run) => run(), setInterval: () => 1, addEventListener: () => null},
   document: {
     hidden: false, activeElement: null, createElement: (tag) => make(tag, {}, []), getElementById: (name) => (name === "view" ? {textContent: JSON.stringify(view)} : null),
@@ -164,9 +178,14 @@ const read = () => {
     lines: [...new Set(all.filter((node) => has(node, "res-line")).map((node) => `${node.attrs["data-series"]}|${node.attrs["data-kind"]}`))],
     ids: [...new Set(all.filter((node) => has(node, "res-line")).map((node) => node.attrs["data-id"]))],
     waits: marks("wait"),
+    blocked: marks("blocked"),
+    hung: marks("hung"),
     asleep: marks("asleep"),
     unknown: marks("unknown"),
     words: all.filter((node) => has(node, "res-mark") && has(node, "unknown")).map((node) => node.children[0].children.join("")),
+    queueWords: all.filter((node) => has(node, "res-mark") && ["wait", "blocked", "hung"].some((kind) => has(node, kind))).map((node) => node.children[0].children.join("")),
+    clickable: all.filter((node) => has(node, "res-mark") && node.listeners.click).map((node) => node.attrs.class),
+    lanes: [...new Set(all.filter((node) => node.tag === "use" && has(node, "res-icon")).map((node) => [node.attrs.class, node.attrs.href, Number(node.attrs.y)].join("|")))],
     bars: all.filter((node) => has(node, "res-bar")).map((node) => [node.attrs["data-agent"], Number(node.attrs["data-t"]), has(node, "faint")]),
     sums: all.filter((node) => has(node, "res-sum")).map((node) => [node.attrs["data-agent"], JSON.parse(node.attrs["data-points"])]),
     burn: all.filter((node) => node.tag === "path" && has(node, "res-burn")).map((node) => [node.attrs["data-series"], Number(node.attrs["data-last"]), Number(node.attrs["data-top"])]),
@@ -177,9 +196,23 @@ const read = () => {
   };
 };
 const press = (selector) => walk(context.screen, []).find(selector).listeners.click();
+const textOf = (node) => node.children.map((child) => (typeof child === "object" ? textOf(child) : String(child))).join("");
+const sheetOf = ({title, body, wide}) => {
+  const nodes = body.flatMap((node) => walk(node, []));
+  return {
+    title, wide,
+    heads: nodes.filter((node) => node.attrs["data-head"]).map((node) => [node.attrs["data-head"], Number(node.attrs["data-from"]), Number(node.attrs["data-to"]), textOf(node.children[1])]),
+    hung: nodes.filter((node) => node.attrs["data-hung"]).map((node) => node.attrs["data-hung"]),
+    counts: nodes.filter((node) => has(node, "count")).map(textOf),
+  };
+};
 (async () => {
   await settle();
   const normal = read();
+  press((node) => has(node, "res-mark") && has(node, "blocked"));
+  press((node) => has(node, "res-mark") && has(node, "hung"));
+  press((node) => has(node, "res-mark") && has(node, "hung") && node.attrs["data-from"] === String(T + 5000));
+  normal.sheets = sheets.map(sheetOf);
   press((node) => node.attrs["data-chip"] === "host:CPU");
   press((node) => node.attrs["data-chip"] === "agent:Stage");
   const hidden = read();
@@ -222,8 +255,29 @@ class TestResourcesModule(unittest.TestCase):
     def test_a_marker_spans_rows_where_jobs_waited_while_cpu_and_ram_stayed_under_half(self):
         self.assertEqual(self.data["waits"], [{"from": T + 60, "to": T + 180, "peak": 3}, {"from": T + 240, "to": T + 300, "peak": 1}, {"from": T + 5000, "to": T + 5060, "peak": 1}])
 
+    def test_a_blocked_span_needs_a_head_that_waited_ten_minutes_and_keeps_its_last_reason_and_steps(self):
+        self.assertEqual(self.data["threshold"], 600)
+        self.assertEqual(self.data["blocked"], [
+            {
+                "from": T + 240, "to": T + 360, "peak": 660, "head": QH, "reason": RAM,
+                "steps": [{"id": QH, "reason": ESCALATED, "from": T + 240, "to": T + 240}, {"id": QH, "reason": RAM, "from": T + 300, "to": T + 300}],
+                "hung": ["test-1001"],
+            },
+            {"from": T + 5060, "to": T + 5120, "peak": 1200, "head": "deploy-1003", "reason": BEHIND, "steps": [{"id": "deploy-1003", "reason": BEHIND, "from": T + 5060, "to": T + 5060}], "hung": []},
+        ])
+
+    def test_a_head_under_ten_minutes_or_without_an_id_or_a_numeric_wait_is_not_blocked(self):
+        self.assertEqual(self.data["under"], [])
+
+    def test_a_hung_span_marks_rows_listing_a_suspect_hung_job_independent_of_the_head(self):
+        self.assertEqual(self.data["hung"], [
+            {"from": T + 300, "to": T + 360, "peak": 1, "steps": [{"id": QH, "reason": RAM, "from": T + 300, "to": T + 300}], "hung": ["test-1001"]},
+            {"from": T + 5000, "to": T + 5060, "peak": 1, "steps": [], "hung": ["test-1001"]},
+        ])
+        self.assertEqual(self.data["quiet"], [])
+
     def test_an_asleep_gpu_gets_its_own_spans(self):
-        self.assertEqual(self.data["asleep"], [{"name": "0000:01:00.0", "spans": [{"from": T, "to": T + 120, "peak": 1}, {"from": T + 5000, "to": T + 5120, "peak": 1}]}])
+        self.assertEqual(self.data["asleep"],[{"name": "0000:01:00.0", "spans": [{"from": T, "to": T + 120, "peak": 1}, {"from": T + 5000, "to": T + 5120, "peak": 1}]}])
 
     def test_an_awake_gpu_without_a_reading_gets_unknown_spans_apart_from_asleep_ones(self):
         self.assertEqual(self.data["unknown"], [{"name": "0000:01:00.0", "spans": [{"from": T + 300, "to": T + 360, "peak": 1}]}])
@@ -293,6 +347,25 @@ class TestResourcesPage(unittest.TestCase):
         self.assertEqual(found["switches"], [["tokens", "false"], ["combined", "false"]])
         names = [("Hardware: disks, CPU, RAM, swap, GPU and VRAM", "bi-cpu"), ("Tokens per agent", "bi-coin"), ("Hardware, tokens and burnup", "bi-layers")]
         self.assertEqual(found["titles"], [[name, name, icon] for name, icon in names])
+
+    def test_blocked_and_hung_marks_sit_in_lanes_of_their_own_and_name_head_wait_reason_and_ids(self):
+        found = self.found["normal"]
+        self.assertEqual((found["blocked"], found["hung"]), ([[T + 240, T + 360], [T + 5060, T + 5120]], [[T + 300, T + 360], [T + 5000, T + 5060]]))
+        idle = "jobs waited while CPU and RAM stayed under 50 %"
+        self.assertEqual(found["queueWords"], [
+            f"Idle waiting: 3 {idle}", f"Idle waiting: 1 {idle}", f"Idle waiting: 1 {idle}",
+            f"{QH} waited 11 min: {RAM}", f"deploy-1003 waited 20 min: {BEHIND}", "suspect hung: test-1001", "suspect hung: test-1001",
+        ])
+        self.assertEqual(found["clickable"], ["res-mark blocked"] * 2 + ["res-mark hung"] * 2)
+        self.assertEqual(found["lanes"], [
+            "res-icon wait|#bi-hourglass-split|8", "res-icon blocked|#bi-sign-stop|21", "res-icon hung|#bi-pause-circle|34", "res-icon asleep|#bi-moon|8", "res-icon unknown|#bi-question-circle|8",
+        ])
+
+    def test_a_click_on_a_blocked_or_hung_mark_opens_a_sheet_of_each_head_reason_with_its_first_and_last_time_and_the_hung_ids(self):
+        blocked, hung, alone = self.found["normal"]["sheets"]
+        self.assertEqual(blocked, {"title": f"{QH} waited 11 min", "wide": False, "heads": [[QH, T + 240, T + 240, ESCALATED], [QH, T + 300, T + 300, RAM]], "hung": ["test-1001"], "counts": ["2", "1"]})
+        self.assertEqual(hung, {"title": "Suspect hung: test-1001", "wide": False, "heads": [[QH, T + 300, T + 300, RAM]], "hung": ["test-1001"], "counts": ["1", "1"]})
+        self.assertEqual(alone, {"title": "Suspect hung: test-1001", "wide": False, "heads": [], "hung": ["test-1001"], "counts": ["0", "1"]})
 
     def test_hiding_a_chip_removes_its_line_or_its_agent_and_stores_the_list(self):
         found = self.found["hidden"]
@@ -392,7 +465,7 @@ class TestHubResources(HubCase):
         self.assertIn(MODULE.read_text(encoding="utf-8").strip(), html)
         self.assertIn(PAGE.read_text(encoding="utf-8").strip(), html)
         self.assertIn(STYLE.read_text(encoding="utf-8").strip(), html)
-        for name in ("speedometer2", "cpu", "coin", "layers", "graph-up-arrow", "hourglass-split", "moon", "question-circle"):
+        for name in ("speedometer2", "cpu", "coin", "layers", "graph-up-arrow", "hourglass-split", "sign-stop", "pause-circle", "moon", "question-circle"):
             with self.subTest(icon=name):
                 self.assertIn(f'<symbol id="bi-{name}"', html)
         done = subprocess.run(["node", "-e", "const N = require(process.argv[1]); console.log(JSON.stringify([N.TABS.at(-1), N.ICONS.resources, N.route('#resources')]));", str(NAV)], capture_output=True, text=True, timeout=60, check=True)

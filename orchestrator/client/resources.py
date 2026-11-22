@@ -2,10 +2,14 @@
 """Args:
     sample: append one row to <state>/samples.jsonl: {t, disks: [{mount,
         used, total}], cpu, ram, swap, load, gpus: [{name, util, vram_used,
-        vram_total} | {name, asleep: true}], queue: {waiting, active},
-        psi_some, psi_full, swap_out_mb_min}; t in epoch seconds, used, total
-        and vram in bytes, cpu, ram, swap and util in percent, load the
-        1-minute load average, a GPU named by its PCI address. cpu is the
+        vram_total} | {name, asleep: true}], queue: {waiting, active, head,
+        hung}, psi_some, psi_full, swap_out_mb_min}; t in epoch seconds, used,
+        total and vram in bytes, cpu, ram, swap and util in percent, load the
+        1-minute load average, a GPU named by its PCI address. head is {id,
+        kind, waited_s, reason} of the first waiting row of one `queue.py
+        list --json` run per sample, hung the ids of its active rows whose
+        reason says suspect hung; each is left out without one, and both
+        while that run fails or prints no JSON list. cpu is the
         busy share of the /proc/stat ticks since those the run before kept in
         <state>/cpu.json as [t, idle, total], None on the first run and after
         a gap of more than 15 minutes. psi_some and psi_full are the avg10 of
@@ -19,8 +23,9 @@
         and vram None. In the first minute of a 15-minute bucket, rows older
         than 7 days fold into 15-minute means and means older than 90 days
         into one mean per day, kept forever, each row weighted by the seconds
-        it sampled; a folded row carries span, the seconds its rows sampled
-        (60 per raw row), and width, the seconds of its bucket.
+        it sampled, the queue keeping the last head and every hung id; a
+        folded row carries span, the seconds its rows sampled (60 per raw
+        row), and width, the seconds of its bucket.
     tokens: add the input, output, cache-read and cache-write tokens of the
         usage fields in the Claude Code transcripts under --transcripts since
         each file's byte offset to <state>/tokens.jsonl as {t, agent, model,
@@ -37,6 +42,8 @@
     --state: the directory of these files, the unit passes
         ~/.local/state/agents-council/resources.
     --council: the council directory with queue.json and the claims.
+    --queue (sample): the installed kvb-org-queue queue.py, run with
+        AGENTS_COUNCIL_ROOT set to --council.
     --transcripts (tokens): Claude Code's projects directory.
     --proc, --sys (sample): where /proc and /sys are mounted.
 
@@ -61,6 +68,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -93,7 +101,11 @@ OFFSETS = "offsets.json"
 TICKS = "cpu.json"
 SWAPPED = "swap.json"
 PAGE_BYTES = os.sysconf("SC_PAGE_SIZE")
-MB = 1_000_000
+MEGABYTE = 1_000_000
+QUEUE_ARGS = ("list", "--json")
+ID_TEXT = 64
+REASON_TEXT = 240
+HUNG = "suspect hung ("
 
 
 def read_text(path: Path) -> str:
@@ -258,6 +270,56 @@ def queue(council: Path) -> dict:
     return {"waiting": statuses.count("waiting"), "active": statuses.count("active")}
 
 
+def string_of(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def queue_rows(text: str | None) -> list[dict] | None:
+    """Returns:
+        The objects of the JSON list `queue.py list --json` printed as text;
+        None when text holds no JSON list.
+    """
+    try:
+        data = json.loads(text) if text else None
+    except (ValueError, RecursionError):
+        return None
+    return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else None
+
+
+def head_of(rows: list[dict]) -> dict | None:
+    """Returns:
+        {id, kind, waited_s, reason} of the first waiting row, id and kind cut
+        to ID_TEXT characters, reason to REASON_TEXT; None without a waiting
+        row or when it lacks a string id or a number waited_s.
+    """
+    first = next((row for row in rows if row.get("status") == "waiting"), None)
+    if first is None or not isinstance(first.get("id"), str) or not is_number(first.get("waited_s")):
+        return None
+    return {"id": first["id"][:ID_TEXT], "kind": string_of(first.get("kind"))[:ID_TEXT], "waited_s": first["waited_s"], "reason": string_of(first.get("reason"))[:REASON_TEXT]}
+
+
+def hung_ids(rows: list[dict]) -> list[str]:
+    return [row["id"][:ID_TEXT] for row in rows if row.get("status") == "active" and isinstance(row.get("id"), str) and HUNG in string_of(row.get("reason"))]
+
+
+def queue_view(council: Path, script: Path, run: Callable[[list[str]], str | None]) -> dict:
+    """Returns:
+        {head, hung} of one `queue.py list --json` run of script through run
+        with AGENTS_COUNCIL_ROOT set to council, head as head_of() gives it,
+        hung as hung_ids(), each left out without one; {} when the run fails
+        or prints no JSON list.
+    """
+    rows = queue_rows(run(["env", f"AGENTS_COUNCIL_ROOT={council}", sys.executable, "-I", "-B", str(script), *QUEUE_ARGS]))
+    if rows is None:
+        return {}
+    head, hung = head_of(rows), hung_ids(rows)
+    return {**({"head": head} if head else {}), **({"hung": hung} if hung else {})}
+
+
+def queue_state(council: Path, script: Path, run: Callable[[list[str]], str | None]) -> dict:
+    return {**queue(council), **queue_view(council, script, run)}
+
+
 def integers(value: object, size: int) -> bool:
     return isinstance(value, list) and len(value) == size and all(isinstance(item, int) and not isinstance(item, bool) for item in value)
 
@@ -306,10 +368,10 @@ def swap_out_since(proc: Path, state: Path, t: int) -> float | None:
     replace(state / SWAPPED, json.dumps([t, pages]))
     if not integers(stored, 2) or not t - BUCKET <= stored[0] < t or stored[1] > pages:
         return None
-    return round((pages - stored[1]) * PAGE_BYTES / MB * 60 / (t - stored[0]), 1)
+    return round((pages - stored[1]) * PAGE_BYTES / MEGABYTE * 60 / (t - stored[0]), 1)
 
 
-def sample(proc: Path, sys_root: Path, council: Path, run: Callable[[list[str]], str | None], state: Path) -> dict:
+def sample(proc: Path, sys_root: Path, queued: Callable[[], dict], run: Callable[[list[str]], str | None], state: Path) -> dict:
     t = int(time.time())
     ram, swap = memory(parse_meminfo(read_text(proc / "meminfo")))
     pressure = read_text(proc / "pressure" / "memory")
@@ -321,7 +383,7 @@ def sample(proc: Path, sys_root: Path, council: Path, run: Callable[[list[str]],
         "swap": swap,
         "load": parse_loadavg(read_text(proc / "loadavg")),
         "gpus": gpus(sys_root, run),
-        "queue": queue(council),
+        "queue": queued(),
         "psi_some": psi_avg10(pressure, "some"),
         "psi_full": psi_avg10(pressure, "full"),
         "swap_out_mb_min": swap_out_since(proc, state, t),
@@ -381,9 +443,26 @@ def disk_means(rows: list[dict]) -> list[dict]:
     return [{"mount": mount, "used": whole(means(disks, "used")), "total": whole(means(disks, "total"))} for mount, disks in grouped(listed(rows, "disks"), "mount").items()]
 
 
+def queue_marks(queues: list[dict]) -> dict:
+    """Returns:
+        {head, hung} of a bucket's queue entries: the head of the last entry
+        that carries one and the hung ids of every entry, each once in the
+        order first seen; each left out without one.
+    """
+    heads = [entry["head"] for entry in queues if isinstance(entry.get("head"), dict)]
+    lists = [entry["hung"] for entry in queues if isinstance(entry.get("hung"), list)]
+    hung = list(dict.fromkeys(item for found in lists for item in found if isinstance(item, str)))
+    return {**({"head": heads[-1]} if heads else {}), **({"hung": hung} if hung else {})}
+
+
 def queue_mean(rows: list[dict]) -> dict:
+    """Returns:
+        The weighted means of waiting and active with queue_marks() of the
+        bucket.
+    """
     queues = [(weight(row), row["queue"]) for row in rows if isinstance(row.get("queue"), dict)]
-    return {key: average(means(queues, key), 2) for key in ("waiting", "active")}
+    found = {key: average(means(queues, key), 2) for key in ("waiting", "active")}
+    return {**found, **queue_marks([entry for _, entry in queues])}
 
 
 def mean_row(start: int, width: int, rows: list[dict]) -> dict:
@@ -732,11 +811,12 @@ def main() -> int:
         sub.add_argument("--council", type=Path, required=True)
     sampling.add_argument("--proc", type=Path, required=True)
     sampling.add_argument("--sys", type=Path, required=True)
+    sampling.add_argument("--queue", type=Path, required=True)
     counting.add_argument("--transcripts", type=Path, required=True)
     args = parser.parse_args()
     args.state.mkdir(parents=True, exist_ok=True)
     if args.command == "sample":
-        row = sample(args.proc, args.sys, args.council, command, args.state)
+        row = sample(args.proc, args.sys, functools.partial(queue_state, args.council, args.queue, command), command, args.state)
         record(args.state, row, row["t"])
     else:
         count_tokens(args.transcripts, args.council, args.state, time.time(), BUDGET)

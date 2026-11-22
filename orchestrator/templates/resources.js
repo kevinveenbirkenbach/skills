@@ -3,6 +3,7 @@ const Resources = (() => {
   const IDLE = 30;
   const SATURATED = 90;
   const CALM = 50;
+  const BLOCKED = 600;
   const GAP = 1800;
   const STEP = 60;
   const HOUR = 3600;
@@ -98,6 +99,73 @@ const Resources = (() => {
     return spans(samples, (row) => waiting(row) > 0 && finite(row.cpu) && finite(row.ram) && row.cpu < CALM && row.ram < CALM, waiting);
   }
 
+  function headOf(row) {
+    const head = row.queue && row.queue.head;
+    if (!head || typeof head !== "object" || typeof head.id !== "string" || !finite(head.waited_s)) {
+      return null;
+    }
+    return {id: head.id, waited: head.waited_s, reason: typeof head.reason === "string" ? head.reason : ""};
+  }
+
+  const hungOf = (row) => (row.queue && Array.isArray(row.queue.hung) ? row.queue.hung.filter((id) => typeof id === "string") : []);
+
+  function headSteps(rows) {
+    const found = [];
+    for (const row of rows) {
+      const head = headOf(row);
+      if (!head) {
+        continue;
+      }
+      const last = found[found.length - 1];
+      if (last && last.id === head.id && last.reason === head.reason) {
+        last.to = row.t;
+      } else {
+        found.push({id: head.id, reason: head.reason, from: row.t, to: row.t});
+      }
+    }
+    return found;
+  }
+
+  /**
+   * @param samples - sampler rows.
+   * @param test - whether a row belongs to a span.
+   * @param value - the number of a row its span's peak is the largest of.
+   * @param more - the extra keys of a span from the rows in it.
+   * @returns spans() of test and value, each with more() of its rows, steps (per run of one head with one reason
+   * its id, reason and first and last row time) and hung, every id suspect hung in it, once.
+   */
+  function queueSpans(samples, test, value, more) {
+    const rows = timed(samples).filter(test);
+    return spans(samples, test, value).map((span) => {
+      const inside = rows.filter((row) => row.t === span.from || (row.t > span.from && row.t < span.to));
+      return {...span, ...more(inside), steps: headSteps(inside), hung: [...new Set(inside.flatMap(hungOf))]};
+    });
+  }
+
+  /**
+   * @param samples - sampler rows.
+   * @returns queueSpans() where the queue head had waited at least BLOCKED seconds, peak the longest wait in
+   * seconds, head and reason those of the span's last row.
+   */
+  function blocked(samples) {
+    const waited = (row) => {
+      const head = headOf(row);
+      return head === null ? 0 : head.waited;
+    };
+    return queueSpans(samples, (row) => waited(row) >= BLOCKED, waited, (inside) => {
+      const last = headOf(inside[inside.length - 1]);
+      return {head: last.id, reason: last.reason};
+    });
+  }
+
+  /**
+   * @param samples - sampler rows.
+   * @returns queueSpans() where the queue listed an active job as suspect hung, peak the most such jobs at once.
+   */
+  function hung(samples) {
+    return queueSpans(samples, (row) => hungOf(row).length > 0, (row) => hungOf(row).length, () => ({}));
+  }
+
   function gpuSpans(samples, test) {
     const names = [...new Set(timed(samples).flatMap((row) => listOf(row, "gpus").filter(test).map((gpu) => String(gpu.name))))];
     return names.map((name) => ({name, spans: spans(samples, (row) => listOf(row, "gpus").some((gpu) => String(gpu.name) === name && test(gpu)), () => 1)}));
@@ -190,7 +258,7 @@ const Resources = (() => {
     return unit ? `${(value / unit[0]).toFixed(1)}${unit[1]}` : String(Math.round(value));
   }
 
-  return {IDLE, SATURATED, CALM, GAP, HOUR, COUNTS, ZONES, lines, hardware, segments, spans, waits, asleep, unknown, stack, accumulate, burnup, compact};
+  return {IDLE, SATURATED, CALM, BLOCKED, GAP, HOUR, COUNTS, ZONES, lines, hardware, segments, spans, waits, blocked, hung, asleep, unknown, stack, accumulate, burnup, compact};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Resources;

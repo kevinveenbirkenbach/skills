@@ -16,9 +16,13 @@ svg .res-sum { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: r
 svg .res-burn { fill: none; stroke: var(--c); stroke-width: 2.4; stroke-linejoin: round; }
 svg .res-burn.k-scope { stroke-dasharray: 7 4; }
 svg .res-mark.wait { fill: var(--warn-soft); stroke: var(--warn); stroke-dasharray: 3 3; }
+svg .res-mark.blocked { fill: var(--bad-soft); stroke: var(--bad); cursor: pointer; }
+svg .res-mark.hung { fill: var(--violet-soft); stroke: var(--violet); stroke-dasharray: 1 3; cursor: pointer; }
 svg .res-mark.asleep { fill: var(--neutral-soft); }
 svg .res-mark.unknown { fill: var(--neutral-soft); stroke: var(--muted); stroke-dasharray: 2 3; }
 svg .res-icon.wait { fill: var(--warn); }
+svg .res-icon.blocked { fill: var(--bad); pointer-events: none; }
+svg .res-icon.hung { fill: var(--violet); pointer-events: none; }
 svg .res-icon.asleep, svg .res-icon.unknown { fill: var(--muted); }
 svg .res-bar { fill: var(--c); }
 svg .res-bar.faint { opacity: 0.35; }

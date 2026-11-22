@@ -1,10 +1,12 @@
-  const RESOURCE = {left: 46, right: 10, wide: 50, top: 6, bottom: 6, axis: 18, poll: 5000, stale: 60, tones: 6, glyph: 6.5, shown: 100};
+  const RESOURCE = {left: 46, right: 10, wide: 50, top: 6, bottom: 6, axis: 18, poll: 5000, stale: 60, tones: 6, glyph: 6.5, shown: 100, lane: 13};
   const RESOURCE_PANELS = [["hardware", "bi-cpu", "Hardware: disks, CPU, RAM, swap, GPU and VRAM"], ["tokens", "bi-coin", "Tokens per agent"], ["combined", "bi-layers", "Hardware, tokens and burnup"]];
   const RESOURCE_ZONES = {idle: "Idle: below 30 %", saturated: "Saturated: above 90 %"};
   const RESOURCE_MARKS = {
-    wait: ["#bi-hourglass-split", (mark) => `${mark.peak} jobs waited while CPU and RAM stayed under 50 %`],
-    asleep: ["#bi-moon", (mark) => `${mark.name} asleep`],
-    unknown: ["#bi-question-circle", (mark) => `${mark.name} unknown: no reading`],
+    wait: ["#bi-hourglass-split", (mark) => `Idle waiting: ${mark.peak} jobs waited while CPU and RAM stayed under 50 %`, 0],
+    blocked: ["#bi-sign-stop", (mark) => revealed(`${mark.head} waited ${Math.round(mark.peak / 60)} min: ${mark.reason}`), 1],
+    hung: ["#bi-pause-circle", (mark) => revealed(`suspect hung: ${mark.hung.join(", ")}`), 2],
+    asleep: ["#bi-moon", (mark) => `${mark.name} asleep`, 0],
+    unknown: ["#bi-question-circle", (mark) => `${mark.name} unknown: no reading`, 0],
   };
   const RESOURCE_BURN = {done: "Done", scope: "Scope"};
   const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0, series: {}};
@@ -130,10 +132,36 @@
       if (right <= left) {
         continue;
       }
-      const [href, words] = RESOURCE_MARKS[mark.kind];
-      frame.svg.append(s("rect", {class: `res-mark ${mark.kind}`, "data-from": mark.from, "data-to": mark.to, "data-peak": mark.peak, x: fixed(left), width: fixed(Math.max(right - left, 2)), y: frame.top, height: fixed(frame.bottom - frame.top)}, s("title", {}, words(mark))));
-      frame.svg.append(s("use", {class: `res-icon ${mark.kind}`, href, x: fixed(left + 2), y: frame.top + 2, width: 11, height: 11}));
+      const [href, words, lane] = RESOURCE_MARKS[mark.kind];
+      const press = (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          resourceQueueSheet(mark);
+        }
+      };
+      const open = mark.steps ? {role: "button", tabindex: 0, "aria-label": words(mark), on: {click: () => resourceQueueSheet(mark), keydown: press}} : {};
+      frame.svg.append(s("rect", {class: `res-mark ${mark.kind}`, "data-from": mark.from, "data-to": mark.to, "data-peak": mark.peak, x: fixed(left), width: fixed(Math.max(right - left, 2)), y: frame.top, height: fixed(frame.bottom - frame.top), ...open}, s("title", {}, words(mark))));
+      frame.svg.append(s("use", {class: `res-icon ${mark.kind}`, href, x: fixed(left + 2), y: frame.top + 2 + lane * RESOURCE.lane, width: 11, height: 11}));
     }
+  }
+
+  /**
+   * @param mark - a blocked or hung mark: {kind, from, to, peak, steps, hung} and for blocked head.
+   */
+  function resourceQueueSheet(mark) {
+    const time = (t) => absolute.format(stampOf(t));
+    const title = mark.kind === "blocked" ? `${mark.head} waited ${Math.round(mark.peak / 60)} min` : `Suspect hung: ${mark.hung.join(", ")}`;
+    const steps = mark.steps.map((step) => h("li", {"data-head": step.id, "data-from": step.from, "data-to": step.to},
+      h("div", {class: "row"}, h("code", {}, revealed(step.id)), h("span", {class: "muted"}, `${time(step.from)} to ${time(step.to)}`)),
+      h("p", {class: "text"}, revealed(step.reason === "" ? "no reason given" : step.reason))));
+    const hung = mark.hung.map((id) => h("li", {"data-hung": id}, h("code", {}, revealed(id))));
+    openSheet(title, [
+      h("p", {class: "muted"}, `${time(mark.from)} to ${time(mark.to)}`),
+      h("h3", {}, "Queue head", counter(steps.length)),
+      steps.length ? h("ul", {class: "mini"}, steps) : h("p", {class: "muted"}, "No job waited at the head of the queue."),
+      h("h3", {}, "Suspect hung", counter(hung.length)),
+      hung.length ? h("ul", {class: "mini"}, hung) : h("p", {class: "muted"}, "No active job was suspect hung."),
+    ], false);
   }
 
   function resourceLines(frame, y, list) {
@@ -311,6 +339,8 @@
       burn: view.combined ? burnSeries(span) : [],
       marks: [
         ...Resources.waits(data.samples).map((mark) => ({...mark, kind: "wait"})),
+        ...Resources.blocked(data.samples).map((mark) => ({...mark, kind: "blocked"})),
+        ...Resources.hung(data.samples).map((mark) => ({...mark, kind: "hung"})),
         ...["asleep", "unknown"].flatMap((kind) => Resources[kind](data.samples).flatMap((gpu) => gpu.spans.map((mark) => ({...mark, kind, name: gpu.name})))),
       ],
     };

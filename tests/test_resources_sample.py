@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fcntl
+import functools
 import json
 import os
 import subprocess
@@ -54,6 +55,20 @@ with Path(os.environ["STUB_LOG"]).open("a", encoding="utf-8") as handle:
     handle.write(json.dumps([Path(sys.argv[0]).name, *sys.argv[1:]]) + "\\n")
 sys.stdout.write(os.environ["STUB_" + Path(sys.argv[0]).name.replace("-", "_").upper()])
 """
+QUEUE_STUB = """import json, os, sys
+from pathlib import Path
+with Path(os.environ["STUB_LOG"]).open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps([Path(sys.argv[0]).name, *sys.argv[1:], os.environ["AGENTS_COUNCIL_ROOT"]]) + "\\n")
+sys.stdout.write(os.environ["STUB_QUEUE"])
+"""
+REASON = "escalated post: quality-high runs only beside test-nostack, but test runs"
+QUEUE_ROWS = [
+    {"position": None, "id": "test-1001", "status": "active", "kind": "test", "task": "t", "waited_s": 30, "eta_s": None, "reason": "suspect hung (95 min); granted beside deploy-1000", "trace": []},
+    {"position": None, "id": "deploy-1000", "status": "active", "kind": "deploy", "task": "t", "waited_s": 0, "eta_s": 600, "reason": "-", "trace": []},
+    {"position": 1, "id": "quality-high-1002", "status": "waiting", "kind": "quality-high", "task": "t", "waited_s": 2880, "eta_s": None, "reason": REASON, "trace": ["step"]},
+    {"position": 2, "id": "build-1004", "status": "waiting", "kind": "build", "task": "t", "waited_s": 60, "eta_s": None, "reason": "waits in line behind quality-high-1002", "trace": []},
+]
+HEAD = {"id": "quality-high-1002", "kind": "quality-high", "waited_s": 2880, "reason": REASON}
 
 
 def device(root: Path, address: str, vendor: str, kind: str, status: str | None) -> None:
@@ -136,6 +151,65 @@ class TestParsing(unittest.TestCase):
             self.assertEqual(sampler.queue(council), {"waiting": 1, "active": 1})
 
 
+class TestQueueView(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+
+    def answer(self, output: str | None):
+        def run(argv: list[str]) -> str | None:
+            self.calls.append(argv)
+            return output
+
+        return run
+
+    def test_the_head_is_the_first_waiting_row_and_hung_the_active_rows_queue_py_suspects(self):
+        found = sampler.queue_view(Path("/council"), Path("/skills/kvb-org-queue/scripts/queue.py"), self.answer(json.dumps(QUEUE_ROWS, indent=1)))
+        self.assertEqual(found, {"head": HEAD, "hung": ["test-1001"]})
+        self.assertEqual(self.calls, [["env", "AGENTS_COUNCIL_ROOT=/council", sys.executable, "-I", "-B", "/skills/kvb-org-queue/scripts/queue.py", "list", "--json"]])
+
+    def test_a_stamped_reason_still_says_suspect_hung_and_long_texts_are_cut(self):
+        rows = [
+            {"id": "test-7", "status": "active", "reason": "queue code abc, the host runs def: suspect hung (12 min)"},
+            {"id": "test-8", "status": "active", "reason": "granted; not suspect hung yet"},
+            {"id": "x" * 100, "status": "waiting", "kind": "k" * 100, "waited_s": 700.5, "reason": "r" * 1000},
+        ]
+        found = sampler.queue_view(Path("/council"), Path("/queue.py"), self.answer(json.dumps(rows)))
+        self.assertEqual(found, {"head": {"id": "x" * sampler.ID_TEXT, "kind": "k" * sampler.ID_TEXT, "waited_s": 700.5, "reason": "r" * sampler.REASON_TEXT}, "hung": ["test-7"]})
+
+    def test_a_head_without_an_id_or_a_wait_is_no_head_and_a_quiet_queue_adds_nothing(self):
+        for rows in ([{"status": "waiting", "waited_s": 900}, {"id": "next", "status": "waiting", "waited_s": 900}], [{"id": "w", "status": "waiting", "waited_s": True}], [QUEUE_ROWS[1]], []):
+            with self.subTest(rows=rows):
+                self.assertEqual(sampler.queue_view(Path("/council"), Path("/queue.py"), self.answer(json.dumps(rows))), {})
+
+    def test_a_failing_or_silent_queue_py_leaves_the_counts_alone(self):
+        for output in (None, "", "Traceback (most recent call last):", '{"entries": []}', "[1, 2"):
+            with self.subTest(output=output):
+                self.assertEqual(sampler.queue_view(Path("/council"), Path("/queue.py"), self.answer(output)), {})
+        with tempfile.TemporaryDirectory() as tmp:
+            council, state = Path(tmp), Path(tmp) / "state"
+            state.mkdir()
+            (council / "queue.json").write_text(json.dumps({"entries": [{"status": "waiting", "enqueued": NOW}]}), encoding="utf-8")
+            self.calls.clear()
+            silent = self.answer(None)
+            found = sampler.sample(council, council / "sys", functools.partial(sampler.queue_state, council, council / "missing.py", silent), silent, state)
+            self.assertEqual(found["queue"], {"waiting": 1, "active": 0})
+            self.assertEqual([argv[0] for argv in self.calls], ["df", "env"])
+
+    def test_the_bucket_mean_keeps_the_last_head_and_every_hung_id_once(self):
+        asleep = {"name": ASLEEP, "asleep": True}
+        first = {**HEAD, "waited_s": 600, "reason": "quality-high runs only beside test-nostack, but test runs"}
+        last = {**HEAD, "waited_s": 660, "reason": "RAM 56 % used + 37 % still to come reach the limit 85 %"}
+        rows = [
+            row(NOW + 60, 1.0, 1, 1, asleep) | {"queue": {"waiting": 1, "active": 1, "head": first, "hung": ["test-1001"]}},
+            row(NOW + 120, 1.0, 1, 1, asleep) | {"queue": {"waiting": 1, "active": 1, "head": last, "hung": ["deploy-1003", "test-1001"]}},
+            row(NOW + 180, 1.0, 1, 0, asleep),
+        ]
+        self.assertEqual(sampler.mean_row(NOW, sampler.BUCKET, rows)["queue"], {"waiting": 0.67, "active": 1.0, "head": last, "hung": ["test-1001", "deploy-1003"]})
+        day = sampler.mean_row(NOW - NOW % DAY, DAY, [sampler.mean_row(NOW, sampler.BUCKET, rows), row(NOW + sampler.BUCKET, 1.0, 1, 0, asleep)])
+        self.assertEqual((day["queue"]["head"], day["queue"]["hung"]), (last, ["test-1001", "deploy-1003"]))
+        self.assertEqual(sampler.queue_mean(rows[2:]), {"waiting": 0.0, "active": 1.0})
+
+
 class TestCpu(unittest.TestCase):
     def test_cpu_is_the_busy_share_since_the_ticks_the_run_before_kept_and_the_sampler_never_sleeps(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -144,7 +218,7 @@ class TestCpu(unittest.TestCase):
             state.mkdir()
             (proc / "stat").write_text(STAT_BEFORE, encoding="utf-8")
             with mock.patch.object(sampler.time, "sleep", side_effect=AssertionError("slept")), mock.patch.object(sampler.time, "time", return_value=NOW - 60):
-                self.assertIsNone(sampler.sample(proc, Path(tmp) / "sys", Path(tmp), lambda argv: None, state)["cpu"])
+                self.assertIsNone(sampler.sample(proc, Path(tmp) / "sys", functools.partial(sampler.queue_state, Path(tmp), Path(tmp) / "queue.py", lambda _argv: None), lambda _argv: None, state)["cpu"])
             (proc / "stat").write_text(STAT_AFTER, encoding="utf-8")
             self.assertEqual(sampler.cpu_since(proc, state, NOW), 61.5)
             (proc / "stat").write_text(STAT_LATER, encoding="utf-8")
@@ -185,7 +259,7 @@ class TestPressure(unittest.TestCase):
 
     def test_a_sample_row_adds_the_pressure_keys_and_keeps_every_other_key(self):
         (self.proc / "pressure" / "memory").write_text("some avg10=3.00 avg60=0 avg300=0 total=1\n", encoding="utf-8")
-        found = sampler.sample(self.proc, self.proc / "sys", self.proc, lambda argv: None, self.state)
+        found = sampler.sample(self.proc, self.proc / "sys", functools.partial(sampler.queue_state, self.proc, self.proc / "queue.py", lambda _argv: None), lambda _argv: None, self.state)
         self.assertEqual(sorted(found), ["cpu", "disks", "gpus", "load", "psi_full", "psi_some", "queue", "ram", "swap", "swap_out_mb_min", "t"])
         self.assertEqual((found["psi_some"], found["psi_full"], found["swap_out_mb_min"]), (3.0, None, None))
 
@@ -324,17 +398,20 @@ class TestSamplerInScratchHome(unittest.TestCase):
         for tool in ("df", "nvidia-smi"):
             (stubs / tool).write_text(STUB, encoding="utf-8")
             (stubs / tool).chmod(0o755)
+        self.queue = base / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
+        self.queue.parent.mkdir(parents=True)
+        self.queue.write_text(QUEUE_STUB, encoding="utf-8")
         self.sys = host_sys(base / "sys")
         self.log = base / "calls.jsonl"
         (self.council / "queue.json").write_text(json.dumps({"entries": [{"status": status, "enqueued": NOW} for status in ("waiting", "active", "active")]}), encoding="utf-8")
         self.env = {
             **os.environ, "HOME": str(self.home), "PATH": f"{stubs}:/usr/bin:/bin",
-            "STUB_LOG": str(self.log), "STUB_DF": DF, "STUB_NVIDIA_SMI": NVIDIA_SMI.splitlines()[0] + "\n",
+            "STUB_LOG": str(self.log), "STUB_DF": DF, "STUB_NVIDIA_SMI": NVIDIA_SMI.splitlines()[0] + "\n", "STUB_QUEUE": json.dumps(QUEUE_ROWS, indent=1),
         }
         self.resources = self.home / ".local" / "state" / "agents-council" / "resources"
 
     def sample(self) -> None:
-        argv = [sys.executable, str(SCRIPT), "sample", "--state", str(self.resources), "--council", str(self.council), "--proc", str(self.proc), "--sys", str(self.sys)]
+        argv = [sys.executable, str(SCRIPT), "sample", "--state", str(self.resources), "--council", str(self.council), "--proc", str(self.proc), "--sys", str(self.sys), "--queue", str(self.queue)]
         done = subprocess.run(argv, env=self.env, capture_output=True, text=True, timeout=60, check=False)
         self.assertEqual(done.returncode, 0, done.stderr)
 
@@ -350,12 +427,13 @@ class TestSamplerInScratchHome(unittest.TestCase):
                 self.assertEqual(sorted(found), ["cpu", "disks", "gpus", "load", "psi_full", "psi_some", "queue", "ram", "swap", "swap_out_mb_min", "t"])
                 self.assertEqual(found["disks"], DISKS)
                 self.assertEqual(found["gpus"], [{"name": AWAKE, "util": 37.0, "vram_used": 2048 * MIB, "vram_total": 8188 * MIB}, {"name": ASLEEP, "asleep": True}])
-                self.assertEqual(found["queue"], {"waiting": 1, "active": 2})
+                self.assertEqual(found["queue"], {"waiting": 1, "active": 2, "head": HEAD, "hung": ["test-1001"]})
                 self.assertEqual((found["ram"], found["swap"], found["load"]), (25.0, 25.0, 1.25))
         self.assertEqual([found["cpu"] for found in rows], [None, 61.5])
         self.assertLessEqual(rows[0]["t"], rows[1]["t"])
         calls = [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual([call[0] for call in calls], ["df", "nvidia-smi"] * 2)
+        self.assertEqual([call[0] for call in calls], ["df", "nvidia-smi", "queue.py"] * 2)
+        self.assertEqual(calls[2], ["queue.py", "list", "--json", str(self.council)])
         self.assertTrue(all(ASLEEP not in " ".join(call) for call in calls), calls)
         self.assertEqual(sorted(path.name for path in samples.parent.iterdir()), ["cpu.json", "samples.jsonl"])
 
@@ -369,7 +447,7 @@ class TestTimer(unittest.TestCase):
         script = "/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/resources.py"
         shared = "--state ${KVB_ORCHESTRATOR_KEPT}/resources --council ${KVB_ORCHESTRATOR_COUNCIL}"
         self.assertEqual([line for line in service if line.startswith("ExecStart=")], [
-            f"ExecStart={script} sample {shared} --proc /proc --sys /sys",
+            f"ExecStart={script} sample {shared} --proc /proc --sys /sys --queue ${{KVB_ORCHESTRATOR_SKILLS}}/kvb-org-queue/scripts/queue.py",
             f"ExecStart={script} tokens {shared} --transcripts ${{KVB_ORCHESTRATOR_PROJECTS}}",
         ])
         self.assertIn("EnvironmentFile=%h/.local/share/kvb-orchestrator/.env", service)
@@ -381,6 +459,7 @@ class TestTimer(unittest.TestCase):
         self.assertIn('RESOURCES_UNIT="${NAME}-resources"', script)
         self.assertIn('systemctl --user enable --now "${RESOURCES_UNIT}.timer"', script)
         self.assertIn('"${HUB}/client/resources.py"', script)
+        self.assertIn("KVB_ORCHESTRATOR_SKILLS=%s", script)
 
 
 if __name__ == "__main__":
