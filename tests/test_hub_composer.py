@@ -192,6 +192,12 @@ class TestHubComposer(HubCase):
                 result = self.check(sent, text, to)
                 self.assertTrue(result["isError"], result)
                 self.assertNotIn("structuredContent", result)
+        status, _, body = self.say({"to": "Skills", "text": "run make deploy <\\target>", "class": "post", "voice": ""}, signer)
+        self.assertEqual(status, 201, body)
+        tagged = json.loads(body)["id"]
+        for text, matches in (("run make deploy <\\target>", True), ("run make deploy <\\\\target>", True), ("run make deploy <target>", False)):
+            with self.subTest(text=text):
+                self.assertEqual(self.check(tagged, text, "Skills")["isError"], not matches)
         self.assertEqual(self.tell_all({"text": "main is green", "class": "newsletter"}, signer)[0], 200)
         everyone = next(message["id"] for message in self.snapshot()["messages"] if message["to"] == "*")
         self.assertTrue(self.check(everyone, "main is green", "*")["structuredContent"]["match"])

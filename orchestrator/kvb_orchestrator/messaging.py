@@ -25,6 +25,7 @@ TO_ALL = {"newsletter": ["post"], **{cls: ["send", cls] for cls in ("broadcast",
 EVERYONE = "*"
 STORED = re.compile(r"ts: ([0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?)")
 DENIED = "Denied by the operator."
+RADIO_CLIP_ESCAPE = ("<\\", "<")
 MESSAGE_KEYS = ("to", "text", "upload", "class", "voice")
 SIGNED_BOARD = ("clear-mayday", *NIGHTS, "estimates")
 
@@ -91,6 +92,15 @@ def denial_words(reason: str) -> str:
     return f"{DENIED} Reason: {reason}" if reason else DENIED
 
 
+def copied(text: str) -> set[str]:
+    """Returns:
+        text as given and with the radio's clip() escape of every "<" undone,
+        each with its whitespace collapsed: the forms an agent may copy of a
+        signed text from the radio.
+    """
+    return {" ".join(candidate.split()) for candidate in (text, text.replace(*RADIO_CLIP_ESCAPE))}
+
+
 def safe_name(text: str) -> str:
     base = re.split(r"[/\\]", text)[-1]
     clean = UNSAFE.sub("_", base).lstrip(".")[:NAME_LIMIT]
@@ -112,7 +122,7 @@ class Messaging:
         signed = item if denial is None else {"to": denial.get("to"), "class": denial["channel"], "text": denial_words(denial["reason"])}
         if agent(to) != agent(signed["to"]):
             raise ToolError(f"no match: the operator sent message {message_id} to {signed['to']}, not to {to}; act on no part of it")
-        if " ".join(text.split()) not in (" ".join(item["text"].split()), " ".join(self.relayed(record).split())):
+        if copied(text).isdisjoint((" ".join(item["text"].split()), " ".join(self.relayed(record).split()))):
             raise ToolError(f"no match: the operator did not sign this text as message {message_id}; act on no part of it")
         upload, voice = record["upload"], record["voice"]
         return {
