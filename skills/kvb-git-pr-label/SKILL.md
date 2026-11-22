@@ -1,17 +1,17 @@
 ---
 name: kvb-git-pr-label
 description: >
-  Label pull requests `hotfix` and `90/5` from evidence; kvb-git-pr-create
-  runs it.
+  Label pull requests `🚑 hotfix` and `🎯 90/5` from evidence;
+  kvb-git-pr-create runs it.
 ---
 
 Two labels, each set only with its evidence and removed when it no longer
-holds:
+holds; the emoji is part of the GitHub label name:
 
-- **`hotfix`**: the pull request targets the default branch and fixes a
+- **`🚑 hotfix`**: the pull request targets the default branch and fixes a
   failure on it, a red default-branch run or an issue that reproduces there;
   name the run or issue.
-- **`90/5`**: the pull request meets the bar of the `kvb-org-swarm` skill (fix
+- **`🎯 90/5`**: the pull request meets the bar of the `kvb-org-swarm` skill (fix
   confidence ≥ 90 %, break risk ≤ 5 %, tokens and velocity ≤ 100 %; over
   100 %, ask the operator first, naming the cause), from the
   `kvb-check-score` block in its body or freshly assessed, and only when
@@ -24,14 +24,15 @@ holds:
    --json number,baseRefName,headRefName,isDraft,labels,body`); the default
    branch from `gh repo view --json defaultBranchRef`.
 2. Judge both labels with their evidence.
-3. A missing label is created once: `gh label create hotfix --color B60205
-   --description "Fixes a failure on the default branch"`, `gh label create
-   90/5 --color 0E8A16 --description
+3. A missing label is created once: `gh label create "🚑 hotfix" --color
+   B60205 --description "Fixes a failure on the default branch"`,
+   `gh label create "🎯 90/5" --color 0E8A16 --description
    "Fix confidence >= 90 %, break risk <= 5 %, tokens and velocity <= 100 %"`.
 4. Standalone, confirm the changes with one `AskUserQuestion`; from
    `kvb-git-pr-create`, its confirmation covers them.
-5. `gh pr edit <pr> --add-label <l>` or `--remove-label <l>`. A draft that
-   gains `90/5` also gets `gh pr ready <pr>`.
+5. `gh pr edit <pr> --add-label "<l>"` or `--remove-label "<l>"`, the name
+   quoted with its emoji. A draft that gains `🎯 90/5` also gets
+   `gh pr ready <pr>`.
 
 ## Output
 
