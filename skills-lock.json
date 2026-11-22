@@ -57,6 +57,22 @@
       "skillPath": "skills/caveman-stats/SKILL.md",
       "computedHash": "d47db80af9353f411b5840fa207ac10c883f04576cd280b135e3a44a0ff86285"
     },
+    "motion-designer": {
+      "source": "infinito-nexus/motion-presenter",
+      "commit": "fc490a433b8803ba27b4431db1e7a96eba023b4f",
+      "sourceType": "github",
+      "skillPath": "skills/motion-designer/SKILL.md",
+      "computedHash": "784c6305af1da28bd58fbfc6bb7c1c77df7f5186b3940adb068621a623d2a51b",
+      "installMode": "copy"
+    },
+    "motion-presenter": {
+      "source": "infinito-nexus/motion-presenter",
+      "commit": "fc490a433b8803ba27b4431db1e7a96eba023b4f",
+      "sourceType": "github",
+      "skillPath": "skills/motion-presenter/SKILL.md",
+      "computedHash": "60d626975b90b7fb55e9bd4630b3d222556589a1383ea6a98cac678c06107ebb",
+      "installMode": "copy"
+    },
     "ponytail": {
       "source": "DietrichGebert/ponytail",
       "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
