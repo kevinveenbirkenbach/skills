@@ -32,7 +32,7 @@ class TestHubQuestions(HubCase):
         self.assertEqual(status, 201, body)
         return json.loads(body)["id"]
 
-    def state(self, decision_id: str) -> dict:
+    def decision_state(self, decision_id: str) -> dict:
         status, _, body = self.get(f"/api/decisions/{decision_id}?wait=0")
         self.assertEqual(status, 200, body)
         return json.loads(body)
@@ -79,7 +79,7 @@ class TestHubQuestions(HubCase):
             with self.subTest(payload=payload):
                 self.assertEqual(self.post_json("/api/decisions", payload, self.local())[0], 400)
         decision_id = self.ask_question(BODY)
-        self.assertEqual(self.state(decision_id), {"id": decision_id, "status": "pending", "choice": None, "proof": None, "to": "Skills"})
+        self.assertEqual(self.decision_state(decision_id), {"id": decision_id, "status": "pending", "choice": None, "proof": None, "to": "Skills"})
         item = next(item for item in self.snapshot()["inbox"] if item["id"] == decision_id)
         self.assertEqual((item["kind"], item["agent"], item["recommended"]), ("decision", "Skills", PICK))
         cards = json.loads(self.get("/api/match")[2])["cards"]
@@ -87,7 +87,7 @@ class TestHubQuestions(HubCase):
         self.assertEqual(self.get(f"/api/decisions/{self.decision('')}?wait=0")[0], 404)
         self.assertEqual(self.get("/api/decisions/0123456789abcdef?wait=0")[0], 404)
         expired = self.ask_question({**BODY, "timeout": 0})
-        self.assertEqual(self.state(expired)["status"], "expired")
+        self.assertEqual(self.decision_state(expired)["status"], "expired")
         self.assertNotIn(expired, [item["id"] for item in self.snapshot()["inbox"]])
         self.assertNotIn(f"decision:{expired}", [card["id"] for card in json.loads(self.get("/api/match")[2])["cards"]])
         self.assertNotIn(expired, [row["id"] for row in self.snapshot()["decisions"]])
@@ -98,7 +98,7 @@ class TestHubQuestions(HubCase):
         signer = self.pin()
         decision_id = self.ask_question(BODY)
         self.pick(decision_id, PICK, signer)
-        state = self.state(decision_id)
+        state = self.decision_state(decision_id)
         self.assertEqual((state["status"], state["choice"], state["to"]), ("decided", PICK, "Skills"))
         self.assertEqual(set(state["proof"]), {"payload", "assertion"})
         self.assertEqual(self.scripts.calls, [])
@@ -116,7 +116,7 @@ class TestHubQuestions(HubCase):
             with self.subTest(label=label):
                 self.assertEqual(self.approve([self.entry("decision", decision_id, label, "")], None)[0], 400)
         self.pick(decision_id, f"{GROUPS[1]}\n{GROUPS[2]}", signer)
-        self.assertEqual(self.state(decision_id)["choice"], f"{GROUPS[1]}\n{GROUPS[2]}")
+        self.assertEqual(self.decision_state(decision_id)["choice"], f"{GROUPS[1]}\n{GROUPS[2]}")
         single = self.ask_question(BODY)
         self.assertEqual(self.approve([self.entry("decision", single, f"{PICK}\n{PICK}", "")], None)[0], 400)
 
