@@ -1,7 +1,7 @@
 ---
 name: kvb-ci-track
 description: >
-  Track CI runs, PR checks, alerts, issues; wake on new failures.
+  Track runs, PR checks, alerts, issues; wake on new failures.
 ---
 
 `${CLAUDE_SKILL_DIR}/scripts/track.py` keeps one JSON file per target in the
