@@ -14,7 +14,6 @@ CONSOLE = ("id", "status", "code", "output", "created_ts", "started", "finished"
 TASK_JOB = "task"
 GATE_JOB = "gate"
 CHANGES = (TASK_JOB, GATE_JOB)
-USAGE = 2
 
 
 def runner_job(job: dict) -> dict:
@@ -79,11 +78,19 @@ class Jobs:
         return runner_job(job)
 
     def report(self, job_id: str, body: bytes) -> dict:
+        """Args:
+            body: {"output", "code", "refused"}, and "checked" on an operator
+                command's final report after exit 0: whether its row's check
+                passed on the host, null when the runner could not tell.
+        """
         payload = decode(body)
-        expect(payload, ("output", "code", "refused"))
+        expect(payload, ("output", "code", "refused", "checked") if "checked" in payload else ("output", "code", "refused"))
         output, code, refused = bounded(payload, "output", RUN_OUTPUT), payload["code"], payload["refused"]
+        checked = payload.get("checked")
         if not isinstance(refused, bool) or (code is not None and (isinstance(code, bool) or not isinstance(code, int))):
             raise ToolError("code must be a whole number or null and refused true or false")
+        if checked is not None and not isinstance(checked, bool):
+            raise ToolError("checked must be true, false or null")
         record = self.jobs.get(job_id)
         if record is None:
             raise Missing(job_id)
@@ -96,18 +103,23 @@ class Jobs:
         job, changed = self.jobs.transition(job_id, "running", {"status": status, "code": code, "output": output, "finished": time.time()})
         if not changed:
             raise Conflict({"id": job_id, "status": job["status"]})
-        runs = self.close_row(job, status, code)
+        runs = self.close_row(job, status, code, checked is True)
         tail = "\n".join(output.splitlines()[-20:])
         self.log.add({"kind": "run", "title": f"{status}: {job['command'][:200]}", "text": tail, "ref": {"job": job_id, "task": job["task"], "code": code, "status": status}})
         told = self.tell_applied(job) if job.get("kind") == TASK_JOB else []
         return {"id": job_id, "status": status, "code": code, "runs": runs, "told": told}
 
-    def close_row(self, job: dict, status: str, code: int | None) -> list[dict]:
-        """Returns:
+    def close_row(self, job: dict, status: str, code: int | None, checked: bool) -> list[dict]:
+        """Args:
+            checked: whether the runner saw the row's check pass on the host
+                after exit 0; the hub cannot read the host's repos, PATH and
+                installed dirs itself.
+
+        Returns:
             The operator.py runs that report the end of an operator command
-            job on its row: `ran` on exit 0, then an older operator.py's
-            `done` when `ran` is its usage error; `failed` on any other exit;
-            none for a refused job or a task or gate change.
+            job on its row: `ran` on exit 0, with --check-failed unless
+            checked, so the row stays open; `failed` on any other exit; none
+            for a refused job or a task or gate change.
         """
         if job.get("kind") in CHANGES or status not in ("done", "failed"):
             return []
@@ -116,7 +128,4 @@ class Jobs:
         if status == "failed":
             why = f"killed by signal {-code}" if code < 0 else f"exit {code}"
             return [self.scripts.run(OPERATOR_SCRIPT, ["failed", *shown, "--why", why])]
-        runs = [self.scripts.run(OPERATOR_SCRIPT, ["ran", *shown])]
-        if runs[0]["code"] == USAGE:
-            runs.append(self.scripts.run(OPERATOR_SCRIPT, ["done", slug]))
-        return runs
+        return [self.scripts.run(OPERATOR_SCRIPT, ["ran", *shown] if checked else ["ran", *shown, "--check-failed"])]

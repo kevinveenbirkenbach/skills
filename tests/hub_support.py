@@ -24,6 +24,8 @@ CLIENT = HUB / "client" / "permission_hook.py"
 RUNNER = HUB / "client" / "runner.py"
 APPROVAL = HUB / "client" / "approval.py"
 RASCI = REPO_ROOT / "skills" / "kvb-org-rasci" / "scripts" / "rasci.py"
+OPERATOR = REPO_ROOT / "skills" / "kvb-org-operator" / "scripts" / "operator.py"
+LOGIN_SHELL = '#!/bin/sh\n[ "$1" = -ic ] || exit 97\nexec /bin/sh -c "$2"\n'
 SPEC = importlib.util.spec_from_file_location("kvb_orchestrator_server", HUB / "server.py")
 server = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = server

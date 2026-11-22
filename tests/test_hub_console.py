@@ -107,47 +107,48 @@ class TestHubConsole(HubCase):
         fields = {"task": "operator/greet", "command": COMMAND, "directory": str(self.outside), "sha256": DIGEST, "status": "running", "proof": None}
         jobs = [
             self.httpd.hub.jobs.add({**fields, **extra, "code": None, "output": "", "created_ts": time.time(), "started": time.time(), "finished": None, "dismissed": False})
-            for extra in ({}, {}, {}, {}, {}, {"kind": "gate", "argv": []})
+            for extra in ({}, {}, {}, {}, {}, {}, {}, {"kind": "gate", "argv": []})
         ]
         reports = (
-            {"output": "token-42\n", "code": 0, "refused": False}, {"output": "token-42\n", "code": 3, "refused": False},
+            {"output": "token-42\n", "code": 0, "refused": False, "checked": True}, {"output": "", "code": 0, "refused": False, "checked": False},
+            {"output": "", "code": 0, "refused": False}, {"output": "token-42\n", "code": 3, "refused": False},
             {"output": "", "code": -9, "refused": False}, {"output": "", "code": 130, "refused": False},
             {"output": "token-42\n", "code": None, "refused": True}, {"output": "", "code": 1, "refused": False},
         )
         answers = [self.runner(f"/api/runner/{job['id']}/report", report) for job, report in zip(jobs, reports)]
         self.assertEqual([(status, body["status"], len(body["runs"])) for status, body in answers], [
-            (200, "done", 1), (200, "failed", 1), (200, "failed", 1), (200, "failed", 1), (200, "refused", 0), (200, "failed", 0),
+            (200, "done", 1), (200, "done", 1), (200, "done", 1), (200, "failed", 1), (200, "failed", 1), (200, "failed", 1), (200, "refused", 0), (200, "failed", 0),
         ])
         shown = ["greet", f"--command={COMMAND}", f"--dir={self.outside}"]
         self.assertEqual(self.scripts.calls, [
             (skill_scripts.OPERATOR_SCRIPT, ["ran", *shown]),
+            (skill_scripts.OPERATOR_SCRIPT, ["ran", *shown, "--check-failed"]),
+            (skill_scripts.OPERATOR_SCRIPT, ["ran", *shown, "--check-failed"]),
             (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "exit 3"]),
             (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "killed by signal 9"]),
             (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "exit 130"]),
         ])
         self.assertNotIn("token-42", json.dumps(self.scripts.calls))
 
-    def test_an_older_installed_operator_without_ran_still_closes_the_row_through_done(self):
+    def test_a_ran_the_installed_operator_refuses_never_falls_back_to_done(self):
         self.register("queued")
         fields = {"task": "operator/greet", "command": COMMAND, "directory": str(self.outside), "sha256": DIGEST, "status": "running", "proof": None}
-        jobs = [
-            self.httpd.hub.jobs.add({**fields, "code": None, "output": "", "created_ts": time.time(), "started": time.time(), "finished": None, "dismissed": False})
-            for _ in range(2)
-        ]
-        self.scripts.code = 2
-        done = self.runner(f"/api/runner/{jobs[0]['id']}/report", {"output": "", "code": 0, "refused": False})[1]
-        failed = self.runner(f"/api/runner/{jobs[1]['id']}/report", {"output": "", "code": 1, "refused": False})[1]
-        shown = ["greet", f"--command={COMMAND}", f"--dir={self.outside}"]
-        self.assertEqual(self.scripts.calls, [
-            (skill_scripts.OPERATOR_SCRIPT, ["ran", *shown]),
-            (skill_scripts.OPERATOR_SCRIPT, ["done", "greet"]),
-            (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "exit 1"]),
-        ])
-        self.assertEqual((len(done["runs"]), len(failed["runs"])), (2, 1))
-        self.scripts.code = 1
         job = self.httpd.hub.jobs.add({**fields, "code": None, "output": "", "created_ts": time.time(), "started": time.time(), "finished": None, "dismissed": False})
-        self.runner(f"/api/runner/{job['id']}/report", {"output": "", "code": 0, "refused": False})
-        self.assertEqual(self.scripts.calls[-1], (skill_scripts.OPERATOR_SCRIPT, ["ran", *shown]))
+        self.scripts.code = 2
+        done = self.runner(f"/api/runner/{job['id']}/report", {"output": "", "code": 0, "refused": False, "checked": False})[1]
+        shown = ["greet", f"--command={COMMAND}", f"--dir={self.outside}"]
+        self.assertEqual(self.scripts.calls, [(skill_scripts.OPERATOR_SCRIPT, ["ran", *shown, "--check-failed"])])
+        self.assertEqual(len(done["runs"]), 1)
+
+    def test_a_report_with_a_checked_other_than_true_false_or_null_is_refused(self):
+        self.register("queued")
+        fields = {"task": "operator/greet", "command": COMMAND, "directory": str(self.outside), "sha256": DIGEST, "status": "running", "proof": None}
+        job = self.httpd.hub.jobs.add({**fields, "code": None, "output": "", "created_ts": time.time(), "started": time.time(), "finished": None, "dismissed": False})
+        for checked in ("yes", 1, [True]):
+            with self.subTest(checked=checked):
+                self.assertEqual(self.runner(f"/api/runner/{job['id']}/report", {"output": "", "code": 0, "refused": False, "checked": checked})[0], 400)
+        self.assertEqual(self.runner(f"/api/runner/{job['id']}/report", {"output": "", "code": 0, "refused": False, "checked": None})[1]["status"], "done")
+        self.assertEqual(self.scripts.calls[-1][1][-1], "--check-failed")
 
     def test_jobs_from_before_the_console_stay_out_of_the_inbox(self):
         self.register("done")

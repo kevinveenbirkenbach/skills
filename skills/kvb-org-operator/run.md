@@ -36,7 +36,9 @@ check passed (<check>)"), or `done` ("... marked done by <name>").
 `add` under the same slug reopens the row and clears `cancelled` and
 `failed`.
 
-The hub's runner reports through `ran` and `failed`, as the same calls:
-exit 0 closes the row from any status but done, whatever its check; exit
-130 and signals count as failures. Any agent of the same user can forge `ran`, `failed` or
+The hub's runner runs the command as `$SHELL -ic` too and reports through
+`ran` and `failed`, as the same calls: after exit 0 it runs `checked` on
+the host, and the row closes from any status but done only when that
+passes; otherwise `ran --check-failed` keeps it open. Exit 130 and signals
+count as failures. Any agent of the same user can forge `ran`, `failed` or
 `done`: the register and the radio are writable by every agent already.

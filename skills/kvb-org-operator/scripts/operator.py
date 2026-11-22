@@ -85,11 +85,14 @@ Args:
     done <slug> [--session <id>]: mark a row done, whatever its check, with
         a message unless it was done; a stale `failed` or `cancelled` goes
         as in ran. Without a session the caller is Operator.
-    ran <slug> --command "<cmd>" --dir <dir>: the hub's report of a job
-        that exited 0: the row set done from every status but done and
-        whatever its check, which the hub cannot run without the host's
-        repos, PATH and installed dirs; a stale `failed` or `cancelled`
-        goes.
+    ran <slug> --command "<cmd>" --dir <dir> [--check-failed]: the hub's
+        report of a job that exited 0: the row set done from every status
+        but done, or with --check-failed (the runner's `checked` on the host
+        did not pass) kept open with a message like run's; a stale `failed`
+        or `cancelled` goes.
+    checked <slug>: exit 0 when the row's check passes here as run would
+        close it, 1 when it does not, 2 for a slug the register lacks; the
+        hub's runner calls it on the host after a job's exit 0.
     failed <slug> --why "<text>" --command "<cmd>" --dir <dir>: the hub's
         report of a job that failed: the row set stopped with why and no
         output lines under `failed`, sent as a message like a failure in run.
@@ -792,11 +795,20 @@ def settle(rasci: ModuleType, row: dict, status: str | None, fields: dict, statu
     return addressees(holders, None)
 
 
-def succeeded(rasci: ModuleType, row: dict, hub: bool) -> str:
+def holds(row: dict) -> bool:
+    """Returns:
+        Whether the row's check passes here; manual and an unreadable check
+        pass at once.
+    """
+    check = "manual" if problem(row["check"]) else row["check"]
+    return check == "manual" or passed(check)
+
+
+def succeeded(rasci: ModuleType, row: dict, hub: bool, complete: bool) -> str:
     """Args:
-        hub: the hub's report: the row closes whatever its check and from
-            every status but done; else only while open and once its check
-            passes (manual: at once).
+        hub: the hub's report: the row closes from every status but done;
+            else only while open.
+        complete: whether its check passed where the command ran.
 
     Returns:
         What an exit 0 did: the row as shown set done, or kept open while
@@ -806,7 +818,6 @@ def succeeded(rasci: ModuleType, row: dict, hub: bool) -> str:
     """
     name = visible(row["task"], "")
     check = "manual" if problem(row["check"]) else row["check"]
-    complete = hub or check == "manual" or passed(check)
     statuses = tuple(status for status in rasci.STATUSES if status != "done") if hub else OPEN
     agents = settle(rasci, row, "done" if complete else None, {}, statuses)
     if agents is None:
@@ -1065,7 +1076,7 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
         elif code != 0:
             print(failure(rasci, row, f"exit {code}", shared(lines, typed)))
         else:
-            print(succeeded(rasci, row, False))
+            print(succeeded(rasci, row, False, holds(row)))
     return 0
 
 
@@ -1097,8 +1108,20 @@ def ran_row(rasci: ModuleType, args: argparse.Namespace) -> dict:
 
 
 def cmd_ran(rasci: ModuleType, args: argparse.Namespace) -> int:
-    print(succeeded(rasci, ran_row(rasci, args), True))
+    print(succeeded(rasci, ran_row(rasci, args), True, not args.check_failed))
     return 0
+
+
+def cmd_checked(rasci: ModuleType, args: argparse.Namespace) -> int:
+    """Returns:
+        0 when the row's check passes here, the way run closes a row after
+        exit 0; 1 when it does not; exit 2 for a task the register lacks.
+    """
+    task = task_of(rasci, args.slug)
+    entry = rasci.load().get(task)
+    if entry is None:
+        fail(f"{task}: not in the register")
+    return 0 if holds({"check": entry.get("check") or "manual"}) else 1
 
 
 def cmd_failed(rasci: ModuleType, args: argparse.Namespace) -> int:
@@ -1142,6 +1165,11 @@ def main() -> int:
         for flag in flags:
             p.add_argument(flag, required=True)
         p.set_defaults(func=func)
+        if name == "ran":
+            p.add_argument("--check-failed", action="store_true")
+    p = sub.add_parser("checked")
+    p.add_argument("slug")
+    p.set_defaults(func=cmd_checked)
     args = parser.parse_args()
     return args.func(module("rasci", RASCI), args)
 

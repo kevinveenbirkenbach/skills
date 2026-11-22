@@ -13,12 +13,22 @@
     --gates: the installed gates script, e.g.
         ~/.claude/skills/kvb-check-gate/scripts/gates.py; optional, gate
         changes need it.
+    --operator: the installed operator script, e.g.
+        ~/.claude/skills/kvb-org-operator/scripts/operator.py; optional,
+        without it no row closes done after exit 0.
     --once: handle the queued jobs once and exit.
+
+Environment:
+    SHELL: the operator's shell, else the login shell of the runner's uid.
 
 Returns:
     Runs as the operator, outside any sandbox, every operator command a
-    pinned passkey signed in the Agent Orchestrator: exactly the signed text, with bash
-    in the signed directory, each signature once and before its expiry.
+    pinned passkey signed in the Agent Orchestrator: exactly the signed
+    text, as `$SHELL -ic <text>` like `operator.py run`, in the signed
+    directory, each signature once and before its expiry. After exit 0 it
+    runs `operator.py checked <slug>` the same way and reports whether the
+    row's check passes on this host; the hub keeps the row open unless it
+    does.
     Runs every signed task change (priority pin, status, dependency or WSJF
     estimate; a board batch is one job per change) as
     `python3 -I -B <rasci> <argv>` from / without a shell, after checking the
@@ -45,6 +55,8 @@ import collections
 import contextlib
 import json
 import os
+import pwd
+import shlex
 import signal
 import stat
 import subprocess
@@ -72,6 +84,7 @@ SAFE_PATH = "/usr/bin:/bin"
 TASK_JOB = "task"
 TASK_LIMIT = 30.0
 GATE_JOB = "gate"
+OPERATOR = "operator/"
 REFUSED = "refused: no valid operator signature for this command"
 UNREGISTERED = "refused: this runner was started without --rasci and --council; reinstall its unit with make orchestrator-runner"
 UNGATED = "refused: this runner was started without --gates; reinstall its unit with make orchestrator-runner"
@@ -80,6 +93,12 @@ UNGATED = "refused: this runner was started without --gates; reinstall its unit 
 class Register(NamedTuple):
     rasci: Path
     council: Path
+
+
+class Host(NamedTuple):
+    shell: str
+    operator: Path | None
+    council: Path | None
 
 
 def call(base: str, path: str, payload: dict | None) -> dict:
@@ -229,16 +248,44 @@ def council_refusal(council: Path) -> str | None:
     return None
 
 
-def execute(job: dict, report: Callable[[dict], None]) -> int:
+def checked(job: dict, host: Host) -> bool | None:
     """Args:
-        job: the claimed and verified job with command and directory.
-        report: called with {"output", "code", "refused"}; code None while
-            the command runs.
+        job: an operator command that exited 0, its task operator/<slug>.
+        host: the operator's shell, operator.py and council.
 
     Returns:
-        The exit code.
+        Whether the row's check passes on this host, from `operator.py
+        checked <slug>` in the operator's shell as `operator.py run` sees it;
+        None without --operator, for a task whose slug signing.TASK does not
+        match, or when that call cannot tell.
     """
-    return spawn(["bash", "-c", job["command"]], job["directory"], None, report)
+    task = job.get("task")
+    if host.operator is None or not isinstance(task, str) or not task.startswith(OPERATOR) or not signing.TASK.fullmatch(task.removeprefix(OPERATOR)):
+        return None
+    council = [f"AGENTS_COUNCIL_ROOT={host.council}"] if host.council else []
+    command = shlex.join(["env", *council, sys.executable, "-I", "-B", str(host.operator), "checked", task.removeprefix(OPERATOR)])
+    try:
+        code = subprocess.run([host.shell, "-ic", command], cwd="/", stdin=subprocess.DEVNULL, capture_output=True, timeout=TASK_LIMIT, check=False, start_new_session=True).returncode
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return {0: True, 1: False}.get(code)
+
+
+def execute(job: dict, host: Host, report: Callable[[dict], None]) -> int:
+    """Args:
+        job: the claimed and verified job with task, command and directory.
+        host: the operator's shell, operator.py and council.
+        report: called with {"output", "code", "refused"}; code None while
+            the command runs; after exit 0 also "checked" from checked().
+
+    Returns:
+        The exit code of `$SHELL -ic <command>` in the signed directory.
+    """
+
+    def final(result: dict) -> None:
+        report({**result, "checked": checked(job, host)} if result["code"] == 0 else result)
+
+    return spawn([host.shell, "-ic", job["command"]], job["directory"], None, final)
 
 
 def change(job: dict, register: Register, report: Callable[[dict], None]) -> int:
@@ -338,7 +385,7 @@ def sender(base: str, job_id: str) -> Callable[[dict], None]:
     return send
 
 
-def cycle(base: str, trust: verifier.Trust, register: Register | None, gates: Path | None = None) -> None:
+def cycle(base: str, trust: verifier.Trust, register: Register | None, gates: Path | None, host: Host) -> None:
     for job in call(base, "/api/runner/jobs", None)["jobs"]:
         try:
             claimed = call(base, f"/api/runner/{job['id']}/claim", {})
@@ -359,7 +406,7 @@ def cycle(base: str, trust: verifier.Trust, register: Register | None, gates: Pa
         elif kind == GATE_JOB:
             gate(claimed, gates, send)
         else:
-            execute(claimed, send)
+            execute(claimed, host, send)
 
 
 def main() -> int:
@@ -371,11 +418,13 @@ def main() -> int:
     parser.add_argument("--rasci", type=Path)
     parser.add_argument("--council", type=Path)
     parser.add_argument("--gates", type=Path)
+    parser.add_argument("--operator", type=Path)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     base = hub_api.base_url(args.port)
     trust = verifier.Trust(approvers=args.approvers, replay=args.replay, origin=signing.origin_of(args.port))
     register = Register(rasci=args.rasci, council=args.council) if args.rasci and args.council else None
+    host = Host(shell=os.environ.get("SHELL") or pwd.getpwuid(os.geteuid()).pw_shell, operator=args.operator, council=args.council)
     rules, told = staged_diff.rules_root(), ""
     while True:
         try:
@@ -386,7 +435,7 @@ def main() -> int:
                 print(f"runner: no merge previews: {error}", file=sys.stderr)
             told = str(error)
         try:
-            cycle(base, trust, register, args.gates)
+            cycle(base, trust, register, args.gates, host)
         except (OSError, ValueError, KeyError, TypeError):
             pass
         if args.once:

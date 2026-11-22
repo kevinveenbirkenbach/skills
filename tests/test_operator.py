@@ -1016,6 +1016,20 @@ class TestOperator(unittest.TestCase):
             with self.subTest(args=args):
                 self.assertEqual(self._as(None, *args).returncode, 2)
 
+    def test_checked_answers_the_host_check_and_ran_with_check_failed_keeps_the_row_open(self):
+        self._add("open", self.base, "true", "r", f"absent:{self.base}")
+        self._add("gone", self.base, "true", "r", f"absent:{self.base / 'nothing'}")
+        self._add("man", self.base, "true", "r", "manual")
+        codes = {slug: self._as(None, "checked", slug).returncode for slug in ("open", "gone", "man", "missing")}
+        self.assertEqual(codes, {"open": 1, "gone": 0, "man": 0, "missing": 2})
+        shown = ("--command", "true", "--dir", str(self.base))
+        kept = self._as(None, "ran", "open", *shown, "--check-failed")
+        self.assertEqual(kept.returncode, 0, kept.stderr)
+        self.assertIn(f"but absent:{self.base} does not pass yet; the row stays open", kept.stdout)
+        self.assertIn("operator/open", self._open())
+        self.assertEqual(self._as(None, "ran", "open", *shown).returncode, 0)
+        self.assertNotIn("operator/open", self._open())
+
     def test_the_hub_runner_calls_the_stored_session_with_ran_and_failed_even_when_its_channel_says_post(self):
         radio = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
         chosen = subprocess.run([sys.executable, str(radio), "feedback", "set", "post"], capture_output=True, text=True, env=self.env, check=False)
@@ -1031,7 +1045,7 @@ class TestOperator(unittest.TestCase):
             "from kvb_orchestrator.jobs import Jobs\n"
             "from kvb_orchestrator.skill_scripts import Scripts\n"
             "hub = types.SimpleNamespace(scripts=Scripts(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4])))\n"
-            "print(json.dumps([Jobs.close_row(hub, job, status, code) for job, status, code in json.loads(sys.argv[5])]))\n"
+            "print(json.dumps([Jobs.close_row(hub, job, status, code, True) for job, status, code in json.loads(sys.argv[5])]))\n"
         )
         jobs = [
             [{"task": "operator/go", "command": "true", "directory": str(self.base)}, "done", 0],

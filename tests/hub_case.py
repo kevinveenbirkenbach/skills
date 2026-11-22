@@ -19,6 +19,8 @@ from hub_support import (
     GIT_ENV,
     HOST_STATE,
     HUB,
+    LOGIN_SHELL,
+    OPERATOR,
     OPTIONS,
     PAGE,
     RASCI,
@@ -53,8 +55,11 @@ class HubCase(unittest.TestCase):
         self.offices = base / "state" / "offices"
         self.approvers = base / "config" / "approvers.json"
         self.replay = base / "replay"
+        self.shell = base / "login-shell"
         for path in (self.pages, self.state, self.outside, self.projects, self.tree_file.parent, self.timers, self.kept):
             path.mkdir()
+        self.shell.write_text(LOGIN_SHELL, encoding="utf-8")
+        self.shell.chmod(0o755)
         silence = mock.patch.object(server.Handler, "log_message")
         silence.start()
         self.addCleanup(silence.stop)
@@ -198,8 +203,8 @@ class HubCase(unittest.TestCase):
     def run_runner(self, register: bool = True, council: Path | None = None) -> None:
         trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json")]
         flags = ["--rasci", str(RASCI), "--council", str(council or self.council)] if register else []
-        command = [sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, *flags, "--once"]
-        done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
+        command = [sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, *flags, "--operator", str(OPERATOR), "--once"]
+        done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False, env={**os.environ, "SHELL": str(self.shell), "AGENTS_COUNCIL_ROOT": str(council or self.council)})
         self.assertEqual(done.returncode, 0, done.stderr)
 
     def settle(self, check: Callable[[], bool]) -> None:

@@ -107,22 +107,54 @@ class TestHubExecutors(HubCase):
         self.approvers.unlink()
         job = {"task": "operator/greet", "command": command, "directory": str(self.outside), "proof": proof}
         self.assertIn("no key is pinned", runner.refusal(job, self.trust("other"), time.time()))
-        reports = []
-        self.assertEqual(runner.execute({"command": "exit 3", "directory": str(self.outside)}, reports.append), 3)
+        reports, host = [], runner.Host(shell=str(self.shell), operator=None, council=None)
+        self.assertEqual(runner.execute({"command": "exit 3", "directory": str(self.outside)}, host, reports.append), 3)
         self.assertEqual(reports[-1], {"output": "", "code": 3, "refused": False})
+        self.assertEqual(runner.execute({"command": "true", "directory": str(self.outside)}, host, reports.append), 0)
+        self.assertEqual(reports[-1], {"output": "", "code": 0, "refused": False, "checked": None})
+        self.assertEqual(runner.execute({"command": "true", "directory": str(self.outside)}, host._replace(shell=str(self.outside)), reports.append), 127)
+
+    def test_the_runner_keeps_a_row_open_whose_check_fails_on_the_host_after_exit_0(self):
+        command = "echo pushed"
+        register = {"operator/push": {"title": command, "workdir": str(self.outside), "description": "push", "check": f"absent:{self.outside}", "status": "queued", "roles": {}}}
+        self.write_council({"rasci.json": register})
+        digest = hashlib.sha256(command.encode()).hexdigest()
+        signer = self.pin()
+        push = [self.entry("operator", "operator/push", "", digest)]
+        with mock.patch.object(batches, "UNDO", 0.05):
+            self.assertEqual(self.approve(push, self.signed(push, signer))[0], 202)
+            self.settle(lambda: self.runner_jobs() != [])
+        self.run_runner()
+        job = self.snapshot()["jobs"][-1]
+        self.assertEqual((job["status"], job["code"], job["output"]), ("done", 0, "pushed\n"))
+        self.assertEqual(self.scripts.calls[-1], (skill_scripts.OPERATOR_SCRIPT, ["ran", "push", f"--command={command}", f"--dir={self.outside}", "--check-failed"]))
+        host = runner.Host(shell=str(self.shell), operator=hub_support.OPERATOR, council=self.council)
+        self.assertIs(runner.checked({"task": "operator/push"}, host), False)
+        self.assertIsNone(runner.checked({"task": "operator/missing"}, host))
+        self.assertIsNone(runner.checked({"task": "operator/push"}, host._replace(shell=str(self.outside / "no-shell"))))
+        marking = self.outside / "marking-shell"
+        marking.write_text('#!/bin/sh\ntouch "$0.ran"\n', encoding="utf-8")
+        marking.chmod(0o700)
+        for task in ("operator/x\\'\"; id #", "operator/Push", "review/push", "push", None):
+            with self.subTest(task=task):
+                self.assertIsNone(runner.checked({"task": task}, host._replace(shell=str(marking))))
+        self.assertFalse(marking.with_name("marking-shell.ran").exists())
+        self.write_council({"rasci.json": {"operator/push": {**register["operator/push"], "check": "manual"}}})
+        self.assertIs(runner.checked({"task": "operator/push"}, host), True)
 
     def test_the_runner_closes_the_output_pipe_on_every_path(self):
         popen, spawned = subprocess.Popen, []
         job = {"command": "echo hi; sleep 0.3", "directory": str(self.outside)}
+        host = runner.Host(shell=str(self.shell), operator=None, council=None)
 
         def spawn(*args: object, **kwargs: object) -> subprocess.Popen:
             spawned.append(popen(*args, **kwargs))
             return spawned[-1]
 
         with mock.patch.object(subprocess, "Popen", spawn), mock.patch.object(runner, "BEAT", 0.05):
-            self.assertEqual(runner.execute(job, [].append), 0)
+            self.assertEqual(runner.execute(job, host, [].append), 0)
             self.assertTrue(spawned[0].stdout.closed)
-            self.assertRaises(RuntimeError, runner.execute, job, mock.Mock(side_effect=RuntimeError("the hub is gone")))
+            self.assertRaises(RuntimeError, runner.execute, job, host, mock.Mock(side_effect=RuntimeError("the hub is gone")))
         self.settle(lambda: spawned[1].stdout.closed)
         self.assertEqual(spawned[1].wait(10), 0)
 
