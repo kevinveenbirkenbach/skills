@@ -724,7 +724,7 @@ class TestBackfill(Passes, unittest.TestCase):
             waiting = [e for e in waiting if verdicts[e["id"]] is not None]
         self.fail("a steady stream starved the head")
 
-    def test_r4_load_from_outside_the_queue_drains_for_no_head_and_holds_back_only_non_light_jobs_behind_an_exclusive_one(self):
+    def test_r4_load_from_outside_the_queue_drains_for_no_head_and_holds_back_no_job_while_queue_load_holds_heavy_ones_behind_an_exclusive_one(self):
         rules = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"},
                  "slot_limits": {"quality-high": 1, "test": 1, "test-nostack": 4, "iteration": 3}}
         head, light = job(1, kind="quality-high", enqueued=NOW - 3700), job(2, kind="test-nostack", task="work/b", workdir="/l")
@@ -734,14 +734,14 @@ class TestBackfill(Passes, unittest.TestCase):
         self.assertEqual(self.run_pass([head, light, heavy], loaded={"j1": ram}, drain="j1", **rules)[:2],
                          ({"j1": ram, "j2": None, "j3": "waits behind exclusive j1"}, None))
         self.assertEqual(self.run_pass([running, head, light, heavy], loaded={"j1": outside}, drain="j1", **rules)[:2],
-                         ({"j1": ram, "j2": None, "j3": "waits behind exclusive j1"}, None))
+                         ({"j1": ram, "j2": None, "j3": None}, None))
         self.assertEqual(self.run_pass([running, head, light, heavy], loaded={"j1": ram}, drain="j1", **rules)[:2],
                          ({"j1": ram, "j2": None, "j3": "drained for j1"}, "j1"))
         self.assertEqual(self.run_pass([{**head, "kind": "iteration"}, light, heavy], loaded={"j1": ram}, drain="j1", **rules)[:2],
                          ({"j1": ram, "j2": None, "j3": None}, None))
         twin = job(4, kind="test", task="work/c", workdir="/w1")
         self.assertEqual((self.decide([head, twin], loaded={"j1": outside}, **rules), self.decide([head, twin], loaded={"j1": ram}, **rules)),
-                         ({"j1": ram, "j4": "waits behind exclusive j1"}, {"j1": ram, "j4": "waits in line behind j1"}))
+                         ({"j1": ram, "j4": None}, {"j1": ram, "j4": "waits in line behind j1"}))
 
     def test_r12_a_test_job_never_backfills_past_an_exclusive_head_the_load_holds_while_no_job_runs(self):
         rules = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"quality-high": 1, "test": 1, "test-nostack": 4}}

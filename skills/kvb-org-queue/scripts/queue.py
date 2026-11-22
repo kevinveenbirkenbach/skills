@@ -706,9 +706,9 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       hotfix head, and behind any head whose kind is exclusive or that live
       load holds while queue jobs run; light ones wait too while load the
       queue causes holds a hotfix head. Behind an exclusive entry that only
-      live load holds, from the queue or outside it, head or not, no later
-      entry but a light one starts (loaded_exclusive()): it would keep that
-      entry out once the load drops. An entry never passes an active,
+      load the queue causes holds, head or not, no later entry but a light
+      one starts (loaded_exclusive()): it would keep that entry out once the
+      load drops. An entry never passes an active,
       granted or waiting entry enqueued before it that shares one of its
       claims (claims(): worktree, compose stack, slot): those form its
       line, which runs by enqueue time alone (in_lines()), never by rank,
@@ -870,11 +870,15 @@ def loaded_exclusive(able: list[dict], verdicts: dict[str, str | None], loaded: 
     """Returns:
         The id of the first entry of able (blocked, not unstartable()) whose
         kind is exclusive and that only live load holds back (its verdict is
-        its loaded reason), whether the queue or something outside it causes
-        the load; a job of a kind that is not light, started now, would keep
-        it out once the load drops (alone_reason()). None when there is none.
+        its loaded reason), the queue's own jobs causing that load; a job of
+        a kind that is not light, started now, would keep it out once they
+        end (alone_reason()). None when there is none. An Outside reason
+        never counts: the entry stays out with the queue empty, so holding
+        others back would only starve them while that load lasts, and once
+        it drops, the jobs then running turn the reason into the queue's.
     """
-    return next((e["id"] for e in able if e["kind"] in exclusive and e["id"] in loaded and verdicts[e["id"]] == loaded[e["id"]]), None)
+    return next((e["id"] for e in able if e["kind"] in exclusive and e["id"] in loaded and not isinstance(loaded[e["id"]], Outside)
+                 and verdicts[e["id"]] == loaded[e["id"]]), None)
 
 
 def drained(order: list[dict], verdicts: dict[str, str | None], drain: str | None, could: set[str],
