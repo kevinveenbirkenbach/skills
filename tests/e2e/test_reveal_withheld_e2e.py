@@ -89,7 +89,8 @@ class TestRevealWithheld(base.OrchestratorE2ECase):
         self.sets = {width: {"ONE": self.review(f"feat: one {width}", page), "ALL": self.review(f"feat: all {width}", page)} for width, _ in WIDTHS}
 
     def review(self, title: str, page: str) -> str:
-        result = self.tool("review_request", {**self.arguments(title, "", page), "agent": "Skills", "diff": DIFF, "sealed": SEALED})
+        branch = "feature/" + title.removeprefix("feat: ").replace(" ", "-")
+        result = self.tool("review_request", {**self.arguments(title, "", page), **self.branched(branch), "agent": "Skills", "diff": DIFF, "sealed": SEALED})
         self.assertFalse(result["isError"], result)
         return f"review:{result['structuredContent']['id']}"
 

@@ -14,7 +14,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import APPROVAL, ASK, GIT_ENV, HUB, OPTIONS, REPO_ROOT, key, signing
-from kvb_orchestrator import batches, payloads, scores, skill_scripts
+from kvb_orchestrator import batches, ledger, payloads, scores, skill_scripts
 from kvb_orchestrator.errors import Conflict
 
 MATCH = REPO_ROOT / "skills" / "kvb-match" / "scripts" / "match.py"
@@ -126,7 +126,7 @@ class TestMatchSkill(MatchCase):
         self.assertIn("nothing staged", done.stderr)
         self.assertEqual(self.cards(), [])
 
-    def test_a_changed_stage_turns_the_card_stale_and_adding_it_again_gives_a_fresh_card(self):
+    def test_a_changed_stage_turns_the_card_stale_and_adding_it_again_supersedes_the_old_card(self):
         repo = staged_repo(self.work)
         first = self.add(repo)
         (repo / "notes.md").write_text("# Notes\n\nchanged\n", encoding="utf-8")
@@ -140,7 +140,22 @@ class TestMatchSkill(MatchCase):
         second = self.add(repo)
         fresh = self.card(f"review:{second}")
         self.assertEqual((fresh["stale"], fresh["hash"]), (False, git(repo, "write-tree").strip()))
-        self.assertTrue(self.card(f"review:{first}")["stale"])
+        self.assertEqual([card["id"] for card in self.cards()], [f"review:{second}"])
+        status, _, body = self.get(f"/api/reviews/{first}")
+        self.assertEqual(status, 200, body)
+        self.assertEqual({key: json.loads(body)[key] for key in ("status", "superseded_by")}, {"status": "superseded", "superseded_by": second})
+        self.assertEqual([review["id"] for review in self.httpd.hub.reviews.pending()], [second])
+
+    def test_the_hub_start_supersedes_older_pending_reviews_of_one_worktree_and_branch(self):
+        state = self.work / "start-state"
+        state.mkdir()
+        rows = (("a", "feature/x", "2026-11-19T10:00:00+00:00"), ("b", "feature/x", "2026-11-19T10:05:00+00:00"), ("c", "feature/y", "2026-11-19T10:01:00+00:00"))
+        reviews = {name: {"id": name, "worktree": "/w", "branch": branch, "tree": "0" * 40, "title": name, "created": created, "status": "pending", "decided": None} for name, branch, created in rows}
+        (state / "reviews.json").write_text(json.dumps(reviews), encoding="utf-8")
+        opened = ledger.Reviews(state)
+        self.assertEqual(sorted(review["id"] for review in opened.pending()), ["b", "c"])
+        self.assertEqual({key: opened.get("a")[key] for key in ("status", "superseded_by")}, {"status": "superseded", "superseded_by": "b"})
+        self.assertEqual(json.loads((state / "reviews.json").read_text(encoding="utf-8"))["a"]["status"], "superseded")
 
     def test_a_stale_report_needs_the_local_guard_and_a_tree(self):
         repo = staged_repo(self.work)

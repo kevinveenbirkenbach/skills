@@ -56,7 +56,8 @@ class Matching:
         names = self.names.listed()
         reviews = self.reviews.pending()
         labels = score_labels(self.scripts.skills)
-        cards = [{**self.commit_card(review, reviews, born_of(review.get("agent", ""), names, claims), labels), "to": requester_of(claims, review.get("agent", ""))[0]} for review in reviews if not self.batches.holds("review", review["id"])]
+        senders = {review["id"]: review.get("agent", "") for review in reviews}
+        cards = [{**self.commit_card(review, born_of(senders[review["id"]], names, claims), labels), "to": requester_of(claims, senders[review["id"]])[0]} for review in reviews if not self.batches.holds("review", review["id"])]
         tasks = read_register(self.council / REGISTER)
         held = self.open_jobs()
         rows = [row for row in operator_rows(tasks) if row["check"] != "decision" and row["task"] not in held]
@@ -66,8 +67,8 @@ class Matching:
         for row in rows:
             if f"operator:{row['task']}" in releasing:
                 continue
-            agent = adder(tasks[row["task"]])
-            cards.append({**self.command_card(row, agent, born_of(agent, names, claims), roots, scan, labels), "to": requester_of(claims, agent)[0]})
+            owner = adder(tasks[row["task"]])
+            cards.append({**self.command_card(row, owner, born_of(owner, names, claims), roots, scan, labels), "to": requester_of(claims, owner)[0]})
         items = self.inbox(now, tasks, self.directory(claims, read_jsonl(self.council / NEWS), now))
         cards += [self.waiting_card(item, born_of(item["agent"], names, claims), scan, labels) for item in items if self.waits(item)]
         asked = {row["task"] for row in operator_rows(tasks) if row["check"] == "decision"}
@@ -81,10 +82,9 @@ class Matching:
                     store.remove(snapshot["id"])
         return {"now": now, "cards": cards}
 
-    def commit_card(self, review: dict, reviews: list[dict], born: float | None, labels: dict | None) -> dict:
-        newer = [other["id"] for other in reviews if other["created"] > review["created"] and (other["worktree"], other["branch"]) == (review["worktree"], review["branch"])]
+    def commit_card(self, review: dict, born: float | None, labels: dict | None) -> dict:
         live = review.get("live_tree")
-        reason = f"added again as review:{newer[-1]}" if newer else "the staged tree changed since it was added" if live not in (None, review["tree"]) else ""
+        reason = "the staged tree changed since it was added" if live not in (None, review["tree"]) else ""
         try:
             files = stored_diff(self.reviews.pages, "review", review["id"])["diff"]
         except Missing:

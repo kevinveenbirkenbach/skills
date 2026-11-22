@@ -46,6 +46,8 @@ once the operator's pinned passkey signature over it verifies here.
    add `--record <file>`.
    Exit 0 only: commit as the calling skill says. Any other exit,
    `rejected`, or the tree changed: no commit; report the printed reason.
+   `superseded`: a newer request for the same worktree and branch replaced
+   it; wait on the review its `superseded_by` names.
 
 No kvb-orchestrator tools, or the verify step refused: ask the calling
 skill's approval question in chat.

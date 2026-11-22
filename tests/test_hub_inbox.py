@@ -14,7 +14,7 @@ from kvb_orchestrator import batches
 class TestHubInbox(HubCase):
     def test_inbox_bulk_approval_waits_for_the_undo_window(self):
         green = self.request("feat: green", "")
-        red = self.tool("review_request", {**self.arguments("feat: red", "", self.page("red.html", PAGE)), "gate": "fail"})["structuredContent"]["id"]
+        red = self.tool("review_request", {**self.arguments("feat: red", "", self.page("red.html", PAGE)), **self.branched("feature/red"), "gate": "fail"})["structuredContent"]["id"]
         ask_id = self.create_ask(ASK)
         risky = self.create_ask({**ASK, "command": "rm -rf build"})
         decision_id = self.decision("Merge now")

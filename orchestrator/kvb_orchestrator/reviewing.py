@@ -37,7 +37,12 @@ def found(review: dict | None, review_id: str) -> dict:
 
 
 def state_of(review: dict) -> dict:
-    return {key: review[key] for key in STATE}
+    """Returns:
+        The review's id, status, tree and decision time, and superseded_by
+        once a newer review of its worktree and branch replaced it.
+    """
+    replaced = {"superseded_by": review["superseded_by"]} if "superseded_by" in review else {}
+    return {**{key: review[key] for key in STATE}, **replaced}
 
 
 def proven(review: dict) -> dict:

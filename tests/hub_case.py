@@ -175,6 +175,13 @@ class HubCase(unittest.TestCase):
     def arguments(self, title: str, notes: str, page: str) -> dict:
         return {"repo": "/repo/.git", "worktree": "/repo/.worktrees/feature/x", "branch": "feature/x", "tree": TREE, "title": title, "page": page, "notes": notes, "gate": "pass", "score": SCORE}
 
+    def branched(self, branch: str) -> dict:
+        """Args:
+            branch: the review's branch, checked out in /repo/.worktrees/<branch>;
+                a newer review of the same branch supersedes an older pending one.
+        """
+        return {"worktree": f"/repo/.worktrees/{branch}", "branch": branch}
+
     def events(self, query: str) -> dict:
         status, _, body = self.get(f"/api/events?{query}")
         self.assertEqual(status, 200, body)

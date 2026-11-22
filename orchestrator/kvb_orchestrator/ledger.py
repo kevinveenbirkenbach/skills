@@ -124,9 +124,21 @@ class Reviews(Sealed):
     def __init__(self, state: Path) -> None:
         (state / "pages").mkdir(exist_ok=True)
         super().__init__(state / "reviews.json", state / "pages", SEALED_SUFFIX["review"])
+        for newest in {(review["worktree"], review["branch"]): review for review in self.pending()}.values():
+            self.supersede(newest)
 
     def stored(self, review_id: str, suffix: str) -> Path:
         return self.pages / f"{review_id}{suffix}"
+
+    def supersede(self, newest: dict) -> None:
+        """Args:
+            newest: the review that replaces every other pending review of
+                its worktree and branch; each is set superseded, with
+                superseded_by naming it.
+        """
+        for review in self.pending():
+            if review["id"] != newest["id"] and (review["worktree"], review["branch"]) == (newest["worktree"], newest["branch"]):
+                self.decide(review["id"], {"status": "superseded", "superseded_by": newest["id"]})
 
     def submit(self, fields: dict[str, str], page: bytes, files: list[dict], attached: dict[str, bytes]) -> dict:
         """Args:
@@ -139,7 +151,9 @@ class Reviews(Sealed):
             write_atomic(self.stored(review_id, ".json"), json.dumps({"files": files}).encode("utf-8"))
             for suffix, data in attached.items():
                 write_atomic(self.stored(review_id, suffix), data)
-            return self.insert(review_id, {**fields, "files": len(files), "status": "pending", "decided": None})
+            review = self.insert(review_id, {**fields, "files": len(files), "status": "pending", "decided": None})
+            self.supersede(review)
+            return review
 
 
 class Marks:

@@ -23,8 +23,8 @@ SEALED = {"app.py": APP_CLEAR, "conf.py": CONF_CLEAR}
 
 
 class TestSealedReveal(HubCase):
-    def review(self) -> str:
-        result = self.tool("review_request", {**self.arguments("feat: sealed", "", self.page("sealed.html", PAGE)), "agent": "Skills", "diff": DIFF, "sealed": SEALED})
+    def review(self, branch: str) -> str:
+        result = self.tool("review_request", {**self.arguments("feat: sealed", "", self.page("sealed.html", PAGE)), **self.branched(branch), "agent": "Skills", "diff": DIFF, "sealed": SEALED})
         self.assertFalse(result["isError"], result)
         return result["structuredContent"]["id"]
 
@@ -39,7 +39,7 @@ class TestSealedReveal(HubCase):
             self.assertNotIn(word, body)
 
     def test_the_sealed_patches_sit_apart_with_mode_0600_and_never_reach_the_diff_the_state_or_the_stream(self):
-        items = {"review": self.review(), "ask": self.ask(60)}
+        items = {"review": self.review("feature/x"), "ask": self.ask(60)}
         for kind, item_id in items.items():
             with self.subTest(kind=kind):
                 self.assertEqual(self.sealed(kind, item_id).stat().st_mode & 0o777, 0o600)
@@ -62,7 +62,7 @@ class TestSealedReveal(HubCase):
 
     def test_a_signed_reveal_answers_exactly_the_requested_paths_per_file_and_per_item_and_logs_no_content(self):
         signer = self.pin()
-        for kind, item_id in (("review", self.review()), ("ask", self.ask(60))):
+        for kind, item_id in (("review", self.review("feature/x")), ("ask", self.ask(60))):
             with self.subTest(kind=kind):
                 status, _, body = self.reveal(kind, item_id, ["app.py"], self.reveal_proof(kind, item_id, ["app.py"], signer))
                 self.assertEqual((status, json.loads(body)), (200, {"kind": kind, "id": item_id, "patches": {"app.py": APP_CLEAR}}), body)
@@ -75,7 +75,7 @@ class TestSealedReveal(HubCase):
 
     def test_a_reveal_without_a_pinned_unexpired_unused_signature_over_exactly_its_paths_answers_4xx_without_content(self):
         signer = self.pin()
-        review_id = self.review()
+        review_id = self.review("feature/x")
         one = self.reveal_proof("review", review_id, ["app.py"], signer)
         stranger = self.reveal_proof("review", review_id, ["app.py"], key(-7, "stranger"))
         cases = {
@@ -106,7 +106,7 @@ class TestSealedReveal(HubCase):
 
     def test_the_sealed_file_is_deleted_after_the_grant_the_denial_or_the_expiry_and_a_reveal_then_conflicts(self):
         signer = self.pin()
-        granted, rejected = self.review(), self.review()
+        granted, rejected = self.review("feature/x"), self.review("feature/rejected")
         proven = self.proven([self.entry("review", granted, "", "")], signer)
         self.assertEqual(self.call("POST", f"/reviews/{granted}/approve", proven, self.guard(self.host))[0], 200)
         self.assertEqual(self.call("POST", f"/reviews/{rejected}/reject", b"", self.guard(self.host))[0], 200)
@@ -125,7 +125,7 @@ class TestSealedReveal(HubCase):
                 self.assert_no_clear_text(body)
 
     def test_a_reveal_of_a_decided_item_drops_a_sealed_file_left_behind(self):
-        review_id = self.review()
+        review_id = self.review("feature/x")
         left = self.sealed("review", review_id).read_bytes()
         self.assertEqual(self.call("POST", f"/reviews/{review_id}/reject", b"", self.guard(self.host))[0], 200)
         self.sealed("review", review_id).write_bytes(left)

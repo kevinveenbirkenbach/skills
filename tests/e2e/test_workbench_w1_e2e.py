@@ -157,7 +157,7 @@ class TestWorkbenchOperatorTasks(HubCase):
         for width, _ in base.WIDTHS:
             tag = f"w{width}"
             for word in ("review", "second"):
-                arguments = {**self.arguments(f"feat: {tag} {word}", "", self.page(f"{tag}-{word}.html", PAGE)), "agent": "Skills", "diff": DIFF}
+                arguments = {**self.arguments(f"feat: {tag} {word}", "", self.page(f"{tag}-{word}.html", PAGE)), **self.branched(f"feature/{tag}-{word}"), "agent": "Skills", "diff": DIFF}
                 result = self.tool("review_request", arguments)
                 self.assertFalse(result["isError"], result)
                 self.reviews[(tag, word)] = result["structuredContent"]["id"]

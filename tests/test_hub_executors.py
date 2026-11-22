@@ -184,7 +184,7 @@ class TestHubExecutors(HubCase):
             outside = self.create_ask({**ASK, "cwd": "/elsewhere"})
             cargo = self.create_ask({**ASK, "command": "cargo build"})
             green = self.request("feat: auto", "")
-            red = self.tool("review_request", {**self.arguments("feat: red", "", self.page("red.html", PAGE)), "gate": "fail"})["structuredContent"]["id"]
+            red = self.tool("review_request", {**self.arguments("feat: red", "", self.page("red.html", PAGE)), **self.branched("feature/red"), "gate": "fail"})["structuredContent"]["id"]
             chosen = self.decision("Wait")
             plain = self.decision("")
             self.settle(lambda: self.ask_status(matched, "0") == "allowed")
