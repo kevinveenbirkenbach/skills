@@ -88,7 +88,7 @@ mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
 entries = settings.setdefault("hooks", {}).setdefault("PermissionRequest", [])
 entries[:] = [entry for entry in entries if not any(marker in hook.get("command", "") for hook in entry.get("hooks", []))]
 if added:
-    entries.append({"matcher": "Bash", "hooks": [{"type": "command", "command": added[0], "timeout": int(added[1])}]})
+    entries.append({"matcher": "Bash|AskUserQuestion", "hooks":[{"type": "command", "command": added[0], "timeout": int(added[1])}]})
 temporary = path.with_name(f"{path.name}.{os.getpid()}")
 temporary.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 temporary.chmod(mode)
@@ -389,7 +389,9 @@ check() {
 	code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${port}/" || true)"
 	if [[ "${code}" == "200" ]]; then ok "http://localhost:${port}/ answers 200"; else fail "http://localhost:${port}/ answers ${code}"; fi
 	check_keys
-	if grep -qs "${NAME}/client/permission_hook.py" "${SETTINGS}" "${LOCAL_SETTINGS}"; then
+	if grep -qs "${NAME}/client/permission_hook.py" "${SETTINGS}" "${LOCAL_SETTINGS}" && ! grep -qs '"Bash|AskUserQuestion"' "${SETTINGS}" "${LOCAL_SETTINGS}"; then
+		todo "PermissionRequest hook misses AskUserQuestion: make orchestrator-hook"
+	elif grep -qs "${NAME}/client/permission_hook.py" "${SETTINGS}" "${LOCAL_SETTINGS}"; then
 		ok "PermissionRequest hook registered"
 	else
 		todo "PermissionRequest hook missing: make orchestrator-hook"

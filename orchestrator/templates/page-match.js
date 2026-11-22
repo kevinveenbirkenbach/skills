@@ -11,7 +11,7 @@
   const CONFETTI = 28;
   const COMMENTS_KEPT = 5;
   const PATTERNS = ["dots", "stripes", "waves", "grid", "rings"];
-  const matchView = {cards: null, order: [], marks: new Map(), opened: new Map(), decisions: new Map(), overview: false, front: null, drag: null, dom: null, sig: "", fetched: 0, loading: false, press: null, flying: false, openBefore: 0, epoch: 0};
+  const matchView = {cards: null, order: [], marks: new Map(), opened: new Map(), decisions: new Map(), toggles: new Map(), overview: false, front: null, drag: null, dom: null, sig: "", fetched: 0, loading: false, press: null, flying: false, openBefore: 0, epoch: 0};
 
   /**
    * @returns {Promise<void>} settled when this read ends, at once while another runs; a response requested before
@@ -274,12 +274,59 @@
       card.stale ? h("p", {class: "match-stale"}, icon("bi-exclamation-triangle"), revealed(card.stale_reason)) : null);
   }
 
+  /**
+   * @param {Object} card a decision card; a multi one takes several options, toggled here and kept in matchView.toggles across redraws until Pick.
+   * @returns {HTMLElement} its option buttons, and Pick for a multi card.
+   */
   function matchOptions(card) {
     const kept = matchView.decisions.get(cardKey(card));
-    return h("div", {class: "options match-options", role: "group", "aria-label": "Options"}, card.options.map((option) => h("button", {
-      type: "button", class: `option${option.label === card.recommended ? " recommended" : ""}`, "aria-pressed": String(Boolean(kept && kept.label === option.label)),
-      title: revealed(`${option.label}: picked now, sent to ${card.agent || "its agent"} as a post at the release`), on: {click: () => decide(card, "accept", "", option.label)},
-    }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null)));
+    const recommended = card.recommended.split(PICKED);
+    const toggled = matchView.toggles.get(cardKey(card)) || new Set(kept ? kept.label.split(PICKED) : []);
+    const pick = card.multi ? h("button", {type: "button", class: "btn small primary match-pick", disabled: !toggled.size, title: revealed(`Pick: the toggled options, sent to ${card.agent || "its agent"} at the release`)}, icon("bi-check2-square"), "Pick") : null;
+    const buttons = card.options.map((option) => {
+      const button = h("button", {
+        type: "button", class: `option${recommended.includes(option.label) ? " recommended" : ""}`, "aria-pressed": String(toggled.has(option.label)),
+        title: revealed(`${option.label}: ${card.multi ? "toggled now" : "picked now"}, sent to ${card.agent || "its agent"} at the release`),
+        on: {click: () => {
+          if (!card.multi) {
+            decide(card, "accept", "", option.label);
+            return;
+          }
+          toggled.has(option.label) ? toggled.delete(option.label) : toggled.add(option.label);
+          matchView.toggles.set(cardKey(card), toggled);
+          button.setAttribute("aria-pressed", String(toggled.has(option.label)));
+          pick.disabled = !toggled.size;
+        }},
+      }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null);
+      return button;
+    });
+    if (pick) {
+      pick.addEventListener("click", () => {
+        matchView.toggles.delete(cardKey(card));
+        decide(card, "accept", "", card.options.filter((option) => toggled.has(option.label)).map((option) => option.label).join(PICKED));
+      });
+    }
+    return h("div", {class: "options match-options", role: "group", "aria-label": "Options"}, buttons, pick, card.other ? matchOther(card, kept) : null);
+  }
+
+  /**
+   * @param {Object} card a decision card of a question the permission hook asked.
+   * @param {Object} [kept] its decision so far; a free-text one fills the field.
+   * @returns {HTMLElement} the one-line free-text answer, picked like an option.
+   */
+  function matchOther(card, kept) {
+    const free = kept && kept.label && !kept.label.split(PICKED).some((label) => card.options.some((option) => option.label === label));
+    const input = h("input", {class: "field", type: "text", maxlength: OTHER_LIMIT, placeholder: "Other answer …", "aria-label": "Other answer", value: free ? kept.label : null});
+    const form = h("form", {class: "option other match-other"}, input,
+      h("button", {type: "submit", class: "btn small", ...named("Pick", revealed(`Pick: this text, sent to ${card.agent || "its agent"} at the release`))}, icon("bi-send"), "Pick"));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (input.value.trim()) {
+        matchView.toggles.delete(cardKey(card));
+        decide(card, "accept", "", input.value.trim());
+      }
+    });
+    return form;
   }
 
   function matchPayload(card) {
@@ -559,7 +606,7 @@
     });
     return h("li", {class: "match-decision", "data-card": card.id, "data-verdict": decision.verdict},
       h("div", {class: "row"}, face(card.agent || "-", false), h("span", {class: "pill", "data-tone": kindTone}, icon(kindIcon), kindName), h("strong", {class: "match-decision-title"}, revealed(card.title)), h("span", {class: "spacer"}),
-        h("span", {class: "pill match-verdict", "data-tone": tone}, icon(mark), decision.label ? revealed(`${word}: ${decision.label}`) : word), decision.verdict === "reject" ? iconBtn("bi-pencil", "Edit feedback", "btn small ghost match-edit", () => rejectCard(card)) : null, flip, back),
+        h("span", {class: "pill match-verdict", "data-tone": tone}, icon(mark), decision.label ? revealed(`${word}: ${shownPick(decision.label)}`) : word), decision.verdict === "reject" ? iconBtn("bi-pencil", "Edit feedback", "btn small ghost match-edit", () => rejectCard(card)) : null, flip, back),
       decision.verdict === "reject" ? h("pre", {class: "match-decision-feedback"}, revealedLines(decision.feedback === "" ? "no feedback text" : decision.feedback)) : null);
   }
 
@@ -687,7 +734,7 @@
     matchView.front = front;
     const act = (cls, iconName, word, hint, disabled, run) => h("button", {type: "button", class: `match-act ${cls}`, disabled, ...named(word, hint), on: {click: run}},
       h("span", {class: "match-act-face", "aria-hidden": "true"}, icon(iconName)), h("span", {class: "match-act-label"}, word));
-    const hint = front.stale ? `Accept: refused while the card is stale (${front.stale_reason})` : front.kind === "rule" ? "Accept: opens its row, where the passkey signs exactly this rule" : front.kind === "decision" ? (front.recommended ? `Accept: ${front.recommended} (right arrow, swipe right)` : "Accept: pick one of its options") : "Accept (right arrow, swipe right)";
+    const hint = front.stale ? `Accept: refused while the card is stale (${front.stale_reason})` : front.kind === "rule" ? "Accept: opens its row, where the passkey signs exactly this rule" : front.kind === "decision" ? (front.recommended ? `Accept: ${shownPick(front.recommended)} (right arrow, swipe right)` : "Accept: pick one of its options") : "Accept (right arrow, swipe right)";
     const accept = act("match-accept", "bi-check-lg", "Accept", revealed(hint), Boolean(front.stale) || (front.kind === "decision" && !front.recommended), () => acceptCard(front));
     const reject = act("match-reject", "bi-x-lg", "Reject", pickOnly(front) ? "Reject: a choice is answered with one of its options" : "Reject with feedback (left arrow, swipe left)", pickOnly(front), () => rejectCard(front));
     const later = act("match-later", "bi-arrow-up", "Later", "Later: to the back of the stack (up arrow, swipe up)", !rest.length, () => laterCard(front));

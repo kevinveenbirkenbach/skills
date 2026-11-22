@@ -30,7 +30,10 @@ Returns:
         Any other Bash command that may run git commit (-a, --all, -i, -o,
         -p, a pathspec, a chain, a wrapper) is not approvable: no ask
         reaches the hub, stderr gets WORKTREE and Claude Code shows its own
-        dialog.
+        dialog. An AskUserQuestion call becomes one hub decision per
+        question; once a pinned passkey signed the pick of every question,
+        the allow carries updatedInput with the questions and their
+        answers, the labels of a multi-select pick joined by ", ".
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ from pathlib import Path
 
 import hub_api
 import hub_limits
+import passkey
 import signing
 import staged_diff
 import verifier
@@ -61,6 +65,8 @@ WORKTREE = "commit reads the working tree; stage the files and commit the index"
 ALLOW = {"behavior": "allow"}
 REASON_LIMIT = 2000
 FAILURES = (OSError, ValueError, staged_diff.DiffError)
+QUESTION_TOOL = "AskUserQuestion"
+OPTION_KEYS = ("label", "description", "preview")
 
 
 def summary(tool_input: object) -> str:
@@ -228,6 +234,103 @@ def decision(answer: dict, item: dict, trust: verifier.Trust) -> dict | None:
     return {"behavior": "allow"}
 
 
+def asked_questions(hook: dict) -> list[dict] | None:
+    """Returns:
+        The questions of an AskUserQuestion call, None for any other tool
+        call and for input of another shape.
+    """
+    if hook.get("tool_name") != QUESTION_TOOL or not isinstance(hook.get("tool_input"), dict):
+        return None
+    questions = hook["tool_input"].get("questions")
+    if not isinstance(questions, list) or not questions:
+        return None
+    if not all(isinstance(question, dict) and isinstance(question.get("question"), str) and isinstance(question.get("options"), list) for question in questions):
+        print("kvb-orchestrator: a malformed question stays in the terminal", file=sys.stderr)
+        return None
+    return questions
+
+
+def ask_question(base: str, question: dict, session: str, timeout: float) -> str:
+    options = [{key: option[key] for key in OPTION_KEYS if key in option} if isinstance(option, dict) else option for option in question["options"]]
+    data = encoded({"question": question["question"], "options": options, "session": session, "timeout": timeout, "multi": question.get("multiSelect") is True})
+    request = urllib.request.Request(f"{base}/api/decisions", data=data, headers={"Content-Type": "application/json", **hub_api.GUARD}, method="POST")
+    decision_id = hub_api.call(request, hub_api.SLACK)["id"]
+    if not isinstance(decision_id, str) or not signing.ID.fullmatch(decision_id):
+        raise ValueError("the hub answered no decision id")
+    return decision_id
+
+
+def picked(base: str, decision_id: str, question: dict, deadline: float) -> tuple[dict, str] | None:
+    """Returns:
+        The hub's decided answer for the decision decision_id and the answer
+        to the question it holds, its signature not yet checked: the
+        option's label, for a multi-select question the picked labels in
+        option order joined by ", ", or the one line of other text that
+        names no option; None when the decision expires, the deadline
+        passes or a multi-line pick holds a line that is no option of the
+        question.
+    """
+    answer = {"status": "pending"}
+    while answer["status"] == "pending" and (left := deadline - time.monotonic()) > 0:
+        wait = min(left, POLL)
+        answer = hub_api.call(urllib.request.Request(f"{base}/api/decisions/{decision_id}?wait={wait:.1f}"), wait + hub_api.SLACK)
+        if not isinstance(answer.get("status"), str):
+            raise TypeError("the hub answered no status")
+    choice, to = answer.get("choice"), answer.get("to")
+    if answer["status"] != "decided" or not isinstance(choice, str) or not isinstance(to, str):
+        return None
+    labels = [option["label"] for option in question["options"] if isinstance(option, dict) and isinstance(option.get("label"), str)]
+    parts = choice.split(signing.PICKED) if question.get("multiSelect") is True else [choice]
+    chosen = [label for label in labels if label.strip() in parts]
+    other = signing.PICKED not in choice and not chosen
+    if [label.strip() for label in chosen] != parts and not other:
+        return None
+    return answer, choice if other else ", ".join(chosen)
+
+
+def counter_of(answer: dict) -> int:
+    """Returns:
+        The signature counter the pick's assertion claims, unchecked: it only
+        orders the signature checks, so the picks of an authenticator that
+        counts up pass in the order they were signed; 0 when it cannot be read.
+    """
+    try:
+        data = passkey.b64decode(answer["proof"]["assertion"]["authenticatorData"], "authenticatorData")
+    except (signing.Refused, KeyError, TypeError):
+        return 0
+    return int.from_bytes(data[33:37], "big")
+
+
+def signed(answer: dict, decision_id: str, question: dict, trust: verifier.Trust) -> bool:
+    try:
+        verifier.check(answer.get("proof"), signing.choice_item(answer["to"], decision_id, question["question"], answer["choice"]), "", trust, time.time())
+    except (signing.Refused, OSError) as error:
+        print(f"kvb-orchestrator: the pick is not signed, Claude Code asks instead: {error}", file=sys.stderr)
+        return False
+    return True
+
+
+def answers_of(base: str, hook: dict, questions: list[dict], timeout: float, trust: verifier.Trust, deadline: float) -> dict | None:
+    """Returns:
+        The PermissionRequest allow that answers every question with the
+        option the operator picked and signed in the Agent Orchestrator;
+        None as soon as one question goes unanswered or one signature does
+        not hold.
+    """
+    session = str(hook.get("session_id") or "")
+    asked = [(ask_question(base, question, session, timeout), question) for question in questions]
+    picks = []
+    for decision_id, question in asked:
+        pick = picked(base, decision_id, question, deadline)
+        if pick is None:
+            return None
+        picks.append((decision_id, question, *pick))
+    for decision_id, question, answer, _ in sorted(picks, key=lambda pick: counter_of(pick[2])):
+        if not signed(answer, decision_id, question, trust):
+            return None
+    return {"behavior": "allow", "updatedInput": {**hook["tool_input"], "answers": {question["question"]: label for _, question, _, label in picks}}}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="permission_hook")
     parser.add_argument("--port", type=int, required=True)
@@ -240,6 +343,12 @@ def main() -> int:
     deadline = time.monotonic() + args.timeout
     try:
         hook = json.load(sys.stdin)
+        questions = asked_questions(hook)
+        if questions is not None:
+            chosen = answers_of(base, hook, questions, args.timeout, trust, deadline)
+            if chosen is not None:
+                print(json.dumps({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": chosen}}))
+            return 0
         ask = facts(hook)
         too_long = [name for name, limit in LIMITS.items() if len(ask[name]) > limit]
         if too_long:

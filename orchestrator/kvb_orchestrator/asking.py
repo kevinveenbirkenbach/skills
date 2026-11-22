@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import time
 
-from .choosing import EVERYONE, answer_text
+from .choosing import EVERYONE, PICKED, answer_text, decision_status
+from .council import agent, read_claims
 from .diffs import sealed_file, store_diff, store_sealed, valid_diff, valid_sealed
 from .errors import Conflict, Missing, ToolError
 from .fields import (
@@ -26,6 +27,7 @@ ASK_LIFETIME = 3600
 PREVIEW_LIMIT = 4000
 ASK_TEXTS = {"command": COMMAND_LIMIT, "cwd": PATH_LIMIT, "session": 200, "agent": 200}
 ANSWERS = {"allow": "allowed", "deny": "denied"}
+RECOMMENDED = "(Recommended)"
 
 
 def ask_state(ask: dict, now: float) -> dict:
@@ -69,6 +71,22 @@ def option_of(option: object) -> dict:
     preview = bounded(option, "preview", PREVIEW_LIMIT).rstrip() if "preview" in option else ""
     visible({"description": description, "preview": preview})
     return {"label": label, "description": description, **({"preview": preview} if preview.strip() else {})}
+
+
+def choice_of(arguments: dict) -> tuple[str, list[dict]]:
+    """Returns:
+        The question and the options of a decision, each passed by
+        option_of(), once the labels are distinct.
+    """
+    question = message_text(arguments, "question")
+    visible({"question": question})
+    options = arguments["options"]
+    if not isinstance(options, list) or not 1 <= len(options) <= OPTION_LIMIT:
+        raise ToolError(f"options must be a list of 1 to {OPTION_LIMIT} objects")
+    parsed = [option_of(option) for option in options]
+    if len({option["label"] for option in parsed}) != len(parsed):
+        raise ToolError("option labels must be distinct")
+    return question, parsed
 
 
 class Asking:
@@ -122,16 +140,52 @@ class Asking:
             return ask_state(decided, time.time())
         raise Missing(verb)
 
+    def question(self, body: bytes) -> dict:
+        """Args:
+            body: {"question", "options", "session", "timeout", "multi"}: one
+                question of an AskUserQuestion call the permission hook
+                mirrors as a decision; it expires after timeout seconds, a
+                multi one takes several options as a pick (choosing.picks),
+                its recommendation is the options labelled RECOMMENDED
+                (the first of them for a single one), and a signed pick is
+                kept for the hook instead of being posted.
+        """
+        payload = decode(body)
+        expect(payload, ("question", "options", "session", "timeout", "multi"))
+        question, parsed = choice_of(payload)
+        multi = payload["multi"]
+        if not isinstance(multi, bool):
+            raise ToolError("multi must be true or false")
+        session = bounded(payload, "session", ASK_TEXTS["session"]).strip()
+        if not session:
+            raise ToolError("session must not be empty")
+        visible({"session": session})
+        created = time.time()
+        asker = self.directory(read_claims(self.council), [], created).now(session) or session
+        if EVERYONE in asker:
+            raise ToolError(f"the asking session's name holds {EVERYONE}")
+        marked = [option["label"] for option in parsed if option["label"].endswith(RECOMMENDED)]
+        recommended = PICKED.join(marked) if multi else next(iter(marked), "")
+        fields = {"question": question, "options": parsed, "agent": asker, "recommended": recommended, "session": session, "hooked": True, "multi": multi}
+        record = self.decisions.add({**fields, "status": "pending", "choice": None, "decided": None, "proof": None, "created_ts": created, "expires": created + seconds(payload, "timeout", ASK_LIFETIME)})
+        return {"id": record["id"], "status": record["status"]}
+
+    def question_wait(self, decision_id: str, query: dict[str, list[str]]) -> dict:
+        """Returns:
+            The state of a decision the permission hook asked: status
+            (pending, decided or expired), the choice, the operator's
+            signature over the pick and the to it was signed for.
+        """
+        wait = instant(query, "wait")
+        record = self.decisions.get(decision_id)
+        if record is None or not record.get("hooked"):
+            raise Missing(decision_id)
+        record = self.decisions.wait(decision_id, min(wait or 0.0, WAIT_CAP, max(record["expires"] - time.time(), 0.0)))
+        return {"id": decision_id, "status": decision_status(record, time.time()), "choice": record["choice"], "proof": record["proof"], "to": agent(record["agent"])}
+
     def decision_request(self, arguments: dict) -> dict:
         expect(arguments, ("question", "options", "agent", "recommended"))
-        question = message_text(arguments, "question")
-        visible({"question": question})
-        options = arguments["options"]
-        if not isinstance(options, list) or not 1 <= len(options) <= OPTION_LIMIT:
-            raise ToolError(f"options must be a list of 1 to {OPTION_LIMIT} objects")
-        parsed = [option_of(option) for option in options]
-        if len({option["label"] for option in parsed}) != len(parsed):
-            raise ToolError("option labels must be distinct")
+        question, parsed = choice_of(arguments)
         recommended = arguments["recommended"]
         if not isinstance(recommended, str) or recommended.strip() not in ["", *(option["label"] for option in parsed)]:
             raise ToolError("recommended must be one of the option labels or an empty string")

@@ -28,6 +28,9 @@ TASK = re.compile(r"[a-z0-9][a-z0-9._-]{0,99}(?:/[a-z0-9][a-z0-9._-]{0,99}){0,7}
 PRIO = re.compile(r"[1-9][0-9]{0,2}")
 FIBONACCI = ("1", "2", "3", "5", "8", "13", "21", "34", "55", "89")
 ESTIMATOR = "Operator"
+CHOICE_CLASS = "post"
+QUESTION_SHOWN = 200
+PICKED = "\n"
 COMMANDS = "operator/"
 STATUSES = ("queued", "running", "blocked", "done", "stopped")
 GATE_LEVELS = ("none", "quick", "test", "quality-high", "e2e")
@@ -177,6 +180,22 @@ def denial_item(subject: dict, channel: str, reason: str, to: str) -> dict:
 
 def message_item(to: str, cls: str, text: str, upload: str, voice: str, voice_sha256: str) -> dict:
     return {"kind": "message", "to": to, "class": cls, "text": text, "upload": upload, "voice": voice, "voice_sha256": voice_sha256}
+
+
+def choice_text(decision_id: str, question: str, label: str) -> str:
+    shown = " ".join(question.split())[:QUESTION_SHOWN]
+    return f"Choice for decision {decision_id} ({shown}): {label}"
+
+
+def choice_item(to: str, decision_id: str, question: str, label: str) -> dict:
+    """Args:
+        to: the asking agent the answer is posted to.
+
+    Returns:
+        The post that a pick of the option label of the decision decision_id
+        signs, its question on one line and cut at QUESTION_SHOWN.
+    """
+    return message_item(to, CHOICE_CLASS, choice_text(decision_id, question, label), "", "", "")
 
 
 def board_item(action: str, agents: list[str]) -> dict:

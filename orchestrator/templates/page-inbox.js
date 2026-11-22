@@ -99,12 +99,12 @@
         openItem(item);
         return null;
       }
-      return submit([entryOf(item, "approve", item.recommended)], `Choice: ${item.recommended}`);
+      return submit([entryOf(item, "approve", item.recommended)], `Choice: ${shownPick(item.recommended)}`);
     }
     return submit([entryOf(item, "approve", "")], `${item.kind === "operator" ? "Run" : "Grant"}: ${short(item.title)}`);
   }
 
-  const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Choice: ${label}`);
+  const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Choice: ${shownPick(label)}`);
   const asked = (item) => item.kind === "operator" && item.check === "decision";
   const answers = new Map();
   const answerOf = (item) => answers.get(keyOf(item)) || item.answered || "";
@@ -120,39 +120,73 @@
     }
   }
 
-  function otherAnswer(item) {
-    const input = h("input", {class: "field", type: "text", placeholder: "Other answer …", "aria-label": `Other answer to ${item.id}`, disabled: answers.has(keyOf(item))});
+  /**
+   * @param {Object} item a decision row, or a decision the permission hook asked.
+   * @param {Function} send called with the trimmed text once it is not empty.
+   * @returns {HTMLElement} the free-text answer form.
+   */
+  function otherAnswer(item, send) {
+    const done = answers.has(keyOf(item));
+    const input = h("input", {class: "field", type: "text", placeholder: "Other answer …", "aria-label": `Other answer to ${item.id}`, maxlength: item.kind === "decision" ? OTHER_LIMIT : null, disabled: done});
     const form = h("form", {class: "option other"}, input,
-      h("button", {type: "submit", class: "btn small", disabled: answers.has(keyOf(item)), ...named("Send", revealed(`Send: your passkey signs this answer, a post to ${item.agent}`))}, icon("bi-send"), "Send"));
+      h("button", {type: "submit", class: "btn small", disabled: done, ...named("Send", revealed(`Send: your passkey signs this answer for ${item.agent}`))}, icon("bi-send"), "Send"));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       if (input.value.trim()) {
-        answerRow(item, input.value.trim());
+        send(input.value.trim());
       }
     });
     return form;
   }
 
+  /**
+   * @param {Object} item a decision or a decision row; a multi decision takes several options, toggled until Send.
+   * @param {Function} pick called with the answer: one label, or the toggled labels in option order joined by PICKED.
+   * @param {HTMLElement} [other] a free-text answer form.
+   * @returns {HTMLElement} the option buttons with their preview pane.
+   */
   function choicePanel(item, pick, other) {
     const done = Boolean(answerOf(item));
+    const recommended = item.recommended.split(PICKED);
+    const toggled = new Set();
     const pane = item.options.some((option) => option.preview) ? h("pre", {class: "choice-preview", "aria-label": "Preview"}) : null;
     const show = (option) => {
       if (pane) {
         pane.textContent = revealedLines(option.preview || "");
       }
     };
-    const buttons = item.options.map((option) => h("button", {
-      type: "button", class: `option${option.label === item.recommended ? " recommended" : ""}`, title: revealed(`${option.label}: your passkey signs this answer, a post to ${item.agent}`), disabled: item.held || done,
-      on: {click: () => pick(option.label), focus: () => show(option), mouseenter: () => show(option)},
-    }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null));
-    show(item.options.find((option) => option.label === item.recommended) || item.options[0] || {});
-    const list = h("div", {class: "options"}, buttons, other || null);
+    const send = item.multi ? h("button", {type: "button", class: "btn small primary choice-send", disabled: true, ...named("Send", revealed(`Send the toggled options: your passkey signs this answer for ${item.agent}`))}, icon("bi-send"), "Send") : null;
+    const buttons = item.options.map((option) => {
+      const button = h("button", {
+        type: "button", class: `option${recommended.includes(option.label) ? " recommended" : ""}`, title: revealed(`${option.label}: your passkey signs this answer, a post to ${item.agent}`), disabled: item.held || done,
+        "aria-pressed": item.multi ? "false" : null,
+        on: {click: () => {
+          if (!item.multi) {
+            pick(option.label);
+            return;
+          }
+          toggled.has(option.label) ? toggled.delete(option.label) : toggled.add(option.label);
+          button.setAttribute("aria-pressed", String(toggled.has(option.label)));
+          send.disabled = !toggled.size;
+        }, focus: () => show(option), mouseenter: () => show(option)},
+      }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null);
+      return button;
+    });
+    if (send) {
+      send.addEventListener("click", () => pick(item.options.filter((option) => toggled.has(option.label)).map((option) => option.label).join(PICKED)));
+    }
+    show(item.options.find((option) => recommended.includes(option.label)) || item.options[0] || {});
+    const list = h("div", {class: "options"}, buttons, other || null, send);
     return pane ? h("div", {class: "choice"}, list, pane) : list;
   }
 
-  const choiceOf = (item, after) => item.kind === "decision"
-    ? choicePanel(item, (label) => { after(); chooseOne(item, label); })
-    : asked(item) ? [answerTo(item), choicePanel(item, (label) => { after(); answerRow(item, label); }, otherAnswer(item))] : null;
+  const choiceOf = (item, after) => {
+    if (item.kind === "decision") {
+      const choose = (label) => { after(); chooseOne(item, label); };
+      return choicePanel(item, choose, item.other ? otherAnswer(item, choose) : null);
+    }
+    return asked(item) ? [answerTo(item), choicePanel(item, (label) => { after(); answerRow(item, label); }, otherAnswer(item, (text) => answerRow(item, text)))] : null;
+  };
 
   /**
    * @param {Object} item a decision row of the register.
@@ -171,7 +205,7 @@
       return;
     }
     const rows = usable.map((item) => h("li", {},
-      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.kind === "decision" && !deny ? h("span", {class: "muted"}, revealed(`→ ${item.recommended}`)) : null),
+      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.kind === "decision" && !deny ? h("span", {class: "muted"}, revealed(`→ ${shownPick(item.recommended)}`)) : null),
       h("strong", {}, revealed(item.title)),
       item.kind === "operator" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null,
       item.kind === "operator" ? h("span", {class: "muted"}, revealed(`in ${item.directory}`)) : null,
@@ -252,7 +286,7 @@
     } else if (item.kind === "ask") {
       grant(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "decision" && item.recommended) {
-      grant(h("button", {type: "button", class: "btn small primary", ...named(revealed(`Recommendation: ${item.recommended}`)), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), revealed(item.recommended)));
+      grant(h("button", {type: "button", class: "btn small primary", ...named(revealed(`Recommendation: ${shownPick(item.recommended)}`)), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), revealed(shownPick(item.recommended))));
     } else if (item.kind === "operator" && item.runnable) {
       grant(iconBtn("bi-play-fill", "Run", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "rule") {

@@ -29,7 +29,8 @@ UPLOADS = "/api/uploads"
 MATCH_ROUTE = "/api/match"
 PREVIEWS_ROUTE = "/api/runner/previews"
 MATCH_POSTS = {"/api/match/stale": "match_stale", "/api/match/snapshot": "match_snapshot"}
-POSTS = ("/api/asks", UPLOADS, "/api/messages", *MATCH_POSTS)
+HOOK_POSTS = {"/api/asks": "ask", "/api/decisions": "question"}
+POSTS = (*HOOK_POSTS, UPLOADS, "/api/messages", *MATCH_POSTS)
 STORED = {
     "page": (".html", "text/html; charset=utf-8", PAGE_CSP),
     "files": (".json", "application/json", PLAIN_CSP),
@@ -155,8 +156,8 @@ class Handler(Exchange):
                 self.send_text(HTTPStatus.FORBIDDEN, "forbidden: the runner calls with the X-Kvb-Orchestrator header and no origin only")
         elif entry:
             self.answer(lambda: hub.entry(int(entry.group(1))), HTTPStatus.OK)
-        elif item and item.group(1) == "asks" and item.group(3) is None:
-            self.answer(lambda: hub.ask_wait(item.group(2), self.query()), HTTPStatus.OK)
+        elif item and item.group(3) is None:
+            self.answer(lambda: (hub.ask_wait if item.group(1) == "asks" else hub.question_wait)(item.group(2), self.query()), HTTPStatus.OK)
         elif route and route.group(2) in STORED:
             self.stored(route.group(1), route.group(2))
         elif route or item or path == "/mcp" or path in POSTS or path in ACTION_POSTS or BOARD.fullmatch(path) or self.posted(path):
@@ -281,10 +282,9 @@ class Handler(Exchange):
         """
         if path == "/mcp":
             return self.mcp_receiver(host)
-        if path == "/api/asks" or path in MATCH_POSTS:
+        if path in HOOK_POSTS or path in MATCH_POSTS:
             if self.local(host):
-                hub = self.server.hub
-                receive = getattr(hub, MATCH_POSTS[path]) if path in MATCH_POSTS else hub.ask
+                receive = getattr(self.server.hub, MATCH_POSTS.get(path) or HOOK_POSTS[path])
                 return lambda body: self.answer(lambda: receive(body), HTTPStatus.OK if path in MATCH_POSTS else HTTPStatus.CREATED)
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden: local POST with the X-Kvb-Orchestrator header and no foreign origin only")
             return None

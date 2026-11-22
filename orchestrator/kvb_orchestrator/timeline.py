@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from .asking import ask_state
+from .choosing import decision_status
 from .council import MAYDAY_ACTIVE, NEWS, message_rows, read_claims, sessions
 from .crons import cron_event
 from .errors import Missing, ToolError
@@ -73,12 +74,13 @@ class Timeline:
                 who = {"agent": directory.at(ask["session"], ask["created_ts"]), "now": directory.now(ask["session"]), "session": ask["session"]}
                 rows.append(event({"id": f"ask:{ask['id']}", "ts": ask["created_ts"], "kind": "ask", **who, "title": ask["tool"], "text": ask["command"], "waiting": state["status"] == "pending", "ref": ref}))
         for decision in self.decisions.listed():
-            if decision["created_ts"] <= end and (decision["status"] == "pending" or decision["created_ts"] >= begin):
-                ref = {key: decision.get(key, "") for key in ("id", "status", "choice", "recommended", "options")}
+            status = decision_status(decision, now)
+            if decision["created_ts"] <= end and (status == "pending" or decision["created_ts"] >= begin):
+                ref = {**{key: decision.get(key, "") for key in ("id", "choice", "recommended", "options")}, "status": status}
                 text = " · ".join(option["label"] for option in decision["options"])
                 source = directory.key(decision["agent"], decision["created_ts"])
                 who = {"agent": directory.at(source, decision["created_ts"]) or decision["agent"], "now": directory.now(source), "session": source}
-                rows.append(event({"id": f"decision:{decision['id']}", "ts": decision["created_ts"], "kind": "decision", **who, "title": decision["question"][:300], "text": text, "waiting": decision["status"] == "pending", "ref": ref}))
+                rows.append(event({"id": f"decision:{decision['id']}", "ts": decision["created_ts"], "kind": "decision", **who, "title": decision["question"][:300], "text": text, "waiting": status == "pending", "ref": ref}))
         held = self.open_jobs()
         for row in operator_rows(tasks):
             first = self.watch.first(row["task"], now)

@@ -4,7 +4,14 @@ import secrets
 import time
 
 from .asking import ask_state
-from .choosing import answer_signed, answered, row_answer_signed
+from .choosing import (
+    PICKED,
+    answer_signed,
+    answered,
+    decision_status,
+    picks,
+    row_answer_signed,
+)
 from .cleanup import cleanup_request
 from .denying import (
     DENIABLE,
@@ -268,13 +275,14 @@ class Approving:
         record = {"review": self.reviews, "ask": self.asks, "decision": self.decisions, "rule": self.rule_requests}[kind_name].get(item_id)
         if record is None:
             raise Missing(item_id)
-        status = ask_state(record, time.time())["status"] if kind_name == "ask" else request_status(record, time.time()) if kind_name == "rule" else record["status"]
+        status = ask_state(record, time.time())["status"] if kind_name == "ask" else request_status(record, time.time()) if kind_name == "rule" else decision_status(record, time.time()) if kind_name == "decision" else record["status"]
         if status != "pending":
             raise Conflict({"id": item_id, "status": status})
         label = ""
         if kind_name == "decision":
-            if verb != "approve" or raw["label"] not in [option["label"] for option in record["options"]]:
-                raise ToolError("a decision is approved with one of its option labels")
+            if verb != "approve" or not picks(record, raw["label"]):
+                raise ToolError("a decision is approved with one of its option labels, a multi decision with one or more of them in option order, a hook question also with one line of other text")
+            visible([{"label": part} for part in raw["label"].split(PICKED)])
             label = raw["label"]
         if kind_name == "rule":
             return inbox_item(raw, "", f"Rule {request_words(record)}", "", request_signed(record), self.requester(raw, record["agent"]))

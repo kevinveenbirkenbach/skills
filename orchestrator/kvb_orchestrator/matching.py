@@ -147,7 +147,7 @@ class Matching:
             "born": born, "created_ts": item["ts"], "repo": repo, "branch": branch, "worktree": worktree, "title": item["title"], "score": "",
             "metrics": metric_chips("\n".join((item["title"], item["command"], item["detail"])), labels, False), "gate": "", "hash": shown, "live_hash": shown, "stale": False, "stale_reason": "",
             "files": files, "command": item["command"], "directory": item["directory"], "reason": item["detail"], "sha256": item["sha256"], "options": item["options"],
-            "recommended": item["recommended"], "warnings": item["warnings"], "rule": item["rule"], "dry_run": item["dry_run"],
+            "recommended": item["recommended"], "multi": item["multi"], "other": item["other"], "warnings": item["warnings"], "rule": item["rule"], "dry_run": item["dry_run"],
         }
 
     def command_card(self, row: dict, agent: str, born: float | None, roots: list[str] | None, scan: dict, labels: dict | None) -> dict:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from .council import agent
 from .errors import ToolError
 from .fields import decode, expect, field
@@ -12,23 +14,52 @@ CHOICE_REQUEST = "send me your open decisions as choices"
 CHANNELS = {**DIRECT, **TO_ALL}
 CHOICE_KEYS = ("class", "to")
 RECIPIENT_LIMIT = 40
-ANSWER_CLASS = "post"
-QUESTION_SHOWN = 200
+ANSWER_CLASS = signing.CHOICE_CLASS
+PICKED = signing.PICKED
+OTHER_LIMIT = 1000
+
+
+def picks(decision: dict, label: str) -> bool:
+    """Args:
+        label: the answer to a decision: one option label, or for a multi
+            decision one or more labels in option order, joined by PICKED,
+            which no label holds; for a decision the permission hook asked
+            also one line of free text up to OTHER_LIMIT characters, trimmed
+            and no option label.
+
+    Returns:
+        Whether label is a valid answer to the decision.
+    """
+    labels = [option["label"] for option in decision["options"]]
+    if decision.get("hooked") and PICKED not in label and label not in labels:
+        return 0 < len(label) <= OTHER_LIMIT and label == label.strip()
+    if not decision.get("multi"):
+        return label in labels
+    parts = label.split(PICKED)
+    return [found for found in labels if found in parts] == parts
+
+
+def decision_status(decision: dict, now: float) -> str:
+    """Returns:
+        The decision's status, expired for a pending one the permission hook
+        asked whose wait ran out.
+    """
+    return "expired" if decision["status"] == "pending" and decision.get("expires", now + 1) <= now else decision["status"]
 
 
 def answer_text(decision: dict, label: str) -> str:
-    question = " ".join(decision["question"].split())[:QUESTION_SHOWN]
-    return f"Choice for decision {decision['id']} ({question}): {label}"
+    return signing.choice_text(decision["id"], decision["question"], label)
 
 
 def answer_signed(decision: dict, label: str) -> dict:
     """Returns:
         The post to the asking agent that a click on the option label
-        signs: the operator's answer operator_message proves.
+        signs: the operator's answer operator_message proves, or for a
+        decision the permission hook asked, the one it verifies itself.
     """
     if EVERYONE in decision["agent"]:
         raise ToolError(f"a choice answer goes to the asking agent, never to a name with {EVERYONE}")
-    return signing.message_item(agent(decision["agent"]), ANSWER_CLASS, answer_text(decision, label), "", "", "")
+    return signing.choice_item(agent(decision["agent"]), decision["id"], decision["question"], label)
 
 
 def row_answer_signed(row: dict, to: str, label: str) -> dict:
@@ -108,9 +139,13 @@ class Choosing:
         record = self.decisions.get(item["id"])
         if record is None:
             return "unknown"
-        if record["status"] != "pending":
-            return f"already {record['status']}"
+        status = decision_status(record, time.time())
+        if status != "pending":
+            return f"already {status}"
         self.operator_proven(proof, item["signed"])
+        if record.get("hooked"):
+            decided, changed = self.decisions.decide(item["id"], {"status": "decided", "choice": item["label"], "proof": proof})
+            return "decided · answered through the permission hook" if changed else f"already {decided['status']}"
         message = self.stored_message(item["signed"], proof, None)
         decided, changed = self.decisions.decide(item["id"], {"status": "decided", "choice": item["label"], "message": message["id"]})
         if not changed:

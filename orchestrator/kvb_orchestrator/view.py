@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from .asking import ask_row, decision_row
+from .choosing import decision_status
 from .council import (
     MAYDAY_ACTIVE,
     NEWS,
@@ -160,7 +161,7 @@ class View:
             "alarm_since": end - MAYDAY_ACTIVE,
             "reviews": [row for row in map(review_row, self.reviews.pending()) if row["created_ts"] <= end],
             "asks": [ask_row(ask, names) for ask in self.asks.pending() if ask["expires"] > now and ask["created_ts"] <= end],
-            "decisions": [decision_row(decision) for decision in self.decisions.pending() if decision["created_ts"] <= end],
+            "decisions": [decision_row(decision) for decision in self.decisions.pending() if decision_status(decision, now) == "pending" and decision["created_ts"] <= end],
             "messages": [{**message_row(message), **read_of(inlined, epoch(message.get("relay_ts")))} for message in stored if begin <= message["created_ts"] <= end],
             "reasons": recent_reasons(stored),
             "operator": operator_rows(tasks),

@@ -27,6 +27,9 @@
   const short = (text) => (text.length > 80 ? `${text.slice(0, 80)}…` : text);
   const btn = (label, cls, run) => h("button", {type: "button", class: cls, on: {click: run}}, label);
   const nowSeconds = () => Date.now() / 1000;
+  const PICKED = "\n";
+  const OTHER_LIMIT = 1000;
+  const shownPick = (label) => label.split(PICKED).join(", ");
 
   function ago(ts) {
     const diff = ts - nowSeconds();
