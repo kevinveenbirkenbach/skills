@@ -433,14 +433,14 @@ class TestEvaluate(Passes, unittest.TestCase):
         self.assertEqual(self.decide([job(1), light], loaded={"j1": load}), {"j1": load, "j2": None})
         self.assertEqual(self.decide([hotfix, light]), {"j1": None, "j2": None})
 
-    def test_r5_a_head_the_host_load_keeps_out_reserves_nothing_and_exclusive_kinds_share_no_line(self):
+    def test_r5_a_head_the_host_load_keeps_out_reserves_nothing_but_its_exclusivity_and_exclusive_kinds_share_no_line(self):
         load = "RAM 55 % used + 41 % still to come reach the limit 90 %"
         head, twin = job(1, kind="quality-high"), job(2, kind="quality-high", task="work/b")
         gate, light = job(3, task="work/b"), job(4, kind="test-nostack", task="work/c")
         shares = {"j1": {"ram": 41, "cpu": 62}, "j2": {"ram": 41, "cpu": 62}, "j3": {"ram": 20, "cpu": 40}, "j4": {"ram": 6, "cpu": 40}}
         rules = {"slot_limits": {"quality-high": 1, "test": 5, "test-nostack": 6}, "exclusive": {"quality-high", "test"}, "light": {"test-nostack"}}
         loaded = {"j1": load, "j2": load}
-        line = {"j2": load, "j3": None, "j4": None}
+        line = {"j2": load, "j3": "waits behind exclusive j1", "j4": None}
         self.assertEqual(self.decide([head, twin, gate, light], loaded=loaded, footprints=shares, **rules), {"j1": load, **line})
         running = job(5, kind="test-nostack", task="work/c", status="active")
         self.assertEqual(
@@ -536,7 +536,7 @@ class TestBackfill(Passes, unittest.TestCase):
         self.assertEqual(self.decide(stacked, loaded={"j5": load}), {"j5": load, "j6": "waits in line behind j5", "j7": None})
         rules = {"exclusive": {"test"}, "slot_limits": {"test": 5, "deploy": 1}}
         machine = [job(8, workdir="/g"), job(9, task="work/b", workdir="/h"), job(10, kind="deploy", task="work/c", workdir="/i")]
-        self.assertEqual(self.decide(machine, loaded={"j8": load}, **rules), {"j8": load, "j9": None, "j10": "test runs only beside nothing"})
+        self.assertEqual(self.decide(machine, loaded={"j8": load}, **rules), {"j8": load, "j9": "waits behind exclusive j8", "j10": "waits behind exclusive j8"})
         running = [job(11, workdir="/core", status="active"), job(12, task="work/b", workdir="/core", hotfix="fix-1")]
         self.assertEqual(self.decide(running), {"j12": "waits in line behind j11"})
 
@@ -724,7 +724,7 @@ class TestBackfill(Passes, unittest.TestCase):
             waiting = [e for e in waiting if verdicts[e["id"]] is not None]
         self.fail("a steady stream starved the head")
 
-    def test_r4_load_from_outside_the_queue_drains_for_no_head_and_holds_back_no_job(self):
+    def test_r4_load_from_outside_the_queue_drains_for_no_head_and_holds_back_only_non_light_jobs_behind_an_exclusive_one(self):
         rules = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"},
                  "slot_limits": {"quality-high": 1, "test": 1, "test-nostack": 4, "iteration": 3}}
         head, light = job(1, kind="quality-high", enqueued=NOW - 3700), job(2, kind="test-nostack", task="work/b", workdir="/l")
@@ -732,14 +732,32 @@ class TestBackfill(Passes, unittest.TestCase):
         ram = "RAM 45 % used + 41 % still to come reach the limit 85 %"
         outside = self.queue.Outside(ram)
         self.assertEqual(self.run_pass([head, light, heavy], loaded={"j1": ram}, drain="j1", **rules)[:2],
-                         ({"j1": ram, "j2": None, "j3": None}, None))
+                         ({"j1": ram, "j2": None, "j3": "waits behind exclusive j1"}, None))
         self.assertEqual(self.run_pass([running, head, light, heavy], loaded={"j1": outside}, drain="j1", **rules)[:2],
-                         ({"j1": ram, "j2": None, "j3": None}, None))
+                         ({"j1": ram, "j2": None, "j3": "waits behind exclusive j1"}, None))
         self.assertEqual(self.run_pass([running, head, light, heavy], loaded={"j1": ram}, drain="j1", **rules)[:2],
                          ({"j1": ram, "j2": None, "j3": "drained for j1"}, "j1"))
+        self.assertEqual(self.run_pass([{**head, "kind": "iteration"}, light, heavy], loaded={"j1": ram}, drain="j1", **rules)[:2],
+                         ({"j1": ram, "j2": None, "j3": None}, None))
         twin = job(4, kind="test", task="work/c", workdir="/w1")
         self.assertEqual((self.decide([head, twin], loaded={"j1": outside}, **rules), self.decide([head, twin], loaded={"j1": ram}, **rules)),
-                         ({"j1": ram, "j4": None}, {"j1": ram, "j4": "waits in line behind j1"}))
+                         ({"j1": ram, "j4": "waits behind exclusive j1"}, {"j1": ram, "j4": "waits in line behind j1"}))
+
+    def test_r12_a_test_job_never_backfills_past_an_exclusive_head_the_load_holds_while_no_job_runs(self):
+        rules = {"exclusive": {"quality-high"}, "light": {"test-nostack"}, "slot_limits": {"quality-high": 1, "test": 1, "test-nostack": 4}}
+        cpu = "CPU 30 % busy + 62 % still to come reach the limit 90 %"
+        head = job(1, id="quality-high-1060", kind="quality-high", workdir="/core", name="Main")
+        scan, light = job(2, id="test-1008", task="work/b", workdir="/skills"), job(3, id="test-nostack-1", kind="test-nostack", task="work/c", workdir="/l")
+        shares = {"quality-high-1060": {"ram": 41, "cpu": 62}, "test-1008": {"ram": 10, "cpu": 13}, "test-nostack-1": {"ram": 6, "cpu": 10}}
+        trace: dict[str, list[str]] = {}
+        verdicts = self.run_pass([head, scan, light], loaded={"quality-high-1060": cpu}, footprints=shares, trace=trace, **rules)[0]
+        self.assertEqual(verdicts, {"quality-high-1060": cpu, "test-1008": "waits behind exclusive quality-high-1060", "test-nostack-1": None})
+        self.assertEqual(trace["test-1008"][-1], "exclusive quality-high-1060 blocked ahead: load holds it, test beside it would keep it out")
+        self.assertNotIn("backfilled past quality-high-1060", trace["test-1008"])
+        plain = {**rules, "exclusive": set()}
+        self.assertEqual(self.decide([head, scan, light], loaded={"quality-high-1060": cpu}, footprints=shares, **plain)["test-1008"], None)
+        self.assertEqual(self.decide([head, scan, light], footprints=shares, **rules),
+                         {"quality-high-1060": None, "test-1008": "quality-high runs only beside test-nostack", "test-nostack-1": None})
 
     def test_r4_a_head_aged_out_waiting_only_for_an_exclusive_job_holds_back_no_light_job(self):
         rules = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"}, "budget": {"ram": 75, "cpu": 100},

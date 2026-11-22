@@ -705,7 +705,10 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       later one but light ones waits behind a
       hotfix head, and behind any head whose kind is exclusive or that live
       load holds while queue jobs run; light ones wait too while load the
-      queue causes holds a hotfix head. An entry never passes an active,
+      queue causes holds a hotfix head. Behind an exclusive entry that only
+      live load holds, from the queue or outside it, head or not, no later
+      entry but a light one starts (loaded_exclusive()): it would keep that
+      entry out once the load drops. An entry never passes an active,
       granted or waiting entry enqueued before it that shares one of its
       claims (claims(): worktree, compose stack, slot): those form its
       line, which runs by enqueue time alone (in_lines()), never by rank,
@@ -777,6 +780,9 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
             s := held_for(kind, need, share, h, counts, slot_limits, exclusive, light, pools, floor, budget))), None)
         if why:
             reason, step = f"reserved for {why[0]}", f"reserved for {why[0]}: {why[1]}"
+        gate = None if reason is not None or kind in light else loaded_exclusive(able, verdicts, loaded, exclusive)
+        if gate:
+            reason, step = f"waits behind exclusive {gate}", f"exclusive {gate} blocked ahead: load holds it, {kind} beside it would keep it out"
         for claim in () if isinstance(loaded.get(entry["id"]), Outside) else mine:
             if reason is None or claim in lifted:
                 lines[claim] = entry["id"]
@@ -857,6 +863,18 @@ def behind(entry: dict, mine: list[str], lines: dict[str, str], blocked: list[di
         if entry["kind"] not in light and e["id"] == drain and (drain in loaded or e["kind"] in exclusive):
             return f"drained for {drain}", f"drained for {drain}: " + ("load holds it" if drain in loaded else f"{e['kind']} is exclusive")
     return None
+
+
+def loaded_exclusive(able: list[dict], verdicts: dict[str, str | None], loaded: dict[str, str],
+                     exclusive: set[str]) -> str | None:
+    """Returns:
+        The id of the first entry of able (blocked, not unstartable()) whose
+        kind is exclusive and that only live load holds back (its verdict is
+        its loaded reason), whether the queue or something outside it causes
+        the load; a job of a kind that is not light, started now, would keep
+        it out once the load drops (alone_reason()). None when there is none.
+    """
+    return next((e["id"] for e in able if e["kind"] in exclusive and e["id"] in loaded and verdicts[e["id"]] == loaded[e["id"]]), None)
 
 
 def drained(order: list[dict], verdicts: dict[str, str | None], drain: str | None, could: set[str],
