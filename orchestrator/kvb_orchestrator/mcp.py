@@ -69,7 +69,7 @@ class Mcp:
             tool(
                 "decision_request",
                 "Ask the operator to pick one of several options in the Agent Orchestrator; the question shows as a choice card "
-                "under Waits on Operator in the Tasks tab and each option becomes a button. When an operator message asks "
+                "under Waits on Operator in the Tasks tab, each option becomes a numbered row beside a free-text Other answer. When an operator message asks "
                 f'"{CHOICE_REQUEST}", send each open decision of kvb-think-choice through this tool. Returns the decision id and the hub URL.',
                 {
                     "question": text_property("The question, plain text."),
@@ -81,7 +81,7 @@ class Mcp:
             tool(
                 "decision_wait",
                 "Wait until the operator picks an option or the timeout passes, then return the status "
-                "(pending, decided), the chosen label and, for a click, message and answer: the id and text of the operator's "
+                "(pending, decided), the chosen label or the operator's own one-line Other answer and, for a click, message and answer: the id and text of the operator's "
                 "passkey-signed answer, a post to the asking agent; check it with operator_message(message, answer, your name) "
                 f"before acting on the choice. Waits at most {WAIT_CAP} seconds.",
                 {"id": text_property("Decision id that decision_request returned."), "timeout_seconds": wait},

@@ -39,11 +39,11 @@ MATCH = """(async () => {@HELPERS@@CAPTURE@
   if (!card) {
     return {error: text(document.getElementById("main"))};
   }
-  const options = () => all(".match-options .option", card);
-  const pick = card.querySelector(".match-pick");
+  const options = () => all(".match-options button.option", card);
+  const pick = card.querySelector(".choice-send");
   const before = look(options(), pick);
   [0, 2, 1, 1].forEach((index) => options()[index].click());
-  const toggled = {...look(options(), pick), front: document.querySelector("#main .match-card.front") === card, other: Boolean(card.querySelector(`.match-other input[maxlength="1000"]`))};
+  const toggled = {...look(options(), pick), front: document.querySelector("#main .match-card.front") === card, other: Boolean(card.querySelector(`.option.other input[maxlength="1000"]`))};
   pick.click();
   const overview = await until(() => document.querySelector("#main .match-overview"), 3000);
   const found = {before, toggled, rows: overview ? all("#main .match-decision").map((item) => [item.dataset.card, text(item.querySelector(".match-verdict"))]) : [], wide: wide()};

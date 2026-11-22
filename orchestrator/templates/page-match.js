@@ -275,58 +275,19 @@
   }
 
   /**
-   * @param {Object} card a decision card; a multi one takes several options, toggled here and kept in matchView.toggles across redraws until Pick.
-   * @returns {HTMLElement} its option buttons, and Pick for a multi card.
+   * @param {Object} card a decision card; a multi one keeps its toggled options in matchView.toggles across redraws until Send.
+   * @returns {HTMLElement} its choiceDialog(); an answer is picked now and sent at the release.
    */
   function matchOptions(card) {
-    const kept = matchView.decisions.get(cardKey(card));
-    const recommended = card.recommended.split(PICKED);
-    const toggled = matchView.toggles.get(cardKey(card)) || new Set(kept ? kept.label.split(PICKED) : []);
-    const pick = card.multi ? h("button", {type: "button", class: "btn small primary match-pick", disabled: !toggled.size, title: revealed(`Pick: the toggled options, sent to ${card.agent || "its agent"} at the release`)}, icon("bi-check2-square"), "Pick") : null;
-    const buttons = card.options.map((option) => {
-      const button = h("button", {
-        type: "button", class: `option${recommended.includes(option.label) ? " recommended" : ""}`, "aria-pressed": String(toggled.has(option.label)),
-        title: revealed(`${option.label}: ${card.multi ? "toggled now" : "picked now"}, sent to ${card.agent || "its agent"} at the release`),
-        on: {click: () => {
-          if (!card.multi) {
-            decide(card, "accept", "", option.label);
-            return;
-          }
-          toggled.has(option.label) ? toggled.delete(option.label) : toggled.add(option.label);
-          matchView.toggles.set(cardKey(card), toggled);
-          button.setAttribute("aria-pressed", String(toggled.has(option.label)));
-          pick.disabled = !toggled.size;
-        }},
-      }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null);
-      return button;
-    });
-    if (pick) {
-      pick.addEventListener("click", () => {
-        matchView.toggles.delete(cardKey(card));
-        decide(card, "accept", "", card.options.filter((option) => toggled.has(option.label)).map((option) => option.label).join(PICKED));
-      });
-    }
-    return h("div", {class: "options match-options", role: "group", "aria-label": "Options"}, buttons, pick, card.other ? matchOther(card, kept) : null);
-  }
-
-  /**
-   * @param {Object} card a decision card of a question the permission hook asked.
-   * @param {Object} [kept] its decision so far; a free-text one fills the field.
-   * @returns {HTMLElement} the one-line free-text answer, picked like an option.
-   */
-  function matchOther(card, kept) {
-    const free = kept && kept.label && !kept.label.split(PICKED).some((label) => card.options.some((option) => option.label === label));
-    const input = h("input", {class: "field", type: "text", maxlength: OTHER_LIMIT, placeholder: "Other answer …", "aria-label": "Other answer", value: free ? kept.label : null});
-    const form = h("form", {class: "option other match-other"}, input,
-      h("button", {type: "submit", class: "btn small", ...named("Pick", revealed(`Pick: this text, sent to ${card.agent || "its agent"} at the release`))}, icon("bi-send"), "Pick"));
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      if (input.value.trim()) {
-        matchView.toggles.delete(cardKey(card));
-        decide(card, "accept", "", input.value.trim());
-      }
-    });
-    return form;
+    const key = cardKey(card);
+    const kept = matchView.decisions.get(key);
+    const toggled = matchView.toggles.get(key) || new Set(kept ? kept.label.split(PICKED) : []);
+    matchView.toggles.set(key, toggled);
+    const pick = (label) => {
+      matchView.toggles.delete(key);
+      decide(card, "accept", "", label);
+    };
+    return choiceDialog({...card, id: card.ref}, {pick, toggled, chosen: kept ? kept.label : "", locked: false, hint: `picked now, sent to ${card.agent || "its agent"} at the release`, group: "match-options"});
   }
 
   function matchPayload(card) {

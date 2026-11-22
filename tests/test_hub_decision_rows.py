@@ -8,7 +8,7 @@ from hub_case import HubCase
 from hub_support import HUB
 
 TEMPLATES = HUB / "templates"
-MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-inbox.js", "page-grant.js"]
+MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-inbox.js", "page-grant.js"]
 PROBE = r"""
 const fs = require("fs");
 const vm = require("vm");
@@ -21,6 +21,8 @@ class El {
   replaceChildren(...nodes) { this.children = nodes; }
   addEventListener(name, handler) { this.handlers[name] = handler; }
   fire(name) { return this.handlers[name]({stopPropagation() {}, preventDefault() {}}); }
+  click() { return this.fire("click"); }
+  focus() { document.activeElement = this; }
   remove() {}
 }
 const all = (node) => [node, ...(node.children || []).filter((child) => child instanceof El).flatMap(all)];
@@ -98,6 +100,15 @@ const results = {};
   await optionNamed(pick, "A").fire("click");
   results.pick.submits = submits.splice(0);
   results.pick.sent = sent.splice(0);
+  const list = classed(inboxItem(items.pick, 5), "dialog")[0];
+  let stopped = 0;
+  const press = (key, target) => list.handlers.keydown({key, target: target || list, altKey: false, ctrlKey: false, metaKey: false, preventDefault() {}, stopPropagation() { stopped += 1; }});
+  ["2", "0", "5", "x"].forEach((key) => press(key));
+  press("1", all(list).find((el) => el.tag === "input"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  results.keys = {submits: submits.splice(0), stopped, focused: document.activeElement === null ? "" : document.activeElement.tag};
+  press("4");
+  results.keys.other = document.activeElement.tag;
   console.log(JSON.stringify(results));
 })().catch((error) => { console.error(error && error.stack || error); process.exit(1); });
 `;
@@ -153,9 +164,14 @@ class TestDecisionRows(unittest.TestCase):
 
     def test_a_choice_card_shows_the_preview_of_the_focused_option_beside_the_options(self):
         pick = self.data["pick"]
-        self.assertEqual((pick["shape"]["choice"], pick["shape"]["other"]), (1, 0))
+        self.assertEqual((pick["shape"]["choice"], pick["shape"]["other"]), (1, 1))
         self.assertEqual((pick["first"], pick["hovered"], pick["empty"]), (["[B]"], ["[A]\nline"], [""]))
         self.assertEqual((pick["submits"], pick["sent"]), (["Choice: A"], []))
+
+    def test_the_digit_keys_pick_an_option_or_focus_other_and_never_reach_the_tab_keys(self):
+        keys = self.data["keys"]
+        self.assertEqual((keys["submits"], keys["stopped"], keys["focused"]), (["Choice: B"], 1, ""))
+        self.assertEqual(keys["other"], "input")
 
 
 class TestDecisionFeed(HubCase):

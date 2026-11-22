@@ -21,7 +21,7 @@ SNOOZE_LIMIT = 8 * 86400
 class Inbox:
     def inbox(self, now: float, tasks: dict[str, dict], directory: Directory) -> list[dict]:
         claims = read_claims(self.council)
-        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "other": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": ""}
+        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": ""}
         items = []
         for review in self.reviews.pending():
             created = iso_epoch(review["created"]) or now
@@ -35,7 +35,7 @@ class Inbox:
             items.append({**base, "kind": "ask", "id": ask["id"], "ts": ask["created_ts"], **fields, "command": ask["command"], "directory": ask["cwd"]})
         for decision in (decision for decision in self.decisions.pending() if decision_status(decision, now) == "pending"):
             recommended = decision.get("recommended", "")
-            fields = {"title": decision["question"][:300], "agent": decision["agent"], "green": recommended != "", "options": decision["options"], "recommended": recommended, "multi": bool(decision.get("multi")), "other": bool(decision.get("hooked"))}
+            fields = {"title": decision["question"][:300], "agent": decision["agent"], "green": recommended != "", "options": decision["options"], "recommended": recommended, "multi": bool(decision.get("multi"))}
             items.append({**base, "kind": "decision", "id": decision["id"], "ts": decision["created_ts"], **fields})
         held = self.open_jobs()
         consoles = self.consoles()

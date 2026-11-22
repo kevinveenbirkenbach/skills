@@ -373,6 +373,14 @@ textarea + .mic-auto { display: flex; margin: 4px 0 0 auto; }
 .choice { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 10px; align-items: start; }
 .choice-preview { margin: 8px 0 0; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); line-height: 1.45; white-space: pre; overflow: auto; max-height: 360px; }
 .text.question { font-weight: 600; }
+.options.dialog { counter-reset: option; }
+.options.dialog > .option { grid-template-columns: 2.4em minmax(0, 1fr); column-gap: 4px; }
+.options.dialog > .option > * { grid-column: 2; }
+.options.dialog > .option::before { counter-increment: option; content: counter(option) "."; grid-column: 1; grid-row: 1 / span 3; color: var(--muted); font-variant-numeric: tabular-nums; }
+.options.dialog[data-multi] > .option:not(.other)::before { content: counter(option) ". ☐"; }
+.options.dialog[data-multi] > .option[aria-pressed="true"]::before { content: counter(option) ". ☑"; color: var(--accent); }
+.option-tag { justify-self: start; font-style: normal; font-size: var(--fs-xs); padding: 0 7px; border: 1px solid var(--ok); border-radius: 999px; color: var(--ok); }
+.choice-send { justify-self: start; }
 @media (max-width: 720px) { .choice { grid-template-columns: 1fr; } }
 .inbox-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .inbox-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -575,6 +583,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 {% include "page-reveal.js" %}
 
 {% include "page-dom.js" %}
+{% include "page-dialog.js" %}
 
 {% include "page-api.js" %}
 

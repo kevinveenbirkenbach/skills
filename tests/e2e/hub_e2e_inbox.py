@@ -201,7 +201,7 @@ CHOICE_ANSWER = """(async () => {@HELPERS@@WATCH@
   if (!card) {
     return {error: text(document.getElementById("main"))};
   }
-  const option = all(".option", card).find((button) => text(button.querySelector("strong")) === "Wait");
+  const option = all("button.option", card).find((button) => text(button.querySelector("strong")) === "Wait");
   const title = option.title;
   const shown = new Set(all("#toasts .toast"));
   option.click();

@@ -508,13 +508,15 @@ def unit_active() -> bool:
     return unit is not None and unit.returncode == 0
 
 
-def add_row_once(slug: str, session: str, command: str, reason: str) -> None:
+def add_row_once(slug: str, session: str, command: str, reason: str, options: list[str]) -> None:
     """Args:
         slug: the kvb-org-operator row; added at most once per host, so a row
             the operator cancelled is never reopened.
         session: the hook payload's session id, forwarded as --session.
         command: the row's command, shown only (--check decision).
         reason: why the row exists.
+        options: the row's answers as "<label>=<consequence>", the
+            recommended one first.
     """
     rows = state_dir() / "rows.json"
     with locked_json(rows) as added:
@@ -526,6 +528,7 @@ def add_row_once(slug: str, session: str, command: str, reason: str) -> None:
     result = run([
         sys.executable, "-I", str(script), "add", slug, "--session", session,
         "--dir", str(Path.home()), "--command", command, "--reason", reason, "--check", "decision",
+        *[part for option in options for part in ("--option", option)], "--recommended", options[0].partition("=")[0],
     ], timeout=ROW_TIMEOUT)
     if result is not None and result.returncode == 0:
         with locked_json(rows) as added:
@@ -537,7 +540,8 @@ def notices(session: str, settings: dict | None) -> list[str]:
     if settings is None:
         path = config_path()
         messages.append(f"kvb-code-graph: nothing is indexed until {path} sets queue_file_threshold and queue_task (operator row {CONFIG_ROW})")
-        add_row_once(CONFIG_ROW, session, f"code {path}", "set queue_file_threshold and queue_task; the code graph hook indexes nothing until both are set")
+        add_row_once(CONFIG_ROW, session, f"code {path}", "set queue_file_threshold and queue_task; the code graph hook indexes nothing until both are set",
+                     [f"Configure=set queue_file_threshold and queue_task in {path}; indexing starts", "Leave off=nothing is indexed"])
     kind = daemon_kind(binary())
     if kind == "permanent":
         return messages
@@ -548,7 +552,8 @@ def notices(session: str, settings: dict | None) -> list[str]:
         messages.append(NOTICE_PENDING if kind == "session-managed" else NOTICE_STUCK)
     elif unit_installed():
         messages.append(NOTICE)
-        add_row_once(DAEMON_ROW, session, ENABLE, "no permanent codebase-memory-mcp daemon: graphs lose their watch when the last session ends")
+        add_row_once(DAEMON_ROW, session, ENABLE, "no permanent codebase-memory-mcp daemon: graphs lose their watch when the last session ends",
+                     ["Enable=run the command; one permanent daemon keeps every graph watched", "Per session=graphs lose their watch when the last session ends"])
     else:
         messages.append(NOTICE_NO_UNIT)
     return messages

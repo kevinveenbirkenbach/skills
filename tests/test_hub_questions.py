@@ -50,7 +50,7 @@ class TestHubQuestions(HubCase):
         with mock.patch.object(batches, "UNDO", 0.05):
             status, _, body = self.approve(items, proof)
             self.assertEqual(status, 202, body)
-            self.settle(lambda: self.state(decision_id)["status"] == "decided")
+            self.settle(lambda: self.httpd.hub.decisions.get(decision_id)["status"] == "decided")
 
     def hook(self, payload: dict, timeout: str) -> subprocess.Popen:
         trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "hook.json")]
@@ -120,19 +120,18 @@ class TestHubQuestions(HubCase):
         single = self.ask_question(BODY)
         self.assertEqual(self.approve([self.entry("decision", single, f"{PICK}\n{PICK}", "")], None)[0], 400)
 
-    def test_a_hook_question_also_takes_one_trimmed_line_of_other_text_and_an_mcp_decision_does_not(self):
+    def test_every_decision_takes_one_trimmed_line_of_other_text_as_an_ask_user_question_does(self):
         self.claim("s1", "Skills session")
         signer = self.pin()
         single, multi, mcp = self.ask_question(BODY), self.ask_question(MULTI_BODY), self.decision("")
-        item = next(item for item in self.snapshot()["inbox"] if item["id"] == mcp)
-        self.assertFalse(item["other"])
-        self.assertTrue(next(item for item in self.snapshot()["inbox"] if item["id"] == single)["other"])
-        for decision_id, label in ((single, " padded"), (single, "x" * 1001), (single, "tab\there"), (mcp, "free text")):
+        for decision_id, label in ((single, " padded"), (single, "x" * 1001), (single, "tab\there"), (mcp, "two\nlines"), (mcp, "padded ")):
             with self.subTest(label=label[:20]):
                 self.assertEqual(self.approve([self.entry("decision", decision_id, label, "")], None)[0], 400)
         self.pick(single, "Keep the old one", signer)
         self.pick(multi, "None of these", signer)
-        self.assertEqual((self.state(single)["choice"], self.state(multi)["choice"]), ("Keep the old one", "None of these"))
+        self.pick(mcp, "Ask Main first", signer)
+        self.assertEqual([self.httpd.hub.decisions.get(found)["choice"] for found in (single, multi, mcp)], ["Keep the old one", "None of these", "Ask Main first"])
+        self.assertTrue(all("other" not in item for item in self.snapshot()["inbox"]))
 
     def test_the_hook_passes_a_signed_other_text_on_as_the_answer(self):
         self.claim("s1", "Skills session")

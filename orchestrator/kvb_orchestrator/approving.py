@@ -248,10 +248,12 @@ class Approving:
     def row_answer_entry(self, raw: dict, row: dict, tasks: dict[str, dict]) -> dict:
         """Returns:
             The signed item of a decision row answered with one of its option
-            labels: the post row_answer_signed() builds to the row's agent.
+            labels or one line of other text: the post row_answer_signed()
+            builds to the row's agent.
         """
-        if raw["label"] not in [option["label"] for option in row["options"]] or "payload" in raw:
-            raise ToolError("a decision row is approved with one of its option labels and no payload")
+        if not picks(row, raw["label"]) or "payload" in raw:
+            raise ToolError("a decision row is approved with one of its option labels or one line of other text, and no payload")
+        visible({"label": raw["label"]})
         if digest(row["command"]) != raw["sha256"]:
             raise Conflict({"id": row["task"], "status": "changed"})
         if answered(self.answers.get(row["task"]), row):
@@ -281,7 +283,7 @@ class Approving:
         label = ""
         if kind_name == "decision":
             if verb != "approve" or not picks(record, raw["label"]):
-                raise ToolError("a decision is approved with one of its option labels, a multi decision with one or more of them in option order, a hook question also with one line of other text")
+                raise ToolError("a decision is approved with one of its option labels, a multi decision with one or more of them in option order, or with one line of other text")
             visible([{"label": part} for part in raw["label"].split(PICKED)])
             label = raw["label"]
         if kind_name == "rule":

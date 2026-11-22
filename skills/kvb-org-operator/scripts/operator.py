@@ -18,11 +18,12 @@ Args:
         --check <kind>[:<arg>] [--option "<label>=<description>" ...]
         [--recommended <label>] [--session <id>]: record a command, or update
         the row of that slug, as queued with Operator R and the adder A, its
-        session id under `sessions`. --option, only with --check decision
-        and at most OPTION_LIMIT times, gives the answers the Agent
-        Orchestrator shows as buttons beside a free answer; the operator's
-        pick arrives as a signed post to the adder. --recommended names one
-        of them.
+        session id under `sessions`. --option, required with --check
+        decision OPTION_FLOOR to OPTION_LIMIT times and refused otherwise,
+        gives the answers the Agent Orchestrator shows as numbered rows
+        beside a free Other answer, as an AskUserQuestion does; the
+        operator's pick arrives as a signed post to the adder. --recommended
+        names one of them.
         Kinds, never a shell command:
             pushed:<repo dir>  `git rev-list --count @{u}..HEAD` is 0 there;
                 no upstream counts as open.
@@ -173,7 +174,8 @@ INTERRUPTED = 130
 SUDO = re.compile(r"\bsudo\b")
 PREFIX = "operator/"
 KINDS = ("pushed", "installed", "binary", "absent", "manual", "decision")
-OPTION_LIMIT = 12
+OPTION_FLOOR = 2
+OPTION_LIMIT = 4
 LABEL_LIMIT = 80
 OPEN = ("queued", "blocked")
 META = re.compile(r"[\s|&;()<>$`\\\"'*?\[\]{}~!#]")
@@ -313,19 +315,18 @@ def choices(raw: list[str] | None, recommended: str | None, check: str) -> list[
         check: the row's --check kind.
 
     Returns:
-        [{"label", "description"}] in the given order; [] without options.
-        Exits 2 when options come with another check than decision, exceed
-        OPTION_LIMIT, repeat a label, hold an empty, multi-line or longer
-        than LABEL_LIMIT label, or when --recommended names no option.
+        [{"label", "description"}] in the given order; [] for another check.
+        Exits 2 when options or a pick come with another check than
+        decision, when a decision holds fewer than OPTION_FLOOR or more than
+        OPTION_LIMIT options, repeats a label, holds an empty, multi-line or
+        longer than LABEL_LIMIT label, or when --recommended names no option.
     """
-    if not raw:
-        if recommended:
-            fail("--recommended needs --option")
-        return []
     if check != "decision":
-        fail("--option is only for --check decision")
-    if len(raw) > OPTION_LIMIT:
-        fail(f"at most {OPTION_LIMIT} --option values")
+        if raw or recommended:
+            fail("--option and --recommended are only for --check decision")
+        return []
+    if not OPTION_FLOOR <= len(raw or []) <= OPTION_LIMIT:
+        fail(f"--check decision needs {OPTION_FLOOR} to {OPTION_LIMIT} --option values, as an AskUserQuestion offers")
     options = []
     for text in raw:
         label, _, description = text.partition("=")
@@ -354,7 +355,7 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
         fail(f"--command {visible(command, '')!r} holds a control character; record one line")
     refused = None if args.check == "decision" else unrunnable(command, args.dir)
     if refused:
-        fail(f"--command {command!r} {refused}; write the real command, or record the step with --check decision")
+        fail(f"--command {command!r} {refused}; write the real command, or ask the step as --check decision with {OPTION_FLOOR} to {OPTION_LIMIT} --option answers")
     options = choices(args.option, args.recommended, args.check)
     council = module("council", rasci.COUNCIL)
     sid, _ = council.caller(args.session)

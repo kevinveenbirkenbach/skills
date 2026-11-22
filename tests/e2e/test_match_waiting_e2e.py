@@ -32,7 +32,7 @@ FRONT = """(async () => {@HELPERS@
     peek.click();
   }
   const node = await until(() => (card() && card().dataset.card === "@PICK@" ? card() : null), 3000);
-  return {front: node ? node.dataset.card : null, options: node ? all(".match-options .option", node).map((option) => [text(option.querySelector("strong")), option.classList.contains("recommended")]) : [],
+  return {front: node ? node.dataset.card : null, options: node ? all(".match-options button.option", node).map((option) => [text(option.querySelector("strong")), option.classList.contains("recommended")]) : [],
     wide: document.documentElement.scrollWidth > window.innerWidth + 1};
 })()"""
 HOME = """(async () => {@HELPERS@@HOME_KIT@
@@ -79,13 +79,13 @@ FLOW = """(async () => {@HELPERS@
     const id = node.dataset.card;
     const acts = Object.fromEntries(all("#main .match-actions .match-act").map((button) => [text(button.querySelector(".match-act-label")), button.disabled]));
     seen[id] = {kind: node.dataset.kind, chips: all(".match-metric", node).map((chip) => `${chip.dataset.metric}=${text(chip.querySelector("strong"))}`), acts,
-      options: all(".match-options .option", node).map((option) => text(option.querySelector("strong"))), rule: Boolean(node.querySelector(".rule-request")), command: text(node.querySelector(".match-command"))};
+      options: all(".match-options button.option", node).map((option) => text(option.querySelector("strong"))), rule: Boolean(node.querySelector(".rule-request")), command: text(node.querySelector(".match-command"))};
     if (id.startsWith("operator:")) {
-      node.querySelector(".match-options .option:not(.recommended)").click();
+      node.querySelector(".match-options button.option:not(.recommended)").click();
     } else if (id.startsWith("decision:")) {
       key("ArrowLeft");
       seen[id].refused = Boolean(await until(() => all("#toasts .toast").map(text).find((entry) => entry.startsWith("Reject: not possible")), 3000));
-      node.querySelector(".match-options .option").click();
+      node.querySelector(".match-options button.option").click();
     } else if (id.startsWith("ask:")) {
       key("ArrowRight");
     } else {

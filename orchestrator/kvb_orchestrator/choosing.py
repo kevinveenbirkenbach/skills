@@ -21,17 +21,17 @@ OTHER_LIMIT = 1000
 
 def picks(decision: dict, label: str) -> bool:
     """Args:
-        label: the answer to a decision: one option label, or for a multi
-            decision one or more labels in option order, joined by PICKED,
-            which no label holds; for a decision the permission hook asked
-            also one line of free text up to OTHER_LIMIT characters, trimmed
-            and no option label.
+        decision: a decision or a decision row, with its options.
+        label: the answer to it: one option label, or for a multi decision
+            one or more labels in option order, joined by PICKED, which no
+            label holds; or one line of free text up to OTHER_LIMIT
+            characters, trimmed and no option label.
 
     Returns:
         Whether label is a valid answer to the decision.
     """
     labels = [option["label"] for option in decision["options"]]
-    if decision.get("hooked") and PICKED not in label and label not in labels:
+    if PICKED not in label and label not in labels:
         return 0 < len(label) <= OTHER_LIMIT and label == label.strip()
     if not decision.get("multi"):
         return label in labels
@@ -66,7 +66,7 @@ def row_answer_signed(row: dict, to: str, label: str) -> dict:
     """Args:
         row: an open decision row of the register.
         to: the row's adding agent.
-        label: one of the row's option labels.
+        label: the answer picks() accepts for the row.
 
     Returns:
         The post to that agent that a Match pick signs, in the words the

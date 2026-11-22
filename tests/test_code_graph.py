@@ -455,6 +455,7 @@ class TestCodeGraphHook(CodeGraphCase):
         rows = [json.loads(line) for line in lines(self.logs["operator"])]
         self.assertEqual([row[:2] for row in rows], [["add", "kvb-code-graph-config"]])
         self.assertEqual(rows[0][rows[0].index("--check") + 1], "decision")
+        self.assertEqual((rows[0].count("--option"), rows[0][rows[0].index("--recommended") + 1]), (2, "Configure"))
 
     def test_failed_index_backs_off_across_sessions(self):
         repo = self._repo("main")
@@ -501,6 +502,7 @@ class TestCodeGraphHook(CodeGraphCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][:2], ["add", "kvb-code-graph-daemon"])
         self.assertEqual(rows[0][rows[0].index("--check") + 1], "decision")
+        self.assertEqual((rows[0].count("--option"), rows[0][rows[0].index("--recommended") + 1]), (2, "Enable"))
         self.assertEqual(rows[0][rows[0].index("--session") + 1], "s1")
         self.assertIn("systemctl --user enable --now kvb-code-graph.service", rows[0])
 

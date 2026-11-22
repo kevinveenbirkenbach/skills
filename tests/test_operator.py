@@ -87,7 +87,7 @@ class TestOperator(unittest.TestCase):
     def _add(self, slug: str, workdir: Path, command: str, reason: str, check: str) -> None:
         self.assertEqual(
             self._out("add", slug, "--dir", str(workdir), "--command", command, "--reason", reason,
-                      "--check", check),
+                      "--check", check, *(("--option", "Yes=go ahead", "--option", "No=leave it") if check == "decision" else ())),
             [f"added operator/{slug}"],
         )
 
@@ -184,25 +184,37 @@ class TestOperator(unittest.TestCase):
     def _register(self) -> dict[str, dict]:
         return json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
 
-    def test_a_decision_row_keeps_its_options_and_pick_and_a_re_add_without_them_drops_both(self):
+    def test_a_decision_row_keeps_its_options_and_pick_and_a_re_add_without_them_is_refused(self):
         question = ["add", "pick", "--dir", str(self.base), "--command", "decide: keep or remove it", "--reason", "only the operator may", "--check", "decision"]
         self._out(*question, "--option", "Keep=ships with the PR", "--option", "Remove = drop it first", "--recommended", "Remove")
+        kept = ([{"label": "Keep", "description": "ships with the PR"}, {"label": "Remove", "description": "drop it first"}], "Remove")
         row = self._register()["operator/pick"]
-        self.assertEqual((row["options"], row["recommended"]), ([{"label": "Keep", "description": "ships with the PR"}, {"label": "Remove", "description": "drop it first"}], "Remove"))
-        self._out(*question)
-        self.assertEqual({"options", "recommended"} & set(self._register()["operator/pick"]), set())
+        self.assertEqual((row["options"], row["recommended"]), kept)
+        refused = self._run(*question)
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("--check decision needs 2 to 4 --option values", refused.stderr)
+        row = self._register()["operator/pick"]
+        self.assertEqual((row["options"], row["recommended"]), kept)
 
-    def test_options_need_a_decision_row_distinct_labels_and_a_known_pick(self):
+    def test_options_need_a_decision_row_two_to_four_distinct_labels_and_a_known_pick(self):
         add = ["add", "bad", "--dir", str(self.base), "--command", "decide: x", "--reason", "r"]
+        two = ("--option", "A=x", "--option", "C=z")
         refused = {
             "manual": self._run(*add[:-2], "--command", "echo hi", "--reason", "r", "--check", "manual", "--option", "A"),
+            "manual pick": self._run(*add[:-2], "--command", "echo hi", "--reason", "r", "--check", "manual", "--recommended", "A"),
+            "none": self._run(*add, "--check", "decision"),
+            "one": self._run(*add, "--check", "decision", "--option", "A=x"),
+            "five": self._run(*add, "--check", "decision", *[part for label in "ABCDE" for part in ("--option", label)]),
             "twice": self._run(*add, "--check", "decision", "--option", "A=x", "--option", "A=y"),
-            "unknown pick": self._run(*add, "--check", "decision", "--option", "A", "--recommended", "B"),
+            "unknown pick": self._run(*add, "--check", "decision", *two, "--recommended", "B"),
             "pick alone": self._run(*add, "--check", "decision", "--recommended", "A"),
-            "empty label": self._run(*add, "--check", "decision", "--option", "=only text"),
+            "empty label": self._run(*add, "--check", "decision", *two, "--option", "=only text"),
         }
         self.assertEqual({name: result.returncode for name, result in refused.items()}, dict.fromkeys(refused, 2))
+        self.assertTrue(all("needs 2 to 4" in refused[name].stderr for name in ("none", "one", "five", "pick alone")), {name: result.stderr for name, result in refused.items()})
         self.assertNotIn("operator/bad", self._register() if (self.root / "rasci.json").exists() else {})
+        self.assertEqual(self._run(*add, "--check", "decision", *two, "--option", "B=y", "--option", "D=w", "--recommended", "B").returncode, 0)
+        self.assertEqual([option["label"] for option in self._register()["operator/bad"]["options"]], ["A", "C", "B", "D"])
 
     def _session(self, sid: str, name: str) -> None:
         (self.home / ".claude" / "sessions" / f"{sid}.json").write_text(json.dumps({"sessionId": sid, "name": name}), encoding="utf-8")
@@ -329,7 +341,7 @@ class TestOperator(unittest.TestCase):
             result = self._run("add", "x", "--dir", str(self.base), "--command", command, "--reason", "r",
                                "--check", "manual")
             self.assertEqual(result.returncode, 2, command)
-            self.assertIn("record the step with --check decision", result.stderr)
+            self.assertIn("ask the step as --check decision with 2 to 4 --option answers", result.stderr)
         self._add("subshell", self.base, "(umask 077; touch secret)", "r", "manual")
         self._add("env", self.base, "GIT_CONFIG_COUNT=1 git status", "r", "manual")
         self._add("ask", self.base, "Edit pcs.yml: add the group", "r", "decision")

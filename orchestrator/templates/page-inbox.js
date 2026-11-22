@@ -120,72 +120,19 @@
     }
   }
 
-  /**
-   * @param {Object} item a decision row, or a decision the permission hook asked.
-   * @param {Function} send called with the trimmed text once it is not empty.
-   * @returns {HTMLElement} the free-text answer form.
-   */
-  function otherAnswer(item, send) {
-    const done = answers.has(keyOf(item));
-    const input = h("input", {class: "field", type: "text", placeholder: "Other answer …", "aria-label": `Other answer to ${item.id}`, maxlength: item.kind === "decision" ? OTHER_LIMIT : null, disabled: done});
-    const form = h("form", {class: "option other"}, input,
-      h("button", {type: "submit", class: "btn small", disabled: done, ...named("Send", revealed(`Send: your passkey signs this answer for ${item.agent}`))}, icon("bi-send"), "Send"));
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      if (input.value.trim()) {
-        send(input.value.trim());
-      }
-    });
-    return form;
-  }
+  const signsFor = (item) => `your passkey signs this answer, a post to ${item.agent}`;
 
   /**
-   * @param {Object} item a decision or a decision row; a multi decision takes several options, toggled until Send.
-   * @param {Function} pick called with the answer: one label, or the toggled labels in option order joined by PICKED.
-   * @param {HTMLElement} [other] a free-text answer form.
-   * @returns {HTMLElement} the option buttons with their preview pane.
+   * @param {Object} item an inbox item.
+   * @param {Function} after called before a picked answer is sent.
+   * @returns {HTMLElement|Array|null} the choiceDialog() of a decision or a decision row, with its recipient line for a row; null for every other item.
    */
-  function choicePanel(item, pick, other) {
-    const done = Boolean(answerOf(item));
-    const recommended = item.recommended.split(PICKED);
-    const toggled = new Set();
-    const pane = item.options.some((option) => option.preview) ? h("pre", {class: "choice-preview", "aria-label": "Preview"}) : null;
-    const show = (option) => {
-      if (pane) {
-        pane.textContent = revealedLines(option.preview || "");
-      }
-    };
-    const send = item.multi ? h("button", {type: "button", class: "btn small primary choice-send", disabled: true, ...named("Send", revealed(`Send the toggled options: your passkey signs this answer for ${item.agent}`))}, icon("bi-send"), "Send") : null;
-    const buttons = item.options.map((option) => {
-      const button = h("button", {
-        type: "button", class: `option${recommended.includes(option.label) ? " recommended" : ""}`, title: revealed(`${option.label}: your passkey signs this answer, a post to ${item.agent}`), disabled: item.held || done,
-        "aria-pressed": item.multi ? "false" : null,
-        on: {click: () => {
-          if (!item.multi) {
-            pick(option.label);
-            return;
-          }
-          toggled.has(option.label) ? toggled.delete(option.label) : toggled.add(option.label);
-          button.setAttribute("aria-pressed", String(toggled.has(option.label)));
-          send.disabled = !toggled.size;
-        }, focus: () => show(option), mouseenter: () => show(option)},
-      }, h("strong", {}, revealed(option.label)), option.description ? h("span", {}, revealed(option.description)) : null);
-      return button;
-    });
-    if (send) {
-      send.addEventListener("click", () => pick(item.options.filter((option) => toggled.has(option.label)).map((option) => option.label).join(PICKED)));
-    }
-    show(item.options.find((option) => recommended.includes(option.label)) || item.options[0] || {});
-    const list = h("div", {class: "options"}, buttons, other || null, send);
-    return pane ? h("div", {class: "choice"}, list, pane) : list;
-  }
-
   const choiceOf = (item, after) => {
     if (item.kind === "decision") {
-      const choose = (label) => { after(); chooseOne(item, label); };
-      return choicePanel(item, choose, item.other ? otherAnswer(item, choose) : null);
+      return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: "", locked: item.held, hint: signsFor(item), group: ""});
     }
-    return asked(item) ? [answerTo(item), choicePanel(item, (label) => { after(); answerRow(item, label); }, otherAnswer(item, (text) => answerRow(item, text)))] : null;
+    const told = answerOf(item);
+    return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerRow(item, label); }, toggled: new Set(), chosen: told, locked: item.held || Boolean(told), hint: signsFor(item), group: ""})] : null;
   };
 
   /**
