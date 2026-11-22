@@ -11,7 +11,8 @@
 
 Returns:
     stdout: the PermissionRequest decision JSON: allow only when a pinned
-        passkey signed exactly this tool, command, cwd, session and ask id;
+        passkey signed exactly this tool, command (summary()), cwd, session
+        and ask id;
         deny when the operator denied in the Agent Orchestrator, with the
         reason only when a pinned passkey signed it. Nothing on timeout,
         error, a missing or invalid signature, a value longer than the hub
@@ -66,21 +67,27 @@ ALLOW = {"behavior": "allow"}
 REASON_LIMIT = 2000
 FAILURES = (OSError, ValueError, staged_diff.DiffError)
 QUESTION_TOOL = "AskUserQuestion"
+SHELL = "Bash"
+SHELL_KEYS = frozenset({"command", "description", "timeout", "run_in_background"})
 OPTION_KEYS = ("label", "description", "preview")
 
 
-def summary(tool_input: object) -> str:
-    if isinstance(tool_input, dict):
-        for key in ("command", "file_path", "url", "pattern", "path"):
-            if isinstance(tool_input.get(key), str):
-                return tool_input[key]
-    return json.dumps(tool_input, ensure_ascii=False)
+def summary(tool: str, tool_input: object) -> str:
+    """Returns:
+        What the hub shows and the passkey signs: a Bash call's command when
+        it sets nothing beyond SHELL_KEYS, else the whole input as sorted
+        JSON, so an allow never covers a value the operator did not see.
+    """
+    if tool == SHELL and isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str) and set(tool_input) <= SHELL_KEYS:
+        return tool_input["command"]
+    return json.dumps(tool_input, ensure_ascii=False, indent=1, sort_keys=True)
 
 
 def facts(hook: dict) -> dict:
+    tool = str(hook.get("tool_name") or "?")
     return {
-        "tool": str(hook.get("tool_name") or "?"),
-        "command": summary(hook.get("tool_input")),
+        "tool": tool,
+        "command": summary(tool, hook.get("tool_input")),
         "cwd": str(hook.get("cwd") or ""),
         "session": str(hook.get("session_id") or ""),
         "agent": str(hook.get("agent_type") or ""),
@@ -88,15 +95,15 @@ def facts(hook: dict) -> dict:
 
 
 def commit_target(ask: dict) -> Path | None:
-    return staged_diff.commit_of(ask["command"], ask["cwd"]) if ask["tool"] == "Bash" and ask["cwd"] else None
+    return staged_diff.commit_of(ask["command"], ask["cwd"]) if ask["tool"] == SHELL and ask["cwd"] else None
 
 
 def tree_target(ask: dict) -> tuple[Path, str, list[str]] | None:
-    return staged_diff.tree_of(ask["command"], ask["cwd"]) if ask["tool"] == "Bash" and ask["cwd"] else None
+    return staged_diff.tree_of(ask["command"], ask["cwd"]) if ask["tool"] == SHELL and ask["cwd"] else None
 
 
 def unapprovable(ask: dict) -> bool:
-    return ask["tool"] == "Bash" and staged_diff.names_commit(ask["command"]) and commit_target(ask) is None and tree_target(ask) is None
+    return ask["tool"] == SHELL and staged_diff.names_commit(ask["command"]) and commit_target(ask) is None and tree_target(ask) is None
 
 
 def tree_preview(ask: dict, rules: Path | None) -> dict:

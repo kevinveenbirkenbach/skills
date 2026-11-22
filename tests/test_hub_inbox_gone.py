@@ -7,7 +7,7 @@ import unittest
 from hub_support import HUB
 
 TEMPLATES = HUB / "templates"
-MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-api.js", "page-passkey.js", "page-inbox.js", "page-grant.js", "page-console.js", "page-rule-request.js", "page-load.js"]
+MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-api.js", "page-passkey.js", "page-inbox.js", "page-grant.js", "page-console.js", "page-rule-request.js", "page-load.js"]
 GONE = "operator/gui-agentbox-merge-push"
 NOTICE = "already done or removed elsewhere"
 PROBE = r"""

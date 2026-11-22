@@ -1,6 +1,11 @@
+  const OTHER_PROMPT = "Other: type your own answer …";
+  const ALLOW = "Yes";
+  const TELL = "Tell Claude what to do instead";
+  const askDialog = (id) => ({id, options: [{label: ALLOW, description: "allow this one call"}, {label: "No", description: "deny it"}], recommended: "", multi: false});
+
   /**
-   * @param {Object} item a decision, a decision row or a decision card: id, options [{label, description, preview}], recommended (labels joined by PICKED), multi.
-   * @param {Object} how pick: called with the answer, one label, the toggled labels in option order joined by PICKED, or the trimmed Other text; toggled: the Set of toggled labels of a multi decision, kept by the caller across redraws; chosen: the answer given so far, "" for none; locked: whether the dialog takes no answer; hint: what an answer does, shown in the titles; group: an extra class of the option list.
+   * @param {Object} item a decision, a decision row, a decision card or a permission ask: id, options [{label, description, preview}], recommended (labels joined by PICKED), multi.
+   * @param {Object} how pick: called with the answer, one label, the toggled labels in option order joined by PICKED, or the trimmed Other text, and true for the Other text only; other: the Other field's placeholder; toggled: the Set of toggled labels of a multi decision, kept by the caller across redraws; chosen: the answer given so far, "" for none; locked: whether the dialog takes no answer; hint: what an answer does, shown in the titles; group: an extra class of the option list.
    * @returns {HTMLElement} the dialog an AskUserQuestion shows: numbered options with their description, the recommended ones tagged, a free-text Other row, Send for a multi decision, and a preview pane beside them once an option has one. The keys 1 to n pick or toggle an option, n + 1 focuses Other.
    */
   function choiceDialog(item, how) {
@@ -20,7 +25,7 @@
         title: revealed(`${option.label}: ${how.hint}`),
         on: {click: () => {
           if (!item.multi) {
-            how.pick(option.label);
+            how.pick(option.label, false);
             return;
           }
           how.toggled.has(option.label) ? how.toggled.delete(option.label) : how.toggled.add(option.label);
@@ -32,16 +37,16 @@
       return button;
     });
     if (send) {
-      send.addEventListener("click", () => how.pick(item.options.filter((option) => how.toggled.has(option.label)).map((option) => option.label).join(PICKED)));
+      send.addEventListener("click", () => how.pick(item.options.filter((option) => how.toggled.has(option.label)).map((option) => option.label).join(PICKED), false));
     }
     const typed = chosen.length === 1 && !item.options.some((option) => option.label === chosen[0]) ? chosen[0] : null;
-    const input = h("input", {class: "field", type: "text", maxlength: OTHER_LIMIT, placeholder: "Other: type your own answer …", "aria-label": `Other answer to ${item.id}`, value: typed, disabled: how.locked});
+    const input = h("input", {class: "field", type: "text", maxlength: OTHER_LIMIT, placeholder: how.other, "aria-label": `Other answer to ${item.id}`, value: typed, disabled: how.locked});
     const other = h("form", {class: "option other"}, input,
       h("button", {type: "submit", class: "btn small", disabled: how.locked, ...named("Send", revealed(`Send this text: ${how.hint}`))}, icon("bi-send"), "Send"));
     other.addEventListener("submit", (event) => {
       event.preventDefault();
       if (input.value.trim()) {
-        how.pick(input.value.trim());
+        how.pick(input.value.trim(), true);
       }
     });
     const list = h("div", {class: `options dialog${how.group ? ` ${how.group}` : ""}`, role: "group", "aria-label": "Options", "data-multi": item.multi ? "" : null}, buttons, other, send);

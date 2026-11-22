@@ -7,7 +7,7 @@ import unittest
 from hub_support import HUB
 
 TEMPLATES = HUB / "templates"
-MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-inbox.js", "page-grant.js"]
+MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-inbox.js", "page-grant.js"]
 PROBE = r"""
 const fs = require("fs");
 const vm = require("vm");
@@ -110,8 +110,8 @@ const byName = (node, label) => buttons(node).find((button) => button.getAttribu
   results.direct_press = press(of("green"));
   await approveOne(of("green"));
   results.direct = take();
-  ui.selected.add(keyOf(of("ask")));
-  results.direct_picked = press(of("ask"));
+  ui.selected.add(keyOf(of("run")));
+  results.direct_picked = press(of("run"));
   drawGrant();
   results.direct_selection = {main: buttons(bar)[0].getAttribute("aria-label"), labels: labels(bar)};
   ui.selected.clear();

@@ -123,16 +123,26 @@
   const signsFor = (item) => `your passkey signs this answer, a post to ${item.agent}`;
 
   /**
+   * @param {Object} item a permission ask.
+   * @param {string} answer the picked label, or the typed text.
+   * @param {boolean} typed whether answer is typed text, which always denies with it as the reason.
+   */
+  const answerAsk = (item, answer, typed) => (!typed && answer === ALLOW ? approveOne(item) : denyNow(item, "post", typed ? answer : ""));
+
+  /**
    * @param {Object} item an inbox item.
    * @param {Function} after called before a picked answer is sent.
-   * @returns {HTMLElement|Array|null} the choiceDialog() of a decision or a decision row, with its recipient line for a row; null for every other item.
+   * @returns {HTMLElement|Array|null} the choiceDialog() of a decision, a decision row or a permission ask, with its recipient line for a row; null for every other item.
    */
   const choiceOf = (item, after) => {
     if (item.kind === "decision") {
-      return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: "", locked: item.held, hint: signsFor(item), group: ""});
+      return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: "", locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT});
+    }
+    if (item.kind === "ask") {
+      return choiceDialog(askDialog(item.id), {pick: (answer, typed) => { after(); answerAsk(item, answer, typed); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? ALLOW : "", locked: item.held, hint: `your passkey signs it, the answer goes to ${item.to || "its session"}`, group: "", other: TELL});
     }
     const told = answerOf(item);
-    return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerRow(item, label); }, toggled: new Set(), chosen: told, locked: item.held || Boolean(told), hint: signsFor(item), group: ""})] : null;
+    return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerRow(item, label); }, toggled: new Set(), chosen: told, locked: item.held || Boolean(told), hint: signsFor(item), group: "", other: OTHER_PROMPT})] : null;
   };
 
   /**
@@ -230,8 +240,6 @@
     if (item.kind === "review") {
       grant(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
       buttons.push(denySplit(item));
-    } else if (item.kind === "ask") {
-      grant(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
     } else if (item.kind === "decision" && item.recommended) {
       grant(h("button", {type: "button", class: "btn small primary", ...named(revealed(`Recommendation: ${shownPick(item.recommended)}`)), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), revealed(shownPick(item.recommended))));
     } else if (item.kind === "operator" && item.runnable) {

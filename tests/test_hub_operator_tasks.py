@@ -24,7 +24,7 @@ hub_limits = importlib.import_module("hub_limits")
 approval = importlib.import_module("approval")
 TEMPLATES = HUB / "templates"
 DIFFS = TEMPLATES / "diffs.js"
-PAGE_MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-diff.js", "page-inbox.js", "page-grant.js", "page-stream.js", "page-screens.js", "page-keyboard.js"]
+PAGE_MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-inbox.js", "page-grant.js", "page-stream.js", "page-screens.js", "page-keyboard.js"]
 SECRET = 'api_key = "plain-example-words"'
 ARMOURED = "before\n-----BEGIN EXAMPLE-----\nplain words only\n-----END EXAMPLE-----\nafter\n"
 WITHHELD = "content withheld"

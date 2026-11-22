@@ -287,7 +287,18 @@
       matchView.toggles.delete(key);
       decide(card, "accept", "", label);
     };
-    return choiceDialog({...card, id: card.ref}, {pick, toggled, chosen: kept ? kept.label : "", locked: false, hint: `picked now, sent to ${card.agent || "its agent"} at the release`, group: "match-options"});
+    return choiceDialog({...card, id: card.ref}, {pick, toggled, chosen: kept ? kept.label : "", locked: false, hint: `picked now, sent to ${card.agent || "its agent"} at the release`, group: "match-options", other: OTHER_PROMPT});
+  }
+
+  /**
+   * @param {Object} card a permission ask card.
+   * @returns {HTMLElement} its choiceDialog(): Yes accepts, No rejects, typed text rejects with it as the feedback; all sent at the release.
+   */
+  function matchAsk(card) {
+    const kept = matchView.decisions.get(cardKey(card));
+    const chosen = !kept ? "" : kept.verdict === "accept" ? ALLOW : kept.feedback || "No";
+    const pick = (answer, typed) => (!typed && answer === ALLOW ? acceptCard(card) : decide(card, "reject", typed ? answer : "", ""));
+    return choiceDialog(askDialog(card.ref), {pick, toggled: new Set(), chosen, locked: false, hint: `picked now, sent to ${card.agent || "its session"} at the release`, group: "match-options", other: TELL});
   }
 
   function matchPayload(card) {
@@ -299,7 +310,7 @@
     }
     if (card.kind === "ask") {
       return h("section", {class: "match-payload"}, h("pre", {class: "match-command"}, h("code", {}, revealed(card.command))), h("p", {class: "match-directory"}, revealed(card.directory)),
-        card.warnings.length ? h("p", {class: "match-warnings"}, card.warnings.map((warning) => pill(warning, "bad"))) : null);
+        card.warnings.length ? h("p", {class: "match-warnings"}, card.warnings.map((warning) => pill(warning, "bad"))) : null, matchAsk(card));
     }
     if (card.kind !== "command") {
       return null;

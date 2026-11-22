@@ -43,6 +43,7 @@ const items = {
   bare: {...base, kind: "operator", id: "operator/bare", title: "decide: rename it", command: "decide: rename it", check: "decision"},
   orphan: {...base, kind: "operator", id: "operator/orphan", title: question, command: question, check: "decision", options, agent: ""},
   run: {...base, kind: "operator", id: "operator/run", title: "make install", command: "make install", check: "manual", runnable: true},
+  ask: {...base, kind: "ask", id: "a-1", title: "Bash: rm -rf build", command: "rm -rf build"},
   pick: {...base, kind: "decision", id: "d-1", title: "Layout?", deniable: false, recommended: "B", options: [{label: "A", description: "tabs", preview: "[A]\nline"}, {label: "B", description: "card", preview: "[B]"}, {label: "C", description: "none"}]},
 };
 const context = {
@@ -109,6 +110,17 @@ const results = {};
   results.keys = {submits: submits.splice(0), stopped, focused: document.activeElement === null ? "" : document.activeElement.tag};
   press("4");
   results.keys.other = document.activeElement.tag;
+  const denials = [];
+  denyNow = (item, channel, reason) => { denials.push([item.id, channel, reason]); };
+  const asking = inboxItem(items.ask, 6);
+  results.ask = {options: shape(asking).options, other: shape(asking).other};
+  await optionNamed(asking, "No").fire("click");
+  const tell = classed(asking, "other")[0];
+  all(tell).find((el) => el.tag === "input").value = " Yes ";
+  await tell.fire("submit");
+  await optionNamed(asking, "Yes").fire("click");
+  results.ask.denials = denials.splice(0);
+  results.ask.grants = submits.splice(0).map((label) => label.split(":")[0]);
   console.log(JSON.stringify(results));
 })().catch((error) => { console.error(error && error.stack || error); process.exit(1); });
 `;
@@ -172,6 +184,12 @@ class TestDecisionRows(unittest.TestCase):
         keys = self.data["keys"]
         self.assertEqual((keys["submits"], keys["stopped"], keys["focused"]), (["Choice: B"], 1, ""))
         self.assertEqual(keys["other"], "input")
+
+    def test_a_permission_ask_offers_yes_and_no_and_typed_text_always_denies_with_it_as_the_reason(self):
+        ask = self.data["ask"]
+        self.assertEqual((ask["options"], ask["other"]), ([["Yes", False], ["No", False]], 1))
+        self.assertEqual(ask["denials"], [["a-1", "post", ""], ["a-1", "post", "Yes"]])
+        self.assertEqual(ask["grants"], ["Grant"])
 
 
 class TestDecisionFeed(HubCase):

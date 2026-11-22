@@ -158,7 +158,7 @@ class TestMatchWaiting(HubCase):
         self.assertEqual(sorted(seen), sorted([PICK, ask, choice, rule]), found)
         self.assertEqual({card_id: entry["kind"] for card_id, entry in seen.items()}, {PICK: "decision", ask: "ask", choice: "decision", rule: "rule"})
         self.assertEqual(seen[ask]["chips"], ["fix=95 %", "break=2 %", "score=93", "value=1:4"], found)
-        self.assertEqual(seen[ask]["command"], SCORED)
+        self.assertEqual((seen[ask]["command"], seen[ask]["options"]), (SCORED, ["Yes", "No"]), found)
         self.assertEqual((seen[PICK]["options"], seen[PICK]["acts"]["Accept"], seen[PICK]["acts"]["Reject"]), (["Merge now", "Wait"], False, False), found)
         self.assertEqual((seen[choice]["acts"]["Accept"], seen[choice]["acts"]["Reject"], seen[choice]["refused"]), (True, True, True), found)
         self.assertEqual((seen[rule]["rule"], seen[rule]["sheet"], seen[rule]["stayed"]), (True, True, True), found)

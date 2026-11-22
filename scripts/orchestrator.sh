@@ -88,11 +88,27 @@ mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
 entries = settings.setdefault("hooks", {}).setdefault("PermissionRequest", [])
 entries[:] = [entry for entry in entries if not any(marker in hook.get("command", "") for hook in entry.get("hooks", []))]
 if added:
-    entries.append({"matcher": "Bash|AskUserQuestion", "hooks":[{"type": "command", "command": added[0], "timeout": int(added[1])}]})
+    entries.append({"matcher": "*", "hooks":[{"type": "command", "command": added[0], "timeout": int(added[1])}]})
 temporary = path.with_name(f"{path.name}.{os.getpid()}")
 temporary.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 temporary.chmod(mode)
 temporary.replace(path)
+PY
+}
+
+# Args: settings files. Prints the matcher of every PermissionRequest entry
+# whose hook runs this hub's client, one per line.
+hook_matchers() {
+	python3 - "${NAME}/client/permission_hook.py" "$@" <<'PY'
+import json, sys
+from pathlib import Path
+
+marker, *paths = sys.argv[1:]
+for path in (Path(name) for name in paths):
+    if path.is_file():
+        for entry in json.loads(path.read_text(encoding="utf-8")).get("hooks", {}).get("PermissionRequest", []):
+            if any(marker in hook.get("command", "") for hook in entry.get("hooks", [])):
+                print(entry.get("matcher", ""))
 PY
 }
 
@@ -389,12 +405,13 @@ check() {
 	code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${port}/" || true)"
 	if [[ "${code}" == "200" ]]; then ok "http://localhost:${port}/ answers 200"; else fail "http://localhost:${port}/ answers ${code}"; fi
 	check_keys
-	if grep -qs "${NAME}/client/permission_hook.py" "${SETTINGS}" "${LOCAL_SETTINGS}" && ! grep -qs '"Bash|AskUserQuestion"' "${SETTINGS}" "${LOCAL_SETTINGS}"; then
-		todo "PermissionRequest hook misses AskUserQuestion: make orchestrator-hook"
-	elif grep -qs "${NAME}/client/permission_hook.py" "${SETTINGS}" "${LOCAL_SETTINGS}"; then
-		ok "PermissionRequest hook registered"
-	else
+	matchers="$(hook_matchers "${SETTINGS}" "${LOCAL_SETTINGS}")"
+	if [[ -z "${matchers}" ]]; then
 		todo "PermissionRequest hook missing: make orchestrator-hook"
+	elif grep -qvx '\*' <<<"${matchers}"; then
+		todo "PermissionRequest hook matches only ${matchers//$'\n'/, }, not every tool: make orchestrator-hook"
+	else
+		ok "PermissionRequest hook registered for every tool"
 	fi
 	if [[ "$(systemctl --user is-active "${RUNNER}" 2>/dev/null || true)" == "active" ]]; then
 		ok "runner active; last lines:"

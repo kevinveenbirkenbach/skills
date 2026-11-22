@@ -148,6 +148,21 @@ class TestHubAsks(HubCase):
         self.assertEqual(self.call("POST", f"/api/asks/{ask['id']}/deny", b"", self.guard(self.host))[0], 200)
         self.assertEqual(json.loads(self.finish(process)[1])["hookSpecificOutput"]["decision"]["behavior"], "deny")
 
+    def test_every_tool_but_a_plain_bash_call_shows_and_signs_its_whole_input(self):
+        edit = {"file_path": "/repo/a.py", "old_string": "x = 1", "new_string": "x = 2\n"}
+        unsandboxed = {"command": "ls", "dangerouslyDisableSandbox": True}
+        for tool, tool_input, shown in (
+            ("Edit", edit, '{\n "file_path": "/repo/a.py",\n "new_string": "x = 2\\n",\n "old_string": "x = 1"\n}'),
+            ("Bash", unsandboxed, '{\n "command": "ls",\n "dangerouslyDisableSandbox": true\n}'),
+            ("Bash", {"command": "ls", "description": "list", "timeout": 5, "run_in_background": False}, "ls"),
+        ):
+            with self.subTest(tool=tool, keys=sorted(tool_input)):
+                process = self.hook(self.port, "20", {**HOOK, "tool_name": tool, "tool_input": tool_input})
+                ask = self.first_ask()
+                self.assertEqual((ask["tool"], ask["command"]), (tool, shown))
+                self.assertEqual(self.call("POST", f"/api/asks/{ask['id']}/deny", b"", self.guard(self.host))[0], 200)
+                self.finish(process)
+
     def test_a_bad_timeout_names_the_field_the_caller_sent(self):
         status, _, body = self.post_json("/api/asks", {**ASK, "timeout": -1}, self.local())
         self.assertEqual((status, body), (400, b"timeout must be a finite number of seconds, 0 or more\n"))
