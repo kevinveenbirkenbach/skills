@@ -1,41 +1,74 @@
   const GRANT_SELECT = "select";
   const GRANT_MODES = {
     direct: ["Direct", "bi-lightning-charge", "Direct mode", "Direct: every grant button grants at once"],
-    [GRANT_SELECT]: ["Select", "bi-check2-square", "Select mode", "Select: every grant button adds its item to the selection; Grant grants the selection under one passkey signature"],
+    [GRANT_SELECT]: ["Select", "bi-check2-square", "Select mode", "Select: every grant button and option adds its item to the selection; Grant grants the selection under one passkey signature, each rule and red-gate review under its own"],
   };
   const PICKED_HINT = "In the selection: take it out with ✕ in the Grant menu";
-  const DIRECT_WHY = {rule: "a rule is accepted one at a time", review: "a red gate is never granted in a selection"};
+  const SOLO_HINT = "Select: press to add it to the selection; Grant asks its own passkey signature for it";
   const grantView = {tray: null, sig: "", open: false};
+  const choices = new Map();
 
   const grantMode = () => (typeof ViewStore === "object" && ViewStore ? ViewStore.get("approval.mode") : "direct");
-  const collecting = (item) => grantMode() === GRANT_SELECT && selectable(item);
+  const chosenLabel = (item) => (ui.selected.has(keyOf(item)) ? choices.get(keyOf(item)) : undefined);
+  const solo = (item) => !item.held && (item.kind === "rule" || (item.kind === "review" && item.gate !== "pass"));
+  const batchable = (item) => selectable(item) || (!item.held && chosenLabel(item) !== undefined);
+  const collectable = (item) => batchable(item) || solo(item);
+  const collecting = (item) => grantMode() === GRANT_SELECT && collectable(item);
+  const picking = (item) => grantMode() === GRANT_SELECT && !item.held;
+
+  /**
+   * @param {Object} item a batchable inbox item.
+   * @returns {string} the label its grant carries: the picked option, else a decision's recommendation, else "".
+   */
+  function labelOf(item) {
+    const label = chosenLabel(item);
+    if (label !== undefined) {
+      return label;
+    }
+    return item.kind === "decision" ? item.recommended : "";
+  }
 
   function regrant() {
     render(false);
     drawStream();
   }
 
-  function collect(item) {
-    const key = keyOf(item);
+  function flip(key) {
+    choices.delete(key);
     if (ui.selected.has(key)) {
       ui.selected.delete(key);
     } else {
       ui.selected.add(key);
     }
+  }
+
+  function collect(item) {
+    flip(keyOf(item));
+    regrant();
+  }
+
+  /**
+   * @param {Object} item a decision or a decision row.
+   * @param {string} label the picked answer; picking the same answer again takes the item out of the selection.
+   */
+  function collectPick(item, label) {
+    const key = keyOf(item);
+    if (chosenLabel(item) === label) {
+      collect(item);
+      return;
+    }
+    choices.set(key, label);
+    ui.selected.add(key);
     regrant();
   }
 
   /**
    * @param button - the grant button of item.
    * @param item - a waiting inbox item.
-   * @returns button; a picked item's button turns pale green and disabled, and in Select it says why a grant still acts at once.
+   * @returns button; a picked item's button turns pale green and disabled, and in Select a rule or red-gate review says it gets its own signature.
    */
   function grantPress(button, item) {
-    const select = grantMode() === GRANT_SELECT;
-    if (!selectable(item)) {
-      if (select) {
-        button.setAttribute("title", `${button.getAttribute("title")}: acts at once, ${DIRECT_WHY[item.kind]}`);
-      }
+    if (!collectable(item)) {
       return button;
     }
     const picked = ui.selected.has(keyOf(item));
@@ -44,10 +77,10 @@
       button.setAttribute("class", `${button.getAttribute("class")} picked`);
       button.setAttribute("title", PICKED_HINT);
     }
-    if (select) {
+    if (grantMode() === GRANT_SELECT) {
       button.setAttribute("aria-pressed", String(picked));
       if (!picked) {
-        button.setAttribute("title", "Select: press to add it to the selection; Grant grants it");
+        button.setAttribute("title", solo(item) ? SOLO_HINT : "Select: press to add it to the selection; Grant grants it");
       }
     }
     return button;

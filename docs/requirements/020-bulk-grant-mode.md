@@ -19,14 +19,18 @@ pass.
 2. **Mode switch**: a segmented control "Direct | Select" in the header
    tools at the top right; Direct keeps today's behaviour. Rejected: a
    switch per view.
-3. **What collects**: in Select, every grant button toggles its item into
-   one shared selection (pressed state): inbox rows, Home, stream rows, the
-   review sheet and the key `a`. A grant of an item `selectable()` refuses
-   (red-gate review, rule request, decision without a recommendation,
-   operator row without a command) stays direct and its title says why.
-   Deny always acts at once with its reason; the Match deck and the palette
-   keep their own confirmed release. Rejected: a unified tray where denials
-   collect too.
+3. **What collects** (operator 2026-11-20): in Select, every grant button
+   and every option pick toggles its item into one shared selection
+   (pressed state): inbox rows, Home, stream rows, the review sheet and the
+   key `a`. A decision or decision row keeps the option picked for it;
+   picking the same option again takes it out. Grant n signs every
+   batchable item under one passkey signature, then asks one more
+   signature per rule request and per red-gate review, one after the
+   other, since the server accepts neither inside a batch. Deny always
+   acts at once with its reason; the Match deck and the palette keep their
+   own confirmed release. Rejected: a unified tray where denials collect
+   too; rules, red-gate reviews and option picks acting directly in Select
+   (operator 2026-11-20: Select applies to every item).
 4. **Tray**: in Select, beside the switch: `n selected` with Grant n,
    Deny n, Grant all green and Clear. Grant and Deny open the existing
    selection sheet that lists every entry and full command; one passkey
@@ -85,15 +89,21 @@ flowchart TD
 - [ ] Tray "Grant n" opens the selection sheet with exactly the selected
       entries; one passkey signature covers them all, and after the undo time
       each is granted.
-- [ ] In Select, the grant of a red-gate review and Accept on a rule request
-      act directly as in Direct; Deny acts at once in both modes.
+- [ ] In Select, an option pick on a decision or decision row, the grant of
+      a red-gate review and Accept on a rule request add the item to the
+      selection; Grant n posts the batchable items under one signature, then
+      each rule and red-gate review under its own; Deny acts at once in both
+      modes.
+- [ ] A grant, option pick or checkbox in Waits on Operator never scrolls
+      the page; only `j` and `k` move the view to the cursor.
 - [ ] In Direct, every grant button acts as today and the tray is hidden.
 
 ### Tests
 
 - [ ] Unit: view store validation of `approval.mode`; page vm: a grant in
-      Select toggles `ui.selected` without a post, a grant in Direct posts, a
-      grant of a non-selectable item stays direct, the tray counts.
+      Select toggles `ui.selected` without a post, a grant in Direct posts,
+      an option pick collects with its label, a rule and a red-gate review
+      collect and get their own signature after the batch, the tray counts.
 - [ ] Integration: n/a: the server and the signing path stay unchanged
       (decision 6).
 - [ ] E2E: Chromium and Firefox at 1920, 1366 and 390: the continuous diff

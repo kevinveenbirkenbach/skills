@@ -24,7 +24,8 @@ class El {
   append(...nodes) { this.children.push(...nodes); }
   replaceChildren(...nodes) { this.children = nodes; }
   addEventListener(name, handler) { this.handlers[name] = handler; }
-  click() { this.handlers.click({stopPropagation() {}, preventDefault() {}}); }
+  click() { return this.handlers.click({stopPropagation() {}, preventDefault() {}}); }
+  focus() {}
   remove() {}
 }
 const all = (node) => [node, ...(node.children || []).filter((child) => child instanceof El).flatMap(all)];
@@ -42,8 +43,10 @@ const items = {
   red: {...base, kind: "review", id: "r-red", title: "feat: red", gate: "fail"},
   ask: {...base, kind: "ask", id: "a-1", title: "git push: ask", command: "git push"},
   run: {...base, kind: "operator", id: "operator/run", title: "make install", command: "make install", runnable: true, deniable: true},
-  pick: {...base, kind: "decision", id: "d-1", title: "Which?", recommended: "A", options: [{label: "A", description: ""}]},
+  pick: {...base, kind: "decision", id: "d-1", title: "Which?", recommended: "A", options: [{label: "A", description: ""}, {label: "B", description: ""}]},
   rule: {...base, kind: "rule", id: "1123456789abcdef", title: "Rule ask Bash make deploy"},
+  open: {...base, kind: "decision", id: "d-2", title: "Open?", options: [{label: "A", description: ""}, {label: "B", description: ""}]},
+  row: {...base, kind: "operator", id: "operator/ask", title: "Ship it?", command: "Ship it?", check: "decision", deniable: true, options: [{label: "Yes", description: ""}]},
 };
 const mode = {value: "select"};
 const sets = [];
@@ -62,16 +65,26 @@ const context = {
 const source = names.map((name) => fs.readFileSync(`${dir}/${name}`, "utf8")).join("\n");
 const probe = `
 const proofs = [];
+const sent = [];
 const accepts = [];
+const sheets = [];
 let renders = 0;
 let streams = 0;
-proofFor = async (entries) => { proofs.push(entries.map((entry) => entry.kind + ":" + entry.id)); return null; };
-acceptRule = (item) => { accepts.push(item.id); };
+let signing = false;
+proofFor = async (entries) => { proofs.push(entries.map((entry) => entry.kind + ":" + entry.id)); sent.push(entries.map((entry) => entry.label)); return signing ? {proof: "p"} : null; };
+sendJson = async () => ({ok: true, data: {id: `b${proofs.length}`, due: 0}});
+undoToast = () => {};
+acceptRule = async (item) => { accepts.push(item.id); return true; };
+openSheet = (title, body) => { sheets.push(body); };
+closeSheet = () => {};
 render = () => { renders += 1; };
 drawStream = () => { streams += 1; };
 toast = () => ({remove() {}});
 const results = {};
-const take = () => ({selected: [...ui.selected].sort(), proofs: proofs.splice(0), accepts: accepts.splice(0), renders, streams});
+const take = () => ({selected: [...ui.selected].sort(), proofs: proofs.splice(0), labels: sent.splice(0), accepts: accepts.splice(0), renders, streams});
+const dialogOf = (item) => { const made = choiceOf(item, () => {}); return Array.isArray(made) ? made[1] : made; };
+const option = (item, label) => buttons(dialogOf(item)).find((button) => (button.getAttribute("title") || "").startsWith(`${label}: `));
+const pressedOptions = (item) => buttons(dialogOf(item)).filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("title").split(": ")[0]);
 const press = (item) => {
   const first = actionsFor(item)[0];
   return {pressed: first.getAttribute("aria-pressed"), title: first.getAttribute("title"), disabled: Boolean(first.disabled), picked: (first.getAttribute("class") || "").split(" ").includes("picked")};
@@ -91,10 +104,14 @@ const byName = (node, label) => buttons(node).find((button) => button.getAttribu
     await approveOne(of(key));
   }
   results.collected = take();
+  results.solo_titles = [press(of("red")).title, press(of("rule")).title];
   await approveOne(of("red"));
   results.red = {...take(), press: press(of("red"))};
   await approveOne(of("rule"));
   results.rule = {...take(), press: press(of("rule"))};
+  await approveOne(of("red"));
+  await approveOne(of("rule"));
+  results.solo_out = take();
   grantBoot();
   const bar = grantView.tray;
   const summary = () => all(bar).find((node) => node.tag === "summary").getAttribute("aria-label");
@@ -115,6 +132,30 @@ const byName = (node, label) => buttons(node).find((button) => button.getAttribu
   drawGrant();
   results.direct_selection = {main: buttons(bar)[0].getAttribute("aria-label"), labels: labels(bar)};
   ui.selected.clear();
+  results.direct_pick = {before: take()};
+  await option(of("open"), "B").click();
+  results.direct_pick.after = take();
+  mode.value = "select";
+  await option(of("open"), "B").click();
+  results.option_added = {...take(), pressed: pressedOptions(of("open"))};
+  await option(of("open"), "B").click();
+  results.option_removed = {...take(), pressed: pressedOptions(of("open"))};
+  await option(of("open"), "B").click();
+  await option(of("pick"), "B").click();
+  await option(of("row"), "Yes").click();
+  results.option_row = {pressed: pressedOptions(of("row")), batchable: batchable(of("row"))};
+  await approveOne(of("green"));
+  await approveOne(of("red"));
+  await approveOne(of("rule"));
+  results.all = take();
+  const actions = selectionActions(state.inbox);
+  results.all_grant = actions.grant.getAttribute("aria-label");
+  await actions.grant.click();
+  const sheet = sheets.splice(0)[0];
+  results.all_note = text(sheet[0]);
+  signing = true;
+  await buttons(sheet[2]).find((button) => text(button).startsWith("Grant ")).click();
+  results.all_granted = take();
   console.log(JSON.stringify(results));
 })().catch((error) => { console.error(error && error.stack || error); process.exit(1); });
 `;
@@ -155,13 +196,33 @@ class TestGrantMode(unittest.TestCase):
         self.assertEqual(self.data["direct_selection"]["main"], "Grant selection (1)")
         self.assertEqual(self.data["direct_selection"]["labels"][-1], "Select")
 
-    def test_a_red_gate_and_a_rule_stay_direct_in_select_and_say_why(self):
-        self.assertEqual(self.data["red"]["proofs"], [["review:r-red"]])
-        self.assertEqual(self.data["red"]["press"]["pressed"], None)
-        self.assertEqual(self.data["red"]["press"]["title"], "Grant: acts at once, a red gate is never granted in a selection")
-        self.assertEqual(self.data["rule"]["accepts"], ["1123456789abcdef"])
-        self.assertEqual(self.data["rule"]["proofs"], [])
-        self.assertTrue(self.data["rule"]["press"]["title"].endswith(": acts at once, a rule is accepted one at a time"), self.data["rule"])
+    def test_a_red_gate_and_a_rule_collect_in_select_and_say_they_sign_alone(self):
+        self.assertEqual(self.data["solo_titles"], ["Select: press to add it to the selection; Grant asks its own passkey signature for it"] * 2)
+        self.assertIn("review:r-red", self.data["red"]["selected"])
+        self.assertEqual((self.data["red"]["proofs"], self.data["red"]["press"]["pressed"]), ([], "true"))
+        self.assertIn("rule:1123456789abcdef", self.data["rule"]["selected"])
+        self.assertEqual((self.data["rule"]["proofs"], self.data["rule"]["accepts"], self.data["rule"]["press"]["pressed"]), ([], [], "true"))
+        self.assertEqual(self.data["solo_out"]["selected"], ["ask:a-1", "decision:d-1", "operator:operator/run", "review:r-green"])
+
+    def test_an_option_pick_posts_at_once_in_direct(self):
+        self.assertEqual((self.data["direct_pick"]["after"]["proofs"], self.data["direct_pick"]["after"]["labels"]), ([["decision:d-2"]], [["B"]]))
+        self.assertEqual(self.data["direct_pick"]["after"]["selected"], [])
+
+    def test_an_option_pick_collects_with_its_label_in_select_and_the_same_pick_takes_it_out(self):
+        self.assertEqual(self.data["option_added"]["selected"], ["decision:d-2"])
+        self.assertEqual((self.data["option_added"]["proofs"], self.data["option_added"]["pressed"]), ([], ["B"]))
+        self.assertEqual((self.data["option_removed"]["selected"], self.data["option_removed"]["pressed"]), ([], []))
+        self.assertEqual(self.data["option_row"], {"pressed": ["Yes"], "batchable": True})
+
+    def test_grant_n_signs_the_batch_once_then_each_rule_and_red_gate_alone(self):
+        self.assertEqual(self.data["all"]["selected"], ["decision:d-1", "decision:d-2", "operator:operator/ask", "review:r-green", "review:r-red", "rule:1123456789abcdef"])
+        self.assertEqual((self.data["all"]["proofs"], self.data["all"]["accepts"]), ([], []))
+        self.assertEqual(self.data["all_grant"], "Grant selection (6)")
+        self.assertTrue(self.data["all_note"].endswith("Each rule and each red-gate review then asks its own signature, one after the other (2)."), self.data["all_note"])
+        granted = self.data["all_granted"]
+        self.assertEqual(granted["proofs"], [["review:r-green", "decision:d-1", "decision:d-2", "operator:operator/ask"], ["review:r-red"]])
+        self.assertEqual(granted["labels"], [["", "B", "B", "Yes"], [""]])
+        self.assertEqual((granted["accepts"], granted["selected"]), (["1123456789abcdef"], []))
 
     def test_one_split_grants_the_selection_and_its_menu_holds_the_rest(self):
         tray = self.data["tray"]

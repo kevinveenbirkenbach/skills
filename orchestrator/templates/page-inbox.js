@@ -104,7 +104,9 @@
     return submit([entryOf(item, "approve", "")], `${item.kind === "operator" ? "Run" : "Grant"}: ${short(item.title)}`);
   }
 
-  const chooseOne = (item, label) => submit([entryOf(item, "approve", label)], `Choice: ${shownPick(label)}`);
+  const chooseOne = (item, label) => (picking(item) ? collectPick(item, label) : submit([entryOf(item, "approve", label)], `Choice: ${shownPick(label)}`));
+  const answerPick = (item, label) => (picking(item) ? collectPick(item, label) : answerRow(item, label));
+  const grantSolo = (item) => (item.kind === "rule" ? acceptRule(item) : submit([entryOf(item, "approve", "")], `Grant: ${short(item.title)}`));
   const asked = (item) => item.kind === "operator" && item.check === "decision";
   const answers = new Map();
   const answerOf = (item) => answers.get(keyOf(item)) || item.answered || "";
@@ -136,13 +138,14 @@
    */
   const choiceOf = (item, after) => {
     if (item.kind === "decision") {
-      return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: "", locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT});
+      return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? labelOf(item) : "", locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT});
     }
     if (item.kind === "ask") {
       return choiceDialog(askDialog(item.id), {pick: (answer, typed) => { after(); answerAsk(item, answer, typed); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? ALLOW : "", locked: item.held, hint: `your passkey signs it, the answer goes to ${item.to || "its session"}`, group: "", other: TELL});
     }
     const told = answerOf(item);
-    return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerRow(item, label); }, toggled: new Set(), chosen: told, locked: item.held || Boolean(told), hint: signsFor(item), group: "", other: OTHER_PROMPT})] : null;
+    const shown = told || (ui.selected.has(keyOf(item)) ? labelOf(item) : "");
+    return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerPick(item, label); }, toggled: new Set(), chosen: shown, locked: item.held || Boolean(told), hint: signsFor(item), group: "", other: OTHER_PROMPT})] : null;
   };
 
   /**
@@ -153,29 +156,37 @@
 
   const deniable = (item) => item.deniable || item.kind === "review";
   const denialOf = (item, reason) => ({...entryOf(item, "reject", ""), channel: "post", reason, to: item.to});
-  const pickable = (item) => !item.held && (selectable(item) || deniable(item));
+  const pickable = (item) => !item.held && (collectable(item) || deniable(item));
 
   function bulk(items, label, deny) {
-    const usable = items.filter(deny ? deniable : selectable);
-    if (!usable.length) {
+    const usable = items.filter(deny ? deniable : batchable);
+    const alone = deny ? [] : items.filter(solo);
+    if (!usable.length && !alone.length) {
       toast(`${label}: nothing to ${deny ? "deny" : "grant"}`, [], false);
       return;
     }
-    const rows = usable.map((item) => h("li", {},
-      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.kind === "decision" && !deny ? h("span", {class: "muted"}, revealed(`→ ${shownPick(item.recommended)}`)) : null),
+    const rows = [...usable, ...alone].map((item) => h("li", {},
+      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), !deny && labelOf(item) ? h("span", {class: "muted"}, revealed(`→ ${shownPick(labelOf(item))}`)) : null),
       h("strong", {}, revealed(item.title)),
       item.kind === "operator" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null,
       item.kind === "operator" ? h("span", {class: "muted"}, revealed(`in ${item.directory}`)) : null,
       item.kind === "ask" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null));
-    const confirm = h("button", {type: "button", class: deny ? "btn danger" : "btn primary"}, `${deny ? "Deny" : "Grant"} ${usable.length}`);
+    const confirm = h("button", {type: "button", class: deny ? "btn danger" : "btn primary"}, `${deny ? "Deny" : "Grant"} ${usable.length + alone.length}`);
     const reason = deny ? h("textarea", {class: "field", maxlength: DENY_REASON, rows: 3, placeholder: "e.g. make the gate green first"}) : null;
-    confirm.addEventListener("click", () => {
+    confirm.addEventListener("click", async () => {
       closeSheet();
-      submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", item.kind === "decision" ? item.recommended : ""))), `${label}: ${usable.length} entries`);
+      if (usable.length && !(await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", labelOf(item)))), `${label}: ${usable.length} entries`))) {
+        return;
+      }
+      for (const item of alone) {
+        if (!(await grantSolo(item))) {
+          return;
+        }
+      }
     });
     const note = deny
       ? "Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click the passkey signs the whole selection once; then 3 s remain to undo."
-      : "Every entry and every full command that gets granted. After the click the passkey signs the whole selection once; then 3 s remain to undo.";
+      : `Every entry and every full command that gets granted. After the click the passkey signs the whole selection once; then 3 s remain to undo.${alone.length ? ` Each rule and each red-gate review then asks its own signature, one after the other (${alone.length}).` : ""}`;
     openSheet(label, [h("p", {class: "muted"}, note), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
     (reason || confirm).focus();
@@ -188,7 +199,7 @@
     const green = items.filter(isGreen);
     const chosen = items.filter((item) => ui.selected.has(keyOf(item)));
     const denials = chosen.filter(deniable);
-    const grantable = chosen.filter(selectable);
+    const grantable = chosen.filter(collectable);
     return {
       chosen,
       grant: h("button", {type: "button", class: "btn small primary", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection", false)}}, icon("bi-check2-square"), `Grant ${grantable.length}`),
@@ -217,11 +228,7 @@
       return;
     }
     const key = keyOf(item);
-    if (ui.selected.has(key)) {
-      ui.selected.delete(key);
-    } else {
-      ui.selected.add(key);
-    }
+    flip(key);
     ui.cursor = Math.max(visibleInbox().findIndex((entry) => keyOf(entry) === key), 0);
     drawInbox();
     drawGrant();
@@ -317,7 +324,7 @@
       }
     }
     const mode = grantMode();
-    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], [...answers], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
+    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], [...choices], [...answers], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
     if (sig === inboxSig) {
       repaintConsoles(items);
       return;
@@ -334,10 +341,6 @@
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
       items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now.")));
     settleConsoles(items);
-    const current = inboxDom.querySelector(`.item[data-index="${ui.cursor}"]`);
-    if (current && document.activeElement === document.body) {
-      current.scrollIntoView({block: "nearest"});
-    }
   }
 
   function openItem(item) {

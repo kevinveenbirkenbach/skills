@@ -11,18 +11,36 @@
       h("p", {class: "muted"}, RULE_HINTS[rule.kind]));
   }
 
+  /**
+   * @param {Object} item a rule request.
+   * @param {string} label the toast and passkey prompt label.
+   * @returns {Promise<Object|null>} the accept body with the rule and its passkey assertion, null when the server refused or the operator cancelled.
+   */
+  async function signRule(item, label) {
+    const prepared = await sendJson(`/api/rule-requests/${encodeURIComponent(item.id)}/sign`, {});
+    if (!prepared.ok || !prepared.data) {
+      if (!closeGone(prepared, [keyOf(item)], label)) {
+        toast(`${label}: not possible`, fail(prepared), false);
+      }
+      return null;
+    }
+    const signed = await assertion(prepared.data, label);
+    return signed ? {rule: prepared.data.payload, assertion: signed} : null;
+  }
+
+  /**
+   * @param {Object} item a rule request.
+   * @returns {Promise<boolean>} whether the rule was created.
+   */
   async function acceptRule(item) {
     const label = `Rule: ${short(item.title)}`;
     ui.busy = true;
-    const prepared = await sendJson(`/api/rule-requests/${encodeURIComponent(item.id)}/sign`, {});
-    const signed = prepared.ok && prepared.data ? await assertion(prepared.data, label) : null;
-    if ((!prepared.ok || !prepared.data) && !closeGone(prepared, [keyOf(item)], label)) {
-      toast(`${label}: not possible`, fail(prepared), false);
-    }
-    const result = signed ? await sendJson(`/api/rule-requests/${encodeURIComponent(item.id)}/accept`, {rule: prepared.data.payload, assertion: signed}) : null;
+    const body = await signRule(item, label);
+    const result = body ? await sendJson(`/api/rule-requests/${encodeURIComponent(item.id)}/accept`, body) : null;
     ui.busy = false;
     if (result && !closeGone(result, [keyOf(item)], label)) {
       toast(result.ok ? `Created: ${short(item.title)}` : `${label}: not created`, result.ok ? [] : fail(result), result.ok);
     }
     await load();
+    return Boolean(result && result.ok);
   }
