@@ -1,8 +1,8 @@
 ---
 name: kvb-ci-triage
 description: >
-  Triage a failing CI run or build, test or deploy pipeline to verified root
-  causes and real fixes, one cluster per worktree.
+  Triage a failing CI run or pipeline to verified root causes and real
+  fixes, one cluster per worktree.
 ---
 
 Drive a red pipeline green by root cause. Every failing job is its own
@@ -47,8 +47,9 @@ steps 0 to 2; the judgement stays yours.
 6. **Timeouts**: only for a cluster whose jobs died on their time budget, or
    on operator request, hand the furthest-running job log to `kvb-code-tune`;
    its candidates get funnels of their own and never delay the fix.
-7. **Follow** a run still in progress and triage each newly failed job; done
-   when the run finished and every failure has a verified fix.
+7. **Follow** a running run through the `kvb-ci-track` skill, triage each
+   new cluster it prints and ack it once fixed; done when the run finished
+   and every failure has a verified fix.
 
 ## Rules
 

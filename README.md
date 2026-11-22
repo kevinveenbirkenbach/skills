@@ -47,6 +47,7 @@ flowchart LR
   ci --> ci_triage[kvb-ci-triage]
   ci --> ci_artifacts[kvb-ci-artifacts]
   ci --> ci_observe[kvb-ci-observe]
+  ci --> ci_track[kvb-ci-track]
   git --> git_commit_next[kvb-git-commit-next]
   git --> git_commit_no_verify[kvb-git-commit-no-verify]
   git --> git_merge_fix[kvb-git-merge-fix]
@@ -160,6 +161,7 @@ flowchart LR
     triage[kvb-ci-triage]
     ci_artifacts[kvb-ci-artifacts]
     observe[kvb-ci-observe]
+    track[kvb-ci-track]
   end
   subgraph cat_git [git]
     commit_next[kvb-git-commit-next]
@@ -339,6 +341,10 @@ flowchart LR
 
   observe --> triage
   observe --> ci_artifacts
+  observe --> track
+  triage --> track
+  track --> ci_artifacts
+  track --> hotfix
   triage --> ci_artifacts
   triage --> democracy
   triage --> dialectic

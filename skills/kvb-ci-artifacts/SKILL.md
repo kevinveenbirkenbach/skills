@@ -1,8 +1,8 @@
 ---
 name: kvb-ci-artifacts
 description: >
-  Pull failed CI job logs (also mid-run), clustered by error line, and
-  cause-holding artifacts. Trigger to explain a CI failure, and from triage.
+  Pull failed CI job logs, clustered by error line, and cause-holding
+  artifacts. Trigger to explain a CI failure.
 ---
 
 A job log tells you what broke. An artifact tells you why.

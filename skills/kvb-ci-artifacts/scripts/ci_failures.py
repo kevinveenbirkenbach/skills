@@ -92,7 +92,12 @@ def is_lint(lines: list[tuple[str, str]], index: int) -> bool:
     return bool(LINT_CODE.match(line) and LINT_ARROW.match(following))
 
 
-def signature(text: str) -> str:
+def failing(text: str) -> str:
+    """Returns:
+        The line that ended the job, as the log holds it: the last annotation,
+        else the last fatal line after its task, lint finding or error word,
+        else the last kept line.
+    """
     lines = output_lines(text)
     tiers = (
         (lambda i: ANNOTATION.search(lines[i][1]), False),
@@ -105,8 +110,12 @@ def signature(text: str) -> str:
             if matches(index):
                 task, line = lines[index]
                 found = ANNOTATION.sub("", line).strip()
-                return normalise(f"{task} {found}" if with_task and task else found)
-    return normalise(lines[-1][1]) if lines else "<empty log>"
+                return f"{task} {found}" if with_task and task else found
+    return lines[-1][1] if lines else "<empty log>"
+
+
+def signature(text: str) -> str:
+    return normalise(failing(text))
 
 
 def cluster(jobs: list[tuple[str, str]]) -> dict[str, list[str]]:
