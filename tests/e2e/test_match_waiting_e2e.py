@@ -13,6 +13,7 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
 import hub_e2e_kit as base
+import test_home_dashboard_e2e as dash
 from hub_case import HubCase
 from hub_support import ASK, OPTIONS, iso
 from kvb_orchestrator import batches, skill_scripts
@@ -33,6 +34,30 @@ FRONT = """(async () => {@HELPERS@
   const node = await until(() => (card() && card().dataset.card === "@PICK@" ? card() : null), 3000);
   return {front: node ? node.dataset.card : null, options: node ? all(".match-options .option", node).map((option) => [text(option.querySelector("strong")), option.classList.contains("recommended")]) : [],
     wide: document.documentElement.scrollWidth > window.innerWidth + 1};
+})()"""
+HOME = """(async () => {@HELPERS@@HOME_KIT@
+  await ViewStore.update("home.pins", () => [{kind: "panel", id: "tasks/match", w: 12, h: 8}]);
+  await go("#home");
+  const tile = await until(() => document.querySelector('#main .home-tile[data-id="tasks/match"]'), 8000);
+  if (!tile) {
+    return {error: text(document.getElementById("main"))};
+  }
+  const slot = await until(() => tile.querySelector(".home-head > .home-slot"), 4000);
+  await until(() => slot && /cards? wait/.test(text(slot)), 6000);
+  const below = () => Boolean(tile.querySelector(".match-actions + .match-peeks .match-peek"));
+  const toggle = slot ? slot.querySelector(".match-peeks-toggle") : null;
+  const peeks = [[Boolean(await until(below, 6000)), toggle && toggle.getAttribute("aria-pressed")]];
+  if (toggle) {
+    toggle.click();
+    await sleep(200);
+    peeks.push([below() || Boolean(tile.querySelector(".match-peeks")), toggle.getAttribute("aria-pressed"), localStorage.getItem("kvb-orchestrator.match-peeks")]);
+    toggle.click();
+    await sleep(200);
+    peeks.push([below(), toggle.getAttribute("aria-pressed"), localStorage.getItem("kvb-orchestrator.match-peeks")]);
+  }
+  return {peeks, slot: slot ? text(slot.querySelector(".muted")) : null, overview: Boolean(slot && slot.querySelector(".match-open-overview")),
+    toolbar: Boolean(tile.querySelector(".home-body .task-toolbar")), card: Boolean(await until(() => tile.querySelector(".match-card.front"), 6000)),
+    head: Math.round(tile.querySelector(".home-head").getBoundingClientRect().height), wide: document.documentElement.scrollWidth > innerWidth + 1};
 })()"""
 FLOW = """(async () => {@HELPERS@
   const posted = [];
@@ -120,6 +145,8 @@ class TestMatchWaiting(HubCase):
             url = f"http://localhost:{self.port}/?{width}#tasks/match"
             front = FRONT.replace("@HELPERS@", base.HELPERS).replace("@PICK@", PICK)
             flow = FLOW.replace("@HELPERS@", base.HELPERS).replace("@RELEASE@", "true" if width == RELEASE_AT else "false")
+            home = HOME.replace("@HELPERS@", base.HELPERS).replace("@HOME_KIT@", dash.HOME)
+            steps.append({"width": width, "height": height, "url": f"http://localhost:{self.port}/?{width}-home#stream", "wait": 1500, "probe": home, "shot": str(OUT / f"chromium-{width}-home.png")})
             steps.append({"width": width, "height": height, "url": url, "wait": 1500, "probe": front, "shot": str(OUT / f"chromium-{width}-decision.png")})
             steps.append({"width": width, "height": height, "url": url, "wait": 1500, "probe": flow, "shot": str(OUT / f"chromium-{width}-overview.png")})
         return steps
@@ -145,7 +172,12 @@ class TestMatchWaiting(HubCase):
             self.settle(lambda: self.ask_status(self.ask, "0") == "allowed")
         (OUT / "chromium-waiting.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
-        fronts, flows = data["results"][0::2], data["results"][1::2]
+        homes, fronts, flows = data["results"][0::3], data["results"][1::3], data["results"][2::3]
+        for home in homes:
+            with self.subTest(home=home):
+                self.assertEqual((home["slot"], home["overview"], home["toolbar"], home["card"], home["wide"]), ("4 cards wait", True, False, True, False), home)
+                self.assertLessEqual(home["head"], 48, home)
+                self.assertEqual(home["peeks"], [[True, "true"], [False, "false", "false"], [True, "true", "true"]], home)
         for front in fronts:
             with self.subTest(front=front):
                 self.assertEqual((front["front"], front["options"], front["wide"]), (PICK, [["Merge now", True], ["Wait", False]], False), front)

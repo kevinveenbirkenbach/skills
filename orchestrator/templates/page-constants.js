@@ -37,7 +37,7 @@
   const MOVE = 2000;
   const RELAYOUT = 60000;
   const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
-  const STORE = {views: "kvb-orchestrator.views", status: "kvb-orchestrator.status"};
+  const STORE = {views: "kvb-orchestrator.views", status: "kvb-orchestrator.status", comments: "kvb-orchestrator.match-comments", peeks: "kvb-orchestrator.match-peeks"};
   const PRESENCE = {
     working: ["Working", "bi-gear-fill", "info"],
     alive: ["Alive", "bi-heart-pulse-fill", "ok"],

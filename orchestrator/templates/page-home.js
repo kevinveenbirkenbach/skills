@@ -2,7 +2,7 @@
   const HOME_FETCH = 3000;
   const HOME_MESSAGE = 30000;
   const HOME_MARKS = [['section[aria-label="Recently sent"]', "radio-log"]];
-  const homeView = {dom: null, pins: [], tiles: new Map(), hosts: new Map(), messages: new Map(), drag: null, mark: () => null, touched: false, fetched: {}};
+  const homeView = {dom: null, pins: [], tiles: new Map(), hosts: new Map(), heads: new Map(), messages: new Map(), drag: null, mark: () => null, touched: false, fetched: {}};
   const homeStore = Panels.store(typeof ViewStore === "object" && ViewStore ? ViewStore : Panels.memory(), HOME_PATH);
   const homePins = () => homeView.pins;
   const homeIndex = (key) => homePins().findIndex((pin) => Panels.keyOf(pin) === key);
@@ -515,6 +515,25 @@
     }
   }
 
+  /**
+   * @param {Element} tile the Home tile.
+   * @param {Element|null} slot the controls its panel hands the tile head (homeView.heads), shown between the title and
+   * the open link; null takes the previous ones out.
+   */
+  function homeHeadSlot(tile, slot) {
+    const old = tile.querySelector(".home-head > .home-slot");
+    if (old === slot) {
+      return;
+    }
+    if (old) {
+      old.remove();
+    }
+    if (slot) {
+      slot.classList.add("home-slot");
+      tile.querySelector(".home-open").before(slot);
+    }
+  }
+
   function homeContent(entry, pin) {
     try {
       return entry.render({w: pin.w, h: pin.h});
@@ -535,6 +554,7 @@
     homeSpan(tile, pin);
     tile.querySelector(".home-title").textContent = name;
     homeOpenLink(tile.querySelector(".home-open"), content ? homeLink(pin) : null, name);
+    homeHeadSlot(tile, content ? homeView.heads.get(pin.id) : null);
     const body = tile.querySelector(".home-body");
     const shown = content || homeGone(pin, key);
     if (body.childNodes.length !== 1 || body.firstChild !== shown) {

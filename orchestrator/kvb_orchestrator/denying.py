@@ -15,6 +15,26 @@ NOTED = ("review",)
 DENY_KEYS = ("channel", "reason", "to")
 DENY_CHANNELS = {**DIRECT, **{name: words for name, words in TO_ALL.items() if name != "mayday"}}
 REASON_LIMIT = 2000
+REASONS_SHOWN = 5
+
+
+def recent_reasons(messages: list[dict]) -> list[str]:
+    """Args:
+        messages: the stored messages; a denial's signed item holds its
+            reason.
+
+    Returns:
+        the last REASONS_SHOWN distinct non-empty denial reasons by
+        created_ts, newest first.
+    """
+    recent: list[str] = []
+    for message in sorted(messages, key=lambda message: message["created_ts"], reverse=True):
+        reason = message["denial"]["reason"] if message.get("denial") else ""
+        if reason and reason not in recent:
+            recent.append(reason)
+            if len(recent) == REASONS_SHOWN:
+                break
+    return recent
 
 
 def denial_note(raw: dict, requester: str) -> dict:

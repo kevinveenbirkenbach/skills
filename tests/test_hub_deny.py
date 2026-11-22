@@ -11,7 +11,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import ASK, CLIENT, PAGE, Key, key, signing, verifier
-from kvb_orchestrator import batches, skill_scripts
+from kvb_orchestrator import batches, denying, skill_scripts
 
 PUSH = "git push"
 PLANTED = {"work/a0/claim.json": {"office": "work/a0", "session": "s1", "runtime": "claude", "name": "Villain session", "since": "2026-11-05T08:00:00+00:00", "beat": 0, "work": "x"}}
@@ -106,7 +106,9 @@ class TestHubDeny(HubCase):
         self.assertEqual(sorted(sent[:3] for sent in self.radio()), [["post", "--to", "Skills session"]] * 3)
         self.assertTrue(all("Denied by the operator: " in sent[-1] for sent in self.radio()), self.radio())
         self.assertIn("Denied by the operator: commit feat: deny me", next(sent[-1] for sent in self.radio() if "Reason: rebase first" in sent[-1]))
-        self.assertFalse({ask_id, review_id} & {item["id"] for item in self.snapshot()["inbox"]})
+        state = self.snapshot()
+        self.assertFalse({ask_id, review_id} & {item["id"] for item in state["inbox"]})
+        self.assertEqual(state["reasons"], ["rebase first"])
 
     def test_every_class_but_mayday_reaches_the_agent_or_all(self):
         session = "s9"
@@ -240,6 +242,15 @@ class TestHubDeny(HubCase):
 
     def trust(self) -> verifier.Trust:
         return verifier.Trust(approvers=self.approvers, replay=self.replay / "hook.json", origin=self.origin)
+
+
+class TestRecentReasons(unittest.TestCase):
+    def test_the_last_five_distinct_reasons_come_newest_first(self):
+        said = ["a", "", "b", "a", "c", "d", "e", "f", "c"]
+        denials = [{"denial": {"reason": reason}, "created_ts": float(at)} for at, reason in enumerate(said)]
+        messages = [{"text": "hi", "created_ts": 99.0}, {"denial": None, "created_ts": 98.0}, *reversed(denials)]
+        self.assertEqual(denying.recent_reasons(messages), ["c", "f", "e", "d", "a"])
+        self.assertEqual(denying.recent_reasons([{"text": "hi", "created_ts": 1.0}]), [])
 
 
 if __name__ == "__main__":

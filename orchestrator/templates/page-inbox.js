@@ -185,7 +185,7 @@
     const note = deny
       ? "Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click the passkey signs the whole selection once; then 3 s remain to undo."
       : "Every entry and every full command that gets granted. After the click the passkey signs the whole selection once; then 3 s remain to undo.";
-    openSheet(label, [h("p", {class: "muted"}, note), h("ul", {class: "mini"}, rows), ...(deny ? [h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
+    openSheet(label, [h("p", {class: "muted"}, note), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
     (reason || confirm).focus();
   }

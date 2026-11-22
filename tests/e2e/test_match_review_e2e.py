@@ -18,6 +18,7 @@ from hub_support import iso
 
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/hub-012-shots"))
 FILES = (("src/app.py", 60), ("src/view.js", 30), ("docs/notes.md", 12))
+PATTERNS = ("dots", "stripes", "waves", "grid", "rings")
 CARD = """
   const card = () => document.querySelector("#main .match-card.front");
   const body = () => card() && card().querySelector(".match-body");
@@ -34,7 +35,8 @@ CARD = """
     name: text(card().querySelector(".match-name")), age: text(card().querySelector(".match-age")),
     metrics: all(".match-metric", card()).map((chip) => [chip.dataset.metric, text(chip.querySelector("strong"))]),
     under: Boolean(card().querySelector(".match-metrics")) && card().querySelector(".match-metrics").getBoundingClientRect().top >= card().querySelector(".match-name").getBoundingClientRect().bottom - 1,
-    place: all(".match-place dt", card()).map(text).map((label, index) => [label, text(all(".match-place dd", card())[index])]),
+    place: all(".match-place .match-where", card()).map((chip) => [chip.dataset.place, text(chip), chip.title]),
+    paint: [card().dataset.pattern, card().style.getPropertyValue("--card-hue"), card().style.getPropertyValue("--card-hue-2"), getComputedStyle(card().querySelector(".match-head")).backgroundImage.includes("radial-gradient")],
     files: all(".match-file", card()).map((file) => file.dataset.path), accept: card().closest(".match-stack").querySelector(".match-accept").disabled,
     reason: text(card().querySelector(".match-stale")), peeks: all("#main .match-peek").map((tab) => tab.dataset.card),
     wide: document.documentElement.scrollWidth > window.innerWidth + 1,
@@ -84,7 +86,14 @@ MARK = """(async () => {@HELPERS@@CARD@
   const pressed = await save("long press note");
   const marks = all("tr.match-mark", card()).map((mark) => [mark.dataset.line, text(mark.querySelector(".match-mark-text"))]);
   const marked = all("tr.marked", card()).map((mark) => mark.dataset.line);
-  return {clicked, pressed, marks, marked, count: text(card().querySelector('.match-file[data-path="@FIRST@"] .match-marks'))};
+  const third = row("@FIRST@", 9);
+  third.dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true, clientX: box.left + 40, clientY: box.top + 4, button: 2}));
+  const field = await until(() => card().querySelector(".match-comment textarea"), 3000);
+  const presets = all(".match-comment .reason-chips .chip", card()).map(text);
+  card().querySelector(".match-comment .reason-chips .chip:last-child").click();
+  const preset = [field.value, document.activeElement === field];
+  card().querySelector(".match-comment .btn.ghost").click();
+  return {clicked, pressed, marks, marked, presets, preset, count: text(card().querySelector('.match-file[data-path="@FIRST@"] .match-marks'))};
 })()"""
 PICK = """(async () => {@HELPERS@@CARD@
   const found = await pick("@ID@");
@@ -171,13 +180,19 @@ class TestMatchReview(HubCase):
     def check(self, data: dict, widths: tuple[tuple[int, int], ...]) -> None:
         results = iter(data["results"])
         order = [path for path, _ in FILES]
+        paints = set()
         for width, _ in widths:
             with self.subTest(width=width):
                 stack = next(results)
                 self.assertEqual((stack["card"], stack["kind"], stack["stale"], stack["face"]), (f"review:{self.commit}", "commit", "false", True), stack)
                 self.assertEqual((stack["name"], stack["age"]), ("Skills", "3 days"), stack)
                 self.assertEqual((stack["metrics"], stack["under"]), ([["fix", "95"], ["break", "3"]], True), stack)
-                self.assertEqual(stack["place"], [["Repository", "/repo"], ["Branch", "feature/match"], ["Worktree", "/repo/.worktrees/feature/match"]], stack)
+                place = [["branch", "feature/match", "Branch: feature/match (click copies)"], ["repo", "repo", "Repository: /repo (click copies)"],
+                         ["worktree", ".worktrees/feature/match", "Worktree: /repo/.worktrees/feature/match (click copies)"]]
+                self.assertEqual(stack["place"], place, stack)
+                self.assertIn(stack["paint"][0], PATTERNS, stack)
+                self.assertTrue(stack["paint"][1] and stack["paint"][2] and stack["paint"][3], stack)
+                paints.add(tuple(stack["paint"]))
                 self.assertEqual(stack["files"], order)
                 self.assertEqual(stack["peeks"], ["operator:operator/issue", f"review:{self.stale}"], stack)
                 self.assertFalse(stack["accept"], stack)
@@ -193,6 +208,7 @@ class TestMatchReview(HubCase):
                 self.assertEqual((mark["clicked"], mark["pressed"]), (True, True), mark)
                 self.assertEqual(mark["marks"], [["3", "use the helper here"], ["6", "long press note"]], mark)
                 self.assertEqual(mark["marked"], ["3", "6"], mark)
+                self.assertEqual((mark["presets"], mark["preset"]), (["long press note", "use the helper here"], ["use the helper here", True]), mark)
                 self.assertEqual(mark["count"], "2", mark)
                 command = next(results)
                 self.assertEqual((command["kind"], command["stale"], command["command"], command["why"]), ("command", "false", self.command, "file the release issue"), command)
@@ -202,6 +218,7 @@ class TestMatchReview(HubCase):
                 stale = next(results)
                 self.assertEqual((stale["kind"], stale["stale"], stale["accept"], stale["name"], stale["age"]), ("commit", "true", True, "Stage", "9 days"), stale)
                 self.assertIn("changed", stale["reason"])
+        self.assertEqual(len(paints), 1, paints)
 
     def test_chromium_shows_face_place_files_on_scroll_and_marks_at_three_widths(self):
         data = self.drive(self.steps("chromium", base.WIDTHS), None)

@@ -6,6 +6,29 @@
     return submit([{...entryOf(item, "reject", ""), channel, reason, to: item.to}], `Denial (${CLASSES[channel]}): ${short(item.title)}`);
   }
 
+  /**
+   * @param {HTMLTextAreaElement} field the field the chips fill.
+   * @param {string[]} texts the earlier texts, newest first.
+   * @param {string} label the accessible name of the chip group.
+   * @returns {Node|null} the texts as chips: a press puts its text into the field, which stays editable; null without
+   * texts.
+   */
+  function presetChips(field, texts, label) {
+    if (!texts.length) {
+      return null;
+    }
+    return h("div", {class: "chips reason-chips", role: "group", "aria-label": label}, texts.map((text) => {
+      const chip = h("button", {type: "button", class: "chip", title: text}, short(text));
+      chip.addEventListener("click", () => {
+        field.value = text;
+        field.focus();
+      });
+      return chip;
+    }));
+  }
+
+  const reasonChips = (field) => presetChips(field, state.reasons, "Recent reasons");
+
   function denySheet(item) {
     const name = `deny-${keyOf(item)}`;
     const choices = DENY_CHANNELS.map(([id, direct, hint]) => h("label", {class: "deny-channel"},
@@ -22,6 +45,7 @@
       h("div", {class: "who"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? person(item.agent) : null),
       h("p", {class: "text"}, item.title),
       h("fieldset", {class: "deny-channels"}, h("legend", {}, "Channel"), choices),
+      reasonChips(reason),
       h("label", {class: "deny-reason"}, "Reason (optional, the agent reads it too)", reason),
       h("p", {class: "muted"}, "The passkey signs the denial with channel, recipient and reason; then 3 s remain to undo it.",
         " Mayday stays reserved for the operator."),

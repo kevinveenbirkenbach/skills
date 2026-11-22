@@ -9,6 +9,8 @@
   const FEEDBACK_LIMIT = 2000;
   const FLY_MS = 400;
   const CONFETTI = 28;
+  const COMMENTS_KEPT = 5;
+  const PATTERNS = ["dots", "stripes", "waves", "grid", "rings"];
   const matchView = {cards: null, order: [], marks: new Map(), opened: new Map(), decisions: new Map(), overview: false, front: null, drag: null, dom: null, sig: "", fetched: 0, loading: false, press: null, flying: false, openBefore: 0, epoch: 0};
 
   /**
@@ -60,6 +62,20 @@
   }
 
   const cardKey = (card) => `${card.id}@${card.hash}`;
+
+  /**
+   * @returns {string[]} this browser's last COMMENTS_KEPT distinct saved line comments, newest first.
+   */
+  function savedComments() {
+    const kept = stored(STORE.comments, []);
+    return Array.isArray(kept) ? kept.filter((text) => typeof text === "string" && text).slice(0, COMMENTS_KEPT) : [];
+  }
+
+  const peeksShown = () => stored(STORE.peeks, true) !== false;
+
+  function rememberComment(text) {
+    keep(STORE.comments, [text, ...savedComments().filter((old) => old !== text)].slice(0, COMMENTS_KEPT));
+  }
 
   function marksOf(card) {
     const key = cardKey(card);
@@ -153,11 +169,13 @@
         return;
       }
       marksOf(data).push({path: file.dataset.path, line: Number(row.dataset.line), comment: words.value.trim()});
+      rememberComment(words.value.trim());
       drawMatch(true);
     }}}, icon("bi-bookmark-fill"), "Save");
     const cancel = h("button", {type: "button", class: "btn small ghost", ...named("Cancel"), on: {click: () => closeComment(article)}}, "Cancel");
     const columns = row.children.length;
-    const field = h("tr", {class: "match-comment"}, h("td", {colspan: columns}, h("div", {class: "match-comment-box"}, h("code", {}, `${file.dataset.path}:${row.dataset.line}`), words, h("div", {class: "actions"}, cancel, save))));
+    const field = h("tr", {class: "match-comment"}, h("td", {colspan: columns}, h("div", {class: "match-comment-box"}, h("code", {}, `${file.dataset.path}:${row.dataset.line}`),
+      presetChips(words, savedComments(), "Recent comments"), words, h("div", {class: "actions"}, cancel, save))));
     row.after(field);
     words.focus();
   }
@@ -201,6 +219,47 @@
     article.addEventListener("pointercancel", drop);
   }
 
+  /**
+   * @param {string} worktree the card's worktree path.
+   * @param {string} repo the card's repository path.
+   * @returns {string} the worktree below the repository relative to it, the repository itself as "checkout", any
+   * other path as its last three folders.
+   */
+  function worktreeWords(worktree, repo) {
+    if (repo && worktree === repo) {
+      return "checkout";
+    }
+    if (repo && worktree.startsWith(`${repo}/`)) {
+      return worktree.slice(repo.length + 1);
+    }
+    const parts = worktree.split("/").filter(Boolean);
+    return parts.length > 3 ? `…/${parts.slice(-3).join("/")}` : worktree;
+  }
+
+  function placeChip(place, iconName, label, value, words) {
+    const full = revealed(value);
+    const chip = h("button", {type: "button", class: "match-where", "data-place": place, title: `${label}: ${full} (click copies)`, "aria-label": `${label}: ${full}, click copies`},
+      icon(iconName), h("span", {}, revealed(words)));
+    chip.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(value);
+        toast(`Copied ${label.toLowerCase()}`, [full], true);
+      } catch {
+        toast("Not copied", ["The browser refused the clipboard."], false);
+      }
+    });
+    return chip;
+  }
+
+  function placeRow(card) {
+    const chips = [
+      card.branch ? placeChip("branch", "bi-git", "Branch", card.branch, card.branch) : null,
+      card.repo ? placeChip("repo", "bi-folder2", "Repository", card.repo, card.repo.split("/").filter(Boolean).pop() || card.repo) : null,
+      card.worktree ? placeChip("worktree", "bi-diagram-2", "Worktree", card.worktree, worktreeWords(card.worktree, card.repo)) : null,
+    ].filter(Boolean);
+    return chips.length ? h("div", {class: "match-place", "aria-label": "Place"}, chips) : null;
+  }
+
   function matchHead(card) {
     const [kindName, kindTone, kindIcon] = MATCH_KINDS[card.kind] || [card.kind, "neutral", "bi-collection"];
     const metrics = card.metrics || [];
@@ -210,7 +269,7 @@
         h("span", {"aria-hidden": "true"}, metric.emoji), h("span", {class: "match-metric-label"}, metric.label), h("strong", {}, revealed(metric.value))))) : null,
       h("div", {class: "states"}, h("span", {class: "pill", "data-tone": kindTone}, icon(kindIcon), kindName), card.gate ? pill(`gate ${card.gate}`, card.gate === "pass" ? "ok" : "bad") : null,
         card.score && !metrics.length ? h("span", {class: "pill", "data-tone": "neutral"}, revealed(card.score)) : null, card.stale ? h("span", {class: "pill match-stale-pill", "data-tone": "bad"}, icon("bi-hourglass-split"), "stale") : null),
-      h("dl", {class: "meta match-place"}, [["Repository", card.repo], ["Branch", card.branch], ["Worktree", card.worktree]].map(([label, value]) => h("div", {}, h("dt", {}, label), h("dd", {}, h("code", {title: value ? revealed(value) : null}, revealed(dash(value))))))),
+      placeRow(card),
       h("h2", {class: "match-title"}, revealed(card.title)),
       card.stale ? h("p", {class: "match-stale"}, icon("bi-exclamation-triangle"), revealed(card.stale_reason)) : null);
   }
@@ -247,6 +306,18 @@
       card.reason && card.reason !== "-" ? h("p", {class: "match-reason"}, revealed(card.reason)) : null, preview);
   }
 
+  /**
+   * @param {HTMLElement} article the card.
+   * @param {string} id the card id; the same id always gets the same two hues and pattern, so a redraw never flickers.
+   */
+  function paint(article, id) {
+    const seed = Faces.hash(id);
+    const hue = seed % 360;
+    article.style.setProperty("--card-hue", String(hue));
+    article.style.setProperty("--card-hue-2", String((hue + 40 + ((seed >>> 9) % 100)) % 360));
+    article.dataset.pattern = PATTERNS[(seed >>> 17) % PATTERNS.length];
+  }
+
   function matchCard(card) {
     const files = card.files || [];
     const none = card.kind === "commit" ? "No diff shipped with this stage." : card.kind === "ask" ? "Its tool call changes no file." : card.merge ? (card.merge.error ? "No diff to show." : "The merge brings no change.") : "Its command names no file.";
@@ -256,6 +327,7 @@
     const article = h("article", {class: "card match-card front", "data-card": card.id, "data-kind": card.kind, "data-stale": String(Boolean(card.stale)), "aria-label": `${card.kind} card of ${card.agent || "an agent"}`},
       matchHead(card), body);
     article.style.setProperty("--agent-hue", String(Faces.hash(card.agent) % 360));
+    paint(article, card.id);
     markable(article, card);
     window.setTimeout(() => openOnScroll(body, ".match-file"), 0);
     return article;
@@ -365,7 +437,7 @@
       decide(card, "reject", words.value.trim(), "");
     });
     const note = `${card.agent || "The agent"} gets this text by radio call at the release; nothing is sent before.`;
-    openSheet(`Reject: ${card.title}`, [h("p", {class: "muted"}, note), words, h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
+    openSheet(`Reject: ${card.title}`, [h("p", {class: "muted"}, note), reasonChips(words), words, h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
     words.focus();
   }
 
@@ -531,12 +603,16 @@
       matchView.overview = true;
       drawMatch(true);
     }}}, icon("bi-card-checklist"), tally);
-    matchView.dom = {stack, count, decisions, tally};
+    const peeks = h("button", {type: "button", class: "btn small soft match-peeks-toggle", "aria-pressed": String(peeksShown()), ...named("Next cards", "Next cards: show or hide the row of waiting cards below the buttons"), on: {click: () => {
+      keep(STORE.peeks, !peeksShown());
+      drawMatch(true);
+    }}}, icon("bi-collection"));
+    matchView.dom = {stack, count, decisions, tally, peeks};
     matchView.sig = "";
     if (matchView.drag) {
       matchView.drag.end();
     }
-    const bar = h("div", {class: "card controls task-toolbar", role: "toolbar", "aria-label": "Match"}, h("strong", {}, icon("bi-stack"), "Match"), count, h("span", {class: "spacer"}), decisions,
+    const bar = h("div", {class: "card controls task-toolbar", role: "toolbar", "aria-label": "Match"}, h("strong", {}, icon("bi-stack"), "Match"), count, h("span", {class: "spacer"}), decisions, peeks,
       iconBtn("bi-list-check", "Tasks", "btn small soft", () => go("tasks", null), "Tasks: back to the task list"), h("span", {"data-star-slot": ""}));
     fetchMatch();
     return h("div", {class: "graph tasks match", "data-panel": "tasks/match"}, bar, stack);
@@ -544,7 +620,7 @@
 
   /**
    * @returns {Element} the Match stack for a Home tile, kept while it still holds the live stack, without the
-   * data-panel and star slot of the screen.
+   * data-panel and toolbar of the screen: its card count and decisions button go to the tile head.
    */
   function homeMatch() {
     const kept = homeView.hosts.get("tasks/match");
@@ -553,7 +629,8 @@
     }
     const host = h("div", {class: "match-home"}, matchScreen());
     host.querySelectorAll("[data-panel]").forEach((node) => node.removeAttribute("data-panel"));
-    host.querySelectorAll("[data-star-slot]").forEach((node) => node.removeAttribute("data-star-slot"));
+    host.querySelector(".task-toolbar").remove();
+    homeView.heads.set("tasks/match", h("div", {role: "toolbar", "aria-label": "Match"}, matchView.dom.count, matchView.dom.decisions, matchView.dom.peeks));
     homeView.hosts.set("tasks/match", host);
     window.setTimeout(() => drawMatch(true), 0);
     return host;
@@ -590,6 +667,7 @@
     matchView.openBefore = open.length;
     dom.count.textContent = open.length === 1 ? "1 card waits" : `${open.length} cards wait`;
     dom.tally.textContent = String(matchView.decisions.size);
+    dom.peeks.setAttribute("aria-pressed", String(peeksShown()));
     dom.decisions.hidden = !matchView.decisions.size || shownOverview;
     if (!cards.length) {
       matchView.front = null;
@@ -613,7 +691,7 @@
     const accept = act("match-accept", "bi-check-lg", "Accept", revealed(hint), Boolean(front.stale) || (front.kind === "decision" && !front.recommended), () => acceptCard(front));
     const reject = act("match-reject", "bi-x-lg", "Reject", pickOnly(front) ? "Reject: a choice is answered with one of its options" : "Reject with feedback (left arrow, swipe left)", pickOnly(front), () => rejectCard(front));
     const later = act("match-later", "bi-arrow-up", "Later", "Later: to the back of the stack (up arrow, swipe up)", !rest.length, () => laterCard(front));
-    const peeks = rest.length ? h("div", {class: "match-peeks", role: "group", "aria-label": `${rest.length} more cards`}, rest.map(peekTab)) : null;
+    const peeks = rest.length && peeksShown() ? h("div", {class: "match-peeks", role: "group", "aria-label": `${rest.length} more cards`}, rest.map(peekTab)) : null;
     const behind = rest.slice(0, MATCH_PEEKS).map((card, index) => {
       const sheet = h("div", {class: "match-behind", "aria-hidden": "true"});
       sheet.style.setProperty("--depth", String(index + 1));
@@ -624,6 +702,6 @@
     const shown = matchCard(front);
     shown.dataset.fresh = String(!before || before.dataset.card !== front.id);
     draggable(shown, front);
-    dom.stack.replaceChildren(peeks || h("div", {class: "match-peeks"}), h("div", {class: "match-deck"}, behind, shown), h("div", {class: "match-actions"}, reject, later, accept));
+    dom.stack.replaceChildren(h("div", {class: "match-deck"}, behind, shown), h("div", {class: "match-actions"}, reject, later, accept), peeks);
     shown.querySelector(".match-body").scrollTop = scrolled;
   }
