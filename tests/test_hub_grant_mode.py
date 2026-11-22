@@ -72,7 +72,7 @@ let renders = 0;
 let streams = 0;
 let signing = false;
 proofFor = async (entries) => { proofs.push(entries.map((entry) => entry.kind + ":" + entry.id)); sent.push(entries.map((entry) => entry.label)); return signing ? {proof: "p"} : null; };
-sendJson = async () => ({ok: true, data: {id: `b${proofs.length}`, due: 0}});
+sendJson = async () => ({ok: true, data: {id: \`b\${proofs.length}\`, due: 0}});
 undoToast = () => {};
 acceptRule = async (item) => { accepts.push(item.id); return true; };
 openSheet = (title, body) => { sheets.push(body); };
@@ -83,7 +83,7 @@ toast = () => ({remove() {}});
 const results = {};
 const take = () => ({selected: [...ui.selected].sort(), proofs: proofs.splice(0), labels: sent.splice(0), accepts: accepts.splice(0), renders, streams});
 const dialogOf = (item) => { const made = choiceOf(item, () => {}); return Array.isArray(made) ? made[1] : made; };
-const option = (item, label) => buttons(dialogOf(item)).find((button) => (button.getAttribute("title") || "").startsWith(`${label}: `));
+const option = (item, label) => buttons(dialogOf(item)).find((button) => (button.getAttribute("title") || "").startsWith(\`\${label}: \`));
 const pressedOptions = (item) => buttons(dialogOf(item)).filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("title").split(": ")[0]);
 const press = (item) => {
   const first = actionsFor(item)[0];

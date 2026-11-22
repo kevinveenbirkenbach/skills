@@ -20,7 +20,7 @@
    * @param {Object} item a batchable inbox item.
    * @returns {string} the label its grant carries: the picked option, else a decision's recommendation, else "".
    */
-  function labelOf(item) {
+  function grantLabel(item) {
     const label = chosenLabel(item);
     if (label !== undefined) {
       return label;

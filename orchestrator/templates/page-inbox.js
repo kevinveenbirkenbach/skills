@@ -138,13 +138,13 @@
    */
   const choiceOf = (item, after) => {
     if (item.kind === "decision") {
-      return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? labelOf(item) : "", locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT});
+      return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? grantLabel(item) : "", locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT});
     }
     if (item.kind === "ask") {
       return choiceDialog(askDialog(item.id), {pick: (answer, typed) => { after(); answerAsk(item, answer, typed); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? ALLOW : "", locked: item.held, hint: `your passkey signs it, the answer goes to ${item.to || "its session"}`, group: "", other: TELL});
     }
     const told = answerOf(item);
-    const shown = told || (ui.selected.has(keyOf(item)) ? labelOf(item) : "");
+    const shown = told || (ui.selected.has(keyOf(item)) ? grantLabel(item) : "");
     return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerPick(item, label); }, toggled: new Set(), chosen: shown, locked: item.held || Boolean(told), hint: signsFor(item), group: "", other: OTHER_PROMPT})] : null;
   };
 
@@ -186,7 +186,7 @@
       return;
     }
     const rows = [...usable, ...alone].map((item) => h("li", {},
-      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), !deny && labelOf(item) ? h("span", {class: "muted"}, revealed(`→ ${shownPick(labelOf(item))}`)) : null),
+      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), !deny && grantLabel(item) ? h("span", {class: "muted"}, revealed(`→ ${shownPick(grantLabel(item))}`)) : null),
       h("strong", {}, revealed(item.title)),
       item.kind === "operator" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null,
       item.kind === "operator" ? h("span", {class: "muted"}, revealed(`in ${item.directory}`)) : null,
@@ -201,7 +201,7 @@
         }
       }
       if (usable.length) {
-        await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", labelOf(item)))), `${label}: ${usable.length} entries`);
+        await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", grantLabel(item)))), `${label}: ${usable.length} entries`);
       }
     });
     openSheet(label, [h("p", {class: "muted"}, deny ? DENY_NOTE : grantNote(alone.length, usable.length)), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
