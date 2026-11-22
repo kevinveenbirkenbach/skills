@@ -12,11 +12,13 @@ from pathlib import Path
 RP_ID = "localhost"
 VERSION = 1
 LIFETIME = 900
+REVIEW_LIFETIME = 7200
 RULE_LIFETIME = 366 * 86400
 ALGORITHMS = {-7: "ES256", -8: "EdDSA", -257: "RS256"}
 HASH = re.compile(r"[0-9a-f]{64}")
 NONCE = re.compile(r"[0-9a-f]{32}")
 ID = re.compile(r"[0-9a-f]{16}")
+VERIFY_STEP = re.compile(r"approval\.py verify(?=[^;&|]*--port (?P<port>[0-9]+))(?=[^;&|]*--review (?P<review>[0-9a-f]{16}))")
 CHAINED = re.compile(r"[;&|`$<>()\n\r]")
 OFFICE = re.compile(r"chair|[a-z0-9][a-z0-9._-]{0,63}/[a-z0-9][a-z0-9._-]{0,63}")
 SESSION = re.compile(r"(?!-)[A-Za-z0-9_-]{1,128}")
@@ -108,6 +110,15 @@ def ask_item(ask_id: str, tool: str, command: str, cwd: str, session: str) -> di
 
 def review_item(review_id: str, repo: str, worktree: str, branch: str, tree: str) -> dict:
     return {"kind": "review", "id": review_id, "repo": repo, "worktree": worktree, "branch": branch, "tree": tree}
+
+
+def verified_reviews(command: str) -> list[str]:
+    """Returns:
+        The review ids the approval.py verify steps of an operator command
+        check, in order and each once: a commit row whose run needs them
+        approved first.
+    """
+    return list(dict.fromkeys(step["review"] for step in VERIFY_STEP.finditer(command)))
 
 
 def operator_item(task: str, command: str, directory: str) -> dict:
@@ -755,7 +766,17 @@ def expiry(value: object, now: float, cap: int) -> int:
     return value
 
 
-def checked_approval(payload: object, now: float) -> dict:
+def lifetime(items: list[dict]) -> int:
+    """Returns:
+        How long an approval of items may live: REVIEW_LIFETIME when every
+        item is a review, whose approval names one exact tree and is used
+        once at the commit, so a commit row may run well after the clicks;
+        LIFETIME for any other mix.
+    """
+    return REVIEW_LIFETIME if items and all(item.get("kind") == "review" for item in items) else LIFETIME
+
+
+def checked_approval(payload: object, now: float, cap: int) -> dict:
     if not isinstance(payload, dict) or set(payload) != APPROVAL_KEYS or payload["v"] != VERSION or payload["kind"] != "approve":
         raise Refused("the payload is no approval")
     items = payload["items"]
@@ -763,7 +784,7 @@ def checked_approval(payload: object, now: float) -> dict:
         raise Refused("the approval lists no item hashes")
     if not isinstance(payload["nonce"], str) or not NONCE.fullmatch(payload["nonce"]):
         raise Refused("the approval holds no nonce")
-    expiry(payload["expires"], now, LIFETIME)
+    expiry(payload["expires"], now, cap)
     return payload
 
 

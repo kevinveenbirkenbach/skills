@@ -158,6 +158,26 @@
   const denialOf = (item, reason) => ({...entryOf(item, "reject", ""), channel: "post", reason, to: item.to});
   const pickable = (item) => !item.held && (collectable(item) || deniable(item));
 
+  const unsettled = (item) => item.reviews.filter((review) => review.status !== "approved");
+
+  /**
+   * @param {Object[]} items the entries to grant.
+   * @returns {Object[]} items after the pending reviews that their commit rows verify and that are not among them yet.
+   */
+  function withReviews(items) {
+    const keys = new Set(items.map(keyOf));
+    const linked = new Set(items.flatMap((item) => unsettled(item).map((review) => review.id)));
+    return [...state.inbox.filter((entry) => entry.kind === "review" && linked.has(entry.id) && !entry.held && !keys.has(keyOf(entry))), ...items];
+  }
+
+  const DENY_NOTE = "Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click the passkey signs the whole selection once; then 3 s remain to undo.";
+
+  function grantNote(alone, batched) {
+    const solos = alone ? ` Each rule and each red-gate review first asks its own signature, one after the other (${alone}).` : "";
+    const rest = batched ? ` ${alone ? "Then the" : "The"} passkey signs the rest once, commit rows settling after the reviews they verify.` : "";
+    return `Every entry and every full command that gets granted.${solos}${rest} Each signature leaves 3 s to undo.`;
+  }
+
   function bulk(items, label, deny) {
     const usable = items.filter(deny ? deniable : batchable);
     const alone = deny ? [] : items.filter(solo);
@@ -175,19 +195,16 @@
     const reason = deny ? h("textarea", {class: "field", maxlength: DENY_REASON, rows: 3, placeholder: "e.g. make the gate green first"}) : null;
     confirm.addEventListener("click", async () => {
       closeSheet();
-      if (usable.length && !(await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", labelOf(item)))), `${label}: ${usable.length} entries`))) {
-        return;
-      }
       for (const item of alone) {
         if (!(await grantSolo(item))) {
           return;
         }
       }
+      if (usable.length) {
+        await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", labelOf(item)))), `${label}: ${usable.length} entries`);
+      }
     });
-    const note = deny
-      ? "Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click the passkey signs the whole selection once; then 3 s remain to undo."
-      : `Every entry and every full command that gets granted. After the click the passkey signs the whole selection once; then 3 s remain to undo.${alone.length ? ` Each rule and each red-gate review then asks its own signature, one after the other (${alone.length}).` : ""}`;
-    openSheet(label, [h("p", {class: "muted"}, note), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
+    openSheet(label, [h("p", {class: "muted"}, deny ? DENY_NOTE : grantNote(alone.length, usable.length)), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
     (reason || confirm).focus();
   }
@@ -202,7 +219,7 @@
     const grantable = chosen.filter(collectable);
     return {
       chosen,
-      grant: h("button", {type: "button", class: "btn small primary", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(chosen, "Grant selection", false)}}, icon("bi-check2-square"), `Grant ${grantable.length}`),
+      grant: h("button", {type: "button", class: "btn small primary", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(withReviews(chosen), "Grant selection", false)}}, icon("bi-check2-square"), `Grant ${grantable.length}`),
       deny: h("button", {type: "button", class: "menu-item danger", ...named(`Deny selection (${denials.length})`, `Deny selection (${denials.length}): each requester gets its denial and an optional reason by post, one passkey signature, 3 s to undo`), disabled: !denials.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), `Deny ${denials.length}`),
       green: h("button", {type: "button", class: "menu-item", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), `Grant all green ${green.length}`),
     };
@@ -238,6 +255,26 @@
     }
   }
 
+  function reviewsPill(item) {
+    if (!item.reviews.length) {
+      return null;
+    }
+    const waiting = unsettled(item).length;
+    return pill(`reviews ${item.reviews.length - waiting}/${item.reviews.length} approved`, waiting ? "neutral" : "ok");
+  }
+
+  function runButton(item) {
+    const waiting = unsettled(item);
+    if (!waiting.length) {
+      return iconBtn("bi-play-fill", "Run", "btn small primary", () => approveOne(item));
+    }
+    const stuck = waiting.some((review) => review.status !== "pending");
+    const why = stuck
+      ? "A review its commit verifies is rejected or unknown to this hub: the run would fail at its verify step"
+      : `Approve the ${waiting.length} reviews its commit verifies, then run it: each red-gate review asks its own signature, the rest goes with the row in one`;
+    return h("button", {type: "button", class: "btn small primary", ...named(`Approve ${waiting.length} and run`, why), disabled: stuck || ui.busy, on: {click: () => (collecting(item) ? collect(item) : bulk(withReviews([item]), "Approve and run", false))}}, icon("bi-play-fill"), `Approve ${waiting.length} and run`);
+  }
+
   function actionsFor(item) {
     if (item.held) {
       return [h("span", {class: "muted"}, "takes effect …")];
@@ -250,7 +287,7 @@
     } else if (item.kind === "decision" && item.recommended) {
       grant(h("button", {type: "button", class: "btn small primary", ...named(revealed(`Recommendation: ${shownPick(item.recommended)}`)), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), revealed(shownPick(item.recommended))));
     } else if (item.kind === "operator" && item.runnable) {
-      grant(iconBtn("bi-play-fill", "Run", "btn small primary", () => approveOne(item)));
+      grant(runButton(item));
     } else if (item.kind === "rule") {
       grant(h("button", {type: "button", class: "btn small primary", ...named("Accept", "Accept: the passkey signs exactly this rule, then it applies"), on: {click: () => approveOne(item)}}, icon("bi-shield-check"), "Accept"));
     }
@@ -279,6 +316,7 @@
         asked(item) ? pill("Decision", KIND_TONES.decision) : pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
         answerOf(item) ? pill(revealed(`answered: ${answerOf(item)}`), "ok") : null,
         item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
+        reviewsPill(item),
         item.warnings.map((warning) => pill(warning, "bad")),
         item.pinned ? pill("pinned", "violet") : null,
         item.until ? pill(`until ${absolute.format(stampOf(item.until))}`, "neutral") : null),

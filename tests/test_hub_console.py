@@ -8,7 +8,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import HUB
-from kvb_orchestrator import batches, skill_scripts
+from kvb_orchestrator import batches, jobs, skill_scripts
 
 COMMAND = "echo hi"
 DIGEST = hashlib.sha256(COMMAND.encode()).hexdigest()
@@ -28,6 +28,29 @@ class TestHubConsole(HubCase):
 
     def dismiss(self, payload: object, headers: dict[str, str]) -> int:
         return self.post_json("/api/inbox/dismiss", payload, headers)[0]
+
+    def test_a_commit_row_lists_the_reviews_it_verifies_and_queues_its_job_only_after_them(self):
+        self.claim("s1", "Skills session")
+        review = self.request("feat: x", "notes")
+        command = f"python3 approval.py verify --port 8737 --review {review} --gate pass && python3 approval.py verify --port 8737 --review {'f' * 16} --gate pass && git commit -m x"
+        row = {"title": command, "workdir": str(self.outside), "description": "commit", "check": "manual", "status": "queued", "roles": {"Operator": "R", "Skills session": "A"}}
+        self.write_council({"rasci.json": {"operator/commit": row}})
+        self.assertEqual(self.item("operator/commit")["reviews"], [{"id": review, "status": "pending", "gate": "pass"}, {"id": "f" * 16, "status": "unknown", "gate": ""}])
+        self.assertEqual(self.item(review)["reviews"], [])
+        seen = []
+        queue = jobs.Jobs.queue_job
+
+        def spy(hub, item, proof):
+            seen.append(hub.reviews.get(review)["status"])
+            return queue(hub, item, proof)
+
+        signer = self.pin()
+        entries = [self.entry("operator", "operator/commit", "", hashlib.sha256(command.encode()).hexdigest()), self.entry("review", review, "", "")]
+        with mock.patch.object(batches, "UNDO", 0.05), mock.patch.object(jobs.Jobs, "queue_job", spy):
+            self.assertEqual(self.approve(entries, self.signed(entries, signer))[0], 202)
+            self.settle(lambda: self.item("operator/commit")["job"] is not None)
+        self.assertEqual(seen, ["approved"])
+        self.assertEqual(self.item("operator/commit")["reviews"][0]["status"], "approved")
 
     def test_the_job_console_stays_under_the_command_until_the_row_is_dismissed(self):
         self.claim("s1", "Skills session")

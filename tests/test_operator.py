@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import http.server
 import json
 import os
 import pty
 import select
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import termios
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -380,6 +383,55 @@ class TestOperator(unittest.TestCase):
         self.assertIn("skipped operator/second", out)
         self.assertNotIn("\x1b", out)
         self.assertEqual(self._open(), ["operator/second"])
+
+    def test_run_skips_a_commit_row_while_a_review_it_verifies_is_unapproved_or_the_hub_is_silent(self):
+        statuses = {"a" * 16: "pending", "b" * 16: "approved"}
+
+        class Hub(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                review = self.path.rsplit("/", 1)[-1]
+                if review == "c" * 16:
+                    self.send_response(302)
+                    self.send_header("Location", f"/api/reviews/{'b' * 16}")
+                    self.end_headers()
+                    return
+                guarded = self.headers.get("X-Kvb-Orchestrator") == "1"
+                body = json.dumps({"status": statuses.get(review) if guarded else "approved"}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_):
+                return
+
+        hub = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Hub)
+        self.addCleanup(hub.server_close)
+        threading.Thread(target=hub.serve_forever, daemon=True).start()
+        self.addCleanup(hub.shutdown)
+        silent = socket.socket()
+        silent.bind(("127.0.0.1", 0))
+        dead = silent.getsockname()[1]
+        silent.close()
+        port = hub.server_address[1]
+        work = self.base / "work"
+        work.mkdir()
+        rows = {"pending": (port, "a"), "huge": (65536 + port, "b"), "approved": (port, "b"), "offline": (dead, "b"), "redirect": (port, "c")}
+        for slug, (target, letter) in rows.items():
+            self._add(slug, work, f"true approval.py verify --port {target} --review {letter * 16} && touch ran-{slug}", "commit", "manual")
+        missing = self._feed("")
+        self.assertIn("waits operator/approved: the hub does not answer about the reviews its commit verifies, or", missing.stdout)
+        client = self.home / ".local" / "share" / "kvb-orchestrator" / "client"
+        client.mkdir(parents=True)
+        shutil.copy(REPO_ROOT / "orchestrator" / "client" / "hub_api.py", client / "hub_api.py")
+        result = self._feed("y\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sorted(path.name for path in work.iterdir()), ["ran-approved"])
+        self.assertIn(f"waits operator/pending: 1 reviews its commit verifies are not approved yet ({'a' * 16})", result.stdout)
+        self.assertIn("waits operator/offline: the hub does not answer", result.stdout)
+        self.assertIn("waits operator/redirect: the hub does not answer", result.stdout)
+        self.assertIn("waits operator/huge: the hub does not answer", result.stdout)
+        self.assertEqual(sorted(self._open()), ["operator/huge", "operator/offline", "operator/pending", "operator/redirect"])
 
     def test_run_colors_only_on_a_terminal_without_no_color(self):
         self._add("go", self.base, "true", "runnable", "manual")

@@ -27,7 +27,7 @@ const document = {
   createElement: () => new El(), createElementNS: () => new El(),
 };
 const now = 1_800_000_000;
-const base = {agent: "Store", to: "Store", detail: "", green: false, gate: "", score: "", warnings: [], options: [], recommended: "", command: "", directory: "/repo", sha256: "s", runnable: true, deniable: true, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now};
+const base = {agent: "Store", to: "Store", detail: "", green: false, gate: "", score: "", warnings: [], options: [], recommended: "", command: "", directory: "/repo", sha256: "s", runnable: true, deniable: true, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now, reviews: []};
 const row = (id, command, extra) => ({...base, kind: "operator", id, title: command, command, ...extra});
 const items = {
   gone: row(GONE, "git merge --no-ff --no-verify -F msg"),

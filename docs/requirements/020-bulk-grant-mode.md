@@ -23,10 +23,13 @@ pass.
    and every option pick toggles its item into one shared selection
    (pressed state): inbox rows, Home, stream rows, the review sheet and the
    key `a`. A decision or decision row keeps the option picked for it;
-   picking the same option again takes it out. Grant n signs every
-   batchable item under one passkey signature, then asks one more
+   picking the same option again takes it out. Grant n first asks one
    signature per rule request and per red-gate review, one after the
-   other, since the server accepts neither inside a batch. Deny always
+   other, since the server accepts neither inside a batch, then signs
+   every batchable item under one passkey signature. A commit row brings
+   the pending reviews its `approval.py verify` steps check along, and
+   the server settles it after them, so it runs only once they are
+   approved (operator 2026-11-20: approve-and-run). Deny always
    acts at once with its reason; the Match deck and the palette keep their
    own confirmed release. Rejected: a unified tray where denials collect
    too; rules, red-gate reviews and option picks acting directly in Select
@@ -103,7 +106,8 @@ flowchart TD
 - [ ] Unit: view store validation of `approval.mode`; page vm: a grant in
       Select toggles `ui.selected` without a post, a grant in Direct posts,
       an option pick collects with its label, a rule and a red-gate review
-      collect and get their own signature after the batch, the tray counts.
+      collect and get their own signature before the batch, a commit row
+      grants the reviews it verifies first, the tray counts.
 - [ ] Integration: n/a: the server and the signing path stay unchanged
       (decision 6).
 - [ ] E2E: Chromium and Firefox at 1920, 1366 and 390: the continuous diff

@@ -85,7 +85,7 @@ def shown(templates: Path, calls: list[list[object]], globals_: dict | None = No
 
 
 def item(kind: str, **fields: object) -> dict:
-    base = {"kind": kind, "id": "0123456789abcdef", "title": "Bash: make test", "command": "", "directory": "", "agent": "Skills", "to": "Skills", "ts": 1_800_000_000, "warnings": [], "options": [], "recommended": "", "held": False, "until": 0, "pinned": False, "diff": None, "job": None, "rule": None, "detail": "", "green": False, "gate": "", "score": "", "runnable": True, "deniable": True, "sha256": ""}
+    base = {"kind": kind, "id": "0123456789abcdef", "title": "Bash: make test", "command": "", "directory": "", "agent": "Skills", "to": "Skills", "ts": 1_800_000_000, "warnings": [], "options": [], "recommended": "", "held": False, "until": 0, "pinned": False, "diff": None, "job": None, "rule": None, "detail": "", "green": False, "gate": "", "score": "", "runnable": True, "deniable": True, "sha256": "", "reviews": []}
     return {**base, **fields}
 
 

@@ -95,7 +95,7 @@ class Approving:
         credentials = [key["id"] for key in self.keys()]
         if not items:
             return {"payload": None, "challenge": None, "credentials": credentials}
-        request = signing.approval_payload([signing.item_hash(item) for item in items], secrets.token_hex(16), int(time.time()) + signing.LIFETIME)
+        request = signing.approval_payload([signing.item_hash(item) for item in items], secrets.token_hex(16), int(time.time()) + signing.lifetime(items))
         return {"payload": request, "challenge": signing.challenge(request), "credentials": credentials}
 
     def operator_proven(self, proof: object, item: dict) -> dict:
@@ -147,7 +147,7 @@ class Approving:
             raise ToolError("not signed: an approval of an ask, review, choice or operator command needs the passkey signature")
         expect(proof, ("payload", "assertion"))
         try:
-            payload = signing.checked_approval(proof["payload"], now)
+            payload = signing.checked_approval(proof["payload"], now, signing.lifetime(signed))
         except signing.Refused as error:
             raise ToolError(f"proof: {error}") from None
         if not isinstance(proof["assertion"], dict) or any(signing.item_hash(item) not in payload["items"] for item in signed):
@@ -171,7 +171,12 @@ class Approving:
         self.log.add({"kind": "rule", "title": f"Rule grants: {item['title']}", "text": words, "ref": {"rule": rule["id"], "batch": batch["id"], "item": item["id"]}})
 
     def apply(self, batch: dict) -> None:
-        for item in batch["items"]:
+        """Args:
+            batch: settled item by item; operator rows after every other
+                item, so a commit row's job never starts before the reviews
+                its verify steps check are decided.
+        """
+        for item in sorted(batch["items"], key=lambda item: item["kind"] == "operator"):
             try:
                 outcome = self.settle_item(item, batch["proof"] if item["signed"] is not None else None)
             except (OSError, ToolError) as error:

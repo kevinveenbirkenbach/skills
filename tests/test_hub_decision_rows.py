@@ -34,7 +34,7 @@ const document = {
   createElement: (tag) => new El(tag), createElementNS: (ns, tag) => new El(tag),
 };
 const now = 1_800_000_000;
-const base = {agent: "Stage 2.0", to: "Stage 2.0", detail: "", green: false, gate: "", score: "", warnings: [], options: [], recommended: "", check: "", command: "", directory: "/repo", sha256: "s", runnable: false, deniable: true, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now};
+const base = {agent: "Stage 2.0", to: "Stage 2.0", detail: "", green: false, gate: "", score: "", warnings: [], options: [], recommended: "", check: "", command: "", directory: "/repo", sha256: "s", runnable: false, deniable: true, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now, reviews: []};
 const question = "decide: keep or remove the donation section";
 const options = [{label: "Keep", description: "the section ships with the IAM PR"}, {label: "Remove", description: "drop it before the PR"}];
 const items = {

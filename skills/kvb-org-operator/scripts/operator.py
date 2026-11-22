@@ -47,8 +47,11 @@ Args:
         directory, command, reason and check in a label column (control
         characters made visible; on a terminal values wrap under their
         column, and unless NO_COLOR is set the separator is bold, labels dim,
-        the command bold cyan and preview commands yellow), then a preview
-        of what the command changes, its output indented, and asks [y]es /
+        the command bold cyan and preview commands yellow). A commit row
+        whose approval.py verify steps name a review the Agent Orchestrator
+        on their --port does not hold approved, or whose hub does not
+        answer, is skipped with the reason and stays open (unready()).
+        Otherwise a preview of what the command changes, its output indented, and asks [y]es /
         [s]kip / [c]ancel / [d]iff / [q]uit; d shows the full diff. A repo
         whose git config names filter commands gets no preview. c asks for a
         reason (empty: back to the question), sets the row as shown stopped
@@ -152,6 +155,7 @@ import subprocess
 import termios
 import textwrap
 import time
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
@@ -162,6 +166,11 @@ WATCH = SKILLS / "kvb-org-organize" / "scripts" / "watch.py"
 QUEUE = SKILLS / "kvb-org-queue" / "scripts" / "queue.py"
 RADIO = SKILLS / "kvb-org-radio" / "scripts" / "radio.py"
 COUNCIL = SKILLS / "kvb-org-organize" / "scripts" / "council.py"
+HUB_API = Path.home() / ".local" / "share" / "kvb-orchestrator" / "client" / "hub_api.py"
+VERIFY_STEP = re.compile(r"approval\.py verify(?=[^;&|]*--port (?P<port>[0-9]+))(?=[^;&|]*--review (?P<review>[0-9a-f]{16}))")
+HUB_SECONDS = 5
+PORT_LIMIT = 65535
+REVIEWS_SHOWN = 5
 HOLD_KIND = "operator"
 HOLD_SESSION = "Operator"
 NOT_RUN = 75
@@ -961,6 +970,52 @@ def cmd_granted(rasci: ModuleType, args: argparse.Namespace) -> int:
     return subprocess.run(args.argv, cwd=row["directory"], check=False).returncode
 
 
+def unapproved(command: str) -> list[str] | None:
+    """Returns:
+        The review ids the approval.py verify steps of command name whose
+        review the Agent Orchestrator on their --port does not hold approved,
+        in order; [] when every one is approved or command names none; None
+        when the hub does not answer, a --port lies above PORT_LIMIT (the
+        resolver would wrap it onto another port), or
+        the client's hub_api.py, whose
+        loopback opener sends no proxy and follows no redirect, is missing,
+        so the commit would fail at its verify.
+    """
+    steps = list(VERIFY_STEP.finditer(command))
+    if not steps:
+        return []
+    if not HUB_API.is_file():
+        return None
+    api = module("kvb_operator_hub_api", HUB_API)
+    waiting = []
+    for step in steps:
+        port = int(step["port"])
+        if port > PORT_LIMIT:
+            return None
+        try:
+            status = api.call(urllib.request.Request(f"{api.base_url(port)}/api/reviews/{step['review']}", headers=api.GUARD), HUB_SECONDS).get("status")
+        except (OSError, ValueError, TypeError):
+            return None
+        if status != "approved":
+            waiting.append(step["review"])
+    return list(dict.fromkeys(waiting))
+
+
+def unready(row: dict) -> str | None:
+    """Returns:
+        Why run skips row for now: reviews its commit verifies that the
+        operator has not approved yet, or a hub that does not answer about
+        them; None when it may run.
+    """
+    waiting = unapproved(row["command"])
+    if waiting is None:
+        return f"the hub does not answer about the reviews its commit verifies, or {HUB_API} is missing; start or install it, then run again"
+    if not waiting:
+        return None
+    more = " …" if len(waiting) > REVIEWS_SHOWN else ""
+    return f"{len(waiting)} reviews its commit verifies are not approved yet ({', '.join(waiting[:REVIEWS_SHOWN])}{more}); approve them in the hub, then run again"
+
+
 def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
     shell = os.environ.get("SHELL")
     if not shell:
@@ -982,6 +1037,10 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
         print(field("command", visible(row["command"], ""), "command"))
         print(field("why", visible(row["why"] or "-", "")))
         print(field("check", visible(check, "")), flush=True)
+        why = unready(row)
+        if why:
+            print(f"waits {name}: {why}; the row stays open")
+            continue
         holdable = heavy_row(watch, cfg, row)
         answer, reason = decide(row, holdable, typed)
         if answer == "q" or (answer == "c" and reason is None):

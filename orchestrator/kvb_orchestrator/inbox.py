@@ -21,7 +21,7 @@ SNOOZE_LIMIT = 8 * 86400
 class Inbox:
     def inbox(self, now: float, tasks: dict[str, dict], directory: Directory) -> list[dict]:
         claims = read_claims(self.council)
-        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": ""}
+        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": "", "reviews": []}
         items = []
         for review in self.reviews.pending():
             created = iso_epoch(review["created"]) or now
@@ -45,7 +45,7 @@ class Inbox:
             busy = row["task"] in held
             answer = self.answers.get(row["task"])
             fields = {"answered": answer["label"] if answered(answer, row) else "", "title": row["command"], "detail": row["why"], "agent": adder(tasks[row["task"]]), "to": requester_of(claims, adder(tasks[row["task"]]))[0], "command": row["command"], "directory": row["directory"], "sha256": digest(row["command"]), "check": row["check"], "options": row["options"], "recommended": row["recommended"]}
-            state = {"runnable": runnable(row) and not busy, "deniable": not busy, "job": console_of(consoles.get(row["task"]))}
+            state = {"runnable": runnable(row) and not busy, "deniable": not busy, "job": console_of(consoles.get(row["task"])), "reviews": self.linked(row["command"])}
             items.append({**base, "kind": "operator", "id": row["task"], "ts": self.watch.first(row["task"], now), **fields, **state})
         listed = {row["task"] for row in rows}
         for task, job in consoles.items():
@@ -57,6 +57,14 @@ class Inbox:
             mark = self.marks.get(f"{item['kind']}:{item['id']}")
             item.update(pinned=mark["pinned"], until=mark["until"] if mark["until"] > now else 0.0, held=self.batches.holds(item["kind"], item["id"]))
         return sorted(items, key=lambda item: (not item["pinned"], -item["ts"], item["id"]))
+
+    def linked(self, command: str) -> list[dict]:
+        """Returns:
+            {"id", "status", "gate"} of each review the approval.py verify
+            steps of command check; status unknown for one the hub lacks.
+        """
+        records = {review_id: self.reviews.get(review_id) for review_id in signing.verified_reviews(command)}
+        return [{"id": review_id, "status": record["status"] if record else "unknown", "gate": record.get("gate", "") if record else ""} for review_id, record in records.items()]
 
     def mark(self, body: bytes) -> dict:
         payload = decode(body)

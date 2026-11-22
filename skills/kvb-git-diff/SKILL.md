@@ -48,6 +48,10 @@ once the operator's pinned passkey signature over it verifies here.
    `rejected`, or the tree changed: no commit; report the printed reason.
    `superseded`: a newer request for the same worktree and branch replaced
    it; wait on the review its `superseded_by` names.
+   A review's approval holds two hours. A `kvb-org-operator` commit row
+   chaining these steps runs only once every review is approved:
+   `operator.py run` skips it until then, and its hub card offers
+   `Approve n and run`.
 
 No kvb-orchestrator tools, or the verify step refused: ask the calling
 skill's approval question in chat.

@@ -150,6 +150,23 @@ class TestApproval(unittest.TestCase):
         self.approvers.write_text('{"credentials": []}', encoding="utf-8")
         self.refused(signer.proof(self.payload([self.item], int(self.now) + 60), ORIGIN), self.item, "", "no key is pinned")
 
+    def test_a_review_approval_lives_two_hours_and_every_other_kind_fifteen_minutes(self):
+        signer = key(-7, "main")
+        signer.pin(self.approvers, ORIGIN)
+        tree = signing.review_item("0123456789abcdef", "/repo/.git", "/repo", "main", "a" * 40)
+        later = int(self.now) + signing.LIFETIME + 60
+        verifier.check(signer.proof(self.payload([tree], later), ORIGIN), tree, "pass", self.trust, self.now)
+        self.refused(signer.proof(self.payload([tree], int(self.now) + signing.REVIEW_LIFETIME + 60), ORIGIN), tree, "pass", "too far")
+        self.refused(signer.proof(self.payload([self.item, tree], later), ORIGIN), self.item, "", "too far")
+        self.assertEqual((signing.lifetime([tree]), signing.lifetime([tree, self.item]), signing.lifetime([])), (signing.REVIEW_LIFETIME, signing.LIFETIME, signing.LIFETIME))
+
+    def test_the_operator_runner_reads_the_verify_steps_of_a_commit_row_as_the_hub_does(self):
+        runner = (HUB.parent / "skills" / "kvb-org-operator" / "scripts" / "operator.py").read_text(encoding="utf-8")
+        self.assertIn(f'VERIFY_STEP = re.compile(r"{signing.VERIFY_STEP.pattern}")', runner)
+        first, second = "a" * 16, "b" * 16
+        command = f"approval.py verify --port 1 --review {first} && approval.py verify --review {second} --gate pass --port 2; approval.py verify --port 1 --review {first}; approval.py verify --review {'c' * 16}; echo --port 3"
+        self.assertEqual(signing.verified_reviews(command), [first, second])
+
     def test_one_bulk_signature_serves_each_listed_item_once(self):
         signer = key(-8, "main")
         signer.pin(self.approvers, ORIGIN)

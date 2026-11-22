@@ -106,7 +106,7 @@ const classes = (node) => String(node.className || node.attrs.class || "").split
 const labels = (node) => all(node).filter((el) => el.tag === "button").map((el) => el.getAttribute("aria-label") || el.textContent);
 const calls = {proofs: [], posts: [], sheets: [], radio: [], signs: []};
 const now = 1_800_000_000;
-const base = {agent: "Skills", to: "Skills", detail: "", green: true, gate: "", score: "", warnings: [], options: [], recommended: "", command: "", directory: "", sha256: "", runnable: false, deniable: false, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now - 60};
+const base = {agent: "Skills", to: "Skills", detail: "", green: true, gate: "", score: "", warnings: [], options: [], recommended: "", command: "", directory: "", sha256: "", runnable: false, deniable: false, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now - 60, reviews: []};
 const operator = {...base, kind: "operator", id: "operator/ship", title: "make ship", command: "make ship", directory: "/repo", detail: "release the build", runnable: true, deniable: true, green: false, sha256: "abc"};
 const review = {...base, kind: "review", id: "0123456789abcdef", title: "feat: x", detail: "feature/x", gate: "pass", score: "🎯 95", directory: "/repo", diff: 4};
 const ask = {...base, kind: "ask", id: "1123456789abcdef", title: "Bash: git commit -m x", command: "git commit -m x", directory: "/repo", deniable: true};

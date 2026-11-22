@@ -20,6 +20,7 @@ from signing import (
     checked_approval,
     checked_rule,
     item_hash,
+    lifetime,
     load_pinned,
     rule_allows,
 )
@@ -301,7 +302,7 @@ def check(proof: object, item: dict, gate: str, trust: Trust, now: float) -> Non
         if not rule_allows(payload, item, gate, now):
             raise Refused("the signed rule does not match this item")
         return
-    checked_approval(payload, now)
+    checked_approval(payload, now, lifetime([item]))
     count = verify_assertion(proof["assertion"], payload, pinned(trust.approvers), trust.origin)
     digest = item_hash(item)
     if digest not in payload["items"]:

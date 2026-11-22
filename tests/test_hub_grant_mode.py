@@ -37,7 +37,7 @@ const document = {
   createElement: (tag) => new El(tag), createElementNS: (ns, tag) => new El(tag),
 };
 const now = 1_800_000_000;
-const base = {agent: "Store", to: "Store", detail: "", green: false, gate: "", score: "", warnings: [], options: [], recommended: "", command: "", directory: "/repo", sha256: "s", runnable: false, deniable: false, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now};
+const base = {agent: "Store", to: "Store", detail: "", green: false, gate: "", score: "", warnings: [], options: [], recommended: "", command: "", directory: "/repo", sha256: "s", runnable: false, deniable: false, job: null, rule: null, dry_run: null, diff: null, pinned: false, until: 0, held: false, ts: now, reviews: []};
 const items = {
   green: {...base, kind: "review", id: "r-green", title: "feat: green", gate: "pass", green: true},
   red: {...base, kind: "review", id: "r-red", title: "feat: red", gate: "fail"},
@@ -156,6 +156,21 @@ const byName = (node, label) => buttons(node).find((button) => button.getAttribu
   signing = true;
   await buttons(sheet[2]).find((button) => text(button).startsWith("Grant ")).click();
   results.all_granted = take();
+  const commit = {...base, kind: "operator", id: "operator/commit", title: "git commit", command: "git commit", runnable: true, deniable: true, reviews: [{id: "r-green", status: "pending", gate: "pass"}, {id: "r-red", status: "pending", gate: "fail"}, {id: "r-old", status: "approved", gate: "pass"}]};
+  state.inbox = [...Object.values(items).map((item) => ({...item})), commit];
+  const runOf = (row) => actionsFor(row)[0];
+  results.run_label = runOf(commit).getAttribute("aria-label");
+  await runOf(commit).click();
+  results.run_collected = {...take(), sheets: sheets.splice(0).length};
+  ui.selected.clear();
+  mode.value = "direct";
+  await runOf(commit).click();
+  const runSheet = sheets.splice(0)[0];
+  results.run_note = text(runSheet[0]);
+  await buttons(runSheet[2]).find((button) => text(button).startsWith("Grant ")).click();
+  results.run_granted = take();
+  results.run_stuck = runOf({...commit, reviews: [{id: "r-gone", status: "rejected", gate: "pass"}]}).getAttribute("disabled");
+  results.run_plain = runOf({...commit, reviews: [{id: "r-old", status: "approved", gate: "pass"}]}).getAttribute("aria-label");
   console.log(JSON.stringify(results));
 })().catch((error) => { console.error(error && error.stack || error); process.exit(1); });
 `;
@@ -214,15 +229,23 @@ class TestGrantMode(unittest.TestCase):
         self.assertEqual((self.data["option_removed"]["selected"], self.data["option_removed"]["pressed"]), ([], []))
         self.assertEqual(self.data["option_row"], {"pressed": ["Yes"], "batchable": True})
 
-    def test_grant_n_signs_the_batch_once_then_each_rule_and_red_gate_alone(self):
+    def test_grant_n_signs_each_rule_and_red_gate_alone_first_then_the_batch_once(self):
         self.assertEqual(self.data["all"]["selected"], ["decision:d-1", "decision:d-2", "operator:operator/ask", "review:r-green", "review:r-red", "rule:1123456789abcdef"])
         self.assertEqual((self.data["all"]["proofs"], self.data["all"]["accepts"]), ([], []))
         self.assertEqual(self.data["all_grant"], "Grant selection (6)")
-        self.assertTrue(self.data["all_note"].endswith("Each rule and each red-gate review then asks its own signature, one after the other (2)."), self.data["all_note"])
+        self.assertIn("Each rule and each red-gate review first asks its own signature, one after the other (2). Then the passkey signs the rest once", self.data["all_note"])
         granted = self.data["all_granted"]
-        self.assertEqual(granted["proofs"], [["review:r-green", "decision:d-1", "decision:d-2", "operator:operator/ask"], ["review:r-red"]])
-        self.assertEqual(granted["labels"], [["", "B", "B", "Yes"], [""]])
+        self.assertEqual(granted["proofs"], [["review:r-red"], ["review:r-green", "decision:d-1", "decision:d-2", "operator:operator/ask"]])
+        self.assertEqual(granted["labels"], [[""], ["", "B", "B", "Yes"]])
         self.assertEqual((granted["accepts"], granted["selected"]), (["1123456789abcdef"], []))
+
+    def test_a_commit_row_approves_the_reviews_it_verifies_before_it_runs(self):
+        self.assertEqual(self.data["run_label"], "Approve 2 and run")
+        self.assertEqual(self.data["run_collected"]["selected"], ["operator:operator/commit"])
+        self.assertEqual((self.data["run_collected"]["proofs"], self.data["run_collected"]["sheets"]), ([], 0))
+        self.assertIn("first asks its own signature, one after the other (1). Then the passkey signs the rest once, commit rows settling after the reviews they verify.", self.data["run_note"])
+        self.assertEqual(self.data["run_granted"]["proofs"], [["review:r-red"], ["review:r-green", "operator:operator/commit"]])
+        self.assertEqual((self.data["run_stuck"], self.data["run_plain"]), ("", "Run"))
 
     def test_one_split_grants_the_selection_and_its_menu_holds_the_rest(self):
         tray = self.data["tray"]
