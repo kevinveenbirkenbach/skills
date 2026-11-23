@@ -209,6 +209,7 @@ RULES_OVERLAP = """(async () => {@HELPERS@@CLASHES@
   if (open) {
     open.click();
   }
+  (await until(() => document.getElementById("controls-tab-rules"), 8000)).click();
   const rules = await until(() => document.querySelector("#main .rule-form"), 8000);
   const kind = rules.querySelector("select");
   const found = {};

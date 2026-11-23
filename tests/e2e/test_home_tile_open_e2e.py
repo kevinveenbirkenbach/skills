@@ -123,7 +123,8 @@ HEADERS = """(async () => {@HELPERS@@HOME@@KIT@
     return {
       key: node.dataset.pin, w: Number(node.dataset.w), gone: node.classList.contains("gone"), overflow: head.scrollWidth > head.clientWidth + 1,
       outside: shown.filter((child) => child.getBoundingClientRect().left < box.left - 0.5 || child.getBoundingClientRect().right > box.right + 0.5).map((child) => child.className),
-      order: shown.map((child) => [...child.classList].find((name) => name.startsWith("home-"))),
+      order: shown.map((child) => [...child.classList].find((name) => name.startsWith("home-") || name === "legend-toggle")),
+      legend: Boolean(head.querySelector(".legend-toggle")),
       ellipsis: [getComputedStyle(title).textOverflow, getComputedStyle(title).whiteSpace, title.scrollWidth > title.clientWidth],
       open: open.hidden ? null : {href: open.getAttribute("href"), title: open.getAttribute("title"), label: open.getAttribute("aria-label"), tag: open.tagName, focused, tabIndex: open.tabIndex, size: rect(open), unpin: rect(head.querySelector(".home-unpin")), glyph: open.querySelector("use").getAttribute("href")},
     };
@@ -233,7 +234,7 @@ class TestHomeTileOpen(HubCase):
                     self.assertEqual(head["order"], ["home-grip", "home-title", "home-unpin"], head)
                     continue
                 self.assertFalse(head["gone"], head)
-                self.assertEqual(head["order"], ["home-grip", "home-title", "home-open", "home-unpin"], head)
+                self.assertEqual(head["order"], ["home-grip", "home-title", *(["legend-toggle"] if head["legend"] else []), "home-open", "home-unpin"], head)
                 found = head["open"]
                 self.assertEqual((found["tag"], found["label"], found["focused"], found["tabIndex"], found["glyph"]), ("A", "Open", True, 0, "#bi-arrows-angle-expand"), found)
                 self.assertTrue(found["title"].startswith("Open: show ") and found["title"].endswith(" in full view"), found)

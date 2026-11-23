@@ -64,7 +64,7 @@ class TestHubInbox(base.OrchestratorE2ECase):
 
         def run_jobs() -> None:
             if any(job["status"] == "queued" for job in self.httpd.hub.jobs.listed()):
-                subprocess.run([sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, "--once"], capture_output=True, timeout=120, check=False)
+                subprocess.run([sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, "--once"], capture_output=True, timeout=120, check=False, env={**os.environ, "SHELL": str(self.shell)})
 
         self.beside(run_jobs)
         private = "".join(line for line in signer.pem.read_text(encoding="utf-8").splitlines() if not line.startswith("-----"))

@@ -11,7 +11,7 @@
   const DEPTH_GAP = 90;
   const TIME_DEPTH = 640;
   const TOP = {operator: 6, chair: 4, session: 2.5};
-  const g3 = {lib: null, three: null, THREE: null, graph: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: "", picked: null, fit: false, badges: new Map(), faces: new Set(), textures: new Map(), pulse: 0};
+  const g3 = {lib: null, three: null, THREE: null, graph: null, sizer: null, host: null, tab: "", sig: "", planes: [], colors: null, failed: "", picked: null, fit: false, badges: new Map(), faces: new Set(), textures: new Map(), pulse: 0};
 
   const layoutsOf = (tab) => (tab === "tasks" ? LAYOUTS.filter(([id]) => id !== "spawn") : LAYOUTS);
   const layoutOf = (tab) => (layoutsOf(tab).some(([id]) => id === space.views.graph.axis) ? space.views.graph.axis : "none");
@@ -398,6 +398,8 @@
     if (!g3.graph) {
       try {
         g3.graph = Graph({controlType: "orbit"})(box);
+        g3.sizer = new ResizeObserver(() => g3.graph && g3.graph.width(box.clientWidth).height(box.clientHeight));
+        g3.sizer.observe(box);
       } catch (error) {
         host.replaceChildren(emptyState("3D unavailable", `This browser offers no WebGL: ${error.message || error}`));
         g3.host = null;
@@ -437,6 +439,10 @@
       if (typeof g3.graph._destructor === "function") {
         g3.graph._destructor();
       }
+    }
+    if (g3.sizer) {
+      g3.sizer.disconnect();
+      g3.sizer = null;
     }
     window.cancelAnimationFrame(g3.pulse);
     g3.pulse = 0;

@@ -132,16 +132,16 @@ class TestMatchSwipe(HubCase):
         super().setUp()
         self.cards()
 
-    def ids(self) -> dict[str, str]:
+    def card_ids(self) -> dict[str, str]:
         return {"COMMIT": f"review:{self.commit}", "COMMAND": "operator:operator/issue", "STALE": f"review:{self.stale}"}
 
     def measured(self, driver: str, binary: str) -> dict[int, list[dict]]:
-        steps = [{"width": width, "height": height, "url": f"{self.base}?{width}-measure#tasks/match", "wait": 1500, "probe": probe(MEASURE, **self.ids()), "shot": None} for width, height in base.WIDTHS]
+        steps = [{"width": width, "height": height, "url": f"{self.base}?{width}-measure#tasks/match", "wait": 1500, "probe": probe(MEASURE, **self.card_ids()), "shot": None} for width, height in base.WIDTHS]
         data = self.drive(steps, None, driver, binary)
         found = {}
         for result, (width, _) in zip(data["results"], base.WIDTHS, strict=True):
             self.assertNotIn("error", result, result)
-            self.assertEqual([point["front"] for point in result["points"]], [self.ids()[name] for name in ("COMMIT", "COMMAND", "STALE", "COMMIT")], result)
+            self.assertEqual([point["front"] for point in result["points"]], [self.card_ids()[name] for name in ("COMMIT", "COMMAND", "STALE", "COMMIT")], result)
             self.assertEqual(result["tally"], "1", result)
             found[width] = result["points"]
         return found
@@ -155,17 +155,17 @@ class TestMatchSwipe(HubCase):
             shot = str(OUT / f"{browser}-{width}")
             at = {"width": width, "height": height}
             steps += [
-                {**at, "url": f"{self.base}?{width}-swipe#tasks/match", "wait": 1500, "probe": probe(START, X=commit["x"], Y=commit["y"], **self.ids()), "shot": None},
-                {**at, "url": None, "wait": 0, "drag": [[commit["x"], commit["y"]], [commit["x"], max(commit["y"] - LIFT, 2)]], "probe": probe(LATER, X=command["x"], Y=command["y"], **self.ids()), "shot": None},
-                {**at, "url": None, "wait": 0, "drag": sideways(command, width, -1), "probe": probe(REJECT, X=stale["x"], Y=stale["y"], **self.ids()), "shot": None},
-                {**at, "url": None, "wait": 0, "drag": sideways(stale, width, 1), "probe": probe(REFUSED, X=again["x"], Y=again["y"], **self.ids()), "shot": None},
+                {**at, "url": f"{self.base}?{width}-swipe#tasks/match", "wait": 1500, "probe": probe(START, X=commit["x"], Y=commit["y"], **self.card_ids()), "shot": None},
+                {**at, "url": None, "wait": 0, "drag": [[commit["x"], commit["y"]], [commit["x"], max(commit["y"] - LIFT, 2)]], "probe": probe(LATER, X=command["x"], Y=command["y"], **self.card_ids()), "shot": None},
+                {**at, "url": None, "wait": 0, "drag": sideways(command, width, -1), "probe": probe(REJECT, X=stale["x"], Y=stale["y"], **self.card_ids()), "shot": None},
+                {**at, "url": None, "wait": 0, "drag": sideways(stale, width, 1), "probe": probe(REFUSED, X=again["x"], Y=again["y"], **self.card_ids()), "shot": None},
                 {**at, "url": None, "wait": 0, "drag": sideways(again, width, 1), "probe": probe(ACCEPT), "shot": f"{shot}-swiped-decisions.png"},
             ]
         return steps
 
     def check(self, data: dict) -> None:
         self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])
-        ids = self.ids()
+        ids = self.card_ids()
         results = iter(data["results"])
         for width, _ in base.WIDTHS:
             start, later, reject, refused, accept = (next(results) for _ in range(5))

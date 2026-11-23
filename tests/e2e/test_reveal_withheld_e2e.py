@@ -110,7 +110,7 @@ class TestRevealWithheld(base.OrchestratorE2ECase):
 
     def check(self, data: dict, browser: str, signs: bool) -> None:
         self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
-        hidden = {"hidden": ["masked", "content withheld", None], "buttons": ["Reveal", "Reveal"], "masked": True, "clear": []}
+        hidden = {"hidden": ["masked", "content withheld", None], "buttons": ["Reveal all 2", "Reveal", "Reveal"], "masked": True, "clear": []}
         results = iter(data["results"])
         for width, _ in WIDTHS:
             ids = self.sets[width]
@@ -118,7 +118,7 @@ class TestRevealWithheld(base.OrchestratorE2ECase):
             with self.subTest(browser=browser, width=width):
                 self.assertNotIn("error", show, show)
                 self.assertEqual(show["one"], hidden, show)
-                self.assertEqual(show["all"], {**hidden, "buttons": ["Reveal all 2", "Reveal", "Reveal"]}, show)
+                self.assertEqual(show["all"], hidden, show)
                 self.assertEqual(show["leaked"], [], show)
                 one_id, all_id = (ids[name].split(":", 1)[1] for name in ("ONE", "ALL"))
                 self.assertEqual(one["posted"], [[f"review/{one_id}/reveal/sign", ["app.py"]], *([[f"review/{one_id}/reveal", ["app.py"]]] if signs else [])], one)
@@ -127,7 +127,7 @@ class TestRevealWithheld(base.OrchestratorE2ECase):
                     self.assertEqual(one["after"], {"hidden": ["revealed", "content withheld", None], "buttons": ["Reveal"], "masked": False, "clear": ["plain-example"]}, one)
                     self.assertEqual(every["after"], {"hidden": ["revealed", "revealed", None], "buttons": [], "masked": False, "clear": list(WORDS)}, every)
                 else:
-                    self.assertEqual((one["after"], every["after"]), (hidden, {**hidden, "buttons": ["Reveal all 2", "Reveal", "Reveal"]}))
+                    self.assertEqual((one["after"], every["after"]), (hidden, hidden))
                 self.assertEqual((one["kept"], every["kept"]), ([], []))
                 self.assertFalse(any(found["wide"] for found in (show, one, every)), width)
 
