@@ -305,7 +305,7 @@ REPLY_HOME = """(async () => {@HELPERS@@PROBES@
     questions.push(question);
     return true;
   };
-  const clear = all(".spot-head button", tile("radio")).find((button) => button.getAttribute("aria-label") === "Cancel mayday");
+  const clear = all("form.composer button.radio-cancel", tile("radio")).find((button) => button.getAttribute("aria-label") === "Cancel mayday");
   const enabled = clear ? !clear.disabled : null;
   const shownBefore = new Set(all("#toasts .toast"));
   if (clear) {

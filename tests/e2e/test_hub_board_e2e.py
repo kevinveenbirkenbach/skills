@@ -103,7 +103,7 @@ class TestHubBoard(base.OrchestratorE2ECase):
                 self.assertNotIn("error", found)
                 self.assertEqual((found["badge"], found["start"], found["wide"]), (["Day", "1 alone"], everyone, False))
                 self.assertEqual((found["one"], found["kept"], found["none"], found["all"]), ([one, [True] * 3], one, [nobody, [False] * 3], [everyone, [True] * 3]))
-                self.assertEqual(found["popup"], {"badge": ["Draining"], "buttons": ["Drain", "Suspend", "Resume"]})
+                self.assertEqual(found["popup"], {"badge": ["Draining"], "buttons": ["Mute Stage", "Drain", "Suspend", "Resume"]})
                 self.assertEqual([question.split(":")[0] for question in found["questions"]], ["Drain Stage", "Suspend Stage"])
                 sent = [["/api/board/sign", ["action", "agents"], "drain", ["s2"]], ["/api/board/drain", ["proof", "agents"], None, ["s2"]], ["/api/board/sign", ["action", "agents"], "suspend", ["s2"]], ["/api/board/suspend", ["proof", "agents"], None, ["s2"]]]
                 self.assertEqual(found["posted"], sent if signs else sent[::2])

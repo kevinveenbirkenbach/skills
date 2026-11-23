@@ -93,7 +93,7 @@ PROBES = """
     row.querySelector(".radio-pick").click();
     return until(() => popup().open && popup().querySelector(".radio-full") ? popup() : null, 4000);
   };
-  const shown = (node) => node.getClientRects().length > 0;
+  const shown = (node) => node.getClientRects().length > 0 && !node.closest("details:not([open]) > :not(summary)");
   const scrolls = (node) => {
     const look = getComputedStyle(node);
     return (node.scrollHeight > node.clientHeight + 1 && ["auto", "scroll"].includes(look.overflowY)) || (node.scrollWidth > node.clientWidth + 1 && ["auto", "scroll"].includes(look.overflowX));

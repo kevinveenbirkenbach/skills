@@ -139,7 +139,7 @@ class TestOrchestratorE2E(base.OrchestratorE2ECase):
             with self.subTest(url=step["url"], width=step["width"]):
                 self.assertNotIn("error", probe)
                 self.assertEqual((probe["title"], probe["h1"]), ("(2) Agent Orchestrator", "Agent Orchestrator"))
-                self.assertEqual(probe["header"], ["grant-direct", "grant-select", "radio-open", "bubbles-toggle", "palette-open", "settings-open"])
+                self.assertEqual(probe["header"], ["grant-select", "radio-open", "bubbles-toggle", "palette-open", "settings-open"])
                 self.assertEqual((probe["tabs"], probe["subs"]), (TABS, SUBS))
                 self.assertEqual(probe["badges"], {"tab-home": None, "tab-stream": None, "tab-rules": None, "tab-agents": "1", "tab-artifacts": None, "tab-tasks": "2", "tab-resources": None})
                 self.assertEqual(probe["banner"], "MAYDAY · Docs: disk full")

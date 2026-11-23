@@ -98,7 +98,7 @@ QUIET = """(async () => {@HELPERS@@RADIO@@KIT@
   const played = await sent(at.captured);
   const quiet = await stopped();
   const tts = audio().tts.slice(at.tts).map((entry) => entry.body.text);
-  await opened(true);
+  await modeMenu("quiet", true);
   return {played, quiet, tts, captured: window.e2eGibber.slice(at.captured), fits: fits(), violations: window.e2eViolations};
 })()"""
 DECODE = """

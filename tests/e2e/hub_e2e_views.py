@@ -15,7 +15,7 @@ PROBE = """(async () => {@HELPERS@
     hash: location.hash,
     title: document.title,
     h1: text(document.querySelector("h1")),
-    header: all("header.top button").map((button) => button.id),
+    header: all("header.top button[id]").map((button) => button.id),
     tabs: all("#tabs > .tab-group > button").map(name),
     subs: all("#tabs .subtabs button").map(name),
     badges: Object.fromEntries(all("#tabs button").map((button) => [button.id, badge(button)])),

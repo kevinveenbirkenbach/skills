@@ -36,7 +36,8 @@ code, pre { font-family: var(--mono); font-size: var(--fs-sm); }
 .head { position: sticky; top: 0; z-index: 6; }
 .top { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-5); background: var(--glass-panel); border-bottom: 1px solid var(--line); }
 .brand { display: flex; flex: 1; align-items: center; gap: var(--sp-3); min-width: 0; }
-.brand-text { display: grid; line-height: var(--lh-tight); }
+.brand-text { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; line-height: var(--lh-tight); }
+.brand-text > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sky-note { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
 .logo { width: 24px; height: 24px; border-radius: var(--radius-sm); background: linear-gradient(135deg, var(--accent), var(--violet)); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%), var(--shadow); }
 h1 { margin: 0; font-size: var(--fs-lg); font-weight: 680; letter-spacing: -.01em; }

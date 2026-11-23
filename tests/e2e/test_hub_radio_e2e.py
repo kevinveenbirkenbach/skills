@@ -298,7 +298,7 @@ class TestHubRadio(base.OrchestratorE2ECase):
                 self.assertEqual((sent["closed"], sent["open"]), ([True, "false"], [False, "true", True]))
                 self.assertEqual(sent["inline"], ["static", True, True])
                 self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
-                self.assertEqual((sent["heads"], sent["send"], sent["cancel"]), (0, SEND_GROUP, True))
+                self.assertEqual((sent["heads"], sent["send"], sent["cancel"]), (0, SEND_GROUP, False))
                 self.assertEqual((sent["tall"], sent["wide"]), (width == 390, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
                 for run in sent["runs"]:
@@ -349,7 +349,7 @@ class TestHubRadio(base.OrchestratorE2ECase):
                 self.assertNotIn("error", sent, sent)
                 self.assertEqual((sent["closed"], sent["open"], sent["inline"]), ([True, "false"], [False, "true", True], ["static", True, True]))
                 self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
-                self.assertEqual((sent["heads"], sent["send"], sent["cancel"]), (0, SEND_GROUP, True))
+                self.assertEqual((sent["heads"], sent["send"], sent["cancel"]), (0, SEND_GROUP, False))
                 self.assertEqual((sent["tall"], sent["wide"]), (width == 390, False))
                 self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
                 for run in sent["runs"]:

@@ -30,7 +30,7 @@ EARLY = 0.1
 LATE = 2.0
 VIEWS = {1920: "agents/orbit", 1366: "stream/radio", 390: "agents/hierarchy"}
 SECOND_FROM = {1920: "Skills", 1366: "Skills", 390: "Docs"}
-SECOND_ANCHORED = {1920: True, 1366: False, 390: False}
+SECOND_ANCHORED = {1920: True, 1366: True, 390: False}
 CALM = [{"name": "prefers-reduced-motion", "value": "reduce"}]
 FADE_MS = 400
 FADE_SLACK = 50
@@ -108,7 +108,7 @@ BUBBLES_ON = """(async () => {@HELPERS@@READ@
       });
     }
   }).observe(layer, {subtree: true, childList: true, attributes: true, attributeFilter: ["class", "data-state", "data-words", "data-read"]});
-  const speaker = document.querySelector('[data-face="@FACE@"]');
+  const speaker = [...document.querySelectorAll('[data-face="@FACE@"]')].find((node) => node.getClientRects().length > 0);
   if (speaker && !visible(speaker.getBoundingClientRect())) {
     speaker.scrollIntoView({block: "center", inline: "center"});
   }

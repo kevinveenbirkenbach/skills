@@ -132,7 +132,7 @@ RADIO = """
 FACE = """(async () => {@HELPERS@@RADIO@
   await cpuShown("CPU 10 %");
   const display = {lamp: [text(lamp()), lamp().dataset.lit], cls: field("class"), mode: field("mode"), cpu: field("cpu"), title: spot.querySelector('[data-field="cpu"]').title};
-  const modes = all(".radio-modes button", spot).map((button) => [text(button), button.getAttribute("aria-pressed"), Boolean(button.title && button.getAttribute("aria-label")), Boolean(button.querySelector("svg.bi"))]);
+  const modes = all(".radio-modes button", spot).map((button) => [text(button).replace("▾", ""), button.getAttribute("aria-pressed"), Boolean(button.title && button.getAttribute("aria-label")), Boolean(button.querySelector("svg.bi"))]);
   const knobs = all(".radio-knobs input[type=range]", spot).map((input) => [input.getAttribute("aria-label"), input.min, input.max, input.step, input.value]);
   const toneToggles = all(".radio-knobs button[aria-pressed]", spot).map((button) => [button.getAttribute("aria-label"), button.getAttribute("aria-pressed")]);
   const labels = all(".radio-knobs .knob-row", spot).filter((row) => row.querySelector(".knob-label")).map((row) => {
