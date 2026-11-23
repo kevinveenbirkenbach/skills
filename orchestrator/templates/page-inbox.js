@@ -248,12 +248,14 @@
     const key = keyOf(item);
     flip(key);
     ui.cursor = Math.max(visibleInbox().findIndex((entry) => keyOf(entry) === key), 0);
+    const top = inboxDom.scrollTop;
     drawInbox();
     drawGrant();
     const box = inboxDom.querySelector(`.item[data-index="${ui.cursor}"] > input[type="checkbox"]`);
     if (refocus && box) {
       box.focus({preventScroll: true});
     }
+    inboxDom.scrollTop = top;
   }
 
   function reviewsPill(item) {
