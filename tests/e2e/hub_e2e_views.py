@@ -36,7 +36,7 @@ PROBE = """(async () => {@HELPERS@
     composers: all("form.composer").map((form) => (form.closest("#radio-spot") ? "spot" : "other")),
     inbox: all("#main .inbox-list > li").length,
     icons: icons.length,
-    unlabelled: icons.map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160)),
+    unlabelled: icons.map((svg) => svg.parentElement.closest(':not([aria-hidden="true"])')).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).map((owner) => owner.outerHTML.slice(0, 160)),
     broken: all("svg.bi use").filter((use) => !document.getElementById(use.getAttribute("href").slice(1))).map((use) => use.getAttribute("href")),
     states: all("#main span.state").map(name),
     deletes: all('#main button[aria-label="Delete"], #main button[aria-label="Delete all merged"]').map((button) => [name(button), button.disabled, button.title]),

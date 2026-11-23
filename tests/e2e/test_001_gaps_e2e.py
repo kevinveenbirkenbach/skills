@@ -75,7 +75,9 @@ SWEEP = """(async () => {@HELPERS@
       if (css(up).textOverflow === "ellipsis" || css(up).webkitLineClamp !== "none") {
         return null;
       }
-      if (top < own.top - 1 || bottom > own.bottom + 1 || left < own.left - 1 || right > own.right + 1) {
+      const cutY = css(up).overflowY !== "visible" && (top < own.top - 1 || bottom > own.bottom + 1);
+      const cutX = css(up).overflowX !== "visible" && (left < own.left - 1 || right > own.right + 1);
+      if (cutY || cutX) {
         return `cut by ${path(up)}`;
       }
     }

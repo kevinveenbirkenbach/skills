@@ -188,7 +188,7 @@ class TestOrchestratorE2E(base.OrchestratorE2ECase):
         self.assertEqual(by_hash["#artifacts/chord"]["flowEdges"], ["pull", "push"])
         order = ["work/feature", "work/docs", "work/stage", "queue/gate-3", "work/old", "operator/push"]
         listed = by_hash["#tasks/list"]
-        self.assertEqual(listed["views"], ["List", "Board", "RASCI", "Gantt", "Burndown and burnup", "3D"])
+        self.assertEqual(listed["views"], ["List", "Board", "RASCI", "Gantt", "Burndown and burnup", "3D", "Match"])
         self.assertEqual(by_hash["#tasks/3d"]["layouts"], ["Force", "Time"])
         self.assertTrue(by_hash["#tasks/3d"]["canvas"], by_hash["#tasks/3d"]["note"])
         self.assertRegex(by_hash["#tasks/3d"]["note"], r"^6 nodes · \d+ edges · Force$")
