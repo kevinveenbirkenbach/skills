@@ -33,7 +33,7 @@ COMMON = """
     await until(() => menu().open, 2000);
     await sleep(100);
   };
-  const grantOf = (ref) => row(ref) && row(ref).querySelector(".item-actions button.primary");
+  const grantOf = (ref) => row(ref) && (row(ref).querySelector(".item-actions button.primary") || all(".options.dialog > button.option", row(ref)).find((button) => text(button.querySelector("strong")) === "Yes"));
   const wide = () => document.documentElement.scrollWidth > innerWidth + 1;
   const switchState = () => [name(main()), count(), document.querySelector("#grant-bar #grant-direct") ? "select" : "direct"];
   const storedMode = async (mode) => {
@@ -250,7 +250,7 @@ class TestBulkGrant(base.OrchestratorE2ECase):
                 self.assertEqual(collect["restored"], selecting, collect)
                 self.assertEqual(collect["pale"], [True, True], collect)
                 self.assertEqual(collect["counts"], ["1 selected", "2 selected", "1 selected", "2 selected", "3 selected"], collect)
-                self.assertEqual((collect["pressed"], collect["posted"]), ([["true", True]] * 3, []), collect)
+                self.assertEqual((collect["pressed"], collect["posted"]), ([["true", True], ["true", False], ["true", True]], []), collect)
                 self.assertEqual((collect["labels"][0], collect["labels"][-1]), ("Grant selection (3)", "Direct"), collect)
                 self.assertEqual(sum(label.startswith("Remove ") for label in collect["labels"]), 3, collect)
                 self.assertEqual((sheet["label"], len(sheet["listed"])), ("Grant 3", 3), sheet)

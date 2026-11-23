@@ -151,7 +151,7 @@ WATCH = """
   const fits = () => ({tall: document.documentElement.scrollHeight > window.innerHeight, wide: document.documentElement.scrollWidth > window.innerWidth + 1});
 """
 CHOICE_VIEW = """(async () => {@HELPERS@@LABELS@
-  const found = await until(() => document.getElementById("choice-request") && all("#main .inbox-list > li .options").length === @CARDS@ && document.querySelector('#choice-request input[type="checkbox"]'), 8000);
+  const found = await until(() => document.getElementById("choice-request") && all("#main .inbox-list > li.k-decision .options").length === @CARDS@ && document.querySelector('#choice-request input[type="checkbox"]'), 8000);
   if (!found) {
     return {error: text(document.getElementById("main"))};
   }
