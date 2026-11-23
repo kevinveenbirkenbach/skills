@@ -8,6 +8,7 @@
 .task-toolbar > .choice-request { margin-left: auto; }
 .tasks > .chips { margin-bottom: 0; }
 body.fit .graph.tasks > .tasks-body, body.fit .graph.tasks > .inbox { flex: 1; min-height: 0; overflow: auto; }
+.inbox { overflow-anchor: none; }
 .choice-agents { display: grid; gap: 6px; max-height: 30vh; overflow: auto; }
 .choice-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip .count { margin-left: 2px; }
