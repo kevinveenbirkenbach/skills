@@ -9,7 +9,7 @@
 .match-peek .match-peek-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .match-deck { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; padding-top: 14px; overflow-x: clip; }
 .match-behind { position: absolute; inset: calc(14px - var(--depth) * 7px) calc(var(--depth) * 12px) auto; height: 40px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel); opacity: calc(1 - var(--depth) * 0.3); transform: rotate(calc((var(--depth) * 2 - 3) * 1deg)); }
-.match-card.front { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; padding: 0; overflow: hidden; border-radius: 22px; box-shadow: 0 14px 34px -16px rgb(0 0 0 / 0.45); }
+.match-card.front { position: relative; display: grid; grid-template-rows: auto minmax(min(50%, 12rem), 1fr); min-height: 0; padding: 0; overflow: hidden auto; border-radius: 22px; box-shadow: 0 14px 34px -16px rgb(0 0 0 / 0.45); }
 .match-card.front::before { content: ""; position: absolute; inset: 0 0 auto; z-index: 1; height: 6px; background: linear-gradient(90deg, hsl(var(--card-hue, 210) 75% 58%), hsl(var(--card-hue-2, 280) 75% 58%)); }
 .match-card[data-stale="true"]::before { background: var(--bad); }
 .match-card.front[data-fresh="true"] { animation: match-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1); }

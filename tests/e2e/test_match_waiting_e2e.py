@@ -38,26 +38,26 @@ FRONT = """(async () => {@HELPERS@
 HOME = """(async () => {@HELPERS@@HOME_KIT@
   await ViewStore.update("home.pins", () => [{kind: "panel", id: "tasks/match", w: 12, h: 8}]);
   await go("#home");
-  const tile = await until(() => document.querySelector('#main .home-tile[data-id="tasks/match"]'), 8000);
-  if (!tile) {
+  const matchTile = await until(() => document.querySelector('#main .home-tile[data-id="tasks/match"]'), 8000);
+  if (!matchTile) {
     return {error: text(document.getElementById("main"))};
   }
-  const slot = await until(() => tile.querySelector(".home-head > .home-slot"), 4000);
+  const slot = await until(() => matchTile.querySelector(".home-head > .home-slot"), 4000);
   await until(() => slot && /cards? wait/.test(text(slot)), 6000);
-  const below = () => Boolean(tile.querySelector(".match-actions + .match-peeks .match-peek"));
+  const below = () => Boolean(matchTile.querySelector(".match-actions + .match-peeks .match-peek"));
   const toggle = slot ? slot.querySelector(".match-peeks-toggle") : null;
   const peeks = [[Boolean(await until(below, 6000)), toggle && toggle.getAttribute("aria-pressed")]];
   if (toggle) {
     toggle.click();
     await sleep(200);
-    peeks.push([below() || Boolean(tile.querySelector(".match-peeks")), toggle.getAttribute("aria-pressed"), localStorage.getItem("kvb-orchestrator.match-peeks")]);
+    peeks.push([below() || Boolean(matchTile.querySelector(".match-peeks")), toggle.getAttribute("aria-pressed"), localStorage.getItem("kvb-orchestrator.match-peeks")]);
     toggle.click();
     await sleep(200);
     peeks.push([below(), toggle.getAttribute("aria-pressed"), localStorage.getItem("kvb-orchestrator.match-peeks")]);
   }
   return {peeks, slot: slot ? text(slot.querySelector(".muted")) : null, overview: Boolean(slot && slot.querySelector(".match-open-overview")),
-    toolbar: Boolean(tile.querySelector(".home-body .task-toolbar")), card: Boolean(await until(() => tile.querySelector(".match-card.front"), 6000)),
-    head: Math.round(tile.querySelector(".home-head").getBoundingClientRect().height), wide: document.documentElement.scrollWidth > innerWidth + 1};
+    toolbar: Boolean(matchTile.querySelector(".home-body .task-toolbar")), card: Boolean(await until(() => matchTile.querySelector(".match-card.front"), 6000)),
+    head: Math.round(matchTile.querySelector(".home-head").getBoundingClientRect().height), wide: document.documentElement.scrollWidth > innerWidth + 1};
 })()"""
 FLOW = """(async () => {@HELPERS@
   const posted = [];
