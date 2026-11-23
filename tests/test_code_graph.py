@@ -136,7 +136,7 @@ class CodeGraphCase(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name).resolve()
         self.release = self.tmp / "release"
-        self.addCleanup(self.release.touch)
+        self.addCleanup(self._release)
         self.cache = self.tmp / "cache"
         self.cache.mkdir()
         self.state = self.tmp / "state"
@@ -231,6 +231,13 @@ class CodeGraphCase(unittest.TestCase):
     def _inflight(self) -> dict:
         path = self.state / "inflight.json"
         return json.loads(path.read_text(encoding="utf-8") or "{}") if path.is_file() else {}
+
+    def _release(self) -> None:
+        graph = load_graph()
+        with graph.locked_json(self.state / "inflight.json") as inflight:
+            helpers = [entry.get("pid") for entry in inflight.values() if isinstance(entry, dict)]
+        self.release.touch()
+        wait_for(lambda: not any(graph.alive(pid) for pid in helpers), 15)
 
     def _age_deferred(self, session: str) -> None:
         path = self.state / "sessions" / f"{session}.json"
