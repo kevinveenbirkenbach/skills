@@ -185,8 +185,9 @@
       toast(`${label}: nothing to ${deny ? "deny" : "grant"}`, [], false);
       return;
     }
+    const labels = new Map([...usable, ...alone].map((item) => [keyOf(item), deny ? "" : grantLabel(item)]));
     const rows = [...usable, ...alone].map((item) => h("li", {},
-      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), !deny && grantLabel(item) ? h("span", {class: "muted"}, revealed(`→ ${shownPick(grantLabel(item))}`)) : null),
+      h("div", {class: "row"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), labels.get(keyOf(item)) ? h("span", {class: "muted"}, revealed(`→ ${shownPick(labels.get(keyOf(item)))}`)) : null),
       h("strong", {}, revealed(item.title)),
       item.kind === "operator" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null,
       item.kind === "operator" ? h("span", {class: "muted"}, revealed(`in ${item.directory}`)) : null,
@@ -201,7 +202,7 @@
         }
       }
       if (usable.length) {
-        await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", grantLabel(item)))), `${label}: ${usable.length} entries`);
+        await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", labels.get(keyOf(item))))), `${label}: ${usable.length} entries`);
       }
     });
     openSheet(label, [h("p", {class: "muted"}, deny ? DENY_NOTE : grantNote(alone.length, usable.length)), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),

@@ -60,7 +60,7 @@ const context = {
   known: {batches: new Set()},
   ViewStore: {get: (path) => (path === "approval.mode" ? mode.value : null), set: (path, value) => { sets.push([path, value]); mode.value = value; }, on: (path, callback) => listeners.push([path, callback])},
   denySplit: () => new El("deny"), jobOpen: () => false, load: async () => {}, openItem: () => {},
-  items, mode, sets, listeners, all, text, buttons,
+  base, items, mode, sets, listeners, all, text, buttons,
 };
 const source = names.map((name) => fs.readFileSync(`${dir}/${name}`, "utf8")).join("\n");
 const probe = `
