@@ -102,7 +102,7 @@
   }
 
   function drawSpeaker() {
-    const now = speech.current && speech.current.who ? speech.current : null;
+    const now = speaker();
     for (const art of document.querySelectorAll(".avatar[data-face]")) {
       art.classList.toggle("speaking", Boolean(now && art.dataset.face === now.who));
     }

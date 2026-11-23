@@ -73,7 +73,11 @@
   }
 
   const faceParts = (key) => Faces.of(key).parts.map(([tag, attrs]) => s(tag, attrs));
-  const talking = (key) => Boolean(speech.current && speech.current.who === key);
+  const speaker = () => {
+    const now = speech.current || speech.item;
+    return now && now.who ? now : null;
+  };
+  const talking = (key) => Boolean(speaker() && speaker().who === key);
   const face = (who, big) => {
     const key = agentKey(who);
     return h("span", {class: `avatar${big ? " big" : ""}${talking(key) ? " speaking" : ""}`, "data-face": key, "aria-hidden": "true"},
