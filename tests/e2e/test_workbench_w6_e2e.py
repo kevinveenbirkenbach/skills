@@ -129,7 +129,7 @@ BUBBLES_GROW = """(async () => {@HELPERS@@READ@
   let grown = null;
   if (left) {
     await Promise.all((speaking() ? speaking().getAnimations() : []).map((animation) => animation.finished.catch(() => null)));
-    grown = read(speaking());
+    grown = read(await until(speaking, 4000));
     await until(() => mine().some((entry) => entry.removed), 4000);
     await until(() => (window.e2eFades || []).some((entry) => entry.who === who && entry.removed !== null && entry.reference !== null), 2000);
   }

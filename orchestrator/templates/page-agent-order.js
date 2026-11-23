@@ -1,14 +1,9 @@
   const orderDom = {box: null, slot: null, dragged: null, focus: null};
 
   function openAgentOrder() {
+    orderDom.focus = "order:title";
     go("agents", "hierarchy");
-    window.setTimeout(() => {
-      const title = document.getElementById("agent-order-title");
-      if (title) {
-        title.scrollIntoView({block: "nearest"});
-        title.focus();
-      }
-    }, 50);
+    drawAgentOrder();
   }
 
   function syncOrder() {
