@@ -82,7 +82,7 @@ class Mcp:
                 "decision_wait",
                 "Wait until the operator picks an option or the timeout passes, then return the status "
                 "(pending, decided), the chosen label or the operator's own one-line Other answer and, for a click, message and answer: the id and text of the operator's "
-                "passkey-signed answer, a post to the asking agent; check it with operator_message(message, answer, your name) "
+                "passkey-signed answer, a radio call to the asking agent; check it with operator_message(message, answer, your name) "
                 f"before acting on the choice. Waits at most {WAIT_CAP} seconds.",
                 {"id": text_property("Decision id that decision_request returned."), "timeout_seconds": wait},
             ),

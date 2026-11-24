@@ -150,7 +150,7 @@ flowchart TD
 - [ ] Every ask, choice, decision row and rule request under Waits on
       Operator is a card of its kind; a decision row answered through Match
       leaves the stack until its question changes, and its agent receives the
-      pick as a post.
+      pick as a call.
 - [ ] A decision card's option buttons record the pick; a choice's reject is
       refused; a rule card's accept opens its row and its reject carries the
       feedback.

@@ -608,7 +608,7 @@
     }) : null;
     return h("section", {class: "card match-overview", "aria-label": "Decisions"},
       h("h2", {class: "panel-title"}, "Decisions"),
-      h("p", {class: "muted"}, "Nothing has run yet. Accepted commits get the operator's signature for their exact tree, accepted commands run once as jobs under Waits on Operator, accepted asks are granted, every picked option goes to its agent as a post, every rejection goes to its agent by radio call."),
+      h("p", {class: "muted"}, "Nothing has run yet. Accepted commits get the operator's signature for their exact tree, accepted commands run once as jobs under Waits on Operator, accepted asks are granted, every picked option and every rejection goes to its agent by radio call."),
       picked.length ? h("ol", {class: "match-decisions"}, picked.map(([card, decision]) => overviewRow(card, decision))) : h("p", {class: "muted"}, "No decision yet."),
       block && picked.length ? h("p", {class: "match-release-block"}, icon("bi-exclamation-triangle"), block) : null,
       h("div", {class: "actions"}, back, h("span", {class: "spacer"}), release));

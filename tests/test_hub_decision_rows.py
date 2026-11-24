@@ -168,7 +168,7 @@ class TestDecisionRows(unittest.TestCase):
         self.assertNotIn("Operator", row["pills"])
         self.assertEqual(row["options"], [["Keep", False], ["Remove", False]])
         self.assertEqual(row["other"], 1)
-        self.assertEqual(row["to"], ["Your answer goes to Stage 2.0 as a passkey-signed post, with the row id and your answer only."])
+        self.assertEqual(row["to"], ["Your answer goes to Stage 2.0 as a passkey-signed call that wakes it at once, with the row id and your answer only."])
 
     def test_a_picked_option_is_one_signed_grant_of_the_row_with_its_label_and_no_plain_post(self):
         picked = self.data["picked"]
@@ -183,7 +183,7 @@ class TestDecisionRows(unittest.TestCase):
     def test_a_clicked_row_greys_out_spins_and_names_what_it_waits_for(self):
         waits = self.data["waits"]
         self.assertEqual(waits["idle"], ["", False, 0, ""])
-        for state, words in (("sending", "Clicked: waits for your passkey, then the hub stores the answer and sends it to Stage 2.0"), ("held", "Signed: waits out the undo window of a few seconds, then the hub delivers it to Stage 2.0 and the card closes"), ("picked", 'Picked "Keep": Select mode collects it until you press Grant selection at the top; pick it again to take it back')):
+        for state, words in (("sending", "Clicked: the hub stores the answer and sends it to Stage 2.0 once your passkey signs it"), ("held", "Signed: waits out the undo window of a few seconds, then the hub delivers it to Stage 2.0 and the card closes"), ("picked", 'Picked "Keep": Select mode collects it until you press Grant selection at the top; pick it again to take it back')):
             with self.subTest(state=state):
                 self.assertEqual(waits[state], [words, True, 1, words])
 

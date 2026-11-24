@@ -132,7 +132,7 @@
     }
   }
 
-  const signsFor = (item) => `your passkey signs this answer, a post to ${item.agent}`;
+  const signsFor = (item) => `${item.agent} gets this answer as a call once your passkey signs it`;
 
   /**
    * @param {Object} item a permission ask.
@@ -151,7 +151,7 @@
       return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? grantLabel(item) : "", locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT});
     }
     if (item.kind === "ask") {
-      return choiceDialog(askDialog(item.id), {pick: (answer, typed) => { after(); answerAsk(item, answer, typed); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? ALLOW : "", locked: item.held, hint: `your passkey signs it, the answer goes to ${item.to || "its session"}`, group: "", other: TELL});
+      return choiceDialog(askDialog(item.id), {pick: (answer, typed) => { after(); answerAsk(item, answer, typed); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? ALLOW : "", locked: item.held, hint: `the answer goes to ${item.to || "its session"} once your passkey signs it`, group: "", other: TELL});
     }
     const shown = ui.selected.has(keyOf(item)) ? grantLabel(item) : "";
     return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerPick(item, label); }, toggled: new Set(), chosen: shown, locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT})] : null;
@@ -161,7 +161,8 @@
    * @param {Object} item a decision row of the register.
    * @returns {HTMLElement} who receives the answer: the row's first agent with role A, which any agent can set, so the operator sees it before signing.
    */
-  const answerTo = (item) => h("p", {class: "muted answer-to"}, item.agent ? ["Your answer goes to ", h("strong", {}, revealed(item.agent)), " as a passkey-signed post, with the row id and your answer only."] : "No agent holds role A on this row: answer in its session.");
+  const UNASSIGNED = "No agent holds role A on this row: answer in its session.";
+  const answerTo = (item) => h("p", {class: "muted answer-to"}, item.agent ? ["Your answer goes to ", h("strong", {}, revealed(item.agent)), " as a passkey-signed call that wakes it at once, with the row id and your answer only."] : UNASSIGNED);
 
   const deniable = (item) => item.deniable || item.kind === "review";
   const denialOf = (item, reason) => ({...entryOf(item, "reject", ""), channel: "post", reason, to: item.to});
@@ -179,7 +180,7 @@
     return [...state.inbox.filter((entry) => entry.kind === "review" && linked.has(entry.id) && !entry.held && !keys.has(keyOf(entry))), ...items];
   }
 
-  const DENY_NOTE = "Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click the passkey signs the whole selection once; then 3 s remain to undo.";
+  const DENY_NOTE = "Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click 3 s remain for undo, and one passkey signature covers the whole selection.";
 
   function grantNote(alone, batched) {
     const solos = alone ? ` Each rule and each red-gate review first asks its own signature, one after the other (${alone}).` : "";
@@ -230,7 +231,7 @@
     return {
       chosen,
       grant: h("button", {type: "button", class: "btn small primary", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(withReviews(chosen), "Grant selection", false)}}, icon("bi-check2-square"), `Grant ${grantable.length}`),
-      deny: h("button", {type: "button", class: "menu-item danger", ...named(`Deny selection (${denials.length})`, `Deny selection (${denials.length}): each requester gets its denial and an optional reason by post, one passkey signature, 3 s to undo`), disabled: !denials.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), `Deny ${denials.length}`),
+      deny: h("button", {type: "button", class: "menu-item danger", ...named(`Deny selection (${denials.length})`, `Deny selection (${denials.length}): each requester gets its denial and an optional reason by post, 3 s to undo, one passkey signature`), disabled: !denials.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), `Deny ${denials.length}`),
       green: h("button", {type: "button", class: "menu-item", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), `Grant all green ${green.length}`),
     };
   }
@@ -322,7 +323,7 @@
   function waitOf(item) {
     const to = item.agent ? ` to ${item.agent}` : "";
     if (sending.has(keyOf(item))) {
-      return `Clicked: waits for your passkey, then the hub stores the answer and sends it${to}`;
+      return `Clicked: the hub stores the answer and sends it${to} once your passkey signs it`;
     }
     if (item.held) {
       return `Signed: waits out the undo window of a few seconds, then the hub delivers it${to} and the card closes`;

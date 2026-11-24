@@ -445,7 +445,7 @@ class TestWaitingCards(MatchCase):
             {"kind": "decision", "id": ids["decision"], "verb": "approve", "label": "Merge now", "sha256": ""},
             {"kind": "ask", "id": ids["ask"], "verb": "approve", "label": "", "sha256": ""},
         ]
-        answer = signing.message_item("Skills", "post", "Decision operator/pick\nAnswer: Wait", "", "", "")
+        answer = signing.message_item("Skills", "call", "Decision operator/pick\nAnswer: Wait", "", "", "")
         self.assertIn(signing.item_hash(answer), self.prepare(entries)["payload"]["items"])
         for bad, code in (({**entries[0], "label": "Wait\nAnswer: Merge now"}, 400), ({**entries[0], "payload": "0" * 64}, 400), ({**entries[0], "sha256": "0" * 64}, 409)):
             with self.subTest(bad=bad):
@@ -454,9 +454,9 @@ class TestWaitingCards(MatchCase):
             self.assertEqual(self.approve(entries, self.signed(entries, self.pin()))[0], 202)
             self.assertNotIn("operator:operator/pick", [card["id"] for card in self.cards()])
             self.settle(lambda: self.choice(ids["decision"]) == "Merge now" and self.ask_status(ids["ask"], "0") == "allowed")
-        self.settle(lambda: any(sent[0] == "post" and sent[-1].endswith("Decision operator/pick Answer: Wait") for sent in self.radio()))
+        self.settle(lambda: any(sent[:2] == ["send", "call"] and sent[-1].endswith("Decision operator/pick Answer: Wait") for sent in self.radio()))
         sent = next(sent for sent in self.radio() if sent[-1].endswith("Answer: Wait"))
-        self.assertEqual(sent[:5], ["post", "--to", "Skills session", "--session", "Operator"])
+        self.assertEqual(sent[:6], ["send", "call", "--to", "Skills session", "--session", "Operator"])
         self.assertNotIn((skill_scripts.RASCI, ["set", "operator/pick", "--status", "stopped"]), self.scripts.calls)
         self.assertEqual({card["kind"] for card in self.cards()}, {"commit", "command", "rule"})
         self.assertEqual(self.post_json("/api/sign", {"items": [entries[0]]}, self.guard(self.host))[0], 409)
@@ -471,7 +471,7 @@ class TestWaitingCards(MatchCase):
         for label in (" padded", "Wait\nAnswer: Merge now", "tab\there", "x" * 1001):
             with self.subTest(label=label[:20]):
                 self.assertEqual(self.post_json("/api/sign", {"items": [{**entry, "label": label}]}, self.guard(self.host))[0], 400)
-        answer = signing.message_item("Skills", "post", "Decision operator/pick\nAnswer: Ask Main first", "", "", "")
+        answer = signing.message_item("Skills", "call", "Decision operator/pick\nAnswer: Ask Main first", "", "", "")
         self.assertIn(signing.item_hash(answer), self.prepare([entry])["payload"]["items"])
         with mock.patch.object(batches, "UNDO", 0.4):
             self.assertEqual(self.approve([entry], self.signed([entry], self.pin()))[0], 202)

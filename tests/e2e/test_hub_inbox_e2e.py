@@ -212,7 +212,7 @@ class TestHubInbox(base.OrchestratorE2ECase):
 
     def answered(self, result: dict, signs: bool) -> None:
         self.assertNotIn("error", result)
-        self.assertEqual((result["title"], result["asked"], result["closed"], result["tall"], result["wide"]), ("Wait: your passkey signs this answer, a post to Stage", 1, [False, 0], False, False))
+        self.assertEqual((result["title"], result["asked"], result["closed"], result["tall"], result["wide"]), ("Wait: Stage gets this answer as a call once your passkey signs it", 1, [False, 0], False, False))
         signed = [["/api/sign", ["items"], None, None]]
         self.assertEqual(result["posted"], [*signed, ["/api/inbox/approve", ["items", "proof"], None, None]] if signs else signed)
         self.assertTrue((result["toast"] or "").startswith("Choice: Wait" + ("" if signs else ": not signed")), result)
@@ -268,8 +268,8 @@ class TestHubInbox(base.OrchestratorE2ECase):
                 state = self.tool("decision_wait", {"id": decision, "timeout_seconds": 0})["structuredContent"]
                 self.assertEqual((state["status"], state["choice"], state["answer"]), ("decided", "Wait", f"Choice for decision {decision} ({questions[width]}): Wait"))
                 found = self.tool("operator_message", {"id": state["message"], "text": state["answer"], "to": "Stage"})["structuredContent"]
-                self.assertEqual((found["match"], found["class"], found["to"]), (True, "post", "Stage"))
-                self.assertIn(["post", "--to", "Stage", "--session", "Operator", f"[kvb-orchestrator msg {state['message']}] {state['answer']}"], radio)
+                self.assertEqual((found["match"], found["class"], found["to"]), (True, "call", "Stage"))
+                self.assertIn(["send", "call", "--to", "Stage", "--session", "Operator", f"[kvb-orchestrator msg {state['message']}] {state['answer']}"], radio)
 
     def test_chromium_requests_choices_on_every_channel_and_signs_a_choice_at_three_widths(self):
         self.check_choices("chromium", "cdp.mjs", os.environ.get("CHROMIUM", "chromium"), signs=True)

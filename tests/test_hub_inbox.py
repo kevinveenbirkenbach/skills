@@ -29,7 +29,7 @@ class TestHubInbox(HubCase):
         self.assertEqual(self.approve([self.entry("review", "0123456789abcdef", "", "")], None)[0], 404)
         self.assertEqual(self.post_json("/api/inbox/approve", {"items": batch, "proof": None}, self.client())[0], 403)
         prepared = self.prepare(batch)
-        answer = signing.message_item("Skills", "post", f"Choice for decision {decision_id} (Merge the hub?): Merge now", "", "", "")
+        answer = signing.message_item("Skills", "call", f"Choice for decision {decision_id} (Merge the hub?): Merge now", "", "", "")
         listed = [signing.item_hash(signing.review_item(green, "/repo/.git", "/repo/.worktrees/feature/x", "feature/x", TREE)), signing.item_hash(signing.ask_item(ask_id, "Bash", "make deploy", "/repo", "s1")), signing.item_hash(answer)]
         self.assertEqual((prepared["payload"]["items"], prepared["challenge"]), (sorted(listed), signing.challenge(prepared["payload"])))
         unsigned = [{**self.entry("review", red, "", ""), "verb": "reject"}]

@@ -25,5 +25,5 @@ A `decision` row carries two to four answers, as an `AskUserQuestion`
 offers, each as `--option "<label>=<what it means>"`, and your pick as
 `--recommended`; an instruction step offers `Done=` and `Blocked=`. The hub
 shows them as a numbered dialog with a one-line Other answer, and the answer
-reaches the row's A as a passkey-signed post `Decision <task>` /
+reaches the row's A as a passkey-signed call `Decision <task>` /
 `Answer: <answer>` to check with `operator_message` before acting.

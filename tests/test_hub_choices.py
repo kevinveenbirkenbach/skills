@@ -113,7 +113,7 @@ class TestHubChoices(HubCase):
         result = self.tool("decision_request", {"question": question, "options": OPTIONS, "agent": "Stage", "recommended": ""})
         self.assertFalse(result["isError"], result)
         decision_id = result["structuredContent"]["id"]
-        answer = signing.message_item("Stage", "post", f"Choice for decision {decision_id} ({' '.join(question.split())}): Wait", "", "", "")
+        answer = signing.message_item("Stage", "call", f"Choice for decision {decision_id} ({' '.join(question.split())}): Wait", "", "", "")
         return decision_id, answer
 
     def test_a_click_on_a_choice_option_sends_a_signed_answer_operator_message_verifies(self):
@@ -131,13 +131,13 @@ class TestHubChoices(HubCase):
         state = self.tool("decision_wait", {"id": decision_id, "timeout_seconds": 0})["structuredContent"]
         self.assertEqual((state["status"], state["answer"]), ("decided", answer["text"]))
         found = self.check(state["message"], state["answer"], "Stage")["structuredContent"]
-        self.assertEqual((found["match"], found["to"], found["class"], found["text"]), (True, "Stage", "post", answer["text"]))
+        self.assertEqual((found["match"], found["to"], found["class"], found["text"]), (True, "Stage", "call", answer["text"]))
         self.assertTrue(self.check(state["message"], state["answer"], "Skills")["isError"])
         self.assertTrue(self.check(state["message"], f"Choice for decision {decision_id} (Pick a name?): Merge now", "Stage")["isError"])
-        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["post", "--to", "Stage", "--session", "Operator", f"[kvb-orchestrator msg {state['message']}] {answer['text']}"])])
+        self.assertEqual(self.scripts.calls, [(skill_scripts.RADIO, ["send", "call", "--to", "Stage", "--session", "Operator", f"[kvb-orchestrator msg {state['message']}] {answer['text']}"])])
         self.assertEqual(self.approve([entry], proof)[0], 409)
         titles = [row["text"] for row in self.events("kinds=approval")["events"]]
-        self.assertIn("decided · post to Stage (operator)", titles)
+        self.assertIn("decided · call to Stage (operator)", titles)
 
     def test_an_answer_signed_by_no_pinned_key_decides_nothing_and_sends_nothing(self):
         self.pin()
