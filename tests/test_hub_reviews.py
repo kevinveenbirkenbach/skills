@@ -46,7 +46,9 @@ REVIEW_PAGE = """<!DOCTYPE html><html><head><script>const x = "<details class='f
 <section class="group" id="commits">
 <details class="commit" id="c1" open><summary><code class="sha">abc1234</code></summary>
 <div class="commit-files">
-<details class="file" id="f3" data-path="skip.py"><summary><span class="badge added" title="added">A</span><span class="path">skip.py</span></summary></details>
+<details class="file" id="f3" data-path="committed.py"><summary><span class="badge added" title="added">A</span><span class="path">committed.py</span><span class="stat"><span class="add">+1</span><span class="del">&minus;0</span></span></summary>
+<table class="diff"><tbody><tr class="add"><td class="num"></td><td class="num">1</td><td class="sign">+</td><td class="code">x = 1</td></tr></tbody></table>
+</details>
 </div>
 </details>
 </section>
@@ -176,7 +178,9 @@ class TestHubReviews(HubCase):
         self.assertEqual([(f["section"], f["path"], f["old"], f["status"], f["added"], f["removed"]) for f in files], [
             ("staged", "hub/server.py", "", "modified", 2, 1),
             ("staged", "docs/new.md", "docs/old.md", "renamed", 0, 0),
+            ("commits", "committed.py", "", "added", 1, 0),
         ])
+        self.assertEqual([(line["kind"], line["new"], line["text"]) for line in files[2]["lines"]], [("add", "1", "x = 1")])
         lines = [(line["kind"], line["old"], line["new"], line["text"]) for line in files[0]["lines"]]
         self.assertEqual(lines, [
             ("hunk", "", "", "@@ -1,2 +1,3 @@"),
@@ -190,7 +194,7 @@ class TestHubReviews(HubCase):
         review_id = self.tool("review_request", self.arguments("feat: tree", "", self.page("tree.html", REVIEW_PAGE)))["structuredContent"]["id"]
         status, _, body = self.get(f"/reviews/{review_id}/files")
         self.assertEqual((status, json.loads(body)), (200, {"files": files}))
-        self.assertEqual([(r["id"], r["files"]) for r in self.snapshot()["reviews"]], [(review_id, 2)])
+        self.assertEqual([(r["id"], r["files"]) for r in self.snapshot()["reviews"]], [(review_id, 3)])
         self.assertEqual(self.get(f"/reviews/{review_id}/page")[2].decode("utf-8"), REVIEW_PAGE)
 
 

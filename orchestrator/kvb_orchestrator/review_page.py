@@ -28,7 +28,7 @@ class ReviewPage(HTMLParser):
         if tag == "section":
             self.section = values.get("id") or ""
         elif tag == "details":
-            if first == "file" and "commit" not in self.details:
+            if first == "file":
                 self.file = {"section": self.section, "status": "", "tags": [], "lines": []}
                 self.texts = {name: [] for name in TEXTS}
                 self.spans = []
