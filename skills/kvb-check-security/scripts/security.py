@@ -22,8 +22,8 @@ Args:
 Scan:
     The regular files `git diff <ref>` names plus untracked ones, symlinks left
     out, copied to a temporary tree and scanned once with
-    `medusa scan <tree> --format json -o <dir> --no-cache --workers <w>`, w the
-    files scanned but at most host_workers(), HOME pointing into the temporary
+    `medusa scan <tree> --format json -o <dir> --no-cache --workers <w>`, w
+    host_workers() also for fewer files, HOME pointing into the temporary
     directory because medusa creates ~/.medusa on start and KNOB set to
     --timeout (a medusa that ignores KNOB keeps its own cap), read from
     `<dir>/medusa-scan-*.json`: a `findings` list whose entries carry
@@ -837,7 +837,7 @@ def scan(
             return scanned, hit, missed
         code, out, lasted = medusa_run(
             [medusa, "scan", str(tree), "--format", "json", "-o", str(reports), "--no-cache",
-             "--workers", str(min(scanned, host_workers()))],
+             "--workers", str(host_workers())],
             work, env, deadline,
         )
         try:

@@ -222,7 +222,7 @@ class TestSecurity(unittest.TestCase):
         argv = json.loads((self.bin / "argv.json").read_text(encoding="utf-8"))
         self.assertEqual(
             [argv[0], *argv[2:4], argv[4], *argv[6:]],
-            ["scan", "--format", "json", "-o", "--no-cache", "--workers", str(min(2, security_module().host_workers()))],
+            ["scan", "--format", "json", "-o", "--no-cache", "--workers", str(security_module().host_workers())],
         )
         result = self.scan("--json", env=self.env)
         self.assertNotIn(PLACEHOLDER, result.stdout + result.stderr)
