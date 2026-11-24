@@ -4,6 +4,9 @@
 .inbox-list > .item.entry.red { box-shadow: inset 3px 0 0 var(--bad); }
 .inbox-list > .item.entry > .entry-body { display: grid; gap: var(--sp-1); min-width: 0; }
 .inbox-list > .item.entry .reason { margin: 0; }
+.inbox-list > .item.entry.pending { box-shadow: inset 3px 0 0 var(--muted); filter: grayscale(.85); opacity: .6; }
+.wait-spin { display: inline-block; flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; color: var(--accent); animation: presence-spin .9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .wait-spin { animation: none; } }
 @media (max-width: 640px) {
   .inbox-list > .item.entry { grid-template-columns: auto minmax(0, 1fr); }
   .inbox-list > .item.entry > .entry-body { grid-column: 1 / -1; }

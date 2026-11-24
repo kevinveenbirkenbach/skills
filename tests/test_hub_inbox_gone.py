@@ -40,7 +40,7 @@ const context = {
   console, document, JSON, Math, Date, Intl, Promise, Set, Map, Number, String, Array, Object, RegExp, Boolean, Error, AbortController, setTimeout, setImmediate,
   window: {location: {hash: "", hostname: "localhost", port: "8737", pathname: "/"}, setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {}, getSelection: () => "", matchMedia: () => ({matches: false})},
   ResizeObserver: class { observe() {} unobserve() {} },
-  state: {inbox: [], radio: [], settings: {}, now},
+  state: {inbox: [], radio: [], settings: {}, now}, inboxDom: null,
   ui: {screen: "inbox", busy: false, selected: new Set(), cursor: 0, snoozed: false, asOf: null, playing: false, offline: false},
   known: {batches: new Set()}, motion: {current: new Map([["x", {}]]), asOf: null}, settingsSig: "{}",
   windowQuery: () => "", adoptSettings: () => {}, tuneMusic: () => {}, drawSky: () => {}, announce: () => {}, drawTime: () => {}, drawAgent: () => {}, relayout: () => {}, pulses: () => {}, tick: () => {}, forgetRevealed: () => {},

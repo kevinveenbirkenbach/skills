@@ -721,6 +721,6 @@
     const shown = matchCard(front);
     shown.dataset.fresh = String(!before || before.dataset.card !== front.id);
     draggable(shown, front);
-    dom.stack.replaceChildren(h("div", {class: "match-deck"}, behind, shown), h("div", {class: "match-actions"}, reject, later, accept), peeks);
+    keepTyping(dom.stack, () => dom.stack.replaceChildren(h("div", {class: "match-deck"}, behind, shown), h("div", {class: "match-actions"}, reject, later, accept), peeks));
     shown.querySelector(".match-body").scrollTop = scrolled;
   }

@@ -2,6 +2,23 @@
   const ALLOW = "Yes";
   const TELL = "Tell Claude what to do instead";
   const askDialog = (id) => ({id, options: [{label: ALLOW, description: "allow this one call"}, {label: "No", description: "deny it"}], recommended: "", multi: false});
+  const drafts = new Map();
+  const forgetDraft = (id) => drafts.delete(id);
+
+  /**
+   * @param {HTMLElement} root the element draw() rebuilds.
+   * @param {Function} draw replaces root's children; the text field the operator types in keeps focus and caret when draw() rebuilds it under the same aria-label.
+   */
+  function keepTyping(root, draw) {
+    const field = document.activeElement;
+    const held = field && field.tagName === "INPUT" && root.contains(field) && field.getAttribute("aria-label") ? [field.getAttribute("aria-label"), field.selectionStart, field.selectionEnd] : null;
+    draw();
+    const again = held && [...root.querySelectorAll("input")].find((node) => node.getAttribute("aria-label") === held[0]);
+    if (again && document.activeElement !== again) {
+      again.focus({preventScroll: true});
+      again.setSelectionRange(held[1], held[2]);
+    }
+  }
 
   /**
    * @param {Object} item a decision, a decision row, a decision card or a permission ask: id, options [{label, description, preview}], recommended (labels joined by PICKED), multi.
@@ -40,7 +57,8 @@
       send.addEventListener("click", () => how.pick(item.options.filter((option) => how.toggled.has(option.label)).map((option) => option.label).join(PICKED), false));
     }
     const typed = chosen.length === 1 && !item.options.some((option) => option.label === chosen[0]) ? chosen[0] : null;
-    const input = h("input", {class: "field", type: "text", maxlength: OTHER_LIMIT, placeholder: how.other, "aria-label": `Other answer to ${item.id}`, value: typed, disabled: how.locked});
+    const input = h("input", {class: "field", type: "text", maxlength: OTHER_LIMIT, placeholder: how.other, "aria-label": `Other answer to ${item.id}`, value: typed || drafts.get(item.id) || null, disabled: how.locked});
+    input.addEventListener("input", () => drafts.set(item.id, input.value));
     const other = h("form", {class: "option other"}, input,
       h("button", {type: "submit", class: "btn small", disabled: how.locked, ...named("Send", revealed(`Send this text: ${how.hint}`))}, icon("bi-send"), "Send"));
     other.addEventListener("submit", (event) => {

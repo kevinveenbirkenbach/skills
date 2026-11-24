@@ -168,7 +168,7 @@ class Choosing:
         """
         tasks = read_register(self.council / REGISTER)
         row = next((row for row in operator_rows(tasks) if row["task"] == item["id"]), None)
-        if row is None or item["label"] not in [option["label"] for option in row["options"]] or row_answer_signed(row, adder(tasks[item["id"]]), item["label"]) != item["signed"]:
+        if row is None or not picks(row, item["label"]) or row_answer_signed(row, adder(tasks[item["id"]]), item["label"]) != item["signed"]:
             return "refused: the row changed since the release"
         self.operator_proven(proof, item["signed"])
         with self.answers.changed:

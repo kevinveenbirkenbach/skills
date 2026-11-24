@@ -64,9 +64,10 @@ const probe = `
 const sent = [];
 const toasts = [];
 const submits = [];
+const entries = [];
 radioSend = async (message) => { sent.push(message); return true; };
 toast = (title) => { toasts.push(title); return {remove() {}}; };
-submit = async (entries, label) => { submits.push(label); };
+submit = async (batch, label) => { submits.push(label); entries.push(...batch); return true; };
 drawInbox = () => {};
 const shape = (node) => ({
   commands: classed(node, "command").length,
@@ -83,14 +84,21 @@ const results = {};
 (async () => {
   results.row = shape(inboxItem(items.row, 0));
   await optionNamed(inboxItem(items.row, 0), "Keep").fire("click");
-  results.picked = {sent: sent.splice(0), after: shape(inboxItem(items.row, 0))};
+  results.picked = {sent: sent.splice(0), submits: submits.splice(0), entries: entries.splice(0)};
   const form = classed(inboxItem(items.other, 1), "other")[0];
-  all(form).find((el) => el.tag === "input").value = "Ask Main first";
+  const field = all(form).find((el) => el.tag === "input");
+  field.value = "Ask Main";
+  field.fire("input");
+  results.draft = all(classed(inboxItem(items.other, 1), "other")[0]).find((el) => el.tag === "input").attrs.value || "";
+  field.value = "Ask Main first";
   await form.fire("submit");
-  results.typed = {sent: sent.splice(0), after: shape(inboxItem(items.other, 1)).pills};
+  results.typed = {sent: sent.splice(0), submits: submits.splice(0), entries: entries.splice(0), kept: all(classed(inboxItem(items.other, 1), "other")[0]).find((el) => el.tag === "input").attrs.value || ""};
+  state.inbox = [{...items.row, answered: "Keep"}, items.other, {...items.bare, until: state.now + 3600}];
+  results.listed = {visible: visibleInbox().map((item) => item.id), waiting: waitingCount(), snoozed: openInbox().length - waitingCount()};
+  state.inbox = [];
   results.bare = shape(inboxItem(items.bare, 2));
   await optionNamed(inboxItem(items.orphan, 3), "Keep").fire("click");
-  results.orphan = {sent: sent.splice(0), toasts: toasts.splice(0)};
+  results.orphan = {sent: sent.splice(0), submits: submits.splice(0), toasts: toasts.splice(0)};
   results.run = shape(inboxItem(items.run, 4));
   const pick = inboxItem(items.pick, 5);
   results.pick = {shape: shape(pick), first: preview(pick)};
@@ -121,13 +129,27 @@ const results = {};
   await optionNamed(asking, "Yes").fire("click");
   results.ask.denials = denials.splice(0);
   results.ask.grants = submits.splice(0).map((label) => label.split(":")[0]);
+  const look = (item) => {
+    const node = inboxItem(item, 0);
+    return [waitOf(item), (node.attrs.class || "").split(" ").includes("pending"), classed(node, "wait-spin").length, node.attrs.title || ""];
+  };
+  results.waits = {idle: look(items.row)};
+  sending.add(keyOf(items.row));
+  results.waits.sending = look(items.row);
+  sending.clear();
+  results.waits.held = look({...items.row, held: true});
+  ViewStore.get = () => GRANT_SELECT;
+  ui.selected.add(keyOf(items.row));
+  choices.set(keyOf(items.row), "Keep");
+  results.waits.picked = look(items.row);
+  ui.selected.clear();
+  choices.clear();
+  ViewStore.get = () => "direct";
   console.log(JSON.stringify(results));
 })().catch((error) => { console.error(error && error.stack || error); process.exit(1); });
 `;
 vm.runInNewContext(`${source}\n${probe}`, {...context, process});
 """
-
-ANSWER = "Decision operator/donation\nAnswer: Keep"
 
 
 class TestDecisionRows(unittest.TestCase):
@@ -148,27 +170,31 @@ class TestDecisionRows(unittest.TestCase):
         self.assertEqual(row["other"], 1)
         self.assertEqual(row["to"], ["Your answer goes to Stage 2.0 as a passkey-signed post, with the row id and your answer only."])
 
-    def test_the_signed_answer_carries_no_text_an_agent_wrote_but_the_answer_and_names_its_recipient(self):
-        picked = self.data["picked"]["sent"][0]
-        self.assertNotIn("donation section", picked["text"])
-        self.assertEqual(picked["to"], "Stage 2.0")
-
-    def test_a_picked_option_is_a_post_to_the_asking_agent_and_the_row_shows_it_answered(self):
+    def test_a_picked_option_is_one_signed_grant_of_the_row_with_its_label_and_no_plain_post(self):
         picked = self.data["picked"]
-        self.assertEqual(picked["sent"], [{"to": "Stage 2.0", "text": ANSWER, "cls": "post", "upload": "", "voice": ""}])
-        self.assertIn("answered: Keep", picked["after"]["pills"])
-        self.assertEqual(picked["after"]["options"], [["Keep", True], ["Remove", True]])
+        self.assertEqual((picked["sent"], picked["submits"]), ([], ["Answer: Keep"]))
+        self.assertEqual(picked["entries"], [{"kind": "operator", "id": "operator/donation", "verb": "approve", "label": "Keep", "sha256": "s"}])
 
-    def test_a_typed_answer_goes_the_same_way(self):
+    def test_a_typed_answer_goes_the_same_way_and_survives_a_redraw_until_it_is_sent(self):
         typed = self.data["typed"]
-        self.assertEqual([message["text"].split("\n")[1] for message in typed["sent"]], ["Answer: Ask Main first"])
-        self.assertIn("answered: Ask Main first", typed["after"])
+        self.assertEqual(self.data["draft"], "Ask Main")
+        self.assertEqual((typed["sent"], typed["submits"], [entry["label"] for entry in typed["entries"]], typed["kept"]), ([], ["Answer: Ask Main first"], ["Ask Main first"], ""))
+
+    def test_a_clicked_row_greys_out_spins_and_names_what_it_waits_for(self):
+        waits = self.data["waits"]
+        self.assertEqual(waits["idle"], ["", False, 0, ""])
+        for state, words in (("sending", "Clicked: waits for your passkey, then the hub stores the answer and sends it to Stage 2.0"), ("held", "Signed: waits out the undo window of a few seconds, then the hub delivers it to Stage 2.0 and the card closes"), ("picked", 'Picked "Keep": Select mode collects it until you press Grant selection at the top; pick it again to take it back')):
+            with self.subTest(state=state):
+                self.assertEqual(waits[state], [words, True, 1, words])
+
+    def test_an_answered_row_leaves_the_list_and_the_counts(self):
+        self.assertEqual(self.data["listed"], {"visible": ["operator/other"], "waiting": 1, "snoozed": 1})
 
     def test_a_row_without_options_still_offers_the_free_answer(self):
         self.assertEqual((self.data["bare"]["commands"], self.data["bare"]["options"], self.data["bare"]["other"]), (0, [], 1))
 
     def test_a_row_without_an_adding_agent_sends_nothing_and_says_why(self):
-        self.assertEqual(self.data["orphan"]["sent"], [])
+        self.assertEqual((self.data["orphan"]["sent"], self.data["orphan"]["submits"]), ([], []))
         self.assertEqual(self.data["orphan"]["toasts"], ["Answer: no agent to send it to"])
 
     def test_a_runnable_operator_row_keeps_its_command_box(self):

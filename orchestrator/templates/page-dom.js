@@ -56,8 +56,9 @@
   const live = () => ui.asOf === null;
   const alarmRows = () => state.radio.filter((row) => (row.class === "mayday" || row.class === "pan-pan") && row.ts >= state.alarm_since).reverse();
   const keyOf = (item) => `${item.kind}:${item.id}`;
-  const visibleInbox = () => state.inbox.filter((item) => ui.snoozed || !item.until);
-  const waitingCount = () => state.inbox.filter((item) => !item.until && !item.answered).length;
+  const openInbox = () => state.inbox.filter((item) => !item.answered);
+  const visibleInbox = () => openInbox().filter((item) => ui.snoozed || !item.until);
+  const waitingCount = () => openInbox().filter((item) => !item.until).length;
   const isGreen = (item) => item.green && !item.held && !item.until && item.kind !== "operator";
   const selectable = (item) => !item.held && item.kind !== "rule" && !(item.kind === "review" && item.gate !== "pass") && !(item.kind === "operator" && !item.runnable) && !(item.kind === "decision" && !item.recommended);
   const entryOf = (item, verb, label) => ({kind: item.kind, id: item.id, verb, label, sha256: item.sha256 || ""});

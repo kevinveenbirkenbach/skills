@@ -55,7 +55,7 @@ const context = {
   console, document, JSON, Math, Date, Intl, Promise, Set, Map, Number, String, Array, Object, RegExp, Boolean, Error, setTimeout,
   Node: El, Element: El, HTMLElement: El,
   window: {location: {hash: "", hostname: "localhost", port: "8737", pathname: "/"}, setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {}, getSelection: () => "", matchMedia: () => ({matches: false})},
-  state: {inbox: [], radio: [], messages: [], settings: {}, now},
+  state: {inbox: [], radio: [], messages: [], settings: {}, now}, inboxDom: null,
   ui: {screen: "inbox", busy: false, selected: new Set(), cursor: 0, snoozed: false, asOf: null},
   known: {batches: new Set()},
   ViewStore: {get: (path) => (path === "approval.mode" ? mode.value : null), set: (path, value) => { sets.push([path, value]); mode.value = value; }, on: (path, callback) => listeners.push([path, callback])},

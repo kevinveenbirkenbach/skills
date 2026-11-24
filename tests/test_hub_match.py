@@ -473,6 +473,10 @@ class TestWaitingCards(MatchCase):
                 self.assertEqual(self.post_json("/api/sign", {"items": [{**entry, "label": label}]}, self.guard(self.host))[0], 400)
         answer = signing.message_item("Skills", "post", "Decision operator/pick\nAnswer: Ask Main first", "", "", "")
         self.assertIn(signing.item_hash(answer), self.prepare([entry])["payload"]["items"])
+        with mock.patch.object(batches, "UNDO", 0.4):
+            self.assertEqual(self.approve([entry], self.signed([entry], self.pin()))[0], 202)
+            self.settle(lambda: self.answered("operator/pick") == "Ask Main first")
+        self.settle(lambda: any(sent[-1].endswith("Decision operator/pick Answer: Ask Main first") for sent in self.radio()))
 
     def test_a_rejected_decision_row_stops_and_its_agent_hears_the_question_and_the_feedback(self):
         self.waiting()

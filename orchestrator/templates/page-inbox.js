@@ -25,9 +25,22 @@
     }
   }
 
+  const sending = new Set();
+
   async function submit(entries, label) {
-    ui.busy = true;
     const keys = entries.map(keyOf);
+    keys.forEach((key) => sending.add(key));
+    drawInbox();
+    try {
+      return await sendBatch(entries, label, keys);
+    } finally {
+      keys.forEach((key) => sending.delete(key));
+      drawInbox();
+    }
+  }
+
+  async function sendBatch(entries, label, keys) {
+    ui.busy = true;
     let missing = null;
     const gone = (result) => {
       if (keys.length > 1 && result.status === 404) {
@@ -108,17 +121,14 @@
   const answerPick = (item, label) => (picking(item) ? collectPick(item, label) : answerRow(item, label));
   const grantSolo = (item) => (item.kind === "rule" ? acceptRule(item) : submit([entryOf(item, "approve", "")], `Grant: ${short(item.title)}`));
   const asked = (item) => item.kind === "operator" && item.check === "decision";
-  const answers = new Map();
-  const answerOf = (item) => answers.get(keyOf(item)) || item.answered || "";
 
   async function answerRow(item, answer) {
     if (!item.agent) {
       toast("Answer: no agent to send it to", ["The row names no adding agent; answer in its session."], false);
       return;
     }
-    if (await radioSend({to: item.agent, text: `Decision ${item.id}\nAnswer: ${answer}`, cls: "post", upload: "", voice: ""})) {
-      answers.set(keyOf(item), answer);
-      drawInbox();
+    if (await submit([entryOf(item, "approve", answer)], `Answer: ${shownPick(answer)}`)) {
+      forgetDraft(item.id);
     }
   }
 
@@ -143,9 +153,8 @@
     if (item.kind === "ask") {
       return choiceDialog(askDialog(item.id), {pick: (answer, typed) => { after(); answerAsk(item, answer, typed); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? ALLOW : "", locked: item.held, hint: `your passkey signs it, the answer goes to ${item.to || "its session"}`, group: "", other: TELL});
     }
-    const told = answerOf(item);
-    const shown = told || (ui.selected.has(keyOf(item)) ? grantLabel(item) : "");
-    return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerPick(item, label); }, toggled: new Set(), chosen: shown, locked: item.held || Boolean(told), hint: signsFor(item), group: "", other: OTHER_PROMPT})] : null;
+    const shown = ui.selected.has(keyOf(item)) ? grantLabel(item) : "";
+    return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerPick(item, label); }, toggled: new Set(), chosen: shown, locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT})] : null;
   };
 
   /**
@@ -305,17 +314,38 @@
     return h("button", {type: "button", class: "linkish headline", title: "Open", on: {click: () => openItem(item)}}, revealed(item.kind === "operator" ? item.id : item.kind === "ask" ? item.title.split(": ")[0] : item.title));
   }
 
+  /**
+   * @param {Object} item an inbox item.
+   * @returns {string} what the item waits for once it was clicked: the passkey, the undo window, or the Grant of a
+   * Select pick; "" for an item nobody clicked yet.
+   */
+  function waitOf(item) {
+    const to = item.agent ? ` to ${item.agent}` : "";
+    if (sending.has(keyOf(item))) {
+      return `Clicked: waits for your passkey, then the hub stores the answer and sends it${to}`;
+    }
+    if (item.held) {
+      return `Signed: waits out the undo window of a few seconds, then the hub delivers it${to} and the card closes`;
+    }
+    if (grantMode() === GRANT_SELECT && ui.selected.has(keyOf(item))) {
+      const label = chosenLabel(item);
+      return `${label === undefined ? "Selected" : `Picked "${shownPick(label)}"`}: Select mode collects it until you press Grant selection at the top; pick it again to take it back`;
+    }
+    return "";
+  }
+
   function inboxItem(item, index) {
     const red = item.kind === "review" && item.gate !== "pass";
     const commanded = item.kind === "ask" || (item.kind === "operator" && !asked(item));
-    const classes = ["item", "entry", `k-${item.kind}`, "waiting", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
+    const wait = waitOf(item);
+    const classes = ["item", "entry", `k-${item.kind}`, "waiting", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", wait ? "pending" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
     const box = h("input", {type: "checkbox", "aria-label": `Select ${item.title}`, checked: ui.selected.has(keyOf(item)), disabled: !pickable(item), on: {change: () => toggle(item, true)}});
-    return h("li", {class: classes, "data-index": index, "data-ref": keyOf(item), "data-to": item.to || null},
+    return h("li", {class: classes, "data-index": index, "data-ref": keyOf(item), "data-to": item.to || null, "aria-busy": wait ? "true" : null, title: wait || null},
       box,
       h("div", {class: "msg-meta"},
         when(item.ts),
+        wait ? h("span", {class: "wait-spin", role: "status", "aria-label": wait, title: wait}) : null,
         asked(item) ? pill("Decision", KIND_TONES.decision) : pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
-        answerOf(item) ? pill(revealed(`answered: ${answerOf(item)}`), "ok") : null,
         item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
         reviewsPill(item),
         item.warnings.map((warning) => pill(warning, "bad")),
@@ -363,22 +393,22 @@
       }
     }
     const mode = grantMode();
-    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], [...choices], [...answers], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
+    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], [...choices], [...sending], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
     if (sig === inboxSig) {
       repaintConsoles(items);
       return;
     }
     inboxSig = sig;
-    const hidden = state.inbox.length - waitingCount();
+    const hidden = openInbox().length - waitingCount();
     const snoozed = h("input", {type: "checkbox", checked: ui.snoozed, on: {change: (event) => {
       ui.snoozed = event.target.checked;
       drawInbox();
     }}});
-    Panels.keepFocus(inboxSlot, () => inboxDom.replaceChildren(
+    keepTyping(inboxDom, () => Panels.keepFocus(inboxSlot, () => inboxDom.replaceChildren(
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Waits on Operator", counter(waitingCount())), h("span", {class: "spacer"}),
         hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null, inboxSlot),
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
-      items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now.")));
+      items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now."))));
     settleConsoles(items);
   }
 
