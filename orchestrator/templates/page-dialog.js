@@ -11,7 +11,7 @@
    */
   function keepTyping(root, draw) {
     const field = document.activeElement;
-    const held = field && field.tagName === "INPUT" && root.contains(field) && field.getAttribute("aria-label") ? [field.getAttribute("aria-label"), field.selectionStart, field.selectionEnd] : null;
+    const held = field && field.tagName === "INPUT" && typeof field.selectionStart === "number" && root.contains(field) && field.getAttribute("aria-label") ? [field.getAttribute("aria-label"), field.selectionStart, field.selectionEnd] : null;
     draw();
     const again = held && [...root.querySelectorAll("input")].find((node) => node.getAttribute("aria-label") === held[0]);
     if (again && document.activeElement !== again) {
