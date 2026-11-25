@@ -120,13 +120,14 @@ class TestHubConsole(HubCase):
             (200, "done", 1), (200, "done", 1), (200, "done", 1), (200, "failed", 1), (200, "failed", 1), (200, "failed", 1), (200, "refused", 0), (200, "failed", 0),
         ])
         shown = ["greet", f"--command={COMMAND}", f"--dir={self.outside}"]
+        where = [f"--where=the console of hub job {job['id']} under the row in Waits on Operator" for job in jobs[3:6]]
         self.assertEqual(self.scripts.calls, [
             (skill_scripts.OPERATOR_SCRIPT, ["ran", *shown]),
             (skill_scripts.OPERATOR_SCRIPT, ["ran", *shown, "--check-failed"]),
             (skill_scripts.OPERATOR_SCRIPT, ["ran", *shown, "--check-failed"]),
-            (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "exit 3"]),
-            (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "killed by signal 9"]),
-            (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "exit 130"]),
+            (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "exit 3", where[0]]),
+            (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "killed by signal 9", where[1]]),
+            (skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", "exit 130", where[2]]),
         ])
         self.assertNotIn("token-42", json.dumps(self.scripts.calls))
 

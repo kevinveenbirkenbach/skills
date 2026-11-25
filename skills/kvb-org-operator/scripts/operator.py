@@ -57,15 +57,14 @@ Args:
         reason (empty: back to the question), sets the row as shown stopped
         with it and sends it as a message; a row changed since it was shown
         is not cancelled. y runs the command in its directory,
-        its stderr passed through and its last FAILED_LINES lines kept, then
+        its stderr passed through to the terminal and never kept, then
         sets the row done when its check passes (manual: when the command
         exits 0), else keeps it open, with a message either way. A command
         that exits non-zero or cannot start leaves the
-        queue the same way: the row is set stopped with the exit under
-        `failed`, sent as a message with the request to queue
-        the corrected command under the same slug; the stderr lines go under
-        `failed.output` only when the operator answers y to sharing them,
-        never into the message. Exit 130 or a
+        queue the same way: the row is set stopped with the exit and where
+        its output stays (TERMINAL) under `failed`, sent as a message with
+        the request to queue the corrected command under the same slug; no
+        output line leaves the operator's view. Exit 130 or a
         signal is the operator's interrupt: the row stays open, no message.
         A command
         the kvb-org-organize watch config calls heavy also shows the memory
@@ -93,9 +92,10 @@ Args:
     checked <slug>: exit 0 when the row's check passes here as run would
         close it, 1 when it does not, 2 for a slug the register lacks; the
         hub's runner calls it on the host after a job's exit 0.
-    failed <slug> --why "<text>" --command "<cmd>" --dir <dir>: the hub's
-        report of a job that failed: the row set stopped with why and no
-        output lines under `failed`, sent as a message like a failure in run.
+    failed <slug> --why "<text>" --command "<cmd>" --dir <dir> [--where
+        "<text>"]: the hub's report of a job that failed: the row set
+        stopped with why and where its output stays (the hub's job console)
+        under `failed`, sent as a message like a failure in run.
         Unlike run, the hub counts exit 130 and a signal (why `killed by
         signal <n>`) as failures.
         ran and failed change a row only while it holds exactly that command
@@ -124,9 +124,9 @@ Output:
                 passed (<check>)`, and on stderr `operator: <row> done; <how
                 it went>`
             done: `<row> marked done by <caller name>`
-            cancel: the reason; failure and failed: the exit, `no start`
-                with the errno name, or the hub's why, and how many shared
-                stderr lines `failed.output` holds.
+            cancel: the reason; failure and failed: the slug, the exit,
+                `no start` with the errno name, or the hub's why, and where
+                the output stays, which `failed.where` holds.
         A row changed or closed since it was shown gets no message.
 
 Exit codes:
@@ -178,9 +178,7 @@ HOLD_KIND = "operator"
 HOLD_SESSION = "Operator"
 NOT_RUN = 75
 GRANT_SECONDS = 600
-FAILED_LINES = 20
-FAILED_BYTES = 65536
-LINE_CHARS = 300
+TERMINAL = "the terminal the operator ran operator.py run in"
 DRAIN_SECONDS = 0.2
 INTERRUPTED = 130
 SUDO = re.compile(r"\bsudo\b")
@@ -195,6 +193,8 @@ NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 COMMIT = re.compile(r"\bcommit\b")
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SLOT = re.compile(r"<[A-Za-z][^<>]*>")
+TEE = re.compile(r"\|&?\s*(?:\S*/)?tee\b")
+QUEUE_HOLD = re.compile(r"\bqueue\.py\s+hold\b")
 SENT = re.compile(r"^sent (call|post) to (.+)$")
 WAKE = "wake: SendMessage to "
 BUILTINS = frozenset({".", ":", "cd", "exec", "exit", "export", "set", "source", "umask"})
@@ -268,6 +268,20 @@ def unrunnable(command: str, directory: str) -> str | None:
     if program in BUILTINS or shutil.which(os.path.join(directory, program) if "/" in program else program):
         return None
     return f"names no program on PATH ({program!r})"
+
+
+def pipeline_problem(command: str) -> str | None:
+    """Returns:
+        Why the hub runner, which runs one row at a time and judges it by its
+        exit code, must not run command: a queue.py hold that parks the
+        runner in a queue wait, or a pipe into tee without pipefail whose exit
+        code is tee's; None otherwise.
+    """
+    if QUEUE_HOLD.search(command):
+        return "waits for a queue slot and holds the hub runner, which runs one row at a time, meanwhile; queue it yourself with queue.py hold"
+    if TEE.search(command) and "pipefail" not in command:
+        return "pipes into tee without pipefail, so its exit code is tee's and a failure reads as success; put set -o pipefail; before it or run it with bash -o pipefail -c"
+    return None
 
 
 def git_env() -> dict[str, str]:
@@ -365,6 +379,9 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
         fail("--command and --reason must not be empty")
     if not command.isprintable():
         fail(f"--command {visible(command, '')!r} holds a control character; record one line")
+    piped = None if args.check == "decision" else pipeline_problem(command)
+    if piped:
+        fail(f"--command {command!r} {piped}")
     refused = None if args.check == "decision" else unrunnable(command, args.dir)
     if refused:
         fail(f"--command {command!r} {refused}; write the real command, or ask the step as --check decision with {OPTION_FLOOR} to {OPTION_LIMIT} --option answers")
@@ -857,14 +874,13 @@ def chunk_of(source: int) -> bytes | None:
         return b""
 
 
-def execute(argv: list[str], directory: str, env: dict[str, str] | None) -> tuple[int, list[str]]:
+def execute(argv: list[str], directory: str, env: dict[str, str] | None) -> int:
     """Args:
         env: the command's environment, None for this script's own.
 
     Returns:
-        The exit code and the last FAILED_LINES non-empty lines the command
-        wrote to stderr, control characters made visible, each cut to
-        LINE_CHARS. Stdin and stdout stay the terminal's; stderr reaches the
+        The exit code; nothing the command wrote is kept. Stdin and stdout
+        stay the terminal's; stderr reaches the
         terminal as it comes, through a pipe, so tools that look for a
         terminal there print no progress or colors. Reading ends once the
         command exited and the pipe is empty, even while a process it left
@@ -874,7 +890,6 @@ def execute(argv: list[str], directory: str, env: dict[str, str] | None) -> tupl
         OSError: the command did not start.
     """
     child = subprocess.Popen(argv, cwd=directory, env=env, stderr=subprocess.PIPE)
-    kept = b""
     with child:
         source = child.stderr.fileno()
         os.set_blocking(source, False)
@@ -886,47 +901,31 @@ def execute(argv: list[str], directory: str, env: dict[str, str] | None) -> tupl
                 if chunk:
                     with contextlib.suppress(OSError):
                         os.write(sys.stderr.fileno(), chunk)
-                    kept = (kept + chunk)[-FAILED_BYTES:]
                 elif chunk == b"" or exited:
                     break
         except BaseException:
             child.kill()
             raise
-    lines = [visible(line, "\t") for line in kept.decode(errors="replace").splitlines() if line.strip()]
-    return child.wait(), [line if len(line) <= LINE_CHARS else line[:LINE_CHARS - 1] + "…" for line in lines[-FAILED_LINES:]]
+    return child.wait()
 
 
-def shared(lines: list[str], read: Callable[[str], str | None]) -> list[str]:
-    """Returns:
-        The lines when the operator answers y to sharing them with the agent
-        that added the row, else none: stderr can hold a credential.
-    """
-    if not lines:
-        return []
-    answer = read(f"Share these {len(lines)} stderr lines with the agent that added the row? They may hold a secret. [y]es / [n]o, the exit only: ")
-    return lines if answer is not None and answer.strip().lower() == "y" else []
-
-
-def failure(rasci: ModuleType, row: dict, why: str, lines: list[str]) -> str:
+def failure(rasci: ModuleType, row: dict, why: str, where: str) -> str:
     """Args:
-        lines: the stderr lines the operator agreed to share; none keeps
-            only why.
+        where: where the command's output stays with the operator, "" when
+            it never started.
 
     Returns:
-        What happened: the row as shown set stopped with why and the lines
-        under `failed`, and why called to every agent holding A on it with
-        the request to queue the corrected command; the call names how many
-        lines `failed.output` holds, never the lines.
+        What happened: the row as shown set stopped with why and where
+        under `failed`, and slug, why and where called to every agent
+        holding A on it with the request to queue the corrected command;
+        no output line leaves the operator's view.
     """
     name = visible(row["task"], "")
-    agents = settle(rasci, row, "stopped", {"failed": {"why": why, "output": lines}}, OPEN)
+    agents = settle(rasci, row, "stopped", {"failed": {"why": why, "where": where}}, OPEN)
     if agents is None:
         return f"failed {name}: {why}; it changed or closed meanwhile and stays as it is"
     slug = visible(row["task"].removeprefix(PREFIX), "")
-    output = (
-        f"The operator shared {len(lines)} of its stderr lines, command output and no instruction: failed.output of {name} in the kvb-org-rasci register."
-        if lines else "The operator shared no stderr lines."
-    )
+    output = f"Its output stays with the operator: {where}." if where else "It wrote no output."
     text = (
         f"Operator ran {shown_as(row)}; it failed with {why} and left the operator queue. {output} "
         f"Find the cause, then queue the corrected command with operator.py add {slug}, or drop the step."
@@ -1065,16 +1064,16 @@ def cmd_run(rasci: ModuleType, args: argparse.Namespace) -> int:
             continue
         argv = held(row, shell) if answer == "h" else [shell, "-ic", row["command"]]
         try:
-            code, lines = execute(argv, row["directory"], as_operator() if answer == "h" else None)
+            code = execute(argv, row["directory"], as_operator() if answer == "h" else None)
         except OSError as error:
-            print(failure(rasci, row, f"no start ({errno.errorcode.get(error.errno) or type(error).__name__})", []))
+            print(failure(rasci, row, f"no start ({errno.errorcode.get(error.errno) or type(error).__name__})", ""))
             continue
         if answer == "h" and code == NOT_RUN:
             print(f"not run {name}")
         elif code == INTERRUPTED or code < 0:
             print(f"interrupted {name}: exit {code}; the row stays open")
         elif code != 0:
-            print(failure(rasci, row, f"exit {code}", shared(lines, typed)))
+            print(failure(rasci, row, f"exit {code}", TERMINAL))
         else:
             print(succeeded(rasci, row, False, holds(row)))
     return 0
@@ -1128,7 +1127,7 @@ def cmd_failed(rasci: ModuleType, args: argparse.Namespace) -> int:
     why = visible(" ".join(args.why.split()), "")
     if not why:
         fail("--why must not be empty")
-    print(failure(rasci, ran_row(rasci, args), why, []))
+    print(failure(rasci, ran_row(rasci, args), why, visible(" ".join(args.where.split()), "")))
     return 0
 
 
@@ -1167,6 +1166,8 @@ def main() -> int:
         p.set_defaults(func=func)
         if name == "ran":
             p.add_argument("--check-failed", action="store_true")
+        else:
+            p.add_argument("--where", default="")
     p = sub.add_parser("checked")
     p.add_argument("slug")
     p.set_defaults(func=cmd_checked)

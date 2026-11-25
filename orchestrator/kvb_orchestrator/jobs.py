@@ -118,8 +118,9 @@ class Jobs:
         Returns:
             The operator.py runs that report the end of an operator command
             job on its row: `ran` on exit 0, with --check-failed unless
-            checked, so the row stays open; `failed` on any other exit; none
-            for a refused job or a task or gate change.
+            checked, so the row stays open; `failed` with where the output
+            stays, the job's console, never the output itself, on any other
+            exit; none for a refused job or a task or gate change.
         """
         if job.get("kind") in CHANGES or status not in ("done", "failed"):
             return []
@@ -127,5 +128,6 @@ class Jobs:
         shown = [slug, f"--command={job['command']}", f"--dir={job['directory']}"]
         if status == "failed":
             why = f"killed by signal {-code}" if code < 0 else f"exit {code}"
-            return [self.scripts.run(OPERATOR_SCRIPT, ["failed", *shown, "--why", why])]
+            where = f"the console of hub job {job['id']} under the row in Waits on Operator"
+            return [self.scripts.run(OPERATOR_SCRIPT, ["failed", *shown, "--why", why, f"--where={where}"])]
         return [self.scripts.run(OPERATOR_SCRIPT, ["ran", *shown] if checked else ["ran", *shown, "--check-failed"])]
