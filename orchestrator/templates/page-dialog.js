@@ -21,6 +21,27 @@
   }
 
   /**
+   * @param {HTMLElement} root the element draw() rebuilds.
+   * @param {Function} draw replaces root's children; an element scrolled inside a row with data-item gets its offsets back when draw() rebuilds it in the same row as the same nth element of its tag and class, so stars that Panels.decorate adds later do not shift it.
+   */
+  function keepScroll(root, draw) {
+    const twins = (row, tag, name) => [...row.getElementsByTagName(tag)].filter((node) => node.className === name);
+    const held = [...root.querySelectorAll("[data-item] *")].filter((node) => node.scrollTop || node.scrollLeft).map((node) => {
+      const row = node.closest("[data-item]");
+      return [row.dataset.item, node.tagName, node.className, twins(row, node.tagName, node.className).indexOf(node), node.scrollTop, node.scrollLeft];
+    });
+    draw();
+    held.forEach(([item, tag, name, index, top, left]) => {
+      const row = root.querySelector(`[data-item="${CSS.escape(item)}"]`);
+      const node = row ? twins(row, tag, name)[index] : null;
+      if (node) {
+        node.scrollTop = top;
+        node.scrollLeft = left;
+      }
+    });
+  }
+
+  /**
    * @param {Object} item a decision, a decision row, a decision card or a permission ask: id, options [{label, description, preview}], recommended (labels joined by PICKED), multi.
    * @param {Object} how pick: called with the answer, one label, the toggled labels in option order joined by PICKED, or the trimmed Other text, and true for the Other text only; other: the Other field's placeholder; toggled: the Set of toggled labels of a multi decision, kept by the caller across redraws; chosen: the answer given so far, "" for none; locked: whether the dialog takes no answer; hint: what an answer does, shown in the titles; group: an extra class of the option list.
    * @returns {HTMLElement} the dialog an AskUserQuestion shows: numbered options with their description, the recommended ones tagged, a free-text Other row, Send for a multi decision, and a preview pane beside them once an option has one. The keys 1 to n pick or toggle an option, n + 1 focuses Other.

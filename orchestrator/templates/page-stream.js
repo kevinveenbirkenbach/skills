@@ -164,10 +164,10 @@
       stream.dom.list.replaceChildren(emptyState("Stream not readable", stream.error));
       return;
     }
-    stream.dom.list.replaceChildren(rows.length
+    keepTyping(stream.dom.list, () => keepScroll(stream.dom.list, () => stream.dom.list.replaceChildren(rows.length
       ? h("div", {class: "card flush"}, h("ol", {class: "feed"}, shown.map(eventRow)),
         rows.length > shown.length ? h("p", {class: "footnote"}, `${rows.length - shown.length} older entries hidden; narrow down with a filter or the time range.`) : null)
-      : emptyState(stream.busy ? "Loading …" : "No entries", activeWaiting() ? "Nothing is waiting for you right now." : "Nothing in the chosen time range and filter."));
+      : emptyState(stream.busy ? "Loading …" : "No entries", activeWaiting() ? "Nothing is waiting for you right now." : "Nothing in the chosen time range and filter."))));
   }
 
   function streamScreen() {
