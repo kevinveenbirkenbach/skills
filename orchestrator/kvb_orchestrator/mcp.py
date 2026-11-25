@@ -56,6 +56,7 @@ class Mcp:
                     "notes": text_property("Text shown with the review, such as the commit table; may be empty."),
                     "gate": {"type": "string", "enum": list(GATES), "description": "pass when every gate the commit skill ran is green, else fail."},
                     "score": text_property("The kvb-check-score line of the commit, one line."),
+                    "agent": text_property("Your agent name as the radio knows it; the operator's denial and its reason go to it."),
                 },
             ),
             tool("review_status", "Status of a review (pending, approved, rejected, superseded: a newer review of the same worktree and branch replaced it, named by superseded_by), its tree, decision time and the passkey proof that approval.py verify --record checks.", {"id": review_id}),

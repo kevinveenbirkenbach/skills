@@ -132,6 +132,15 @@ class Denying:
     def addressee(self, who: str) -> tuple[str, str]:
         return requester_of(read_claims(self.council), who)
 
+    def pickable(self, channel: str, name: object) -> bool:
+        """Returns:
+            Whether the operator may address a denial over channel to name:
+            a direct channel and the agent of a claim with a radio address
+            that no other agent's claim shares.
+        """
+        claims = read_claims(self.council)
+        return channel in DIRECT and isinstance(name, str) and any(claim["agent"] == name and claim["address"] for claim in claims) and requester_of(claims, name)[0] == name
+
     def tell(self, item: dict, proof: dict | None, who: str, what: str) -> str:
         """Args:
             item: the denied inbox item: its note holds the chosen channel,

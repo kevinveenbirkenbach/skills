@@ -102,8 +102,9 @@ class TestHubInbox(base.OrchestratorE2ECase):
                 self.layout(probe)
                 self.assertTrue(probe["console"].startswith("doneExit code 0"), probe)
                 self.assertEqual(sheet["title"], "Deny")
-                self.assertEqual(sheet["channels"], [["post", True], ["call", False], ["newsletter", False], ["broadcast", False], ["pan-pan", False], ["security", False]])
+                self.assertEqual(sheet["channels"], [["post", False], ["call", True], ["newsletter", False], ["broadcast", False], ["pan-pan", False], ["security", False]])
                 self.assertEqual(sheet["hints"][:3], ["to Skills, when its turn ends", "to Skills, at once, wakes it", "to all, when their turn ends"])
+                self.assertEqual((sheet["recipient"], sheet["gate"]), ("Skills", [True, True, True, True]))
                 self.assertEqual((sheet["reason"], sheet["unlabelled"], sheet["wide"]), (True, [], False))
         denied, gone, accepted = rest[6:]
         self.assertNotIn("error", denied, denied)

@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from hub_case import HubCase
-from hub_support import ASK, CLIENT, PAGE, Key, key, signing, verifier
+from hub_support import ASK, CLIENT, PAGE, TREE, Key, key, signing, verifier
 from kvb_orchestrator import batches, denying, skill_scripts
 
 PUSH = "git push"
@@ -195,6 +195,30 @@ class TestHubDeny(HubCase):
                 self.assertEqual(status, 409, answer)
                 self.assertIn("recipient changed", answer.decode())
         self.assertEqual((self.ask_status(ask_id, "0"), self.radio()), ("pending", []))
+
+    def test_the_operator_picks_the_recipient_of_a_review_that_names_no_agent(self):
+        self.claim("s1", "Skills session")
+        self.claim("s2", "Docs session")
+        review_id = self.tool("review_request", self.arguments("feat: nameless", "", self.page("bundle.html", PAGE)))["structuredContent"]["id"]
+        entry = self.denial("review", review_id, "", "call", "rebase first")
+        self.assertEqual(entry["to"], "")
+        for to, channel in (("Ghost", "call"), ("Docs", "broadcast"), ("", "post")):
+            with self.subTest(to=to, channel=channel):
+                status, _, answer = self.post_json("/api/sign", {"items": [{**entry, "to": to, "channel": channel}]}, self.guard(self.host))
+                if to:
+                    self.assertEqual(status, 409, answer)
+                    self.assertIn("recipient changed", answer.decode())
+                else:
+                    self.assertEqual(status, 200, answer)
+        picked = {**entry, "to": "Docs"}
+        subject = signing.review_item(review_id, "/repo/.git", "/repo/.worktrees/feature/x", "feature/x", TREE)
+        self.assertEqual(self.prepare([picked])["payload"]["items"], [signing.item_hash(signing.denial_item(subject, "call", "rebase first", "Docs"))])
+        with mock.patch.object(batches, "UNDO", 0.05):
+            self.assertEqual(self.approve([picked], self.signed([picked], self.pin()))[0], 202)
+            self.settle(lambda: self.radio() != [])
+        sent = self.radio()[-1]
+        self.assertEqual(sent[:4], ["send", "call", "--to", "Docs session"])
+        self.assertTrue(sent[-1].endswith("Denied by the operator: commit feat: nameless on feature/x (from an agent). Reason: rebase first"), sent[-1])
 
     def test_a_claim_planted_before_signing_leaves_a_direct_denial_without_recipient(self):
         self.claim("s1", "Skills session")

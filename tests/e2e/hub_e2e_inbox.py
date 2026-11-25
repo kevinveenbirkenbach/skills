@@ -94,10 +94,26 @@ DENY_SHEET = """(async () => {@HELPERS@@LABELS@
   const row = await until(() => rowOf("git push"), 8000);
   press(row, "Deny via …");
   const box = await until(() => document.querySelector(".sheet-box"), 4000);
+  const channels = all(".deny-channels input[type=radio]", box).map((input) => [input.value, input.checked]);
+  const hints = all(".deny-channel small", box).map(text);
+  const recipient = box.querySelector(".deny-recipient select");
+  const deny = all("button", box).find((button) => text(button) === "Deny");
+  const picked = recipient.value;
+  const sendable = !deny.disabled;
+  recipient.value = "";
+  recipient.dispatchEvent(new Event("change"));
+  const blocked = deny.disabled;
+  box.querySelector(".deny-channels input[value=broadcast]").click();
+  const toAll = !deny.disabled;
+  box.querySelector(".deny-channels input[value=call]").click();
+  recipient.value = picked;
+  recipient.dispatchEvent(new Event("change"));
   return {
     title: text(box.querySelector(".panel-title")),
-    channels: all(".deny-channels input[type=radio]", box).map((input) => [input.value, input.checked]),
-    hints: all(".deny-channel small", box).map(text),
+    channels,
+    hints,
+    recipient: picked,
+    gate: [sendable, blocked, toAll, !deny.disabled],
     reason: Boolean(box.querySelector("textarea")),
     unlabelled: unlabelled(box),
     wide: wide(),

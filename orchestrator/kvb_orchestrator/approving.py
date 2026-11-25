@@ -213,18 +213,20 @@ class Approving:
 
     def requester(self, raw: dict, who: str) -> str:
         """Returns:
-            The requester a denial addresses, empty for every other item.
+            The agent a denial addresses: the requester the inbox showed, or
+            for a direct channel the claimed agent the operator picked
+            instead; empty for every other item.
 
         Raises:
-            Conflict when it is no longer the one the inbox showed the
-            operator, sent back as raw["to"].
+            Conflict when raw["to"] is neither, the requester sent back as
+            raw["to"].
         """
         if raw["verb"] != "reject" or "channel" not in raw:
             return ""
         name = self.addressee(who)[0]
-        if raw["to"] != name:
+        if raw["to"] != name and not self.pickable(raw["channel"], raw["to"]):
             raise Conflict({"id": raw["id"], "status": "recipient changed", "to": name})
-        return name
+        return raw["to"]
 
     def operator_entry(self, raw: dict, tasks: dict[str, dict]) -> dict:
         """Args:

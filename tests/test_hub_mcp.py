@@ -112,7 +112,7 @@ class TestHubMcp(HubCase):
     def test_mcp_requires_gate_score_and_recommended(self):
         tools = {entry["name"]: entry["inputSchema"] for entry in self.rpc("tools/list", {})["result"]["tools"]}
         self.assertEqual(tools["review_request"]["properties"]["gate"]["enum"], ["pass", "fail"])
-        self.assertTrue({"gate", "score"} <= set(tools["review_request"]["required"]))
+        self.assertTrue({"gate", "score", "agent"} <= set(tools["review_request"]["required"]))
         self.assertIn("recommended", tools["decision_request"]["required"])
         review_id = self.request("feat: gated", "")
         decision_id = self.decision("Wait")
