@@ -152,7 +152,7 @@ class TestRadioSet(HubCase):
                     self.assertTrue(label["whole"] or width == 390, label)
                 self.assertEqual(face["bells"], [["MAYDAY / PAN-PAN tone", "speak"], ["Reviews, asks, decisions tone", "tone"], ["Post and calls to you tone", "tone"], ["All radio tone", "off"]])
                 self.assertEqual((face["caret"], list(face["groups"]), face["menuFits"]), (["auto"], ["Fallback"], {"page": True, "panel": True}))
-                self.assertEqual(face["send"], ["More send options", True])
+                self.assertEqual(face["send"], ["More send options", "false"])
                 self.assertEqual(face["stationsHead"], "Internet radio")
                 self.assertEqual(face["ptt"][0], "PTT")
                 self.assertEqual([section for section in face["sections"] if section in ("Internet radio", "Tones", "Read radio aloud", "Radio")], [])

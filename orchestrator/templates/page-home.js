@@ -1,4 +1,6 @@
   const HOME_PATH = "home.pins";
+  const ZOOM_PATH = "home.zoom";
+  const ZOOM_KEYS = {"+": 1, "=": 1, "-": -1, "0": 0};
   const HOME_FETCH = 3000;
   const HOME_MESSAGE = 30000;
   const HOME_MARKS = [['section[aria-label="Recently sent"]', "radio-log"]];
@@ -146,6 +148,12 @@
     return row ? h("ol", {class: "task-list"}, taskItem(row, etaOf().get(row.task))) : null;
   }
 
+  function homeBoard() {
+    const board = kanbanBoard(shownTasks());
+    homeView.heads.set("tasks/board", board.querySelector(".kanban-bar"));
+    return board;
+  }
+
   function homeTaskList() {
     const etas = etaOf();
     return h("ol", {class: "task-list"}, Plan.sortRows(shownTasks(), taskView.sort, taskView.descending).map((row) => taskItem(row, etas.get(row.task))));
@@ -167,7 +175,7 @@
   Panels.panel("artifacts/swimlane", "Artifacts: Swimlane", () => homeArt("swimlane"));
   Panels.panel("artifacts/3d", "Artifacts: 3D", () => homeTree(() => home3d("artifacts")), "3d");
   Panels.panel("tasks/list", "Tasks: list", homeTaskList);
-  Panels.panel("tasks/board", "Tasks: kanban", () => kanbanBoard(shownTasks()));
+  Panels.panel("tasks/board", "Tasks: kanban", homeBoard);
   Panels.panel("tasks/rasci", "Tasks: RASCI", () => taskMatrix(shownTasks()));
   Panels.panel("tasks/gantt", "Tasks: Gantt", () => ganttChart(shownTasks()));
   Panels.panel("tasks/burn", "Tasks: burndown and burnup", () => burnChart(state.tasks, shownTasks()));
@@ -181,6 +189,7 @@
   Panels.panel("agents/order", "Agents: priority", homeOrder);
   Panels.panel("tasks/operator", "Tasks: Waits on Operator", homeInbox);
   Panels.panel("tasks/match", "Tasks: Match", () => homeMatch(), "", [6, 8]);
+  Panels.panel("resources-accounts", "Resources: accounts", () => homeAccounts(), "", [12, 5]);
   Panels.item("metric", (id, view) => metricTitle(view), (size, id, view) => homeMetric(id, view));
   Panels.capture("resources-hardware", () => resourcePin("hardware"));
   Panels.capture("resources-tokens", () => resourcePin("tokens"));
@@ -466,11 +475,40 @@
 
   function homeKeys(event, key) {
     const steps = {ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1};
-    if (event.target !== event.currentTarget || !Object.hasOwn(steps, event.key) || event.altKey || event.ctrlKey || event.metaKey) {
+    if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+    if (Object.hasOwn(ZOOM_KEYS, event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      homeZoomBy(key, ZOOM_KEYS[event.key]);
+    } else if (Object.hasOwn(steps, event.key)) {
+      event.preventDefault();
+      homeSave((pins) => Panels.moveKey(pins, key, steps[event.key]));
+    }
+  }
+
+  const homeZoom = (key) => ViewStore.get(ZOOM_PATH)[key] || Panels.ZOOM.base;
+
+  function homeZoomBy(key, step) {
+    ViewStore.update(ZOOM_PATH, (zooms) => Panels.zoomBy(zooms, key, step));
+  }
+
+  function homeWheel(event, key) {
+    if (!event.ctrlKey || !event.deltaY) {
       return;
     }
     event.preventDefault();
-    homeSave((pins) => Panels.moveKey(pins, key, steps[event.key]));
+    homeZoomBy(key, event.deltaY < 0 ? 1 : -1);
+  }
+
+  function paintZoom(tile) {
+    const zoom = homeZoom(tile.dataset.pin);
+    const body = tile.querySelector(".home-body");
+    if (body.dataset.zoom !== String(zoom)) {
+      body.dataset.zoom = String(zoom);
+      body.style.setProperty("--zoom", String(zoom / 100));
+    }
   }
 
   function homeSizeKeys(event, key) {
@@ -501,6 +539,7 @@
     grip.addEventListener("pointerdown", (event) => homeGrab(event, key, "move"));
     handle.addEventListener("pointerdown", (event) => homeGrab(event, key, "size"));
     handle.addEventListener("keydown", (event) => homeSizeKeys(event, key));
+    body.addEventListener("wheel", (event) => homeWheel(event, key), {passive: false});
     homeView.tiles.set(key, tile);
     return tile;
   }
@@ -560,6 +599,7 @@
     if (body.childNodes.length !== 1 || body.firstChild !== shown) {
       body.replaceChildren(shown);
     }
+    paintZoom(tile);
   }
 
   function drawHome() {
@@ -614,6 +654,7 @@
       drawHome();
       homeView.mark();
     });
+    ViewStore.on(ZOOM_PATH, () => drawHome());
     homeView.mark = Panels.decorate(document.body, {pinned: (kind, id) => Panels.has(homePins(), kind, id), press: homePress, marks: HOME_MARKS});
     window.addEventListener("pointermove", homeDragMove);
     window.addEventListener("pointerup", homeDragEnd);

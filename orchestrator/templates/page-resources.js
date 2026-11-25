@@ -9,6 +9,7 @@
     unknown: ["#bi-question-circle", (mark) => `${mark.name} unknown: no reading`, 0],
   };
   const RESOURCE_BURN = {done: "Done", scope: "Scope"};
+  const RESOURCE_PICKS = [["hardware", "Hardware"], ["tokens", "Tokens"], ["combined", "Combined"], ["accounts", "Accounts"]];
   const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0, series: {}};
   const resourceKey = () => JSON.stringify([ui.preset, ui.asOf]);
   const resourcesStale = () => resourceKey() !== resourceView.key || nowSeconds() - resourceView.at >= RESOURCE.stale;
@@ -21,12 +22,22 @@
     return h("button", {type: "button", class: "btn small soft res-switch", "data-switch": key, "aria-pressed": "false", ...named(label, hint), on: {click: () => ViewStore.set(path, next(ViewStore.get(path)))}}, icon(name), h("span", {}, label));
   }
 
+  function resourcePicks() {
+    const boxes = RESOURCE_PICKS.map(([kind, label]) => {
+      const box = h("input", {type: "checkbox", "data-pick": kind, "aria-label": label, on: {change: () => ViewStore.update("resources.panels", (list) => [...list.filter((name) => name !== kind), ...(box.checked ? [kind] : [])])}});
+      return {kind, box, row: h("label", {class: "menu-item res-pick"}, box, h("span", {}, label))};
+    });
+    const menu = h("details", {class: "menu res-panels-menu"}, h("summary", {...named("Panels", "Panels: choose which panels Resources shows; the last one stays on")}, icon("bi-grid"), h("span", {}, "Panels"), caret()),
+      h("div", {class: "menu-box end", role: "group", "aria-label": "Panels"}, boxes.map((entry) => entry.row)));
+    return {menu, boxes};
+  }
+
   function resourcesScreen() {
     const count = h("span", {class: "count", title: "Samples", "aria-label": "Samples"}, "0");
     const switches = {
       tokens: resourceSwitch("tokens", (mode) => (mode === "accumulated" ? "interval" : "accumulated"), "bi-graph-up-arrow", "Accumulated", "Accumulated: per-agent running sums of the tokens instead of the tokens per hour"),
-      combined: resourceSwitch("combined", (on) => !on, "bi-layers", "Combined", "Combined: hardware in %, tokens and the burnup in one chart"),
     };
+    const picks = resourcePicks();
     const panels = RESOURCE_PANELS.map(([kind, name, label]) => {
       const legend = h("div", {class: "res-legend"});
       const plot = h("div", {class: "res-plot"});
@@ -34,7 +45,8 @@
         h("div", {class: "res-head", "data-star-slot": ""}, h("span", {class: "res-title", title: label, "aria-label": label}, icon(name)), legend), plot);
       return {kind, label, legend, plot, panel};
     });
-    resourceView.dom = {count, switches, panels};
+    const accounts = accountsPanel();
+    resourceView.dom = {count, switches, picks, panels, accounts};
     if (!resourceView.timer) {
       resourceView.timer = window.setInterval(pollResources, RESOURCE.poll);
       window.addEventListener("resize", drawResources);
@@ -43,11 +55,15 @@
     window.setTimeout(() => {
       drawResources();
       fetchResources();
+      fetchAccounts();
     }, 0);
-    const reload = iconBtn("bi-arrow-clockwise", "Reload", "btn small soft", fetchResources, "Reload: read the sampler files again");
+    const reload = iconBtn("bi-arrow-clockwise", "Reload", "btn small soft", () => {
+      fetchResources();
+      fetchAccounts();
+    }, "Reload: read the sampler files and the accounts again");
     return h("div", {class: "graph resources"},
-      h("div", {class: "card controls"}, h("div", {class: "toolbar", role: "toolbar", "aria-label": "Resources"}, reload, switches.tokens, switches.combined, count)),
-      h("div", {class: "res-panels"}, panels.map((entry) => entry.panel)));
+      boxHead("Resources", "", h("div", {class: "toolbar"}, reload, switches.tokens, picks.menu, count)),
+      h("div", {class: "res-panels"}, panels.map((entry) => entry.panel), accounts.panel));
   }
 
   function pollResources() {
@@ -305,7 +321,7 @@
 
   function metricParts(data, view) {
     const span = {from: data.since, to: Math.max(data.until, data.since + 60)};
-    const parts = resourceParts(data, {tokens: view.tokens, hidden: [], combinedHidden: [], combined: view.chart === "combined"}, span);
+    const parts = resourceParts(data, {tokens: view.tokens, hidden: [], combinedHidden: [], panels: [view.chart]}, span);
     const series = RESOURCE_SERIES[view.chart](parts);
     return {span, parts, series, hidden: new Set(view.shown === null ? [] : series.map((line) => line.id).filter((id) => !view.shown.includes(id)))};
   }
@@ -321,7 +337,7 @@
     const {series, hidden} = metricParts(resourceView.data, view);
     const ids = new Set(series.map((line) => line.id));
     ViewStore.update(view.chart === "combined" ? "resources.combinedHidden" : "resources.hidden", (list) => [...list.filter((id) => !ids.has(id)), ...hidden]);
-    ViewStore.set("resources.combined", view.chart === "combined");
+    ViewStore.update("resources.panels", (list) => (list.includes(view.chart) ? list : [...list, view.chart]));
     if (view.chart !== "hardware") {
       ViewStore.set("resources.tokens", view.tokens);
     }
@@ -336,7 +352,7 @@
       mode: view.tokens,
       hidden: new Set(view.hidden),
       combinedHidden: new Set(view.combinedHidden),
-      burn: view.combined ? burnSeries(span) : [],
+      burn: view.panels.includes("combined") ? burnSeries(span) : [],
       marks: [
         ...Resources.waits(data.samples).map((mark) => ({...mark, kind: "wait"})),
         ...Resources.blocked(data.samples).map((mark) => ({...mark, kind: "blocked"})),
@@ -354,10 +370,16 @@
     }
     const view = ViewStore.get("resources");
     dom.switches.tokens.setAttribute("aria-pressed", String(view.tokens === "accumulated"));
-    dom.switches.combined.setAttribute("aria-pressed", String(view.combined));
-    for (const entry of dom.panels) {
-      entry.panel.hidden = (entry.kind === "combined") !== view.combined;
+    for (const {kind, box} of dom.picks.boxes) {
+      box.checked = view.panels.includes(kind);
+      box.disabled = box.checked && view.panels.length === 1;
+      box.title = box.disabled ? "The last panel stays on" : "";
     }
+    for (const entry of dom.panels) {
+      entry.panel.hidden = !view.panels.includes(entry.kind);
+    }
+    dom.accounts.panel.hidden = !view.panels.includes("accounts");
+    drawAccounts();
     if (data === null) {
       return;
     }

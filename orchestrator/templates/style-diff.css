@@ -26,4 +26,5 @@
 .feedback-list { display: grid; gap: 4px; margin: var(--sp-1) 0 0; padding: 0; list-style: none; }
 .feedback-list li { display: flex; align-items: baseline; gap: 6px; padding: 4px 8px; border-radius: 8px; background: var(--info-soft); font-size: var(--fs-sm); }
 .feedback-list .text { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.feedback-list li.line-mark { align-items: center; background: var(--accent-soft); }
 .feedback-float { position: fixed; z-index: 40; padding: 2px; border-radius: 10px; background: var(--glass-card); box-shadow: var(--shadow); }

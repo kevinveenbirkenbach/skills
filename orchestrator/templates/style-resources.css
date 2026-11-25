@@ -6,6 +6,24 @@ body.fit .graph.resources > .res-panels { flex: 1; }
 .res-title { display: inline-flex; color: var(--text); font-size: var(--fs-md); }
 .res-legend { display: flex; flex: 1; min-width: 0; font-variant-numeric: tabular-nums; }
 .res-switch[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.res-panels-menu { position: relative; }
+.res-panels-menu > summary { padding: 4px 10px; }
+.res-panels-menu .menu-box { gap: 2px; min-width: 11rem; padding: 6px; }
+.res-pick { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.res-pick:has(input:disabled) { cursor: not-allowed; opacity: 0.7; }
+.res-accounts { flex: 0 1 auto; min-height: 0; overflow: visible; }
+.acc-title { color: var(--text); font-size: var(--fs-sm); font-weight: 620; }
+.acc-scroll { max-width: 100%; overflow-x: auto; }
+.acc-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.acc-table th, .acc-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.acc-table th { color: var(--muted); font-size: var(--fs-xs); font-weight: 650; }
+.acc-table tr[data-active] td { background: var(--accent-soft); }
+.acc-table .pill { margin-left: 6px; }
+.acc-unassigned td { color: var(--muted); }
+.acc-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--sp-2) var(--sp-3); }
+.acc-field { display: grid; gap: 4px; font-size: var(--fs-sm); }
+.acc-pair { display: flex; gap: 6px; }
+.acc-pair > * { flex: 1; min-width: 0; }
 .res-plot { position: relative; flex: 1; min-height: 0; }
 .res-plot > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 svg .band.idle { fill: var(--ok-soft); }

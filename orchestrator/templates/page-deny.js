@@ -9,8 +9,12 @@
    * @param {string} reason the operator's reason, possibly empty.
    * @param {string} to the agent a direct channel tells; a class to all keeps the item's requester.
    */
-  function denyNow(item, channel, reason, to) {
-    return submit([{...entryOf(item, "reject", ""), channel, reason, to: DIRECT_DENY.has(channel) ? to : item.to}], `Denial (${CLASSES[channel]}): ${short(item.title)}`);
+  async function denyNow(item, channel, reason, to) {
+    const denied = await submit([{...entryOf(item, "reject", ""), channel, reason, to: DIRECT_DENY.has(channel) ? to : item.to}], `Denial (${CLASSES[channel]}): ${short(item.title)}`);
+    if (denied && lineNotes(keyOf(item))) {
+      setLineMarks(keyOf(item), []);
+    }
+    return denied;
   }
 
   /**
@@ -57,7 +61,8 @@
         h("span", {}, h("strong", {}, CLASSES[id]), small));
     });
     recipient.addEventListener("change", paintDeny);
-    const reason = h("textarea", {class: "field", maxlength: DENY_REASON, rows: 3, placeholder: "e.g. make the gate green first"});
+    const reason = h("textarea", {class: "field", maxlength: DENY_REASON, rows: 3, placeholder: "e.g. make the gate green first", "data-skills": item.repo || ""});
+    reason.value = lineNotes(keyOf(item)).slice(0, DENY_REASON);
     confirm.addEventListener("click", () => {
       const channel = picked().value;
       closeSheet();
@@ -78,7 +83,7 @@
   }
 
   function denySplit(item) {
-    const main = iconBtn("bi-x-lg", "Deny", "btn small danger", () => denyNow(item, "post", "", item.to), item.to ? `Deny: by post to ${revealed(item.to)}, 3 s to undo` : "Deny: the card names no agent; pick one under Deny via …");
+    const main = iconBtn("bi-x-lg", "Deny", "btn small danger", () => (lineNotes(keyOf(item)) ? denySheet(item) : denyNow(item, "post", "", item.to)), item.to ? `Deny: by post to ${revealed(item.to)}, 3 s to undo; with line comments it opens Deny via … with them as the reason` : "Deny: the card names no agent; pick one under Deny via …");
     main.disabled = !item.to;
     const more = h("button", {type: "button", class: "btn small danger icon-only", "aria-haspopup": "dialog", ...named("Deny via …", "Deny via another channel or with a reason")}, caret());
     more.addEventListener("click", (event) => {
@@ -86,4 +91,34 @@
       denySheet(item);
     });
     return h("div", {class: "deny-split", role: "group", "aria-label": "Deny"}, main, more);
+  }
+
+  /**
+   * @param {Object} item a Yes/No choice or decision row.
+   * @param {string} no its No label.
+   * @param {Function} answer sends the label it is given.
+   */
+  function declineSheet(item, no, answer) {
+    const words = h("textarea", {class: "field", rows: 4, maxlength: OTHER_LIMIT, "aria-label": "Comment", "data-skills": ""});
+    const confirm = h("button", {type: "button", class: "btn danger"}, icon("bi-x-lg"), revealed(no));
+    confirm.addEventListener("click", () => {
+      closeSheet();
+      answer(Answers.declined(no, words.value, OTHER_LIMIT));
+    });
+    openSheet(`${revealed(no)}: ${short(item.title)}`, [h("p", {class: "muted"}, `Optional: what to do instead; it goes with the answer ${revealed(no)} on one line.`), reasonChips(words), words,
+      h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
+    words.focus();
+  }
+
+  /**
+   * @param {Object} item a Yes/No choice or decision row.
+   * @param {Function} answer sends the label it is given: chooseOne() for a choice, answerPick() for a row.
+   * @returns {HTMLElement[]} the grant button answering Yes and the decline button answering No with an optional comment.
+   */
+  function yesNoButtons(item, answer) {
+    const {yes, no} = Answers.pair(item);
+    return [
+      h("button", {type: "button", class: "btn small primary", disabled: ui.busy, ...named(revealed(yes), `${revealed(yes)}: answer ${short(item.title)}`), on: {click: () => answer(yes)}}, icon("bi-check-lg"), revealed(yes)),
+      h("button", {type: "button", class: "btn small danger", disabled: ui.busy, ...named(revealed(no), `${revealed(no)}: answer it, with an optional comment on what to do instead`), on: {click: () => declineSheet(item, no, answer)}}, icon("bi-x-lg"), revealed(no)),
+    ];
   }

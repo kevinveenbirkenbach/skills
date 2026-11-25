@@ -62,7 +62,7 @@ KIT = """
 CLEAR = """(async () => {
   sessionStorage.clear();
   await Promise.all([ViewStore.update("home.pins", () => []), ViewStore.update("resources.hidden", () => []), ViewStore.update("resources.combinedHidden", () => []),
-    ViewStore.set("resources.combined", false), ViewStore.set("resources.tokens", "interval")]);
+    ViewStore.update("resources.panels", () => ["hardware", "tokens", "accounts"]), ViewStore.set("resources.tokens", "interval")]);
   return true;
 })()"""
 LOADED = """(async () => {@HELPERS@@READ@
@@ -112,7 +112,9 @@ METRIC = """(async () => {@HELPERS@@HOME@@READ@@KIT@
   const back = Boolean(await until(() => lineIds(document.querySelector(panel("hardware"))).length === @COUNT@, 5000));
   await sleep(200);
   const allState = [starOf(panel("hardware")).getAttribute("aria-pressed"), starOf(panel("hardware")).getAttribute("title")];
-  switched("combined").click();
+  await pickPanel("combined", true);
+  await pickPanel("hardware", false);
+  await pickPanel("tokens", false);
   const combinedOn = Boolean(await until(() => charts().join() === "combined" && burn().length === 2, 5000));
   const combined = await press(panel("combined"));
   return {cpuOnly, hardware, cpuTitle, tokens, back, allState, combinedOn, combined, axisOverlaps, stored: (ViewStore.get("home.pins") || []).map((pin) => [pin.kind, pin.id, pin.view || null])};
@@ -120,7 +122,9 @@ METRIC = """(async () => {@HELPERS@@HOME@@READ@@KIT@
 COMBINED_OFF = """(async () => {@HELPERS@@HOME@@READ@@KIT@
   await go("resources");
   await until(() => charts().join() === "combined", 8000);
-  switched("combined").click();
+  await pickPanel("hardware", true);
+  await pickPanel("tokens", true);
+  await pickPanel("combined", false);
   const off = Boolean(await until(() => charts().length === 2 && lines().length === @COUNT@, 8000));
   await sleep(300);
   return {off, hardware: [starOf(panel("hardware")).getAttribute("aria-pressed"), starOf(panel("hardware")).getAttribute("title")]};
@@ -384,7 +388,7 @@ class TestHomeBookmarks(HubCase):
                 loaded = next(results)
                 self.assertTrue(loaded["drawn"], loaded)
                 found = next(results)
-                self.assertEqual((found["charts"], found["chips"], found["inHead"]), ([True, True, True], 0, True), found)
+                self.assertEqual((found["charts"], found["chips"], found["inHead"]), ([True] * 4, 0, True), found)
                 self.assertEqual(found["tree"], [True], found)
                 self.assertTrue(found["rows"]["repo"] and all(found["rows"]["repo"]), found)
                 self.assertTrue(found["rows"]["branch"] and all(found["rows"]["branch"]), found)

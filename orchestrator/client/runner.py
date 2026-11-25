@@ -220,13 +220,49 @@ def preview(row: dict, rules: Path | None) -> dict | None:
     return {"task": row["task"], "command": row["command"], "head": head, **shown}
 
 
+def review_preview(row: dict, rules: Path | None) -> dict | None:
+    """Args:
+        row: a pending review that shipped no diff, with id, worktree, tree
+            and head, the HEAD the hub last saw, None for none.
+        rules: the MEDUSA rules directory.
+
+    Returns:
+        {id, head, diff}: the review's tree against its worktree's HEAD
+        (staged_diff.tree_diff), or {id, head, error} when it cannot be
+        built; None while HEAD is the one the hub saw.
+    """
+    try:
+        head = staged_diff.head_of(Path(row["worktree"]))
+    except PREVIEW_FAILURES as error:
+        head, shown = "", {"error": str(error)[:ERROR_LIMIT]}
+    else:
+        shown = None
+    if head == row["head"]:
+        return None
+    if shown is None:
+        try:
+            shown = {"diff": staged_diff.tree_diff(Path(row["worktree"]), row["tree"], rules)[0]}
+        except PREVIEW_FAILURES as error:
+            shown = {"error": str(error)[:ERROR_LIMIT]}
+    return {"id": row["id"], "head": head, **shown}
+
+
+def oversized(shown: dict, keys: tuple[str, ...]) -> dict:
+    if len(json.dumps(shown).encode()) <= hub_limits.DIFF_BODY_LIMIT:
+        return shown
+    return {**{key: shown[key] for key in keys}, "error": f"the preview passes the hub's {hub_limits.DIFF_BODY_LIMIT} bytes"}
+
+
 def previews(base: str, rules: Path | None) -> None:
-    for row in call(base, PREVIEWS, None)["rows"]:
+    listed = call(base, PREVIEWS, None)
+    for row in listed["rows"]:
         shown = preview(row, rules)
-        if shown is not None and len(json.dumps(shown).encode()) > hub_limits.DIFF_BODY_LIMIT:
-            shown = {"task": row["task"], "command": row["command"], "head": shown["head"], "error": f"the preview passes the hub's {hub_limits.DIFF_BODY_LIMIT} bytes"}
         if shown is not None:
-            call(base, PREVIEWS, shown)
+            call(base, PREVIEWS, oversized(shown, ("task", "command", "head")))
+    for row in listed["reviews"]:
+        shown = review_preview(row, rules)
+        if shown is not None:
+            call(base, PREVIEWS, oversized(shown, ("id", "head")))
 
 
 def council_refusal(council: Path) -> str | None:

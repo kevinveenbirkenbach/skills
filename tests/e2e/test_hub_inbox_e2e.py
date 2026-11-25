@@ -151,10 +151,10 @@ class TestHubInbox(base.OrchestratorE2ECase):
         stops = []
         with mock.patch.object(batches, "UNDO", 0.3):
             data = self.drive(steps, self.authenticator() if signs else None, driver, binary)
+            (OUT / f"{browser}-inbox-deny-selection.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
             if signs:
                 self.settle(lambda: len([call for call in self.scripts.calls if call[0] == skill_scripts.RASCI]) >= 2 * len(WIDTHS))
             stops = [args for script, args in self.scripts.calls if script == skill_scripts.RASCI]
-        (OUT / f"{browser}-inbox-deny-selection.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
         denied = []
         for found, (width, _) in zip(data["results"], WIDTHS, strict=True):

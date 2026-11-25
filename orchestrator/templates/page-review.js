@@ -39,14 +39,17 @@
       return;
     }
     const item = state.inbox.find((entry) => entry.kind === "review" && entry.id === review.id);
+    const ref = item ? keyOf(item) : null;
     const list = fileList(review.id);
     const treeNav = h("nav", {class: "card tree", "aria-label": "Changed files"}, treePane(list));
-    const diff = h("section", {class: "card diff-pane", "aria-label": "Diff"}, diffPane(list));
+    const diff = h("section", {class: "card diff-pane", "aria-label": "Diff"}, diffPane(list, ref));
+    const notes = h("div", {class: "review-notes"}, ref ? feedbackList(ref) : null);
     const id = ui.review;
     const head = h("article", {class: "card"},
       h("div", {class: "card-head"}, h("div", {}, h("p", {class: "muted"}, "submitted ", when(review.created_ts))), h("div", {class: "who"}, status(review.status || "pending"), review.gate ? pill(review.gate === "pass" ? "Gate green" : "Gate red", review.gate === "pass" ? "ok" : "bad") : null)),
       meta([["Repo", review.worktree], ["Branch", review.branch], ["Tree", (review.tree || "").slice(0, 12), review.tree], ["Score", review.score]]),
       review.notes ? h("pre", {class: "notes"}, revealedLines(review.notes)) : null,
+      notes,
       h("div", {class: "actions"},
         h("a", {class: "btn ghost icon-only", href: `/reviews/${encodeURIComponent(review.id)}/page`, target: "_blank", rel: "noopener noreferrer", ...named("Open full page", "Open full page (new tab)")}, icon("bi-box-arrow-up-right")),
         h("span", {class: "spacer"}),
@@ -54,9 +57,26 @@
           node.addEventListener("click", closeSheet);
           return node;
         }) : null));
-    openSheet(review.title, [head, h("div", {class: "split"}, treeNav, diff)], true);
+    openSheet(review.title, [head, h("div", {class: "split", "data-ref": ref, "data-to": item && item.to ? item.to : null}, treeNav, diff)], true);
     ui.review = id;
-    reviewDom = {tree: treeNav, diff};
+    reviewDom = {tree: treeNav, diff, notes, ref};
+  }
+
+  function repaintReview() {
+    const stack = reviewDom && reviewDom.ref ? reviewDom.diff.querySelector(".review-stack") : null;
+    const list = stack ? files.get(ui.review) : null;
+    if (!Array.isArray(list)) {
+      return;
+    }
+    const top = stack.scrollTop;
+    const opened = [...stack.querySelectorAll(REVIEW_FILE)].map((file) => file.open);
+    stack.replaceChildren(...list.map((file, index) => {
+      const node = reviewFile(file, index, reviewDom.ref);
+      node.open = opened[index];
+      return node;
+    }));
+    stack.scrollTop = top;
+    reviewDom.notes.replaceChildren(...[feedbackList(reviewDom.ref)].filter(Boolean));
   }
 
   function nest(entries) {
@@ -149,21 +169,27 @@
     if (line.kind === "hunk" || line.kind === "more") {
       return h("tr", {class: line.kind}, h("td", {colspan: 3}), h("td", {class: "code"}, line.text));
     }
-    return h("tr", {class: line.kind}, h("td", {class: "num"}, line.old), h("td", {class: "num"}, line.new), h("td", {class: "sign"}, SIGNS[line.kind] || " "), h("td", {class: "code"}, line.text));
+    return h("tr", {class: line.kind, "data-line": line.new || line.old || null}, h("td", {class: "num"}, line.old), h("td", {class: "num"}, line.new), h("td", {class: "sign"}, SIGNS[line.kind] || " "), h("td", {class: "code"}, line.text));
   }
 
-  function diffPane(list) {
+  function diffPane(list, ref) {
     if (!Array.isArray(list) || !list.length) {
       return h("p", {class: "muted pad"}, list === "loading" ? "Loading changes …" : "No diff available.");
     }
-    const stack = h("div", {class: "review-stack"}, list.map((file, index) => reviewFile(file, index)));
+    const stack = h("div", {class: "review-stack"}, list.map((file, index) => reviewFile(file, index, ref)));
     stack.addEventListener("scroll", () => followScroll(stack), {passive: true});
     return stack;
   }
 
-  function reviewFile(file, index) {
+  /**
+   * @param {Object} file a file of the review's file list.
+   * @param {number} index its place in that list.
+   * @param {string|null} ref the keyOf() of the review's inbox item, whose line comments its rows show; null when it
+   * waits on nobody.
+   */
+  function reviewFile(file, index, ref) {
     const [letter, tone] = FILE_STATUS[file.status] || ["?", "neutral"];
-    return h("details", {class: "review-file", "data-index": index, open: index === ui.file},
+    return h("details", {class: "review-file", "data-index": index, "data-path": ref ? file.path : null, open: index === ui.file},
       h("summary", {class: "diff-head"},
         h("span", {class: "letter", "data-tone": tone}, letter),
         h("code", {class: "path"}, file.old ? `${file.old} → ${file.path}` : file.path),
@@ -171,5 +197,5 @@
         h("span", {class: "spacer"}),
         stat(file)),
       file.detail ? h("p", {class: "muted pad"}, file.detail) : null,
-      file.lines.length ? h("div", {class: "diff-wide"}, h("table", {class: "diff"}, h("tbody", {}, file.lines.map(diffRow)))) : null);
+      file.lines.length ? h("div", {class: "diff-wide"}, h("table", {class: "diff"}, h("tbody", {}, ref ? withLineMarks(ref, file.path, file.lines.map(diffRow)) : file.lines.map(diffRow)))) : null);
   }

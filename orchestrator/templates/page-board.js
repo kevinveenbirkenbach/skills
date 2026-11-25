@@ -17,11 +17,15 @@
     .sort(([one, a], [two, b]) => a.localeCompare(b) || one.localeCompare(two));
 
   async function confirmAct(action, agents) {
-    const [, label, question] = actionOf(action);
+    const [, , question] = actionOf(action);
     const names = new Map(nightAgents());
-    if (!window.confirm(agents.length ? question.replace("all agents", agents.map((sid) => names.get(sid) || sid).join(", ")) : question)) {
-      return;
+    if (window.confirm(agents.length ? question.replace("all agents", agents.map((sid) => names.get(sid) || sid).join(", ")) : question)) {
+      await signedAct(action, agents);
     }
+  }
+
+  async function signedAct(action, agents) {
+    const [, label] = actionOf(action);
     const chosen = agents.length ? {agents} : {};
     const signed = await signedProof("/api/board/sign", {action, ...chosen}, label);
     if (signed) {

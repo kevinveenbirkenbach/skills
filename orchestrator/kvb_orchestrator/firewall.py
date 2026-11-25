@@ -253,22 +253,23 @@ class Firewall:
     def settings_files(self) -> tuple[list[dict], dict]:
         """Returns:
             The listed settings files the host writer last read, each
-            {"path", "exists", "sha256", "error", "settings", "own"} with
-            settings only the part signing.settings_view() keeps, and the
-            view's written time, error and tools_of().
+            {"path", "exists", "folder", "sha256", "error", "settings", "own"}
+            with settings only the part signing.settings_view() keeps and
+            folder False only when the writer found no directory for the
+            path, and the view's written time, error and tools_of().
         """
         view = read_json(self.firewall_spool.root / VIEW)
         files = view.get("files") if isinstance(view, dict) else None
         if not isinstance(files, list):
             return [], {"written": None, "error": "no settings view yet: the kvb-orchestrator-firewall unit writes it on the host", "tools": None}
-        shown = [{**entry, "settings": signing.settings_view(entry["settings"]), "error": str(entry.get("error") or ""), "own": entry.get("own") is True} for entry in files if shaped_file(entry)]
+        shown = [{**entry, "settings": signing.settings_view(entry["settings"]), "error": str(entry.get("error") or ""), "folder": entry.get("folder") is not False, "own": entry.get("own") is True} for entry in files if shaped_file(entry)]
         return shown, {"written": view.get("written"), "error": "", "tools": tools_of(shown, view.get("known"))}
 
     def firewall(self) -> dict:
         files, meta = self.settings_files()
         now = time.time()
         asks = self.recent_subjects("ask", now)
-        listed = [{key: entry[key] for key in ("path", "exists", "sha256", "error")} | {"groups": counted(grouped(entry["settings"].get("permissions")), asks, now), "sandbox": sandbox_entries(entry["settings"].get("sandbox"), "sandbox")} for entry in files]
+        listed = [{key: entry[key] for key in ("path", "exists", "folder", "sha256", "error")} | {"groups": counted(grouped(entry["settings"].get("permissions")), asks, now), "sandbox": sandbox_entries(entry["settings"].get("sandbox"), "sandbox")} for entry in files]
         rules = {rule["id"]: stored_hits(rule, asks, now) for rule in self.rules.listed()}
         return {**meta, "files": listed, "lists": list(signing.SETTINGS_LISTS), "patterns": deny_patterns(), "groups": self.groups.listed(), "sets": self.rule_sets.listed(), "days": RECENT_DAYS, "rules": rules}
 

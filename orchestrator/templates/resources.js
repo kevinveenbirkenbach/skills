@@ -258,7 +258,44 @@ const Resources = (() => {
     return unit ? `${(value / unit[0]).toFixed(1)}${unit[1]}` : String(Math.round(value));
   }
 
-  return {IDLE, SATURATED, CALM, BLOCKED, GAP, HOUR, COUNTS, ZONES, lines, hardware, segments, spans, waits, blocked, hung, asleep, unknown, stack, accumulate, burnup, compact};
+  /**
+   * @param moment - {day, time}: day 0 for Sunday to 6 for Saturday, time HH:MM, both local.
+   * @param now - epoch milliseconds.
+   * @returns the epoch milliseconds of the latest local moment at or before now; days step by the calendar, so a DST
+   * change keeps the wall clock time.
+   */
+  function lastMoment(moment, now) {
+    const [hours, minutes] = moment.time.split(":").map(Number);
+    const at = new Date(now);
+    at.setHours(hours, minutes, 0, 0);
+    at.setDate(at.getDate() - ((at.getDay() - moment.day + 7) % 7));
+    if (at.getTime() > now) {
+      at.setDate(at.getDate() - 7);
+    }
+    return at.getTime();
+  }
+
+  function nextMoment(moment, now) {
+    const at = new Date(lastMoment(moment, now));
+    at.setDate(at.getDate() + 7);
+    return at.getTime();
+  }
+
+  /**
+   * @param entry - one account's usage from /api/accounts: {total, hours: [[t, tokens]]}, t in epoch seconds.
+   * @param reset - the account's weekly reset {day, time}, or null for the unassigned tokens.
+   * @param now - epoch milliseconds.
+   * @returns {since, today, total}: tokens of the hours from the last reset (null without a reset), from local
+   * midnight, and of all rows; an hour counts once its start is at or after the bound.
+   */
+  function accountUsage(entry, reset, now) {
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    const from = (bound) => entry.hours.filter(([t]) => t * 1000 >= bound).reduce((sum, [, tokens]) => sum + tokens, 0);
+    return {since: reset ? from(lastMoment(reset, now)) : null, today: from(midnight.getTime()), total: entry.total};
+  }
+
+  return {IDLE, SATURATED, CALM, BLOCKED, GAP, HOUR, COUNTS, ZONES, lines, hardware, segments, spans, waits, blocked, hung, asleep, unknown, stack, accumulate, burnup, compact, lastMoment, nextMoment, accountUsage};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Resources;

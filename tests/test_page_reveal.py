@@ -10,7 +10,7 @@ from pathlib import Path
 from hub_support import signing
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "orchestrator" / "templates"
-MODULES = ["page-constants.js", "glossary.js", "ancestry.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-rule-request.js", "page-inbox.js", "page-grant.js", "page-firewall.js", "page-review.js", "page-cleanup.js", "page-offices.js", "page-ancestry.js", "page-tasks-prio.js"]
+MODULES = ["page-constants.js", "glossary.js", "answers.js", "ancestry.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-rule-request.js", "page-inbox.js", "page-grant.js", "page-firewall.js", "page-review.js", "page-cleanup.js", "page-offices.js", "page-ancestry.js", "page-tasks-prio.js"]
 RLO, ZWSP, LRI, SEPARATOR, CARRIAGE = chr(0x202E), chr(0x200B), chr(0x2066), chr(0x2028), chr(0x0D)
 FILLER, NBSP, CGJ, VS15, VS16 = chr(0x3164), chr(0xA0), chr(0x34F), chr(0xFE0E), chr(0xFE0F)
 HIDDEN = (RLO, ZWSP, LRI, SEPARATOR, CARRIAGE, FILLER, NBSP, CGJ, VS16)

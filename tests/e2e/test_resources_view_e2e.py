@@ -44,14 +44,26 @@ READ = """
     }
     return null;
   };
-  const legendFits = () => all("#main .res-panel:not([hidden])").every((panel) => panel.querySelector(".res-plot").getBoundingClientRect().height > 40);
+  const legendFits = () => all("#main .res-panel:not([hidden]) .res-plot").every((plot) => plot.getBoundingClientRect().height > 40);
+  const panelsShown = () => all("#main .res-panel").map((panel) => [panel.dataset.panel, panel.hidden]);
+  const picks = () => all("#main input[data-pick]").map((box) => [box.dataset.pick, box.checked, box.disabled]);
+  const pickPanel = async (kind, on) => {
+    const menu = document.querySelector("#main .res-panels-menu");
+    menu.open = true;
+    const box = menu.querySelector(`input[data-pick="${kind}"]`);
+    if (box.checked !== on) {
+      box.click();
+    }
+    await sleep(200);
+    menu.open = false;
+  };
   const page = () => ({tall: document.documentElement.scrollHeight > innerHeight, wide: document.documentElement.scrollWidth > innerWidth + 1, fits: legendFits()});
 """
 TOGGLE = """(async () => {@HELPERS@@READ@
   if (!(await until(() => charts().length === 2 && chip("@CPU@") && chip("@STAGE@") && agents().length === 2, 15000))) {
     return {error: text(document.getElementById("main")), charts: charts()};
   }
-  const before = {charts: charts(), lines: lines(), agents: agents(), pressed: pressed(), panels: all("#main .res-panel").map((panel) => [panel.dataset.panel, panel.hidden])};
+  const before = {charts: charts(), lines: lines(), agents: agents(), pressed: pressed(), panels: panelsShown(), picks: picks()};
   chip("@CPU@").click();
   await until(() => chip("@STAGE@") && !lines().includes("@CPU@"), 4000);
   chip("@STAGE@").click();
@@ -67,9 +79,11 @@ COMBINE = """(async () => {@HELPERS@@READ@
   switched("tokens").click();
   const accumulated = Boolean(await until(() => sums().length === 1 && !agents().length, 4000));
   const sumsAt = {sums: sums(), rising: rising(), pressed: switched("tokens").getAttribute("aria-pressed")};
-  switched("combined").click();
+  await pickPanel("combined", true);
+  await pickPanel("hardware", false);
+  await pickPanel("tokens", false);
   const combinedOn = Boolean(await until(() => charts().join() === "combined" && burn().length === 2, 4000));
-  const combined = {charts: charts(), lines: lines(), sums: sums(), burn: burn(), right: all('#main text[data-axis="right"]').length, pressed: pressed(), panels: all("#main .res-panel").map((panel) => [panel.dataset.panel, panel.hidden]), switch: switched("combined").getAttribute("aria-pressed")};
+  const combined = {charts: charts(), lines: lines(), sums: sums(), burn: burn(), right: all('#main text[data-axis="right"]').length, pressed: pressed(), panels: panelsShown(), picks: picks()};
   return {kept, accumulated, sumsAt, combinedOn, combined, page: page(), violations: window.e2eViolations || null};
 })()"""
 DESELECT = """(async () => {@HELPERS@@READ@
@@ -135,7 +149,8 @@ class TestResourcesView(HubCase):
                 self.assertNotIn("error", toggle, toggle)
                 before = toggle["before"]
                 self.assertEqual(before["charts"], ["hardware", "tokens"])
-                self.assertEqual(before["panels"], [["resources-hardware", False], ["resources-tokens", False], ["resources-combined", True]])
+                self.assertEqual(before["panels"], [["resources-hardware", False], ["resources-tokens", False], ["resources-combined", True], ["resources-accounts", False]])
+                self.assertEqual(before["picks"], [["hardware", True, False], ["tokens", True, False], ["combined", False, False], ["accounts", True, False]])
                 self.assertEqual((before["lines"], before["agents"]), (hardware, ["Skills", "Stage"]))
                 self.assertEqual(set(before["pressed"].values()), {"true"})
                 self.assertEqual(set(before["pressed"]), {*hardware, "agent:Skills", STAGE})
@@ -153,15 +168,16 @@ class TestResourcesView(HubCase):
                 self.assertTrue(combine["combinedOn"], combine)
                 combined = combine["combined"]
                 self.assertEqual((combined["charts"], combined["lines"], combined["sums"], combined["burn"]), (["combined"], hardware, ["Skills", "Stage"], ["done", "scope"]))
-                self.assertEqual((combined["right"], combined["switch"]), (2, "true"))
-                self.assertEqual(combined["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False]])
+                self.assertEqual(combined["right"], 2)
+                self.assertEqual(combined["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", False]])
+                self.assertEqual(combined["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, False], ["accounts", True, False]])
                 self.assertEqual(set(combined["pressed"].values()), {"true"})
                 self.assertEqual(set(combined["pressed"]), {*hardware, "agent:Skills", STAGE, "burn:done", SCOPE})
                 self.assertEqual(combine["page"], {"tall": False, "wide": False, "fits": True})
                 self.assertEqual(w4.quiet(combine["violations"]), [])
                 self.assertTrue(deselect["deselected"], deselect)
                 self.assertEqual((deselect["burn"], deselect["lines"]), (["done"], [line for line in hardware if line != UTIL]))
-                self.assertEqual(deselect["saved"], {"hidden": [CPU, STAGE], "tokens": "accumulated", "combined": True, "combinedHidden": [SCOPE, UTIL]})
+                self.assertEqual(deselect["saved"], {"hidden": [CPU, STAGE], "tokens": "accumulated", "panels": ["accounts", "combined"], "combinedHidden": [SCOPE, UTIL]})
                 self.assertEqual(deselect["reset"], 200)
                 self.assertEqual(w4.quiet(deselect["violations"]), [])
         self.assertEqual(self.httpd.hub.view_store.get(), VIEW)

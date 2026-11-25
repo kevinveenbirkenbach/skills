@@ -14,6 +14,7 @@ CONSOLE = ("id", "status", "code", "output", "created_ts", "started", "finished"
 TASK_JOB = "task"
 GATE_JOB = "gate"
 CHANGES = (TASK_JOB, GATE_JOB)
+UNRUNNABLE = "The hub runner needs a command and an absolute directory, and this row lacks one; run it with operator.py run in a terminal."
 
 
 def runner_job(job: dict) -> dict:
@@ -32,9 +33,50 @@ def console_of(job: dict | None) -> dict | None:
     return None if job is None else {**{key: job[key] for key in CONSOLE}, "output": job["output"][-OUTPUT_LIMIT:]}
 
 
+def minutes_since(ts: float | None, now: float) -> int:
+    return max(0, round((now - (ts or now)) / 60))
+
+
+def blocked_reasons(jobs: list[dict], now: float) -> dict[str, str]:
+    """Args:
+        jobs: every hub job record.
+
+    Returns:
+        Per task with a queued or running job why its row cannot be run or
+        denied now: how long the runner runs it, or how long it waits and
+        which job the runner, which runs one job at a time, started last.
+    """
+    open_jobs = [job for job in jobs if job["status"] in JOB_OPEN]
+    running = max((job for job in open_jobs if job["status"] == "running"), key=lambda job: job["started"] or 0, default=None)
+    ahead = "" if running is None else f" behind {running['task']}, which runs for {minutes_since(running['started'], now)} min"
+    reasons = {}
+    for job in sorted(open_jobs, key=lambda job: job["created_ts"]):
+        if job["status"] == "running":
+            reasons[job["task"]] = f"The hub runner runs it for {minutes_since(job['started'], now)} min; its result comes in Waits on Operator."
+        else:
+            reasons[job["task"]] = f"Queued in the hub runner for {minutes_since(job['created_ts'], now)} min{ahead}; the runner runs one job at a time."
+    return reasons
+
+
+def row_blocked(row: dict, reasons: dict[str, str]) -> str:
+    """Args:
+        row: an open operator row.
+        reasons: blocked_reasons() of the hub jobs.
+
+    Returns:
+        Why no area can run or deny the row now, "" when one can: its open
+        hub job, else for a command row without a command or an absolute
+        directory UNRUNNABLE; a decision row is answered, never run.
+    """
+    return reasons.get(row["task"]) or ("" if row["check"] == "decision" or runnable(row) else UNRUNNABLE)
+
+
 class Jobs:
     def open_jobs(self) -> set[str]:
         return {job["task"] for job in self.jobs.listed() if job["status"] in JOB_OPEN}
+
+    def blocked_rows(self, now: float) -> dict[str, str]:
+        return blocked_reasons(self.jobs.listed(), now)
 
     def consoles(self) -> dict[str, dict]:
         latest: dict[str, dict] = {}

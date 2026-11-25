@@ -88,13 +88,13 @@
   function openAgent(who, anchor, closed) {
     const key = agentKey(who);
     const name = nameOf(key);
-    const text = h("textarea", {"aria-label": `Message to ${name}`, placeholder: `Message to ${name} …`});
+    const text = h("textarea", {"aria-label": `Message to ${name}`, placeholder: `Message to ${name} …`, "data-skills": ""});
     const file = h("input", {type: "file", class: "field", "aria-label": "Attach file"});
     const button = h("button", {type: "submit", class: "btn primary icon-only", ...named("Send")}, icon("bi-send"));
     const classes = choice("to-one", TO_ONE, "post");
-    const form = h("form", {class: "popup-form"}, text, file, classes,
+    const form = h("form", {class: "popup-form"}, micFrame(text, []), file, classes,
       h("p", {class: "muted"}, "Post arrives at the end of the turn, Call at once with a read receipt; your passkey signs, verifiable with operator_message."),
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), micButton(text, false), button));
+      h("div", {class: "actions"}, h("span", {class: "spacer"}), button));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!text.value.trim()) {

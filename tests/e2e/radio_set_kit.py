@@ -153,7 +153,7 @@ FACE = """(async () => {@HELPERS@@RADIO@
   await sleep(150);
   const menuFits = fits();
   await modeMenu("auto", false);
-  const send = [name(spot.querySelector("form.composer .ptt-more")), spot.querySelector("form.composer .radio-cancel").hidden];
+  const send = [name(spot.querySelector("form.composer .ptt-more")), spot.querySelector("form.composer .mayday-toggle").getAttribute("aria-pressed")];
   const stationsHead = text(spot.querySelector(".radio-station .group-title"));
   const ptt = spot.querySelector('form.composer button[type="submit"]');
   const pageFits = fits();

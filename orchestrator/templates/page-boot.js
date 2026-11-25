@@ -41,6 +41,7 @@
   window.addEventListener("resize", placeStations);
   skyPanel();
   micWatch();
+  slashWatch();
   radioSpot();
   radio.element = radioElement();
   drawSky();

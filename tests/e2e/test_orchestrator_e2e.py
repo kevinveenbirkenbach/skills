@@ -164,7 +164,7 @@ class TestOrchestratorE2E(base.OrchestratorE2ECase):
                 self.assertRegex(by_hash[f"#{tab}/3d"]["note"], r"^\d+ nodes · \d+ edges · Force$")
         agents = by_hash["#agents/orbit"]
         self.assertEqual(agents["toolbar"], ["Priority", "Day/Night", "Status"])
-        self.assertEqual(agents["spot"], {"hidden": True, "channels": CHOICE_CHANNELS})
+        self.assertEqual(agents["spot"], {"hidden": True, "channels": [channel for channel in CHOICE_CHANNELS if channel != "mayday"]})
         hierarchy = by_hash["#agents/hierarchy"]
         self.assertEqual([office for office, _ in hierarchy["org"]], ["chair", "identity/oidc", "work/s1", "work/s2"])
         self.assertEqual(hierarchy["toggles"], [["Collapse: Operator", "true"], ["Collapse: Chair", "true"], ["Collapse: identity", "true"], ["Collapse: Presidents", "true"]])

@@ -15,9 +15,9 @@ from .settings import flag, section
 VIEW_LIMIT = 64 << 10
 CHANGE_LIMIT = 2 * VIEW_LIMIT + (1 << 10)
 VIEW = {
-    "resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []},
+    "resources": {"hidden": [], "tokens": "interval", "panels": ["hardware", "tokens", "accounts"], "combinedHidden": []},
     "burn": {"overlays": []},
-    "home": {"pins": []},
+    "home": {"pins": [], "zoom": {}},
     "kanban": {"hidden": []},
     "legend": {"views": {}, "tiles": {}},
     "approval": {"mode": "direct"},
@@ -37,8 +37,10 @@ OVERLAYS = ("fix", "break", "tokens", "velocity", "security", "score")
 KANBAN_LAYERS = ("line", "jobs")
 PINS_LIMIT = 64
 SPAN = (1, 12)
+ZOOM = (50, 200, 10)
 METRIC = "metric"
 CHARTS = ("hardware", "tokens", "combined")
+PANELS = (*CHARTS, "accounts")
 SHOWN_LIMIT = 100
 FNV_PRIME = 0x01000193
 FNV_SEEDS = (0x811C9DC5, 0x01000193)
@@ -145,6 +147,30 @@ def pins(value: object) -> list[dict]:
     return found
 
 
+def zooms(value: object) -> dict[str, int]:
+    """Returns:
+        home.zoom: pin keys kind:id to a whole percent from 50 to 200 in
+        steps of 10; anything else raises ToolError.
+    """
+    low, high, step = ZOOM
+    if not isinstance(value, dict) or not all(isinstance(key, str) and PIN_KEY.fullmatch(key) for key in value):
+        raise ToolError("home.zoom must map pin keys kind:id to a percent")
+    if not all(not isinstance(zoom, bool) and isinstance(zoom, int) and low <= zoom <= high and zoom % step == 0 for zoom in value.values()):
+        raise ToolError(f"home.zoom must hold whole percents from {low} to {high} in steps of {step}")
+    return dict(value)
+
+
+def shown_panels(value: object) -> list[str]:
+    """Returns:
+        resources.panels: the distinct Resources panels shown, at least
+        one; anything else raises ToolError.
+    """
+    panels = members(value, "resources.panels", "panels", PANELS)
+    if not panels:
+        raise ToolError("resources.panels must show at least one panel")
+    return panels
+
+
 def legend_flags(value: object, name: str, known: Callable[[str], object], what: str) -> dict[str, bool]:
     """Args:
         value: a map of legend owners to whether their legend shows.
@@ -168,7 +194,7 @@ def valid_view(raw: object) -> dict:
     Returns:
         The document with every key of VIEW and nothing else; any other
         key, a missing one or a malformed value raises ToolError. The
-        legend state of a tile whose pin left Home is dropped.
+        legend state and zoom of a tile whose pin left Home are dropped.
     """
     data = section(raw, "view", tuple(VIEW))
     resources = section(data["resources"], "resources", tuple(VIEW["resources"]))
@@ -188,11 +214,11 @@ def valid_view(raw: object) -> dict:
         "resources": {
             "hidden": series_ids(resources["hidden"], "resources.hidden"),
             "tokens": resources["tokens"],
-            "combined": flag(resources["combined"], "resources.combined"),
+            "panels": shown_panels(resources["panels"]),
             "combinedHidden": series_ids(resources["combinedHidden"], "resources.combinedHidden"),
         },
         "burn": {"overlays": members(burn["overlays"], "burn.overlays", "metrics", OVERLAYS)},
-        "home": {"pins": pinned},
+        "home": {"pins": pinned, "zoom": {key: zoom for key, zoom in zooms(home["zoom"]).items() if key in keys}},
         "kanban": {"hidden": members(kanban["hidden"], "kanban.hidden", "layers", KANBAN_LAYERS)},
         "legend": {
             "views": legend_flags(legend["views"], "legend.views", LEGEND_PANELS.__contains__, f"panels of {', '.join(LEGEND_PANELS)}"),
@@ -204,10 +230,20 @@ def valid_view(raw: object) -> dict:
 
 def upgraded(raw: object) -> object:
     """Returns:
-        A stored document of an older hub with each VIEW section it lacks
-        at its default; anything else as it is.
+        A stored document of an older hub with each VIEW section, and each
+        key of a section, it lacks at its default, and resources.combined,
+        which resources.panels replaced, turned into the panels it showed;
+        anything else as it is.
     """
-    return {**copy.deepcopy(VIEW), **raw} if isinstance(raw, dict) else raw
+    if not isinstance(raw, dict):
+        return raw
+    resources = raw.get("resources")
+    if isinstance(resources, dict) and "combined" in resources and "panels" not in resources:
+        combined = resources["combined"] is True
+        kept = {key: value for key, value in resources.items() if key != "combined"}
+        raw = {**raw, "resources": {**kept, "panels": ["combined", "accounts"] if combined else list(VIEW["resources"]["panels"])}}
+    merged = {**copy.deepcopy(VIEW), **raw}
+    return {name: {**copy.deepcopy(VIEW[name]), **value} if name in VIEW and isinstance(value, dict) else value for name, value in merged.items()}
 
 
 def slot(view: dict, path: object) -> tuple[dict, str]:

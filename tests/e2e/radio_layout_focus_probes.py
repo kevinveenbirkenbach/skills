@@ -301,15 +301,16 @@ REPLY_HOME = """(async () => {@HELPERS@@PROBES@
   };
   const sent = await sendFrom(tile("radio"), "reply from the Home radio");
   const questions = [];
-  window.confirm = (question) => {
-    questions.push(question);
-    return true;
-  };
-  const clear = all("form.composer button.radio-cancel", tile("radio")).find((button) => button.getAttribute("aria-label") === "Cancel mayday");
+  const clear = all("form.composer button.mayday-toggle", tile("radio")).find((button) => text(button) === "Cancel mayday" && button.getAttribute("aria-pressed") === "true");
   const enabled = clear ? !clear.disabled : null;
   const shownBefore = new Set(all("#toasts .toast"));
   if (clear) {
     clear.click();
+    const ask = await until(() => tile("radio").querySelector("form.composer .mayday-confirm"), 4000);
+    if (ask) {
+      questions.push(text(ask.querySelector("p")));
+      all("button", ask).find((button) => text(button) === "Cancel mayday").click();
+    }
   }
   const lifted = await until(() => all("#toasts .toast").filter((node) => !shownBefore.has(node)).map(text).find((entry) => entry.startsWith("Cancel mayday")), 15000);
   document.getElementById("toasts").replaceChildren();

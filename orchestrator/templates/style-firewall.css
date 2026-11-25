@@ -1,6 +1,17 @@
 .stack-tight { display: grid; gap: 10px; min-width: 0; }
-.fw-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: end; }
-.fw-form label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
+.fw-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; align-items: start; }
+.fw-form > button { align-self: end; justify-self: start; }
+.fw-form label, .fw-chips-field { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
+.fw-chips-field { grid-column: 1 / -1; }
+.fw-chips-field > p { margin: 0; }
+.check-chips { margin: 0; }
+.fw-form label.check-chip { display: inline-flex; color: var(--text); font-size: var(--fs-sm); }
+.check-chip input { margin: 0; accent-color: var(--accent); }
+.check-chip .avatar { width: 20px; height: 20px; }
+.check-chip:has(input:checked) { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
+.check-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fw-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fw-filters > .chips { margin-bottom: 0; }
 .fw-form .field { width: 100%; min-width: 0; }
 .fw-path { overflow-wrap: anywhere; }
 .fw-patterns code { overflow-wrap: anywhere; }
@@ -20,9 +31,10 @@
 .fw-diff .add { color: var(--ok); }
 .fw-diff .del { color: var(--bad); }
 .rule-row select.field { width: auto; max-width: 100%; min-width: 0; }
-.controls > .segmented { justify-self: start; max-width: 100%; }
-.controls > .segmented button { display: inline-flex; align-items: center; gap: 6px; }
-.controls [role="tabpanel"][hidden], .apply-bar[hidden] { display: none; }
+.fw-controls .box-head > .segmented { max-width: 100%; }
+.fw-controls .box-head > .segmented button { display: inline-flex; align-items: center; gap: 6px; }
+.fw-controls [role="tabpanel"][hidden], .apply-bar[hidden] { display: none; }
+.fw-controls [role="tabpanel"] { grid-template-columns: minmax(0, 1fr); }
 .tool-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; align-items: start; }
 .tool-group { display: grid; gap: 6px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--sunken); }
 .tool-group h4 { margin: 0; }

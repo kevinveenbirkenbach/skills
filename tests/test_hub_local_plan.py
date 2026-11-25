@@ -147,7 +147,7 @@ class TestLocalPlan(HubCase):
 
     def test_the_tree_timer_writes_the_local_dry_run_after_the_tree(self):
         starts = [line.split("=", 1)[1] for line in TREE_UNIT.read_text(encoding="utf-8").splitlines() if line.startswith("ExecStart=")]
-        self.assertEqual(len(starts), 2)
+        self.assertEqual(len(starts), 3)
         self.assertIn("pkgmgr branch tree --format json --output %h/.local/state/pkgmgr/tree/branch-tree.json", starts[0])
         self.assertEqual(starts[1], "/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/local_plan.py --tree %h/.local/state/pkgmgr/tree/branch-tree.json --pkgmgr %h/.local/share/kvb-orchestrator/pkgmgr/bin/pkgmgr --budget 240")
         self.assertIn("TimeoutStartSec=600", TREE_UNIT.read_text(encoding="utf-8").splitlines())

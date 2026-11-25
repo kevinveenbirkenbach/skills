@@ -154,10 +154,10 @@ HOME = """(async () => {@HELPERS@@PROBES@
     await sleep(200);
   }
   const menu = whole.querySelector(".radio-mode-menu:not([hidden])");
-  const cancel = whole.querySelector("form.composer .radio-cancel");
+  const cancel = whole.querySelector("form.composer .mayday-toggle");
   const tools = {
     menu: opens ? [active.getAttribute("aria-expanded"), Boolean(menu), menu ? box(menu).bottom <= box(whole).bottom + 1 : null] : null,
-    cancel: cancel ? [cancel.hidden, cancel.title] : null,
+    cancel: cancel ? [cancel.getAttribute("aria-pressed"), cancel.title] : null,
   };
   if (opens) {
     active.click();
@@ -244,8 +244,9 @@ SPOT = """(async () => {@HELPERS@@PROBES@@SPEAKING@
       const edge = box(node);
       const [x, y] = [edge.left + edge.width / 2, edge.top + edge.height / 2];
       const hit = document.elementFromPoint(x, y);
-      if (!(list.contains(node) && (y < box(list).top || y > box(list).bottom)) && !(hit === node || node.contains(hit) || (layer && hit && layer.contains(hit) && !layer.contains(node)))) {
-        found.push(`${named(node)} <- ${hit ? `${hit.tagName}.${hit.getAttribute("class")}#${hit.id}` : "null"}`);
+      if (!(list.contains(node) && (y <= box(list).top || y >= box(list).bottom)) &&!(hit === node || node.contains(hit) || (layer && hit && layer.contains(hit) && !layer.contains(node)))) {
+        const under = document.elementsFromPoint(x, y).slice(0, 4).map((item) => `${item.tagName}.${item.getAttribute("class")}`).join(" > ");
+        found.push(`${named(node)} <- ${hit ? `${hit.tagName}.${hit.getAttribute("class")}#${hit.id}` : "null"} at ${Math.round(x)},${Math.round(y)} list ${Math.round(box(list).top)}-${Math.round(box(list).bottom)} stack ${under}`);
       }
     }
     window.scrollTo(0, 0);

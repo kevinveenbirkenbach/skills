@@ -9,6 +9,7 @@ const Panels = (() => {
   const ESCAPED = /_([0-9a-f]+)_/g;
   const PANEL = "panel";
   const SIZES = {panel: [6, 4], item: [4, 3]};
+  const ZOOM = {min: 50, max: 200, step: 10, base: 100};
   const HOSTS = "[data-panel], [data-item]";
   const TOO_LONG = "the id runs past 200 characters";
   const XHTML = "http://www.w3.org/1999/xhtml";
@@ -171,6 +172,19 @@ const Panels = (() => {
   const placeKey = (pins, from, to) => place(pins, indexOf(pins, from), indexOf(pins, to));
   const moveKey = (pins, key, step) => move(pins, indexOf(pins, key), step);
   const resizeKey = (pins, key, w, h) => resize(pins, indexOf(pins, key), w, h);
+
+  /**
+   * @param zooms - the view store's home.zoom: pin key to percent; a pin without one shows at ZOOM.base.
+   * @param key - the tile's pin key.
+   * @param step - +1 zooms in, -1 out, 0 resets.
+   * @returns the new map: the tile at ZOOM.step percent more or less, held in ZOOM.min to ZOOM.max, left out at the base.
+   */
+  function zoomBy(zooms, key, step) {
+    const now = Object.hasOwn(zooms, key) ? zooms[key] : ZOOM.base;
+    const next = step === 0 ? ZOOM.base : Math.min(ZOOM.max, Math.max(ZOOM.min, now + step * ZOOM.step));
+    const rest = Object.fromEntries(Object.entries(zooms).filter(([name]) => name !== key));
+    return next === ZOOM.base ? rest : {...rest, [key]: next};
+  }
 
   function resizeBy(pins, key, dw, dh) {
     const pin = pins[indexOf(pins, key)];
@@ -363,7 +377,7 @@ const Panels = (() => {
 
   return {
     MAX, SPAN, PANEL, ID, HOSTS, keyOf, token, raw, digest, valid, validLayout, clean, panel, item, capture, lookup, targetOf, has, add, remove, firstOfGroup,
-    place, move, resize, placeKey, moveKey, resizeKey, resizeBy, stretch, memory, store, decorate, keepFocus,
+    place, move, resize, placeKey, moveKey, resizeKey, resizeBy, stretch, ZOOM, zoomBy, memory, store, decorate, keepFocus,
   };
 })();
 if (typeof module === "object" && module.exports) {

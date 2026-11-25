@@ -296,8 +296,8 @@
   }
 
   function speakCard() {
-    const {form, recipient, text, channel, clear} = composerForm();
-    const part = {recipient, text, channel, clear, names: ""};
+    const {form, recipient, text, channel, mayday} = composerForm();
+    const part = {recipient, text, channel, mayday, names: ""};
     part.root = h("section", {class: "radio-card radio-speak", "data-panel": "radio-speak", "aria-label": "Speak"}, cardHead("Speak"), form);
     radioParts.speaks.push(part);
     return part;
@@ -307,7 +307,7 @@
     const names = agentNames();
     const sig = JSON.stringify(names);
     for (const part of liveParts("speaks")) {
-      part.clear.hidden = !state.silence;
+      drawMayday(part.mayday);
       if (sig !== part.names) {
         part.names = sig;
         const chosen = part.recipient.value;

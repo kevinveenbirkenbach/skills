@@ -643,7 +643,9 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 
 def node(probe: str, *args: str) -> dict:
-    done = subprocess.run(["node", "-e", probe, *args], capture_output=True, text=True, timeout=60, check=True)
+    done = subprocess.run(["node", "-e", probe, *args], capture_output=True, text=True, timeout=60, check=False)
+    if done.returncode != 0:
+        raise AssertionError(done.stderr[-2000:])
     return json.loads(done.stdout)
 
 
@@ -765,7 +767,7 @@ class TestHomePage(unittest.TestCase):
         marked = set(re.findall(r"\['[^']+', \"([^\"]+)\"\]", home))
         captured = set(re.findall(r'Panels\.capture\("([^"]+)"', home))
         made = set(re.findall(r'\{kind: "(\w+)", id, view[,}]', sources))
-        self.assertEqual((len(literal), marked), (12, {"radio-log"}))
+        self.assertEqual((len(literal), marked), (13, {"radio-log"}))
         literal |= marked
         self.assertEqual(len(dynamic), 13)
         self.assertEqual(sorted(literal | dynamic), sorted(registered))

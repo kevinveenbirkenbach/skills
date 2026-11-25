@@ -29,9 +29,11 @@
     tokens: add the input, output, cache-read and cache-write tokens of the
         usage fields in the Claude Code transcripts under --transcripts since
         each file's byte offset to <state>/tokens.jsonl as {t, agent, model,
-        input, output, cache_read, cache_write}, t the hour; agent is the
-        name the council claim of the session carries, else the session id's
-        first 8 characters. A message counts once by its message id and
+        input, output, cache_read, cache_write, account?}, t the hour; agent
+        is the name the council claim of the session carries, else the
+        session id's first 8 characters; account is the email the
+        SessionStart hook mapped the session to in the council's
+        session-accounts.jsonl, left out for an unmapped session. A message counts once by its message id and
         request id, also when written over several lines or copied into a
         fork's transcript. <state>/offsets.json holds {files: {path: offset},
         seen: {hour: [key digest]}}, seen keeping the hours this run read and
@@ -97,6 +99,8 @@ HOST_DIGITS = (("cpu", 1), ("ram", 1), ("swap", 1), ("load", 2), ("psi_some", 2)
 CLAIMS = ("*/claim.json", "*/*/claim.json")
 SAMPLES = "samples.jsonl"
 TOKENS = "tokens.jsonl"
+SESSION_ACCOUNTS = "session-accounts.jsonl"
+EMAIL_CHARS = 254
 OFFSETS = "offsets.json"
 TICKS = "cpu.json"
 SWAPPED = "swap.json"
@@ -115,18 +119,28 @@ def read_text(path: Path) -> str:
         return ""
 
 
-def read_json(path: Path) -> object:
+def read_capped(path: Path) -> str:
     """Returns:
-        The parsed JSON of path, read without following a symlink and only
-        from a regular file of at most JSON_BYTES; None when that fails.
+        The text of path, read without following a symlink and only from a
+        regular file of at most JSON_BYTES; "" when that fails.
     """
     try:
         with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as handle:
             if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                return None
+                return ""
             data = handle.read(JSON_BYTES + 1)
-        return None if len(data) > JSON_BYTES else json.loads(data.decode("utf-8"))
-    except (OSError, ValueError, RecursionError):
+        return "" if len(data) > JSON_BYTES else data.decode("utf-8")
+    except (OSError, ValueError):
+        return ""
+
+
+def read_json(path: Path) -> object:
+    """Returns:
+        The parsed JSON of read_capped(path); None when that fails.
+    """
+    try:
+        return json.loads(read_capped(path))
+    except (ValueError, RecursionError):
         return None
 
 
@@ -526,8 +540,12 @@ def retain(rows: list[dict], now: float) -> list[dict]:
 
 
 def read_rows(path: Path) -> list[dict]:
+    return json_lines(read_text(path))
+
+
+def json_lines(text: str) -> list[dict]:
     rows = []
-    for line in read_text(path).splitlines():
+    for line in text.splitlines():
         try:
             row = json.loads(line)
         except (ValueError, RecursionError):
@@ -606,6 +624,20 @@ def claim_names(council: Path) -> dict[str, str]:
             if isinstance(data, dict) and isinstance(data.get("session"), str) and isinstance(data.get("name"), str) and data["name"].strip():
                 names[data["session"]] = data["name"].strip()
     return names
+
+
+def session_accounts(council: Path) -> dict[str, str]:
+    """Returns:
+        Each session's account email from the lines the SessionStart hook
+        appends to <council>/session-accounts.jsonl, the last one winning.
+        Agents may write the file, so it is read through read_capped() and
+        an email longer than EMAIL_CHARS is dropped.
+    """
+    found = {}
+    for row in json_lines(read_capped(council / SESSION_ACCOUNTS)):
+        if isinstance(row.get("session"), str) and isinstance(row.get("email"), str) and len(row["email"]) <= EMAIL_CHARS:
+            found[row["session"]] = row["email"]
+    return found
 
 
 def epoch(value: object) -> float | None:
@@ -700,24 +732,30 @@ def scan(path: Path, start: int, budget: int, seen: dict[int, set[str]]) -> tupl
 
 def token_rows(sums: dict[tuple, list[int]]) -> list[dict]:
     """Args:
-        sums: per (t, agent, model, width) the counts in COUNTS order.
+        sums: per (t, agent, model, width, account) the counts in COUNTS
+            order, account "" for a session the hook mapped to none.
 
     Returns:
         One token row per key in key order; a row other than hourly names
-        its width.
+        its width, a row of a mapped session its account.
     """
-    return [{"t": t, "agent": agent, "model": model, **dict(zip(NAMES, counts, strict=True)), **({} if width == HOUR else {"width": width})} for (t, agent, model, width), counts in sorted(sums.items())]
+    return [
+        {"t": t, "agent": agent, "model": model, **dict(zip(NAMES, counts, strict=True)), **({} if width == HOUR else {"width": width}), **({"account": account} if account else {})}
+        for (t, agent, model, width, account), counts in sorted(sums.items())
+    ]
 
 
 def token_key(row: dict, line: float) -> tuple:
     """Returns:
-        (t, agent, model, width) of the row a token row merges into: its day
-        (UTC) when the row is daily or the day ended by line, else its hour.
+        (t, agent, model, width, account) of the row a token row merges
+        into: its day (UTC) when the row is daily or the day ended by line,
+        else its hour.
     """
     day = int(row["t"] // DAY * DAY)
+    account = row["account"] if isinstance(row.get("account"), str) else ""
     if row.get("width") == DAY or day + DAY <= line:
-        return day, row["agent"], row["model"], DAY
-    return row["t"], row["agent"], row["model"], HOUR
+        return day, row["agent"], row["model"], DAY, account
+    return row["t"], row["agent"], row["model"], HOUR, account
 
 
 def add(sums: dict[tuple, list[int]], key: tuple, counts: tuple[int, ...]) -> None:
@@ -775,6 +813,7 @@ def count_tokens(transcripts: Path, council: Path, state: Path, now: float, budg
     offsets = stored.get("files") if isinstance(stored, dict) and isinstance(stored.get("files"), dict) else {}
     seen = seen_of(stored.get("seen") if isinstance(stored, dict) else None)
     names = claim_names(council)
+    accounts = session_accounts(council)
     sums: dict[tuple, list[int]] = {}
     files, touched = {}, set()
     for path in sorted(transcripts.rglob("*.jsonl")):
@@ -791,7 +830,7 @@ def count_tokens(transcripts: Path, council: Path, state: Path, now: float, budg
             seen.setdefault(hour, set()).update(read)
             touched.add(hour)
         for ts, session, model, counts in found:
-            add(sums, (int(ts // HOUR * HOUR), names.get(session) or session[:8], model, HOUR), counts)
+            add(sums, (int(ts // HOUR * HOUR), names.get(session) or session[:8], model, HOUR, accounts.get(session, "")), counts)
     rows = token_rows(sums)
     append_rows(state / TOKENS, rows)
     kept = {"files": files, "seen": kept_seen(seen, touched, now)}

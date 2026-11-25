@@ -76,6 +76,7 @@ OPERATOR = """(async () => {@HELPERS@@UNLABELLED@
   return found;
 })()"""
 FEEDBACK = """(async () => {@HELPERS@@UNLABELLED@
+  const mine = (words) => all("#main .inbox-list > li").find((li) => li.textContent.includes(words));
   const card = await until(() => all("#main .inbox-list > li").find((li) => li.textContent.includes("@TAG@ second") && li.querySelector(".diff-file tr.add")), 10000);
   if (!card) {
     return {error: text(document.getElementById("main"))};
@@ -92,8 +93,9 @@ FEEDBACK = """(async () => {@HELPERS@@UNLABELLED@
   window.e2eFeedback = [];
   const send = window.fetch.bind(window);
   window.fetch = (path, init) => {
-    if (String(path).startsWith("/api/messages")) {
-      window.e2eFeedback.push([String(path), JSON.parse(init.body).text]);
+    if (String(path).startsWith("/api/") && init && init.method === "POST" && !String(path).startsWith("/api/inbox/undo")) {
+      const body = JSON.parse(init.body);
+      window.e2eFeedback.push([String(path), body.text || null, (body.items || []).map((entry) => [entry.kind, entry.verb, entry.channel || "", entry.reason || ""])]);
     }
     return send(path, init);
   };
@@ -117,25 +119,36 @@ FEEDBACK = """(async () => {@HELPERS@@UNLABELLED@
   const title = text(document.querySelector(".sheet-head .panel-title"));
   const range = text(document.querySelector(".sheet-box .who code"));
   sheet.value = "right-click note";
-  all(".sheet-box button").find((button) => name(button) === "Send feedback").click();
-  await until(() => window.e2eFeedback.length >= (@SIGNS@ ? 2 : 1), 8000);
-  await sleep(600);
-  const fresh = () => all("#main .inbox-list > li").find((li) => li.textContent.includes("@TAG@ second"));
-  const shown = @SIGNS@ ? await until(() => fresh() && all(".feedback-list li", fresh()).map(text).find((entry) => entry.includes("right-click note")), 15000) : null;
-  const close = document.querySelector(".sheet-head button");
-  if (close) {
-    close.click();
-  }
-  const ask = all("#main .inbox-list > li").find((li) => li.textContent.includes("@TAG@ keyed"));
-  const code = ask.querySelector(".command code");
+  all(".sheet-box button").find((button) => name(button) === "Save comment").click();
+  const fresh = () => mine("@TAG@ second");
+  await until(() => fresh() && fresh().querySelector("tr.match-mark"), 4000);
+  const marked = {
+    rows: all("tr.marked", fresh()).map((row) => row.dataset.line),
+    notes: all("tr.match-mark", fresh()).map(text),
+    list: all(".feedback-list li.line-mark", fresh()).map(text),
+    open: !document.getElementById("sheet").hidden,
+  };
+  const ask = () => mine("@TAG@ keyed");
+  const code = ask().querySelector(".command code");
   select(code, code);
   document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "f", bubbles: true, cancelable: true}));
   const keyed = await until(() => document.querySelector(".sheet-box textarea"), 4000);
   const keyRange = text(document.querySelector(".sheet-box .who code"));
   keyed.value = "key f note";
-  all(".sheet-box button").find((button) => name(button) === "Send feedback").click();
+  all(".sheet-box button").find((button) => name(button) === "Save comment").click();
+  const askList = await until(() => ask() && all(".feedback-list li.line-mark", ask()).map(text).join("|"), 4000);
+  const before = window.e2eFeedback.length;
+  all(".deny-split button", ask()).find((button) => name(button) === "Deny").click();
+  const reason = await until(() => document.querySelector(".sheet-box .deny-reason textarea"), 4000);
+  const deny = {reason: reason ? reason.value : null, channel: (document.querySelector(".sheet-box .deny-channels input:checked") || {}).value || null, to: (document.querySelector(".sheet-box .deny-recipient select") || {}).value || null};
+  all(".sheet-box .actions button").find((button) => text(button) === "Deny").click();
+  await until(() => window.e2eFeedback.length > before && (!@SIGNS@ || window.e2eFeedback.some(([path]) => path === "/api/inbox/approve")), 8000);
+  await sleep(1200);
+  all(".item-actions button", fresh()).find((button) => name(button) === "Grant").click();
+  await until(() => window.e2eFeedback.some(([path]) => path === (@SIGNS@ ? "/api/messages" : "/api/sign")) && window.e2eFeedback.filter(([path]) => path === "/api/sign").length >= 2, 10000);
   await sleep(1500);
-  return {nearby, menu, item, title, range, keyRange, labels, shown: shown || "", posted: window.e2eFeedback, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
+  const kept = {review: fresh() ? all(".feedback-list li.line-mark", fresh()).map(text) : null, ask: ask() ? all(".feedback-list li.line-mark", ask()).map(text) : null};
+  return {nearby, menu, item, title, range, keyRange, labels, marked, askList, deny, kept, posted: window.e2eFeedback, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
 })()"""
 
 
@@ -205,29 +218,35 @@ class TestWorkbenchOperatorTasks(HubCase):
                 self.assertEqual(tasks["posted"], [["/api/sign", kinds], *([["/api/inbox/approve", kinds]] if signs else [])])
                 self.assertFalse(tasks["wide"])
                 self.assertNotIn("error", feedback, feedback)
-                self.assertEqual((feedback["nearby"], feedback["menu"], feedback["item"], feedback["title"]), (True, "menu", "Feedback", "Feedback"))
-                self.assertEqual((feedback["range"], feedback["keyRange"]), ("src/app.py:2-2", "/repo:1-1"))
-                ref = f"review:{self.reviews[(tag, 'second')]}"
-                texts = [text for path, text in feedback["posted"] if path == "/api/messages/sign"]
-                self.assertEqual(texts[0].split(": ", 1)[0], f"Feedback on {ref} src/app.py:2-2")
-                self.assertTrue(texts[0].endswith(" right-click note"), texts)
-                if signs:
-                    self.assertIn("right-click note", feedback["shown"])
-                    self.assertTrue(any(text and text.endswith(" key f note") for _, text in feedback["posted"]), feedback["posted"])
+                self.assertEqual((feedback["nearby"], feedback["menu"], feedback["item"], feedback["title"]), (True, "menu", "Comment", "Comment"))
+                self.assertEqual((feedback["range"], feedback["keyRange"]), ("src/app.py:2", "/repo:1"))
+                self.assertEqual(feedback["marked"], {"rows": ["2", "2"], "notes": ["right-click note"], "list": ["src/app.py:2right-click note"], "open": False})
+                self.assertEqual(feedback["askList"], "/repo:1key f note")
+                self.assertEqual(feedback["deny"], {"reason": "/repo:1: key f note", "channel": "call", "to": "Skills"})
+                denial = [["ask", "reject", "call", "/repo:1: key f note"]]
+                grant = [["review", "approve", "", ""]]
+                notes = f"Granted: feat: {tag} second. Notes:\nsrc/app.py:2: right-click note"
+                expected = [["/api/sign", None, denial], ["/api/inbox/approve", None, denial], ["/api/sign", None, grant], ["/api/inbox/approve", None, grant], ["/api/messages/sign", notes, []], ["/api/messages", notes, []]]
+                self.assertEqual(feedback["posted"], expected if signs else [["/api/sign", None, denial], ["/api/sign", None, grant]])
+                if not signs:
+                    self.assertEqual(feedback["kept"], {"review": ["src/app.py:2right-click note"], "ask": ["/repo:1key f note"]})
                 self.assertFalse(feedback["wide"])
         radio = [" ".join(args) for script, args in self.scripts.calls if script == skill_scripts.RADIO]
-        reached = [entry for entry in radio if "] Feedback on review:" in entry or "] Feedback on ask:" in entry]
-        self.assertEqual(len(reached), 2 * len(base.WIDTHS) if signs else 0, radio)
+        granted = [entry for entry in radio if entry.startswith("send post --to Skills ") and "Granted: feat: w" in entry and "Notes:" in entry and "right-click note" in entry]
+        self.assertEqual(len(granted), len(base.WIDTHS) if signs else 0, radio)
+        asks = {ask["command"]: (ask["status"], ask.get("channel", ""), ask.get("reason", "")) for ask in self.httpd.hub.asks.listed() if "keyed" in ask["command"]}
+        self.assertEqual(asks, {f"git commit -m 'w{width} keyed'": ("denied", "call", "/repo:1: key f note") if signs else ("pending", "", "") for width, _ in base.WIDTHS})
 
-    def test_chromium_shows_operator_tasks_with_a_badge_diffs_bulk_grants_and_sends_feedback_at_three_widths(self):
+    def test_chromium_shows_operator_tasks_with_a_badge_diffs_bulk_grants_and_line_comments_in_the_deny_call_and_grant_post_at_three_widths(self):
         with mock.patch.object(batches, "UNDO", 0.3):
             data = self.drive(self.steps("chromium", True), self.authenticator())
+            self.settle(lambda: all(ask["status"] == "denied" for ask in self.httpd.hub.asks.listed() if "keyed" in ask["command"]))
         (OUT / "chromium-operator.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])
         self.check(data, "chromium", True)
 
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
-    def test_firefox_shows_operator_tasks_with_a_badge_diffs_and_feedback_without_signing_at_three_widths(self):
+    def test_firefox_shows_operator_tasks_with_a_badge_diffs_and_keeps_line_comments_without_signing_at_three_widths(self):
         data = self.drive(self.steps("firefox", False), None, "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
         (OUT / "firefox-operator.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])

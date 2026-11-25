@@ -79,7 +79,7 @@ try {
   if (plan.authenticator) {
     await page("WebAuthn.enable", {enableUI: false});
     const {authenticatorId} = await page("WebAuthn.addVirtualAuthenticator", {options: {protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true}});
-    await page("WebAuthn.addCredential", {authenticatorId, credential: {...plan.authenticator, isResidentCredential: false, signCount: 0}});
+    await page("WebAuthn.addCredential", {authenticatorId, credential: {signCount: 0, ...plan.authenticator, isResidentCredential: false}});
   }
   for (const step of plan.steps) {
     await page("Emulation.setDeviceMetricsOverride", {width: step.width, height: step.height, deviceScaleFactor: 1, mobile: false});

@@ -4,7 +4,7 @@
   async function requestChoices(cls) {
     const direct = TO_ONE.some(([id]) => id === cls);
     const to = direct ? [...choiceAsk.to].sort((a, b) => a.localeCompare(b)) : ["*"];
-    if ((direct && !to.length) || (cls === "mayday" && !confirmMayday())) {
+    if ((direct && !to.length) || (cls === "mayday" && !window.confirm(MAYDAY_ASK))) {
       return;
     }
     const label = `Choice request (${CLASSES[cls]}) to ${direct ? to.join(", ") : "all"}`;

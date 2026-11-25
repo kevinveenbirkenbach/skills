@@ -535,11 +535,12 @@ class TestSettingsWriter(unittest.TestCase):
     def test_a_missing_directory_shows_in_the_view_as_the_writer_handles_it(self):
         self.project_settings.parent.rmdir()
         shown = self.writer.view()["files"][1]
-        self.assertEqual((shown["exists"], shown["error"]), (False, host.MISSING_DIRECTORY))
+        self.assertEqual((shown["exists"], shown["folder"], shown["error"]), (False, False, host.MISSING_DIRECTORY))
+        self.assertTrue(self.writer.view()["files"][0]["folder"])
         result = self.signed({"file": str(self.project_settings), "base": "", "changes": [ADD_LINT]})
         self.assertEqual((result["status"], self.project_settings.parent.exists()), ("refused", False), result)
         self.project_settings.parent.mkdir()
-        self.assertEqual(self.writer.view()["files"][1]["error"], "")
+        self.assertEqual((self.writer.view()["files"][1]["error"], self.writer.view()["files"][1]["folder"]), ("", True))
         self.assertEqual(self.signed({"file": str(self.project_settings), "base": "", "changes": [ADD_LINT]})["status"], "done")
 
     def test_the_unit_runs_once_outside_any_agent_and_refuses_inside_one(self):

@@ -8,7 +8,7 @@ from hub_case import HubCase
 from hub_support import HUB
 
 TEMPLATES = HUB / "templates"
-MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-inbox.js", "page-grant.js"]
+MODULES = ["page-constants.js", "answers.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-inbox.js", "page-grant.js"]
 PROBE = r"""
 const fs = require("fs");
 const vm = require("vm");
@@ -118,17 +118,9 @@ const results = {};
   results.keys = {submits: submits.splice(0), stopped, focused: document.activeElement === null ? "" : document.activeElement.tag};
   press("4");
   results.keys.other = document.activeElement.tag;
-  const denials = [];
-  denyNow = (item, channel, reason) => { denials.push([item.id, channel, reason]); };
   const asking = inboxItem(items.ask, 6);
-  results.ask = {options: shape(asking).options, other: shape(asking).other};
-  await optionNamed(asking, "No").fire("click");
-  const tell = classed(asking, "other")[0];
-  all(tell).find((el) => el.tag === "input").value = " Yes ";
-  await tell.fire("submit");
-  await optionNamed(asking, "Yes").fire("click");
-  results.ask.denials = denials.splice(0);
-  results.ask.grants = submits.splice(0).map((label) => label.split(":")[0]);
+  const buttons = all(asking).filter((el) => el.tag === "button").map((el) => el.getAttribute("aria-label"));
+  results.ask = {options: shape(asking).options, other: shape(asking).other, choice: shape(asking).choice, grant: buttons.includes("Grant"), deny: all(asking).some((el) => el.tag === "deny")};
   const look = (item) => {
     const node = inboxItem(item, 0);
     return [waitOf(item), (node.attrs.class || "").split(" ").includes("pending"), classed(node, "wait-spin").length, node.attrs.title || ""];
@@ -211,11 +203,8 @@ class TestDecisionRows(unittest.TestCase):
         self.assertEqual((keys["submits"], keys["stopped"], keys["focused"]), (["Choice: B"], 1, ""))
         self.assertEqual(keys["other"], "input")
 
-    def test_a_permission_ask_offers_yes_and_no_and_typed_text_always_denies_with_it_as_the_reason(self):
-        ask = self.data["ask"]
-        self.assertEqual((ask["options"], ask["other"]), ([["Yes", False], ["No", False]], 1))
-        self.assertEqual(ask["denials"], [["a-1", "post", ""], ["a-1", "post", "Yes"]])
-        self.assertEqual(ask["grants"], ["Grant"])
+    def test_a_permission_ask_shows_no_numbered_form_and_its_grant_and_deny_buttons_answer_it(self):
+        self.assertEqual(self.data["ask"], {"options": [], "other": 0, "choice": 0, "grant": True, "deny": True})
 
 
 class TestDecisionFeed(HubCase):

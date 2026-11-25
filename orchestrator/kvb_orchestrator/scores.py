@@ -10,7 +10,7 @@ LABELS = "kvb-check-score/labels.json"
 FILE_LIMIT = 64 << 20
 VARIATION = "️"
 VALUE = r"([0-9]+(?:\.[0-9]+)?(?:\s*%|:[0-9]+(?:\.[0-9]+)?)?|–|-|new)(?![0-9.])"
-CHIP_EXTRAS = ("value",)
+CHIP_EXTRAS = ("legal", "architecture", "value")
 
 
 def checked(labels: object) -> dict | None:
@@ -71,7 +71,8 @@ def metric_chips(score: str, labels: dict | None, bare: bool) -> list[dict]:
             text, where "fix 2 tests" is no score.
 
     Returns:
-        In label order, then the CHIP_EXTRAS, per metric whose emoji (with or
+        In label order, each CHIP_EXTRAS entry right before the metric its
+        "before" names, else after all, per metric whose emoji (with or
         without its variation selector) or label or former label stands
         right before a value in score (the label alone only when bare), the
         first such value: {"id", "emoji", "label", "value"}; none without
@@ -79,8 +80,12 @@ def metric_chips(score: str, labels: dict | None, bare: bool) -> list[dict]:
     """
     found = []
     extras = (labels or {}).get("extras")
-    shown = [(key, extras[key]) for key in CHIP_EXTRAS if isinstance(extras, dict) and checked({"metrics": {key: extras.get(key)}})]
-    for key, metric in [*(labels or {}).get("metrics", {}).items(), *shown]:
+    ordered = list((labels or {}).get("metrics", {}).items())
+    for key in CHIP_EXTRAS:
+        if isinstance(extras, dict) and checked({"metrics": {key: extras.get(key)}}):
+            keys = [name for name, _ in ordered]
+            ordered.insert(keys.index(extras[key]["before"]) if extras[key].get("before") in keys else len(ordered), (key, extras[key]))
+    for key, metric in ordered:
         emoji = re.escape(metric["emoji"].removesuffix(VARIATION)) + f"{VARIATION}?"
         names = "|".join(re.escape(name) for name in (metric["label"], *metric.get("former", [])))
         alone = rf"|\b(?:{names})\s*:?\s*" if bare else ""

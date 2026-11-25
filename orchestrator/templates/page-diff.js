@@ -1,8 +1,56 @@
   const DIFF_TONES = {A: "ok", M: "info", D: "bad", R: "violet", B: "neutral"};
   const HIDDEN_NOTES = new Set(["masked", "content withheld"]);
-  const diffView = {cache: new Map(), revealed: new Map(), version: 0, float: null, picked: null, timer: 0};
+  const LINE_NOTES_GO = "Your line comments go to the requesting agent with Deny as a call, or after Grant as a post.";
+  const LINE_JOIN = ";\n";
+  const diffView = {cache: new Map(), revealed: new Map(), marks: new Map(), version: 0, float: null, picked: null, timer: 0, hit: null};
   const revealedOf = (item) => diffView.revealed.get(keyOf(item)) || new Map();
   const hiddenFile = (item, file) => HIDDEN_NOTES.has(file.note) && !revealedOf(item).has(file.path);
+  const lineMarksOf = (ref) => diffView.marks.get(ref) || [];
+  const lineSpanOf = (mark) => `${mark.path}:${mark.from === mark.until ? mark.from : `${mark.from}-${mark.until}`}`;
+
+  /**
+   * @param {string} ref the keyOf() of an inbox item.
+   * @returns {string} its line comments as "path:line: comment" in the order they were set, joined by LINE_JOIN so they
+   * stay apart once a denial folds the lines into one; "" without one.
+   */
+  const lineNotes = (ref) => lineMarksOf(ref).map((mark) => `${lineSpanOf(mark)}: ${mark.comment}`).join(LINE_JOIN);
+
+  /**
+   * @param {string} ref the keyOf() of an inbox item.
+   * @param {Object[]} marks its line comments [{path, from, until, comment}]; empty forgets them.
+   */
+  function setLineMarks(ref, marks) {
+    if (marks.length) {
+      diffView.marks.set(ref, marks);
+    } else {
+      diffView.marks.delete(ref);
+    }
+    diffView.version += 1;
+    drawInbox();
+    drawStream();
+    repaintReview();
+  }
+
+  /**
+   * @param {string} ref the keyOf() of the item the rows belong to.
+   * @param {string} path the file the rows show.
+   * @param {HTMLElement[]} rows its table rows; a code row carries data-line.
+   * @returns {HTMLElement[]} the rows, each commented one marked and its comments shown after the last line they cover.
+   */
+  function withLineMarks(ref, path, rows) {
+    const marks = lineMarksOf(ref).filter((mark) => mark.path === path);
+    const placed = new Set();
+    return rows.flatMap((row) => {
+      const line = Number(row.dataset.line);
+      if (!marks.some((mark) => line >= mark.from && line <= mark.until)) {
+        return [row];
+      }
+      row.setAttribute("class", `${row.getAttribute("class") || ""} marked`.trim());
+      const here = marks.filter((mark) => mark.until === line && !placed.has(mark));
+      here.forEach((mark) => placed.add(mark));
+      return [row, ...here.map((mark) => h("tr", {class: "match-mark", "data-line": line}, h("td", {colspan: row.children.length}, icon("bi-chat-square-text"), h("span", {class: "match-mark-text"}, revealed(mark.comment)))))];
+    });
+  }
 
   function forgetRevealed() {
     const waiting = new Set(state.inbox.map(keyOf));
@@ -105,7 +153,7 @@
     if (file.status === "B" || !file.patch) {
       return h("section", {class: "diff-file", "data-path": file.path, "data-status": file.status, "data-patch": "none", "data-hidden": shown}, h("div", {class: "diff-head"}, head));
     }
-    const table = h("table", {class: "diff"}, h("tbody", {}, Diffs.rows(file.patch).map(patchRow)));
+    const table = h("table", {class: "diff"}, h("tbody", {}, withLineMarks(keyOf(item), file.path, Diffs.rows(file.patch).map(patchRow))));
     return h("section", {class: "diff-file", "data-path": file.path, "data-status": file.status, "data-hidden": shown},
       h("details", {open: !Diffs.collapsed(file)}, h("summary", {class: "diff-head"}, head), h("div", {class: "diff-scroll"}, table)));
   }
@@ -126,7 +174,58 @@
 
   function feedbackList(ref) {
     const sent = Diffs.feedbackOf(state.messages, ref);
-    return sent.length ? h("ul", {class: "feedback-list", "aria-label": `Feedback: ${sent.length}`}, sent.map((message) => h("li", {}, icon("bi-chat-left-text"), h("span", {class: "text"}, message.text), when(message.created_ts)))) : null;
+    const marks = lineMarksOf(ref);
+    const marked = marks.map((mark, index) => h("li", {class: "line-mark"}, icon("bi-bookmark-fill"), h("code", {}, revealed(lineSpanOf(mark))), h("span", {class: "text"}, revealed(mark.comment)),
+      iconBtn("bi-x-lg", "Remove comment", "btn small ghost", () => setLineMarks(ref, marks.filter((_, at) => at !== index)), `Remove the comment on ${revealed(lineSpanOf(mark))}`)));
+    return sent.length || marks.length ? h("ul", {class: "feedback-list", "aria-label": `Feedback: ${sent.length + marks.length}`, title: marks.length ? LINE_NOTES_GO : null}, marked,
+      sent.map((message) => h("li", {}, icon("bi-chat-left-text"), h("span", {class: "text"}, message.text), when(message.created_ts)))) : null;
+  }
+
+  /**
+   * @param {HTMLElement} row a code row with data-line, as a right-click hits it.
+   * @returns {Object|null} the row as the lines a comment covers, like selectionFeedback(); null outside a [data-path] region of an item with a requester.
+   */
+  function rowPick(row) {
+    const region = row.closest("[data-path]");
+    const card = region && region.closest("[data-ref]");
+    if (!card || !card.dataset.to || !row.dataset.line || row.classList.contains("match-mark") || row.closest(".match-card")) {
+      return null;
+    }
+    const line = Number(row.dataset.line);
+    return {ref: card.dataset.ref, to: card.dataset.to, path: region.dataset.path, from: line, until: line, anchor: row, inline: Boolean(region.closest("#sheet"))};
+  }
+
+  /**
+   * @param {Object} picked the lines to comment: {ref, to, path, from, until, anchor, inline}; inline puts the field
+   * under the anchor instead of a sheet of its own.
+   */
+  function markLines(picked) {
+    hideFeedback();
+    const words = h("textarea", {class: "field", rows: 3, maxlength: OTHER_LIMIT, "aria-label": "Comment", placeholder: "Comment on these lines", "data-skills": ""});
+    const save = () => {
+      const comment = words.value.trim();
+      if (!comment) {
+        words.focus();
+        return false;
+      }
+      setLineMarks(picked.ref, [...lineMarksOf(picked.ref), {path: picked.path, from: picked.from, until: picked.until, comment}]);
+      rememberComment(comment);
+      return true;
+    };
+    const head = h("code", {}, revealed(lineSpanOf(picked)));
+    const chips = presetChips(words, savedComments(), "Recent comments");
+    const saveButton = (cls, done) => h("button", {type: "button", class: cls, ...named("Save comment", LINE_NOTES_GO), on: {click: () => save() && done()}}, icon("bi-bookmark-fill"), "Save");
+    if (picked.inline) {
+      const box = h("div", {class: "match-comment-box"}, head, chips, words);
+      const field = picked.anchor.tagName === "TR" ? h("tr", {class: "match-comment"}, h("td", {colspan: picked.anchor.children.length}, box)) : h("div", {class: "match-comment"}, box);
+      box.append(h("div", {class: "actions"}, btn("Cancel", "btn small ghost", () => field.remove()), saveButton("btn small primary", () => field.remove())));
+      document.querySelectorAll("#sheet .match-comment").forEach((open) => open.remove());
+      picked.anchor.after(field);
+    } else {
+      openSheet("Comment", [h("div", {class: "who"}, icon("bi-chat-left-text"), person(picked.to), head), h("p", {class: "muted"}, LINE_NOTES_GO), chips, words,
+        h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), saveButton("btn primary", closeSheet))], false);
+    }
+    words.focus();
   }
 
   function selectionFeedback() {
@@ -143,36 +242,12 @@
     }
     const quote = selection.toString();
     const code = region.querySelector("code");
-    const lines = region.classList.contains("command") && code
-      ? Diffs.lineSpan(code.textContent, quote)
-      : Diffs.span([...region.querySelectorAll("tr[data-line]")].filter((row) => range.intersectsNode(row)).map((row) => Number(row.dataset.line)));
+    const rows = [...region.querySelectorAll("tr[data-line]")].filter((row) => !row.classList.contains("match-mark") && range.intersectsNode(row));
+    const lines = region.classList.contains("command") && code ? Diffs.lineSpan(code.textContent, quote) : Diffs.span(rows.map((row) => Number(row.dataset.line)));
     if (!lines) {
       return null;
     }
-    return {ref: card.dataset.ref, to: card.dataset.to, path: region.dataset.path, from: lines[0], until: lines[1], quote, rect: range.getBoundingClientRect()};
-  }
-
-  function feedbackSheet(picked) {
-    hideFeedback();
-    const words = h("textarea", {class: "field", rows: 4, "aria-label": "Feedback", title: "Feedback"});
-    const send = iconBtn("bi-send", "Send feedback", "btn primary", async () => {
-      if (!words.value.trim()) {
-        words.focus();
-        return;
-      }
-      send.disabled = true;
-      const sent = await radioSend({to: picked.to, text: Diffs.feedback(picked.ref, picked.path, picked.from, picked.until, picked.quote, words.value), upload: "", cls: "post", voice: ""});
-      send.disabled = false;
-      if (sent) {
-        closeSheet();
-      }
-    }, `Send feedback: a post to ${picked.to}`);
-    openSheet("Feedback", [
-      h("div", {class: "who"}, icon("bi-chat-left-text"), person(picked.to), h("code", {}, `${picked.path}:${picked.from}-${picked.until}`)),
-      h("pre", {class: "notes"}, Diffs.quoted(picked.quote)),
-      words,
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), send)], false);
-    words.focus();
+    return {ref: card.dataset.ref, to: card.dataset.to, path: region.dataset.path, from: lines[0], until: lines[1], anchor: rows.length ? rows[rows.length - 1] : region, inline: Boolean(region.closest("#sheet")), rect: range.getBoundingClientRect()};
   }
 
   function hideFeedback() {
@@ -185,9 +260,9 @@
   function showFeedback(picked, x, y) {
     if (!diffView.float) {
       diffView.float = h("div", {class: "feedback-float", role: "toolbar", hidden: true},
-        h("button", {type: "button", class: "btn small primary icon-only", ...named("Feedback", "Feedback (f): a post with the selected lines to the requesting agent"), on: {
+        h("button", {type: "button", class: "btn small primary icon-only", ...named("Comment", `Comment (f) on the selected lines. ${LINE_NOTES_GO}`), on: {
           mousedown: (event) => event.preventDefault(),
-          click: () => diffView.picked && feedbackSheet(diffView.picked),
+          click: () => diffView.picked && markLines(diffView.picked),
         }}, icon("bi-chat-left-text")));
       document.body.append(diffView.float);
     }
@@ -210,18 +285,20 @@
   }
 
   /**
-   * @returns the context menu items of a [data-path] region, a diff file or a command: Feedback while lines of one are
-   * selected.
+   * @param {HTMLElement} node the [data-path] region the menu is for.
+   * @returns the context menu items of a diff file or a command: Comment on the selected lines, else on the code row the
+   * right-click hit.
    */
-  function feedbackItems() {
-    const picked = selectionFeedback();
-    return picked ? [{label: "Feedback", hint: "f: a post with the selected lines to the requesting agent", run: () => feedbackSheet(picked)}] : [];
+  function feedbackItems(node) {
+    const row = diffView.hit && node.contains(diffView.hit) ? diffView.hit.closest("tr[data-line]") : null;
+    const picked = selectionFeedback() || (row ? rowPick(row) : null);
+    return picked ? [{label: "Comment", hint: `f: ${lineSpanOf(picked)}. ${LINE_NOTES_GO}`, run: () => markLines(picked)}] : [];
   }
 
   function feedbackKey() {
     const picked = selectionFeedback();
     if (picked) {
-      feedbackSheet(picked);
+      markLines(picked);
     }
     return Boolean(picked);
   }

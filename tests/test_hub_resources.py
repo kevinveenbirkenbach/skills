@@ -91,8 +91,8 @@ const fs = require("fs");
 const vm = require("vm");
 const Resources = require(process.argv[1]);
 const Plan = require(process.argv[2]);
-const code = [process.argv[3], process.argv[4], process.argv[5]].map((path) => fs.readFileSync(path, "utf8")).join("\\n");
-const T = Number(process.argv[6]);
+const code = [process.argv[3], process.argv[4], process.argv[5], process.argv[6]].map((path) => fs.readFileSync(path, "utf8")).join("\\n");
+const T = Number(process.argv[7]);
 @FIXTURE@
 const make = (tag, attrs, children) => {
   const node = {tag, attrs: {}, children: [], textContent: "", isConnected: true, listeners: {},
@@ -115,7 +115,7 @@ const make = (tag, attrs, children) => {
 };
 const h = (tag, attrs, ...children) => make(tag, attrs, children);
 const icon = (name) => make("svg", {class: "bi", "data-icon": name}, []);
-const view = {resources: {hidden: [], tokens: "interval", combined: false, combinedHidden: []}, burn: {overlays: []}, home: {pins: []}};
+const view = {resources: {hidden: [], tokens: "interval", panels: ["hardware", "tokens", "accounts"], combinedHidden: []}, burn: {overlays: []}, home: {pins: []}};
 const served = JSON.parse(JSON.stringify(view));
 const fetched = [];
 const sheets = [];
@@ -129,7 +129,8 @@ const context = {
   Resources, Plan, h, s: h, icon, DAY: 86400, ui: {preset: 86400, from: null, to: null, asOf: null, offline: false},
   state: {tasks, now: T + 6000}, settings: {estimation: "none"}, setTimeout, clearTimeout,
   named: (label, hint) => ({title: hint || label, "aria-label": label}),
-  iconBtn: (name, label, cls, run, hint) => make("button", {title: hint, "aria-label": label}, [icon(name)]),
+  iconBtn: (name, label, cls, run, hint) => make("button", {title: hint, "aria-label": label}, [icon(name)]), caret: () => icon("bi-caret-down-fill"),
+  boxHead: (label, cls, ...children) => make("div", {class: "box-head", "aria-label": label}, children),
   fixed: (value) => value.toFixed(1), dash: (value) => (value === null ? "–" : value), absolute: {format: () => "d"}, clock: {format: () => "c"}, stampOf: (t) => new Date(t * 1000),
   revealed: (text) => String(text), counter: (value) => make("span", {class: "count"}, [String(value)]), openSheet: (title, body, wide) => sheets.push({title, body, wide}),
   window: {setTimeout: (run) => run(), setInterval: () => 1, addEventListener: () => null},
@@ -139,6 +140,10 @@ const context = {
   },
   windowQuery: () => "from=1", nowSeconds: () => 0,
   fetch: async (url, options) => {
+    if (url === "/api/accounts") {
+      fetched.push(url);
+      return {ok: true, json: async () => ({accounts: [], active: null, usage: {}})};
+    }
     if (url !== "/api/view") {
       fetched.push(url);
       return {ok: true, json: async () => ({since: T - 600, until: T + 6000, samples, tokens})};
@@ -192,10 +197,17 @@ const read = () => {
     right: all.filter((node) => node.attrs["data-axis"] === "right").map((node) => node.children.join("")),
     chips: all.filter((node) => has(node, "legend-chip")).map((node) => [node.attrs["data-chip"], node.attrs["data-path"], node.attrs["aria-pressed"], node.textContent]),
     switches: all.filter((node) => has(node, "res-switch")).map((node) => [node.attrs["data-switch"], node.attrs["aria-pressed"]]),
+    picks: all.filter((node) => node.attrs["data-pick"]).map((node) => [node.attrs["data-pick"], Boolean(node.checked), Boolean(node.disabled)]),
+    accounts: textOf(all.find((node) => has(node, "acc-body"))),
     titles: all.filter((node) => has(node, "res-title")).map((node) => [node.attrs.title, node.attrs["aria-label"], node.children[0].attrs["data-icon"]]),
   };
 };
 const press = (selector) => walk(context.screen, []).find(selector).listeners.click();
+const pick = (kind, on) => {
+  const box = walk(context.screen, []).find((node) => node.attrs["data-pick"] === kind);
+  box.checked = on;
+  box.listeners.change();
+};
 const textOf = (node) => node.children.map((child) => (typeof child === "object" ? textOf(child) : String(child))).join("");
 const sheetOf = ({title, body, wide}) => {
   const nodes = body.flatMap((node) => walk(node, []));
@@ -218,14 +230,18 @@ const sheetOf = ({title, body, wide}) => {
   const hidden = read();
   press((node) => node.attrs["data-switch"] === "tokens");
   const accumulated = read();
-  press((node) => node.attrs["data-switch"] === "combined");
+  pick("combined", true);
+  pick("hardware", false);
+  pick("tokens", false);
   const combined = read();
   press((node) => node.attrs["data-chip"] === "burn:scope" && node.attrs["data-path"] === "resources.combinedHidden");
   press((node) => node.attrs["data-chip"] === "util:0000_3a_01_3a_00.0" && node.attrs["data-path"] === "resources.combinedHidden");
   const deselected = read();
+  pick("accounts", false);
+  const last = read();
   await new Promise((resolve) => setTimeout(resolve, 400));
   await settle();
-  console.log(JSON.stringify({fetched, normal, hidden, accumulated, combined, deselected, stored: context.store.get("resources")}));
+  console.log(JSON.stringify({fetched, normal, hidden, accumulated, combined, deselected, last, stored: context.store.get("resources")}));
 })();
 """.replace("@FIXTURE@", FIXTURE)
 
@@ -327,14 +343,18 @@ def chips(entries: list[list[str]], path: str, hidden: set[str]) -> list[list[st
 class TestResourcesPage(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        sources = [str(HUB / "templates" / name) for name in ("view-store.js", "legend-chips.js", "page-resources.js")]
-        done = subprocess.run(["node", "-e", PAGE_PROBE, str(MODULE), str(PLAN), *sources, str(T)], capture_output=True, text=True, timeout=60, check=True)
+        sources = [str(HUB / "templates" / name) for name in ("view-store.js", "legend-chips.js", "page-resources.js", "page-accounts.js")]
+        done = subprocess.run(["node", "-e", PAGE_PROBE, str(MODULE), str(PLAN), *sources, str(T)], capture_output=True, text=True, timeout=60, check=False)
+        if done.returncode != 0:
+            raise AssertionError(done.stderr[-2000:])
         cls.found = json.loads(done.stdout)
 
     def test_normal_mode_draws_exactly_a_hardware_and_a_tokens_chart_on_one_time_axis(self):
         found = self.found["normal"]
         self.assertEqual(found["count"], "8")
-        self.assertEqual(found["panels"], [["resources-hardware", False], ["resources-tokens", False], ["resources-combined", True]])
+        self.assertEqual(found["panels"], [["resources-hardware", False], ["resources-tokens", False], ["resources-combined", True], ["resources-accounts", False]])
+        self.assertEqual(found["picks"], [["hardware", True, False], ["tokens", True, False], ["combined", False, False], ["accounts", True, False]])
+        self.assertIn("No account yet", found["accounts"])
         axis = [str(T - 600), str(T + 6000)]
         self.assertEqual(found["charts"], [["hardware", *axis], ["tokens", *axis]])
         self.assertEqual(found["bands"], [["idle", "saturated"], []])
@@ -344,8 +364,8 @@ class TestResourcesPage(unittest.TestCase):
         self.assertEqual((found["unknown"], found["words"]), ([[T + 300, T + 360]], ["0000:01:00.0 unknown: no reading"]))
         self.assertEqual(found["bars"], [["Stage", T, False], ["Skills", T, False], ["Stage", T + 3600, False]])
         self.assertEqual(found["chips"], chips(HARDWARE_CHIPS + AGENT_CHIPS, "resources.hidden", set()))
-        self.assertEqual(found["switches"], [["tokens", "false"], ["combined", "false"]])
-        names = [("Hardware: disks, CPU, RAM, swap, GPU and VRAM", "bi-cpu"), ("Tokens per agent", "bi-coin"), ("Hardware, tokens and burnup", "bi-layers")]
+        self.assertEqual(found["switches"], [["tokens", "false"]])
+        names = [("Hardware: disks, CPU, RAM, swap, GPU and VRAM", "bi-cpu"), ("Tokens per agent", "bi-coin"), ("Hardware, tokens and burnup", "bi-layers"), ("Accounts", "bi-person-badge")]
         self.assertEqual(found["titles"], [[name, name, icon] for name, icon in names])
 
     def test_blocked_and_hung_marks_sit_in_lanes_of_their_own_and_name_head_wait_reason_and_ids(self):
@@ -376,11 +396,11 @@ class TestResourcesPage(unittest.TestCase):
     def test_the_accumulated_switch_draws_running_sums_of_the_shown_agents_instead_of_bars(self):
         found = self.found["accumulated"]
         self.assertEqual((found["bars"], found["sums"]), ([], [["Skills", [0, 375]]]))
-        self.assertEqual(found["switches"], [["tokens", "true"], ["combined", "false"]])
+        self.assertEqual(found["switches"], [["tokens", "true"]])
 
-    def test_the_combined_switch_replaces_both_charts_with_one_holding_every_series_switched_on(self):
+    def test_the_panels_menu_shows_the_combined_chart_with_every_series_switched_on_instead_of_both(self):
         found = self.found["combined"]
-        self.assertEqual(found["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False]])
+        self.assertEqual(found["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", False]])
         self.assertEqual(found["charts"], [["combined", str(T - 600), str(T + 6000)]])
         self.assertEqual(found["lines"], LINES)
         self.assertEqual(found["sums"], [["Stage", [0, 10, 510]], ["Skills", [0, 375, 375]]])
@@ -390,16 +410,21 @@ class TestResourcesPage(unittest.TestCase):
         self.assertAlmostEqual(done_last, 200 / 3)
         burn = [["burn:done", "Done 67 %"], ["burn:scope", "Scope 100 %"]]
         self.assertEqual(found["chips"], chips(HARDWARE_CHIPS + AGENT_CHIPS + burn, "resources.combinedHidden", set()))
-        self.assertEqual(found["switches"], [["tokens", "true"], ["combined", "true"]])
+        self.assertEqual(found["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, False], ["accounts", True, False]])
+
+    def test_the_last_checked_panel_cannot_be_switched_off(self):
+        found = self.found["last"]
+        self.assertEqual(found["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", True]])
+        self.assertEqual(found["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, True], ["accounts", False, False]])
 
     def test_each_combined_series_is_deselectable_and_every_switch_is_stored_in_one_patch(self):
         found = self.found["deselected"]
         self.assertEqual([series for series, _, _ in found["burn"]], ["done"])
         self.assertEqual(found["lines"], [line for line in LINES if line != "0000:01:00.0|util"])
-        stored = {"hidden": ["host:CPU", "agent:Stage"], "tokens": "accumulated", "combined": True, "combinedHidden": ["burn:scope", f"util:{GPU_ID}"]}
+        stored = {"hidden": ["host:CPU", "agent:Stage"], "tokens": "accumulated", "panels": ["combined"], "combinedHidden": ["burn:scope", f"util:{GPU_ID}"]}
         self.assertEqual(self.found["stored"], stored)
         changes = {f"resources.{key}": value for key, value in stored.items()}
-        self.assertEqual(self.found["fetched"], ["/api/resources?from=1", ["PATCH", "/api/view", changes]])
+        self.assertEqual(self.found["fetched"], ["/api/resources?from=1", "/api/accounts", ["PATCH", "/api/view", changes]])
 
 
 AXIS_PROBE = """

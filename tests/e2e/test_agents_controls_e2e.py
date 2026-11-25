@@ -17,7 +17,7 @@ OUT = Path(os.environ.get("E2E_OUT", "/tmp/agents-controls-shots"))
 VIEWS = (*base.VIEWS, "hierarchy")
 READ = """
   const rect = (node) => node.getBoundingClientRect();
-  const card = () => document.querySelector("#main .graph > .card.controls");
+  const card = () => document.querySelector("#main .graph > .box-head");
   const bar = () => card() && card().querySelector(':scope > [role="toolbar"]');
   const menuOf = (label) => all("details.menu", bar()).find((node) => name(node.querySelector("summary")) === label);
   const wide = () => document.documentElement.scrollWidth > innerWidth + 1;

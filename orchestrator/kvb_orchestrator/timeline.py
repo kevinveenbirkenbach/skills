@@ -9,6 +9,7 @@ from .crons import cron_event
 from .errors import Missing, ToolError
 from .events import event, event_filters, wanted
 from .fields import instant, single, whole
+from .jobs import row_blocked
 from .names import Directory
 from .receipts import read_of
 from .records import iso_epoch, read_jsonl
@@ -81,12 +82,12 @@ class Timeline:
                 source = directory.key(decision["agent"], decision["created_ts"])
                 who = {"agent": directory.at(source, decision["created_ts"]) or decision["agent"], "now": directory.now(source), "session": source}
                 rows.append(event({"id": f"decision:{decision['id']}", "ts": decision["created_ts"], "kind": "decision", **who, "title": decision["question"][:300], "text": text, "waiting": status == "pending", "ref": ref}))
-        held = self.open_jobs()
+        reasons = self.blocked_rows(now)
         for row in operator_rows(tasks):
             first = self.watch.first(row["task"], now)
             if first <= end:
-                ref = {key: row[key] for key in ("task", "directory", "check", "status")}
-                rows.append(event({"id": f"operator:{row['task']}", "ts": first, "kind": "operator", "title": row["command"], "text": row["why"], "waiting": row["task"] not in held, "ref": ref}))
+                ref = {**{key: row[key] for key in ("task", "directory", "check", "status")}, "blocked": row_blocked(row, reasons)}
+                rows.append(event({"id": f"operator:{row['task']}", "ts": first, "kind": "operator", "title": row["command"], "text": row["why"], "waiting": True, "ref": ref}))
         rows += [change for change in self.watch.listed() if begin <= change["ts"] <= end]
         rows += [cron_event(cron, directory) for cron in self.schedules(claims, now) if cron["created"] <= end and (cron["active"] or cron["created"] >= begin)]
         rows += [row for row in self.log.listed() if begin <= row["ts"] <= end]

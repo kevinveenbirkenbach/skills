@@ -34,15 +34,18 @@
 
   /**
    * @param {HTMLInputElement|HTMLTextAreaElement} field the text field the transcript lands in.
-   * @param {boolean} auto whether the shared component placed the button right after the field and keeps it there.
-   * @returns {HTMLButtonElement} the microphone button of the field.
+   * @returns {HTMLButtonElement} the microphone button of the field, made once and kept.
    */
-  function micButton(field, auto) {
+  function micButton(field) {
+    const kept = micButtons.get(field);
+    if (kept) {
+      return kept;
+    }
     if (!field.id) {
       micCount += 1;
       field.id = `mic-field-${micCount}`;
     }
-    const button = h("button", {type: "button", class: auto ? "btn small ghost icon-only mic mic-auto" : "btn small ghost icon-only mic", "aria-controls": field.id}, icon("bi-mic"));
+    const button = h("button", {type: "button", class: "mic", "aria-controls": field.id}, icon("bi-mic"));
     micButtons.set(field, button);
     micFields.set(button, field);
     field.dataset.mic = "on";
@@ -51,21 +54,43 @@
     return button;
   }
 
+  const micFramed = (field) => Boolean(field.parentElement && field.parentElement.classList.contains("mic-frame"));
+
+  /**
+   * @param {HTMLInputElement|HTMLTextAreaElement} field the text field; it moves into the frame.
+   * @param {Node[]} extras what belongs to a textarea besides its mic, on the footer's left (Record, a count); [] for none.
+   * @returns {HTMLElement} one frame around field and mic: for a one-line field the mic as the field's last segment, for a
+   * textarea a footer row below it whose last child is the mic.
+   */
+  function micFrame(field, extras) {
+    const button = micButton(field);
+    if (field.tagName === "TEXTAREA") {
+      return h("div", {class: "mic-frame mic-area"}, field, h("div", {class: "mic-foot"}, extras, h("span", {class: "spacer"}), button));
+    }
+    return h("span", {class: "mic-frame mic-line"}, field, button);
+  }
+
+  function micWrap(field) {
+    const focused = document.activeElement === field;
+    const [start, end] = [field.selectionStart, field.selectionEnd];
+    const [parent, next] = [field.parentNode, field.nextSibling];
+    parent.insertBefore(micFrame(field, []), next);
+    if (focused) {
+      field.focus({preventScroll: true});
+      field.setSelectionRange(start, end);
+    }
+  }
+
   function micSweep() {
     for (const field of document.querySelectorAll(Voice.FIELDS)) {
-      const button = micButtons.get(field);
-      if (field.readOnly || (button && !button.classList.contains("mic-auto"))) {
-        continue;
-      }
-      if (!button) {
-        field.after(micButton(field, true));
-      } else if (button.previousElementSibling !== field) {
-        field.after(button);
+      if (!field.readOnly && !micFramed(field) && field.parentNode) {
+        micWrap(field);
       }
     }
-    for (const button of document.querySelectorAll("button.mic-auto")) {
-      if (!micFields.get(button).isConnected) {
-        button.remove();
+    for (const frame of document.querySelectorAll(".mic-frame")) {
+      const button = frame.querySelector(":scope > button.mic, :scope > .mic-foot > button.mic");
+      if (!button || micFields.get(button).parentElement !== frame) {
+        frame.remove();
       }
     }
   }

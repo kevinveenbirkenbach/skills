@@ -30,9 +30,9 @@ DIGESTS = "const P = require(process.argv[1]); console.log(JSON.stringify(proces
 CHIPS = HUB / "templates" / "legend-chips.js"
 CHIPS_STYLE = HUB / "templates" / "style-legend-chips.css"
 FULL = {
-    "resources": {"hidden": ["host:CPU", "agent:Stage", "disk:/mnt_20_data"], "tokens": "accumulated", "combined": True, "combinedHidden": ["burn:scope"]},
+    "resources": {"hidden": ["host:CPU", "agent:Stage", "disk:/mnt_20_data"], "tokens": "accumulated", "panels": ["combined", "accounts"], "combinedHidden": ["burn:scope"]},
     "burn": {"overlays": ["fix", "score"]},
-    "home": {"pins": [{"kind": "panel", "id": "resources-hardware", "w": 12, "h": 4}, {"kind": "task", "id": "work/feature", "w": 1, "h": 12}]},
+    "home": {"pins": [{"kind": "panel", "id": "resources-hardware", "w": 12, "h": 4}, {"kind": "task", "id": "work/feature", "w": 1, "h": 12}], "zoom": {"panel:resources-hardware": 130}},
     "kanban": {"hidden": ["line"]},
     "legend": {"views": {"resources-tokens": False, "tasks/burn": True}, "tiles": {"panel:resources-hardware": False}},
     "approval": {"mode": "select"},
@@ -122,7 +122,7 @@ const caught = (run) => {
   const stored = await Promise.all([first, second]);
   server.home.pins = [@PIN@];
   server.burn.overlays = ["fix"];
-  const combined = await V.set("resources.combined", true);
+  const combined = await V.set("approval.mode", "select");
   const adopted = [V.get("home.pins"), V.get("burn.overlays"), V.get("resources.hidden"), heard.filter(([name]) => name === "pins").at(-1)];
   server.resources.hidden = ["host:CPU", "host:RAM"];
   const rebased = await V.update("resources.hidden", (list) => [...list, "disk:/"]);
@@ -159,11 +159,11 @@ const caught = (run) => {
   const landed = await Promise.all([flying, leaving]);
   await wait(400);
   const left = clone(server);
-  server.resources.combined = false;
+  server.approval.mode = "direct";
   await hooks["pageshow:run"]({persisted: false});
-  const notRestored = [gets, V.get("resources.combined")];
+  const notRestored = [gets, V.get("approval.mode")];
   await hooks["pageshow:run"]({persisted: true});
-  const restored = [gets, V.get("resources.combined"), hooks.pageshow];
+  const restored = [gets, V.get("approval.mode"), hooks.pageshow];
   const long = "x".repeat(300);
   console.log(JSON.stringify({
     unknown, wide, listSet, local, stored, combined, adopted, rebased, merged, churned, gaveUp, refused, during, kept, beforeLeave, atLeave, landed, sent, server: left, hooks: hooks.pagehide, error: V.error(), notRestored, restored,
@@ -292,7 +292,7 @@ class TestViewDocument(unittest.TestCase):
     def test_the_defaults_and_a_full_document_pass_unchanged(self):
         self.assertEqual(valid_view(copy.deepcopy(VIEW)), VIEW)
         self.assertEqual(valid_view(copy.deepcopy(FULL)), FULL)
-        self.assertEqual(VIEW, {"resources": {"hidden": [], "tokens": "interval", "combined": False, "combinedHidden": []}, "burn": {"overlays": []}, "home": {"pins": []}, "kanban": {"hidden": []}, "legend": {"views": {}, "tiles": {}}, "approval": {"mode": "direct"}})
+        self.assertEqual(VIEW, {"resources": {"hidden": [], "tokens": "interval", "panels": ["hardware", "tokens", "accounts"], "combinedHidden": []}, "burn": {"overlays": []}, "home": {"pins": [], "zoom": {}}, "kanban": {"hidden": []}, "legend": {"views": {}, "tiles": {}}, "approval": {"mode": "direct"}})
 
     def test_unknown_or_missing_keys_and_malformed_values_are_refused(self):
         def changed(section: str | None, key: str | None, value: object) -> dict:
@@ -315,7 +315,10 @@ class TestViewDocument(unittest.TestCase):
             "missing key": changed("resources", "combinedHidden", KeyError),
             "section not an object": changed("burn", None, ["fix"]),
             "tokens mode": changed("resources", "tokens", "sum"),
-            "combined not a flag": changed("resources", "combined", 1),
+            "panels not a list": changed("resources", "panels", "accounts"),
+            "no panel": changed("resources", "panels", []),
+            "unknown panel": changed("resources", "panels", ["radio"]),
+            "repeated panel": changed("resources", "panels", ["tokens", "tokens"]),
             "hidden not a list": changed("resources", "hidden", "host:CPU"),
             "id with a space": changed("resources", "hidden", ["host CPU"]),
             "empty id": changed("resources", "combinedHidden", [""]),
@@ -441,7 +444,7 @@ class TestViewDocument(unittest.TestCase):
         store = self.store()
         store.patch(change({"home.pins": [PIN], "burn.overlays": ["fix"]}, {"home.pins": [], "burn.overlays": []}))
         found = store.patch(change({"resources.hidden": ["host:CPU"]}, {"resources.hidden": []}))
-        expected = {**VIEW, "resources": {**VIEW["resources"], "hidden": ["host:CPU"]}, "burn": {"overlays": ["fix"]}, "home": {"pins": [PIN]}}
+        expected = {**VIEW, "resources": {**VIEW["resources"], "hidden": ["host:CPU"]}, "burn": {"overlays": ["fix"]}, "home": {"pins": [PIN], "zoom": {}}}
         self.assertEqual((found, ViewStore(store.file).get()), (expected, expected))
 
     def test_a_stale_tab_on_the_same_path_gets_a_conflict_and_its_retry_keeps_both_changes(self):
@@ -479,7 +482,7 @@ class TestViewClient(unittest.TestCase):
         self.assertEqual((first["url"], first["method"], first["headers"], first["keepalive"]), ("/api/view", "PATCH", {"X-Kvb-Orchestrator": "1", "Content-Type": "application/json"}, False))
         self.assertEqual(self.bodies()[:2], [
             {"set": {"resources.hidden": ["host:CPU"], "resources.tokens": "accumulated"}, "expect": {"resources.hidden": [], "resources.tokens": "interval"}},
-            {"set": {"resources.combined": True}, "expect": {"resources.combined": False}},
+            {"set": {"approval.mode": "select"}, "expect": {"approval.mode": "direct"}},
         ])
 
     def test_an_older_tab_adopts_what_another_browser_stored_on_other_paths(self):
@@ -518,8 +521,8 @@ class TestViewClient(unittest.TestCase):
         self.assertEqual(self.data["local"][0], ["host:CPU"])
 
     def test_a_page_restored_from_the_back_forward_cache_refetches_the_stored_view(self):
-        self.assertEqual(self.data["notRestored"], [0, True])
-        self.assertEqual(self.data["restored"], [1, False, 1])
+        self.assertEqual(self.data["notRestored"], [0, "select"])
+        self.assertEqual(self.data["restored"], [1, "direct", 1])
 
     def test_ids_follow_the_view_grammar_and_stay_distinct(self):
         ids = self.data["ids"]
@@ -594,7 +597,7 @@ class TestHubView(HubCase):
     def test_two_tabs_changing_other_paths_keep_both_changes(self):
         self.assertEqual(self.patch(change({"home.pins": [PIN], "burn.overlays": ["fix"]}, {"home.pins": [], "burn.overlays": []}), self.guard(self.host))[0], 200)
         status, body = self.patch(change({"resources.hidden": ["host:CPU"]}, {"resources.hidden": []}), self.guard(self.host))
-        expected = {**VIEW, "resources": {**VIEW["resources"], "hidden": ["host:CPU"]}, "burn": {"overlays": ["fix"]}, "home": {"pins": [PIN]}}
+        expected = {**VIEW, "resources": {**VIEW["resources"], "hidden": ["host:CPU"]}, "burn": {"overlays": ["fix"]}, "home": {"pins": [PIN], "zoom": {}}}
         self.assertEqual((status, json.loads(body), self.view()), (200, expected, expected))
 
     def test_a_stale_expect_answers_409_with_the_stored_view_and_stores_nothing(self):
@@ -635,7 +638,7 @@ class TestHubView(HubCase):
             "not utf-8": b"\xff\xfe{}",
             "a list": b"[]",
             "no expect": json.dumps({"set": {"resources.tokens": "interval"}}).encode(),
-            "expect other paths": change({"resources.tokens": "interval"}, {"resources.combined": True}),
+            "expect other paths": change({"resources.tokens": "interval"}, {"resources.panels": ["combined", "accounts"]}),
             "set and more": json.dumps({"set": {"resources.tokens": "interval"}, "expect": {"resources.tokens": "accumulated"}, "theme": "dark"}).encode(),
             "empty set": change({}, {}),
             "set a list": json.dumps({"set": [["resources.tokens", "interval"]], "expect": {}}).encode(),
@@ -643,7 +646,7 @@ class TestHubView(HubCase):
             "unknown key": change({"resources.extra": 1}, {"resources.extra": 0}),
             "too deep": change({"home.pins.0": PIN}, {"home.pins.0": PIN}),
             "a section missing a key": change({"resources": {"hidden": []}}, {"resources": FULL["resources"]}),
-            "malformed value": change({"resources.combined": "yes"}, {"resources.combined": True}),
+            "malformed value": change({"resources.panels": "yes"}, {"resources.panels": ["combined", "accounts"]}),
             "null overlay": change({"burn.overlays": [None]}, {"burn.overlays": ["fix", "score"]}),
             "one bad of two": change({"resources.tokens": "interval", "home.pins": [{**PIN, "w": 13}]}, {"resources.tokens": "accumulated", "home.pins": FULL["home"]["pins"]}),
             "the change limit and one byte": padded + b" " * (CHANGE_LIMIT + 1 - len(padded)),

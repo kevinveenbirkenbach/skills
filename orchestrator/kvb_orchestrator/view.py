@@ -58,9 +58,9 @@ ENCODER_CSP = (
 )
 
 
-def badges(inbox: list[dict], claims: list[dict], jobs: list[dict], now: float) -> dict[str, int]:
+def badges(cards: int, claims: list[dict], jobs: list[dict], now: float) -> dict[str, int]:
     return {
-        "tasks": sum(1 for item in inbox if not item["until"] and not item["settled"]),
+        "tasks": cards,
         "agents": len({claim["agent"] for claim in claims if claim["beat"] is not None and claim["beat"] >= now - ACTIVE}),
         "artifacts": sum(1 for job in jobs if job["status"] in JOB_OPEN),
     }
@@ -146,7 +146,7 @@ class View:
             "speech": {**self.speech.describe(), "gate": self.speech_gate.state()},
             "people": people,
             "inbox": inbox,
-            "badges": badges(inbox, claims, self.jobs.listed(), now),
+            "badges": badges(self.match_open(inbox), claims, self.jobs.listed(), now),
             "pending": self.batches.listed(),
             "rules": [{**{key: value for key, value in rule.items() if key != "proof"}, "signed": rule.get("proof") is not None} for rule in self.rules.listed()],
             "approvers": self.keys(),

@@ -1,7 +1,6 @@
 const Diffs = (() => {
   "use strict";
   const COLLAPSE = 400;
-  const QUOTE_LIMIT = 2000;
   const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
   const KINDS = {"+": "add", "-": "del", " ": "ctx"};
 
@@ -45,15 +44,9 @@ const Diffs = (() => {
     return [from, from + quote.split("\n").length - 1];
   }
 
-  function quoted(text) {
-    const clean = String(text).trim();
-    return clean.length > QUOTE_LIMIT ? `${clean.slice(0, QUOTE_LIMIT)}…` : clean;
-  }
-
-  const feedback = (ref, path, from, to, quote, words) => `Feedback on ${ref} ${path}:${from}-${to}: "${quoted(quote)}" ${String(words).trim()}`;
   const feedbackOf = (messages, ref) => messages.filter((message) => String(message.text).startsWith(`Feedback on ${ref} `));
 
-  return {COLLAPSE, QUOTE_LIMIT, rows, collapsed, span, lineSpan, quoted, feedback, feedbackOf};
+  return {COLLAPSE, rows, collapsed, span, lineSpan, feedbackOf};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Diffs;

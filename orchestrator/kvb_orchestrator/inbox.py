@@ -8,7 +8,7 @@ from .council import read_claims
 from .denying import requester_of
 from .errors import ToolError
 from .fields import decode, expect
-from .jobs import console_of
+from .jobs import console_of, row_blocked
 from .names import Directory
 from .records import digest, iso_epoch
 from .register import adder, operator_rows, runnable
@@ -21,7 +21,7 @@ SNOOZE_LIMIT = 8 * 86400
 class Inbox:
     def inbox(self, now: float, tasks: dict[str, dict], directory: Directory) -> list[dict]:
         claims = read_claims(self.council)
-        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": "", "reviews": []}
+        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": "", "reviews": [], "blocked": ""}
         items = []
         for review in self.reviews.pending():
             created = iso_epoch(review["created"]) or now
@@ -38,6 +38,7 @@ class Inbox:
             fields = {"title": decision["question"][:300], "agent": decision["agent"], "green": recommended != "", "options": decision["options"], "recommended": recommended, "multi": bool(decision.get("multi"))}
             items.append({**base, "kind": "decision", "id": decision["id"], "ts": decision["created_ts"], **fields})
         held = self.open_jobs()
+        reasons = self.blocked_rows(now)
         consoles = self.consoles()
         pattern = task_pattern(self.scripts.skills)
         rows = [row for row in operator_rows(tasks) if pattern is not None and pattern.fullmatch(row["task"])]
@@ -45,7 +46,7 @@ class Inbox:
             busy = row["task"] in held
             answer = self.answers.get(row["task"])
             fields = {"answered": answer["label"] if answered(answer, row) else "", "title": row["command"], "detail": row["why"], "agent": adder(tasks[row["task"]]), "to": requester_of(claims, adder(tasks[row["task"]]))[0], "command": row["command"], "directory": row["directory"], "sha256": digest(row["command"]), "check": row["check"], "options": row["options"], "recommended": row["recommended"]}
-            state = {"runnable": runnable(row) and not busy, "deniable": not busy, "job": console_of(consoles.get(row["task"])), "reviews": self.linked(row["command"])}
+            state = {"runnable": runnable(row) and not busy, "deniable": not busy, "job": console_of(consoles.get(row["task"])), "reviews": self.linked(row["command"]), "blocked": row_blocked(row, reasons)}
             items.append({**base, "kind": "operator", "id": row["task"], "ts": self.watch.first(row["task"], now), **fields, **state})
         listed = {row["task"] for row in rows}
         for task, job in consoles.items():

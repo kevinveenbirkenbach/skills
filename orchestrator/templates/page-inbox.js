@@ -114,12 +114,32 @@
       }
       return submit([entryOf(item, "approve", item.recommended)], `Choice: ${shownPick(item.recommended)}`);
     }
-    return submit([entryOf(item, "approve", "")], `${item.kind === "operator" ? "Run" : "Grant"}: ${short(item.title)}`);
+    return withGrantNotes(item, submit([entryOf(item, "approve", "")], `${item.kind === "operator" ? "Run" : "Grant"}: ${short(item.title)}`));
+  }
+
+  /**
+   * @param {Object} item the granted inbox item.
+   * @param {Promise<boolean>|boolean} granted whether its grant went through.
+   * @returns {Promise<boolean>} granted; once it holds, the item's line comments go to its requester as one post and
+   * are forgotten.
+   */
+  async function withGrantNotes(item, granted) {
+    const done = await granted;
+    const notes = lineNotes(keyOf(item));
+    if (!done || !notes) {
+      return done;
+    }
+    if (!item.to) {
+      toast("Line comments kept", ["The card names no agent to post them to."], false);
+    } else if (await radioSend({to: item.to, text: `Granted: ${item.title}. Notes:\n${notes}`, upload: "", cls: "post", voice: ""})) {
+      setLineMarks(keyOf(item), []);
+    }
+    return done;
   }
 
   const chooseOne = (item, label) => (picking(item) ? collectPick(item, label) : submit([entryOf(item, "approve", label)], `Choice: ${shownPick(label)}`));
   const answerPick = (item, label) => (picking(item) ? collectPick(item, label) : answerRow(item, label));
-  const grantSolo = (item) => (item.kind === "rule" ? acceptRule(item) : submit([entryOf(item, "approve", "")], `Grant: ${short(item.title)}`));
+  const grantSolo = (item) => (item.kind === "rule" ? acceptRule(item) : withGrantNotes(item, submit([entryOf(item, "approve", "")], `Grant: ${short(item.title)}`)));
   const asked = (item) => item.kind === "operator" && item.check === "decision";
 
   async function answerRow(item, answer) {
@@ -139,14 +159,18 @@
    * @param {string} answer the picked label, or the typed text.
    * @param {boolean} typed whether answer is typed text, which always denies with it as the reason.
    */
-  const answerAsk = (item, answer, typed) => (!typed && answer === ALLOW ? approveOne(item) : denyNow(item, "post", typed ? answer : "", item.to));
+  const answerAsk = (item, answer, typed) => (!typed && answer === ALLOW ? approveOne(item) : denyNow(item, lineNotes(keyOf(item)) ? "call" : "post", withNotes(item, typed ? answer : ""), item.to));
 
   /**
    * @param {Object} item an inbox item.
    * @param {Function} after called before a picked answer is sent.
-   * @returns {HTMLElement|Array|null} the choiceDialog() of a decision, a decision row or a permission ask, with its recipient line for a row; null for every other item.
+   * @returns {HTMLElement|Array|null} the choiceDialog() of a decision or a decision row with named options, with its recipient line for a row; only
+   * that line for a Yes/No row and null for a permission ask or a Yes/No decision, which booleanActions() answers; null for every other item.
    */
   const choiceOf = (item, after) => {
+    if (Answers.boolean(item)) {
+      return asked(item) ? answerTo(item) : null;
+    }
     if (item.kind === "decision") {
       return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? grantLabel(item) : "", locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT});
     }
@@ -165,7 +189,8 @@
   const answerTo = (item) => h("p", {class: "muted answer-to"}, item.agent ? ["Your answer goes to ", h("strong", {}, revealed(item.agent)), " as a passkey-signed call that wakes it at once, with the row id and your answer only."] : UNASSIGNED);
 
   const deniable = (item) => item.deniable || item.kind === "review";
-  const denialOf = (item, reason) => ({...entryOf(item, "reject", ""), channel: "post", reason, to: item.to});
+  const withNotes = (item, reason) => [reason, lineNotes(keyOf(item))].filter(Boolean).join(LINE_JOIN).slice(0, DENY_REASON);
+  const denialOf = (item, reason) => ({...entryOf(item, "reject", ""), channel: lineNotes(keyOf(item)) ? "call" : "post", reason: withNotes(item, reason), to: item.to});
   const pickable = (item) => !item.held && (collectable(item) || deniable(item));
 
   const unsettled = (item) => item.reviews.filter((review) => review.status !== "approved");
@@ -203,7 +228,7 @@
       item.kind === "operator" ? h("span", {class: "muted"}, revealed(`in ${item.directory}`)) : null,
       item.kind === "ask" ? h("div", {class: "command"}, h("code", {}, revealed(item.command))) : null));
     const confirm = h("button", {type: "button", class: deny ? "btn danger" : "btn primary"}, `${deny ? "Deny" : "Grant"} ${usable.length + alone.length}`);
-    const reason = deny ? h("textarea", {class: "field", maxlength: DENY_REASON, rows: 3, placeholder: "e.g. make the gate green first"}) : null;
+    const reason = deny ? h("textarea", {class: "field", maxlength: DENY_REASON, rows: 3, placeholder: "e.g. make the gate green first", "data-skills": ""}) : null;
     confirm.addEventListener("click", async () => {
       closeSheet();
       for (const item of alone) {
@@ -211,8 +236,14 @@
           return;
         }
       }
-      if (usable.length) {
-        await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", labels.get(keyOf(item))))), `${label}: ${usable.length} entries`);
+      if (usable.length && (await submit(usable.map((item) => (deny ? denialOf(item, reason.value) : entryOf(item, "approve", labels.get(keyOf(item))))), `${label}: ${usable.length} entries`))) {
+        for (const item of usable) {
+          if (deny && lineNotes(keyOf(item))) {
+            setLineMarks(keyOf(item), []);
+          } else if (!deny) {
+            await withGrantNotes(item, true);
+          }
+        }
       }
     });
     openSheet(label, [h("p", {class: "muted"}, deny ? DENY_NOTE : grantNote(alone.length, usable.length)), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
@@ -286,6 +317,8 @@
     return h("button", {type: "button", class: "btn small primary", ...named(`Approve ${waiting.length} and run`, why), disabled: stuck || ui.busy, on: {click: () => (collecting(item) ? collect(item) : bulk(withReviews([item]), "Approve and run", false))}}, icon("bi-play-fill"), `Approve ${waiting.length} and run`);
   }
 
+  const blockedButton = (glyph, word, reason) => h("button", {type: "button", class: "btn small", disabled: true, "data-blocked": "", ...named(word, `${word}: not possible now. ${reason}`)}, icon(glyph), word);
+
   function actionsFor(item) {
     if (item.held) {
       return [h("span", {class: "muted"}, "takes effect …")];
@@ -295,15 +328,23 @@
     if (item.kind === "review") {
       grant(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item)));
       buttons.push(denySplit(item));
+    } else if (item.kind === "ask") {
+      grant(iconBtn("bi-check-lg", "Grant", "btn small primary", () => approveOne(item), "Grant: allow this one call"));
+    } else if (Answers.pair(item)) {
+      buttons.push(...yesNoButtons(item, (label) => (asked(item) ? answerPick(item, label) : chooseOne(item, label))));
     } else if (item.kind === "decision" && item.recommended) {
       grant(h("button", {type: "button", class: "btn small primary", ...named(revealed(`Recommendation: ${shownPick(item.recommended)}`)), on: {click: () => approveOne(item)}}, icon("bi-check-lg"), revealed(shownPick(item.recommended))));
     } else if (item.kind === "operator" && item.runnable) {
       grant(runButton(item));
+    } else if (item.kind === "operator" && item.blocked) {
+      buttons.push(blockedButton("bi-play-fill", "Run", item.blocked));
     } else if (item.kind === "rule") {
       grant(h("button", {type: "button", class: "btn small primary", ...named("Accept", "Accept: the passkey signs exactly this rule, then it applies"), on: {click: () => approveOne(item)}}, icon("bi-shield-check"), "Accept"));
     }
     if (item.deniable) {
       buttons.push(denySplit(item));
+    } else if (item.kind === "operator" && item.blocked) {
+      buttons.push(blockedButton("bi-x-lg", "Deny", item.blocked));
     }
     if (item.job && !jobOpen(item.job)) {
       buttons.push(iconBtn("bi-x-circle", "Close", "btn small ghost", () => dismissJob(item.job), "Close: hide the console; a done row disappears with it"));
@@ -341,7 +382,7 @@
     const wait = waitOf(item);
     const classes = ["item", "entry", `k-${item.kind}`, "waiting", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", wait ? "pending" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
     const box = h("input", {type: "checkbox", "aria-label": `Select ${item.title}`, checked: ui.selected.has(keyOf(item)), disabled: !pickable(item), on: {change: () => toggle(item, true)}});
-    return h("li", {class: classes, "data-index": index, "data-ref": keyOf(item), "data-to": item.to || null, "aria-busy": wait ? "true" : null, title: wait || null},
+    return h("li", {class: classes, "data-index": index, "data-ref": keyOf(item), "data-to": item.to || null, "data-blocked": item.blocked ? "" : null, "aria-busy": wait ? "true" : null, title: item.blocked || wait || null},
       box,
       h("div", {class: "msg-meta"},
         when(item.ts),
@@ -361,6 +402,7 @@
         commanded ? h("span", {class: "muted"}, revealed(`in ${dash(item.directory)}`)) : null,
         asked(item) ? h("p", {class: "text question"}, revealed(item.title)) : null,
         item.kind === "operator" && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, revealed(item.detail)) : null,
+        item.blocked ? h("p", {class: "item-blocked"}, icon("bi-slash-circle"), item.blocked) : null,
         diffBlocks(item),
         item.job ? consoleOf(item.job) : null,
         item.kind === "rule" ? ruleRequestBody(item) : null,

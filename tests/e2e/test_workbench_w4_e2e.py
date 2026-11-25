@@ -20,7 +20,7 @@ ROWS = 360
 WAITED = (120, 180)
 ASLEEP = 180
 UNREAD = (300, 320)
-PANELS = {"resources-hardware": "Hardware: disks, CPU, RAM, swap, GPU and VRAM", "resources-tokens": "Tokens per agent"}
+PANELS = {"resources-hardware": "Hardware: disks, CPU, RAM, swap, GPU and VRAM", "resources-tokens": "Tokens per agent", "resources-accounts": "Accounts"}
 GUARD = """() => {
   window.e2eViolations = [];
   document.addEventListener("securitypolicyviolation", (event) => window.e2eViolations.push(`${event.violatedDirective} ${event.blockedURI}`));
@@ -128,7 +128,7 @@ class TestWorkbenchResources(HubCase):
                 self.assertEqual(found["unknown"], [[self.start + UNREAD[0] * 60, self.start + UNREAD[1] * 60]])
                 self.assertEqual((found["agents"], found["bottoms"], found["stacked"]), (["Skills", "Stage"], ["Skills"], True))
                 self.assertEqual(found["legend"], ["CPU 60 %", "RAM 55 %", "Swap 5 %"])
-                self.assertEqual(found["labels"], {"tab": ["Resources (key 6)", "Resources"], "reload": ["Reload: read the sampler files again", "Reload"], "titles": [[name, name] for name in PANELS.values()]})
+                self.assertEqual(found["labels"], {"tab": ["Resources (key 6)", "Resources"], "reload": ["Reload: read the sampler files and the accounts again", "Reload"], "titles": [[name, name] for name in PANELS.values()]})
                 self.assertEqual((found["unlabelled"], found["plots"]), (0, [True] * 2))
                 self.assertEqual((found["tall"], found["wide"]), (False, False), "the page scrolls")
                 self.assertEqual(quiet(found["violations"]), [])

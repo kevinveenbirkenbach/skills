@@ -214,11 +214,6 @@ COMPOSE_SEND = """(async () => {@HELPERS@
 })()""".replace("@HELPERS@", HELPERS)
 CLEAR_MAYDAY = """(async () => {@HELPERS@
   const questions = [];
-  let accept = false;
-  window.confirm = (question) => {
-    questions.push(question);
-    return accept;
-  };
   const posted = [];
   const send = window.fetch.bind(window);
   window.fetch = (path, init) => {
@@ -229,19 +224,28 @@ CLEAR_MAYDAY = """(async () => {@HELPERS@
   };
   await until(() => document.querySelector('#main [role="toolbar"]'), 8000);
   const toolbar = all('#main [role="toolbar"] button, #main [role="toolbar"] summary').map(name);@SPOT_OPEN@
-  const button = await until(() => spot && all("form.composer .radio-cancel", spot).find((node) => name(node) === "Cancel mayday" && !node.hidden), 8000);
+  const button = await until(() => spot && all("form.composer .mayday-toggle", spot).find((node) => name(node) === "Cancel mayday" && node.getAttribute("aria-pressed") === "true"), 8000);
   if (!button) {
-    return {error: "no shown Cancel mayday button next to PTT", toolbar};
+    return {error: "no pressed Cancel mayday toggle next to PTT", toolbar};
   }
+  const [title, shownLabel, next] = [button.title, text(button), Boolean(button.previousElementSibling && button.previousElementSibling.matches(".ptt-split"))];
+  const answer = async (yes) => {
+    button.click();
+    const box = await until(() => spot.querySelector("form.composer .mayday-confirm"), 4000);
+    if (box) {
+      questions.push(text(box.querySelector("p")));
+      all("button", box).find((node) => text(node) === (yes ? "Cancel mayday" : "Cancel")).click();
+    }
+  };
   const shown = new Set(all("#toasts .toast"));
   const fresh = () => all("#toasts .toast").filter((node) => !shown.has(node)).map(text);
-  button.click();
+  await answer(false);
   await sleep(800);
   const declined = {question: questions.slice(), posted: posted.slice(), toasts: fresh()};
-  accept = true;
-  button.click();
+  await answer(true);
   const done = await until(() => fresh().find((toast) => toast.startsWith("Cancel mayday")), 15000);
-  return {toolbar, title: button.title, shown: text(button), declined, accepted: {question: questions.slice(declined.question.length), posted: posted.slice(declined.posted.length)}, done};
+  await sleep(600);
+  return {toolbar, title, shown: shownLabel, next, declined, accepted: {question: questions.slice(declined.question.length), posted: posted.slice(declined.posted.length)}, done, after: [text(button), button.getAttribute("aria-pressed")]};
 })()""".replace("@HELPERS@", HELPERS).replace("@SPOT_OPEN@", SPOT_OPEN)
 SPOT_SEND = """(async () => {@HELPERS@
   const questions = [];
@@ -265,10 +269,10 @@ SPOT_SEND = """(async () => {@HELPERS@
     inline: [getComputedStyle(spot).position, spot.getBoundingClientRect().bottom <= main.getBoundingClientRect().top, spot.parentElement.nextElementSibling === main],
     toolbar: all('#main [role="toolbar"] > *').map((node) => name(node.tagName === "DETAILS" ? node.querySelector("summary") : node)),
     channels: all("option", channel).map((option) => option.value),
-    record: all("button", form).filter((button) => button.hasAttribute("aria-pressed") && !button.classList.contains("mic")).map(text),
+    record: all("button", form).filter((button) => button.hasAttribute("aria-pressed") && !button.matches(".mic, .mayday-toggle")).map(text),
     heads: all(".spot-head button", spot).length,
     send: all(".ptt-split :is(button, summary)", form).filter((node) => !node.closest(".menu-box")).map((node) => [name(node), node.title]),
-    cancel: form.querySelector(".radio-cancel").hidden,
+    mayday: [text(form.querySelector(".mayday-toggle")), form.querySelector(".mayday-toggle").getAttribute("aria-pressed"), form.querySelector(".mayday-toggle").previousElementSibling.matches(".ptt-split")],
     @FITS@,
   };
   await until(() => [...recipient.options].some((option) => option.value === "Stage"), 8000);

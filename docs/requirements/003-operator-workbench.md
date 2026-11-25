@@ -29,9 +29,17 @@ changed and what it costs, and a gate means something again.
    2026-11-11). A commit that reads the working tree (`-a`, `--all`, `-i`,
    `-o`, `-p`, a pathspec, a chain or a wrapper) is not approvable here: the
    hook sends no Ask and Claude Code asks instead.
-4. **Inline feedback**: selected lines of a diff or a command go back to the
-   agent as one radio `post` with path, line range, quote and text, through
-   the right-click menu, the key `f` or a button at the selection.
+4. **Inline feedback** (changed by the operator 2026-11-24): selected lines of
+   a diff or a command, or the code row a right-click hits, take a comment
+   through the right-click menu, the key `f` or a button at the selection,
+   wherever code waits for a grant (Waits on Operator, the stream, the review
+   overlay). The comments collect on their card, mark their lines and go out
+   with its decision: Deny opens with them as the reason and Call
+   preselected, so the requesting agent reads them at once; after Grant they
+   follow as one post `Granted: <title>. Notes:` with one
+   `<path>:<lines>: <comment>` per comment. Rejected: one immediate post per
+   selection, which scattered the feedback over many messages and reached
+   the agent before it knew whether its change was granted.
 5. **Kanban**: columns Waiting, Running and Done; Blocked and Stopped become
    labels; `operator/*` rows stay off the board; swimlanes P1, P2, P3, P4+ and
    Unpinned (by WSJF), collapsible; Done older than 24 h hidden by default.
@@ -210,10 +218,17 @@ flowchart TD
       `git ls-files -s -z`, read without writing the index or running a hook;
       a different tree at approval
       turns it into a deny "staged tree changed since the preview".
-- [ ] Selecting lines in a diff or a command and choosing Feedback (right-click
-      menu, key `f`, or the button at the selection) posts one radio `post` to
-      the requesting agent with path, line range, quote and text; the feedback
-      shows under the card.
+- [ ] Selecting lines in a diff or a command, or right-clicking a code row,
+      and choosing Comment (right-click menu, key `f`, or the button at the
+      selection) saves a comment on the card without sending it: the lines
+      carry a mark, the comment shows under them and in the card's list,
+      which can remove it.
+- [ ] Deny on a card with comments opens Deny via … with Call preselected
+      and the comments as the reason; the signed denial carries them to the
+      requester and clears them.
+- [ ] Grant on a card with comments sends them after the signed grant as one
+      post `Granted: <title>. Notes:` to the requester and clears them; a
+      failed signature keeps them.
 
 ### W2 Kanban
 
@@ -374,9 +389,11 @@ The work packages meet only through these interfaces:
   cap and for withheld content), note empty or "content withheld". An Ask
   for a `git commit` carries the same `diff` from `permission_hook.py`; a
   body past the hub's limit goes without it.
-- **Feedback**: a feedback is a message to the requesting agent through the
-  existing signed message flow, text `Feedback on <ref> <path>:<from>-<to>:
-  "<quote>" <text>`.
+- **Feedback**: line comments `<path>:<from>[-<to>]: <comment>`, joined by
+  `;` and a line break, travel as the reason of a signed denial (channel
+  Call) or, after a signed grant, as the text `Granted: <title>. Notes:` and
+  the comments of one post through the existing signed message flow. Posts
+  `Feedback on <ref> …` from before 2026-11-24 still show under their card.
 - **Resources**: the host unit writes `samples.jsonl` (`{t, disks: [{mount,
   used, total}], cpu, ram, swap, load, gpus: [{name, util, vram_used,
   vram_total} | {name, asleep: true}], queue: {waiting, active}}`),
@@ -445,8 +462,8 @@ The work packages meet only through these interfaces:
         parents derive; receipt tree sha with unstaged and untracked files;
         hook pass and refuse; queue wait on `after`.
   - [x] Resources sample parsing on fixtures (df, meminfo, nvidia-smi, asleep
-        GPU); token offsets; retention fold; diff cap and masking; feedback
-        payload.
+        GPU); token offsets; retention fold; diff cap and masking; line
+        comment text.
   - [x] W4 part of the item above: sample parsing on fixtures (df, meminfo,
         CPU ticks between runs, nvidia-smi, asleep and unread GPU); token
         offsets, a message counted once across fork transcripts; retention
@@ -467,8 +484,9 @@ The work packages meet only through these interfaces:
   - [x] The sampler writes rows in a scratch HOME.
 - E2E, headless Chromium and Firefox at 1920, 1366 and 390 px:
   - [ ] Tasks badge, no Inbox entry, operator cards with bulk actions, review
-        diff expanded, feedback by right-click and `f` reaching the radio
-        store.
+        diff expanded, line comments by right-click and `f` reaching the
+        requester in the Deny call and the Grant post, kept when signing
+        fails.
   - [ ] Kanban lanes, no Blocked or Stopped column, drags to column, lane and
         dependency, Apply with a test passkey, arrows and the dashed queue
         line, card popup; forecast two lines and ∞.

@@ -24,12 +24,13 @@ hub_limits = importlib.import_module("hub_limits")
 approval = importlib.import_module("approval")
 TEMPLATES = HUB / "templates"
 DIFFS = TEMPLATES / "diffs.js"
-PAGE_MODULES = ["page-constants.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-inbox.js", "page-grant.js", "page-stream.js", "page-screens.js", "page-keyboard.js"]
+PAGE_MODULES = ["page-constants.js", "answers.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-inbox.js", "page-grant.js", "page-stream.js", "page-screens.js", "page-keyboard.js"]
 SECRET = 'api_key = "plain-example-words"'
 ARMOURED = "before\n-----BEGIN EXAMPLE-----\nplain words only\n-----END EXAMPLE-----\nafter\n"
 WITHHELD = "content withheld"
 MASKED = "masked"
 MASK = "••••"
+LINE_NOTES_GO = "Your line comments go to the requesting agent with Deny as a call, or after Grant as a post."
 APP_CLEAR = f"@@ -1,2 +1,4 @@\n keep = 1\n-old = 2\n+new = 3\n+{SECRET}\n+print(1)"
 APP_SHOWN = f"@@ -1,2 +1,4 @@\n keep = 1\n-old = 2\n+new = 3\n+{MASK}\n+print(1)"
 ALLOW = {"behavior": "allow"}
@@ -56,8 +57,6 @@ console.log(JSON.stringify({
   collapsed: [[400, 0], [200, 201], [0, 401]].map(([additions, deletions]) => D.collapsed({additions, deletions})),
   span: [D.span([7, 3, 5]), D.span([]), D.span([0, 2])],
   lineSpan: [D.lineSpan("make\\n  deploy\\n  now", "deploy\\n  now"), D.lineSpan("one line", "nope"), D.lineSpan("a\\nb", "")],
-  feedback: D.feedback("review:0123456789abcdef", "src/app.py", 4, 5, "  -old\\n+new  ", "  use the helper  "),
-  quoted: [D.quoted("x".repeat(D.QUOTE_LIMIT + 5)).length, D.QUOTE_LIMIT],
   picked: D.feedbackOf([{text: "Feedback on review:abc a:1-1: \\"q\\" t"}, {text: "Feedback on review:abcd a:1-1"}, {text: "hello"}], "review:abc").length,
 }));
 """
@@ -101,7 +100,7 @@ const document = {
 };
 document.activeElement = document.body;
 document.getElementById("emoji-bases").textContent = "[]";
-const all =(node) => (typeof node === "string" ? [] : [node, ...node.children.flatMap(all)]);
+const all =(node) => (node === null || typeof node === "string" ? [] : [node, ...node.children.flatMap(all)]);
 const classes = (node) => String(node.className || node.attrs.class || "").split(" ").filter(Boolean);
 const labels = (node) => all(node).filter((el) => el.tag === "button").map((el) => el.getAttribute("aria-label") || el.textContent);
 const calls = {proofs: [], posts: [], sheets: [], radio: [], signs: []};
@@ -129,6 +128,7 @@ const context = {
   load: async () => {}, toast: () => {}, fail: () => [], undoToast: () => {},
   jobOpen: () => false, dismissJob: () => {}, consoleOf: () => null, settleConsoles: () => {}, repaintConsoles: () => {},
   withoutOutput: (item) => item, ruleRequestBody: () => null, acceptRule: () => null, reviewSheet: () => {}, openAgent: () => {}, confirmAct: () => {}, measure: () => {},
+  presetChips: () => null, savedComments: () => [], rememberComment: () => {}, repaintReview: () => {},
   openSheet: (title, body) => calls.sheets.push({title, body}), closeSheet: () => {}, emptyState: () => new El("div"), onLocalhost: () => true, localLink: () => null,
   focusSub: () => {}, openPalette: () => {}, closePalette: () => {}, skyLook: () => {}, popupDialog: () => ({open: false}), closePopup: () => {}, closeMenus: () => {}, helpSheet: () => {},
   space: {look: false}, stream: {events: [], entries: [], dom: null}, filter: {}, inboxDom: null, inboxSig: "", reviewDom: null, graphDom: null, tree: {}, taskView: {}, g3: {},
@@ -189,13 +189,27 @@ const sheet = calls.sheets.pop();
 const confirm = all({children: sheet.body}).filter((el) => el.tag === "button").pop();
 results.bulk = {label: confirm.textContent, shown: all({children: sheet.body}).filter((el) => el.tag === "li").length};
 confirm.click();
-feedbackSheet({ref: "review:0123456789abcdef", to: "Skills", path: "src/app.py", from: 2, until: 4, quote: "-old\\n+new"});
-const form = calls.sheets.pop();
-const area = all({children: form.body}).find((el) => el.tag === "textarea");
-area.value = "  call the helper instead  ";
-const send = all({children: form.body}).filter((el) => el.tag === "button").pop();
-results.feedback = {title: form.title, send: [send.getAttribute("aria-label"), send.getAttribute("title")]};
-send.click();
+const comment = (from, until, words) => {
+  markLines({ref: "review:0123456789abcdef", to: "Skills", path: "src/app.py", from, until, anchor: null, inline: false});
+  const form = calls.sheets.pop();
+  all({children: form.body}).find((el) => el.tag === "textarea").value = words;
+  const save = all({children: form.body}).filter((el) => el.tag === "button").pop();
+  save.click();
+  return {title: form.title, save: [save.getAttribute("aria-label"), save.getAttribute("title")]};
+};
+setTimeout(() => {
+  results.feedback = comment(2, 3, "  call the helper instead  ");
+  comment(1, 1, "   ");
+  comment(3, 3, "rename it");
+  results.notes = lineNotes("review:0123456789abcdef");
+  const marked = inboxItem(review, 1);
+  results.marked = {
+    rows: all(marked).filter((el) => el.tag === "tr" && /mark/.test(classes(el).join(" "))).map((row) => [classes(row).join(" "), row.dataset.line]),
+    notes: all(marked).filter((el) => classes(el).includes("match-mark")).map((el) => el.textContent),
+    list: all(marked).filter((el) => classes(el).includes("line-mark")).map((el) => el.textContent),
+  };
+  approveOne(review);
+}, 0);
 let prevented = false;
 feedbackKey = () => true;
 keyboard({key: "f", target: document.body, altKey: false, ctrlKey: false, metaKey: false, isComposing: false, preventDefault: () => { prevented = true; }});
@@ -204,6 +218,7 @@ setTimeout(() => {
   results.proofs = calls.proofs.map((call) => call.entries.map((entry) => [entry.kind, entry.verb, entry.label]));
   results.posts = calls.posts.map((call) => [call.path, call.body.items.length, call.body.proof !== null]);
   results.radio = calls.radio;
+  results.cleared = lineNotes("review:0123456789abcdef");
   drawInbox = () => {};
   drawStream = () => {};
   const secret = {...review, id: "3123456789abcdef", diff: 2};
@@ -304,9 +319,7 @@ class TestDiffsModule(unittest.TestCase):
         self.assertEqual(self.data["span"], [[3, 7], None, [2, 2]])
         self.assertEqual(self.data["lineSpan"], [[2, 3], [1, 1], [1, 2]])
 
-    def test_the_feedback_text_follows_the_contract(self):
-        self.assertEqual(self.data["feedback"], 'Feedback on review:0123456789abcdef src/app.py:4-5: "-old\n+new" use the helper')
-        self.assertEqual(self.data["quoted"], [2001, 2000])
+    def test_earlier_feedback_posts_are_found_by_their_card(self):
         self.assertEqual(self.data["picked"], 1)
 
 
@@ -372,13 +385,19 @@ class TestOperatorPage(unittest.TestCase):
 
     def test_the_bulk_bar_counts_and_grants_asks_reviews_operator_commands_and_choices_with_one_signature(self):
         self.assertEqual(self.data["bulk"], {"label": "Grant 4", "shown": 4})
-        self.assertEqual(self.data["proofs"], [[["operator", "approve", ""], ["review", "approve", ""], ["ask", "approve", ""], ["decision", "approve", "Now"]]])
-        self.assertEqual(self.data["posts"], [["/api/inbox/approve", 4, True]])
+        self.assertEqual(self.data["proofs"], [[["operator", "approve", ""], ["review", "approve", ""], ["ask", "approve", ""], ["decision", "approve", "Now"]], [["review", "approve", ""]]])
+        self.assertEqual(self.data["posts"], [["/api/inbox/approve", 4, True], ["/api/inbox/approve", 1, True]])
 
-    def test_feedback_is_one_signed_post_to_the_requesting_agent_in_the_contract_format_and_the_key_f_opens_it(self):
-        self.assertEqual(self.data["feedback"]["title"], "Feedback")
-        self.assertEqual(self.data["feedback"]["send"], ["Send feedback", "Send feedback: a post to Skills"])
-        self.assertEqual(self.data["radio"], [{"to": "Skills", "text": 'Feedback on review:0123456789abcdef src/app.py:2-4: "-old\n+new" call the helper instead', "upload": "", "cls": "post", "voice": ""}])
+    def test_line_comments_collect_on_their_card_and_go_as_one_post_after_its_grant(self):
+        self.assertEqual(self.data["feedback"], {"title": "Comment", "save": ["Save comment", LINE_NOTES_GO]})
+        self.assertEqual(self.data["notes"], "src/app.py:2-3: call the helper instead;\nsrc/app.py:3: rename it")
+        self.assertEqual(self.data["marked"], {
+            "rows": [["del marked", "2"], ["add marked", "2"], ["add marked", "3"], ["match-mark", "3"], ["match-mark", "3"]],
+            "notes": ["call the helper instead", "rename it"],
+            "list": ["src/app.py:2-3call the helper instead", "src/app.py:3rename it"],
+        })
+        self.assertEqual(self.data["radio"], [{"to": "Skills", "text": f"Granted: feat: x. Notes:\n{self.data['notes']}", "upload": "", "cls": "post", "voice": ""}])
+        self.assertEqual(self.data["cleared"], "")
         self.assertTrue(self.data["key"])
 
 

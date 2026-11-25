@@ -209,12 +209,13 @@ def digest(data: bytes | None) -> str:
 
 def view_of(path: str) -> dict:
     """Returns:
-        {"path", "exists", "sha256", "error", "settings"}: settings only the
+        {"path", "exists", "folder", "sha256", "error", "settings"}: folder
+        False when the path's directory is missing, settings only the
         permissions and sandbox sections; error why the file was unreadable,
         for anything unforeseen only the exception's class, so one bad path
         never keeps the others or the view from being written.
     """
-    entry = {"path": path, "exists": False, "sha256": "", "error": "", "settings": {}}
+    entry = {"path": path, "exists": False, "folder": True, "sha256": "", "error": "", "settings": {}}
     try:
         return read_view(path, entry)
     except Exception as error:  # noqa: BLE001
@@ -225,7 +226,7 @@ def read_view(path: str, entry: dict) -> dict:
     try:
         parent = parent_of(path)
     except FileNotFoundError:
-        return {**entry, "error": MISSING_DIRECTORY}
+        return {**entry, "folder": False, "error": MISSING_DIRECTORY}
     except OSError as error:
         return {**entry, "error": f"a link or no directory on the path: {error.strerror}"}
     try:

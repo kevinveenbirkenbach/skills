@@ -129,6 +129,7 @@ const SCRIPT_HOOKS = [
   ["kvb-org-perform/scripts/log.py", "PreToolUse", "Agent|Task", "spawn", {}],
   ["kvb-org-perform/scripts/log.py", "PostToolUse", "Bash", "persist", {}],
   ["kvb-agent-optimize/scripts/graph.py", "PreToolUse", null, "hook", { timeout: 30 }],
+  ["kvb-org-organize/scripts/account.py", "SessionStart", null, "hook", {}],
 ];
 // Trip-wire: python3 recompiles the script it is started with on every call and caches only imported modules; loading it as __main__ by file path reuses its __pycache__.
 const AS_MAIN = `'import importlib.util as u,sys;s=u.spec_from_file_location("__main__",sys.argv[1]);m=u.module_from_spec(s);sys.argv=sys.argv[1:];sys.modules["__main__"]=m;s.loader.exec_module(m)'`;
@@ -149,4 +150,4 @@ for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate and resource watch, the kvb-org-radio hooks, the kvb-org-queue gate, the kvb-org-perform log, and the kvb-agent-optimize code graph hook in ${settingsPath}`);
+console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, resource watch and session account hook, the kvb-org-radio hooks, the kvb-org-queue gate, the kvb-org-perform log, and the kvb-agent-optimize code graph hook in ${settingsPath}`);

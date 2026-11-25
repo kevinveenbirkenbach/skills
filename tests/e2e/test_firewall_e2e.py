@@ -47,7 +47,7 @@ SHOW = """(async () => {@HELPERS@
   wrap.scrollIntoView({block: "start"});
   await sleep(100);
   return {
-    title: text(document.querySelector("#main h2.title")),
+    title: text(document.querySelector("#main .box-head h2.box-title")),
     tabs: {first, picked: tabs()},
     subs: all("#tabs .subtabs button").map(name),
     sources,
@@ -162,8 +162,8 @@ GROUP_RULE = """(async () => {@HELPERS@
   (await until(() => document.querySelector('#main tbody[data-source="hub"] .fw-fold'), 10000)).click();
   const group = document.querySelector('#main form[aria-label="New agent group"]');
   group.querySelector('input[aria-label="Group name"]').value = "builders";
-  for (const option of group.querySelector('select[aria-label="Members"]').options) {
-    option.selected = true;
+  for (const box of group.querySelectorAll('[aria-label="Members"] input[type="checkbox"]')) {
+    box.checked = true;
   }
   group.requestSubmit();
   const row = await until(() => document.querySelector('#main [data-group="builders"]'), 8000);
@@ -182,8 +182,8 @@ GROUP_RULE = """(async () => {@HELPERS@
   const found = {group: text(row.querySelector("strong")), members: text(row.querySelector(".muted")), pills: all("#main tr[data-rule] [data-agents]").map(text), found: Boolean(pill), hits, toasts: all("#toasts .toast").map(text)};
   const sets = document.querySelector('#main form[aria-label="New rule set"]');
   sets.querySelector('input[aria-label="Set name"]').value = "ci";
-  for (const option of sets.querySelector('select[aria-label="Rules"]').options) {
-    option.selected = option.textContent.includes("make e2e");
+  for (const box of sets.querySelectorAll('[aria-label="Rules"] input[type="checkbox"]')) {
+    box.checked = box.closest("label").textContent.includes("make e2e");
   }
   sets.requestSubmit();
   if (!await until(setRow, 8000)) {
@@ -291,9 +291,9 @@ class TestFirewallE2E(HubCase):
                 self.assertNotIn("error", shown, shown)
                 self.assertEqual((shown["title"], shown["subs"]), ("Controls", base.SUBS))
                 self.assertEqual(shown["tabs"], {"first": [["tools", "true", False], ["rules", "false", True], ["groups", "false", True]], "picked": [["tools", "false", True], ["rules", "true", False], ["groups", "false", True]]})
-                self.assertEqual(shown["sources"], ["hub", str(self.settings), str(self.outside / "demo" / ".claude" / "settings.json")])
-                self.assertEqual(shown["folded"], {"expanded": ["false"] * 3, "rows": 0})
-                self.assertEqual(shown["opened"], ["true"] * 3)
+                self.assertEqual(shown["sources"], ["hub", str(self.settings)])
+                self.assertEqual(shown["folded"], {"expanded": ["false"] * 2, "rows": 0})
+                self.assertEqual(shown["opened"], ["true"] * 2)
                 self.assertEqual(shown["heads"], ["Action", "Tool", "Pattern", "Scope", "Source", "Hits (7 days)", ""])
                 self.assertEqual(shown["chips"], [[chip, "true"] for chip in ("allow", "ask", "deny", "sandbox", "signed")])
                 rows = shown["rows"]

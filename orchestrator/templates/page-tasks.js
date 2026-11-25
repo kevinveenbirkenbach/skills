@@ -167,12 +167,31 @@
     }}});
     const stage = !inbox && view === "3d" ? h("div", {class: "stage"}) : null;
     const body = inbox ? inboxScreen() : stage ? h("div", {class: "card stage-card tasks-body", "data-panel": "tasks/3d"}, layoutTools("tasks"), stage) : h("div", {class: "tasks-body", "data-panel": `tasks/${view}`});
-    taskView.dom = {chips, count, body, inbox, view, stage};
+    const slot = h("span", {class: "box-slot"});
+    taskView.dom = {chips, count, body, inbox, view, stage, slot};
     taskView.sig = "";
     taskView.plan = null;
     taskView.bulk = null;
-    const bar = h("div", {class: "card controls task-toolbar", role: "toolbar", "aria-label": "Tasks"}, taskViewSwitch(inbox), search, count, inbox ? null : planTools(view), choiceMenu());
+    const bar = boxHead("Tasks", "task-toolbar", taskViewSwitch(inbox), search, count, inbox ? null : planTools(view), slot, choiceMenu());
     return h("div", {class: "graph tasks"}, bar, chips, body);
+  }
+
+  const operatorItems = () => state.inbox.filter((item) => item.kind === "operator" && !item.settled);
+
+  /**
+   * @returns {HTMLElement|null} the open operator rows, greyed: the list and board only show them, Waits on Operator,
+   * Match and the Stream run, answer or deny them; null without any.
+   */
+  function operatorSection() {
+    const items = operatorItems();
+    if (!items.length) {
+      return null;
+    }
+    const why = (item) => `Only shown here: Waits on Operator, Match and the Stream act on it.${item.blocked ? ` ${item.blocked}` : ""}`;
+    return h("section", {class: "operator-rows", "aria-label": "Waits on Operator"},
+      h("h3", {class: "group-title"}, "Waits on Operator", counter(items.length), h("span", {class: "spacer"}), btn("Open", "btn small ghost", () => chooseTaskFilter("operator"))),
+      h("ol", {class: "operator-list"}, items.map((item) => h("li", {"data-operator": item.id, "data-blocked": "", "aria-disabled": "true", title: why(item)},
+        pill(item.check === "decision" ? "Decision" : ITEM_LABELS.operator, item.check === "decision" ? KIND_TONES.decision : KIND_TONES.operator), h("code", {}, revealed(item.title)), h("span", {class: "muted"}, revealed(item.id))))));
   }
 
   function shownTasks() {
@@ -191,7 +210,7 @@
       stage3d("tasks", dom.stage);
     }
     const q = taskView.q.trim().toLowerCase();
-    const sig = JSON.stringify([state.tasks, state.jobs, state.task_edges, state.queue_line, Kanban.queueSig(state.queue_jobs), settings.estimation, settings.trend, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
+    const sig = JSON.stringify([state.tasks, operatorItems().map((item) => [item.id, item.title, item.blocked]), state.jobs, state.task_edges, state.queue_line, Kanban.queueSig(state.queue_jobs), settings.estimation, settings.trend, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
     if (sig === taskView.sig) {
       return;
     }
@@ -224,5 +243,7 @@
       gantt: ganttChart,
       burn: (found) => burnChart(rows, found),
     };
-    dom.body.replaceChildren(shown.length || dom.view === "burn" ? views[dom.view](shown) : emptyState("No task", "No entry matches this filter."));
+    dom.body.replaceChildren(shown.length || dom.view === "burn" ? views[dom.view](shown) : emptyState("No task", "No entry matches this filter."), ...(dom.view === "list" || dom.view === "board" ? [operatorSection()].filter(Boolean) : []));
+    const bar = dom.body.querySelector(".kanban-bar");
+    dom.slot.replaceChildren(...(bar ? [bar] : []));
   }

@@ -23,7 +23,7 @@
   };
   const SWITCH_TITLES = {enableArtifact: "Artifacts"};
   const OTHER_OP = {add: "remove", remove: "add"};
-  const firewall = {data: null, busy: false, staged: {}, dom: null, targets: new Set(), picks: {}, shown: new Set(ROW_FILTERS.map(([id]) => id)), open: new Set(), tab: CONTROL_TABS[0][0]};
+  const firewall = {data: null, busy: false, staged: {}, dom: null, targets: new Set(), picks: {}, shown: new Set(ROW_FILTERS.map(([id]) => id)), open: new Set(), tab: CONTROL_TABS[0][0], missing: false};
 
   const knownAgents = () => Object.keys(people()).filter((key) => key !== HUMAN && SESSION_KEY.test(key)).sort();
   const firewallGroups = () => (firewall.data ? firewall.data.groups : []);
@@ -214,7 +214,7 @@
       tabs[id] = h("button", {type: "button", role: "tab", id: `controls-tab-${id}`, "data-tab": id, "aria-controls": `controls-${id}`, "aria-selected": String(firewall.tab === id), on: {click: () => pick(id)}}, icon(glyph), label);
       views[id] = h("div", {class: "stack", role: "tabpanel", id: `controls-${id}`, "aria-labelledby": `controls-tab-${id}`, hidden: firewall.tab !== id}, panels[id]);
     }
-    return h("div", {class: "stack controls"}, h("h2", {class: "title"}, "Controls"), h("div", {class: "segmented", role: "tablist", "aria-label": "Controls"}, Object.values(tabs)), Object.values(views), bar);
+    return h("div", {class: "stack fw-controls"}, boxHead("Controls", "", h("h2", {class: "box-title"}, "Controls"), h("div", {class: "segmented", role: "tablist", "aria-label": "Controls"}, Object.values(tabs))), Object.values(views), bar);
   }
 
   async function firewallPost(path, payload, label) {
@@ -224,15 +224,28 @@
     return result.ok;
   }
 
+  /**
+   * @param {string} label the field's name, shown above the chips.
+   * @param {Array} items [value, text, leading node or null] per chip.
+   * @param {HTMLElement|null} empty what the field shows when items is empty.
+   * @returns {Object} {node, chosen}: the field and a reader of the checked values.
+   */
+  function checkChips(label, items, empty) {
+    const boxes = items.map(([value, text, lead]) => ({value, box: h("input", {type: "checkbox", value}), text, lead}));
+    const node = h("div", {class: "fw-chips-field"}, h("span", {class: "fw-chips-label"}, label), items.length
+      ? h("div", {class: "chips check-chips", role: "group", "aria-label": label}, boxes.map(({box, text, lead}) => h("label", {class: "chip check-chip"}, box, lead, h("span", {}, text))))
+      : empty);
+    return {node, chosen: () => boxes.filter(({box}) => box.checked).map(({value}) => value)};
+  }
+
   function groupsCard() {
     const name = h("input", {class: "field", type: "text", placeholder: "builders", "aria-label": "Group name"});
-    const members = h("select", {class: "field", multiple: true, size: Math.min(Math.max(knownAgents().length, 2), 6), "aria-label": "Members"}, knownAgents().map((key) => h("option", {value: key}, labelOf(key))));
-    const form = h("form", {class: "fw-form", "aria-label": "New agent group"}, h("label", {}, "Name", name), h("label", {}, "Members", members),
+    const members = checkChips("Members", knownAgents().map((key) => [key, labelOf(key), face(key, false)]), h("p", {class: "muted"}, "No agent known yet: agents appear once they post or claim work."));
+    const form = h("form", {class: "fw-form", "aria-label": "New agent group"}, h("label", {}, "Name", name), members.node,
       h("button", {type: "submit", class: "btn soft", ...named("Add group", "Add group: name the chosen agents as one rule target")}, icon("bi-people"), "Add group"));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const chosen = [...members.selectedOptions].map((option) => option.value).sort();
-      await firewallPost("/api/firewall/groups", {name: name.value.trim(), members: chosen}, "Group added");
+      await firewallPost("/api/firewall/groups", {name: name.value.trim(), members: members.chosen().sort()}, "Group added");
     });
     const rows = firewallGroups().map((group) => h("div", {class: "rule-row", "data-group": group.name}, h("strong", {}, revealed(group.name)), h("span", {class: "muted"}, revealed(group.members.map(labelOf).join(", "))), h("span", {class: "spacer"}),
       iconBtn("bi-trash3", "Delete group", "btn small danger", () => firewallPost(`/api/firewall/groups/${encodeURIComponent(group.id)}/delete`, {}, "Group deleted"), revealed(`Delete group ${group.name}: rules signed for it keep their agents`))));
@@ -244,12 +257,13 @@
   function setsCard() {
     const name = h("input", {class: "field", type: "text", placeholder: "ci", "aria-label": "Set name"});
     const days = h("input", {class: "field", type: "number", min: 1, max: 366, value: 7, "aria-label": "Days"});
-    const chosen = h("select", {class: "field", multiple: true, size: Math.min(Math.max(state.rules.length, 2), 6), "aria-label": "Rules"}, state.rules.map((rule) => h("option", {value: rule.id}, revealed(`${rule.kind} ${rule.tool} ${rule.pattern}`.replace("  ", " ")))));
-    const form = h("form", {class: "fw-form", "aria-label": "New rule set"}, h("label", {}, "Name", name), h("label", {}, "Days", days), h("label", {}, "Rules", chosen),
+    const chosen = checkChips("Rules", state.rules.map((rule) => [rule.id, revealed(`${rule.kind} ${rule.tool} ${rule.pattern}`.replace("  ", " ")), null]),
+      h("p", {class: "muted"}, "No rule yet: create one under Rules, New hub rule for automatic grants, then pick it here."));
+    const form = h("form", {class: "fw-form", "aria-label": "New rule set"}, h("label", {}, "Name", name), h("label", {}, "Days", days), chosen.node,
       h("button", {type: "submit", class: "btn soft", ...named("Save set", "Save set: keep the chosen rules as one named rule set")}, icon("bi-collection"), "Save set"));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      await firewallPost("/api/firewall/sets", {name: name.value.trim(), days: Number(days.value), rules: [...chosen.selectedOptions].map((option) => option.value)}, "Rule set saved");
+      await firewallPost("/api/firewall/sets", {name: name.value.trim(), days: Number(days.value), rules: chosen.chosen()}, "Rule set saved");
     });
     const sets = firewall.data ? firewall.data.sets : [];
     const rows = sets.map((set) => setRow(set));
@@ -339,7 +353,7 @@
   const byAction = (one, two) => ACTION_ORDER.indexOf(one.filter) - ACTION_ORDER.indexOf(two.filter);
 
   function sourceGroups() {
-    return [{id: HUB_SOURCE, label: "Hub rules", file: false, status: null, rows: signedRows()}, ...firewall.data.files.map((file) => ({id: file.path, label: file.path, file: true, status: fileStatus(file), rows: fileRows(file)}))];
+    return [{id: HUB_SOURCE, label: "Hub rules", file: false, status: null, rows: signedRows()}, ...SettingsFiles.listed(firewall.data.files, firewall.missing).shown.map((file) => ({id: file.path, label: file.path, file: true, status: fileStatus(file), rows: fileRows(file)}))];
   }
 
   function hitsCell(row) {
@@ -540,7 +554,19 @@
     return h("section", {class: "card stack-tight fw-rules", "aria-label": "Firewall rules"}, h("h3", {}, "Firewall rules"),
       h("p", {class: "muted"}, `Every rule in one table: the hub rules and the permissions and sandbox entries of the listed settings files as the host read them, one folded group per source. Hits count the asks of the last ${data.days} days a rule matches, with the matcher of the rule request dry run; allow, deny and sandbox entries never reach the ask ledger and show not seen. A settings change shows as a diff, is signed with your passkey and is written by the host, never by an agent.`),
       data.error ? h("p", {class: "muted"}, data.error) : null,
-      filterChips(), ruleTable(), files.length ? addForm(files) : null);
+      h("div", {class: "row fw-filters"}, filterChips(), missingToggle(SettingsFiles.listed(files, false).missing)), ruleTable(), files.length ? addForm(files) : null);
+  }
+
+  function missingToggle(count) {
+    if (!count) {
+      return null;
+    }
+    const label = `${firewall.missing ? "hide" : "show"} ${count} missing`;
+    return h("button", {type: "button", class: "btn small ghost fw-missing", "aria-pressed": String(firewall.missing),
+      ...named(label, `${label}: settings files whose folder does not exist on this host; a change cannot create them`), on: {click: () => {
+        firewall.missing = !firewall.missing;
+        drawFirewall();
+      }}}, icon(firewall.missing ? "bi-eye-slash" : "bi-eye"), label);
   }
 
   function diffLines(text) {

@@ -78,7 +78,7 @@
       send.addEventListener("click", () => how.pick(item.options.filter((option) => how.toggled.has(option.label)).map((option) => option.label).join(PICKED), false));
     }
     const typed = chosen.length === 1 && !item.options.some((option) => option.label === chosen[0]) ? chosen[0] : null;
-    const input = h("input", {class: "field", type: "text", maxlength: OTHER_LIMIT, placeholder: how.other, "aria-label": `Other answer to ${item.id}`, value: typed || drafts.get(item.id) || null, disabled: how.locked});
+    const input = h("input", {class: "field", type: "text", maxlength: OTHER_LIMIT, placeholder: how.other, "aria-label": `Other answer to ${item.id}`, value: typed || drafts.get(item.id) || null, disabled: how.locked, "data-skills": item.repo || ""});
     input.addEventListener("input", () => drafts.set(item.id, input.value));
     const other = h("form", {class: "option other"}, input,
       h("button", {type: "submit", class: "btn small", disabled: how.locked, ...named("Send", revealed(`Send this text: ${how.hint}`))}, icon("bi-send"), "Send"));

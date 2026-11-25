@@ -13,9 +13,20 @@ from pathlib import Path
 from unittest import mock
 
 from hub_case import HubCase
-from hub_support import APPROVAL, ASK, GIT_ENV, HUB, OPTIONS, REPO_ROOT, key, signing
+from hub_support import (
+    APPROVAL,
+    ASK,
+    GIT_ENV,
+    HUB,
+    OPERATOR,
+    OPTIONS,
+    REPO_ROOT,
+    key,
+    signing,
+)
 from kvb_orchestrator import batches, ledger, payloads, scores, skill_scripts
 from kvb_orchestrator.errors import Conflict
+from kvb_orchestrator.jobs import UNRUNNABLE, blocked_reasons
 
 MATCH = REPO_ROOT / "skills" / "kvb-match" / "scripts" / "match.py"
 CLIENT = HUB / "client"
@@ -390,6 +401,67 @@ class TestCommandCards(MatchCase):
         fresh = self.card("operator:operator/ship")
         self.assertFalse(fresh["stale"], fresh)
         self.assertIn("swapped", next(entry["content"] for entry in fresh["files"] if entry["path"].endswith("body.md")))
+
+    def test_a_row_with_an_open_job_or_no_absolute_directory_stays_a_greyed_card_with_its_reason(self):
+        row = {"title": "true", "workdir": str(self.work), "description": "ship the release notes", "check": "done", "roles": {"Skills": "A", "Operator": "R"}}
+        register = {f"operator/{slug}": row for slug in ("free", "waits", "runs")}
+        self.write_council({"rasci.json": {**register, "operator/loose": {**row, "workdir": "relative/dir"}}})
+        now = time.time()
+        base = {"command": "true", "directory": str(self.work), "sha256": "0" * 64, "proof": None, "output": "", "finished": None, "dismissed": False, "code": None}
+        self.httpd.hub.jobs.add({**base, "task": "operator/runs", "status": "running", "created_ts": now - 1800, "started": now - 1800})
+        self.httpd.hub.jobs.add({**base, "task": "operator/waits", "status": "queued", "created_ts": now - 600, "started": None})
+        cards = {card["id"].removeprefix("operator:"): card for card in self.cards() if card["kind"] == "command"}
+        self.assertEqual(sorted(cards), ["operator/free", "operator/loose", "operator/runs", "operator/waits"])
+        self.assertEqual(cards["operator/free"]["blocked"], "")
+        self.assertEqual(cards["operator/runs"]["blocked"], "The hub runner runs it for 30 min; its result comes in Waits on Operator.")
+        self.assertEqual(cards["operator/waits"]["blocked"], "Queued in the hub runner for 10 min behind operator/runs, which runs for 30 min; the runner runs one job at a time.")
+        self.assertEqual(cards["operator/loose"]["blocked"], UNRUNNABLE)
+
+    def test_every_open_row_operator_py_lists_shows_in_match_the_inbox_and_the_stream_with_its_reason(self):
+        row = {"title": "true", "workdir": str(self.work), "description": "ship the release notes", "check": "done", "roles": {"Skills": "A", "Operator": "R"}}
+        options = [{"label": "Commit B11", "description": ""}, {"label": "Don't commit", "description": ""}]
+        register = {f"operator/{slug}": row for slug in ("free", "waits", "runs")}
+        register |= {"operator/loose": {**row, "workdir": "relative/dir"}, "operator/pick": {**row, "title": "Commit B11?", "check": "decision", "options": options}}
+        self.write_council({"rasci.json": register})
+        now = time.time()
+        base = {"command": "true", "directory": str(self.work), "sha256": "0" * 64, "proof": None, "output": "", "finished": None, "dismissed": False, "code": None}
+        self.httpd.hub.jobs.add({**base, "task": "operator/runs", "status": "running", "created_ts": now - 1800, "started": now - 1800})
+        self.httpd.hub.jobs.add({**base, "task": "operator/waits", "status": "queued", "created_ts": now - 600, "started": None})
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.outside), "AGENTS_COUNCIL_ROOT": str(self.council)}
+        done = subprocess.run([sys.executable, str(OPERATOR), "list", "--json"], capture_output=True, text=True, timeout=60, check=False, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        listed = {entry["task"] for entry in json.loads(done.stdout)}
+        self.assertEqual(listed, set(register))
+        cards = {card["ref"]: card for card in self.cards() if card["kind"] in ("command", "decision")}
+        status, _, body = self.get("/api/state")
+        self.assertEqual(status, 200, body)
+        inbox = {item["id"]: item for item in json.loads(body)["inbox"] if item["kind"] == "operator"}
+        data = self.events("")
+        stream = {entry["ref"]["task"]: entry for entry in data["events"] + data.get("entries", []) if entry["kind"] == "operator"}
+        for area, found in (("match", cards), ("inbox", inbox), ("stream", stream)):
+            with self.subTest(area=area):
+                self.assertEqual(set(found), listed)
+        self.assertTrue(all(entry["waiting"] for entry in stream.values()), stream)
+        runs, waits = "The hub runner runs it for 30 min; its result comes in Waits on Operator.", "Queued in the hub runner for 10 min behind operator/runs, which runs for 30 min; the runner runs one job at a time."
+        expected = {"operator/free": "", "operator/pick": "", "operator/runs": runs, "operator/waits": waits, "operator/loose": UNRUNNABLE}
+        self.assertEqual({task: inbox[task]["blocked"] for task in listed}, expected)
+        self.assertEqual({task: stream[task]["ref"]["blocked"] for task in listed}, expected)
+        self.assertEqual({task: cards[task].get("blocked", "") for task in listed}, expected)
+        self.assertEqual((inbox["operator/runs"]["runnable"], inbox["operator/runs"]["deniable"]), (False, False))
+        self.assertEqual(json.loads(body)["badges"]["tasks"], 2)
+
+    def test_the_blocked_reason_names_the_last_started_running_job_and_none_without_jobs(self):
+        now = 10_000.0
+        jobs = [
+            {"task": "operator/old", "status": "running", "created_ts": 0.0, "started": 60.0},
+            {"task": "operator/new", "status": "running", "created_ts": 9_000.0, "started": 9_100.0},
+            {"task": "operator/next", "status": "queued", "created_ts": 9_940.0, "started": None},
+            {"task": "operator/gone", "status": "done", "created_ts": 0.0, "started": 0.0},
+        ]
+        reasons = blocked_reasons(jobs, now)
+        self.assertEqual(sorted(reasons), ["operator/new", "operator/next", "operator/old"])
+        self.assertEqual(reasons["operator/next"], "Queued in the hub runner for 1 min behind operator/new, which runs for 15 min; the runner runs one job at a time.")
+        self.assertEqual(blocked_reasons([], now), {})
 
     def test_a_command_card_shows_the_scores_its_command_carries_with_their_emoji_only(self):
         self.operator_row("operator/commit", SCORED, str(self.work))

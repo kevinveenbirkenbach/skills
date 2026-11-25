@@ -26,11 +26,10 @@ class TestHubSurface(HubCase):
 
     def test_badges_count_waiting_operator_tasks_on_tasks_active_agents_and_open_runner_jobs(self):
         now = 1000.0
-        inbox = [{"until": None, "settled": False}, {"until": None, "settled": False}, {"until": now + 60, "settled": False}, {"until": None, "settled": True}]
         claims = [{"agent": "A", "beat": now - 10}, {"agent": "A", "beat": now - 20}, {"agent": "B", "beat": now - 900}, {"agent": "C", "beat": now - 901}, {"agent": "D", "beat": None}]
         jobs = [{"status": "queued"}, {"status": "running"}, {"status": "done"}, {"status": "failed"}]
-        self.assertEqual(view.badges(inbox, claims, jobs, now), {"tasks": 2, "agents": 2, "artifacts": 2})
-        self.assertEqual(view.badges([], [], [], now), {"tasks": 0, "agents": 0, "artifacts": 0})
+        self.assertEqual(view.badges(2, claims, jobs, now), {"tasks": 2, "agents": 2, "artifacts": 2})
+        self.assertEqual(view.badges(0, [], [], now), {"tasks": 0, "agents": 0, "artifacts": 0})
         self.claim("s1", "Skills session")
         self.create_ask(ASK)
         self.assertEqual(self.snapshot()["badges"], {"tasks": 1, "agents": 1, "artifacts": 0})

@@ -277,8 +277,8 @@
       drawArtifacts();
       fetchTree();
     }, 0);
-    const controls = h("div", {class: "card controls"}, viewSwitch("artifacts"), view === "3d" ? layoutTools("artifacts") : view === "tree" ? null : picker,
-      h("div", {class: "toolbar", role: "toolbar", "aria-label": "Artifacts"}, search, reload, removeAll, apply), count);
+    const controls = boxHead("Artifacts", "", viewSwitch("artifacts"), view === "3d" ? layoutTools("artifacts") : view === "tree" ? null : picker,
+      h("div", {class: "toolbar"}, search, reload, removeAll, apply), count);
     const body = view === "tree" ? h("div", {class: "tree-panel", "data-panel": "artifacts/tree"}, list) : h("div", {class: "card stage-card", "data-panel": `artifacts/${view}`}, stageBox, legendBox);
     return h("div", {class: "graph"}, controls, body);
   }

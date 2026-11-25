@@ -9,6 +9,8 @@
   },
   "extras": {
     "value": {"emoji": "💰", "label": "Value", "former": []},
-    "gate": {"emoji": "🚦", "label": "Gate", "former": []}
+    "gate": {"emoji": "🚦", "label": "Gate", "former": []},
+    "legal": {"emoji": "⚖️", "label": "Legal", "former": [], "before": "score"},
+    "architecture": {"emoji": "🏛️", "label": "Architecture", "former": [], "before": "score"}
   }
 }

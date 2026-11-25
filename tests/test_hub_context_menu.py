@@ -27,7 +27,11 @@ class Element {
   }
   getAttribute(name) { return Object.hasOwn(this.attrs, name) ? this.attrs[name] : null; }
   hasAttribute(name) { return Object.hasOwn(this.attrs, name); }
-  matches(selector) { return selector.split(",").map((part) => part.trim()).some((part) => (part.startsWith("[") ? this.hasAttribute(part.slice(1, -1)) : this.tagName === part.toUpperCase())); }
+  matches(selector) {
+    return selector.split(",").map((part) => /^([\w-]*)(?:\[([\w-]+)\])?$/.exec(part.trim())).some((found) => Boolean(found) && (!found[1] || this.tagName === found[1].toUpperCase()) && (!found[2] || this.hasAttribute(found[2])));
+  }
+  get dataset() { return Object.fromEntries(Object.entries(this.attrs).filter(([name]) => name.startsWith("data-")).map(([name, value]) => [name.slice(5), value])); }
+  get classList() { return {contains: (name) => String(this.attrs.class || "").split(" ").includes(name)}; }
   closest(selector) { return this.matches(selector) ? this : this.parentElement && this.parentElement.closest(selector); }
   contains(node) { return Boolean(node) && (node === this || this.contains(node.parentElement)); }
   getBoundingClientRect() { return this.rect; }
@@ -45,7 +49,7 @@ const context = {
   h: (tag, attrs, ...children) => ({tag, attrs, children}), face: () => null, revealed: (text) => text,
   agentNames: () => ["Docs", "Stage"], agentKey: (who) => KEYS_OF[who] || who, nameOf: (key) => NAMES[key] || key, labelOf: (key) => NAMES[key] || key, keyOf: (item) => `${item.kind}:${item.id}`,
   go: () => {}, useView: () => {}, useSaved: () => {}, openAgent: () => {}, openRadio: () => {}, confirmAct: () => {}, openAgentOrder: () => {}, settingsSheet: () => {},
-  toggleMusic: () => {}, skyLook: () => {}, toggleLeitstand: () => {}, askNotify: () => {}, helpSheet: () => {}, micButton: () => null,
+  toggleMusic: () => {}, skyLook: () => {}, toggleLeitstand: () => {}, askNotify: () => {}, helpSheet: () => {}, micFrame: (field) => field,
   taskSheet: (id) => calls.tasks.push(id), artSelect: () => {}, select: () => {}, openItem: () => {}, openSheet: () => {}, glossarySections: () => [], toast: () => {},
   homePins: () => [], homePress: (kind, id) => calls.pins.push(`${kind}:${id}`), HOME_OPENERS: {task: (id) => calls.tasks.push(`home ${id}`)},
   closeMenus: () => { calls.closed += 1; }, calls,
@@ -53,7 +57,7 @@ const context = {
 const probe = `
 ctxShow = (sections, at) => calls.shown.push({at, sections: labels(sections)});
 selectionFeedback = () => null;
-feedbackSheet = (picked) => calls.feedback.push(picked.path);
+markLines = (picked) => calls.feedback.push(picked.path + ":" + picked.from + "-" + picked.until);
 const labels = (sections) => sections.map((section) => [section.scope, section.title, section.items.map((item) => item.label)]);
 const out = {};
 const panel = new Element("div", {"data-panel": "tasks/list"});
@@ -94,6 +98,12 @@ const entry = new Element("li", {"data-ref": "review:r1", "data-to": "Skills"});
 const file = new Element("section", {"data-path": "src/app.py"}, entry);
 const cell = new Element("td", {}, file);
 out.unselected = labels(ctxSections(cell))[0];
+const row = new Element("tr", {"data-line": "7"}, file);
+const code = new Element("td", {}, row);
+out.row = fire(code, {});
+ctxSections(code)[0].items[0].run();
+const note = new Element("tr", {"data-line": "7", class: "match-mark"}, file);
+out.note = fire(new Element("td", {}, note), {}).sections[0][2];
 selectionFeedback = () => ({ref: "review:r1", to: "Skills", path: "src/app.py", from: 2, until: 3, quote: "new"});
 out.selected = fire(cell, {});
 ctxSections(cell)[0].items[0].run();
@@ -159,12 +169,14 @@ class TestHubContextMenu(unittest.TestCase):
             with self.subTest(case=case):
                 self.assertEqual(keys[case], {"prevented": False, "at": None, "element": None})
 
-    def test_a_selection_in_a_diff_makes_feedback_the_first_item_of_the_menu(self):
+    def test_a_selection_or_a_right_clicked_code_row_in_a_diff_makes_comment_the_first_item_of_the_menu(self):
         self.assertEqual(self.data["unselected"], ["element", "src/app.py", ["Copy path", "Open entry", "Copy id"]])
+        self.assertEqual(self.data["row"]["sections"][0], ["element", "src/app.py", ["Comment", "Copy path", "Open entry", "Copy id"]])
+        self.assertEqual(self.data["note"], ["Copy path", "Open entry", "Copy id"])
         selected = self.data["selected"]
         self.assertTrue(selected["prevented"])
-        self.assertEqual(selected["sections"][0], ["element", "src/app.py", ["Feedback", "Copy path", "Open entry", "Copy id"]])
-        self.assertEqual(self.data["feedback"], ["src/app.py"])
+        self.assertEqual(selected["sections"][0], ["element", "src/app.py", ["Comment", "Copy path", "Open entry", "Copy id"]])
+        self.assertEqual(self.data["feedback"], ["src/app.py:7-7", "src/app.py:2-3"])
 
     def test_the_shortcuts_sheet_names_the_context_menu_keys(self):
         keys = self.data["keysHelp"]

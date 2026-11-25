@@ -13,6 +13,7 @@ from .exchange import PLAIN_CSP, Exchange
 from .rates import rated
 from .resources import RESOURCES, sampled
 from .scores import scored
+from .skillindex import SKILLS_INDEX, served
 
 BODY_LIMIT = 1 << 20
 UPLOAD_LIMIT = 50 << 20
@@ -78,7 +79,9 @@ FIREWALL_STATE = re.compile(r"/api/firewall/settings/([0-9a-f]{16})")
 FIREWALL_DROP = re.compile(r"/api/firewall/(groups|sets)/([0-9a-f]{16})/delete")
 FIREWALL_STATUS = {"settings_preview": HTTPStatus.OK, "change_settings": HTTPStatus.ACCEPTED, "add_group": HTTPStatus.CREATED, "add_set": HTTPStatus.CREATED}
 WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
-ACTION_POSTS = ("/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
+ACCOUNTS_ROUTE = "/api/accounts"
+ACCOUNT_DROP = re.compile(r"/api/accounts/([0-9a-f]{16})/delete")
+ACTION_POSTS = (ACCOUNTS_ROUTE, "/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
 
 
 class Handler(Exchange):
@@ -137,8 +140,12 @@ class Handler(Exchange):
             self.answer(lambda: hub.events(self.query()), HTTPStatus.OK)
         elif path == "/api/tree":
             self.answer(hub.repositories, HTTPStatus.OK)
+        elif path == "/api/skills":
+            self.answer(lambda: served(hub.tree.file.with_name(SKILLS_INDEX)), HTTPStatus.OK)
         elif path == MATCH_ROUTE:
             self.answer(hub.match_cards, HTTPStatus.OK)
+        elif path == ACCOUNTS_ROUTE:
+            self.answer(lambda: hub.accounts.view(time.time()), HTTPStatus.OK)
         elif path == "/api/resources":
             self.answer(lambda: sampled(hub.kept / RESOURCES, hub.span(self.query(), time.time())), HTTPStatus.OK)
         elif path == "/api/scores":
@@ -182,6 +189,11 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.sign_board(body), HTTPStatus.OK)
         if board:
             return lambda body: self.answer(lambda: hub.board(board.group(1), body), HTTPStatus.OK)
+        drop = ACCOUNT_DROP.fullmatch(path)
+        if path == ACCOUNTS_ROUTE:
+            return lambda body: self.answer(lambda: hub.accounts.save(body), HTTPStatus.OK)
+        if drop:
+            return lambda _body: self.answer(lambda: hub.accounts.drop(drop.group(1)), HTTPStatus.OK)
         reveal = REVEAL_ROUTE.fullmatch(path)
         if reveal:
             method = hub.sign_reveal if reveal.group(3) else hub.reveal
@@ -263,7 +275,7 @@ class Handler(Exchange):
         return None
 
     def posted(self, path: str) -> bool:
-        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE, FIREWALL_DROP, REVEAL_ROUTE))
+        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE, FIREWALL_DROP, REVEAL_ROUTE, ACCOUNT_DROP))
 
     def runner(self, path: str, body: bytes) -> None:
         hub = self.server.hub

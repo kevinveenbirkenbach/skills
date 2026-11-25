@@ -37,7 +37,7 @@
   }
 
   function ctxPathItems(node, path) {
-    return [...feedbackItems(), ...(path === "-" ? [] : [ctxCopyItem("Copy path", path)])];
+    return [...feedbackItems(node), ...(path === "-" ? [] : [ctxCopyItem("Copy path", path)])];
   }
 
   function ctxEntryItems(node, ref) {
@@ -69,6 +69,15 @@
     return [...opens, {label: pinned ? "Unpin from Home" : "Pin to Home", hint: entry.title, run: () => homePress(target.kind, target.id, entry.title, target.view)}];
   }
 
+  function ctxTileItems(node, key) {
+    const hint = `${node.querySelector(".home-title").textContent}: zoom its content`;
+    return [
+      {label: "Zoom in", hint: `${hint} (+)`, run: () => homeZoomBy(key, 1)},
+      {label: "Zoom out", hint: `${hint} (-)`, run: () => homeZoomBy(key, -1)},
+      {label: `Reset zoom (${homeZoom(key)} %)`, hint: `${hint} (0)`, run: () => homeZoomBy(key, 0)},
+    ];
+  }
+
   const CTX_KINDS = [
     {kind: "task", id: ctxAttr("data-task"), title: (id) => `Task ${id}`, items: ctxTaskItems},
     {kind: "agent", id: ctxAgentOf, title: (key) => nameOf(key), items: ctxAgentItems},
@@ -78,6 +87,7 @@
     {kind: "rule", id: ctxAttr("data-rule", "data-entry"), title: (id) => `Rule ${id}`, items: (node, id) => [ctxCopyItem("Copy rule", id)]},
     {kind: "pick", id: ctxAttr("data-pick"), title: ctxPickTitle, items: ctxPickItems},
     {kind: "pin", id: ctxPinOf, title: (target) => ctxPinEntry(target).title, items: ctxPinItems},
+    {kind: "tile", id: (node) => (node.matches(".home-tile[data-pin]") ? node.dataset.pin : null), title: (key) => `Tile ${key}`, items: ctxTileItems},
   ];
 
   /**
@@ -175,6 +185,7 @@
   function ctxOpen(target, at) {
     closeMenus(null);
     ctxMenu.back = document.activeElement;
+    diffView.hit = target;
     ctxShow(ctxSections(target), at);
   }
 

@@ -8,6 +8,7 @@ from .denying import requester_of
 from .diffs import stored_diff
 from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field
+from .jobs import row_blocked
 from .payloads import denied_roots, payload_files, payload_hash
 from .previewing import merge_hash
 from .records import digest, iso_epoch, read_jsonl
@@ -59,8 +60,8 @@ class Matching:
         senders = {review["id"]: review.get("agent", "") for review in reviews}
         cards = [{**self.commit_card(review, born_of(senders[review["id"]], names, claims), labels), "to": requester_of(claims, senders[review["id"]])[0]} for review in reviews if not self.batches.holds("review", review["id"])]
         tasks = read_register(self.council / REGISTER)
-        held = self.open_jobs()
-        rows = [row for row in operator_rows(tasks) if row["check"] != "decision" and row["task"] not in held]
+        blocked = self.blocked_rows(now)
+        rows = [row for row in operator_rows(tasks) if row["check"] != "decision"]
         releasing = {f"operator:{row['task']}" for row in rows if self.batches.holds("operator", row["task"])}
         roots = denied_roots(self.settings_files()[0])
         scan = self.tree.get()
@@ -68,7 +69,7 @@ class Matching:
             if f"operator:{row['task']}" in releasing:
                 continue
             owner = adder(tasks[row["task"]])
-            cards.append({**self.command_card(row, owner, born_of(owner, names, claims), roots, scan, labels), "to": requester_of(claims, owner)[0]})
+            cards.append({**self.command_card(row, owner, born_of(owner, names, claims), roots, scan, labels), "to": requester_of(claims, owner)[0], "blocked": row_blocked(row, blocked)})
         items = self.inbox(now, tasks, self.directory(claims, read_jsonl(self.council / NEWS), now))
         cards += [self.waiting_card(item, born_of(item["agent"], names, claims), scan, labels) for item in items if self.waits(item)]
         asked = {row["task"] for row in operator_rows(tasks) if row["check"] == "decision"}
@@ -82,6 +83,17 @@ class Matching:
                     store.remove(snapshot["id"])
         return {"now": now, "cards": cards}
 
+    def match_open(self, inbox: list[dict]) -> int:
+        """Returns:
+            How many cards match_cards() lists that can be decided, by its
+            filters without building them: pending reviews, open command rows
+            not held by a release and without a row_blocked() reason, and the
+            inbox items waits() keeps.
+        """
+        reviews = sum(1 for review in self.reviews.pending() if not self.batches.holds("review", review["id"]))
+        rows = sum(1 for row in self.open_rows() if not self.batches.holds("operator", row["task"]) and not row_blocked(row, {}))
+        return reviews + rows + sum(1 for item in inbox if self.waits(item))
+
     def commit_card(self, review: dict, born: float | None, labels: dict | None) -> dict:
         live = review.get("live_tree")
         reason = "the staged tree changed since it was added" if live not in (None, review["tree"]) else ""
@@ -89,12 +101,17 @@ class Matching:
             files = stored_diff(self.reviews.pages, "review", review["id"])["diff"]
         except Missing:
             files = None
+        preview = self.review_preview(review["id"])
+        if preview is not None:
+            files = preview.get("diff")
+            reason = reason or ("HEAD moved since it was added" if preview.get("moved") else "")
         place = {"repo": repository_of(review.get("repo", "")), "branch": review["branch"], "worktree": review["worktree"]}
         return {
             "id": f"review:{review['id']}", "kind": "commit", "ref": review["id"], "agent": review.get("agent", ""), "born": born, "created_ts": iso_epoch(review["created"]),
             **place, "title": review["title"], "score": review.get("score", ""), "metrics": metric_chips(review.get("score", ""), labels, True), "gate": review.get("gate", ""),
             "hash": review["tree"], "live_hash": live or review["tree"],
             "stale": bool(reason), "stale_reason": reason, "files": files, "command": "", "directory": review["worktree"], "reason": "",
+            "diff_error": None if preview is None else preview.get("error"),
         }
 
     def card_payload(self, row: dict, roots: list[str] | None) -> tuple[list[dict], str, dict | None]:
@@ -113,10 +130,11 @@ class Matching:
         """Returns:
             Whether an inbox item is a Match card of its own: an ask, a
             choice, a rule request, or a decision row not yet answered with
-            its current question, none held by a release in its undo window;
-            commits and commands have their own cards.
+            its current question, none held by a release in its undo window
+            nor snoozed in Waits on Operator; commits and commands have their
+            own cards.
         """
-        if item["held"]:
+        if item["held"] or item["until"]:
             return False
         if item["kind"] == "operator":
             return item["check"] == "decision" and not item["settled"] and item["job"] is None and not item["answered"]

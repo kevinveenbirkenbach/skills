@@ -46,6 +46,8 @@ from hub_e2e_radio import (
 from hub_support import HOST_STATE
 from kvb_orchestrator import skill_scripts
 
+SPEAK_CHANNELS = [channel for channel in CHOICE_CHANNELS if channel != "mayday"]
+PRESSED = ["Cancel mayday", "true", True]
 SEND_GROUP = [["PTT", "PTT: push to transmit the message; your passkey signs it"], ["More send options", "More: send a test message only you hear"]]
 
 
@@ -231,7 +233,7 @@ class TestHubRadio(base.OrchestratorE2ECase):
         self.assertEqual(data["errors"], [])
         composed, plain, again, sent = data["results"]
         self.assertNotIn("error", composed)
-        self.assertEqual(composed["channels"], ["post", "call", "newsletter", "broadcast", "pan-pan", "security", "mayday"])
+        self.assertEqual(composed["channels"], SPEAK_CHANNELS)
         self.assertIn("Stage", composed["recipients"])
         self.assertEqual(composed["recording"], "true")
         self.assertEqual(composed["text"], "hello from the mic second line", composed)
@@ -262,7 +264,7 @@ class TestHubRadio(base.OrchestratorE2ECase):
             with self.subTest(width=width):
                 self.assertNotIn("error", result)
                 self.assertEqual(result["toolbar"], ["Priority", "Day/Night", "Drain", "Suspend", "Resume", "Status"])
-                self.assertEqual((result["title"], result["shown"]), ("Cancel mayday: lift the radio silence so the agents write again; your passkey signs it", "Cancel mayday"))
+                self.assertEqual((result["title"], result["shown"], result["next"]), ("Cancel mayday: lift the radio silence so the agents write again; your passkey signs it", "Cancel mayday", True))
                 self.assertEqual(result["declined"], {"question": [question], "posted": [], "toasts": []})
                 self.assertEqual(result["accepted"], {"question": [question], "posted": ["/api/board/sign", "/api/board/clear-mayday"]})
                 self.assertTrue((result["done"] or "").startswith("Cancel mayday: done"), result)
@@ -284,7 +286,6 @@ class TestHubRadio(base.OrchestratorE2ECase):
         (OUT / "chromium-radio-spot.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
         labels = dict(zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True))
-        mayday = "Send a mayday to all? All agents pause writing steps until you cancel it."
         jumps, walked = data["results"][: len(WIDTHS)], data["results"][len(WIDTHS) :]
         for jump, (width, _) in zip(jumps, WIDTHS, strict=True):
             with self.subTest(width=width, part="radio spot on every tab"):
@@ -297,13 +298,13 @@ class TestHubRadio(base.OrchestratorE2ECase):
                     self.assertNotIn("error", probe)
                 self.assertEqual((sent["closed"], sent["open"]), ([True, "false"], [False, "true", True]))
                 self.assertEqual(sent["inline"], ["static", True, True])
-                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
-                self.assertEqual((sent["heads"], sent["send"], sent["cancel"]), (0, SEND_GROUP, False))
+                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], SPEAK_CHANNELS, ["Record"]))
+                self.assertEqual((sent["heads"], sent["send"], sent["mayday"]), (0, SEND_GROUP, PRESSED))
                 self.assertEqual((sent["tall"], sent["wide"]), (width == 390, False))
-                self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
+                self.assertEqual([run["cls"] for run in sent["runs"]], SPEAK_CHANNELS)
                 for run in sent["runs"]:
                     direct = run["cls"] in ("post", "call")
-                    self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [mayday] if run["cls"] == "mayday" else [], ""), run)
+                    self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [], ""), run)
                     self.assertTrue((run["toast"] or "").startswith(f"{labels[run['cls']]} to {'Stage' if direct else 'all'}: sent"), run)
                 self.assertEqual(saved["clashes"], [{"found": [], "outside": []}])
                 self.assertEqual(saved["tones"], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio", "Squelch", "speak while CPU < 50 %"])
@@ -314,7 +315,7 @@ class TestHubRadio(base.OrchestratorE2ECase):
                 self.assertEqual(read, {"squelch": float(squelch), "radio": radio_bell, "post": post, "tall": width == 390, "wide": False})
         heads = {"post": ["post", "--to", "Stage"], "call": ["send", "call", "--to", "Stage"], "newsletter": ["post"]}
         radio = [args for script, args in self.scripts.calls if script == skill_scripts.RADIO]
-        sends = [(width, cls) for width, _ in WIDTHS for cls in CHOICE_CHANNELS]
+        sends = [(width, cls) for width, _ in WIDTHS for cls in SPEAK_CHANNELS]
         self.assertEqual([args[:-1] for args in radio], [[*heads.get(cls, ["send", cls]), "--session", "Operator"] for _, cls in sends])
         for args, (width, cls) in zip(radio, sends, strict=True):
             with self.subTest(width=width, cls=cls):
@@ -337,7 +338,6 @@ class TestHubRadio(base.OrchestratorE2ECase):
         (OUT / "firefox-radio-spot.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "(style-src-elem)" not in error and "/favicon.ico" not in error], [])
         labels = dict(zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True))
-        mayday = "Send a mayday to all? All agents pause writing steps until you cancel it."
         question = "Lift the radio silence of the active mayday?"
         hint = "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"
         results = iter(data["results"])
@@ -348,19 +348,19 @@ class TestHubRadio(base.OrchestratorE2ECase):
             with self.subTest(browser="firefox", width=width, part="every class unsigned"):
                 self.assertNotIn("error", sent, sent)
                 self.assertEqual((sent["closed"], sent["open"], sent["inline"]), ([True, "false"], [False, "true", True], ["static", True, True]))
-                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], CHOICE_CHANNELS, ["Record"]))
-                self.assertEqual((sent["heads"], sent["send"], sent["cancel"]), (0, SEND_GROUP, False))
+                self.assertEqual((sent["toolbar"], sent["channels"], sent["record"]), (["Priority", "Day/Night", "Status"], SPEAK_CHANNELS, ["Record"]))
+                self.assertEqual((sent["heads"], sent["send"], sent["mayday"]), (0, SEND_GROUP, PRESSED))
                 self.assertEqual((sent["tall"], sent["wide"]), (width == 390, False))
-                self.assertEqual([run["cls"] for run in sent["runs"]], CHOICE_CHANNELS)
+                self.assertEqual([run["cls"] for run in sent["runs"]], SPEAK_CHANNELS)
                 for run in sent["runs"]:
                     direct = run["cls"] in ("post", "call")
-                    self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [mayday] if run["cls"] == "mayday" else [], f"spot {width} {run['cls']}"), run)
+                    self.assertEqual((run["direct"], run["question"], run["left"]), (direct, [], f"spot {width} {run['cls']}"), run)
                     self.assertTrue((run["toast"] or "").startswith(f"{labels[run['cls']]} to {'Stage' if direct else 'all'}: not signed"), run)
                     self.assertIn("NotAllowedError", run["toast"], run)
             with self.subTest(browser="firefox", width=width, part="cancel mayday next to PTT unsigned"):
                 self.assertNotIn("error", cleared, cleared)
                 self.assertEqual(cleared["toolbar"], ["Priority", "Day/Night", "Drain", "Suspend", "Resume", "Status"])
-                self.assertEqual((cleared["title"], cleared["shown"]), (hint, "Cancel mayday"))
+                self.assertEqual((cleared["title"], cleared["shown"], cleared["next"], cleared["after"]), (hint, "Cancel mayday", True, ["Cancel mayday", "true"]))
                 self.assertEqual(cleared["declined"], {"question": [question], "posted": [], "toasts": []})
                 self.assertEqual(cleared["accepted"], {"question": [question], "posted": ["/api/board/sign"]})
                 self.assertTrue((cleared["done"] or "").startswith("Cancel mayday: not signed"), cleared)

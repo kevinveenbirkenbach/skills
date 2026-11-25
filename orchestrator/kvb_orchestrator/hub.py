@@ -10,6 +10,7 @@ from pathlib import Path
 import jinja2
 from markupsafe import Markup
 
+from .accounts import Accounts
 from .approving import Approving
 from .artifacts import Touched
 from .asking import Asking
@@ -140,6 +141,7 @@ class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Den
     match_snapshots: Ledger
     merge_previews: Ledger
     live_state: LiveState
+    accounts: Accounts
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -208,6 +210,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         voice_notes=VoiceNotes(state / "voice", host_state / "voice", speech, lambda: {message["voice"] for message in messages.listed() if message.get("voice")}),
         replay=state / "replay" / "messages.json",
         view_store=ViewStore(state / "view.json"),
+        accounts=Accounts(state, places.kept, council),
         match_snapshots=Ledger(state / "match.json"),
         merge_previews=Ledger(state / "previews.json"),
         live_state=LiveState(live_ttl),

@@ -21,6 +21,7 @@
   const caret = () => icon("bi-caret-down-fill", "caret");
   const named = (label, hint) => ({title: hint || label, "aria-label": label});
   const iconBtn = (name, label, cls, run, hint) => h("button", {type: "button", class: `${cls} icon-only`, ...named(label, hint), on: {click: run}}, icon(name));
+  const boxHead = (label, cls, ...children) => h("div", {class: cls ? `box-head ${cls}` : "box-head", role: children.flat(Infinity).some((child) => child instanceof Node && child.getAttribute("role") === "toolbar") ? "group" : "toolbar", "aria-label": label}, ...children);
   const dash = (value) => (value === "" || value === "-" || value === null || value === undefined ? "–" : value);
   const targetsOf = (row) => (row.to.length ? row.to.join(", ") : "all");
   const fixed = (value) => value.toFixed(1);

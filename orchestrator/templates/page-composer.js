@@ -1,4 +1,4 @@
-  const CHANNELS = [...TO_ONE, ...TO_ALL];
+  const CHANNELS = [...TO_ONE, ...TO_ALL].filter(([id]) => id !== "mayday");
   const CHANNEL_HINTS = {
     post: "Post arrives at the end of the turn.",
     call: "Call arrives at once, with a read receipt.",
@@ -6,14 +6,52 @@
     broadcast: "Broadcast reaches all at once.",
     "pan-pan": "PAN-PAN: urgent, to all, at once.",
     security: "Sécurité: safety notice to all stations, now.",
-    mayday: "MAYDAY: all agents pause writing steps until you cancel it.",
   };
+  const MAYDAY_ASK = "Send a mayday to all? All agents pause writing steps until you cancel it.";
   const VOICE_POLL = 700;
   const HOLD_MS = 350;
   const composer = {live: null};
 
-  function confirmMayday() {
-    return window.confirm("Send a mayday to all? All agents pause writing steps until you cancel it.");
+  /**
+   * @param {boolean} silence whether a mayday holds the radio silent.
+   * @returns {Object} {pressed, label, hint}: the MAYDAY toggle's face: Cancel mayday while one is active.
+   */
+  function maydayFace(silence) {
+    const [, cancel, , cancelHint] = actionOf("clear-mayday");
+    return silence ? {pressed: true, label: cancel, hint: cancelHint} : {pressed: false, label: "MAYDAY", hint: "MAYDAY: send the message as mayday to all; all agents pause writing steps until you cancel it"};
+  }
+
+  function drawMayday(button) {
+    const shown = maydayFace(Boolean(state.silence));
+    button.setAttribute("aria-pressed", String(shown.pressed));
+    button.title = shown.hint;
+    button.replaceChildren(icon("bi-life-preserver"), shown.label);
+  }
+
+  /**
+   * @param {Element} form the composer the question shows in, above its footer, its last child.
+   * @param {string} question what the operator confirms.
+   * @param {string} yes the confirming button's label.
+   * @returns {Promise<boolean>} true on yes, false on Cancel or Escape; nothing leaves the page before.
+   */
+  function inlineConfirm(form, question, yes) {
+    form.querySelectorAll(".mayday-confirm").forEach((node) => node.remove());
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        box.remove();
+        resolve(answer);
+      };
+      const accept = h("button", {type: "button", class: "btn small danger", on: {click: () => done(true)}}, yes);
+      const box = h("div", {class: "mayday-confirm", role: "alertdialog", "aria-label": question}, h("p", {}, question), h("div", {class: "actions"}, h("button", {type: "button", class: "btn small ghost", on: {click: () => done(false)}}, "Cancel"), accept));
+      box.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          done(false);
+        }
+      });
+      form.lastElementChild.before(box);
+      accept.focus();
+    });
   }
 
   async function radioSend(message) {
@@ -169,12 +207,11 @@
   }
 
   function composerForm() {
-    const channel = h("select", {class: "field"}, CHANNELS.map(([id, label]) => h("option", {value: id}, label)));
+    const channel = h("select", {class: "field"}, CHANNELS.map(([id, label]) => h("option", {value: id, title: CHANNEL_HINTS[id]}, label)));
     const recipient = h("select", {class: "field"});
     const toField = h("label", {}, "To", recipient);
-    const text = h("textarea", {"aria-label": "Message", placeholder: "Message to the agents …", maxlength: 20000});
+    const text = h("textarea", {"aria-label": "Message", placeholder: "Message to the agents …", maxlength: 20000, "data-skills": ""});
     const replay = h("div", {class: "voice-note", hidden: true});
-    const hint = h("span", {class: "muted composer-hint"});
     const status = h("span", {class: "muted composer-status", "aria-live": "polite"});
     const record = h("button", {type: "button", class: "btn small", "aria-pressed": "false", title: "Record: one click starts, another stops, you check the text before sending; hold it to talk, release to send"});
     const submit = h("button", {type: "submit", class: "btn primary ptt", title: "PTT: push to transmit the message; your passkey signs it"}, icon("bi-broadcast-pin"), "PTT");
@@ -199,38 +236,54 @@
         startRecording(parts);
       }
     });
-    const [, cancel, , cancelHint] = actionOf("clear-mayday");
-    const clear = h("button", {type: "button", class: "btn small danger radio-cancel", hidden: !state.silence, ...named(cancel, cancelHint), on: {click: () => confirmAct("clear-mayday", [])}}, icon("bi-life-preserver"), cancel);
+    const mayday = h("button", {type: "button", class: "btn small danger mayday-toggle", "aria-pressed": "false"});
+    drawMayday(mayday);
     const sync = () => {
-      const direct = TO_ONE.some(([id]) => id === channel.value);
-      toField.hidden = !direct;
-      hint.textContent = `${CHANNEL_HINTS[channel.value]} Your passkey signs every message.`;
-      channel.title = hint.textContent;
+      toField.hidden = !TO_ONE.some(([id]) => id === channel.value);
+      channel.title = CHANNEL_HINTS[channel.value];
     };
     channel.addEventListener("change", sync);
     sync();
-    const form = h("form", {class: "composer"}, h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField), text, replay,
-      h("div", {class: "actions"}, record, micButton(text, false), status, hint, clear, h("div", {class: "ptt-split", role: "group", "aria-label": "Send"}, submit, testMenu(text, channel))));
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const direct = TO_ONE.some(([id]) => id === channel.value);
+    const form = h("form", {class: "composer"}, h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField), micFrame(text, [record]), replay,
+      h("div", {class: "actions"}, status, h("div", {class: "ptt-split", role: "group", "aria-label": "Send"}, submit, testMenu(text, channel)), mayday));
+    const empty = () => {
       if (!text.value.trim()) {
         toast("Nothing to send", ["Write a text or record one; the transcript lands in the field for checking."], false);
-        return;
       }
-      if ((direct && !recipient.value) || (channel.value === "mayday" && !confirmMayday())) {
-        return;
-      }
+      return !text.value.trim();
+    };
+    const send = async (to, cls) => {
       submit.disabled = true;
-      if (await radioSend({to: direct ? recipient.value : "*", text: text.value, upload: "", cls: channel.value, voice: attach.checked ? parts.voice : ""})) {
+      mayday.disabled = true;
+      if (await radioSend({to, text: text.value, upload: "", cls, voice: attach.checked ? parts.voice : ""})) {
         text.value = "";
         status.textContent = "";
         attachVoice(parts, "");
       }
       submit.disabled = false;
+      mayday.disabled = false;
+    };
+    mayday.addEventListener("click", async () => {
+      if (state.silence) {
+        if (await inlineConfirm(form, actionOf("clear-mayday")[2], maydayFace(true).label)) {
+          await signedAct("clear-mayday", []);
+        }
+        return;
+      }
+      if (!empty() && (await inlineConfirm(form, MAYDAY_ASK, "Send mayday"))) {
+        await send("*", "mayday");
+      }
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const direct = TO_ONE.some(([id]) => id === channel.value);
+      if (empty() || (direct && !recipient.value)) {
+        return;
+      }
+      await send(direct ? recipient.value : "*", channel.value);
     });
     attachVoice(parts, "");
-    return {form, recipient, text, channel, clear};
+    return {form, recipient, text, channel, mayday};
   }
 
   function holdToTalk(parts) {
