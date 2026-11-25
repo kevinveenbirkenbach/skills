@@ -139,7 +139,7 @@
    * @param {string} answer the picked label, or the typed text.
    * @param {boolean} typed whether answer is typed text, which always denies with it as the reason.
    */
-  const answerAsk = (item, answer, typed) => (!typed && answer === ALLOW ? approveOne(item) : denyNow(item, "post", typed ? answer : ""));
+  const answerAsk = (item, answer, typed) => (!typed && answer === ALLOW ? approveOne(item) : denyNow(item, "post", typed ? answer : "", item.to));
 
   /**
    * @param {Object} item an inbox item.
