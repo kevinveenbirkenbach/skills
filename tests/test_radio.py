@@ -109,14 +109,20 @@ class TestRadio(unittest.TestCase):
     def _pidfile(self, sid: str) -> Path:
         return self.root / "radio-listen" / f"{sid}.pid"
 
-    def _listen(self, sid: str) -> subprocess.Popen:
+    def _spawn(self, sid: str) -> subprocess.Popen:
+        reader, writer = os.pipe()
+        os.write(writer, json.dumps({"session_id": sid}).encode())
+        os.close(writer)
         proc = subprocess.Popen(
             [sys.executable, "-c", LISTENER, str(RADIO)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self._env(None),
+            stdin=reader, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self._env(None),
         )
+        os.close(reader)
         self.addCleanup(self._stop, proc)
-        proc.stdin.write(json.dumps({"session_id": sid}))
-        proc.stdin.close()
+        return proc
+
+    def _listen(self, sid: str) -> subprocess.Popen:
+        proc = self._spawn(sid)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline and proc.poll() is None:
             pidfile = self._pidfile(sid)
@@ -607,13 +613,7 @@ class TestRadio(unittest.TestCase):
         _, victims = self._victims()
         self.root.mkdir()
         (self.root / "radio-listen").symlink_to(victims)
-        proc = subprocess.Popen(
-            [sys.executable, "-c", LISTENER, str(RADIO)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self._env(None),
-        )
-        self.addCleanup(self._stop, proc)
-        proc.stdin.write(json.dumps({"session_id": "s2"}))
-        proc.stdin.close()
+        proc = self._spawn("s2")
         try:
             code = proc.wait(timeout=10)
         except subprocess.TimeoutExpired:

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from hub_support import ASK, HUB, REPO_ROOT
 from kvb_orchestrator import scores
 from test_hub_match import MatchCase, git, merge_repo, move_head
+from test_hub_operator_tasks import rules_dir, staged_diff
 
 ORDER = ["fix", "break", "tokens", "velocity", "security", "legal", "architecture", "score"]
 FULL = "🎯 Fix: 95 % · 💥 Break: 3 % · 💸 Tokens: 100 % · ⏱️ Velocity: 100 % · 🛡️ Security: 99 · ⚖️ Legal: 98 · 🏛️ Architecture: 97 · 🏆 Score: 96"
@@ -34,7 +37,10 @@ class TestMergeDiff(MatchCase):
         status, _, body = self.call("GET", "/api/runner/previews", None, self.client())
         self.assertEqual(status, 200, body)
         self.assertEqual([(row["id"], row["worktree"], row["tree"], row["head"]) for row in json.loads(body)["reviews"]], [(review, str(self.repo), tree, None)])
-        self.run_runner(register=False)
+        home = self.outside / "medusa-home"
+        rules_dir(home / staged_diff.RULES_HOME.relative_to(Path.home()) / Path(staged_diff.RULES_TAIL.replace("*", "")).parent)
+        with mock.patch.dict(os.environ, {"HOME": str(home), "XDG_CACHE_HOME": str(home / ".cache")}):
+            self.run_runner(register=False)
         card = self.card(f"review:{review}")
         self.assertEqual([(entry["path"], entry["status"], entry["additions"]) for entry in card["files"]], [("app.py", "M", 1)])
         self.assertIn("+added = 2", card["files"][0]["patch"])

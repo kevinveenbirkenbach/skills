@@ -53,7 +53,8 @@ Args:
         answer, is skipped with the reason and stays open (unready()).
         Otherwise a preview of what the command changes, its output indented, and asks [y]es /
         [s]kip / [c]ancel / [d]iff / [q]uit; d shows the full diff. A repo
-        whose git config names filter commands gets no preview. c asks for a
+        whose git config names filter commands outside the system and global
+        config gets no preview. c asks for a
         reason (empty: back to the question), sets the row as shown stopped
         with it and sends it as a message; a row changed since it was shown
         is not cancelled. y runs the command in its directory,
@@ -207,6 +208,9 @@ INDENT = "  "
 LABEL = 11
 OUTPUT = "    "
 QUEUE_COLUMNS = ("position", "id", "status", "task", "eta_min")
+IUTF8 = getattr(termios, "IUTF8", 0o40000)
+TRUSTED_SCOPES = frozenset({"system", "global"})
+CONFIG_ANSWERS = (0, 1)
 
 
 def fail(message: str) -> None:
@@ -542,11 +546,15 @@ def git_tree(directory: str) -> bool:
 
 def filtered(directory: str) -> bool:
     try:
-        return subprocess.run(
-            [*GIT, "config", "--get-regexp", r"^filter\."], cwd=directory, env=git_env(), capture_output=True, check=False
-        ).returncode == 0
+        found = subprocess.run(
+            [*GIT, "config", "--show-scope", "--name-only", "--get-regexp", r"^filter\."],
+            cwd=directory, env=git_env(), capture_output=True, text=True, check=False,
+        )
     except OSError:
         return False
+    if found.returncode not in CONFIG_ANSWERS:
+        return True
+    return any(line.partition("\t")[0] not in TRUSTED_SCOPES for line in found.stdout.splitlines())
 
 
 def evidence(check: str, directory: str, full: bool) -> list[tuple[list[str], str]]:
@@ -606,7 +614,7 @@ def whole_characters(read: Callable[[str], str | None]) -> Callable[[str], str |
         if not sys.stdin.isatty():
             return read(prompt)
         mode = termios.tcgetattr(sys.stdin.fileno())
-        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, [mode[0] | termios.IUTF8, *mode[1:]])
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, [mode[0] | IUTF8, *mode[1:]])
         try:
             return read(prompt)
         finally:

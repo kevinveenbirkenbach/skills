@@ -425,11 +425,9 @@ class TestSupervise(unittest.TestCase):
         group.assert_not_called()
 
     def test_a_tree_running_a_container_client_never_fires_and_says_so_once(self):
-        sleep = shutil.which("sleep")
-        if sleep is None:
-            self.skipTest("no sleep binary on PATH")
         docker = self.scratch() / "docker"
-        docker.symlink_to(sleep)
+        docker.write_text(f"#!{sys.executable}\nimport sys, time\ntime.sleep(float(sys.argv[1]))\n", encoding="utf-8")
+        docker.chmod(0o755)
         result, _, err = self.supervised(self.start(CLIENT, str(docker)))
         self.assertEqual(result, (0, None))
         self.assertEqual(err.count("the command runs docker,"), 1)

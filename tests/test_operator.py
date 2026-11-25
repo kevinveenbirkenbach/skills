@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.server
+import importlib.util
 import json
 import os
 import pty
@@ -21,6 +22,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OPERATOR = REPO_ROOT / "skills" / "kvb-org-operator" / "scripts" / "operator.py"
+OPERATOR_SPEC = importlib.util.spec_from_file_location("kvb_operator_for_terminal", OPERATOR)
+operator_script = importlib.util.module_from_spec(OPERATOR_SPEC)
+OPERATOR_SPEC.loader.exec_module(operator_script)
 RASCI = REPO_ROOT / "skills" / "kvb-org-rasci" / "scripts" / "rasci.py"
 HEADER = "| # | Directory | Command | Why | Check |"
 RUNNER = ["", "Every step with preview and yes/skip:", "```bash", f"python3 {OPERATOR} run", "```"]
@@ -138,7 +142,7 @@ class TestOperator(unittest.TestCase):
 
     @staticmethod
     def _iutf8(leader: int) -> bool:
-        return bool(termios.tcgetattr(leader)[0] & termios.IUTF8)
+        return bool(termios.tcgetattr(leader)[0] & operator_script.IUTF8)
 
     def _terminal(self, args: list[str], steps: list[tuple[bytes, bytes | signal.Signals]]) -> tuple[int, str, list[bool]]:
         """Args:
@@ -155,7 +159,7 @@ class TestOperator(unittest.TestCase):
         leader, follower = pty.openpty()
         self.addCleanup(os.close, leader)
         mode = termios.tcgetattr(follower)
-        termios.tcsetattr(follower, termios.TCSANOW, [mode[0] & ~termios.IUTF8, *mode[1:]])
+        termios.tcsetattr(follower, termios.TCSANOW, [mode[0] & ~operator_script.IUTF8, *mode[1:]])
         try:
             child = subprocess.Popen(
                 [sys.executable, str(OPERATOR), *args], stdin=follower, stdout=follower, stderr=follower,
@@ -668,6 +672,34 @@ class TestOperator(unittest.TestCase):
         self.assertIn(" M one", result.stdout)
         self.assertIn("+changed", result.stdout)
         self.assertNotIn("?? 2", result.stdout)
+        self.assertFalse(marker.exists())
+
+    def test_run_preview_trusts_a_filter_of_the_system_and_the_global_config(self):
+        system = self.base / "gitconfig"
+        system.write_text('[filter "lfs"]\n\tclean = cat\n', encoding="utf-8")
+        (self.home / ".gitconfig").write_text('[filter "own"]\n\tclean = cat\n', encoding="utf-8")
+        self.env["GIT_CONFIG_SYSTEM"] = str(system)
+        repo = self._repo("lfs", upstream=False)
+        (repo / "one").write_text("changed", encoding="utf-8")
+        self._add("lfs", repo, "true", "r", "manual")
+        result = self._feed("s\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(" M one", result.stdout)
+        self.assertNotIn("(nothing to compare)", result.stdout)
+
+    def test_run_preview_stays_off_when_git_cannot_name_the_scope_of_a_filter(self):
+        marker = self.base / "ran"
+        git = self.bin / "git"
+        git.write_text(f'#!/bin/sh\ncase " $* " in *" --show-scope "*) exit 129;; esac\nexec {shutil.which("git")} "$@"\n', encoding="utf-8")
+        git.chmod(0o755)
+        repo = self._repo("old", upstream=False)
+        self._git(repo, "config", "filter.x.clean", f"touch {marker}")
+        (repo / ".gitattributes").write_text("* filter=x\n", encoding="utf-8")
+        (repo / "one").write_text("changed", encoding="utf-8")
+        self._add("old", repo, "true", "r", "manual")
+        result = self._feed("s\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("(nothing to compare)", result.stdout)
         self.assertFalse(marker.exists())
 
     def test_list_and_preview_never_fetch_a_missing_object(self):
