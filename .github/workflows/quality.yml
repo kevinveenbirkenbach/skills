@@ -1,0 +1,14 @@
+name: 🛡️ Quality
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: 🛡️ Quality gate
+    uses: infinito-nexus/quality/.github/workflows/quality.yml@c7d2ced15cf0ca2c09fd3275fdb6437d893c9344 # v0.1.0
+    with:
+      quality-ref: c7d2ced15cf0ca2c09fd3275fdb6437d893c9344
