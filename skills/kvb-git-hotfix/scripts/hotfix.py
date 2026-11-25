@@ -73,7 +73,11 @@ Args:
     `git ls-remote --get-url origin`, so insteadOf rules apply, and compare
     without scheme, user, port, `.git` and trailing slash; a local path
     resolves against the worktree's top level, and the path on a
-    case-insensitive host of CASELESS compares in lowercase. A merged hotfix
+    case-insensitive host of CASELESS compares in lowercase. A local path
+    that is the top level of a checkout with an origin of its own stands for
+    that origin, followed up to HOPS times and never in a circle, so a
+    funnel clone of a local checkout and a recorded local path both match
+    the checkout's upstream. A merged hotfix
     missing from HEAD counts only when its sha is on origin/<default>; when
     it is not, one fetch decides. Every fetch (sync, pending, void, and add
     or update with --status merged) runs with GIT_TERMINAL_PROMPT=0 and is
@@ -146,6 +150,7 @@ ORIGIN_HEAD = "refs/remotes/origin/HEAD"
 GIT = ("git", "-c", "maintenance.auto=false")
 FETCH = ("fetch", "--quiet", "--no-auto-maintenance", "origin")
 FETCH_SECONDS = 120
+HOPS = 4
 CREATED_WITH = "Created-with: https://s.veen.world/skills"
 PKGMGR_FLOW = ("pkgmgr", "worktree", "flow")
 FLOW_FILE = ("pkgmgr", "flow.yml")
@@ -266,12 +271,27 @@ def normalized(url: str, top: str) -> str:
     return os.path.realpath(os.path.join(top, path)).removesuffix(".git").rstrip("/")
 
 
-def origin_url(where: str) -> str:
+def origin_url(where: str, seen: frozenset[str] = frozenset()) -> str:
     if not git(where, "config", "--get", "remote.origin.url").stdout.strip():
         return ""
     url = git(where, "ls-remote", "--get-url", "origin").stdout
     top = git(where, "rev-parse", "--show-toplevel")
-    return normalized(url, top.stdout.strip() if top.returncode == 0 else where)
+    return upstream(normalized(url, top.stdout.strip() if top.returncode == 0 else where),
+                    seen | {os.path.realpath(where)})
+
+
+def upstream(origin: str, seen: frozenset[str] = frozenset()) -> str:
+    """Returns:
+        origin, or when origin is the top level of a local checkout with an
+        origin of its own, that checkout's origin, followed up to HOPS times
+        and never back into a path in seen.
+    """
+    if not origin.startswith("/") or len(seen) > HOPS or origin in seen or not os.path.isdir(origin):
+        return origin
+    top = git(origin, "rev-parse", "--show-toplevel")
+    if top.returncode or os.path.realpath(top.stdout.strip()) != origin:
+        return origin
+    return origin_url(origin, seen) or origin
 
 
 def identity(where: str) -> tuple[str, str] | None:
@@ -290,7 +310,7 @@ def same(one: tuple[str, str], other: tuple[str, str]) -> bool:
 
 
 def recorded(row: dict) -> tuple[str, str] | None:
-    common, origin = row.get("common_dir") or "", row.get("origin") or ""
+    common, origin = row.get("common_dir") or "", upstream(row.get("origin") or "")
     if not origin and not os.path.isdir(common):
         return None
     return common, origin

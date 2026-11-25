@@ -693,6 +693,42 @@ class TestHotfix(unittest.TestCase):
         self.assertEqual(self.out("match", "--line", "github boom", "--repo", str(second)),
                          [f"hotfix/gh\tstaged\tfix/gh\t{sha}\t-\tgithub.com/org/app"])
 
+    def test_a_funnel_clone_of_a_local_checkout_belongs_to_the_checkouts_upstream(self):
+        funnel = self.base / "funnel"
+        self.git(self.base, "clone", "-q", "--shared", str(self.seed), str(funnel))
+        self.git(funnel, "config", f"url.{self.seed}.insteadOf", "gh:org/app")
+        self.git(funnel, "remote", "set-url", "origin", "gh:org/app")
+        sha = self.commit(funnel, "funnel.txt", "funnel\n", "fix funnel")
+        self.out("add", "funnel", *self.flags({"--repo": str(funnel), "--branch": "fix/funnel", "--sha": sha,
+                                                "--signature": "funnel boom", "--status": "pr", "--pr": "21"}))
+        upstream = str(self.base / "origin")
+        self.assertEqual(self.rows()["hotfix/funnel"]["origin"], upstream)
+        self.assertEqual(self.out("match", "--line", "funnel boom", "--repo", str(self.seed)),
+                         [f"hotfix/funnel\tpr\tfix/funnel\t{sha}\t#21\t{upstream}"])
+        rows = self.rows()
+        rows["hotfix/funnel"]["origin"] = str(self.seed)
+        self.write_rows(rows)
+        self.git(self.seed, "fetch", "-q", str(funnel), "HEAD")
+        self.git(self.seed, "push", "-q", "origin", "FETCH_HEAD:refs/heads/main")
+        self.out("update", "funnel", "--status", "merged", "--sha", sha, "--repo", str(self.seed))
+        row = self.rows()["hotfix/funnel"]
+        self.assertEqual((row["stage"], row["origin"], row["common_dir"]), ("merged", upstream, str(self.seed / ".git")))
+
+    def test_only_the_top_level_of_a_checkout_is_followed_and_never_in_a_circle(self):
+        one, two = self.base / "c1", self.base / "c2"
+        for repo, other in ((one, two), (two, one)):
+            repo.mkdir()
+            self.git(repo, "init", "-q", "-b", "main")
+            self.git(repo, "remote", "add", "origin", str(other))
+        inner = self.seed / "inner"
+        inner.mkdir()
+        hotfix = load_hotfix()
+        with mock.patch.dict(os.environ, self.env):
+            self.assertEqual(hotfix.origin_url(str(one)), str(one))
+            self.assertEqual(hotfix.upstream(str(inner)), str(inner))
+            self.assertEqual(hotfix.upstream(str(self.seed)), str(self.base / "origin"))
+            self.assertEqual(hotfix.upstream("github.com/org/app"), "github.com/org/app")
+
     def test_pending_filters_by_targets_as_void_does(self):
         lint = f"open, not merged\thotfix/lint\tpr\tfix/lint\t{self.lint}\t#13"
         result = self.hotfix("pending", "--repo", str(self.work), "--target", "test-lint")
