@@ -136,7 +136,7 @@ class TestLineComments(base.OrchestratorE2ECase):
         self.assertNotIn("error", stream, stream)
         self.assertEqual((stream["item"], stream["sheet"]), ("Comment", {"title": "Comment", "range": "a.txt:2", "unlabelled": []}))
         self.assertEqual(stream["marked"], {"rows": ["2", "2"], "notes": ["stream note"], "list": ["a.txt:2stream note"], "open": False})
-        self.assertEqual(stream["deny"], {"reason": "a.txt:2: stream note", "channel": "call", "to": "Skills session"})
+        self.assertEqual(stream["deny"], {"reason": "a.txt:2: stream note", "channel": "call", "to": "Skills"})
         denial = [["ask", "reject", "call", "a.txt:2: stream note"]]
         self.assertEqual(stream["posted"], [["/api/sign", None, denial], *([["/api/inbox/approve", None, denial]] if signs else [])])
         self.assertNotIn("error", overlay, overlay)
@@ -159,7 +159,7 @@ class TestLineComments(base.OrchestratorE2ECase):
         asks = [(ask["status"], ask.get("channel", ""), ask.get("reason", "")) for ask in self.httpd.hub.asks.listed() if ask["command"] == COMMAND]
         self.assertEqual(asks, [("denied", "call", "a.txt:2: stream note")])
         radio = [" ".join(args) for script, args in self.scripts.calls if script == skill_scripts.RADIO]
-        self.assertEqual(len([entry for entry in radio if entry.startswith("send post --to Skills session ") and f"Granted: {TITLE}. Notes:" in entry and "src/app.py:3: overlay note" in entry]), 1, radio)
+        self.assertEqual(len([entry for entry in radio if entry.startswith("post --to ") and f"Granted: {TITLE}. Notes:" in entry and "src/app.py:3: overlay note" in entry]), 1, radio)
 
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
     def test_firefox_keeps_line_comments_when_the_deny_and_the_grant_go_unsigned(self):

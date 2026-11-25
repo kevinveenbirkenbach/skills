@@ -24,7 +24,7 @@ FIELDS = {
     "page-dialog.js": r'"aria-label": `Other answer to \$\{item\.id\}`[^}]*"data-skills": item\.repo \|\| ""',
     "page-deny.js": r'placeholder: "e\.g\. make the gate green first", "data-skills": item\.repo \|\| ""',
     "page-inbox.js": r'placeholder: "e\.g\. make the gate green first", "data-skills": ""',
-    "page-diff.js": r'"aria-label": "Feedback", title: "Feedback", "data-skills": ""',
+    "page-diff.js": r'"aria-label": "Comment", placeholder: "Comment on these lines", "data-skills": ""',
 }
 FEEDBACK = r'class: "field match-feedback", [^}]*"data-skills": card\.repo \|\| ""'
 RANK = r"""

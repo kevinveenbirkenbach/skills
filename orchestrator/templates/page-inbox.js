@@ -155,13 +155,6 @@
   const signsFor = (item) => `${item.agent} gets this answer as a call once your passkey signs it`;
 
   /**
-   * @param {Object} item a permission ask.
-   * @param {string} answer the picked label, or the typed text.
-   * @param {boolean} typed whether answer is typed text, which always denies with it as the reason.
-   */
-  const answerAsk = (item, answer, typed) => (!typed && answer === ALLOW ? approveOne(item) : denyNow(item, lineNotes(keyOf(item)) ? "call" : "post", withNotes(item, typed ? answer : ""), item.to));
-
-  /**
    * @param {Object} item an inbox item.
    * @param {Function} after called before a picked answer is sent.
    * @returns {HTMLElement|Array|null} the choiceDialog() of a decision or a decision row with named options, with its recipient line for a row; only
@@ -173,9 +166,6 @@
     }
     if (item.kind === "decision") {
       return choiceDialog(item, {pick: (label) => { after(); chooseOne(item, label); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? grantLabel(item) : "", locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT});
-    }
-    if (item.kind === "ask") {
-      return choiceDialog(askDialog(item.id), {pick: (answer, typed) => { after(); answerAsk(item, answer, typed); }, toggled: new Set(), chosen: ui.selected.has(keyOf(item)) ? ALLOW : "", locked: item.held, hint: `the answer goes to ${item.to || "its session"} once your passkey signs it`, group: "", other: TELL});
     }
     const shown = ui.selected.has(keyOf(item)) ? grantLabel(item) : "";
     return asked(item) ? [answerTo(item), choiceDialog(item, {pick: (label) => { after(); answerPick(item, label); }, toggled: new Set(), chosen: shown, locked: item.held, hint: signsFor(item), group: "", other: OTHER_PROMPT})] : null;

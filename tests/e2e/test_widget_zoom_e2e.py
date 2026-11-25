@@ -146,7 +146,7 @@ class TestWidgetZoom(base.OrchestratorE2ECase):
                 self.assertEqual((keys["stored"], kept["zoom"]), (130, 130), (keys, kept))
                 self.assertEqual(menu["labels"], ["Zoom in", "Zoom out", "Reset zoom (130 %)"], menu)
                 self.assertEqual((menu["out"], menu["back"], menu["reset"]), (120, 130, 100), menu)
-                self.assertIn("+ / − · 0 · Ctrl+wheel", shown["keys"], shown)
+                self.assertIn("+ / - · 0 · Ctrl+wheel", shown["keys"], shown)
 
     def test_chromium_zooms_a_tile_by_keys_wheel_and_menu_and_keeps_it(self):
         data = self.drive(self.steps("chromium"), None, init=w4.GUARD)

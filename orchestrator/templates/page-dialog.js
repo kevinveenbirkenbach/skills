@@ -1,7 +1,4 @@
   const OTHER_PROMPT = "Other: type your own answer …";
-  const ALLOW = "Yes";
-  const TELL = "Tell Claude what to do instead";
-  const askDialog = (id) => ({id, options: [{label: ALLOW, description: "allow this one call"}, {label: "No", description: "deny it"}], recommended: "", multi: false});
   const drafts = new Map();
   const forgetDraft = (id) => drafts.delete(id);
 

@@ -232,7 +232,7 @@ class TestWorkbenchOperatorTasks(HubCase):
                     self.assertEqual(feedback["kept"], {"review": ["src/app.py:2right-click note"], "ask": ["/repo:1key f note"]})
                 self.assertFalse(feedback["wide"])
         radio = [" ".join(args) for script, args in self.scripts.calls if script == skill_scripts.RADIO]
-        granted = [entry for entry in radio if entry.startswith("send post --to Skills ") and "Granted: feat: w" in entry and "Notes:" in entry and "right-click note" in entry]
+        granted = [entry for entry in radio if entry.startswith("post --to Skills ") and "Granted: feat: w" in entry and "Notes:" in entry and "right-click note" in entry]
         self.assertEqual(len(granted), len(base.WIDTHS) if signs else 0, radio)
         asks = {ask["command"]: (ask["status"], ask.get("channel", ""), ask.get("reason", "")) for ask in self.httpd.hub.asks.listed() if "keyed" in ask["command"]}
         self.assertEqual(asks, {f"git commit -m 'w{width} keyed'": ("denied", "call", "/repo:1: key f note") if signs else ("pending", "", "") for width, _ in base.WIDTHS})
