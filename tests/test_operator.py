@@ -687,6 +687,15 @@ class TestOperator(unittest.TestCase):
         self.assertIn(" M one", result.stdout)
         self.assertNotIn("(nothing to compare)", result.stdout)
 
+    def test_a_slot_to_fill_in_refuses_a_row_and_a_mail_address_or_link_in_angle_brackets_does_not(self):
+        for command in ("git push origin <branch>", "make -C <register task> test"):
+            self.assertEqual(operator_script.unrunnable(command, "/"), "holds a <...> slot to fill in", command)
+        for command in (
+            "git commit --no-verify -m 'fix: x' --trailer 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'",
+            "git commit --no-verify -m 'docs: see <https://s.veen.world/skills>'",
+        ):
+            self.assertIsNone(operator_script.unrunnable(command, "/"), command)
+
     def test_run_preview_stays_off_when_git_cannot_name_the_scope_of_a_filter(self):
         marker = self.base / "ran"
         git = self.bin / "git"
