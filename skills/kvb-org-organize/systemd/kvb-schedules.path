@@ -1,0 +1,8 @@
+[Unit]
+Description=Schedules: apply a change of schedules.json at once
+
+[Path]
+PathModified=%S/agents-shared/schedules.json
+
+[Install]
+WantedBy=paths.target

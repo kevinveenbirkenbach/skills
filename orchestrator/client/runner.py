@@ -40,8 +40,8 @@ Returns:
     changes without --rasci and --council or into a council that is a
     symlink or another uid's, gate changes without --gates, and every other
     job. Posts the last 200 output lines
-    back while it runs and the exit code at its end. Before every poll it
-    posts, for each open operator row that is a git merge of a full commit
+    back while it runs and the exit code at its end. Before a poll, at most
+    every PREVIEW_SECONDS, it posts, for each open operator row that is a git merge of a full commit
     id (staged_diff.merge_of) whose HEAD differs from the preview the hub
     holds, staged_diff.merge_preview, which its Match card shows; such a
     merge whose job names the previewed HEAD is refused once HEAD moved. The
@@ -80,6 +80,7 @@ PREVIEWS = "/api/runner/previews"
 ERROR_LIMIT = 500
 PREVIEW_FAILURES = (OSError, ValueError, staged_diff.DiffError)
 BEAT = 2.0
+PREVIEW_SECONDS = 10.0
 SAFE_PATH = "/usr/bin:/bin"
 TASK_JOB = "task"
 TASK_LIMIT = 30.0
@@ -461,15 +462,17 @@ def main() -> int:
     trust = verifier.Trust(approvers=args.approvers, replay=args.replay, origin=signing.origin_of(args.port))
     register = Register(rasci=args.rasci, council=args.council) if args.rasci and args.council else None
     host = Host(shell=os.environ.get("SHELL") or pwd.getpwuid(os.geteuid()).pw_shell, operator=args.operator, council=args.council)
-    rules, told = staged_diff.rules_root(), ""
+    rules, told, previewed = staged_diff.rules_root(), "", None
     while True:
-        try:
-            previews(base, rules)
-            told = ""
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            if str(error) != told:
-                print(f"runner: no merge previews: {error}", file=sys.stderr)
-            told = str(error)
+        if previewed is None or time.monotonic() - previewed >= PREVIEW_SECONDS:
+            previewed = time.monotonic()
+            try:
+                previews(base, rules)
+                told = ""
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                if str(error) != told:
+                    print(f"runner: no merge previews: {error}", file=sys.stderr)
+                told = str(error)
         try:
             cycle(base, trust, register, args.gates, host)
         except (OSError, ValueError, KeyError, TypeError):

@@ -310,7 +310,7 @@ class TestHubRadio(base.OrchestratorE2ECase):
                 self.assertEqual(saved["tones"], ["MAYDAY / PAN-PAN", "Reviews, asks, decisions", "Post and calls to you", "All radio", "Squelch", "speak while CPU < 50 %"])
                 self.assertEqual(saved["bells"], ["MAYDAY / PAN-PAN tone", "Reviews, asks, decisions tone", "Post and calls to you tone", "All radio tone"])
                 self.assertEqual((saved["kept"], saved["after"]), ([float(squelch), radio_bell != "off", post == "speak"], [radio_bell, post]))
-                self.assertEqual(saved["general"], {"sections": ["Ambience", "Location", "Appearance", "Music", "Notifications", "Passkey"], "radio": 0})
+                self.assertEqual(saved["general"], {"sections": ["Ambience", "Location", "Appearance", "Music", "Undo window", "Passkey"], "radio": 0})
                 self.assertEqual((saved["tall"], saved["wide"]), (width == 390, False))
                 self.assertEqual(read, {"squelch": float(squelch), "radio": radio_bell, "post": post, "tall": width == 390, "wide": False})
         heads = {"post": ["post", "--to", "Stage"], "call": ["send", "call", "--to", "Stage"], "newsletter": ["post"]}

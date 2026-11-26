@@ -44,7 +44,7 @@ STREAM = """(async () => {@HELPERS@@READ@
     return {error: text(document.getElementById("main")), rows: rows().length};
   }
   const pick = rows().find((row) => row.dataset.ref === "operator:operator/pick");
-  const buttons = (row) => all(".line-actions button", row).map((button) => [name(button), button.disabled]);
+  const buttons = (row) => all(":is(.line-actions, .code-foot) button", row).map((button) => [name(button), button.disabled]);
   const runs = rows().find((row) => row.dataset.ref === "operator:operator/runs");
   return {refs: rows().map((row) => row.dataset.ref).sort(), blocked: blockedTitles("#main .feed > li.k-operator"), pickForms: pick ? all(".choice", pick).length : null, pickButtons: pick ? buttons(pick) : null, runsButtons: runs ? buttons(runs) : null, wide: wide()};
 })()"""

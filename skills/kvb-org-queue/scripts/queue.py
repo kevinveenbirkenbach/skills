@@ -7,7 +7,7 @@ Usage:
     queue.py list [--json]
     queue.py history
     queue.py cancel ID [--session ID]
-    queue.py block     hook (PreToolUse on Bash)
+    queue.py block     hook (PreToolUse on Bash through hooks.py pre-bash)
 
 Environment:
     AGENTS_COUNCIL_ROOT, XDG_STATE_HOME, HOME: the shared state directory the
@@ -140,6 +140,7 @@ import importlib.util
 import json
 import os
 import re
+import select
 import shlex
 import signal
 import stat
@@ -168,7 +169,6 @@ EXE = os.path.realpath(sys.executable)
 CODE_FILES = tuple(path.relative_to(SKILLS) for path in (Path(__file__).resolve(), *SIBLINGS.values()))
 POLL_SECONDS = 20
 CLAIM_SECONDS = 3 * POLL_SECONDS
-TICK_SECONDS = 0.2
 HOUR = 3600
 CANCELLED = 3
 NOT_RUN = 75
@@ -241,6 +241,7 @@ HOLDS = watch.ROOT / "holds"
 TAG = re.compile(r"\d+-\d+")
 SILENCE = watch.ROOT / "radio-silence.json"
 HISTORIES = (watch.HISTORY, watch.KEPT_HISTORY)
+LEARNED: dict[str, tuple[dict, dict]] = {}
 
 
 def code_of(root: Path) -> str | None:
@@ -312,8 +313,29 @@ def caps(cfg: dict) -> dict[str, int]:
     return cfg.get("slot_limits", {})
 
 
+def marks(paths: tuple[Path, ...]) -> tuple[tuple[int, int, int] | None, ...]:
+    found = []
+    for path in paths:
+        try:
+            info = path.stat()
+        except OSError:
+            found.append(None)
+        else:
+            found.append((info.st_ino, info.st_mtime_ns, info.st_size))
+    return tuple(found)
+
+
 def learned(cfg: dict, now: float) -> tuple[dict[str, dict], dict[str, dict]]:
-    return history.learn(history.read(HISTORIES), now, cfg)
+    """Returns:
+        history.learn over HISTORIES, computed once per process while both
+        files keep their inode, mtime and size and cfg its learning keys; a
+        row that leaves the window meanwhile counts until the next change.
+    """
+    key = json.dumps([marks(HISTORIES), cfg.get("light_kinds"), cfg.get(history.RAM_CAP), cfg.get("load_limits")], sort_keys=True)
+    if key not in LEARNED:
+        LEARNED.clear()
+        LEARNED[key] = history.learn(history.read(HISTORIES), now, cfg)
+    return LEARNED[key]
 
 
 def limits(cfg: dict, kinds: dict[str, dict], entries: list[dict]) -> dict[str, tuple[int, str]]:
@@ -1396,19 +1418,19 @@ def leave(entry_id: str) -> None:
         data["entries"] = [e for e in data["entries"] if e["id"] != entry_id]
 
 
-def pause(caught: list[int]) -> None:
-    deadline = time.monotonic() + POLL_SECONDS
-    while not caught and time.monotonic() < deadline:
-        time.sleep(TICK_SECONDS)
+def pause(wake: int) -> None:
+    select.select([wake], [], [], POLL_SECONDS)
 
 
-def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
+def wait(cfg: dict, entry_id: str, caught: list[int], wake: int) -> tuple[int | None, int]:
     """Poll until the grant.
 
     Args:
       cfg: the config at the hold's start; every poll reads it anew.
       entry_id: this hold's entry.
       caught: signals the caller caught; the first ends the wait.
+      wake: the read end of the signal wakeup pipe; a caught signal makes it
+        readable, so a pause between polls ends at once.
 
     Returns:
       (None, other active jobs at the grant) once granted, else (the exit
@@ -1458,7 +1480,7 @@ def wait(cfg: dict, entry_id: str, caught: list[int]) -> tuple[int | None, int]:
         if (position, reason) != shown:
             print(f"queue: {entry_id} waits at position {position}: {reason}", file=sys.stderr, flush=True)
             shown = (position, reason)
-        pause(caught)
+        pause(wake)
     return 128 + caught[0], 0
 
 
@@ -1610,6 +1632,9 @@ def cmd_hold(args: argparse.Namespace) -> int:
         else:
             send(child, signum)
 
+    wake, alarm = os.pipe()
+    os.set_blocking(alarm, False)
+    signal.set_wakeup_fd(alarm, warn_on_full_buffer=False)
     for signum in FORWARDED:
         signal.signal(signum, forward)
     with holding() as (tag, lock_fd):
@@ -1622,7 +1647,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
         })
         try:
             try:
-                code, concurrent = wait(cfg, entry["id"], caught)
+                code, concurrent = wait(cfg, entry["id"], caught, wake)
             except Stale:
                 hand_over(entry["id"])
                 raise

@@ -1,0 +1,9 @@
+[Unit]
+Description=Agent Orchestrator tokens every 10 minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/10:00
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

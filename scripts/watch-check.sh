@@ -10,7 +10,7 @@ STATE="$(python3 "${COUNCIL_ROOT}" root)/watch.json"
 KEPT="$(python3 "${COUNCIL_ROOT}" durable)/queue-history.jsonl"
 STALE_SECONDS=600
 
-printf 'watch hooks running: %s\n' "$(pgrep -fc 'watch.py watch' || true)"
+printf 'watch hooks running: %s\n' "$(pgrep -fc 'watch.py watch|hooks.py post-bash' || true)"
 if command -v lsof &>/dev/null; then
 	printf 'holders of %s:\n' "${KEPT}"
 	lsof "${KEPT}" 2>/dev/null || printf '  none\n'

@@ -230,6 +230,10 @@ def threshold_item(threshold: int) -> dict:
     return {"kind": "speech-threshold", "threshold": threshold}
 
 
+def popups_item(popups: dict) -> dict:
+    return {"kind": "popups", "popups": popups}
+
+
 def task_item(task: str, argv: list[str]) -> dict:
     return {"kind": "task", "id": task, "argv": argv}
 

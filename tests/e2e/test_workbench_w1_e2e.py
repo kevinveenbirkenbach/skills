@@ -41,7 +41,7 @@ OPERATOR = """(async () => {@HELPERS@@UNLABELLED@
   const mine = (words) => all("#main .inbox-list > li").find((li) => li.textContent.includes(words));
   const cards = ["@TAG@ review", "@TAG@ ship", "@TAG@ commit"].map(mine);
   const tasks = document.getElementById("tab-tasks");
-  const badge = tasks.querySelector(".badge");
+  const badge = tasks.nextElementSibling;
   const review = cards[0];
   const files = all(".diff-file", review).map((file) => ({
     path: file.dataset.path, status: file.dataset.status, open: file.querySelector("details") ? file.querySelector("details").open : null,
@@ -57,7 +57,9 @@ OPERATOR = """(async () => {@HELPERS@@UNLABELLED@
     operator: operator ? {command: text(operator.querySelector(".command code")), place: operator.querySelector(".command").dataset.path, text: text(operator), buttons: all("button", operator).map(name)} : null,
     files, wide: document.documentElement.scrollWidth > window.innerWidth + 1,
   };
-  ["@TAG@ review", "@TAG@ ship", "@TAG@ commit"].forEach((words) => mine(words).querySelector('input[type="checkbox"]').click());
+  for (const words of ["@TAG@ review", "@TAG@ ship", "@TAG@ commit"]) {
+    await selectRow(mine(words).dataset.ref);
+  }
   await sleep(300);
   found.unlabelled = {main: unlabelled(document.getElementById("main"))};
   const grant = all("#grant-bar .grant-split button").find((button) => name(button).startsWith("Grant selection"));
@@ -144,7 +146,7 @@ FEEDBACK = """(async () => {@HELPERS@@UNLABELLED@
   all(".sheet-box .actions button").find((button) => text(button) === "Deny").click();
   await until(() => window.e2eFeedback.length > before && (!@SIGNS@ || window.e2eFeedback.some(([path]) => path === "/api/inbox/approve")), 8000);
   await sleep(1200);
-  all(".item-actions button", fresh()).find((button) => name(button) === "Grant").click();
+  all(":is(.item-actions, .code-foot) button", fresh()).find((button) => name(button) === "Grant").click();
   await until(() => window.e2eFeedback.some(([path]) => path === (@SIGNS@ ? "/api/messages" : "/api/sign")) && window.e2eFeedback.filter(([path]) => path === "/api/sign").length >= 2, 10000);
   await sleep(1500);
   const kept = {review: fresh() ? all(".feedback-list li.line-mark", fresh()).map(text) : null, ask: ask() ? all(".feedback-list li.line-mark", ask()).map(text) : null};
@@ -204,7 +206,7 @@ class TestWorkbenchOperatorTasks(HubCase):
                 self.assertNotIn("error", tasks, tasks)
                 self.assertEqual((tasks["hash"], tasks["tabs"], tasks["subs"], tasks["streamInbox"], tasks["current"]), ("#tasks/operator", base.TABS, ["Controls"], False, ["Tasks"]))
                 self.assertRegex(tasks["badge"] or "", r"^[1-9][0-9]*$")
-                self.assertEqual((tasks["kinds"], tasks["boxes"]), (["k-review", "k-operator", "k-ask"], [True, True, True]))
+                self.assertEqual((tasks["kinds"], tasks["boxes"]), (["k-review", "k-operator", "k-ask"], [False, False, False]))
                 operator = tasks["operator"]
                 self.assertEqual((operator["command"], operator["place"]), (f"make {tag} ship", "/repo"))
                 self.assertIn(f"{tag} ship the build", operator["text"])

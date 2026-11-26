@@ -9,7 +9,7 @@ from unittest import mock
 
 from hub_case import HubCase
 from hub_support import iso
-from kvb_orchestrator import lifetimes, names, orbits
+from kvb_orchestrator import lifetimes, names, orbits, phrasing
 
 
 class TestHubGraph(HubCase):
@@ -87,7 +87,8 @@ class TestHubGraph(HubCase):
             with self.subTest(name=name):
                 self.assertEqual([row["text"] for row in self.events(f"kinds=radio&agent={name}")["events"]], ["before", "after"])
         snapshot = self.snapshot()
-        self.assertEqual([row["speech"] for row in snapshot["radio"]], ["Docs, Docs, this is Skills, before, over", "Docs, Docs, this is IAM, after, over"])
+        self.assertEqual([phrasing.joined((row["word"], row["rest"])) for row in snapshot["radio"]], ["Docs, Docs, this is Skills, before, over", "Docs, Docs, this is IAM, after, over"])
+        self.assertFalse([row for row in snapshot["radio"] if "speech" in row])
         self.assertEqual({row["voice"] for row in snapshot["radio"]}, {self.httpd.hub.speech.voice_of("s1")})
         live = {node["id"]: node for node in snapshot["graph"]["nodes"]}
         self.assertEqual((live["s1"]["label"], live["s1"]["names"]), ("IAM", ["Skills", "IAM"]))

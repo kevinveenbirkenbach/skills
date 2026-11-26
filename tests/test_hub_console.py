@@ -90,7 +90,41 @@ class TestHubConsole(HubCase):
         self.assertEqual(self.get("/api/inbox/dismiss")[0], 405)
         self.assertEqual(self.dismiss({"id": job["id"]}, self.guard(self.host)), 200)
         self.assertIsNone(self.item("operator/greet"))
-        self.assertEqual(self.snapshot()["jobs"][-1]["dismissed"], True)
+        self.assertEqual(self.snapshot()["jobs"], [])
+        self.assertEqual(json.loads((self.state / "jobs.json").read_text(encoding="utf-8")), {})
+
+    def test_a_running_job_keeps_its_output_in_memory_and_writes_the_ledger_only_on_its_end(self):
+        self.register("queued")
+        fields = {"task": "operator/greet", "command": COMMAND, "directory": str(self.outside), "sha256": DIGEST, "status": "queued", "proof": None}
+        job = self.httpd.hub.jobs.add({**fields, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None, "dismissed": False})
+        self.assertEqual(self.runner(f"/api/runner/{job['id']}/claim", {})[0], 200)
+        ledger = self.state / "jobs.json"
+        claimed = ledger.read_bytes()
+        for lines in range(1, 4):
+            output = "".join(f"line {n}\n" for n in range(lines))
+            self.assertEqual(self.runner(f"/api/runner/{job['id']}/report", {"output": output, "code": None, "refused": False})[0], 200)
+            self.assertEqual(self.item("operator/greet")["job"]["output"], output)
+        self.assertEqual(ledger.read_bytes(), claimed)
+        self.assertEqual(self.runner(f"/api/runner/{job['id']}/report", {"output": "done\n", "code": 0, "refused": False})[0], 200)
+        stored = json.loads(ledger.read_text(encoding="utf-8"))[job["id"]]
+        self.assertEqual((stored["status"], stored["output"]), ("done", "done\n"))
+
+    def test_dismissing_a_console_prunes_the_finished_command_jobs_of_its_task_and_keeps_task_changes(self):
+        self.register("queued")
+        now = time.time()
+        base = {"command": COMMAND, "directory": str(self.outside), "sha256": DIGEST, "proof": None, "code": 0, "output": "", "started": now, "finished": now, "dismissed": False}
+        older = self.httpd.hub.jobs.add({**base, "task": "operator/greet", "status": "failed", "created_ts": now - 20})
+        newer = self.httpd.hub.jobs.add({**base, "task": "operator/greet", "status": "done", "created_ts": now - 10})
+        gone = self.httpd.hub.jobs.add({**base, "task": "operator/other", "status": "done", "created_ts": now - 30, "dismissed": True})
+        other = self.httpd.hub.jobs.add({**base, "task": "operator/other", "status": "done", "created_ts": now - 5})
+        change = self.httpd.hub.jobs.add({**base, "task": "operator/greet", "status": "done", "created_ts": now - 15, "kind": "task", "argv": []})
+        self.assertEqual(self.dismiss({"id": newer["id"]}, self.guard(self.host)), 200)
+        left = {job["id"] for job in self.httpd.hub.jobs.listed()}
+        self.assertEqual(left, {other["id"], change["id"]})
+        self.assertNotIn(older["id"], left)
+        self.assertNotIn(gone["id"], left)
+        self.assertEqual(self.dismiss({"id": change["id"]}, self.guard(self.host)), 200)
+        self.assertIs(self.httpd.hub.jobs.get(change["id"])["dismissed"], True)
 
     def test_the_console_carries_only_the_tail_the_job_list_shows(self):
         self.register("queued")

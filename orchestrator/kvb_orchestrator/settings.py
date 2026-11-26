@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .batches import UNDO
 from .errors import ToolError
 from .fields import FIELDS, NAME_LIMIT, expect
 from .rates import METRICS, PERIOD_NAMES
@@ -19,7 +20,13 @@ TRENDS = ("off", "regression", "velocity")
 TREND_DAYS = (1, 365)
 THRESHOLDS = tuple(range(0, ALWAYS + 1, 10))
 WPM = (5, 40)
-LATE = ("rates", "morse")
+LATE = ("rates", "morse", "undo", "popups", "agents")
+AGENT_SWITCHES = ("sound", "aloud", "bubbles")
+AGENTS_LIMIT = 200
+UNDO_RANGE = (0, 60)
+POPUP_SOURCES = ("resources", "mayday", "dream")
+POPUP_UNTIL = 4102444800
+NOTIFY = "notify.json"
 RADIO_MOVED = ("sounds", "squelch")
 SPEECH_MOVED = ("on", "classes", "muted")
 COLOR = re.compile(r"#[0-9a-f]{6}")
@@ -49,6 +56,9 @@ SETTINGS = {
     "trend": {"mode": "off", "days": 7},
     "bubbles": False,
     "rates": {"period": "hour", "metrics": ["tasks", "tokens", "cpu"]},
+    "undo": UNDO,
+    "popups": {source: {"on": True, "until": 0} for source in POPUP_SOURCES},
+    "agents": {},
 }
 RATE_CHIP = (2, 9)
 SPACE_AXES = ("none", "time", "spawn")
@@ -188,6 +198,43 @@ def trend_setting(raw: object) -> dict:
     return {"mode": entry["mode"], "days": entry["days"]}
 
 
+def undo_setting(raw: object) -> int:
+    low, high = UNDO_RANGE
+    if isinstance(raw, bool) or not isinstance(raw, int) or not low <= raw <= high:
+        raise ToolError(f"undo must be whole seconds from {low} to {high}")
+    return raw
+
+
+def popups_setting(raw: object) -> dict:
+    data = section(raw, "popups", POPUP_SOURCES)
+    popups = {}
+    for source in POPUP_SOURCES:
+        entry = section(data[source], f"popups.{source}", ("on", "until"))
+        until = entry["until"]
+        if isinstance(until, bool) or not isinstance(until, int) or not 0 <= until <= POPUP_UNTIL:
+            raise ToolError(f"popups.{source}.until must be whole epoch seconds from 0 to {POPUP_UNTIL}")
+        popups[source] = {"on": flag(entry["on"], f"popups.{source}.on"), "until": until}
+    return popups
+
+
+def agents_setting(raw: object) -> dict:
+    """Returns:
+        Each agent key with its sound, aloud and bubbles switches; an entry
+        with all three on is dropped, since on is what an absent agent gets.
+    """
+    if not isinstance(raw, dict) or len(raw) > AGENTS_LIMIT:
+        raise ToolError(f"agents must be an object of at most {AGENTS_LIMIT} agents")
+    agents = {}
+    for key, entry in raw.items():
+        if not 0 < len(key) <= NAME_LIMIT:
+            raise ToolError(f"agents keys must be 1 to {NAME_LIMIT} characters")
+        switches = section(entry, f"agents.{key}", AGENT_SWITCHES)
+        kept = {name: flag(switches[name], f"agents.{key}.{name}") for name in AGENT_SWITCHES}
+        if not all(kept.values()):
+            agents[key] = kept
+    return agents
+
+
 def rates_setting(raw: object) -> dict:
     entry = section(raw, "rates", tuple(SETTINGS["rates"]))
     low, high = RATE_CHIP
@@ -224,6 +271,9 @@ def valid_settings(raw: object) -> dict:
         "trend": trend_setting(data["trend"]),
         "bubbles": flag(data["bubbles"], "bubbles"),
         "rates": rates_setting(data["rates"]),
+        "undo": undo_setting(data["undo"]),
+        "popups": popups_setting(data["popups"]),
+        "agents": agents_setting(data["agents"]),
     }
 
 
@@ -305,6 +355,10 @@ class Settings:
     def get(self) -> dict:
         with self.lock:
             return copy.deepcopy(self.current)
+
+    def undo(self) -> float:
+        with self.lock:
+            return float(self.current["undo"])
 
     def put(self, raw: object, expected: dict) -> dict:
         """Args:

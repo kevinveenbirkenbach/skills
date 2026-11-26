@@ -22,7 +22,7 @@ SIDE = """
   const front = () => (card() ? card().dataset.card : null);
   const tally = () => text(document.querySelector("#main .match-tally"));
   const point = () => {
-    const name = card().querySelector(".match-name").getBoundingClientRect();
+    const name = card().querySelector(".match-age").getBoundingClientRect();
     return {front: front(), x: Math.round(name.left + name.width / 2), y: Math.round(name.top + name.height / 2), width: card().getBoundingClientRect().width};
   };
   const aim = (x, y) => {

@@ -48,25 +48,41 @@ class TestDreamSkill(unittest.TestCase):
             self.assertIn(f"`{skill}`", text)
 
 
+def council_with(root: Path, rows: dict | None) -> dict:
+    """Args:
+        root: the council directory to create.
+        rows: the schedules.json content, None for no file.
+
+    Returns:
+        The environment entry that points the hooks at root.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    if rows is not None:
+        (root / "schedules.json").write_text(json.dumps(rows), encoding="utf-8")
+    return {"AGENTS_COUNCIL_ROOT": str(root)}
+
+
 class TestDreamHook(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.stamps = Path(self.tmp.name) / "stamps"
+        self.council = Path(self.tmp.name) / "council"
+        self.schedule({"on": True, "every": 12})
 
-    def _run(self, payload: str, interval: str = "43200") -> str:
+    def schedule(self, row: dict | None) -> None:
+        self.env = council_with(self.council, None if row is None else {"dream": row})
+        if row is None:
+            (self.council / "schedules.json").unlink(missing_ok=True)
+
+    def _run(self, payload: str, path: str = "/usr/bin:/bin") -> str:
         return subprocess.run(
             ["bash", str(HOOK)],
             input=payload,
             capture_output=True,
             text=True,
             check=True,
-            env={
-                "PATH": "/usr/bin:/bin",
-                "HOME": self.tmp.name,
-                "DREAM_STAMP_DIR": str(self.stamps),
-                "DREAM_INTERVAL_SECONDS": interval,
-            },
+            env={"PATH": path, "HOME": self.tmp.name, "DREAM_STAMP_DIR": str(self.stamps), **self.env},
         ).stdout
 
     @staticmethod
@@ -85,9 +101,22 @@ class TestDreamHook(unittest.TestCase):
         self._run(self._session("a1"))
         self.assertIn("/kvb-dream", self._run(self._session("b2")))
 
-    def test_hint_returns_after_the_interval(self):
-        self._run(self._session("a1"))
-        self.assertIn("/kvb-dream", self._run(self._session("a1"), interval="0"))
+    def test_hint_returns_after_the_rows_hours(self):
+        self.schedule({"on": True, "every": 2})
+        self.stamps.mkdir()
+        stamp = self.stamps / "a1"
+        now = int(subprocess.run(["date", "+%s"], capture_output=True, text=True, check=True).stdout)
+        stamp.write_text(f"{now - 3600}\n", encoding="utf-8")
+        self.assertEqual(self._run(self._session("a1")), "")
+        stamp.write_text(f"{now - 7300}\n", encoding="utf-8")
+        self.assertIn("/kvb-dream", self._run(self._session("a1")))
+
+    def test_the_row_off_or_no_schedules_file_keeps_it_silent_and_stamps_nothing(self):
+        for row in ({"on": False, "every": 12}, None):
+            with self.subTest(row=row):
+                self.schedule(row)
+                self.assertEqual(self._run(self._session("a1")), "")
+                self.assertFalse(self.stamps.exists())
 
     def test_corrupt_stamp_does_not_crash(self):
         self.stamps.mkdir()
@@ -108,19 +137,7 @@ class TestDreamHook(unittest.TestCase):
             fake = planted / name
             fake.write_text(f"#!/bin/sh\n/usr/bin/touch '{marker}'\n", encoding="utf-8")
             fake.chmod(0o755)
-        subprocess.run(
-            ["bash", str(HOOK)],
-            input=self._session("a1"),
-            capture_output=True,
-            text=True,
-            check=True,
-            env={
-                "PATH": f"{planted}:/usr/bin:/bin",
-                "HOME": self.tmp.name,
-                "DREAM_STAMP_DIR": str(self.stamps),
-                "DREAM_INTERVAL_SECONDS": "43200",
-            },
-        )
+        self._run(self._session("a1"), path=f"{planted}:/usr/bin:/bin")
         self.assertFalse(marker.exists())
 
 
@@ -134,13 +151,15 @@ class TestDreamNotification(unittest.TestCase):
         fake = self.bin / "notify-send"
         fake.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" >> "{self.calls}"\n', encoding="utf-8")
         fake.chmod(0o755)
+        self.council = Path(self.tmp.name) / "council"
 
-    def _run(self, desktop: str) -> None:
+    def _run(self, desktop: str, row: dict | None = None) -> None:
+        rows = {"dream-popup": row or {"on": True, "at": ["17:00"]}}
         subprocess.run(
             ["bash", str(NOTIFY)],
             capture_output=True,
             check=True,
-            env={"PATH": f"{self.bin}:/usr/bin:/bin", "XDG_CURRENT_DESKTOP": desktop},
+            env={"PATH": f"{self.bin}:/usr/bin:/bin", "XDG_CURRENT_DESKTOP": desktop, "HOME": self.tmp.name, **council_with(self.council, rows)},
         )
 
     def test_gnome_session_gets_the_popup(self):
@@ -149,6 +168,18 @@ class TestDreamNotification(unittest.TestCase):
 
     def test_other_desktops_stay_silent(self):
         self._run("KDE")
+        self.assertFalse(self.calls.exists())
+
+    def test_the_popup_row_off_or_a_missing_schedules_file_sends_nothing(self):
+        self._run("ubuntu:GNOME", {"on": False, "at": ["17:00"]})
+        self.assertFalse(self.calls.exists())
+        (self.council / "schedules.json").unlink()
+        subprocess.run(
+            ["bash", str(NOTIFY)],
+            capture_output=True,
+            check=True,
+            env={"PATH": f"{self.bin}:/usr/bin:/bin", "XDG_CURRENT_DESKTOP": "ubuntu:GNOME", "HOME": self.tmp.name, "AGENTS_COUNCIL_ROOT": str(self.council)},
+        )
         self.assertFalse(self.calls.exists())
 
     def test_timer_fires_daily_at_five_pm_and_catches_up(self):
@@ -194,12 +225,14 @@ class TestSettingsRegistration(unittest.TestCase):
             ("Stop", "kvb-org-radio/scripts/radio.py"): 2,
             ("PreToolUse", "kvb-org-radio/scripts/radio.py"): 1,
             ("PreToolUse", "kvb-org-organize/scripts/council.py"): 1,
-            ("PreToolUse", "kvb-org-organize/scripts/watch.py"): 1,
-            ("PreToolUse", "kvb-org-queue/scripts/queue.py"): 1,
+            ("PreToolUse", "kvb-org-organize/scripts/watch.py"): 0,
+            ("PreToolUse", "kvb-org-queue/scripts/queue.py"): 0,
             ("PreToolUse", "kvb-org-perform/scripts/log.py"): 1,
             ("PreToolUse", "kvb-agent-optimize/scripts/graph.py"): 1,
-            ("PostToolUse", "kvb-org-organize/scripts/watch.py"): 1,
-            ("PostToolUse", "kvb-org-perform/scripts/log.py"): 1,
+            ("PreToolUse", "kvb-org-organize/scripts/hooks.py"): 1,
+            ("PostToolUse", "kvb-org-organize/scripts/watch.py"): 0,
+            ("PostToolUse", "kvb-org-perform/scripts/log.py"): 0,
+            ("PostToolUse", "kvb-org-organize/scripts/hooks.py"): 1,
         }
         for (event, script), count in expected.items():
             with self.subTest(event=event, script=script):
@@ -218,39 +251,86 @@ class TestSettingsRegistration(unittest.TestCase):
             for entry in data["hooks"]["PreToolUse"]
             if any(hook["command"].endswith("radio.py\" block") for hook in entry["hooks"])
         ]
-        self.assertEqual(block["matcher"], "Edit|Write|MultiEdit|NotebookEdit|Bash")
-        (gate,) = self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py")
+        self.assertEqual(block["matcher"], "Edit|Write|MultiEdit|NotebookEdit")
+        (gate,) = self._hooks(data, "PreToolUse", "kvb-org-organize/scripts/hooks.py")
         result = subprocess.run(["sh", "-c", gate["command"]], capture_output=True, check=False)
         self.assertEqual(result.returncode, 1)
 
     def test_a_hook_runs_its_script_as_main_from_cached_bytecode_and_keeps_its_exit_code(self):
-        (gate,) = self._hooks(self._patch(), "PreToolUse", "kvb-org-queue/scripts/queue.py")
-        script = Path(self.tmp.name) / "skills" / "kvb-org-queue" / "scripts" / "queue.py"
+        (gate,) = self._hooks(self._patch(), "PreToolUse", "kvb-org-organize/scripts/hooks.py")
+        script = Path(self.tmp.name) / "skills" / "kvb-org-organize" / "scripts" / "hooks.py"
         script.parent.mkdir(parents=True)
         script.write_text("import sys\nprint(__name__, sys.argv[1:], sys.argv[0] == __file__)\nsys.exit(3)\n", encoding="utf-8")
         runs = [subprocess.run(["sh", "-c", gate["command"]], capture_output=True, text=True, check=False) for _ in range(2)]
-        self.assertEqual([(run.returncode, run.stdout) for run in runs], [(3, "__main__ ['block'] True\n")] * 2)
-        self.assertEqual([path.name.split(".")[0] for path in (script.parent / "__pycache__").iterdir()], ["queue"])
+        self.assertEqual([(run.returncode, run.stdout) for run in runs], [(3, "__main__ ['pre-bash'] True\n")] * 2)
+        self.assertEqual([path.name.split(".")[0] for path in (script.parent / "__pycache__").iterdir()], ["hooks"])
 
-    def test_every_bash_gate_answers_under_the_cached_loader_as_it_does_started_directly(self):
+    def bash_entries(self, data: dict, event: str) -> list[dict]:
+        return [entry for entry in data["hooks"].get(event, []) if not entry.get("matcher") or entry["matcher"] == "*" or re.fullmatch(entry["matcher"], "Bash")]
+
+    def answer(self, command: str, home: Path, event: str) -> tuple:
+        home.mkdir()
+        env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "AGENTS_COUNCIL_ROOT": str(home / "council"), "XDG_STATE_HOME": str(home / "state")}
+        payload = json.dumps({"session_id": "s", "hook_event_name": event, "tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": {"stdout": ""}, "cwd": "/"})
+        done = subprocess.run(["sh", "-c", command], input=payload, cwd="/", env=env, capture_output=True, text=True, timeout=60, check=False)
+        return done.returncode, done.stdout.replace(str(home), "~"), done.stderr.replace(str(home), "~")
+
+    def test_the_bash_dispatcher_answers_as_its_handlers_started_directly(self):
+        data = self._patch()
+        skills = Path(self.tmp.name) / "skills"
+        skills.symlink_to(REPO_ROOT / "skills")
+        handlers = {
+            ("PreToolUse", "pre-bash"): [("kvb-org-radio/scripts/radio.py", "block"), ("kvb-org-organize/scripts/watch.py", "block"), ("kvb-org-queue/scripts/queue.py", "block"), ("kvb-agent-optimize/scripts/graph.py", "hook")],
+            ("PostToolUse", "post-bash"): [("kvb-org-organize/scripts/watch.py", "watch"), ("kvb-org-perform/scripts/log.py", "persist")],
+        }
+        for (event, sub), scripts in handlers.items():
+            with self.subTest(event=event):
+                (gate,) = [hook for entry in self.bash_entries(data, event) for hook in entry["hooks"] if "importlib" in hook["command"]]
+                self.assertTrue(gate["command"].endswith(f'hooks.py" {sub}'))
+                direct = [self.answer(f'/usr/bin/python3 -I "{skills / script}" {name}', Path(self.tmp.name) / f"direct-{sub}-{n}", event) for n, (script, name) in enumerate(scripts)]
+                self.assertEqual([code for code, _, _ in direct], [0] * len(scripts), direct)
+                self.assertEqual(self.answer(gate["command"], Path(self.tmp.name) / f"dispatched-{sub}", event), (0, "".join(out for _, out, _ in direct), "".join(err for _, _, err in direct)))
+
+    def test_one_bash_call_starts_one_python_per_hook_event(self):
         data = self._patch()
         (Path(self.tmp.name) / "skills").symlink_to(REPO_ROOT / "skills")
+        counter = Path(self.tmp.name) / "started"
+        fake = Path(self.tmp.name) / "python3"
+        fake.write_text(f'#!/bin/sh\necho started >> "{counter}"\nexec /usr/bin/python3 "$@"\n', encoding="utf-8")
+        fake.chmod(0o755)
+        for event in ("PreToolUse", "PostToolUse"):
+            with self.subTest(event=event):
+                counter.unlink(missing_ok=True)
+                commands = [hook["command"] for entry in self.bash_entries(data, event) for hook in entry["hooks"]]
+                for n, command in enumerate(commands):
+                    self.answer(command.replace("/usr/bin/python3", str(fake)), Path(self.tmp.name) / f"count-{event}-{n}", event)
+                self.assertEqual(counter.read_text(encoding="utf-8").count("started"), 1)
 
-        def answer(command: str, home: Path) -> tuple:
-            home.mkdir()
-            env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "AGENTS_COUNCIL_ROOT": str(home / "council"), "XDG_STATE_HOME": str(home / "state")}
-            payload = json.dumps({"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": "/"})
-            done = subprocess.run(["sh", "-c", command], input=payload, cwd="/", env=env, capture_output=True, text=True, timeout=60, check=False)
-            return done.returncode, done.stdout.replace(str(home), "~"), done.stderr.replace(str(home), "~")
+    def test_the_six_separate_bash_entries_are_rewritten_to_two(self):
+        base = Path(self.tmp.name) / "skills"
 
-        bash = [entry for entry in data["hooks"]["PreToolUse"] if "matcher" not in entry or "Bash" in entry["matcher"].split("|")]
-        gates = [re.search(r' ("[^"]+\.py") (\w+)$', hook["command"]) for entry in bash for hook in entry["hooks"] if "importlib" in hook["command"]]
-        self.assertEqual(len(gates), 4)
-        for n, gate in enumerate(gates):
-            with self.subTest(script=gate[1]):
-                cached = answer(gate.string, Path(self.tmp.name) / f"cached-{n}")
-                direct = answer(f"/usr/bin/python3 -I {gate[1]} {gate[2]}", Path(self.tmp.name) / f"direct-{n}")
-                self.assertEqual(cached, direct)
+        def entry(matcher: str | None, script: str, sub: str) -> dict:
+            hook = {"type": "command", "command": f'[ -f "{base}/{script}" ] && /usr/bin/python3 -I "{base}/{script}" {sub}'}
+            return {"matcher": matcher, "hooks": [hook]} if matcher else {"hooks": [hook]}
+
+        self.settings.write_text(json.dumps({"hooks": {
+            "PreToolUse": [
+                entry("Edit|Write|MultiEdit|NotebookEdit|Bash", "kvb-org-radio/scripts/radio.py", "block"),
+                entry("Bash", "kvb-org-organize/scripts/watch.py", "block"),
+                entry("Bash", "kvb-org-queue/scripts/queue.py", "block"),
+                entry(None, "kvb-agent-optimize/scripts/graph.py", "hook"),
+            ],
+            "PostToolUse": [entry("Bash", "kvb-org-organize/scripts/watch.py", "watch"), entry("Bash", "kvb-org-perform/scripts/log.py", "persist")],
+        }}), encoding="utf-8")
+        data = self._patch()
+        for event, sub in (("PreToolUse", "pre-bash"), ("PostToolUse", "post-bash")):
+            with self.subTest(event=event):
+                commands = [hook["command"] for entry in self.bash_entries(data, event) for hook in entry["hooks"]]
+                self.assertEqual(len(commands), 1, commands)
+                self.assertTrue(commands[0].endswith(f'kvb-org-organize/scripts/hooks.py" {sub}'))
+        (graph,) = [entry for entry in data["hooks"]["PreToolUse"] if any("graph.py" in hook["command"] for hook in entry["hooks"])]
+        self.assertEqual(graph["matcher"], "Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob")
+        self.assertEqual(len(self._hooks(data, "PreToolUse", "kvb-org-radio/scripts/radio.py")), 1)
 
     def test_news_hook_moves_to_radio(self):
         base = Path(self.tmp.name) / "skills"
@@ -298,7 +378,8 @@ class TestSettingsRegistration(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn("/usr/bin/python3 -I ", command)
                 self.assertNotRegex(command, r"(^|&& )python3 ")
-        (gate,) = self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py")
+        self.assertEqual(self._hooks(data, "PreToolUse", "kvb-org-queue/scripts/queue.py"), [])
+        (gate,) = self._hooks(data, "PreToolUse", "kvb-org-organize/scripts/hooks.py")
         self.assertIn("spec_from_file_location", gate["command"])
 
     def test_reminders_run_the_system_bash_and_old_entries_move_to_it(self):

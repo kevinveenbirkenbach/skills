@@ -6,7 +6,6 @@
   function hierarchyScreen() {
     hier.chart = h("section", {class: "card org-chart", "data-panel": "agents/hierarchy", "aria-labelledby": "org-title"});
     orderDom.box = h("section", {class: "card agent-order", id: "agent-order", "aria-labelledby": "agent-order-title", "data-panel": "agents/order"});
-    orderDom.slot = h("span", {"data-star-slot": ""});
     hier.sig = "";
     return h("div", {class: "hierarchy-body"}, hier.chart, orderDom.box);
   }
@@ -190,7 +189,7 @@
     const count = state.claims.length;
     const chart = organigram();
     hier.chart.replaceChildren(
-      h("div", {class: "inbox-head", "data-star-slot": ""}, h("h2", {class: "group-title", id: "org-title"}, "Organigram", counter(count)),
+      h("div", {class: "inbox-head"}, h("h2", {class: "group-title", id: "org-title"}, "Organigram", counter(count)),
         h("span", {class: "muted"}, "Formal offices from the council: Operator, Chair, line and staff positions"),
         h("span", {class: "spacer"}),
         h("button", {type: "button", class: "btn small soft", "data-focus": "appoint:new", ...named("New office", "New office: give a free office to a session, with a passkey signature"), on: {click: () => officeSheet("appoint", null)}}, icon("bi-person-plus"), "New office")),

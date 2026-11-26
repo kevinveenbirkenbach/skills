@@ -1,5 +1,6 @@
-  let inboxSlot = null;
+  let inboxDoneOpen = false;
   const GONE_NOTICE = "already done or removed elsewhere";
+  const doneItem = (item) => Boolean(item.held || (item.job && !jobOpen(item.job)));
 
   function closeGone(result, keys, label) {
     if (result.status !== 404 || !keys.length) {
@@ -71,7 +72,18 @@
     return true;
   }
 
+  /**
+   * @returns {string} what happens after a signature with the undo window the operator set: "3 s remain to undo",
+   * or "it takes effect at once" for 0.
+   */
+  const undoWords = () => (settings.undo > 0 ? `${settings.undo} s remain to undo` : "it takes effect at once");
+
   function undoToast(batch, label) {
+    if (!(batch.due > nowSeconds())) {
+      toast(label, ["Done: no undo window is set."], true);
+      load();
+      return;
+    }
     const left = h("span", {class: "muted"});
     const button = h("button", {type: "button", class: "btn small", ...named("Undo")}, icon("bi-arrow-counterclockwise"), "Undo");
     const box = h("div", {class: "toast wait", role: "status"}, h("strong", {}, label), h("div", {class: "undo-row"}, left, h("span", {class: "spacer"}), button));
@@ -195,12 +207,12 @@
     return [...state.inbox.filter((entry) => entry.kind === "review" && linked.has(entry.id) && !entry.held && !keys.has(keyOf(entry))), ...items];
   }
 
-  const DENY_NOTE = "Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click 3 s remain for undo, and one passkey signature covers the whole selection.";
+  const denyNote = () => `Every entry and every full command that gets denied; each requester gets its denial and the reason by post. After the click ${undoWords()}, and one passkey signature covers the whole selection.`;
 
   function grantNote(alone, batched) {
     const solos = alone ? ` Each rule and each red-gate review first asks its own signature, one after the other (${alone}).` : "";
     const rest = batched ? ` ${alone ? "Then the" : "The"} passkey signs the rest once, commit rows settling after the reviews they verify.` : "";
-    return `Every entry and every full command that gets granted.${solos}${rest} Each signature leaves 3 s to undo.`;
+    return `Every entry and every full command that gets granted.${solos}${rest} After each signature ${undoWords()}.`;
   }
 
   function bulk(items, label, deny) {
@@ -236,7 +248,7 @@
         }
       }
     });
-    openSheet(label, [h("p", {class: "muted"}, deny ? DENY_NOTE : grantNote(alone.length, usable.length)), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
+    openSheet(label, [h("p", {class: "muted"}, deny ? denyNote() : grantNote(alone.length, usable.length)), h("ul", {class: "mini"}, rows), ...(deny ? [reasonChips(reason), h("label", {class: "deny-reason"}, "Reason (optional, every requester reads it)", reason)] : []),
       h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
     (reason || confirm).focus();
   }
@@ -252,7 +264,7 @@
     return {
       chosen,
       grant: h("button", {type: "button", class: "btn small primary", ...named(`Grant selection (${grantable.length})`), disabled: !grantable.length || ui.busy, on: {click: () => bulk(withReviews(chosen), "Grant selection", false)}}, icon("bi-check2-square"), `Grant ${grantable.length}`),
-      deny: h("button", {type: "button", class: "menu-item danger", ...named(`Deny selection (${denials.length})`, `Deny selection (${denials.length}): each requester gets its denial and an optional reason by post, 3 s to undo, one passkey signature`), disabled: !denials.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), `Deny ${denials.length}`),
+      deny: h("button", {type: "button", class: "menu-item danger", ...named(`Deny selection (${denials.length})`, `Deny selection (${denials.length}): each requester gets its denial and an optional reason by post, one passkey signature, then ${undoWords()}`), disabled: !denials.length || ui.busy, on: {click: () => bulk(chosen, "Deny selection", true)}}, icon("bi-x-square"), `Deny ${denials.length}`),
       green: h("button", {type: "button", class: "menu-item", ...named(`Grant all green (${green.length})`), disabled: !green.length || ui.busy, on: {click: () => bulk(green, "Grant all green", false)}}, icon("bi-check2-all"), `Grant all green ${green.length}`),
     };
   }
@@ -272,7 +284,7 @@
     return date.getTime() / 1000;
   }
 
-  function toggle(item, refocus) {
+  function toggle(item) {
     if (!item || !pickable(item)) {
       return;
     }
@@ -281,10 +293,6 @@
     ui.cursor = Math.max(visibleInbox().findIndex((entry) => keyOf(entry) === key), 0);
     drawInbox();
     drawGrant();
-    const box = inboxDom.querySelector(`.item[data-index="${ui.cursor}"] > input[type="checkbox"]`);
-    if (refocus && box) {
-      box.focus({preventScroll: true});
-    }
   }
 
   function reviewsPill(item) {
@@ -366,17 +374,33 @@
     return "";
   }
 
+  /**
+   * @param {Object} item an inbox item.
+   * @param {Array} actions its Grant and Deny nodes.
+   * @returns {HTMLElement|null} one code box with the item's command and diff and the actions in its foot, or null for an
+   * item with neither.
+   */
+  function itemCode(item, actions) {
+    const commanded = item.kind === "ask" || (item.kind === "operator" && !asked(item));
+    const command = commanded ? h("div", {class: "command", "data-path": item.directory || "-"}, h("code", {}, revealed(item.command))) : null;
+    const where = commanded ? h("span", {class: "muted code-where"}, revealed(`in ${dash(item.directory)}`)) : null;
+    const diff = diffBlocks(item);
+    return command || diff ? codeBox(keyOf(item), "preview", [command, where, diff], commanded ? item.command : "", actions, null) : null;
+  }
+
   function inboxItem(item, index) {
     const red = item.kind === "review" && item.gate !== "pass";
-    const commanded = item.kind === "ask" || (item.kind === "operator" && !asked(item));
     const wait = waitOf(item);
+    const actions = actionsFor(item);
+    const code = itemCode(item, actions);
     const classes = ["item", "entry", `k-${item.kind}`, "waiting", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", wait ? "pending" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
-    const box = h("input", {type: "checkbox", "aria-label": `Select ${item.title}`, checked: ui.selected.has(keyOf(item)), disabled: !pickable(item), on: {change: () => toggle(item, true)}});
-    return h("li", {class: classes, "data-index": index, "data-ref": keyOf(item), "data-to": item.to || null, "data-blocked": item.blocked ? "" : null, "aria-busy": wait ? "true" : null, title: item.blocked || wait || null},
-      box,
+    const done = doneItem(item);
+    const selected = grantMode() === GRANT_SELECT ? String(ui.selected.has(keyOf(item))) : null;
+    return h("li", {class: classes, "data-index": index, "data-ref": keyOf(item), "data-to": item.to || null, "data-blocked": item.blocked ? "" : null, "data-done": done ? "" : null, "aria-selected": selected, "aria-busy": wait ? "true" : null, title: item.blocked || wait || null},
       h("div", {class: "msg-meta"},
         when(item.ts),
         wait ? h("span", {class: "wait-spin", role: "status", "aria-label": wait, title: wait}) : null,
+        done ? pill("done", "ok") : null,
         asked(item) ? pill("Decision", KIND_TONES.decision) : pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
         item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
         reviewsPill(item),
@@ -386,20 +410,18 @@
       h("div", {class: "entry-body"},
         h("div", {class: "route"},
           inboxHeadline(item),
-          item.agent ? [face(item.agent, false), person(item.agent)] : null),
+          item.agent ? agentLink(item.agent) : null),
         item.kind === "review" ? h("div", {class: "muted"}, revealed(item.detail), item.score ? revealed(` · ${item.score}`) : "") : null,
-        commanded ? h("div", {class: "command", "data-path": item.directory || "-"}, h("code", {}, revealed(item.command)), copyButton(item.command)) : null,
-        commanded ? h("span", {class: "muted"}, revealed(`in ${dash(item.directory)}`)) : null,
         asked(item) ? h("p", {class: "text question"}, revealed(item.title)) : null,
         item.kind === "operator" && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, revealed(item.detail)) : null,
         item.blocked ? h("p", {class: "item-blocked"}, icon("bi-slash-circle"), item.blocked) : null,
-        diffBlocks(item),
+        code,
         item.job ? consoleOf(item.job) : null,
         item.kind === "rule" ? ruleRequestBody(item) : null,
         choiceOf(item, () => {}),
         feedbackList(keyOf(item))),
       h("div", {class: "item-actions line-actions"},
-        actionsFor(item),
+        code ? null : actions,
         h("span", {class: "spacer"}),
         iconBtn("bi-hourglass-split", "1 h", "btn small ghost", () => mark(item, nowSeconds() + 3600, item.pinned), "1 h: snooze for one hour"),
         iconBtn("bi-sunrise", "tomorrow", "btn small ghost", () => mark(item, tomorrow(), item.pinned), "tomorrow: snooze until 8 am tomorrow"),
@@ -409,7 +431,6 @@
 
   function inboxScreen() {
     inboxDom = h("div", {class: "inbox", "data-panel": "tasks/operator"});
-    inboxSlot = h("span", {"data-star-slot": ""});
     return inboxDom;
   }
 
@@ -437,12 +458,27 @@
       ui.snoozed = event.target.checked;
       drawInbox();
     }}});
-    keepTyping(inboxDom, () => Panels.keepFocus(inboxSlot, () => inboxDom.replaceChildren(
+    keepTyping(inboxDom, () => inboxDom.replaceChildren(
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Waits on Operator", counter(waitingCount())), h("span", {class: "spacer"}),
-        hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null, inboxSlot),
+        hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null),
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
-      items.length ? h("ol", {class: "inbox-list"}, items.map(inboxItem)) : emptyState("All done", "Nothing is waiting for you right now."))));
+      ...inboxRows(items)));
     settleConsoles(items);
+  }
+
+  /**
+   * @param {Object[]} items the visible inbox items in cursor order.
+   * @returns {Array} the open rows, then the done rows (signed within their undo window, or their job ended) under a
+   * Done (n) fold at the end, closed until the operator opens it.
+   */
+  function inboxRows(items) {
+    const rows = items.map((item, index) => [item, index]);
+    const live = rows.filter(([item]) => !doneItem(item));
+    const done = rows.filter(([item]) => doneItem(item));
+    const fold = done.length ? h("details", {class: "inbox-done", open: inboxDoneOpen, on: {toggle: (event) => {
+      inboxDoneOpen = event.currentTarget.open;
+    }}}, h("summary", {}, `Done (${done.length})`), h("ol", {class: "inbox-list"}, done.map(([item, index]) => inboxItem(item, index)))) : null;
+    return [live.length ? h("ol", {class: "inbox-list"}, live.map(([item, index]) => inboxItem(item, index))) : emptyState("All done", "Nothing is waiting for you right now."), fold].filter(Boolean);
   }
 
   function openItem(item) {
@@ -454,7 +490,7 @@
       return;
     }
     const body = [
-      h("div", {class: "who"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? face(item.agent, false) : null, item.agent ? person(item.agent) : null, when(item.ts)),
+      h("div", {class: "who"}, pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? agentLink(item.agent) : null, when(item.ts)),
       h("p", {class: "text"}, revealed(item.title)),
       item.command && !asked(item) ? h("div", {class: "command"}, h("code", {}, revealed(item.command)), copyButton(item.command)) : null,
       asked(item) && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, revealed(item.detail)) : null,

@@ -7,7 +7,7 @@ import unittest
 from hub_support import HUB
 
 TEMPLATES = HUB / "templates"
-MODULES = ["page-constants.js", "answers.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-inbox.js", "page-grant.js"]
+MODULES = ["page-constants.js", "answers.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-codebox.js", "page-inbox.js", "page-grant.js"]
 PROBE = r"""
 const fs = require("fs");
 const vm = require("vm");
@@ -55,7 +55,7 @@ const context = {
   console, document, JSON, Math, Date, Intl, Promise, Set, Map, Number, String, Array, Object, RegExp, Boolean, Error, setTimeout,
   Node: El, Element: El, HTMLElement: El,
   window: {location: {hash: "", hostname: "localhost", port: "8737", pathname: "/"}, setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {}, getSelection: () => "", matchMedia: () => ({matches: false})},
-  state: {inbox: [], radio: [], messages: [], settings: {}, now}, inboxDom: null,
+  state: {inbox: [], radio: [], messages: [], settings: {}, now}, inboxDom: null, settings: {undo: 3},
   ui: {screen: "inbox", busy: false, selected: new Set(), cursor: 0, snoozed: false, asOf: null},
   known: {batches: new Set()},
   ViewStore: {get: (path) => (path === "approval.mode" ? mode.value : null), set: (path, value) => { sets.push([path, value]); mode.value = value; }, on: (path, callback) => listeners.push([path, callback])},
@@ -197,15 +197,15 @@ class TestGrantMode(unittest.TestCase):
         self.assertEqual(self.data["collected"]["selected"], ["ask:a-1", "decision:d-1", "operator:operator/run", "review:r-green"])
         self.assertEqual(self.data["collected"]["proofs"], [])
 
-    def test_a_picked_item_shows_a_pale_green_disabled_grant_button(self):
+    def test_a_picked_item_shows_a_pressed_pale_green_grant_button_that_a_second_press_takes_out(self):
         self.assertEqual(self.data["unpressed"]["pressed"], "false")
         self.assertTrue(self.data["unpressed"]["title"].startswith("Select: "), self.data["unpressed"])
         self.assertEqual((self.data["unpressed"]["disabled"], self.data["unpressed"]["picked"]), (False, False))
         pressed = self.data["pressed"]
-        self.assertEqual((pressed["pressed"], pressed["disabled"], pressed["picked"]), ("true", True, True))
-        self.assertEqual(pressed["title"], "In the selection: take it out with ✕ in the Grant menu")
+        self.assertEqual((pressed["pressed"], pressed["disabled"], pressed["picked"]), ("true", False, True))
+        self.assertEqual(pressed["title"], "Selected: press again to take it out of the selection")
 
-    def test_a_checkbox_pick_in_direct_also_turns_the_button_pale_and_opens_the_grant_split(self):
+    def test_a_pick_in_direct_also_turns_the_button_pale_and_opens_the_grant_split(self):
         picked = self.data["direct_picked"]
         self.assertEqual((picked["pressed"], picked["disabled"], picked["picked"]), (None, True, True))
         self.assertEqual(self.data["direct_selection"]["main"], "Grant selection (1)")

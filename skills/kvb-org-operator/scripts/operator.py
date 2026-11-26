@@ -372,6 +372,34 @@ def choices(raw: list[str] | None, recommended: str | None, check: str) -> list[
     return options
 
 
+def twin_of(tasks: dict, task: str, directory: str, command: str, sid: str) -> str | None:
+    """Args:
+        sid: the adding session; its own rows never count, since one agent
+            may record the same command for two steps on purpose.
+
+    Returns:
+        The first other open operator row of another session holding the
+        same directory and command, None without one.
+    """
+    return next((
+        other for other, entry in sorted(tasks.items())
+        if other != task and other.startswith(PREFIX) and entry.get("status") in OPEN
+        and (entry.get("workdir"), entry.get("title")) == (directory, command)
+        and sid not in sessions_of(entry).values()
+    ), None)
+
+
+def sessions_of(entry: dict) -> dict:
+    sessions = entry.get("sessions")
+    return sessions if isinstance(sessions, dict) else {}
+
+
+def join(rasci: ModuleType, entry: dict, party: str, sid: str) -> None:
+    roles = entry.get("roles", {})
+    entry["roles"] = {**roles, party: rasci.letters_of(roles.get(party, ""), "A")}
+    entry["sessions"] = {**sessions_of(entry), party: sid}
+
+
 def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
     task = task_of(rasci, args.slug)
     for error in (path_problem(args.dir, "--dir"), problem(args.check)):
@@ -394,6 +422,11 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
     sid, _ = council.caller(args.session)
     party = council.live_sessions().get(sid) or sid
     with rasci.database() as tasks:
+        twin = twin_of(tasks, task, args.dir, command, sid)
+        if twin is not None:
+            join(rasci, tasks[twin], party, sid)
+            print(f"joined {twin}: it holds the same command in the same directory")
+            return 0
         # Trip-wire: the register is dumped with sort_keys, so insertion order needs its own field.
         seq = max((e.get("seq", 0) for t, e in tasks.items() if t.startswith(PREFIX)), default=0) + 1
         entry = tasks.setdefault(task, {})
@@ -468,12 +501,18 @@ def cmd_list(rasci: ModuleType, args: argparse.Namespace) -> int:
     if not listed:
         print("operator: nothing open")
         return 0
+    first: dict[tuple, dict] = {}
+    for row in listed:
+        first.setdefault((row["directory"], row["command"]), row)
+    listed = list(first.values())
+    steps = [(number, row) for number, row in enumerate(listed, 1) if runnable(row)]
+    numbered = {number for number, _ in steps}
     print(HEADER)
     print("|---|---|---|---|---|")
     for number, row in enumerate(listed, 1):
-        values = (number, row["directory"] or "-", row["command"] or "-", row["why"] or "-", row["check"])
+        command = f"step {number}" if number in numbered else row["command"] or "-"
+        values = (number, row["directory"] or "-", command, row["why"] or "-", row["check"])
         print("| " + " | ".join(cell(v) for v in values) + " |")
-    steps = [(number, row) for number, row in enumerate(listed, 1) if runnable(row)]
     for number, row in steps:
         print()
         print(f"{number}. {visible(row['task'], '')}")

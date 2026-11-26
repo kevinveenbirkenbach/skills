@@ -31,8 +31,8 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/security.py --repo <root> --base <ref>
 
 It scans the files changed since `<ref>`, untracked ones included, once and
 prints one line: 100 % is safe, each critical, high, medium and low finding
-costs 50, 25, 10 and 2. Pass the value as `--security` and the critical count
-(`--json`) as `--critical` to `score.py`. A complete run is cached. Run long
+costs 50, 25, 10 and 2. Pass the value as `--security` and the `critical <n>`
+count as `--critical` to `score.py`. A complete run is cached. Run long
 files in the background, the log under `skills/.state`.
 
 - Exit 0: 100 %. Exit 3: below 100 without a critical; the score gate asks

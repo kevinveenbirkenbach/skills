@@ -94,7 +94,10 @@ class Jobs:
             raise Missing(job_id)
         if record["status"] in JOB_OPEN:
             raise Conflict({"id": job_id, "status": record["status"]})
-        self.jobs.change(job_id, {"dismissed": True})
+        if record.get("kind") in CHANGES:
+            self.jobs.change(job_id, {"dismissed": True})
+        else:
+            self.jobs.keep(lambda job: job.get("kind") in CHANGES or job["status"] in JOB_OPEN or (job["task"] != record["task"] and job.get("dismissed") is not True))
         return {"id": job_id, "dismissed": True}
 
     def queue_job(self, item: dict, proof: dict | None) -> str:
@@ -139,7 +142,7 @@ class Jobs:
         if record["status"] != "running":
             raise Conflict({"id": job_id, "status": record["status"]})
         if code is None and not refused:
-            self.jobs.change(job_id, {"output": output})
+            self.jobs.note(job_id, {"output": output})
             return {"id": job_id, "status": "running", "code": None}
         status = "refused" if refused else "done" if code == 0 else "failed"
         job, changed = self.jobs.transition(job_id, "running", {"status": status, "code": code, "output": output, "finished": time.time()})

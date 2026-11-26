@@ -13,6 +13,7 @@ const Nav = (() => {
     resources: "bi-speedometer2", match: "bi-stack",
   };
   const OLD = {graph: ["agents", "orbit"], tree: ["artifacts", "tree"]};
+  const SCHEDULES = "schedules";
   const viewsOf = (screen) => (screen === "tasks" ? TASK_VIEWS : [...VIEWS, ...(OWN[screen] || [])]);
   const known = (screen, view) => viewsOf(screen).some(([id]) => id === view);
 
@@ -21,6 +22,9 @@ const Nav = (() => {
   }
 
   function hashOf(screen, view) {
+    if (screen === "rules" && view === SCHEDULES) {
+      return `#stream/${SCHEDULES}`;
+    }
     if (Object.hasOwn(PANES, screen)) {
       return `#${PANES[screen].join("/")}`;
     }
@@ -44,6 +48,9 @@ const Nav = (() => {
     const [head, sub] = decodeURIComponent(path).split("/");
     if (!head && pinned > 0) {
       return {screen: "home", view: null, redirect: "#home"};
+    }
+    if (head === "stream" && sub === SCHEDULES) {
+      return {screen: "rules", view: SCHEDULES, redirect: null};
     }
     if (head === "stream" && sub === "radio") {
       return {screen: "stream", view: null, redirect: "#stream", spot: true};

@@ -4,8 +4,9 @@
 .console-out { min-height: 3.2em; max-height: min(40vh, 320px); margin: 0; padding: 8px 10px; overflow: auto; color: var(--text); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior: contain; }
 .console-out:focus-visible { outline-offset: -2px; }
 .deny-split { display: inline-flex; }
-.deny-split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.deny-split > .btn + .btn { min-width: 22px; margin-left: -1px; padding-right: 5px; padding-left: 5px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.why-off { display: inline-flex; }
+.deny-split > .why-off:first-child > .btn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.deny-split > .why-off + .btn {min-width: 22px; margin-left: -1px; padding-right: 5px; padding-left: 5px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .deny-channels { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: var(--sp-2); min-width: 0; margin: 0; padding: 0; border: 0; }
 .deny-channels legend { margin-bottom: var(--sp-2); padding: 0; color: var(--muted); font-size: var(--fs-xs); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
 .deny-channel { display: flex; align-items: flex-start; gap: var(--sp-2); padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; }

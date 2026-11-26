@@ -73,5 +73,5 @@
     });
     const dom = firewallSections();
     const ruleCard = h("div", {class: "card"}, h("h3", {}, "New hub rule for automatic grants"), hint, form);
-    return controlsPage({tools: [dom.tools], rules: [dom.settings, ruleCard, dom.patterns], groups: [dom.groups, dom.sets]}, dom.bar);
+    return controlsPage({tools: [dom.tools], rules: [dom.settings, ruleCard, dom.patterns], groups: [dom.groups, dom.sets], schedules: [schedulesPanel()]}, dom.bar);
   }

@@ -78,7 +78,7 @@ window filled, with the finished tasks' artifacts (`rasci.py artifacts
 repository, which hands merged-clean rows to `kvb-git-gc`. Each keeps
 its own confirmations; the dream never writes, deletes or commits for them. Close
 with `date +%s > ~/.claude/.dream-stamps/"$CLAUDE_CODE_SESSION_ID"`, so the
-next hint is twelve hours out.
+next hint is a full interval out.
 
 ## Rules
 

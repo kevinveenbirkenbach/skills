@@ -122,15 +122,25 @@ const SCRIPT_HOOKS = [
   ["kvb-org-radio/scripts/radio.py", "PostToolBatch", null, "tool", {}],
   ["kvb-org-radio/scripts/radio.py", "Stop", null, "listen", { asyncRewake: true, timeout: 21600 }],
   ["kvb-org-radio/scripts/radio.py", "Stop", null, "mailbox", {}],
-  ["kvb-org-radio/scripts/radio.py", "PreToolUse", "Edit|Write|MultiEdit|NotebookEdit|Bash", "block", {}],
-  ["kvb-org-organize/scripts/watch.py", "PostToolUse", "Bash", "watch", {}],
-  ["kvb-org-organize/scripts/watch.py", "PreToolUse", "Bash", "block", {}],
-  ["kvb-org-queue/scripts/queue.py", "PreToolUse", "Bash", "block", {}],
+  ["kvb-org-radio/scripts/radio.py", "PreToolUse", "Edit|Write|MultiEdit|NotebookEdit", "block", {}],
+  ["kvb-org-organize/scripts/hooks.py", "PreToolUse", "Bash", "pre-bash", {}],
+  ["kvb-org-organize/scripts/hooks.py", "PostToolUse", "Bash", "post-bash", {}],
   ["kvb-org-perform/scripts/log.py", "PreToolUse", "Agent|Task", "spawn", {}],
-  ["kvb-org-perform/scripts/log.py", "PostToolUse", "Bash", "persist", {}],
-  ["kvb-agent-optimize/scripts/graph.py", "PreToolUse", null, "hook", { timeout: 30 }],
+  ["kvb-agent-optimize/scripts/graph.py", "PreToolUse", "Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob", "hook", { timeout: 30 }],
   ["kvb-org-organize/scripts/account.py", "SessionStart", null, "hook", {}],
 ];
+const DISPATCHED = [
+  ["kvb-org-organize/scripts/watch.py", "PostToolUse", "watch"],
+  ["kvb-org-organize/scripts/watch.py", "PreToolUse", "block"],
+  ["kvb-org-queue/scripts/queue.py", "PreToolUse", "block"],
+  ["kvb-org-perform/scripts/log.py", "PostToolUse", "persist"],
+];
+const ran = (hook, script, sub) => String(hook.command).includes(script) && String(hook.command).endsWith(` ${sub}`);
+for (const [script, event, sub] of DISPATCHED) {
+  data.hooks[event] = (data.hooks[event] || [])
+    .map((entry) => (Array.isArray(entry.hooks) ? { ...entry, hooks: entry.hooks.filter((hook) => !ran(hook, script, sub)) } : entry))
+    .filter((entry) => !Array.isArray(entry.hooks) || entry.hooks.length > 0);
+}
 // Trip-wire: python3 recompiles the script it is started with on every call and caches only imported modules; loading it as __main__ by file path reuses its __pycache__.
 const AS_MAIN = `'import importlib.util as u,sys;s=u.spec_from_file_location("__main__",sys.argv[1]);m=u.module_from_spec(s);sys.argv=sys.argv[1:];sys.modules["__main__"]=m;s.loader.exec_module(m)'`;
 for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
@@ -139,10 +149,11 @@ for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
   // Trip-wire: python3 on a missing file exits 2, which blocks every prompt or tool call; the test makes it exit 1.
   const command = `[ -f ${file} ] && ${PYTHON} -c ${AS_MAIN} ${file} ${sub}`;
   const legacy = [`${PYTHON} ${file} ${sub}`, `[ -f ${file} ] && ${PYTHON} ${file} ${sub}`];
-  const registered = data.hooks[event].flatMap((entry) => entry.hooks || []).find((hook) =>
-    String(hook.command).includes(script) && String(hook.command).endsWith(` ${sub}`));
-  if (registered) {
+  const owner = data.hooks[event].find((entry) => (entry.hooks || []).some((hook) => ran(hook, script, sub)));
+  if (owner) {
+    const registered = owner.hooks.find((hook) => ran(hook, script, sub));
     if (legacy.includes(registered.command)) registered.command = command;
+    if (owner.hooks.length === 1 && matcher) owner.matcher = matcher;
     continue;
   }
   const entry = { hooks: [{ type: "command", command, ...extra }] };
@@ -150,4 +161,4 @@ for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + "\n");
-console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, resource watch and session account hook, the kvb-org-radio hooks, the kvb-org-queue gate, the kvb-org-perform log, and the kvb-agent-optimize code graph hook in ${settingsPath}`);
+console.log(`skills: enabled the caveman and ponytail plugins (plugin skill copies dropped from this .claude), the ${REMINDERS.join(" + ")} reminders, the kvb-org-organize claim gate, resource watch and session account hook, the kvb-org-radio hooks, the kvb-org-perform log, the kvb-agent-optimize code graph hook, and one Bash hook dispatcher (radio, watch, queue, graph, log) per event in ${settingsPath}`);

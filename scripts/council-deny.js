@@ -12,8 +12,6 @@ function withCouncilDeny(data) {
   return data;
 }
 
-module.exports = { COUNCIL_DENY, withCouncilDeny };
-
 function resolved(settingsPath) {
   let link;
   try {
@@ -27,11 +25,13 @@ function resolved(settingsPath) {
   return path.resolve(path.dirname(settingsPath), fs.readlinkSync(settingsPath));
 }
 
-function main(settingsPath) {
-  if (!settingsPath) {
-    console.error("usage: council-deny.js <settings.json>");
-    return 2;
-  }
+/**
+ * Rewrite a settings file atomically through a transform, keeping its mode and following a symlink.
+ * @param {string} settingsPath the settings file; a missing one starts empty.
+ * @param {(data: object) => object} transform returns the new content.
+ * @returns {number} 0 when written, 1 when the file holds no JSON object.
+ */
+function edit(settingsPath, transform) {
   const target = resolved(settingsPath);
   let data = {};
   let mode = 0o600;
@@ -53,15 +53,26 @@ function main(settingsPath) {
   }
   const temporary = `${target}.${process.pid}`;
   try {
-    fs.writeFileSync(temporary, JSON.stringify(withCouncilDeny(data), null, 2) + "\n", { mode, flag: "wx" });
+    fs.writeFileSync(temporary, JSON.stringify(transform(data), null, 2) + "\n", { mode, flag: "wx" });
     fs.chmodSync(temporary, mode);
     fs.renameSync(temporary, target);
   } catch (err) {
     fs.rmSync(temporary, { force: true });
     throw err;
   }
-  console.log(`skills: Edit and Write on ${COUNCIL_DENY.length} council paths denied in ${settingsPath}`);
   return 0;
+}
+
+module.exports = { COUNCIL_DENY, withCouncilDeny, edit };
+
+function main(settingsPath) {
+  if (!settingsPath) {
+    console.error("usage: council-deny.js <settings.json>");
+    return 2;
+  }
+  const code = edit(settingsPath, withCouncilDeny);
+  if (code === 0) console.log(`skills: Edit and Write on ${COUNCIL_DENY.length} council paths denied in ${settingsPath}`);
+  return code;
 }
 
 if (require.main === module) process.exit(main(process.argv[2]));

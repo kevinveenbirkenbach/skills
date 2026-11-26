@@ -10,7 +10,7 @@ import {join} from "node:path";
 const [binary, planFile] = process.argv.slice(2);
 const plan = JSON.parse(readFileSync(planFile, "utf8"));
 const profile = mkdtempSync(join(tmpdir(), "bidi-"));
-writeFileSync(join(profile, "user.js"), ['user_pref("media.navigator.streams.fake", true);', 'user_pref("media.navigator.permission.disabled", true);', ""].join("\n"));
+writeFileSync(join(profile, "user.js"), ['user_pref("media.navigator.streams.fake", true);', 'user_pref("media.navigator.permission.disabled", true);', 'user_pref("media.volume_scale", "0.0");', ""].join("\n"));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const KEYS = {Enter: "", Tab: "", ArrowLeft: "", ArrowRight: ""};
 const port = await new Promise((resolve) => {

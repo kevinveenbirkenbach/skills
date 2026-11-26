@@ -408,13 +408,23 @@ def write_view(path: Path, view: dict) -> None:
             verifier.private_dir(); a linked or foreign spool, or a write
             that fails, prints one line and raises nothing, so an error of
             the cycle before it still surfaces.
-        view: Writer.view().
+        view: Writer.view(); a stored view that differs only in "written"
+            stays.
     """
     try:
         with verifier.private_dir(path.parent, True) as folder:
-            verifier.write_at(folder, path.name, view)
+            if not same_view(folder, path.name, view):
+                verifier.write_at(folder, path.name, view)
     except (signing.Refused, OSError) as error:
         print(f"view not written: {error}", file=sys.stderr)
+
+
+def same_view(folder: int, name: str, view: dict) -> bool:
+    try:
+        stored = json.loads(verifier.read_regular(name, folder))
+    except (OSError, ValueError, RecursionError):
+        return False
+    return isinstance(stored, dict) and {**stored, "written": None} == {**view, "written": None}
 
 
 if __name__ == "__main__":

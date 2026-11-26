@@ -100,6 +100,8 @@ SAFE = (GIT, "--no-pager", "--no-lazy-fetch", "-c", "core.fsmonitor=false", "-c"
 PASSED_ENV = ("HOME", "LANG", "LC_ALL", "LC_CTYPE")
 FIXED_ENV = {"GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "PATH": TRUSTED_PATH}
 INTENT_TO_ADD = 0x20000000
+TOPLEVELS: dict[str, tuple[Path, tuple]] = {}
+TOPLEVELS_KEPT = 64
 DEBUG_LINES = 5
 NAMES_COMMIT = re.compile(r"(?<![\w.-])git(?![\w.-]).*(?<![\w-])commit(?![\w-])", re.DOTALL)
 VERBS = ("commit", "commit-tree", "merge")
@@ -188,8 +190,44 @@ def blobs(cwd: Path, oids: set[str]) -> dict[str, bytes]:
     return found
 
 
+def stat_mark(path: Path) -> tuple[int, int] | None:
+    try:
+        found = os.stat(path)
+    except OSError:
+        return None
+    return found.st_ino, found.st_mtime_ns
+
+
+def git_marks(top: Path) -> tuple:
+    """Returns:
+        The (inode, mtime) of top's .git, its HEAD, packed-refs and
+        refs/heads, which change when the worktree, HEAD, a branch or
+        packed-refs moves; () when the .git file cannot be read.
+    """
+    marker, gitdir = top / ".git", top / ".git"
+    try:
+        if marker.is_file():
+            gitdir = Path(os.path.realpath(top / marker.read_text(encoding="utf-8").strip().removeprefix("gitdir:").strip()))
+        common = Path(os.path.realpath(gitdir / (gitdir / "commondir").read_text(encoding="utf-8").strip())) if (gitdir / "commondir").is_file() else gitdir
+    except OSError:
+        return ()
+    return tuple(stat_mark(path) for path in (marker, gitdir / "HEAD", common / "packed-refs", common / "refs" / "heads"))
+
+
 def toplevel(cwd: Path) -> Path:
-    return Path(os.path.realpath(git(cwd, ["rev-parse", "--show-toplevel"], None).decode("utf-8", "surrogateescape").strip()))
+    """Returns:
+        The real path of cwd's worktree root, from git once per directory
+        until git_marks() of that root changes.
+    """
+    key = os.path.realpath(cwd)
+    held = TOPLEVELS.get(key)
+    if held is not None and held[1] and held[1] == git_marks(held[0]):
+        return held[0]
+    top = Path(os.path.realpath(git(cwd, ["rev-parse", "--show-toplevel"], None).decode("utf-8", "surrogateescape").strip()))
+    if len(TOPLEVELS) >= TOPLEVELS_KEPT:
+        TOPLEVELS.clear()
+    TOPLEVELS[key] = (top, git_marks(top))
+    return top
 
 
 def flagged(raw: bytes) -> list[tuple[bytes, int]]:

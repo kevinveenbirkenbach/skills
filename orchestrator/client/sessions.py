@@ -10,7 +10,8 @@ Returns:
     nor the host's processes: replaces --output with {"written": <epoch>,
     "sessions": {<session id>: {"name", "status", "statusUpdatedAt",
     "running"}}}, running being whether the record's pid still runs the
-    process it started. The exit code is 0.
+    process it started, unless it holds the same sessions written less than
+    REFRESH seconds ago. The exit code is 0.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ PROC = Path("/proc")
 KEPT = ("name", "status", "statusUpdatedAt")
 RECORD_BYTES = 65536
 VALUE_CHARS = 200
+REFRESH = 120
 
 
 def read_record(path: Path) -> object:
@@ -96,7 +98,24 @@ def snapshot(folder: Path, proc: Path, now: float) -> dict:
     }
 
 
+def unchanged(output: Path, data: dict) -> bool:
+    """Returns:
+        Whether output already holds data's sessions, written less than
+        REFRESH seconds before it; the hub counts a snapshot older than five
+        minutes as gone.
+    """
+    try:
+        stored = json.loads(output.read_bytes())
+    except (OSError, ValueError, RecursionError):
+        return False
+    written = stored.get("written") if isinstance(stored, dict) else None
+    fresh = isinstance(written, int | float) and not isinstance(written, bool) and 0 <= data["written"] - written < REFRESH
+    return fresh and stored.get("sessions") == data["sessions"]
+
+
 def write(output: Path, data: dict) -> None:
+    if unchanged(output, data):
+        return
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=output.parent, prefix=f".{output.name}.", delete=False) as handle:
         try:
             json.dump(data, handle)

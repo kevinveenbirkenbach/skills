@@ -120,19 +120,20 @@
 
   function tuneMusic(seconds) {
     music.tension = Math.min(waitingCount() / 4, 1);
-    if (music.gain) {
-      glide(music.filter.frequency, 700 + 900 * music.tension, 4);
-      glide(music.drone[1].oscillator.detune, 8 * music.tension, 6);
-      glide(music.gain.gain, musicLevel(), seconds);
-    }
-  }
-
-  function syncMusic() {
-    if (settings.music.on) {
+    const level = musicLevel();
+    if (level > 0) {
       startMusic();
     } else {
       stopMusic();
     }
+    if (music.gain) {
+      glide(music.filter.frequency, 700 + 900 * music.tension, 4);
+      glide(music.drone[1].oscillator.detune, 8 * music.tension, 6);
+      glide(music.gain.gain, level, seconds);
+    }
+  }
+
+  function syncMusic() {
     tuneMusic(FADE / 1000);
   }
 

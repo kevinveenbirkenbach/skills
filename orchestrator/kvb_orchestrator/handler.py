@@ -81,7 +81,8 @@ FIREWALL_STATUS = {"settings_preview": HTTPStatus.OK, "change_settings": HTTPSta
 WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
 ACCOUNTS_ROUTE = "/api/accounts"
 ACCOUNT_DROP = re.compile(r"/api/accounts/([0-9a-f]{16})/delete")
-ACTION_POSTS = (ACCOUNTS_ROUTE, "/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
+SCHEDULES_ROUTE = "/api/schedules"
+ACTION_POSTS = (ACCOUNTS_ROUTE, SCHEDULES_ROUTE,"/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
 
 
 class Handler(Exchange):
@@ -133,11 +134,11 @@ class Handler(Exchange):
         elif proof:
             self.answer(lambda: hub.review_proof(proof.group(1)), HTTPStatus.OK)
         elif path == "/api/state":
-            self.answer(lambda: hub.window(self.query()), HTTPStatus.OK)
+            self.attempt(lambda: hub.window(self.query()), lambda body: self.send_body(HTTPStatus.OK, body))
         elif path == "/api/stream":
             self.answer(lambda: hub.stream(self.query()), HTTPStatus.OK)
         elif path == "/api/events":
-            self.answer(lambda: hub.events(self.query()), HTTPStatus.OK)
+            self.attempt(lambda: hub.events(self.query()), self.send_tagged)
         elif path == "/api/tree":
             self.answer(hub.repositories, HTTPStatus.OK)
         elif path == "/api/skills":
@@ -194,6 +195,8 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.accounts.save(body), HTTPStatus.OK)
         if drop:
             return lambda _body: self.answer(lambda: hub.accounts.drop(drop.group(1)), HTTPStatus.OK)
+        if path == SCHEDULES_ROUTE:
+            return lambda body: self.answer(lambda: hub.schedule_settings.save(body), HTTPStatus.OK)
         reveal = REVEAL_ROUTE.fullmatch(path)
         if reveal:
             method = hub.sign_reveal if reveal.group(3) else hub.reveal

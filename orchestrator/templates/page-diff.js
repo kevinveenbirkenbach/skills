@@ -183,16 +183,17 @@
 
   /**
    * @param {HTMLElement} row a code row with data-line, as a right-click hits it.
-   * @returns {Object|null} the row as the lines a comment covers, like selectionFeedback(); null outside a [data-path] region of an item with a requester.
+   * @returns {Object|null} the row as the lines a comment covers, like selectionFeedback(); null outside a [data-path]
+   * region of an inbox item. An item without a requester takes marks too: Deny via … picks whom they go to.
    */
   function rowPick(row) {
     const region = row.closest("[data-path]");
     const card = region && region.closest("[data-ref]");
-    if (!card || !card.dataset.to || !row.dataset.line || row.classList.contains("match-mark") || row.closest(".match-card")) {
+    if (!card || !card.dataset.ref || !row.dataset.line || row.classList.contains("match-mark") || row.closest(".match-card")) {
       return null;
     }
     const line = Number(row.dataset.line);
-    return {ref: card.dataset.ref, to: card.dataset.to, path: region.dataset.path, from: line, until: line, anchor: row, inline: Boolean(region.closest("#sheet"))};
+    return {ref: card.dataset.ref, to: card.dataset.to || "", path: region.dataset.path, from: line, until: line, anchor: row, inline: Boolean(region.closest("#sheet"))};
   }
 
   /**
@@ -237,7 +238,7 @@
     const elementOf = (node) => (node instanceof Element ? node : node.parentElement);
     const region = elementOf(range.startContainer) && elementOf(range.startContainer).closest("[data-path]");
     const card = region && region.closest("[data-ref]");
-    if (!card || !card.dataset.to || !elementOf(range.endContainer) || elementOf(range.endContainer).closest("[data-path]") !== region) {
+    if (!card || !card.dataset.ref || !elementOf(range.endContainer) || elementOf(range.endContainer).closest("[data-path]") !== region) {
       return null;
     }
     const quote = selection.toString();
@@ -247,7 +248,7 @@
     if (!lines) {
       return null;
     }
-    return {ref: card.dataset.ref, to: card.dataset.to, path: region.dataset.path, from: lines[0], until: lines[1], anchor: rows.length ? rows[rows.length - 1] : region, inline: Boolean(region.closest("#sheet")), rect: range.getBoundingClientRect()};
+    return {ref: card.dataset.ref, to: card.dataset.to || "", path: region.dataset.path, from: lines[0], until: lines[1], anchor: rows.length ? rows[rows.length - 1] : region, inline: Boolean(region.closest("#sheet")), rect: range.getBoundingClientRect()};
   }
 
   function hideFeedback() {

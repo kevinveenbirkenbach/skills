@@ -8,7 +8,7 @@ from hub_case import HubCase
 from hub_support import HUB
 
 TEMPLATES = HUB / "templates"
-MODULES = ["page-constants.js", "answers.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-inbox.js", "page-grant.js"]
+MODULES = ["page-constants.js", "answers.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-codebox.js", "page-inbox.js", "page-grant.js"]
 PROBE = r"""
 const fs = require("fs");
 const vm = require("vm");

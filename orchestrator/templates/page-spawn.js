@@ -116,7 +116,7 @@
     const all = spawnFlat(root).map(({entry}) => entry).filter((entry) => entry.running !== null);
     const running = all.filter((entry) => entry.running).length;
     spawn.dom.list.replaceChildren(
-      h("div", {class: "inbox-head", "data-star-slot": ""}, h("h2", {class: "group-title"}, "Spawn tree", counter(all.length)), h("span", {class: "muted"}, `${running} running · ${all.length - running} finished · Operator → Chair → Sessions → Subagents`)),
+      h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Spawn tree", counter(all.length)), h("span", {class: "muted"}, `${running} running · ${all.length - running} finished · Operator → Chair → Sessions → Subagents`)),
       agentAncestry(root),
       h("ul", {class: "spawn-tree root"}, spawnItem(root)));
   }

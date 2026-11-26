@@ -74,8 +74,7 @@ class TestRadioLayout(kit.RadioLayoutCase):
         self.assertGreaterEqual(layout["sliver"], 10, layout)
         self.assertTrue(layout["order"]["stacked" if width == 390 else "beside"], layout)
         self.assertEqual(layout["labels"], 1, layout)
-        self.assertEqual(layout["stars"], [[part, True] for part in PARTS], layout)
-        self.assertEqual(layout["covered"], [], layout)
+        self.assertEqual((layout["pinnable"], layout["stars"]), ([[part, True] for part in PARTS], 0), layout)
         self.assertEqual(layout["stations"], [True, False], layout)
 
     def check_popup(self, popup: dict) -> None:
@@ -231,14 +230,14 @@ class TestRadioLayout(kit.RadioLayoutCase):
             with self.subTest(browser=browser, width=width, part="fit view"):
                 self.check_fit(fit, (width, height))
 
-    def test_chromium_lays_the_radio_out_without_overflow_one_line_rows_popup_and_four_home_stars_at_four_widths(self):
+    def test_chromium_lays_the_radio_out_without_overflow_one_line_rows_popup_and_four_home_pins_at_four_widths(self):
         data = self.drive(self.steps("chromium"), None)
         (OUT / "chromium-radio-layout.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
         self.check(data, "chromium")
 
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
-    def test_firefox_lays_the_radio_out_without_overflow_one_line_rows_popup_and_four_home_stars_at_four_widths(self):
+    def test_firefox_lays_the_radio_out_without_overflow_one_line_rows_popup_and_four_home_pins_at_four_widths(self):
         data = self.drive(self.steps("firefox"), None, "bidi.mjs", os.environ.get("FIREFOX", "firefox"))
         (OUT / "firefox-radio-layout.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])

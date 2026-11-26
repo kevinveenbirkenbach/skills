@@ -8,7 +8,7 @@
     accountsView.body = body;
     const add = iconBtn("bi-plus-lg", "Add account", "btn small soft", () => accountSheet(null), "Add account: provider, email, renewal and weekly reset; kept on this host only");
     const panel = h("section", {class: "card res-panel res-accounts", "data-panel": "resources-accounts", "aria-label": "Accounts"},
-      h("div", {class: "res-head", "data-star-slot": ""}, h("span", {class: "res-title", title: "Accounts", "aria-label": "Accounts"}, icon("bi-person-badge")), h("span", {class: "acc-title"}, "Accounts"), h("span", {class: "spacer"}), add), body);
+      h("div", {class: "res-head", "data-legend-slot": ""}, h("span", {class: "res-title", title: "Accounts", "aria-label": "Accounts"}, icon("bi-person-badge")), h("span", {class: "acc-title"}, "Accounts"), h("span", {class: "spacer"}), add), body);
     return {panel, body};
   }
 

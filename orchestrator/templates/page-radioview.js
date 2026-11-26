@@ -110,7 +110,7 @@
       const {caption} = part.face;
       caption.hidden = !now;
       caption.replaceChildren(...(now ? [
-        h("span", {class: "speaker-face"}, face(now.who, false)),
+        h("span", {class: "speaker-face"}, agentFace(now.who, false)),
         h("strong", {}, nameOf(now.who), h("span", {class: "caption-verb"}, " speaking")),
         h("span", {class: "caption-line", title: now.line}, now.line),
         iconBtn("bi-stop-fill", "Stop speaking", "btn small ghost", cancelSpeech),
@@ -235,7 +235,10 @@
     const menu = h("div", {class: "radio-mode-menu", hidden: true});
     Object.assign(part, {face: {lamp, cls, mode, cpu, caption, modes, menu}, menuFor: "", menuSig: "", knobs: knobs()});
     const display = h("div", {class: "radio-display", role: "group", "aria-label": "Display"}, lamp, cls, mode, cpu);
-    return h("div", {class: "radio-face", role: "group", "aria-label": "Radio set"}, display, caption, modes, menu,
+    const bubbles = h("button", {type: "button", class: "btn small ghost icon-only radio-bubbles", "aria-pressed": String(settings.bubbles), "aria-controls": "bubbles",
+      ...named("Speech bubbles", "Speech bubbles: show each message as a bubble beside its speaker, on or off"), on: {click: toggleBubbles}}, icon("bi-chat-quote"));
+    const row = h("div", {class: "radio-mode-row"}, modes, h("span", {class: "mode-divider", "aria-hidden": "true"}), bubbles);
+    return h("div", {class: "radio-face", role: "group", "aria-label": "Radio set"}, display, caption, row, menu,
       h("div", {class: "radio-knobs", role: "group", "aria-label": "Knobs"}, part.knobs.rows));
   }
 
@@ -244,11 +247,11 @@
    * @returns {object} the bar part with its root.
    */
   function radioBar(spot) {
-    return {root: h("div", {class: "spot-bar", "data-star-slot": ""}, h("div", {class: "spot-head"}, spot ? h("h3", {class: "group-title"}, "Radio") : null, h("span", {class: "spacer"})))};
+    return {root: h("div", {class: "spot-bar"}, h("div", {class: "spot-head"}, spot ? h("h3", {class: "group-title"}, "Radio") : null, h("span", {class: "spacer"})))};
   }
 
   function cardHead(title, ...tools) {
-    return h("div", {class: "radio-card-head", "data-star-slot": ""}, h("h3", {class: "group-title"}, title), tools);
+    return h("div", {class: "radio-card-head"}, h("h3", {class: "group-title"}, title), tools);
   }
 
   function stationFold(part) {
@@ -263,7 +266,10 @@
     if (!fold.open) {
       return;
     }
-    const edge = fold.getBoundingClientRect();
+    const layer = fold.querySelector(".station-body");
+    const frame = layer.offsetParent || fold;
+    const outer = frame.getBoundingClientRect();
+    const edge = {top: outer.top + frame.clientTop, bottom: outer.top + frame.clientTop + frame.clientHeight};
     let [top, bottom] = [0, window.innerHeight];
     for (let node = fold.parentElement; node && node !== document.documentElement; node = node.parentElement) {
       const look = getComputedStyle(node);
@@ -274,13 +280,13 @@
     }
     const [above, below] = [Math.floor(edge.top - top), Math.floor(bottom - edge.bottom)];
     fold.style.removeProperty("--room");
-    const up = above >= fold.querySelector(".station-body").offsetHeight || above >= below;
+    const up = above >= layer.offsetHeight || above >= below;
     fold.dataset.side = up ? "up" : "down";
     fold.style.setProperty("--room", `${Math.max(0, up ? above : below)}px`);
   }
 
   function placeStations(event) {
-    for (const fold of document.querySelectorAll("details.radio-station[open]")) {
+    for (const fold of document.querySelectorAll("details:is(.radio-station, .radio-notify)[open]")) {
       if (!(event && event.target instanceof Node && fold.contains(event.target))) {
         placeStation(fold);
       }
@@ -290,7 +296,8 @@
   function deviceCard() {
     const part = {stationsSig: ""};
     const face = faceplate(part);
-    part.root = h("section", {class: "radio-card radio-device", "data-panel": "radio-device", "aria-label": "Device"}, cardHead("Device"), face, stationFold(part));
+    part.root = h("section", {class: "radio-card radio-device", "data-panel": "radio-device", "aria-label": "Device"}, cardHead("Device"), face,
+      h("div", {class: "radio-settings"}, notifyFold(part), stationFold(part)));
     radioParts.devices.push(part);
     return part;
   }
@@ -345,6 +352,7 @@
   function drawRadio() {
     drawRadioSet();
     drawStations();
+    drawNotify();
     drawSpeak();
   }
 
@@ -370,7 +378,6 @@
     const made = body ? [body.bar.root, body.grid] : {"radio-device": deviceCard, "radio-speak": speakCard, "radio-log": historyCard}[id]().root;
     const root = h("div", {class: `radio-home radio-home-${id}`}, made);
     root.querySelectorAll("[data-panel]").forEach((node) => node.removeAttribute("data-panel"));
-    root.querySelectorAll("[data-star-slot]").forEach((node) => node.removeAttribute("data-star-slot"));
     window.setTimeout(drawRadio, 0);
     return root;
   }

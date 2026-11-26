@@ -14,8 +14,10 @@ and never estimates one itself.
 1. **Fix confidence** (percent): probability the change does what it claims.
    **Break risk** (percent): probability it breaks anything else, from the
    `kvb-check-break-risk` skill. Two numbers, never one blended figure.
-2. **Score**: pass both, with tokens from the `kvb-check-efficiency`
-   skill, velocity from the `kvb-check-speed` skill and security and the
+2. **Score**: for a commit, `block.py` measures and scores in one run, as
+   step 2 of `kvb-git-commit-no-verify` says. Otherwise pass both, with
+   tokens from the `kvb-check-efficiency`
+   skill, velocity from the same `kvb-check-efficiency` run and security and the
    critical count from `security.py` of the `kvb-check-security` skill, to
    `${CLAUDE_SKILL_DIR}/../kvb-check-score/scripts/score.py --fix <n> --break
    <n> --efficiency <n|-> --speed <n|-> --security <n|~n> --critical <count>`

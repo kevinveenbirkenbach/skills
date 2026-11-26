@@ -47,7 +47,8 @@ POP = """(async () => {@HELPERS@@PROBES@
         [top, bottom] = [Math.max(top, box(node).top), Math.min(bottom, box(node).bottom)];
       }
     }
-    const room = {above: Math.floor(box(fold).top - top), below: Math.floor(bottom - box(fold).bottom), need: Math.floor(Math.min(layer.scrollHeight + layer.offsetHeight - layer.clientHeight, cap))};
+    const frame = box(layer.offsetParent || fold);
+    const room = {above: Math.floor(frame.top - top), below: Math.floor(bottom - frame.bottom), need: Math.floor(Math.min(layer.scrollHeight + layer.offsetHeight - layer.clientHeight, cap))};
     const opened = {open: fold.open, side: fold.dataset.side, height: Math.round(box(layer).height), cap: Math.ceil(cap), ...room, outside: outside(layer), whole};
     layer.querySelector(".station button").focus();
     document.activeElement.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));

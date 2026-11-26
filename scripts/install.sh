@@ -27,7 +27,7 @@ council_root="${REPO_ROOT}/skills/kvb-org-organize/scripts/councilroot.py"
 has_user_systemd() { command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; }
 resume_units() {
 	bash "${REPO_ROOT}/scripts/orchestrator.sh" start || true
-	if has_user_systemd; then systemctl --user start kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.path || true; fi
+	if has_user_systemd; then systemctl --user start kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.path kvb-schedules.path kvb-schedules.timer || true; fi
 }
 # Args: extra councilroot.py migrate arguments. Returns its exit code; on 3
 # or 5 every file it left behind or kept beside its namesake is named on stderr.
@@ -73,7 +73,7 @@ fi
 if [[ "${TARGET}" == "${HOME}" ]]; then
 	install -d -m 0700 "$(python3 "${council_root}" durable)"
 	if has_user_systemd; then
-		systemctl --user stop kvb-org-queue-cleanup.path kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.service &>/dev/null || true
+		systemctl --user stop kvb-org-queue-cleanup.path kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.service kvb-schedules.path kvb-schedules.timer kvb-schedules.service &>/dev/null || true
 	fi
 	if ! bash "${REPO_ROOT}/scripts/orchestrator.sh" stop; then
 		resume_units
@@ -149,15 +149,17 @@ fi
 
 if [[ "${TARGET}" == "${HOME}" ]]; then
 	if has_user_systemd; then
-		log "skills: enabling the daily kvb-dream notification timer and the kvb-org-queue-cleanup rounds at 00:00, 12:00 and on request"
+		log "skills: installing the kvb-dream notification timer (off until switched on in the hub's Schedules tab), the kvb-org-queue-cleanup rounds and the kvb-schedules reconciler"
 		units="${HOME}/.config/systemd/user"
 		mkdir -p "${units}"
 		cp -f "${REPO_ROOT}/skills/kvb-dream/systemd/kvb-dream-notify.service" "${REPO_ROOT}/skills/kvb-dream/systemd/kvb-dream-notify.timer" "${units}/"
 		cp -f "${REPO_ROOT}/skills/kvb-org-queue-cleanup/systemd/kvb-org-queue-cleanup."{service,timer,path} "${units}/"
+		cp -f "${REPO_ROOT}/skills/kvb-org-organize/systemd/kvb-schedules."{service,timer,path} "${units}/"
 		systemctl --user daemon-reload
-		systemctl --user enable --now kvb-dream-notify.timer kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.path
+		systemctl --user enable --now kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.path kvb-schedules.path kvb-schedules.timer
+		systemctl --user start kvb-schedules.service || warn "skills: the first kvb-schedules round failed; its timer retries in 5 minutes."
 	else
-		warn "skills: no systemd user session; skipped the kvb-dream notification timer and the kvb-org-queue-cleanup rounds."
+		warn "skills: no systemd user session; skipped the kvb-dream notification timer, the kvb-org-queue-cleanup rounds and the kvb-schedules reconciler."
 	fi
 	if command -v docker &>/dev/null; then
 		if ! bash "${REPO_ROOT}/scripts/orchestrator.sh" install; then
@@ -176,6 +178,9 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	if ! curl -fsSL --proto '=https' https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash; then
 		warn "skills: the codebase-memory-mcp installer failed; the code graph keeps its previous setup."
 	fi
+	if command -v node &>/dev/null; then
+		node "${REPO_ROOT}/scripts/graph-hooks.js" "${HOME}/.claude/settings.json" || warn "skills: the codebase-memory-mcp hooks keep the installer's matchers."
+	fi
 	if (ulimit -c 0; codebase-memory-mcp config set auto_index false); then
 		log "skills: daemon auto_index off; the kvb-agent-optimize graph.py hook indexes every git root a session touches, the session root included, through its size and memory gates"
 	else
@@ -189,7 +194,11 @@ if [[ "${TARGET}" == "${HOME}" ]]; then
 	if [[ "${graph_settings}" != *'"queue_file_threshold"'* || "${graph_settings}" != *'"queue_task"'* ]]; then
 		warn "skills: kvb-code-graph: no config at ${graph_config} with queue_file_threshold and queue_task; the graph.py hook indexes nothing until the operator sets both (see kvb-agent-optimize)."
 	fi
-	if command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null && [[ -x "${HOME}/.local/bin/codebase-memory-mcp" ]]; then
+	graph_row=0
+	python3 -I "${REPO_ROOT}/skills/kvb-org-organize/scripts/schedules.py" check code-graph >/dev/null || graph_row=$?
+	if ((graph_row == 3)); then
+		log "skills: kvb-code-graph.service stays off: its row is switched off in the hub's Schedules tab"
+	elif command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null && [[ -x "${HOME}/.local/bin/codebase-memory-mcp" ]]; then
 		log "skills: enabling kvb-code-graph.service, which keeps a permanent codebase-memory-mcp daemon so every graph stays watched"
 		mkdir -p "${HOME}/.config/systemd/user"
 		cp -f "${REPO_ROOT}/skills/kvb-agent-optimize/systemd/kvb-code-graph.service" "${HOME}/.config/systemd/user/"

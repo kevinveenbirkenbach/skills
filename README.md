@@ -9,7 +9,7 @@ Compatible with Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Cline
 
 ## Naming 🏷️
 
-Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `release`, `check`, `org`, `agent`, `skill`, `coach`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `release` announces a release (changelog, article, posts), `check` analyses and reports findings, `org` coordinates agents, `agent` acts on one agent itself: its repository setup (code index, agent instructions) and its state (drain, suspend, resume), `skill` works on skills themselves, `coach` serves the operator's wellbeing. Only `kvb-cleanup`, `kvb-coach`, `kvb-help`, `kvb-match` and the collectors `kvb-dream`, `kvb-optimize`, `kvb-release` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
+Every first-party skill is named `kvb-<category>-<name>` with one of these categories: `think`, `create`, `code`, `ci`, `git`, `release`, `check`, `org`, `agent`, `skill`: `think` thinks without producing a file, `create` produces an artifact, `code` works on code, `ci` on pipelines, `git` on history and forges, `release` announces a release (changelog, article, posts), `check` analyses and reports findings, `org` coordinates agents, `agent` acts on one agent itself: its repository setup (code index, agent instructions) and its state (drain, suspend, resume), `skill` works on skills themselves. The coach skills (`kvb-coach`, `kvb-coach-on`, `kvb-coach-off`, `kvb-coach-meditation`) live in their own repository, [coach](https://github.com/kevinveenbirkenbach/coach), which `skills-lock.json` pins and `make install` installs. Only `kvb-cleanup`, `kvb-help`, `kvb-match` and the collectors `kvb-dream`, `kvb-optimize`, `kvb-release` and `kvb-transcend` stand without a category. Names use `a-z`, `0-9` and single hyphens, at most 64 characters, and equal their directory name. `tests/test_naming.py` enforces all of it, including that the organigram below lists every skill under its category.
 
 ## Organigram 🏛️
 
@@ -28,7 +28,6 @@ flowchart LR
   kvb --> org[org]
   kvb --> agent[agent]
   kvb --> skill[skill]
-  kvb --> coach[coach]
   kvb --> none[no category]
   think --> think_listen[kvb-think-listen]
   think --> think_explain[kvb-think-explain]
@@ -74,7 +73,6 @@ flowchart LR
   check --> check_break_risk[kvb-check-break-risk]
   check --> check_gate[kvb-check-gate]
   check --> check_efficiency[kvb-check-efficiency]
-  check --> check_speed[kvb-check-speed]
   check --> check_ansible[kvb-check-ansible]
   check --> check_score[kvb-check-score]
   org --> org_organize[kvb-org-organize]
@@ -115,9 +113,7 @@ flowchart LR
   none --> dream_all[kvb-dream]
   none --> optimize_all[kvb-optimize]
   none --> release_all[kvb-release]
-  none --> coach_all[kvb-coach]
   none --> match_all[kvb-match]
-  coach --> coach_meditation[kvb-coach-meditation]
 ```
 
 ## Skill map 🗺️
@@ -130,9 +126,8 @@ flowchart LR
     commit_req([commit request])
     stage_req([staging or fix ready])
     edit_hook([edit in a git worktree])
-    reminders([12 h agent hint, 17:00 GNOME popup])
+    reminders([agent hint and GNOME popup, off until switched on in Schedules])
     noon_midnight([00:00 and 12:00 timer])
-    full_hour([full hour])
     code_task([code task])
     spawn([subagent spawn])
   end
@@ -194,7 +189,6 @@ flowchart LR
     break_risk[kvb-check-break-risk]
     gate[kvb-check-gate]
     efficiency[kvb-check-efficiency]
-    speed[kvb-check-speed]
     check_ansible[kvb-check-ansible]
     score[kvb-check-score]
   end
@@ -242,11 +236,7 @@ flowchart LR
     dream[kvb-dream]
     optimize[kvb-optimize]
     release_all[kvb-release]
-    coach[kvb-coach]
     match[kvb-match]
-  end
-  subgraph cat_coach [coach]
-    meditation[kvb-coach-meditation]
   end
 
   commit_req -.-> commit_next
@@ -255,7 +245,6 @@ flowchart LR
   edit_hook -. council gate .-> democracy
   reminders -.-> dream
   noon_midnight -.-> queue_cleanup
-  full_hour -.-> coach
   code_task -.-> clean
   code_task -.-> scope_guard
   spawn -.-> subagent_model
@@ -289,8 +278,6 @@ flowchart LR
   score --> confidence
   score --> break_risk
   score --> efficiency
-  score --> speed
-  speed --> efficiency
   efficiency -. heavy commands .-> queue
   gate --> democracy
   gate --> hotfix
@@ -398,11 +385,6 @@ flowchart LR
   org_suspend -. hold and accept .-> operator
   org_resume -. hold and accept .-> operator
   agent_suspend -. stops .-> robot
-  coach --> active_listening
-  coach --> operator
-  coach --> rasci
-  coach --> meditation
-  meditation --> active_listening
   autoskill --> autotune
   autotune --> essence
   transcend --> skill_transcend
@@ -470,7 +452,7 @@ Copy the skills into a specific project (`<repo>/.agents/skills` and `<repo>/.cl
 make project TARGET=/path/to/repo
 ```
 
-Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered — `kvb-dream` points each agent at `/kvb-dream` at most once every twelve hours (stamped per session in `~/.claude/.dream-stamps/`), and `kvb-coach` runs its short form at the first prompt of every full hour, once across all agents (stamped in `~/.claude/.coach-hours/`); the global install also enables the `kvb-dream-notify.timer` systemd user timer, which recommends `/kvb-dream` in a GNOME notification daily at 17:00 local time and catches up once after a missed run, and the `kvb-org-queue-cleanup.timer` and `kvb-org-queue-cleanup.path` user units, which start a `kvb-org-queue-cleanup` round at 00:00 and 12:00 local time without catch-up and whenever an agent runs `cleanup.py request`. A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.claude/agents-council/config.json` exists, and because its hooks run that config's commands outside the sandbox, the install adds `Edit(~/.claude/agents-council/**)` to `permissions.deny`, which also covers Write in every permission mode; `Edit(~/.local/state/agents-council/**)` joins it, so the state the skills' scripts keep there changes only through those scripts. The global install writes both rules into `~/.claude/settings.json` too (`scripts/council-deny.js`), the only user-wide settings file, so they bind sessions in every repository. The `kvb-org-radio` skill registers five hooks: its prompt hook and a PostToolBatch hook deliver the immediate radio (`call`, `broadcast`, `security`, `pan-pan`, `mayday`) mid-turn, a Stop hook delivers the post (`post`, `newsletter` and call receipts) when the turn ends, an `asyncRewake` Stop hook wakes an idle session for the radio, and a PreToolUse hook refuses every writing action while a mayday holds, except those of its sender and of the agents that join it with `radio.py assist`. The PreToolUse hook of the `kvb-org-queue` skill sends heavy commands through `queue.py hold` once the config sets `queue_enforce`, and holds a held command to the settings' Bash deny and ask rules, which see only `queue.py hold`. The global install also installs the MEDUSA security scanner with pipx for `kvb-check-security`, unless `medusa` is already on the PATH. It clones microsoft/TokenEconomizer at the commit pinned in `plugins-lock.json` to `~/Repositories/github.com/microsoft/TokenEconomizer` and installs it for Claude Code and, when `codex` is on the PATH, for Codex, which runs its hooks once they are approved with `/hooks`; tool pruning only proposes deny lists and never drops `AskUserQuestion`, `Artifact`, `Skill`, `Agent`, `ToolSearch` or the hub and code graph MCP tools, micro-skills learn only from repeated failures, and the loop guard stays on (requirement 021). Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Every hook runs `/usr/bin/python3 -I`, so neither the `python3` of a sandbox-writable virtualenv on the `PATH` nor `PYTHONPATH` reaches the hooks, which run outside the sandbox; older bare `python3` hook entries are rewritten. The reminder hooks run `/usr/bin/bash` and pin `PATH=/usr/bin:/bin`, and the council scripts keep only the `PATH` directories this uid cannot write (`skills/kvb-org-organize/scripts/hookpath.py`), so no binary an agent plants on the inherited `PATH` runs outside the sandbox. Existing settings are preserved.
+Both commands also patch the target's `.claude/settings.local.json` — the machine-local, untracked file, so a project's reviewed `.claude/settings.json` is never rewritten by an install: the caveman and ponytail plugins are enabled so their modes auto-activate on session start, and two reminder hooks are registered, both silent until switched on in the hub's Controls › Schedules tab (`<council>/schedules.json`) — `kvb-dream` points each agent at `/kvb-dream` once every N hours (default 12, stamped per session in `~/.claude/.dream-stamps/`), and `kvb-coach` from the coach repository runs its short form at the first prompt every N hours (default 1), once across all agents (stamped in `~/.claude/.coach-hours/`); the global install also copies the `kvb-dream-notify.timer` systemd user timer, which recommends `/kvb-dream` in a GNOME notification daily at the set times (default 17:00, off) and catches up once after a missed run, enables the `kvb-org-queue-cleanup.timer` and `kvb-org-queue-cleanup.path` user units, which start a `kvb-org-queue-cleanup` round at 00:00 and 12:00 local time without catch-up and whenever an agent runs `cleanup.py request`, and enables `kvb-schedules.path` and `kvb-schedules.timer`, which run `skills/kvb-org-organize/scripts/schedules.py run` on every change of `schedules.json` and every 5 minutes: it switches and retimes the first-party units to their rows and lists every other user timer and hook for the hub. A PreToolUse gate from the `kvb-org-organize` skill blocks edits to files in a git worktree until the session holds a claim (`skills/kvb-org-organize/scripts/council.py`), and its resource watch (`skills/kvb-org-organize/scripts/watch.py`) measures disk, Docker and caches, cleans up low-risk data and blocks new heavy jobs before the disk runs out; it stays inactive until `~/.claude/agents-council/config.json` exists, and because its hooks run that config's commands outside the sandbox, the install adds `Edit(~/.claude/agents-council/**)` to `permissions.deny`, which also covers Write in every permission mode; `Edit(~/.local/state/agents-council/**)` joins it, so the state the skills' scripts keep there changes only through those scripts. The global install writes both rules into `~/.claude/settings.json` too (`scripts/council-deny.js`), the only user-wide settings file, so they bind sessions in every repository. The `kvb-org-radio` skill registers five hooks: its prompt hook and a PostToolBatch hook deliver the immediate radio (`call`, `broadcast`, `security`, `pan-pan`, `mayday`) mid-turn, a Stop hook delivers the post (`post`, `newsletter` and call receipts) when the turn ends, an `asyncRewake` Stop hook wakes an idle session for the radio, and a PreToolUse hook refuses every writing action while a mayday holds, except those of its sender and of the agents that join it with `radio.py assist`. The PreToolUse hook of the `kvb-org-queue` skill sends heavy commands through `queue.py hold` once the config sets `queue_enforce`, and holds a held command to the settings' Bash deny and ask rules, which see only `queue.py hold`. The global install also installs the MEDUSA security scanner with pipx for `kvb-check-security`, unless `medusa` is already on the PATH. It clones microsoft/TokenEconomizer at the commit pinned in `plugins-lock.json` to `~/Repositories/github.com/microsoft/TokenEconomizer` and installs it for Claude Code and, when `codex` is on the PATH, for Codex, which runs its hooks once they are approved with `/hooks`; tool pruning only proposes deny lists and never drops `AskUserQuestion`, `Artifact`, `Skill`, `Agent`, `ToolSearch` or the hub and code graph MCP tools, micro-skills learn only from repeated failures, and the loop guard stays on (requirement 021). Two hooks of the `kvb-org-perform` skill (`skills/kvb-org-perform/scripts/log.py`) log every Agent spawn with its task class, model and effort, and store the quality feedback a sandboxed session prints, in `~/.local/state/agents-council/subagent-model.jsonl`. Every hook runs `/usr/bin/python3 -I`, so neither the `python3` of a sandbox-writable virtualenv on the `PATH` nor `PYTHONPATH` reaches the hooks, which run outside the sandbox; older bare `python3` hook entries are rewritten. On a Bash call the radio, watch, queue, code graph and log hooks run in one interpreter per event, `skills/kvb-org-organize/scripts/hooks.py pre-bash` and `post-bash`, each handler in its own `try`; an exit 2 of any handler still blocks with its text, and the six older separate Bash entries are rewritten to these two. The reminder hooks run `/usr/bin/bash` and pin `PATH=/usr/bin:/bin`, and the council scripts keep only the `PATH` directories this uid cannot write (`skills/kvb-org-organize/scripts/hookpath.py`), so no binary an agent plants on the inherited `PATH` runs outside the sandbox. Existing settings are preserved.
 
 The council root is the one directory every `kvb-org` script, hook and the hub share: the register, radio, queue, claims, operator rows, score journal, gate receipts, security cache and night state, plus `pages/` (the `kvb-git-diff` review pages the hub reads), `approvals/` (the replay stores of `approval.py verify`) and `gates/` (gate logs). `skills/kvb-org-organize/scripts/councilroot.py` alone resolves it: `$AGENTS_COUNCIL_ROOT`, else `$XDG_STATE_HOME/agents-shared`, else `~/.local/state/agents-shared`, so it survives a reboot; `councilroot.py root` prints it and `councilroot.py dir <part>` creates and prints a part. It and `agents-release` below are the only state paths a sandbox's `allowWrite` may name. Its sibling `~/.local/state/agents-council` (`councilroot.py durable`) is host-only and never belongs in `allowWrite`: only hooks, the runner and the systemd units write it (`gates.db`, the watch hook's copies of the receipt, parent, acceptance and queue-history journals, `queue-cleanup.json`, `resources/`, `subagent-model.jsonl`), and the hub mounts it read-only; no directory is both agent-writable and host-written except the council root, where every host writer opens files through `nofollow.py`. The `kvb-release` drafts lie in `agents-release/<version>` beside both (`councilroot.py release <version>`). The global install first runs `councilroot.py preflight` and stops before it copies anything unless `~/.claude/settings.json` lists both `agents-shared` and `agents-release` in `sandbox.filesystem.allowWrite`, no `allowWrite` entry reaches `agents-council` in the managed file, its `managed-settings.d` drop-ins, the user or user-local file (the list `councilroot.py` shares with the queue's permission check), in a project `.claude/settings.json` or `.claude/settings.local.json` below the pkgmgr repositories and worktrees directories (directory and file links followed), or in the start directory of any session listed in `~/.claude/projects`, and the move below would succeed; it warns while the agents are not suspended. Fixing those entries is the operator's step. It then builds the skills, stops the hub, the runner, the offices, resources and queue-cleanup units, runs `councilroot.py migrate`, which moves an earlier council root in `/tmp/agents-council` into the council root, copies the skills, runs `migrate --catch-up` for what the old skills wrote meanwhile, and starts the units again; the hub image is built before the container is replaced, and a failed build leaves the hub down and fails the install until `bash scripts/orchestrator.sh install` succeeds. Migrate refuses while a lock there is held or a queue job waits, and, checked under those locks, moves nothing (exit 4) while a file cannot be moved or a whole file both roots hold differs; the install then stops with the earlier root intact. Each file is renamed to a `.migrating` name before it is copied, so a writer that opens the old name meanwhile makes a new file the catch-up moves. An identical file leaves one copy, a `.jsonl` journal gets the rows it lacks (by id, else each exact line as often as the earlier root holds it more often, in `ts` order), links are skipped, and a second run moves nothing and duplicates no row. The catch-up keeps a differing whole file beside its namesake as `<name>.legacy-<hash>` (exit 3); a file that fails after the check stays behind (exit 5). After exit 3 or 5 the install goes on so the new skills read the new root, names every such file and exits 1 at the end. `~/.local/state/agents-council/migrate.started` exists from the first move to the end of a run; when a crash leaves it, the install copies the new skills anyway, names it and exits 1, and the next completed migrate removes it. Because the council root survives reboots, each `kvb-org-queue-cleanup` round first runs `councilroot.py retire`, which moves gate logs and review pages older than 30 days into `archive/<date>/`, and the radio appends the rows it drops past its last 500 to `archive/news-<date>.jsonl`; no reader opens `archive/`, which `kvb-cleanup` offers for deletion. Run the install with every agent suspended (`kvb-org-suspend`) and the queue empty, so nothing writes either root during the move.
 

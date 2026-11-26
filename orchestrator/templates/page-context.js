@@ -60,6 +60,9 @@
   }
 
   function ctxPinItems(node, target) {
+    if (target.refused) {
+      return [{label: "Pin to Home", hint: `not possible, ${target.refused}`, run: () => toast("Not pinned", [`Pin to Home is not possible: ${target.refused}.`], false)}];
+    }
     const entry = ctxPinEntry(target);
     if (!entry) {
       return [];
@@ -86,7 +89,7 @@
     {kind: "entry", id: ctxAttr("data-ref"), title: (ref) => ctxEntryOf(ref).title, items: ctxEntryItems},
     {kind: "rule", id: ctxAttr("data-rule", "data-entry"), title: (id) => `Rule ${id}`, items: (node, id) => [ctxCopyItem("Copy rule", id)]},
     {kind: "pick", id: ctxAttr("data-pick"), title: ctxPickTitle, items: ctxPickItems},
-    {kind: "pin", id: ctxPinOf, title: (target) => ctxPinEntry(target).title, items: ctxPinItems},
+    {kind: "pin", id: ctxPinOf, title: (target) => (ctxPinEntry(target) || {title: "Home pin"}).title, items: ctxPinItems},
     {kind: "tile", id: (node) => (node.matches(".home-tile[data-pin]") ? node.dataset.pin : null), title: (key) => `Tile ${key}`, items: ctxTileItems},
   ];
 

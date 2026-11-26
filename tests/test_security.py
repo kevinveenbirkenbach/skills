@@ -215,7 +215,7 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             result.stdout,
-            "🛡️ security 63 % (medusa: 4 findings in 2 files: high app.py:2, medium new.py:3, low new.py:1, "
+            "🛡️ security 63 % critical 0 (medusa: 4 findings in 2 files: high app.py:2, medium new.py:3, low new.py:1, "
             "info new.py:4)\n",
         )
         self.assertEqual(result.returncode, 3, result.stderr)
@@ -266,7 +266,7 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             (result.stdout, result.returncode),
-            ("🛡️ security 100 % (medusa: 0 findings, 1 accepted in 1 file)\n", 0),
+            ("🛡️ security 100 % critical 0 (medusa: 0 findings, 1 accepted in 1 file)\n", 0),
         )
         accepted = json.loads(self.scan("--json", env=self.env).stdout)["accepted"]
         self.assertEqual([(a["rule"], a["path"], a["line"]) for a in accepted], [("FAKE-CRITICAL", "app.py", 2)])
@@ -274,14 +274,14 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             (result.stdout, result.returncode),
-            ("🛡️ security 50 % (medusa: 1 finding in 1 file: critical app.py:2)\n", 1),
+            ("🛡️ security 50 % critical 1 (medusa: 1 finding in 1 file: critical app.py:2)\n", 1),
         )
 
     def test_one_acceptance_never_hides_an_identical_line_elsewhere(self):
         twin = "x = fetch(url)  # MARK-HIGH"
         self.write("app.py", f"print(1)\n{twin}\ny = 2\n{twin}\n")
         sha1 = hashlib.sha1(twin.encode()).hexdigest()
-        both = ("🛡️ security 50 % (medusa: 2 findings in 1 file: high app.py:2, high app.py:4)\n", 3)
+        both = ("🛡️ security 50 % critical 0 (medusa: 2 findings in 1 file: high app.py:2, high app.py:4)\n", 3)
         listing = self.base / "council" / "security-accepted.jsonl"
         listing.parent.mkdir(parents=True)
         listing.write_text(json.dumps({"rule": "FAKE-HIGH", "path": "app.py", "sha1": sha1}) + "\n", encoding="utf-8")
@@ -300,7 +300,7 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             (result.stdout, result.returncode),
-            ("🛡️ security 75 % (medusa: 1 finding, 1 accepted in 1 file: high app.py:2)\n", 3),
+            ("🛡️ security 75 % critical 0 (medusa: 1 finding, 1 accepted in 1 file: high app.py:2)\n", 3),
         )
         self.write("app.py", f"print(1)\n{twin}\ny = 3\n{twin}\n")
         result = self.scan(env=self.env)
@@ -314,7 +314,7 @@ class TestSecurity(unittest.TestCase):
         sha1 = hashlib.sha1(line.encode()).hexdigest()
         kept.write_text(json.dumps({"rule": "FAKE-HIGH", "path": "app.py", "sha1": sha1}) + "\n", encoding="utf-8")
         result = self.scan(env=self.env)
-        self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings, 1 accepted in 1 file)\n")
+        self.assertEqual(result.stdout, "🛡️ security 100 % critical 0 (medusa: 0 findings, 1 accepted in 1 file)\n")
         kept.write_text('{"rule": "FAKE-HIGH"}\n', encoding="utf-8")
         result = self.scan(env=self.env)
         self.assertEqual(result.returncode, 2)
@@ -331,7 +331,7 @@ class TestSecurity(unittest.TestCase):
         result = self.accept("--rule", "FAKE-FILE", "--path", "Dockerfile", "--sha1", sha1, "--reason", "fixture")
         self.assertEqual(result.returncode, 0, result.stderr)
         result = self.scan(env=self.env)
-        self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings, 1 accepted in 1 file)\n")
+        self.assertEqual(result.stdout, "🛡️ security 100 % critical 0 (medusa: 0 findings, 1 accepted in 1 file)\n")
         self.write("Dockerfile", text + "USER app\n")
         self.assertEqual(self.scan(env=self.env).returncode, 3)
 
@@ -345,7 +345,7 @@ class TestSecurity(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("accepted FAKE-HIGH, FAKE-LOW app.py", result.stdout)
         result = self.scan(env=self.env)
-        self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings, 2 accepted in 1 file)\n")
+        self.assertEqual(result.stdout, "🛡️ security 100 % critical 0 (medusa: 0 findings, 2 accepted in 1 file)\n")
 
     def test_mjs_and_cjs_files_medusa_skips_are_scanned_and_reported_at_their_repository_path(self):
         line = "run(request.query)  // MARK-HIGH"
@@ -353,7 +353,7 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             (result.stdout, result.returncode),
-            ("🛡️ security 75 % (medusa: 1 finding in 1 file: high tool.mjs:2)\n", 3),
+            ("🛡️ security 75 % critical 0 (medusa: 1 finding in 1 file: high tool.mjs:2)\n", 3),
         )
         sha1 = hashlib.sha1(line.encode()).hexdigest()
         result = self.accept(
@@ -365,7 +365,7 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             (result.stdout, result.returncode),
-            ("🛡️ security 88 % (medusa: 2 findings, 1 accepted in 3 files: medium tool.mjs.js:1, low lib.CJS:1)\n", 3),
+            ("🛡️ security 88 % critical 0 (medusa: 2 findings, 1 accepted in 3 files: medium tool.mjs.js:1, low lib.CJS:1)\n", 3),
         )
 
     def test_a_folder_named_like_the_alias_keeps_both_paths_apart(self):
@@ -374,7 +374,7 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             (result.stdout, result.returncode),
-            ("🛡️ security 73 % (medusa: 2 findings in 2 files: high tool.mjs:1, low tool.mjs.js/inner.py:1)\n", 3),
+            ("🛡️ security 73 % critical 0 (medusa: 2 findings in 2 files: high tool.mjs:1, low tool.mjs.js/inner.py:1)\n", 3),
         )
 
     def test_the_cache_keeps_the_repository_path_of_an_aliased_file(self):
@@ -391,7 +391,7 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             (result.stdout, result.returncode),
-            ("🛡️ security 90 % (medusa: 1 finding in 1 file: medium a/b/tool.mjs:1)\n", 3),
+            ("🛡️ security 90 % critical 0 (medusa: 1 finding in 1 file: medium a/b/tool.mjs:1)\n", 3),
         )
 
     def test_an_mjs_file_name_without_room_for_the_alias_is_scanned_under_a_short_one(self):
@@ -417,7 +417,7 @@ class TestSecurity(unittest.TestCase):
                 self.assertEqual((result.stdout, result.returncode), (f"🛡️ security – ({problem}: {HAND})\n", 4))
                 self.assertTrue(argv.exists())
                 self.assertEqual(list(folder.glob("*.json")), [])
-        scored = ("🛡️ security 75 % (medusa: 1 finding in 1 file: high tool.mjs:1)\n", 3)
+        scored = ("🛡️ security 75 % critical 0 (medusa: 1 finding in 1 file: high tool.mjs:1)\n", 3)
         argv.unlink()
         result = self.scan(env=self.env)
         self.assertEqual((result.stdout, result.returncode), scored)
@@ -431,7 +431,7 @@ class TestSecurity(unittest.TestCase):
     def test_critical_exits_1_and_floors_at_0(self):
         self.write("app.py", "a  # MARK-CRITICAL\nb  # MARK-CRITICAL\nc  # MARK-CRITICAL\n")
         result = self.scan(env=self.env)
-        self.assertTrue(result.stdout.startswith("🛡️ security 0 % (medusa: 3 findings in 1 file: critical app.py:1, "))
+        self.assertTrue(result.stdout.startswith("🛡️ security 0 % critical 3 (medusa: 3 findings in 1 file: critical app.py:1, "))
         self.assertEqual(result.returncode, 1)
 
     def test_more_than_five_locations_are_cut(self):
@@ -439,18 +439,18 @@ class TestSecurity(unittest.TestCase):
         result = self.scan(env=self.env)
         self.assertEqual(
             result.stdout,
-            "🛡️ security 86 % (medusa: 7 findings in 1 file: low app.py:1, low app.py:2, low app.py:3, "
+            "🛡️ security 86 % critical 0 (medusa: 7 findings in 1 file: low app.py:1, low app.py:2, low app.py:3, "
             "low app.py:4, low app.py:5, +2 more)\n",
         )
         self.assertEqual(result.returncode, 3)
 
     def test_clean_and_empty_changes_are_100(self):
         result = self.scan(env=self.env)
-        self.assertEqual((result.stdout, result.returncode), ("🛡️ security 100 % (medusa: 0 findings in 0 files)\n", 0))
+        self.assertEqual((result.stdout, result.returncode), ("🛡️ security 100 % critical 0 (medusa: 0 findings in 0 files)\n", 0))
         self.assertFalse((self.bin / "argv.json").exists())
         self.write("app.py", "print(2)\n")
         result = self.scan(env=self.env)
-        self.assertEqual((result.stdout, result.returncode), ("🛡️ security 100 % (medusa: 0 findings in 1 file)\n", 0))
+        self.assertEqual((result.stdout, result.returncode), ("🛡️ security 100 % critical 0 (medusa: 0 findings in 1 file)\n", 0))
 
     def test_missing_medusa_asks_for_a_review_by_hand(self):
         if shutil.which("medusa", path=GIT_DIR):
@@ -510,7 +510,7 @@ class TestSecurity(unittest.TestCase):
         argv.unlink()
         result = self.scan(env=self.env)
         self.assertTrue(argv.exists())
-        self.assertEqual(result.stdout, "🛡️ security 100 % (medusa: 0 findings in 1 file)\n")
+        self.assertEqual(result.stdout, "🛡️ security 100 % critical 0 (medusa: 0 findings in 1 file)\n")
         folder.chmod(0o777)
         entry.unlink()
         argv.unlink()
@@ -544,7 +544,7 @@ class TestSecurity(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout), {"security": None, "problem": f"{rerun}: medusa exit 3"})
         argv.unlink()
         complete = self.scan(env=self.env)
-        self.assertEqual((complete.stdout, complete.returncode), ("🛡️ security 100 % (medusa: 0 findings in 1 file)\n", 0))
+        self.assertEqual((complete.stdout, complete.returncode), ("🛡️ security 100 % critical 0 (medusa: 0 findings in 1 file)\n", 0))
         self.assertTrue(argv.exists())
         self.assertEqual(len(list(folder.glob("*.json"))), 1)
         argv.unlink()
@@ -591,7 +591,7 @@ class TestSecurity(unittest.TestCase):
         ))
         self.assertFalse(argv.exists())
         self.write("app.py", "print(1)\nx = 1  # MARK-HIGH\n")
-        scored = ("🛡️ security 75 % (medusa: 1 finding in 1 file: high app.py:2; not covered: tpl.conf.j2)\n", 3)
+        scored = ("🛡️ security 75 % critical 0 (medusa: 1 finding in 1 file: high app.py:2; not covered: tpl.conf.j2)\n", 3)
         result = self.scan(env=self.env)
         self.assertEqual((result.stdout, result.returncode), scored)
         argv.unlink()
@@ -759,7 +759,7 @@ class TestSecurity(unittest.TestCase):
         for number in ignored:
             os.killpg(security.pid, number)
         out, _ = security.communicate(timeout=20)
-        self.assertEqual((out, security.returncode), ("🛡️ security 100 % (medusa: 0 findings in 1 file)\n", 0))
+        self.assertEqual((out, security.returncode), ("🛡️ security 100 % critical 0 (medusa: 0 findings in 1 file)\n", 0))
 
     def test_the_first_stop_signal_ignores_the_others_and_kills_the_group(self):
         spec = importlib.util.spec_from_file_location("kvb_check_security_halt", SECURITY)
@@ -784,7 +784,7 @@ class TestSecurity(unittest.TestCase):
             cwd=self.base, env=self.env, capture_output=True, text=True, check=False,
         )
         self.assertEqual(
-            (result.stdout, result.returncode), ("🛡️ security 100 % (medusa: 0 findings in 1 file)\n", 0), result.stderr,
+            (result.stdout, result.returncode), ("🛡️ security 100 % critical 0 (medusa: 0 findings in 1 file)\n", 0), result.stderr,
         )
 
     def test_usage_errors_exit_2(self):

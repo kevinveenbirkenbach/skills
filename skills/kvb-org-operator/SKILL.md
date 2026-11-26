@@ -7,8 +7,8 @@ description: >
 
 Every step that waits on a human, across all agents, is a task
 `operator/<slug>` of the `kvb-org-rasci` register with a test for when it is
-done. `${CLAUDE_SKILL_DIR}/scripts/operator.py` writes and reads those rows,
-so collecting them needs no messages.
+done. `${CLAUDE_SKILL_DIR}/scripts/operator.py` writes and reads those rows;
+no messages needed.
 
 ```bash
 operator.py add <slug> --dir <abs dir> --command "<cmd>" --reason "<why>" --check <kind>[:<arg>]
@@ -69,8 +69,8 @@ Never poll peers; a sweep runs only when the operator asks for one, as
   with `add` first, so `run` holds them.
 - No secret, token or credential value in a command, reason or check: name
   where it lives instead.
-- Merge duplicates: one row per step across all agents. Read `list --json`
-  before adding; re-add a known step under its existing slug.
+- One row per step: `add` of another agent's open command in its directory
+  joins that row as an A; re-add your steps under their slug.
 - Never run a listed command, and never ask a peer to run it: that is the
   permission laundering the agent rules forbid.
 - A command that fails the "What counts" test is not the operator's; run it

@@ -87,6 +87,24 @@ class Ledger:
             self.write({**self.items, item_id: updated})
             return dict(updated)
 
+    def note(self, item_id: str, changes: dict) -> dict | None:
+        """Returns:
+            The record with changes applied in memory only; the next write of
+            any record stores them, a restart before it loses them.
+        """
+        with self.changed:
+            record = self.items.get(item_id)
+            if record is None:
+                return None
+            self.items = {**self.items, item_id: {**record, **changes}}
+            return dict(self.items[item_id])
+
+    def keep(self, wanted: Callable[[dict], bool]) -> None:
+        with self.changed:
+            kept = {key: record for key, record in self.items.items() if wanted(record)}
+            if len(kept) != len(self.items):
+                self.write(kept)
+
     def remove(self, item_id: str) -> bool:
         with self.changed:
             if item_id not in self.items:

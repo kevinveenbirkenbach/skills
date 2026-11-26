@@ -39,19 +39,42 @@
   }
 
   const reasonChips = (field) => presetChips(field, state.reasons, "Recent reasons");
+  const NO_RECIPIENT = "Pick the agent to tell: a post or call needs a recipient";
+  const NO_AGENT = "No agent to tell: the item names no recipient; pick one under Deny via …";
+  let whyOffCount = 0;
+
+  /**
+   * @param {HTMLButtonElement} button a button that may be disabled.
+   * @returns {root, set}: root wraps the button and carries its tooltip, because a disabled
+   * button fires no hover in Chrome; set(why, hint) disables the button and names why while why is not empty, else
+   * enables it and names the action hint; aria-describedby gives keyboard users the same text.
+   */
+  function whyOff(button) {
+    whyOffCount += 1;
+    const note = h("span", {id: `why-off-${whyOffCount}`, hidden: true});
+    const root = h("span", {class: "why-off"}, button, note);
+    button.setAttribute("aria-describedby", note.id);
+    const set = (why, hint) => {
+      button.disabled = Boolean(why);
+      root.title = why || hint;
+      note.textContent = why || hint;
+    };
+    return {root, set};
+  }
 
   function denySheet(item) {
     const name = `deny-${keyOf(item)}`;
     const recipient = h("select", {class: "field"}, h("option", {value: ""}, "Pick the agent to tell"),
       denyRecipients(item).map((agent) => h("option", {value: agent, selected: agent === item.to}, revealed(agent))));
     const confirm = h("button", {type: "button", class: "btn danger"}, icon("bi-x-lg"), "Deny");
+    const gate = whyOff(confirm);
     const hints = [];
     const picked = () => choices.map((label) => label.querySelector("input")).find((input) => input.checked);
     const paintDeny = () => {
       hints.forEach(([small, direct, hint]) => {
         small.textContent = `to ${direct ? revealed(recipient.value) || "nobody yet: pick a recipient" : "all"}, ${hint}`;
       });
-      confirm.disabled = DIRECT_DENY.has(picked().value) && !recipient.value;
+      gate.set(DIRECT_DENY.has(picked().value) && !recipient.value ? NO_RECIPIENT : "", `Deny: ${CLASSES[picked().value]} ${DIRECT_DENY.has(picked().value) ? `to ${revealed(recipient.value)}` : "to all"}, signed by your passkey`);
     };
     const choices = DENY_CHANNELS.map(([id, direct, hint]) => {
       const small = h("small", {});
@@ -76,21 +99,23 @@
       h("label", {class: "deny-recipient"}, "Recipient of a post or call", recipient),
       reasonChips(reason),
       h("label", {class: "deny-reason"}, "Reason (optional, the agent reads it too)", reason),
-      h("p", {class: "muted"}, "The passkey signs the denial with channel, recipient and reason; then 3 s remain to undo it.",
+      h("p", {class: "muted"}, `The passkey signs the denial with channel, recipient and reason; then ${undoWords()}.`,
         " Mayday stays reserved for the operator."),
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), confirm)], false);
+      h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), gate.root)], false);
     reason.focus();
   }
 
   function denySplit(item) {
-    const main = iconBtn("bi-x-lg", "Deny", "btn small danger", () => (lineNotes(keyOf(item)) ? denySheet(item) : denyNow(item, "post", "", item.to)), item.to ? `Deny: by post to ${revealed(item.to)}, 3 s to undo; with line comments it opens Deny via … with them as the reason` : "Deny: the card names no agent; pick one under Deny via …");
-    main.disabled = !item.to;
+    const hint = `Deny: by post to ${revealed(item.to)}, then ${undoWords()}; with line comments it opens Deny via … with them as the reason`;
+    const main = iconBtn("bi-x-lg", "Deny", "btn small danger", () => (lineNotes(keyOf(item)) ? denySheet(item) : denyNow(item, "post", "", item.to)), item.to ? hint : NO_AGENT);
+    const gate = whyOff(main);
+    gate.set(item.to ? "" : NO_AGENT, hint);
     const more = h("button", {type: "button", class: "btn small danger icon-only", "aria-haspopup": "dialog", ...named("Deny via …", "Deny via another channel or with a reason")}, caret());
     more.addEventListener("click", (event) => {
       event.stopPropagation();
       denySheet(item);
     });
-    return h("div", {class: "deny-split", role: "group", "aria-label": "Deny"}, main, more);
+    return h("div", {class: "deny-split", role: "group", "aria-label": "Deny"}, gate.root, more);
   }
 
   /**

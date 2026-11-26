@@ -84,11 +84,10 @@ class TestBoxHeads(unittest.TestCase):
         self.assertRegex(page, r"\.box-head \{[^}]*margin: calc\(-1 \* var\(--main-top\)\) calc\(-1 \* var\(--main-pad\)\) 0;")
         self.assertIn("--main-top: var(--sp-3)", (TEMPLATES / "style-ui.css").read_text(encoding="utf-8"))
 
-    def test_the_match_card_bar_is_its_own_background_on_the_outer_edge(self):
+    def test_the_match_card_bar_flows_from_the_outer_edge_into_the_card(self):
         css = (TEMPLATES / "style-match.css").read_text(encoding="utf-8")
-        self.assertNotIn(".match-card.front::before", css)
-        self.assertRegex(css, r"\.match-card\.front \{[^}]*border-top-width: 0;[^}]*background: var\(--bar\) top / 100% 6px no-repeat")
-        self.assertIn("mask-image: linear-gradient(180deg, transparent 6px, #000 6px", css)
+        self.assertRegex(css, r"\.match-card\.front \{[^}]*border-top-width: 0;")
+        self.assertRegex(css, r"\.match-card\.front::before \{[^}]*inset: 0 0 auto;[^}]*height: 22px; background: var\(--bar\); mask-image: linear-gradient\(180deg, #000 0px 4px, transparent 22px\);")
 
 
 if __name__ == "__main__":

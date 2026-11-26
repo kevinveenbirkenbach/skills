@@ -83,7 +83,7 @@ SWEEP = """(async () => {@HELPERS@
     }
     return top < -1 || bottom > innerHeight + 1 || left < -1 || right > innerWidth + 1 ? "outside the window" : null;
   };
-  const nodes = all("#main *").filter((node) => !node.ownerSVGElement && !node.closest("canvas") && shown(node));
+  const nodes = all("#main *").filter((node) => !node.ownerSVGElement && !node.closest("canvas, [inert]") && shown(node));
   const cut = nodes.map((node) => [path(node), clipped(node)]).filter(([, why]) => why);
   const owner = (node) => {
     for (let up = node.parentElement; up && up !== main; up = up.parentElement) {

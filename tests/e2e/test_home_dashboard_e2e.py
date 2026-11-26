@@ -20,6 +20,7 @@ from hub_support import HUB, iso
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/hub-008-shots"))
 REAL_STORE = (HUB / "templates" / "view-store.js").exists()
 CUE = "e2e-home-change"
+PIN_LABELS = ("Pin to Home", "Unpin from Home")
 SCREENS = [
     "stream", "agents/orbit", "agents/chord", "agents/swimlane", "agents/3d", "agents/tree", "agents/hierarchy",
     "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "artifacts/tree", "artifacts/3d",
@@ -52,19 +53,48 @@ HOME = """
     await screenShown(8000);
     await sleep(500);
   };
-  const ownStar = (owner) => [...owner.querySelectorAll(".star")].find((node) => node.closest("[data-panel], [data-item]") === owner) || null;
-  const starOf = (selector) => {
-    const owner = document.querySelector(selector);
-    return owner ? ownStar(owner) : null;
+  const PIN_LABELS = ["Pin to Home", "Unpin from Home"];
+  const shownMenu = () => document.querySelector(".ctx-menu:not([hidden])");
+  const menuLabel = (node) => text(node.querySelector(".ctx-label"));
+  const closeMenu = async () => {
+    const menu = shownMenu();
+    if (menu) {
+      menu.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true, cancelable: true}));
+      await sleep(100);
+    }
   };
-  const press = async (selector) => {
-    const button = await until(() => starOf(selector), 8000);
-    if (!button) {
+  const pinItem = async (owner) => {
+    await closeMenu();
+    owner.scrollIntoView({block: "center"});
+    const box = owner.getBoundingClientRect();
+    owner.dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: Math.round(box.left + 4), clientY: Math.round(box.top + 4)}));
+    const menu = await until(shownMenu, 3000);
+    return menu ? all('[role="group"][data-scope="element"] [role="menuitem"]', menu).find((node) => PIN_LABELS.includes(menuLabel(node))) || null : null;
+  };
+  const menuPinOf = async (owner) => {
+    const item = await pinItem(owner);
+    const state = item ? [String(menuLabel(item) === PIN_LABELS[1]), `${menuLabel(item)}: ${item.title}`] : null;
+    await closeMenu();
+    return state;
+  };
+  const pinState = async (selector) => {
+    const owner = await until(() => document.querySelector(selector), 8000);
+    return owner ? menuPinOf(owner) : null;
+  };
+  const pinOwner = async (owner) => {
+    const target = Panels.targetOf(owner);
+    const item = await pinItem(owner);
+    if (!item) {
+      await closeMenu();
       return null;
     }
-    button.click();
+    item.click();
     await sleep(200);
-    return button.getAttribute("aria-pressed");
+    return String((ViewStore.get("home.pins") || []).some((pin) => pin.kind === target.kind && pin.id === target.id));
+  };
+  const press = async (selector) => {
+    const owner = await until(() => document.querySelector(selector), 8000);
+    return owner ? pinOwner(owner) : null;
   };
   const tiles = () => all("#main .home-tile").map((tile) => tile.dataset.pin);
   const tile = (key) => document.querySelector(`#main .home-tile[data-pin="${key}"]`);
@@ -103,71 +133,41 @@ START_EMPTY = """(async () => {@HELPERS@
   await screenShown(8000);
   return {hash: location.hash, screen: document.getElementById("main").getAttribute("aria-labelledby"), first: name(document.querySelector("#tabs > .tab-group > button"))};
 })()"""
-STARS = """(async () => {@HELPERS@@HOME@
+OWNERS = """(async () => {@HELPERS@@HOME@
   const seen = [];
   const missing = [];
-  const covered = [];
-  const CONTROLS = 'button, a[href], input, select, textarea, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"])';
-  const shown = (node) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden" && !node.closest("details:not([open]) > :not(summary)");
-  const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  const stars = [];
+  const menus = [];
   const XHTML = "http://www.w3.org/1999/xhtml";
-  const clipped = (node) => {
-    const box = node.getBoundingClientRect();
-    const drawn = {left: box.left, top: box.top, right: box.right, bottom: box.bottom};
-    let position = getComputedStyle(node).position;
-    for (let at = node.parentElement; at && at !== document.body && position !== "fixed"; at = at.parentElement) {
-      const look = getComputedStyle(at);
-      if (at.namespaceURI !== XHTML || ["inline", "contents"].includes(look.display) || (position === "absolute" && look.position === "static")) {
-        continue;
-      }
-      position = look.position;
-      const edge = at.getBoundingClientRect();
-      const left = edge.left + at.clientLeft;
-      const top = edge.top + at.clientTop;
-      if (look.overflowX !== "visible") {
-        drawn.left = Math.max(drawn.left, left);
-        drawn.right = Math.min(drawn.right, left + at.clientWidth);
-      }
-      if (look.overflowY !== "visible") {
-        drawn.top = Math.max(drawn.top, top);
-        drawn.bottom = Math.min(drawn.bottom, top + at.clientHeight);
-      }
-    }
-    return drawn;
-  };
-  const layer = (node) => node.closest("dialog[open]");
-  const count = (where) => {
+  const shown = (node) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden" && !node.closest("details:not([open]) > :not(summary)");
+  const count = async (where) => {
     const owners = all("[data-panel], [data-item]").filter((node) => node.namespaceURI === XHTML);
     seen.push([where, owners.length]);
-    missing.push(...owners.filter((node) => !ownStar(node)).map((node) => `${where}: ${node.outerHTML.slice(0, 120)}`));
-    const controls = all(CONTROLS).filter(shown);
-    for (const star of all(".star").filter(shown)) {
-      const box = clipped(star);
-      for (const other of controls) {
-        if (other !== star && !other.contains(star) && !star.contains(other) && layer(other) === layer(star) && overlap(box, clipped(other)) > 1) {
-          covered.push(`${where}: ${star.title} over ${other.outerHTML.slice(0, 100)}`);
-        }
-      }
-    }
+    missing.push(...owners.filter((node) => !Panels.targetOf(node)).map((node) => `${where}: ${node.outerHTML.slice(0, 120)}`));
+    stars.push(...all(".star, .star-row").map((node) => `${where}: ${node.outerHTML.slice(0, 120)}`));
+    const first = owners.filter(shown).find((node) => node.closest("dialog[open]")) || owners.find(shown) || owners[0];
+    const item = first ? await pinItem(first) : null;
+    menus.push([where, item ? menuLabel(item) : null]);
+    await closeMenu();
   };
   for (const hash of @SCREENS@) {
     await go(hash);
     await sleep(hash.endsWith("3d") || hash.startsWith("artifacts") ? 1500 : 300);
-    count(hash);
+    await count(hash);
   }
   await go("agents/orbit");
   const agent = document.querySelector('#main svg .node.k-session[data-pick]');
   if (agent) {
     agent.dispatchEvent(new MouseEvent("click", {bubbles: true}));
     await until(() => document.querySelector('#popup[open] [data-item^="agent:"]'), 5000);
-    count("agent card");
+    await count("agent card");
     document.getElementById("popup").close();
   }
   document.getElementById("radio-open").click();
   await until(() => document.querySelector('[data-panel="radio-log"]'), 5000);
-  count("radio spot");
+  await count("radio spot");
   document.getElementById("radio-open").click();
-  return {seen, missing, covered, total: seen.reduce((sum, [, size]) => sum + size, 0)};
+  return {seen, missing, stars, menus, total: seen.reduce((sum, [, size]) => sum + size, 0)};
 })()"""
 PIN = """(async () => {@HELPERS@@HOME@
   await go("tasks/gantt");
@@ -322,7 +322,7 @@ class TestHomeDashboard(HubCase):
             steps += [
                 {"width": width, "height": height, "url": f"{page}-clear#stream", "wait": 600, "probe": CLEAR, "shot": None},
                 {"width": width, "height": height, "url": f"{page}-empty", "wait": 1500, "probe": probe(START_EMPTY), "shot": f"{shot}-start-empty.png"},
-                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(STARS), "shot": f"{shot}-stars.png"},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(OWNERS), "shot": f"{shot}-owners.png"},
                 {"width": width, "height": height, "url": f"{page}-pin#stream", "wait": 1200, "probe": probe(PIN), "shot": f"{shot}-pinned.png"},
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(RESIZE), "shot": f"{shot}-resized.png"},
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(REORDER), "shot": f"{shot}-reordered.png"},
@@ -347,10 +347,10 @@ class TestHomeDashboard(HubCase):
                 next(results)
                 empty = next(results)
                 self.assertEqual((empty["hash"], empty["screen"], empty["first"]), ("", "tab-stream", "Home"), empty)
-                stars = next(results)
-                self.assertEqual(stars["missing"], [], stars)
-                self.assertEqual(stars["covered"], [], stars)
-                self.assertGreater(stars["total"], 20, stars)
+                owners = next(results)
+                self.assertEqual((owners["missing"], owners["stars"]), ([], []), owners)
+                self.assertEqual([where for where, label in owners["menus"] if label not in PIN_LABELS], [where for where, size in owners["seen"] if not size], owners)
+                self.assertGreater(owners["total"], 20, owners)
                 pinned = next(results)
                 self.assertEqual((pinned["gantt"], pinned["feature"], pinned["docs"], pinned["streamed"], pinned["chart"], pinned["off"], pinned["again"]), ("true", "true", "true", "true", True, "false", "true"), pinned)
                 self.assertEqual(pinned["pinned"], ["panel:tasks/gantt", "task:work/feature", "task:work/docs", "panel:stream"])
@@ -397,14 +397,14 @@ class TestHomeDashboard(HubCase):
     def init(self) -> str | None:
         return None if REAL_STORE else STUB
 
-    def test_chromium_stars_pins_resizes_reorders_and_marks_gone_tiles_at_three_widths(self):
+    def test_chromium_pins_by_menu_resizes_reorders_and_marks_gone_tiles_at_three_widths(self):
         data = self.drive(self.steps("chromium"), None, init=self.init())
         (OUT / "chromium-home.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
         self.check(data)
 
     @unittest.skipUnless(shutil.which(os.environ.get("FIREFOX", "firefox")), "no Firefox")
-    def test_firefox_stars_pins_resizes_reorders_and_marks_gone_tiles_at_three_widths(self):
+    def test_firefox_pins_by_menu_resizes_reorders_and_marks_gone_tiles_at_three_widths(self):
         data = self.drive(self.steps("firefox"), None, "bidi.mjs", os.environ.get("FIREFOX", "firefox"), init=self.init())
         (OUT / "firefox-home.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual([error for error in data["errors"] if "/favicon.ico" not in error], [])
@@ -412,7 +412,7 @@ class TestHomeDashboard(HubCase):
 
     @unittest.skipUnless(REAL_STORE, "waits on 007: view-store.js and /api/view are not on this branch yet")
     def test_a_second_browser_shows_the_same_layout(self):
-        first = self.drive([step for step in self.steps("chromium")[:6] if step["probe"] != probe(STARS)], None)
+        first = self.drive([step for step in self.steps("chromium")[:6] if step["probe"] != probe(OWNERS)], None)
         second = self.drive([{"width": 1366, "height": 768, "url": f"{self.base}?second", "wait": 2000, "probe": probe(RELOADED), "shot": str(OUT / "chromium-second.png")}], None)
         self.assertEqual(second["results"][0]["tiles"], first["results"][-1]["down"])
         self.assertEqual((second["results"][0]["hash"], second["results"][0]["screen"]), ("#home", "tab-home"))

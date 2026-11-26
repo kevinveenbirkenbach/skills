@@ -12,7 +12,7 @@ const RadioSet = (() => {
   const TABS = ["sent", "received", "all"];
   const CHIPS = ["class", "from", "to", "agent"];
   const TEXT_LIMIT = 200;
-  const MUTED_LIMIT = 200;
+  const VOICED = new Set(["word", "speech"]);
   const BURST = {seconds: 0.6, frequency: 1800, q: 0.9};
   const MARK = /\[kvb-orchestrator msg ([0-9a-f]{16})\]/;
   const MARKS = new RegExp(MARK.source, "g");
@@ -32,7 +32,6 @@ const RadioSet = (() => {
     sounds: {mayday: {on: true, volume: 0.9}, review: {on: true, volume: 0.6}, direct: {on: true, volume: 0.5}, radio: {on: false, volume: 0.25}},
     squelch: 1,
     classes: ["mayday", "pan-pan", "security"],
-    muted: [],
     log: {tab: "received", chips: {class: "", from: "", to: "", agent: ""}, q: ""},
   };
 
@@ -63,20 +62,39 @@ const RadioSet = (() => {
     const raw = object(stored);
     const sounds = object(raw.sounds);
     const classes = Array.isArray(raw.classes) ? raw.classes : DEFAULTS.classes;
-    const muted = Array.isArray(raw.muted) ? raw.muted.filter((key) => typeof key === "string" && key && key.length <= TEXT_LIMIT) : [];
     return {
       mode: MODES.includes(raw.mode) ? raw.mode : DEFAULTS.mode,
       fallback: FALLBACKS.includes(raw.fallback) ? raw.fallback : DEFAULTS.fallback,
       sounds: Object.fromEntries(TONES.map((name) => [name, tone(sounds[name], DEFAULTS.sounds[name])])),
       squelch: level(raw.squelch, DEFAULTS.squelch),
       classes: CLASSES.filter((name) => name === "mayday" || classes.includes(name)),
-      muted: [...new Set(muted)].sort().slice(0, MUTED_LIMIT),
       log: log(raw.log),
     };
   }
 
   function picked(row, set) {
-    return row.class === "mayday" || (set.classes.includes(row.class) && !set.muted.includes(row.source));
+    return row.class === "mayday" || set.classes.includes(row.class);
+  }
+
+  /**
+   * @param {object} row a radio row with class and source.
+   * @param {Object<string, Object<string, boolean>>} agents the per-agent switches of the settings.
+   * @param {string} what sound, aloud or bubbles.
+   * @returns {boolean} false only while the row's sender has that switch off; a MAYDAY always passes.
+   */
+  function heard(row, agents, what) {
+    const entry = agents[row.source];
+    return row.class === "mayday" || !(entry && entry[what] === false);
+  }
+
+  /**
+   * @param {Array<object>} steps the plan of the row.
+   * @param {object} row the radio row.
+   * @param {Object<string, Object<string, boolean>>} agents the per-agent switches of the settings.
+   * @returns {Array<object>} the steps its sender lets play: the spoken word and speech under aloud, the tones and stand-ins under sound.
+   */
+  function voiced(steps, row, agents) {
+    return steps.filter((step) => heard(row, agents, VOICED.has(step.kind) ? "aloud" : "sound"));
   }
 
   /**
@@ -104,10 +122,6 @@ const RadioSet = (() => {
       sounds: {...set.sounds, [tone]: {...set.sounds[tone], on: next !== "off"}},
       classes: next === "speak" ? [...rest, ...SPOKEN[tone]] : rest,
     };
-  }
-
-  function muting(set, key) {
-    return {muted: set.muted.includes(key) ? set.muted.filter((name) => name !== key) : [...set.muted, key]};
   }
 
   /**
@@ -304,7 +318,7 @@ const RadioSet = (() => {
     return {...entry, chips: Object.fromEntries(CHIPS.map((name) => [name, ""])), q: ""};
   }
 
-  return {KEY, MODES, FALLBACKS, KEYED, FRAME, TONES, CLASSES, SPOKEN, TABS, CHIPS, DEFAULTS, GATE, PROSIGNS, valid, picked, bell, ring, muting, frames, standIn, plan, burst, gateLabel, toAll, ledgerOf, logRows, counts, choices, cleared};
+  return {KEY, MODES, FALLBACKS, KEYED, FRAME, TONES, CLASSES, SPOKEN, TABS, CHIPS, DEFAULTS, GATE, PROSIGNS, valid, picked, heard, voiced, bell, ring, frames, standIn, plan, burst, gateLabel, toAll, ledgerOf, logRows, counts, choices, cleared};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = RadioSet;

@@ -58,23 +58,34 @@
 
   /**
    * @param {HTMLInputElement|HTMLTextAreaElement} field the text field; it moves into the frame.
-   * @param {Node[]} extras what belongs to a textarea besides its mic, on the footer's left (Record, a count); [] for none.
-   * @returns {HTMLElement} one frame around field and mic: for a one-line field the mic as the field's last segment, for a
-   * textarea a footer row below it whose last child is the mic.
+   * @param {Node[]} extras for a textarea what belongs to it besides its mic, on the footer's left (Record, a count); for a
+   * one-line field the segments after the mic (its form's submit button); [] for none.
+   * @returns {HTMLElement} one frame around field and mic: for a one-line field the mic and then the extras as its last
+   * segments, for a textarea a footer row below it whose last child is the mic.
    */
   function micFrame(field, extras) {
     const button = micButton(field);
     if (field.tagName === "TEXTAREA") {
       return h("div", {class: "mic-frame mic-area"}, field, h("div", {class: "mic-foot"}, extras, h("span", {class: "spacer"}), button));
     }
-    return h("span", {class: "mic-frame mic-line"}, field, button);
+    return h("span", {class: "mic-frame mic-line"}, field, button, extras);
+  }
+
+  /**
+   * @param {HTMLInputElement|HTMLTextAreaElement} field a text field the sweep frames.
+   * @returns {HTMLButtonElement[]} the submit button right after a one-line field, which joins its frame behind the mic; [] otherwise.
+   */
+  function micSend(field) {
+    const next = field.nextElementSibling;
+    return field.tagName !== "TEXTAREA" && next && next.matches("button[type=submit]") ? [next] : [];
   }
 
   function micWrap(field) {
     const focused = document.activeElement === field;
     const [start, end] = [field.selectionStart, field.selectionEnd];
-    const [parent, next] = [field.parentNode, field.nextSibling];
-    parent.insertBefore(micFrame(field, []), next);
+    const send = micSend(field);
+    const [parent, next] = [field.parentNode, (send[0] || field).nextSibling];
+    parent.insertBefore(micFrame(field, send), next);
     if (focused) {
       field.focus({preventScroll: true});
       field.setSelectionRange(start, end);

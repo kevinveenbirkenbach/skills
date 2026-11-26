@@ -57,7 +57,16 @@
           node.addEventListener("click", closeSheet);
           return node;
         }) : null));
-    openSheet(review.title, [head, h("div", {class: "split", "data-ref": ref, "data-to": item && item.to ? item.to : null}, treeNav, diff)], true);
+    const split = h("div", {class: "split", "data-ref": ref, "data-to": item && item.to ? item.to : null}, treeNav, diff);
+    if (ref) {
+      markable(split, ".review-file tr[data-line]", (row) => {
+        const picked = rowPick(row);
+        if (picked) {
+          markLines(picked);
+        }
+      });
+    }
+    openSheet(review.title, [head, split], true);
     ui.review = id;
     reviewDom = {tree: treeNav, diff, notes, ref};
   }

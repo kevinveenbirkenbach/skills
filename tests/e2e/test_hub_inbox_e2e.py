@@ -49,7 +49,7 @@ class TestHubInbox(base.OrchestratorE2ECase):
 
     def layout(self, probe: dict) -> None:
         self.assertNotIn("error", probe)
-        self.assertEqual(sorted(probe["kinds"]), ["Ask", "Operator", "Operator", "Review", "Rule request"])
+        self.assertEqual((sorted(probe["kinds"]), probe["done"]), (["Ask", "Operator", "Operator", "Review", "Rule request"], 1))
         self.assertEqual(probe["splits"], [["Deny", "Deny via …"]] * 5)
         self.assertEqual(probe["fields"], ["Kind", "Tool (glob)", "Pattern (glob)", "Directory (glob)", "Expires on"])
         self.assertEqual(probe["dry"], "Dry run: the rule would have granted 1 of 1 asks from the last 7 days.")

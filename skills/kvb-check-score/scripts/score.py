@@ -7,7 +7,7 @@ Args:
     --efficiency: tokens in percent above 0, from kvb-check-efficiency; `-` when not
         measured or not relevant, `new` when the change has no base. Both count as 100
         in the score.
-    --speed: velocity in percent above 0, from kvb-check-speed; `-` or `new` as for
+    --speed: velocity in percent above 0, from kvb-check-efficiency; `-` or `new` as for
         --efficiency.
     --security: security in percent, 0 to 100, from security.py of kvb-check-security;
         `~<n>` for a value from a review by hand.

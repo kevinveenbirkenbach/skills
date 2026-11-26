@@ -30,7 +30,7 @@ EXPECTED = {
     "resources": ["resources-hardware", "resources-tokens"],
 }
 READ = """
-  const PARTS = ".legend > :not(.star, .legend-toggle), .res-legend, .home-metric > .legend-chips";
+  const PARTS = ".legend > :not(.legend-toggle), .res-legend, .home-metric > .legend-chips";
   const owners = () => [...all("#main [data-panel]").filter((host) => !host.closest(".home-tile")), ...all(".home-tile[data-pin]")];
   const keyOf = (owner) => owner.dataset.pin || owner.dataset.panel;
   const ownerOf = (key) => owners().find((node) => keyOf(node) === key) || null;
@@ -63,7 +63,7 @@ SCAN = """(async () => {@HELPERS@@READ@
   const flip = async (key) => {
     const path = ownerOf(key).dataset.pin ? "tiles" : "views";
     const button = () => toggleOf(ownerOf(key));
-    const placed = path === "tiles" ? button().nextElementSibling.classList.contains("home-open") : button().previousElementSibling.classList.contains("star");
+    const placed = path === "tiles" ? button().nextElementSibling.classList.contains("home-open") : button().parentElement.matches("[data-legend-slot], .legend-row") && button().parentElement.lastElementChild === button();
     const before = shownParts(ownerOf(key));
     button().click();
     const hidden = Boolean(await until(() => ownerOf(key) && ownerOf(key).dataset.legend === "hidden" && shownParts(ownerOf(key)) === 0 && button().getAttribute("aria-pressed") === "false", 4000));

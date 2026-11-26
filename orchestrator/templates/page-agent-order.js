@@ -46,7 +46,7 @@
     const down = officeBtn("bi-arrow-down", `Move ${name} down`, `Move ${name} down: lower priority`, () => moveAgent(name, 1), `down:${name}`);
     up.disabled = index === 0;
     down.disabled = index === ui.order.length - 1;
-    const item = h("li", {draggable: "true", "data-name": name}, icon("bi-grip-vertical", "grip"), h("span", {class: "rank"}, `${index + 1}.`), face(name, false), person(name), h("span", {class: "spacer"}), up, down);
+    const item = h("li", {draggable: "true", "data-name": name}, icon("bi-grip-vertical", "grip"), h("span", {class: "rank"}, `${index + 1}.`), agentLink(name), h("span", {class: "spacer"}), up, down);
     item.addEventListener("dragstart", (event) => {
       orderDom.dragged = name;
       item.classList.add("dragging");
@@ -79,15 +79,15 @@
     const key = orderDom.focus || focusKey(box);
     orderDom.focus = null;
     const changed = JSON.stringify(ui.order) !== JSON.stringify(state.agent_order);
-    Panels.keepFocus(orderDom.slot, () => box.replaceChildren(
-      h("div", {class: "inbox-head"}, h("h2", {class: "group-title", id: "agent-order-title", tabindex: "-1", "data-focus": "order:title"}, "Agent priority", counter(ui.order.length)), h("span", {class: "spacer"}), orderDom.slot),
+    box.replaceChildren(
+      h("div", {class: "inbox-head"}, h("h2", {class: "group-title", id: "agent-order-title", tabindex: "-1", "data-focus": "order:title"}, "Agent priority", counter(ui.order.length))),
       h("p", {class: "muted"}, "Orders the chair's grants and decides only between equal task priorities; the tasks' --prio pins stay unchanged."),
       ui.order.length ? h("ol", {class: "order-list", "aria-label": "Agent order"}, ui.order.map(orderItem)) : h("p", {class: "muted"}, "No agent with an office or an open task."),
       h("div", {class: "actions"},
         h("span", {class: "muted"}, "Drag or use the arrows to reorder"),
         h("span", {class: "spacer"}),
         h("button", {type: "button", class: "btn ghost", "data-focus": "order:reset", disabled: !changed, on: {click: () => placeAgent([...state.agent_order], "order:reset")}}, "Reset"),
-        h("button", {type: "button", class: "btn primary", "data-focus": "order:save", disabled: !changed, on: {click: saveAgentOrder}}, "Save order"))));
+        h("button", {type: "button", class: "btn primary", "data-focus": "order:save", disabled: !changed, on: {click: saveAgentOrder}}, "Save order")));
     const target = key && [...box.querySelectorAll("[data-focus]")].find((element) => element.dataset.focus === key);
     if (target && target.disabled) {
       refocus(box, key.startsWith("up:") ? `down:${key.slice(3)}` : key.startsWith("down:") ? `up:${key.slice(5)}` : "order:title");

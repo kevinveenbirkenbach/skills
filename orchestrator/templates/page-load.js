@@ -32,7 +32,7 @@
       render(false);
       drawTime();
       drawAgent();
-      drawStream();
+      drawStream(true);
       if (motion.current.size === 0 || ui.asOf !== motion.asOf) {
         const first = motion.current.size === 0;
         motion.asOf = ui.asOf;

@@ -40,7 +40,7 @@ LONG_NAME = "/".join(Path(LONG_REPO).parts[-3:])
 LONG_ROWS = ("repo", "worktree", "core", "leaf")
 READ = res.READ.replace("const stored = async", "const storedResources = async").replace("await stored()", "await storedResources()")
 KIT = """
-  const stars = (selector) => all(selector).map((owner) => Boolean(ownStar(owner)));
+  const pinnable = (selector) => all(selector).map((owner) => Boolean(Panels.targetOf(owner)));
   const panel = (kind) => `#main [data-panel="resources-${kind}"]`;
   const lineIds = (root) => [...new Set(all("path.res-line", root).map((path) => path.dataset.id))];
   const tileOf = (kind) => all("#main .home-tile").find((node) => node.dataset.pin.startsWith(`metric:${kind}/`)) || null;
@@ -73,21 +73,20 @@ LOADED = """(async () => {@HELPERS@@READ@
 FOUND = """(async () => {@HELPERS@@HOME@@KIT@
   const found = {};
   await go("resources");
-  found.charts = stars('#main section.res-panel[data-panel^="resources-"]');
-  found.chips = all("#main .legend-chip .star").length;
-  found.inHead = all("#main .res-panel .star").every((star) => star.parentElement.classList.contains("res-head"));
+  found.charts = pinnable('#main section.res-panel[data-panel^="resources-"]');
+  found.stars = all(".star, .star-row").length;
   await go("artifacts/tree");
   await until(() => kept(), 8000);
-  found.tree = stars('#main [data-panel="artifacts/tree"]');
-  found.rows = Object.fromEntries(["repo", "branch", "wt"].map((kind) => [kind, stars(`#main [data-item^="artifact:${kind}:"]`)]));
+  found.tree = pinnable('#main [data-panel="artifacts/tree"]');
+  found.rows = Object.fromEntries(["repo", "branch", "wt"].map((kind) => [kind, pinnable(`#main [data-item^="artifact:${kind}:"]`)]));
   await until(() => Object.values(longRows).every((find) => find()), 8000);
   found.long = Object.fromEntries(Object.entries(longRows).map(([key, find]) => [key, find() ? find().dataset.item.length : null]));
-  found.disabled = all('#main [data-item^="artifact:"]').filter((node) => !ownStar(node) || ownStar(node).disabled).map((node) => node.dataset.item.slice(0, 80));
+  found.disabled = all('#main [data-item^="artifact:"]').filter((node) => !Panels.targetOf(node) || Panels.targetOf(node).refused).map((node) => node.dataset.item.slice(0, 80));
   found.deletes = all('#main button[aria-label="Delete"]').length;
   await go("agents/hierarchy");
-  found.order = stars('#main [data-panel="agents/order"]');
+  found.order = pinnable('#main [data-panel="agents/order"]');
   await go("tasks/operator");
-  found.operator = stars('#main [data-panel="tasks/operator"]');
+  found.operator = pinnable('#main [data-panel="tasks/operator"]');
   return found;
 })()"""
 METRIC = """(async () => {@HELPERS@@HOME@@READ@@KIT@
@@ -103,7 +102,7 @@ METRIC = """(async () => {@HELPERS@@HOME@@READ@@KIT@
   }
   const cpuOnly = Boolean(await until(() => lineIds(document.querySelector(panel("hardware"))).join() === "@CPU@", 5000));
   const hardware = await press(panel("hardware"));
-  const cpuTitle = starOf(panel("hardware")).getAttribute("title");
+  const cpuTitle = (await pinState(panel("hardware")))[1];
   const tokens = await press(panel("tokens"));
   for (const id of others) {
     chip(id).click();
@@ -111,7 +110,7 @@ METRIC = """(async () => {@HELPERS@@HOME@@READ@@KIT@
   }
   const back = Boolean(await until(() => lineIds(document.querySelector(panel("hardware"))).length === @COUNT@, 5000));
   await sleep(200);
-  const allState = [starOf(panel("hardware")).getAttribute("aria-pressed"), starOf(panel("hardware")).getAttribute("title")];
+  const allState = await pinState(panel("hardware"));
   await pickPanel("combined", true);
   await pickPanel("hardware", false);
   await pickPanel("tokens", false);
@@ -127,7 +126,7 @@ COMBINED_OFF = """(async () => {@HELPERS@@HOME@@READ@@KIT@
   await pickPanel("combined", false);
   const off = Boolean(await until(() => charts().length === 2 && lines().length === @COUNT@, 8000));
   await sleep(300);
-  return {off, hardware: [starOf(panel("hardware")).getAttribute("aria-pressed"), starOf(panel("hardware")).getAttribute("title")]};
+  return {off, hardware: await pinState(panel("hardware"))};
 })()"""
 HOME_METRICS = """(async () => {@HELPERS@@HOME@@KIT@
   await go("home");
@@ -166,12 +165,7 @@ PM = """(async () => {@HELPERS@@HOME@@KIT@
   const row = await until(() => kept(), 8000);
   row.closest("details").open = true;
   const tree = await press('#main [data-panel="artifacts/tree"]');
-  const rowStar = row ? ownStar(row) : null;
-  if (rowStar) {
-    rowStar.click();
-    await sleep(200);
-  }
-  const branch = rowStar ? (ownStar(kept()) || rowStar).getAttribute("aria-pressed") : null;
+  const branch = row ? await pinOwner(kept() || row) : null;
   await go("agents/hierarchy");
   const order = await press('#main [data-panel="agents/order"]');
   await go("tasks/operator");
@@ -210,14 +204,9 @@ LONG = """(async () => {@HELPERS@@HOME@@KIT@
   const pressed = {};
   const keys = {};
   for (const [key, find] of Object.entries(longRows)) {
-    const star = ownStar(find());
     keys[key] = pinKey(find());
-    pressed[key] = star ? [star.disabled, star.title.startsWith("Pin to Home: Artifact ")] : null;
-    if (star && !star.disabled) {
-      star.click();
-      await sleep(200);
-    }
-    pressed[key].push(ownStar(longRows[key]()).getAttribute("aria-pressed"));
+    const before = await menuPinOf(find());
+    pressed[key] = before ? [before[1].startsWith("Pin to Home: Artifact "), await pinOwner(find())] : null;
   }
   await go("home");
   await settled();
@@ -365,10 +354,10 @@ class TestHomeBookmarks(HubCase):
                 {"width": width, "height": height, "url": f"{page}-clear#stream", "wait": 600, "probe": CLEAR, "shot": None},
                 {"width": width, "height": height, "url": f"{page}-loaded#resources", "wait": 1200, "probe": probe(LOADED), "shot": None},
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(FOUND), "shot": None},
-                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(dash.STARS), "shot": None},
-                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(METRIC), "shot": f"{shot}-combined-star.png"},
-                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(dash.STARS, ["resources"]), "shot": None},
-                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(COMBINED_OFF), "shot": f"{shot}-metric-star.png"},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(dash.OWNERS), "shot": None},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(METRIC), "shot": f"{shot}-combined-pin.png"},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(dash.OWNERS, ["resources"]), "shot": None},
+                {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(COMBINED_OFF), "shot": f"{shot}-metric-pin.png"},
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(HOME_METRICS), "shot": f"{shot}-home-metrics.png"},
                 {"width": width, "height": height, "url": f"{page}-reloaded#home", "wait": 1500, "probe": probe(RELOADED), "shot": None},
                 {"width": width, "height": height, "url": None, "wait": 0, "probe": probe(PM), "shot": f"{shot}-home-bookmarks.png"},
@@ -388,7 +377,7 @@ class TestHomeBookmarks(HubCase):
                 loaded = next(results)
                 self.assertTrue(loaded["drawn"], loaded)
                 found = next(results)
-                self.assertEqual((found["charts"], found["chips"], found["inHead"]), ([True] * 4, 0, True), found)
+                self.assertEqual((found["charts"], found["stars"]), ([True] * 4, 0), found)
                 self.assertEqual(found["tree"], [True], found)
                 self.assertTrue(found["rows"]["repo"] and all(found["rows"]["repo"]), found)
                 self.assertTrue(found["rows"]["branch"] and all(found["rows"]["branch"]), found)
@@ -399,7 +388,7 @@ class TestHomeBookmarks(HubCase):
                 self.assertEqual(found["disabled"], [], found)
                 self.assertGreaterEqual(found["deletes"], 1, found)
                 walked = next(results)
-                self.assertEqual((walked["missing"], walked["covered"]), ([], []), walked)
+                self.assertEqual((walked["missing"], walked["stars"]), ([], []), walked)
                 metric = next(results)
                 self.assertNotIn("error", metric, metric)
                 self.assertEqual((metric["cpuOnly"], metric["hardware"], metric["tokens"], metric["back"], metric["combinedOn"], metric["combined"]), (True, "true", "true", True, True, "true"), metric)
@@ -415,7 +404,7 @@ class TestHomeBookmarks(HubCase):
                 self.assertRegex(metric["stored"][0][1], r"^hardware/[0-9a-f]{16}$")
                 self.assertEqual([key for _, key, _ in metric["stored"][1:]], ["tokens/interval/all", "combined/interval/all"])
                 combined_walk = next(results)
-                self.assertEqual((combined_walk["missing"], combined_walk["covered"]), ([], []), combined_walk)
+                self.assertEqual((combined_walk["missing"], combined_walk["stars"]), ([], []), combined_walk)
                 self.assertEqual(next(results), {"off": True, "hardware": ["false", "Pin to Home: Hardware: all series"]})
                 home = next(results)
                 self.assertEqual(home["errors"], [], home)
@@ -453,7 +442,7 @@ class TestHomeBookmarks(HubCase):
 
     def check_long(self, long: dict) -> None:
         self.assertEqual(long["errors"], [], long)
-        self.assertEqual(long["pressed"], {key: [False, True, "true"] for key in LONG_ROWS}, long)
+        self.assertEqual(long["pressed"], {key: [True, "true"] for key in LONG_ROWS}, long)
         self.assertEqual([key for key in long["stored"] if key in long["keys"].values()], list(long["keys"].values()), long)
         for key in ("core", "leaf"):
             self.assertRegex(long["keys"][key], r"^artifact:(wt|artefact)_23_[0-9a-f]{16}$", long)

@@ -13,6 +13,8 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
+from test_dream import council_with
+
 ROOT = Path(__file__).resolve().parents[1]
 CLIENT = ROOT / "orchestrator" / "client"
 REMINDER = ROOT / "skills" / "kvb-dream" / "hooks" / "reminder.sh"
@@ -467,7 +469,8 @@ class TestReminderHook(Scratch):
         self.work.mkdir()
 
     def run_reminder(self, path: str) -> subprocess.CompletedProcess:
-        env = {**os.environ, "HOME": str(self.root), "DREAM_STAMP_DIR": str(self.root / "stamps"), "PATH": path}
+        council = council_with(self.root / "council", {"dream": {"on": True, "every": 12}})
+        env = {**os.environ, **council, "HOME": str(self.root), "DREAM_STAMP_DIR": str(self.root / "stamps"), "PATH": path}
         return subprocess.run(["/usr/bin/bash", str(REMINDER)], cwd=self.work, input='{"session_id": "abc"}', env=env, capture_output=True, text=True, timeout=30, check=False)
 
     def test_a_planted_json_module_in_the_cwd_is_never_imported(self):

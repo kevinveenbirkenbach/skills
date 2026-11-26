@@ -41,11 +41,11 @@ const fs = require("fs");
 const vm = require("vm");
 const Receipts = require(process.argv[1]);
 const RadioSet = require(process.argv[2]);
-const code = ["page-dom.js", "page-stream.js", "page-radioview.js", "page-radiolog.js", "page-agent.js"].map((name) => fs.readFileSync(`${process.argv[3]}/${name}`, "utf8")).join("\\n");
+const code = ["page-dom.js", "page-codebox.js", "page-stream.js", "page-radioview.js", "page-radiolog.js", "page-agent.js", "page-agentset.js"].map((name) => fs.readFileSync(`${process.argv[3]}/${name}`, "utf8")).join("\\n");
 const input = JSON.parse(process.argv[4]);
 class Node {
   constructor(tag) {
-    Object.assign(this, {tag, attrs: {}, children: []});
+    Object.assign(this, {tag, attrs: {}, children: [], dataset: {}});
   }
   setAttribute(key, value) {
     this.attrs[key] = value;
@@ -66,7 +66,7 @@ const find = (node, test, out = []) => {
   return out;
 };
 const sandbox = {
-  Receipts, RadioSet, radioSet: RadioSet.valid({muted: ["s2"]}), Node, NS: "svg", HUMAN: "Operator", DAY: 86400, WEEKDAYS: [], revealed: String,
+  Receipts, RadioSet, radioSet: RadioSet.valid({}), settings: {agents: {s2: {sound: false, aloud: false, bubbles: true}}}, Node, NS: "svg", HUMAN: "Operator", DAY: 86400, WEEKDAYS: [], revealed: String,
   document: {createElement: (tag) => new Node(tag), createElementNS: (ns, tag) => new Node(tag)},
   relative: {format: () => "ago"}, absolute: {format: (date) => `at ${date.getTime() / 1000}`},
   Faces: {of: () => ({parts: []}), SIZE: 10}, speech: {current: null}, look: {hidden: new Set()}, PRESENCE: {}, STATUS: {},
@@ -82,7 +82,7 @@ const shape = (node) => ({
   })),
   more: find(node, (item) => item.attrs.class === "readers-more").map((item) => ({text: text(item), title: item.attrs.title})),
   groups: find(node, (item) => item.attrs.class === "readers").map((item) => item.attrs["aria-label"]),
-  mutes: find(node, (item) => item.attrs.class === "radio-mute").map((item) => [item.attrs["aria-label"], item.attrs["aria-pressed"], find(item, (part) => part.attrs["data-face"] !== undefined).map((part) => part.attrs["data-face"])]),
+  senders: find(node, (item) => item.attrs.class === "radio-sender").map((item) => [item.attrs["aria-label"], item.attrs["data-quiet"], find(item, (part) => part.attrs["data-face"] !== undefined).map((part) => part.attrs["data-face"])]),
 });
 console.log(JSON.stringify({
   events: input.events.map((entry) => shape(sandbox.probe.eventRow(entry))),
@@ -919,8 +919,8 @@ class TestReceiptsPage(unittest.TestCase):
         self.assertEqual((silent["readers"], silent["groups"]), ([], []))
         self.assertEqual(self.data["events"][2]["readers"], [])
 
-    def test_a_log_row_from_an_agent_leads_with_its_avatar_that_mutes_it(self):
-        self.assertEqual([row["mutes"] for row in self.data["logs"]], [[], [], [], [["Mute Two", "true", ["s2"]]], [["Mute Skills", "false", ["s5"]]]])
+    def test_a_log_row_from_an_agent_leads_with_its_avatar_that_opens_it_greyed_while_its_sound_and_read_aloud_are_off(self):
+        self.assertEqual([row["senders"] for row in self.data["logs"]], [[], [], [], [["Open Two", "true", ["s2"]]], [["Open Skills", "false", ["s5"]]]])
 
     def test_more_than_eight_readers_collapse_into_plus_n_with_the_full_list_on_hover(self):
         crowd = self.data["events"][1]

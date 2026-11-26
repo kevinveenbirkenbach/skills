@@ -15,12 +15,14 @@ duplicates; this skill cuts what still costs.
 The skills the current repository owns (`skills/`, its own `.claude/skills/`,
 not installed copies) and the skills repository. Measure before changing:
 
-- `scripts/budget.py --repo <skills repo> --top 10`: listing words, the
-  longest descriptions, every SKILL.md over the cap.
+- `scripts/budget.py --repo <skills repo> --top 10 --memory <project
+  memory>/MEMORY.md`: listing words, the longest descriptions, every SKILL.md
+  over the cap, and a `MEMORY.md` over 400 words.
 - Each own SKILL.md's word count, and what each registered hook prints per
   turn (settings files, read-only).
-- The window's traffic: the radio store (`radio.py show --all` of the
-  `kvb-org-radio` skill; wakes carry `"wake": true` in its `news.jsonl`),
+- The window's traffic: the radio store (`radio.py show --all --since 7d
+  --summary` of the `kvb-org-radio` skill; wakes carry `"wake": true` in its
+  `news.jsonl`),
   this session's `SendMessage` calls, and subagent runs
   (`log.py report` of the `kvb-org-perform` skill).
 - Context re-read per turn, from the transcripts Claude Code keeps:
@@ -48,8 +50,8 @@ not installed copies) and the skills repository. Measure before changing:
    `kvb-agent-optimize` skill), grep and reading after.
 6. **Hooks**: a hook prints nothing when nothing changed; a reminder fires
    once per window, not per turn.
-7. **Context window**: `make install` sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW`
-   to 500000 where it is unset. Propose a new value only with the
+7. **Context window**: `make install` (`scripts/enable-plugins.js`) sets
+   `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to 300000 where it is unset. Propose a new value only with the
    `context.py` series as evidence (tokens saved, compactions, and the
    operator's corrections of agents that lost a detail after one); the
    operator picks and changes it, because the settings are the operator's.

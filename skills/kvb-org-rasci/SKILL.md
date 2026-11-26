@@ -5,9 +5,8 @@ description: >
   Trigger on "rasci", "raci", "zuständigkeiten".
 ---
 
-The register is the single point of truth of the organisation: every agent
-records here what it works on, and claims, queue, handover and reports run
-over it. `${CLAUDE_SKILL_DIR}/scripts/rasci.py` keeps it in
+The register is the organisation's single point of truth: every agent
+records what it works on; claims, queue, handover and reports run over it. `${CLAUDE_SKILL_DIR}/scripts/rasci.py` keeps it in
 `<council root>/rasci.json`. A `kvb-org-organize` claim enters its task by
 itself (holder as R and A, `running`, start, workdir, branch); its release
 sets `done` and the end, or `stopped` while a key result is still open.
@@ -18,8 +17,7 @@ rasci.py kr <task> add "<measurable result>" | met <n> | open <n> | rm <n>
 rasci.py role <task> "<party>" <letters>
 rasci.py get <task>
 rasci.py rm <task>
-rasci.py show [--all]
-rasci.py show --wide [--all]
+rasci.py show [--wide] [--all]
 rasci.py artifacts [--ended] [--task <task>] [--worker <text>]
 rasci.py estimate <task> "<party>" --value <fib> --complexity <fib>
 rasci.py estimate <task> Operator --value <fib>
@@ -40,22 +38,22 @@ published). `done` is refused while one is open; a task ended short of them is
 ## Roles
 
 - **R Responsible**: does the task: the claim holder, or the subagent it runs.
-- **A Accountable**: exactly one; takes the final decision and carries the
-  overall responsibility. The claim holder, unless the operator decides.
+- **A Accountable**: exactly one; takes the final decision. The claim
+  holder, unless the operator decides.
 - **S Supportive**: actively helps carry it out: a peer's fix, the chair's
   grant, a stack or runner.
 - **C Consulted**: asked for input before acting: line representatives,
   lineage owners, the operator on a pending decision.
-- **I Informed**: kept up to date on progress or result, without a say.
+- **I Informed**: kept informed of progress, without a say.
 
 `-` clears a party; the operator is the party `Operator`.
 
 ## Rules
 
 - On start, `set` title, objective, description, priority and worker, `kr
-  add` every key result, and `role` every party beyond R and A; on each
-  change, update the status. The worker is the one session or subagent
-  executing the task right now.
+  add` every key result, and `role` every party beyond R and A; update the
+  status on each change. The worker is the session or subagent executing
+  it now.
 - Artifacts share this table and follow the `kvb-org-artefacts` skill:
   record each one when it appears, drop it once deleted. Add every script or
   tool the task ran (`--tool`): `tools` ranks them for `kvb-dream`.
@@ -69,8 +67,9 @@ published). `done` is refused while one is open; a task ended short of them is
 - Write only your own rows; another session's task belongs to that session.
 - Read `show` (Prio, WSJF, Task, Status, Worker, A; cells cut short) or
   `get` instead of asking a peer what it works on. `show --wide` adds OKR,
-  Artifacts, Start, End and every RASCI letter.
-- When invoked, print `show --wide` unchanged; its `gaps:` line names tasks
-  without exactly one A, without R, or open without a key result. `hotfix/`
-  and `operator/` rows are records, not work tasks: `gaps:`, `wsjf` and
+  Artifacts, Start, End and every RASCI letter. Both cap at the top 30 open
+  tasks; `--all` lists every task.
+- When invoked, summarize `show --wide` (counts per status, top tasks, the
+  `gaps:` line: shown tasks without exactly one A, without R, or open
+  without a key result), never reprint it. `hotfix/` and `operator/` rows are records, not work tasks: `gaps:`, `wsjf` and
   `artifacts` skip them. `get` prints one task in full, key results numbered.

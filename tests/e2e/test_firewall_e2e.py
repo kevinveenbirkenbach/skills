@@ -30,7 +30,7 @@ SHOW = """(async () => {@HELPERS@
   if (!ready) {
     return {error: text(document.getElementById("main"))};
   }
-  const owned = (svg) => svg.closest("button, a, [title]");
+  const owned = (svg) => svg.closest("button, a, label, [title]");
   const rows = () => all("#main table.fw-table tr[data-filter]");
   const chip = (id) => document.querySelector(`#main [aria-label="Show rules"] button[data-filter="${id}"]`);
   const sources = all("#main tbody[data-source]").map((node) => node.dataset.source);
@@ -290,7 +290,7 @@ class TestFirewallE2E(HubCase):
             with self.subTest(width=width):
                 self.assertNotIn("error", shown, shown)
                 self.assertEqual((shown["title"], shown["subs"]), ("Controls", base.SUBS))
-                self.assertEqual(shown["tabs"], {"first": [["tools", "true", False], ["rules", "false", True], ["groups", "false", True]], "picked": [["tools", "false", True], ["rules", "true", False], ["groups", "false", True]]})
+                self.assertEqual(shown["tabs"], {"first": [["tools", "true", False], ["rules", "false", True], ["groups", "false", True], ["schedules", "false", True]], "picked": [["tools", "false", True], ["rules", "true", False], ["groups", "false", True], ["schedules", "false", True]]})
                 self.assertEqual(shown["sources"], ["hub", str(self.settings)])
                 self.assertEqual(shown["folded"], {"expanded": ["false"] * 2, "rows": 0})
                 self.assertEqual(shown["opened"], ["true"] * 2)

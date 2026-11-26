@@ -35,11 +35,18 @@ from hub_support import (
     server,
     signing,
 )
-from kvb_orchestrator import engines
+from kvb_orchestrator import batches, engines
+from kvb_orchestrator.settings import Settings
 
 
 class HubCase(unittest.TestCase):
+    real_undo = False
+
     def setUp(self):
+        if not self.real_undo:
+            undo = mock.patch.object(Settings, "undo", lambda _settings: batches.UNDO)
+            undo.start()
+            self.addCleanup(undo.stop)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         base = Path(tmp.name)

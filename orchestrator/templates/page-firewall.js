@@ -14,7 +14,7 @@
   const TARGET_GONE = "gone";
   const TARGET_PICK = "";
   const SESSION_KEY = /^(?!-)[A-Za-z0-9_-]{1,128}$/;
-  const CONTROL_TABS = [["tools", "Tools", "bi-plug"], ["rules", "Rules", "bi-shield-lock"], ["groups", "Groups", "bi-people"]];
+  const CONTROL_TABS = [["tools", "Tools", "bi-plug"], ["rules", "Rules", "bi-shield-lock"], ["groups", "Groups", "bi-people"], ["schedules", "Schedules", "bi-clock"]];
   const CAPABILITY_WORDS = {deniedMcpServers: ["Unblock server", "Block server"], enabledPlugins: ["Enable plugin", "Disable plugin"], switches: ["Turn on", "Turn off"]};
   const TOOL_HINTS = {
     deniedMcpServers: "Off blocks the server before it loads, in every session and project.",
@@ -201,10 +201,15 @@
    * @returns {HTMLElement} the Controls screen: title, tab list, one panel per tab, only the chosen one shown, and the bar.
    */
   function controlsPage(panels, bar) {
+    if (ui.views.rules === "schedules") {
+      firewall.tab = "schedules";
+      ui.views.rules = null;
+    }
     const views = {};
     const tabs = {};
     const pick = (id) => {
       firewall.tab = id;
+      window.history.replaceState(null, "", Nav.hashOf("rules", id === "schedules" ? id : null));
       for (const [key, tab] of Object.entries(tabs)) {
         tab.setAttribute("aria-selected", String(key === id));
         views[key].hidden = key !== id;

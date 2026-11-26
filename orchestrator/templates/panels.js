@@ -12,12 +12,9 @@ const Panels = (() => {
   const ZOOM = {min: 50, max: 200, step: 10, base: 100};
   const HOSTS = "[data-panel], [data-item]";
   const TOO_LONG = "the id runs past 200 characters";
-  const XHTML = "http://www.w3.org/1999/xhtml";
-  const SVG = "http://www.w3.org/2000/svg";
   const panels = new Map();
   const items = new Map();
   const captures = new Map();
-  const placed = new WeakMap();
 
   const keyOf = (pin) => `${pin.kind}:${pin.id}`;
   const span = (value) => Number.isInteger(value) && value >= 1 && value <= SPAN;
@@ -111,7 +108,7 @@ const Panels = (() => {
 
   /**
    * @param element - a source element with data-panel or data-item.
-   * @returns {kind, id, view, refused} of the pin its star makes now, or null for a data-item without a kind; refused
+   * @returns {kind, id, view, refused} of the pin its "Pin to Home" makes now, or null for a data-item without a kind; refused
    * names why no pin is possible, such as an id past 200 characters, and id is null then unless a capture gave one.
    */
   function targetOf(element) {
@@ -259,117 +256,14 @@ const Panels = (() => {
     };
   }
 
-  function glyph(name) {
-    const svg = document.createElementNS(SVG, "svg");
-    svg.setAttribute("class", "bi");
-    svg.setAttribute("aria-hidden", "true");
-    svg.setAttribute("focusable", "false");
-    const use = document.createElementNS(SVG, "use");
-    use.setAttribute("href", `#${name}`);
-    svg.append(use);
-    return svg;
-  }
-
-  function paint(button, on, title, refused) {
-    const label = on ? "Unpin from Home" : "Pin to Home";
-    if (button.getAttribute("aria-pressed") !== String(on)) {
-      button.setAttribute("aria-pressed", String(on));
-      button.replaceChildren(glyph(on ? "bi-star-fill" : "bi-star"));
-    }
-    if (button.getAttribute("aria-label") !== label) {
-      button.setAttribute("aria-label", label);
-    }
-    const hint = refused ? `${label}: not possible, ${refused}` : `${label}: ${title}`;
-    if (button.getAttribute("title") !== hint) {
-      button.setAttribute("title", hint);
-    }
-    if (button.hasAttribute("disabled") !== Boolean(refused)) {
-      if (refused) {
-        button.setAttribute("disabled", "");
-      } else {
-        button.removeAttribute("disabled");
-      }
-    }
-  }
-
-  function slotOf(element) {
-    const own = [...element.querySelectorAll("[data-star-slot]")].find((slot) => slot.closest(HOSTS) === element);
-    if (own) {
-      return own;
-    }
-    const found = [...element.children].find((child) => child.classList.contains("star-row"));
-    if (found) {
-      return found;
-    }
-    const row = document.createElement("div");
-    row.setAttribute("class", "star-row");
-    element.prepend(row);
-    return row;
-  }
-
-  function button(element, options) {
-    const made = document.createElement("button");
-    made.setAttribute("type", "button");
-    made.setAttribute("class", "star btn small ghost icon-only");
-    made.addEventListener("pointerdown", (event) => event.stopPropagation());
-    made.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const now = targetOf(element);
-      const entry = now && now.id && !now.refused ? lookup(now.kind, now.id, now.view) : null;
-      if (entry) {
-        options.press(now.kind, now.id, entry.title, now.view);
-      }
-    });
-    return made;
-  }
-
-  function star(element, options) {
-    if (element.namespaceURI !== XHTML) {
-      return;
-    }
-    const target = targetOf(element);
-    const entry = target && target.id ? lookup(target.kind, target.id, target.view) : null;
-    if (!target || (target.id && !entry)) {
-      return;
-    }
-    let made = placed.get(element);
-    if (!made || !element.contains(made)) {
-      made = button(element, options);
-      placed.set(element, made);
-      slotOf(element).append(made);
-    }
-    const refused = target.refused || "";
-    paint(made, !refused && options.pinned(target.kind, target.id), entry ? entry.title : "", refused);
-  }
-
   /**
-   * @param slot - a data-star-slot element that draw moves into freshly drawn content.
-   * @param draw - () => void, the redraw.
-   * @returns nothing; the star in the slot gets back the focus it had before draw moved it.
+   * @param root - the element whose subtree carries the marked source elements.
+   * @param marks - [[selector, panel id], ...]: source elements whose page carries no data-panel of its own, tagged so
+   * that the context menu's "Pin to Home" finds them.
+   * @returns mark(): tags the marks again.
    */
-  function keepFocus(slot, draw) {
-    const held = slot && slot.contains(document.activeElement) ? document.activeElement : null;
-    draw();
-    if (held && held.isConnected && document.activeElement !== held) {
-      held.focus();
-    }
-  }
-
-  /**
-   * @param root - the element whose subtree gets a star on every element with data-panel or data-item; the star goes
-   * into the element's own data-star-slot descendant, else into a star row the element gets as its first child.
-   * @param options - {pinned(kind, id) => boolean, press(kind, id, title, view), marks: [[selector, panel id], ...]},
-   * marks naming source elements whose page carries no data-panel of its own; view is undefined unless a capture
-   * gave one.
-   * @returns mark(): tags the marks, stars what lacks one and repaints the pressed state of all.
-   */
-  function decorate(root, options) {
-    const marks = options.marks || [];
-    const mark = () => {
-      marks.forEach(([selector, id]) => root.querySelectorAll(selector).forEach((element) => element.hasAttribute("data-panel") || element.setAttribute("data-panel", id)));
-      root.querySelectorAll(HOSTS).forEach((element) => star(element, options));
-    };
+  function decorate(root, marks) {
+    const mark = () => marks.forEach(([selector, id]) => root.querySelectorAll(selector).forEach((element) => element.hasAttribute("data-panel") || element.setAttribute("data-panel", id)));
     mark();
     new MutationObserver(mark).observe(root, {childList: true, subtree: true});
     return mark;
@@ -377,7 +271,7 @@ const Panels = (() => {
 
   return {
     MAX, SPAN, PANEL, ID, HOSTS, keyOf, token, raw, digest, valid, validLayout, clean, panel, item, capture, lookup, targetOf, has, add, remove, firstOfGroup,
-    place, move, resize, placeKey, moveKey, resizeKey, resizeBy, stretch, ZOOM, zoomBy, memory, store, decorate, keepFocus,
+    place, move, resize, placeKey, moveKey, resizeKey, resizeBy, stretch, ZOOM, zoomBy, memory, store, decorate,
   };
 })();
 if (typeof module === "object" && module.exports) {

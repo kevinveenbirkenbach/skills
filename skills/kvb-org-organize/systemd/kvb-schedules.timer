@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedules: refresh the hub's timer and hook view every 5 minutes
+
+[Timer]
+OnStartupSec=30s
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

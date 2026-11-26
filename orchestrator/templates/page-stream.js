@@ -9,11 +9,15 @@
       stream.events = [];
       stream.entries = [];
       stream.last = 0;
+      stream.tag = "";
     }
     stream.busy = true;
     try {
-      const response = await fetch(`/api/events?${windowQuery()}&${filterQuery()}&after=${stream.last}`, {cache: "no-store"});
-      if (response.ok) {
+      const response = await fetch(`/api/events?${windowQuery()}&${filterQuery()}&after=${stream.last}`, {cache: "no-store", headers: stream.tag ? {"If-None-Match": stream.tag} : {}});
+      if (response.status === 304) {
+        stream.error = "";
+      } else if (response.ok) {
+        const tag = response.headers.get("ETag") || "";
         const data = await response.json();
         if (stream.key === key) {
           const seen = new Set(stream.entries.map((entry) => entry.id));
@@ -21,6 +25,7 @@
           stream.entries = [...stream.entries, ...data.entries.filter((entry) => !seen.has(entry.id))].sort((a, b) => a.ts - b.ts).slice(-STREAM_KEEP);
           stream.last = data.last;
           stream.sessions = data.sessions;
+          stream.tag = tag;
           stream.error = "";
         }
       } else {
@@ -30,7 +35,7 @@
       ui.offline = true;
     }
     stream.busy = false;
-    drawStream();
+    drawStream(true);
     if (stream.again) {
       stream.again = false;
       fetchEvents();
@@ -120,11 +125,10 @@
       return [h("p", {class: "text question"}, revealed(entry.title)), entry.text !== "-" ? h("p", {class: "text reason"}, revealed(entry.text)) : null];
     }
     if (entry.kind === "ask" || entry.kind === "operator") {
-      const where = entry.kind === "ask" ? entry.ref.cwd : entry.ref.directory;
-      return [h("div", {class: "command", "data-path": where || "-"}, h("code", {}, entry.kind === "ask" ? entry.text : entry.title), copyButton(entry.kind === "ask" ? entry.text : entry.title)), h("span", {class: "muted"}, `in ${dash(where)}`), entry.kind === "operator" && entry.text !== "-" ? h("p", {class: "text"}, entry.text) : null];
+      return [entry.kind === "operator" && entry.text !== "-" ? h("p", {class: "text"}, entry.text) : null];
     }
     if (entry.kind === "review") {
-      return [entry.text ? h("pre", {class: "notes"}, entry.text) : null, h("div", {class: "line-actions"}, iconBtn("bi-eye", "View diff", "btn small soft", () => reviewSheet(entry.ref.id)))];
+      return [entry.text ? h("pre", {class: "notes"}, entry.text) : null];
     }
     if (entry.kind === "cron") {
       const ref = entry.ref;
@@ -137,30 +141,57 @@
     return [entry.text ? h("p", {class: "text"}, entry.text) : null];
   }
 
+  /**
+   * @param {Object} entry a stream entry.
+   * @param {Object|null} item its waiting inbox item, or null.
+   * @returns {HTMLElement|null} one code box with the entry's command and diff and the item's actions in its foot; a
+   * review entry without a waiting item loads its diff on the eye's first click; null for an entry with neither.
+   */
+  function streamCode(entry, item) {
+    const commanded = entry.kind === "ask" || (entry.kind === "operator" && entry.ref.check !== "decision");
+    const late = entry.kind === "review" && !item;
+    const key = `message:${entry.ts}/${entry.id}`;
+    const opened = late && codeOpened(key, "preview");
+    const diff = item ? diffBlocks(item) : opened ? diffBlocks({kind: "review", id: entry.ref.id, diff: 0}) : null;
+    if (!commanded && !diff && !late) {
+      return null;
+    }
+    const text = entry.kind === "ask" ? entry.text : entry.title;
+    const where = entry.kind === "ask" ? entry.ref.cwd : entry.ref.directory;
+    const missing = late ? h("p", {class: "muted"}, opened ? "No diff stored for this review." : "The eye loads the diff of this review.") : null;
+    return codeBox(key, "preview", [commanded ? h("div", {class: "command", "data-path": where || "-"}, h("code", {}, text)) : null, commanded ? h("span", {class: "muted code-where"}, `in ${dash(where)}`) : null, diff || missing],
+      commanded ? text : "", item ? actionsFor(item) : [], late ? drawStream : null);
+  }
+
   function eventRow(entry) {
     const answered = entry.kind === "operator" && entry.ref.answered;
     const item = entry.waiting && !answered ? inboxOf(entry) : null;
+    const code = streamCode(entry, item);
     const choice = item ? choiceOf(item, () => {}) : null;
     const alarm = entry.kind === "radio" && (entry.part === "mayday" || entry.part === "pan-pan");
-    const renamed = entry.now && entry.now !== entry.agent ? h("span", {title: `now: ${entry.now}`}, person(entry.agent)) : person(entry.agent);
-    const who = entry.agent ? [face(entry.agent, false), renamed] : entry.session ? h("strong", {title: entry.session}, entry.session.slice(0, 8)) : null;
+    const renamed = entry.now && entry.now !== entry.agent ? h("span", {title: `now: ${entry.now}`}, agentLink(entry.agent)) : agentLink(entry.agent);
+    const who = entry.agent ? renamed : entry.session ? h("strong", {title: entry.session}, entry.session.slice(0, 8)) : null;
     const headline = entry.kind === "transcript" || entry.kind === "ask" || entry.kind === "operator" ? null : h("span", {class: "headline"}, Receipts.headline(entry));
     const blocked = (item && item.blocked) || (entry.kind === "operator" && entry.ref.blocked) || "";
     return h("li", {class: `entry k-${entry.kind}${entry.waiting && !answered ? " waiting" : ""}${alarm ? " alarm" : ""}`, "data-ref": item ? keyOf(item) : null, "data-item": `message:${entry.ts}/${entry.id}`, "data-to": item && item.to ? item.to : null,
       "data-blocked": blocked ? "" : null, "data-answered": answered ? "" : null, title: blocked || null},
       h("div", {class: "msg-meta"}, when(entry.ts), kindPill(entry), extras(entry)),
       h("div", {},
-        h("div", {class: "route", "data-star-slot": ""}, who, entry.sub ? h("button", {type: "button", class: "linkish muted", on: {click: () => focusSub(entry.session, entry.sub)}}, `› Subagent ${entry.sub.slice(0, 12)}`) : null, entry.kind === "ask" ? h("strong", {}, entry.title) : null, headline),
+        h("div", {class: "route"}, who, entry.sub ? h("button", {type: "button", class: "linkish muted", on: {click: () => focusSub(entry.session, entry.sub)}}, `› Subagent ${entry.sub.slice(0, 12)}`) : null, entry.kind === "ask" ? h("strong", {}, entry.title) : null, headline),
         entry.kind === "decision" && choice ? choice : [body(entry), choice],
         entry.kind === "radio" ? readerRow(entry.ref) : null,
         blocked ? h("p", {class: "item-blocked"}, icon("bi-slash-circle"), blocked) : null,
+        code,
         item && item.job ? consoleOf(item.job) : null,
-        item ? diffBlocks(item) : null,
         item ? feedbackList(keyOf(item)) : null,
-        item ? h("div", {class: "line-actions"}, actionsFor(item)) : null));
+        item && !code ? h("div", {class: "line-actions"}, actionsFor(item)) : null));
   }
 
-  function drawStream() {
+  /**
+   * @param {boolean} [polled] true from a poll: the rows stay when the shown entries, their inbox items and the error
+   * are unchanged; any other call redraws them.
+   */
+  function drawStream(polled) {
     if (!stream.dom || ui.screen !== "stream") {
       return;
     }
@@ -168,6 +199,11 @@
     const rows = [...stream.events, ...stream.entries.filter((entry) => entry.ts >= floor)].sort((a, b) => b.ts - a.ts || (a.id < b.id ? 1 : -1));
     const shown = rows.slice(0, FEED_LIMIT);
     stream.dom.count.textContent = `${rows.length} entries${live() ? " · following live" : ""}`;
+    const drawn = JSON.stringify([shown, shown.map((entry) => entry.waiting ? inboxOf(entry) : null), rows.length, stream.error, rows.length ? null : [stream.busy, activeWaiting()]]);
+    if (polled === true && drawn === stream.dom.drawn) {
+      return;
+    }
+    stream.dom.drawn = drawn;
     if (stream.error) {
       stream.dom.list.replaceChildren(emptyState("Stream not readable", stream.error));
       return;
@@ -200,5 +236,5 @@
       drawStream();
       fetchEvents();
     }, 0);
-    return h("div", {}, h("div", {class: "filters"}, categories, search, more, count), focus, list);
+    return h("div", {}, boxHead("Stream", "filters stream-head", categories, search, more, count), focus, list);
   }

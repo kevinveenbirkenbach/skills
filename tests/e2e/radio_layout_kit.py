@@ -70,7 +70,20 @@ PROBES = """
     node.click();
   };
   const box = (node) => node.getBoundingClientRect();
-  const ownStar = (owner) => all(".star", owner).find((node) => node.closest("[data-panel], [data-item]") === owner) || null;
+  const pinByMenu = async (owner) => {
+    const edge = box(owner);
+    owner.dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: Math.round(edge.left + 4), clientY: Math.round(edge.top + 4)}));
+    const menu = await until(() => document.querySelector(".ctx-menu:not([hidden])"), 3000);
+    const item = menu ? all('[role="group"][data-scope="element"] [role="menuitem"]', menu).find((node) => text(node.querySelector(".ctx-label")) === "Pin to Home") : null;
+    if (item) {
+      item.click();
+    } else if (menu) {
+      menu.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true, cancelable: true}));
+    }
+    await sleep(250);
+    const target = Panels.targetOf(owner);
+    return String((ViewStore.get("home.pins") || []).some((pin) => pin.kind === target.kind && pin.id === target.id));
+  };
   const openSpot = async () => {
     await until(() => typeof Nav === "object" && document.getElementById("radio-spot"), 8000);
     const toggle = document.getElementById("radio-open");

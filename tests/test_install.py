@@ -27,6 +27,7 @@ HOME_TOOLS = ("bash", "cp", "dirname", "find", "install", "ln", "mkdir", "python
 COUNCIL_PARTS = (
     "scripts/orchestrator.sh", "scripts/tokeneconomizer.sh", "plugins-lock.json",
     "skills/kvb-org-organize/scripts/councilroot.py", "skills/kvb-org-organize/scripts/nofollow.py",
+    "skills/kvb-org-organize/scripts/schedules.py",
 )
 AGENT_ROOTS = {"sandbox": {"filesystem": {"allowWrite": ["~/.local/state/agents-shared", "~/.local/state/agents-release/**"]}}}
 CGROUP_KILL = """
@@ -40,6 +41,9 @@ HOME_UNITS = (
     "kvb-org-queue-cleanup/systemd/kvb-org-queue-cleanup.service",
     "kvb-org-queue-cleanup/systemd/kvb-org-queue-cleanup.timer",
     "kvb-org-queue-cleanup/systemd/kvb-org-queue-cleanup.path",
+    "kvb-org-organize/systemd/kvb-schedules.service",
+    "kvb-org-organize/systemd/kvb-schedules.timer",
+    "kvb-org-organize/systemd/kvb-schedules.path",
 )
 
 
@@ -118,7 +122,7 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(json.loads(config.read_text(encoding="utf-8")), {"mine": True})
             self.assertIn(str(config), done.stderr)
 
-    def home_install(self, root: Path, binary: bool, config: bool = True, fail_now: bool = False) -> tuple[subprocess.CompletedProcess, list[str], list[str]]:
+    def home_install(self, root: Path, binary: bool, config: bool = True, fail_now: bool = False, schedules: dict | None = None) -> tuple[subprocess.CompletedProcess, list[str], list[str]]:
         repo, stubs, home = root / "repo", root / "bin", root / "home"
         (repo / "scripts").mkdir(parents=True)
         shutil.copy(INSTALL, repo / "scripts" / "install.sh")
@@ -154,6 +158,10 @@ class TestInstall(unittest.TestCase):
             (home / ".config" / "kvb-code-graph" / "config.json").write_text(
                 '{"queue_file_threshold": 2000, "queue_task": "work/code-graph-index"}\n', encoding="utf-8"
             )
+        if schedules is not None:
+            council = home / ".local" / "state" / "agents-shared"
+            council.mkdir(parents=True, mode=0o700)
+            (council / "schedules.json").write_text(json.dumps(schedules), encoding="utf-8")
         env = {"PATH": str(stubs), "TARGET": str(home), "HOME": str(home), "AGENTS_COUNCIL_LEGACY": str(root / "legacy")}
         done = subprocess.run(["/bin/bash", str(repo / "scripts" / "install.sh")], env=env, capture_output=True, text=True, check=False)
         return done, read_lines(log), read_lines(cbm)
@@ -167,6 +175,25 @@ class TestInstall(unittest.TestCase):
             installed = root / "home" / ".config" / "systemd" / "user" / "kvb-code-graph.service"
             self.assertEqual(installed.read_text(encoding="utf-8"), UNIT.read_text(encoding="utf-8"))
             self.assertNotIn("kvb-code-graph: no config", done.stderr)
+
+    def test_the_home_install_starts_the_schedules_reconciler_and_leaves_the_dream_timer_to_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            done, calls, _ = self.home_install(root, binary=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("--user enable --now kvb-org-queue-cleanup.timer kvb-org-queue-cleanup.path kvb-schedules.path kvb-schedules.timer", calls)
+            self.assertIn("--user start kvb-schedules.service", calls)
+            self.assertFalse([call for call in calls if "enable" in call and "kvb-dream-notify" in call])
+            units = root / "home" / ".config" / "systemd" / "user"
+            for name in ("kvb-schedules.service", "kvb-schedules.timer", "kvb-schedules.path", "kvb-dream-notify.timer"):
+                self.assertTrue((units / name).is_file(), name)
+
+    def test_a_code_graph_row_switched_off_keeps_the_service_off_on_a_reinstall(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            done, calls, _ = self.home_install(Path(tmp), binary=True, schedules={"code-graph": {"on": False}})
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertFalse([call for call in calls if "kvb-code-graph" in call])
+            self.assertIn("kvb-code-graph.service stays off", done.stdout + done.stderr)
 
     def test_the_home_install_turns_the_daemon_auto_index_off(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -265,6 +292,22 @@ class TestInstall(unittest.TestCase):
                         self.assertEqual(bytecode, [])
                         self.assertTrue((installed / "own" / "scripts" / "radio.py").is_file())
                         self.assertTrue((installed / "locked" / "SKILL.md").is_file())
+
+
+class TestCoachLock(unittest.TestCase):
+    COACH = ("kvb-coach", "kvb-coach-meditation", "kvb-coach-off", "kvb-coach-on")
+
+    def test_the_lock_pins_the_four_coach_skills_at_one_commit_of_the_coach_repository(self):
+        lock = json.loads((REPO_ROOT / "skills-lock.json").read_text(encoding="utf-8"))["skills"]
+        coach = {name: entry for name, entry in lock.items() if entry["source"] == "kevinveenbirkenbach/coach"}
+        self.assertEqual(sorted(coach), list(self.COACH))
+        self.assertEqual(len({entry["commit"] for entry in coach.values()}), 1)
+        self.assertEqual({name: (entry["sourceType"], entry["skillPath"]) for name, entry in coach.items()}, {name: ("github", f"skills/{name}/SKILL.md") for name in self.COACH})
+        self.assertFalse([name for name in self.COACH if (REPO_ROOT / "skills" / name).exists()])
+
+    def test_the_installer_registers_the_coach_reminder_it_does_not_ship(self):
+        text = (REPO_ROOT / "scripts" / "enable-plugins.js").read_text(encoding="utf-8")
+        self.assertIn('const REMINDERS = ["kvb-dream", "kvb-coach"];', text)
 
 
 if __name__ == "__main__":

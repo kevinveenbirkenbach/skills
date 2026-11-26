@@ -74,7 +74,8 @@
       const newAlarms = [...alarms].filter(([key]) => !known.alarms.has(key)).map(([, row]) => row);
       const newRadio = state.radio.filter((row) => !known.radio.has(`${row.ts}|${row.from}|${row.text.slice(0, 40)}`));
       const direct = newRadio.filter((row) => row.to.includes(HUMAN));
-      const present = {mayday: newAlarms.length > 0, review: fresh.some((item) => item.kind !== "operator"), direct: direct.length > 0, radio: newRadio.length > 0};
+      const sounding = newRadio.filter((row) => RadioSet.heard(row, settings.agents, "sound"));
+      const present = {mayday: newAlarms.length > 0, review: fresh.some((item) => item.kind !== "operator"), direct: sounding.some((row) => row.to.includes(HUMAN)), radio: sounding.length > 0};
       const kind = radioSet.mode === "silence" || !settings.channels.sounds ? null : Voice.beep(present, tones(), SOUND_KINDS.map(([id]) => id));
       if (kind) {
         play(kind, loudness(kind));

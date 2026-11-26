@@ -271,7 +271,7 @@ class TestSpeechGateHttp(HubCase):
         self.host_cpu(50.0, 5)
         state = self.snapshot()
         self.assertEqual(state["speech"]["gate"], {"threshold": 50, "cpu": 50.0, "open": False})
-        rows = [(row["word"], row["rest"], row["speech"]) for row in state["radio"]]
+        rows = [(row["word"], row["rest"], phrasing.joined((row["word"], row["rest"]))) for row in state["radio"]]
         self.assertEqual(rows, [
             (WORDS["mayday"], "this is Docs Docs Docs, disk full, over", f"{WORDS['mayday']}, this is Docs Docs Docs, disk full, over"),
             ("", "Skills, Skills, this is Docs, ready, over", "Skills, Skills, this is Docs, ready, over"),

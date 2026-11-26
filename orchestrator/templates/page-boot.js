@@ -16,7 +16,8 @@
   document.getElementById("palette-open").addEventListener("click", openPalette);
   document.getElementById("settings-open").addEventListener("click", settingsSheet);
   document.getElementById("bubbles-toggle").addEventListener("click", toggleBubbles);
-  document.addEventListener("click", (event) => closeMenus(event.target instanceof Element ? event.target.closest(MENUS) : null));
+  document.addEventListener("click", menuClick);
+  document.addEventListener("toggle", menuLinger, true);
   document.addEventListener("scroll", placeStations, {capture: true, passive: true});
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement) {
@@ -60,13 +61,4 @@
   drawTime();
   motion.asOf = ui.asOf;
   relayout(0);
-  window.setInterval(poll, 10000);
-  window.setInterval(follow, 3000);
-  window.setInterval(() => relayout(MOVE), RELAYOUT);
-  window.setInterval(() => live() && drawSky(), 30000);
-  window.setInterval(syncRadio, 20000);
-  window.setInterval(() => {
-    if (tree.dom && !document.hidden) {
-      fetchTree();
-    }
-  }, 60000);
+  startTimers();

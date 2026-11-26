@@ -37,7 +37,7 @@
   const MOVE = 2000;
   const RELAYOUT = 60000;
   const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
-  const STORE = {views: "kvb-orchestrator.views", status: "kvb-orchestrator.status", comments: "kvb-orchestrator.match-comments", peeks: "kvb-orchestrator.match-peeks"};
+  const STORE = {views: "kvb-orchestrator.views", status: "kvb-orchestrator.status", comments: "kvb-orchestrator.match-comments", peeks: "kvb-orchestrator.match-peeks", wide: "kvb-orchestrator.match-wide"};
   const PRESENCE = {
     working: ["Working", "bi-gear-fill", "info"],
     alive: ["Alive", "bi-heart-pulse-fill", "ok"],
@@ -75,7 +75,7 @@
     direct: [[740, 0, 0.2]],
     radio: [[520, 0, 0.07]],
   };
-  const KEYS = [["Ctrl+K", "Commands, views, agents and AI command"], ["Right-click", "Context menu: the element's commands, then the tab's, then the general ones"], ["Shift+right-click", "The browser's own context menu"], ["Menu key · Shift+F10", "Context menu of the focused element: ↑ / ↓ move, Enter runs, Esc closes"], ["1 · 2 · 3 · 4", "Stream · Agents · Artifacts · Tasks"], ["j / k", "Waits on Operator: next / previous entry"], ["x", "Waits on Operator: select entry"], ["a", "Waits on Operator: grant entry (3 s to undo)"], ["Enter", "Waits on Operator: open entry"], ["f", "Comment on the selected lines of a diff or a command; Deny or Grant sends the comments"], ["→ · ← · ↑", "Match: accept · reject with feedback · later"],["/", "Search the stream"], ["h", "Look at the sky: drag turns the view, wheel or two fingers zoom, Esc ends"], ["Arrows · + / - · 0", "Sky (focused): turn · zoom · reset"], ["Drag · wheel", "3D: turn, right drag pans, wheel zooms"], ["+ / - · 0 · Ctrl+wheel", "Home tile (focused): zoom its content in · out · reset"],["🎙 hold", "Voice input into the agent field or the command line, never sent automatically"], ["?", "This help"], ["Esc", "Close"]];
+  const KEYS = [["Ctrl+K", "Commands, views, agents and AI command"], ["Right-click", "Context menu: the element's commands, then the tab's, then the general ones"], ["Shift+right-click", "The browser's own context menu"], ["Menu key · Shift+F10", "Context menu of the focused element: ↑ / ↓ move, Enter runs, Esc closes"], ["1 · 2 · 3 · 4", "Stream · Agents · Artifacts · Tasks"], ["j / k", "Waits on Operator: next / previous entry"], ["x", "Waits on Operator: select entry"], ["a", "Waits on Operator: grant entry (undo window as set in Settings)"], ["Enter", "Waits on Operator: open entry"], ["f", "Comment on the selected lines of a diff or a command; Deny or Grant sends the comments"], ["d · a · w · s", "Match (also → · ← · ↑): accept · reject with feedback · next card · undo the last step; on the release card d releases"],["/", "Search the stream"], ["h", "Look at the sky: drag turns the view, wheel or two fingers zoom, Esc ends"], ["Arrows · + / - · 0", "Sky (focused): turn · zoom · reset"], ["Drag · wheel", "3D: turn, right drag pans, wheel zooms"], ["+ / - · 0 · Ctrl+wheel", "Home tile (focused): zoom its content in · out · reset"],["🎙 hold", "Voice input into the agent field or the command line, never sent automatically"], ["?", "This help"], ["Esc", "Close"]];
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
   const relative = new Intl.RelativeTimeFormat("en", {numeric: "auto"});
   const absolute = new Intl.DateTimeFormat("en-GB", {dateStyle: "medium", timeStyle: "short"});

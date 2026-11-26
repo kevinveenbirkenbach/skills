@@ -39,7 +39,7 @@ class Element {
 Panels.item("task", (id) => `Task ${id}`, () => null);
 const KEYS_OF = {Stage: "s2", Docs: "s3"};
 const NAMES = {s2: "Stage", s3: "Docs"};
-const calls = {tasks: [], pins: [], feedback: [], shown: [], closed: 0};
+const calls = {tasks: [], pins: [], feedback: [], shown: [], toasts: [], closed: 0};
 const context = {
   console, Nav, Panels, Element, JSON, Math, Object, Array, String, Number, Boolean, Promise, Map, Set, Intl,
   document: {activeElement: null, currentScript: null}, window: {innerWidth: 1366, innerHeight: 768, matchMedia: () => ({matches: false})}, navigator: {},
@@ -50,7 +50,7 @@ const context = {
   agentNames: () => ["Docs", "Stage"], agentKey: (who) => KEYS_OF[who] || who, nameOf: (key) => NAMES[key] || key, labelOf: (key) => NAMES[key] || key, keyOf: (item) => `${item.kind}:${item.id}`,
   go: () => {}, useView: () => {}, useSaved: () => {}, openAgent: () => {}, openRadio: () => {}, confirmAct: () => {}, openAgentOrder: () => {}, settingsSheet: () => {},
   toggleMusic: () => {}, skyLook: () => {}, toggleLeitstand: () => {}, askNotify: () => {}, helpSheet: () => {}, micFrame: (field) => field,
-  taskSheet: (id) => calls.tasks.push(id), artSelect: () => {}, select: () => {}, openItem: () => {}, openSheet: () => {}, glossarySections: () => [], toast: () => {},
+  taskSheet: (id) => calls.tasks.push(id), artSelect: () => {}, select: () => {}, openItem: () => {}, openSheet: () => {}, glossarySections: () => [], toast: (...args) => calls.toasts.push(args),
   homePins: () => [], homePress: (kind, id) => calls.pins.push(`${kind}:${id}`), HOME_OPENERS: {task: (id) => calls.tasks.push(`home ${id}`)},
   closeMenus: () => { calls.closed += 1; }, calls,
 };
@@ -67,6 +67,10 @@ const taskSections = ctxSections(inside);
 out.task = labels(taskSections);
 taskSections[0].items.forEach((item) => item.label !== "Copy task id" && item.run());
 out.ran = {tasks: calls.tasks, pins: calls.pins};
+const refused = ctxSections(new Element("li", {"data-item": "artifact:wt:/" + "p".repeat(300)}))[0];
+out.refused = [refused.title, refused.items.map((item) => [item.label, item.hint])];
+refused.items[0].run();
+out.toasts = calls.toasts;
 ui.screen = "agents";
 out.agent = labels(ctxSections(new Element("g", {"data-face": "s2", "data-pick": "s2"})));
 out.operator = labels(ctxSections(new Element("span", {"data-face": "Operator"})))[0][0];
@@ -137,12 +141,18 @@ class TestHubContextMenu(unittest.TestCase):
     def test_the_element_items_act_on_the_clicked_element(self):
         self.assertEqual(self.data["ran"], {"tasks": ["work/feature"], "pins": ["task:work/feature"]})
 
+    def test_a_refused_pin_keeps_its_menu_item_names_why_and_pins_nothing(self):
+        why = "the id runs past 200 characters"
+        self.assertEqual(self.data["refused"], ["Home pin", [["Pin to Home", f"not possible, {why}"]]])
+        self.assertEqual(self.data["toasts"], [["Not pinned", [f"Pin to Home is not possible: {why}."], False]])
+        self.assertEqual(self.data["ran"]["pins"], ["task:work/feature"])
+
     def test_an_agent_scoped_palette_item_shows_only_on_its_own_agent(self):
         self.assertEqual(self.data["agent"], [["element", "Stage", ["Stage", "Copy name"]], ["agents", "Agents", AGENTS_TAB], ["general", "General", GENERAL]])
         self.assertEqual(self.data["operator"], "agents")
 
     def test_a_sub_screen_takes_the_items_of_its_tab(self):
-        self.assertEqual(self.data["rules"], [["stream", "Stream", ["View: Stream › Controls", "Stream: For you", "Stream: Mine", "Controls …"]], ["general", "General", GENERAL]])
+        self.assertEqual(self.data["rules"], [["stream", "Stream", ["View: Stream › Controls", "Stream: For you", "Stream: Mine", "Controls …", "Schedules …"]], ["general", "General", GENERAL]])
 
     def test_every_palette_item_has_a_scope_and_the_palette_still_lists_them_all(self):
         palette = self.data["palette"]

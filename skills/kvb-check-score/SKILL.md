@@ -17,7 +17,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/score.py --fix <0-100> --break <0-100> --eff
 | 🎯 | fix confidence | `kvb-check-confidence` |
 | 💥 | break risk | `kvb-check-break-risk` |
 | 💸 | tokens, `--efficiency` | `tokens.py` (skills) or `measure.py` (code) of `kvb-check-efficiency` |
-| ⏱️ | velocity, `--speed` | `measure.py`, see `kvb-check-speed` |
+| ⏱️ | velocity, `--speed` | `measure.py`, see `kvb-check-efficiency` |
 | 🛡️ | security, critical count | `security.py` of `kvb-check-security`; `~<n>` from a review by hand |
 | 💰 | cost:value quotient, tables and message block only | 💰 line of `tokens.py` (skills) of `kvb-check-efficiency` |
 | 🏆 | score | this script |
@@ -59,7 +59,9 @@ The second line is the verdict, first match wins:
 ## Tables and message block
 
 Every commit block is the `--commit-table` and every commit message carries
-the `--message-block` paragraph right before the trailers.
+the `--message-block` paragraph right before the trailers; for a commit,
+`scripts/block.py` runs every measuring script and prints both, as step 2
+of `kvb-git-commit-no-verify` says.
 Read `tables.md` next to this file before using `--table`,
 `--commit-table`, `--message-block` or `--value`.
 

@@ -339,42 +339,17 @@ const context = vm.createContext({document, MutationObserver: class { observe() 
 vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
 const P = vm.runInContext("Panels", context);
 """
-STAR_PROBE = DOM_KIT + """
-P.panel("tasks/list", "Tasks: list", () => null);
-P.panel("radio-log", "Radio log", () => null);
-P.item("task", (id) => `Task ${id}`, () => null);
-const slot = el("div", {class: "head-row", "data-star-slot": ""}, el("code", {}), el("button", {class: "priority"}));
-const task = el("li", {"data-item": "task:work/a"}, slot, el("span", {}));
-const bare = el("li", {"data-item": "task:work/b"}, el("span", {}));
-const list = el("div", {"data-panel": "tasks/list"}, el("ol", {}, task, bare));
-const svg = new El("g", "http://www.w3.org/2000/svg");
-svg.setAttribute("data-item", "task:work/c");
-const radio = el("section", {"aria-label": "Radio log"}, el("ul", {"aria-label": "Radio log"}));
-const root = el("main", {}, list, el("div", {}, svg), radio, el("div", {"data-panel": "nope"}));
-const clicked = [];
-const stars = () => root.querySelectorAll("[class]").filter((node) => node.classList.contains("star"));
-const own = (host) => stars().filter((node) => node.closest("[data-panel], [data-item]") === host);
-const mark = P.decorate(root, {pinned: (kind, id) => kind === "task" && id === "work/a", press: (...args) => clicked.push(args), marks: [['section[aria-label="Radio log"]', "radio-log"]]});
-const before = stars().length;
+MARK_PROBE = DOM_KIT + """
+const radio = el("section", {"aria-label": "Radio log"});
+const kept = el("section", {"aria-label": "Radio log", "data-panel": "kept"});
+const root = el("main", {}, radio, kept);
+const mark = P.decorate(root, [['section[aria-label="Radio log"]', "radio-log"]]);
+const first = [radio.getAttribute("data-panel"), kept.getAttribute("data-panel"), root.all().length];
+const fresh = el("section", {"aria-label": "Radio log"});
+root.append(fresh);
 mark();
-const [panelStar] = own(list);
-const [taskStar] = own(task);
-const out = {
-  panel: {first: list.children[0].getAttribute("class"), stars: own(list).length, pressed: panelStar.getAttribute("aria-pressed"), title: panelStar.getAttribute("title")},
-  task: {inSlot: taskStar.parentNode === slot, slotLast: slot.children.at(-1) === taskStar, rows: task.children.filter((child) => child.classList.contains("star-row")).length,
-    pressed: taskStar.getAttribute("aria-pressed"), label: taskStar.getAttribute("aria-label")},
-  bare: {first: bare.children[0].getAttribute("class"), stars: own(bare).length},
-  svg: svg.children.length,
-  radio: [radio.getAttribute("data-panel"), radio.children[0].getAttribute("class")],
-  again: [before, stars().length],
-};
-taskStar.listeners.click[0]({preventDefault: () => null, stopPropagation: () => null});
-const fresh = el("div", {"data-star-slot": ""});
-task.replaceChildren(fresh, el("span", {}));
-mark();
-out.redrawn = [own(task)[0].parentNode === fresh, stars().length];
-out.clicked = clicked;
-console.log(JSON.stringify(out));
+console.log(JSON.stringify({first, fresh: [fresh.getAttribute("data-panel"), root.all().length],
+  targets: [P.targetOf(el("li", {"data-item": "task:work/a"})), P.targetOf(el("li", {"data-item": "nokind"})), P.targetOf(el("div", {"data-panel": "tasks/list"}))]}));
 """
 MESSAGE_PROBE = """
 const fs = require("fs");
@@ -428,22 +403,12 @@ console.log(JSON.stringify({
 }));
 """
 CAPTURE_PROBE = DOM_KIT + """
-P.item("metric", (id, view) => `Metric ${view.shown === null ? "all" : view.shown.join()}`, () => null);
 let selection = null;
 P.capture("resources-hardware", () => ({kind: "metric", id: selection === null ? "hardware/all" : "hardware/cpu", view: {chart: "hardware", tokens: "interval", shown: selection}}));
-const head = el("div", {class: "res-head", "data-star-slot": ""}, el("span", {class: "res-title"}));
-const chart = el("section", {"data-panel": "resources-hardware"}, head, el("div", {class: "res-plot"}));
-const loose = el("section", {"data-panel": "resources-unknown"});
-const root = el("main", {}, chart, loose);
-const clicked = [];
-const mark = P.decorate(root, {pinned: (kind, id) => `${kind}:${id}` === "metric:hardware/cpu", press: (...args) => clicked.push(args)});
-const star = () => head.children.find((child) => child.classList.contains("star"));
-const before = [star().getAttribute("aria-pressed"), star().getAttribute("title"), loose.children.length, chart.children[0] === head];
+const chart = el("section", {"data-panel": "resources-hardware"});
+const before = P.targetOf(chart);
 selection = ["host:CPU"];
-mark();
-const after = [star().getAttribute("aria-pressed"), star().getAttribute("title"), head.children.filter((child) => child.classList.contains("star")).length];
-star().listeners.click[0]({preventDefault: () => null, stopPropagation: () => null});
-console.log(JSON.stringify({before, after, clicked, target: P.targetOf(chart)}));
+console.log(JSON.stringify({before, target: P.targetOf(chart), loose: P.targetOf(el("section", {"data-panel": "resources-unknown"}))}));
 """
 METRIC_PROBE = """
 const fs = require("fs");
@@ -488,61 +453,19 @@ const view = {chart: "hardware", tokens: "interval", shown: ["host:CPU"]};
 })();
 """
 REFUSED_PROBE = DOM_KIT + """
-P.item("metric", (id) => `Metric ${id}`, () => null);
-P.item("artifact", (id) => `Artifact ${id}`, () => null);
 let over = true;
 P.capture("resources-tokens", () => (over ? {kind: "metric", id: "tokens/interval/x", view: {chart: "tokens"}, refused: "too many series"} : {kind: "metric", id: "tokens/interval/y", view: {chart: "tokens"}}));
-const chart = el("section", {"data-panel": "resources-tokens"}, el("div", {"data-star-slot": ""}));
-const long = el("li", {"data-item": `artifact:wt:/${"p".repeat(300)}`});
-const root = el("main", {}, chart, long);
-const clicked = [];
-const mark = P.decorate(root, {pinned: () => false, press: (...args) => clicked.push(args)});
-const star = (host) => host.all().find((node) => node.classList.contains("star"));
-const read = (host) => [star(host).hasAttribute("disabled"), star(host).getAttribute("title"), star(host).getAttribute("aria-pressed")];
-const fire = (host) => (star(host).listeners.click || []).forEach((listen) => listen({preventDefault: () => null, stopPropagation: () => null}));
-const refused = read(chart);
-const first = star(chart);
-fire(chart);
+const chart = el("section", {"data-panel": "resources-tokens"});
+const refused = P.targetOf(chart);
 over = false;
-mark();
-const freed = [...read(chart), star(chart) === first];
-fire(chart);
-over = true;
-mark();
-const again = read(chart);
-fire(chart);
-fire(long);
-console.log(JSON.stringify({refused, freed, again, long: read(long), clicked}));
-"""
-ORDER_PROBE = DOM_KIT + """
-Object.assign(context, {h, state: {agent_order: ["Skills", "Stage"]}, ui: {order: null}, counter: (value) => text(value), face: () => text("face"), person: (name) => text(name),
-  icon: () => text("icon"), officeBtn: (name, label) => h("button", {"aria-label": label}), focusKey: () => null, refocus: () => null, act: async () => true, go: () => null});
-vm.runInContext(`${fs.readFileSync(process.argv[2], "utf8")}\\nglobalThis.probe = {orderDom, drawAgentOrder};`, context);
-const {orderDom, drawAgentOrder} = context.probe;
-P.panel("agents/order", "Agents: priority", () => null);
-orderDom.box = el("section", {"data-panel": "agents/order"});
-orderDom.slot = el("span", {"data-star-slot": ""});
-document.body.append(orderDom.box);
-const mark = P.decorate(document.body, {pinned: () => false, press: () => null});
-const stars = () => orderDom.box.all().filter((node) => node.classList.contains("star"));
-drawAgentOrder();
-mark();
-const first = stars()[0];
-first.focus();
-drawAgentOrder();
-mark();
-context.state.agent_order = ["Stage", "Skills", "Docs"];
-drawAgentOrder();
-mark();
-console.log(JSON.stringify({count: stars().length, same: stars()[0] === first, focused: document.activeElement === first, head: first.parentNode.parentNode === orderDom.box.children[0],
-  ranks: orderDom.box.all().filter((node) => node.tagName === "LI").map((node) => node.getAttribute("data-name"))}));
+console.log(JSON.stringify({refused, freed: P.targetOf(chart), long: P.targetOf(el("li", {"data-item": `artifact:wt:/${"p".repeat(300)}`})), pins: P.add([], "metric", "tokens/interval/y", {chart: "tokens"}).pins}));
 """
 TREE_PROBE = DOM_KIT + """
 const [, artifactsFile, treeFile, homeFile, dataFile] = process.argv.slice(1);
 Object.assign(context, {
   h, icon: () => text(""), named: (label, hint) => ({title: hint || label, "aria-label": label}), iconBtn: (name, label, cls, run, hint) => h("button", {"aria-label": label, title: hint}),
   counter: (value) => text(value), emptyState: (title, words) => h("div", {class: "empty", "data-title": title}, words), branchAncestry: () => null, gateChips: () => h("span", {class: "gates"}), gateExplain: () => null,
-  flowLine: () => null, flowDetails: () => null, flowEdges: () => [], copyButton: () => null, face: () => null, person: (name) => text(name), status: (value) => text(value), pill: (words) => text(words),
+  flowLine: () => null, flowDetails: () => null, flowEdges: () => [], copyButton: () => null, face: () => null, person: (name) => text(name), agentLink: (name) => text(name), status: (value) => text(value), pill: (words) => text(words),
   workChips: () => null, popupHead: (glyph, label) => h("h2", {class: "panel-title"}, label), meta: (rows) => h("dl", {}, rows.map(([key, value]) => h("div", {"data-key": key}, value === null || value === undefined ? "" : value))),
   WORK_CHIPS: {}, clock: {format: () => "c"}, stampOf: (t) => t, nowSeconds: () => 1763000000, labelOf: (key) => key, toast: () => null,
   tree: {data: JSON.parse(fs.readFileSync(dataFile, "utf8")), model: null, busy: false, q: "", open: new Set(), dom: null},
@@ -767,7 +690,7 @@ class TestHomePage(unittest.TestCase):
         marked = set(re.findall(r"\['[^']+', \"([^\"]+)\"\]", home))
         captured = set(re.findall(r'Panels\.capture\("([^"]+)"', home))
         made = set(re.findall(r'\{kind: "(\w+)", id, view[,}]', sources))
-        self.assertEqual((len(literal), marked), (13, {"radio-log"}))
+        self.assertEqual((len(literal), marked), (14, {"radio-log"}))
         literal |= marked
         self.assertEqual(len(dynamic), 13)
         self.assertEqual(sorted(literal | dynamic), sorted(registered))
@@ -777,20 +700,17 @@ class TestHomePage(unittest.TestCase):
         self.assertEqual((made, sorted(used | made)), ({"metric"}, sorted(kinds)))
 
 
-class TestHomeStars(unittest.TestCase):
-    def test_a_star_sits_in_flow_in_its_own_hosts_slot_or_a_star_row_and_never_twice(self):
-        data = node(STAR_PROBE, str(PANELS))
-        self.assertEqual(data["panel"], {"first": "star-row", "stars": 1, "pressed": "false", "title": "Pin to Home: Tasks: list"})
-        self.assertEqual(data["task"], {"inSlot": True, "slotLast": True, "rows": 0, "pressed": "true", "label": "Unpin from Home"})
-        self.assertEqual(data["bare"], {"first": "star-row", "stars": 1})
-        self.assertEqual((data["svg"], data["radio"], data["again"], data["redrawn"]), (0, ["radio-log", "star-row"], [4, 4], [True, 4]))
-        self.assertEqual(data["clicked"], [["task", "work/a", "Task work/a", None]])
+class TestHomeMarks(unittest.TestCase):
+    def test_decorate_tags_only_untagged_marks_adds_no_element_and_tags_a_redrawn_one(self):
+        data = node(MARK_PROBE, str(PANELS))
+        self.assertEqual((data["first"], data["fresh"]), (["radio-log", "kept", 2], ["radio-log", 3]))
+        self.assertEqual(data["targets"], [{"kind": "task", "id": "work/a"}, None, {"kind": "panel", "id": "tasks/list"}])
 
-    def test_the_star_css_positions_nothing_and_leaves_the_starred_elements_alone(self):
+    def test_no_template_or_stylesheet_holds_a_star_a_star_row_or_a_star_slot(self):
+        star = re.compile(r"\.star\b|star-row|data-star-slot|keepFocus|\"star\"")
+        found = [path.name for path in sorted(TEMPLATES.iterdir()) if path.suffix in {".js", ".css", ".j2"} and star.search(path.read_text(encoding="utf-8"))]
+        self.assertEqual(found, [])
         css = (TEMPLATES / "style-home.css").read_text(encoding="utf-8")
-        star = re.findall(r"^\.star(?:-row)?(?:\[[^\]]+\])? \{([^}]*)\}", css, re.MULTILINE)
-        self.assertEqual(len(star), 3)
-        self.assertFalse(any("position" in rule for rule in star), star)
         self.assertNotIn("[data-panel]", css)
         self.assertNotIn("[data-item]", css)
 
@@ -808,14 +728,13 @@ class TestHomeBookmarks(unittest.TestCase):
         self.assertEqual(data["lookup"], ["Metric hardware/x host:CPU", "hardware/x 4 hardware", "Metric hardware/x none", None])
         self.assertEqual(data["digest"], [True, False, True, True])
 
-    def test_a_captured_panel_stars_the_pin_its_capture_makes_now_and_presses_it_with_its_view(self):
+    def test_a_captured_panel_targets_the_pin_its_capture_makes_now_with_its_view(self):
         data = node(CAPTURE_PROBE, str(PANELS))
-        self.assertEqual(data["before"], ["false", "Pin to Home: Metric all", 0, True])
-        self.assertEqual(data["after"], ["true", "Unpin from Home: Metric host:CPU", 1])
-        self.assertEqual(data["clicked"], [["metric", "hardware/cpu", "Metric host:CPU", self.VIEW]])
+        self.assertEqual(data["before"], {"kind": "metric", "id": "hardware/all", "view": {**self.VIEW, "shown": None}})
         self.assertEqual(data["target"], {"kind": "metric", "id": "hardware/cpu", "view": self.VIEW})
+        self.assertEqual(data["loose"], {"kind": "panel", "id": "resources-unknown"})
 
-    def test_a_chart_star_pins_the_series_switched_on_now_so_another_selection_is_another_pin(self):
+    def test_a_chart_pin_takes_the_series_switched_on_now_so_another_selection_is_another_pin(self):
         data = node(METRIC_PROBE, str(PANELS), str(TEMPLATES / "page-resources.js"), str(HOME))
         cpu, mixed = data["digests"]
         self.assertEqual(data["empty"], {"kind": "metric", "id": "tokens/accumulated/all", "view": {"chart": "tokens", "tokens": "accumulated", "shown": None}})
@@ -828,27 +747,22 @@ class TestHomeBookmarks(unittest.TestCase):
         self.assertEqual(data["titles"], ["Hardware: CPU", "Tokens (accumulated): all series", "Combined: done, CPU", "Hardware: all series", "Tokens (accumulated): all series"])
         self.assertEqual((data["four"], data["broken"]), ("Tokens: 4 series", ["Metric", None]))
 
-    def test_pressing_a_metric_star_stores_its_view_with_the_pin_and_pressing_again_unpins_it(self):
+    def test_pinning_a_metric_stores_its_view_with_the_pin_and_pinning_again_unpins_it(self):
         data = node(PRESS_PROBE, str(PANELS), str(HOME))
         pin = {"kind": "metric", "id": "hardware/abc", "w": 4, "h": 3, "view": self.VIEW}
         self.assertEqual((data["stored"], data["after"], data["pins"]), ([pin], [], []))
 
-    def test_a_chart_star_refuses_a_selection_past_the_view_stores_series_limit_and_names_why(self):
+    def test_a_chart_pin_refuses_a_selection_past_the_view_stores_series_limit_and_names_why(self):
         data = node(METRIC_PROBE, str(PANELS), str(TEMPLATES / "page-resources.js"), str(HOME), str(SHOWN_LIMIT))
         why = f"more than {SHOWN_LIMIT} series are switched on: switch some off, or all of them on"
         self.assertEqual(data["limits"], [[SHOWN_LIMIT, None, 3], [SHOWN_LIMIT + 1, why, 3], [None, None, 3], [0, None, 3]])
 
-    def test_a_refused_capture_or_an_overlong_id_disables_the_star_with_its_reason_and_a_press_pins_nothing(self):
+    def test_a_refused_capture_or_an_overlong_id_names_its_reason_and_a_freed_one_adds_its_pin(self):
         data = node(REFUSED_PROBE, str(PANELS))
-        refused = [True, "Pin to Home: not possible, too many series", "false"]
-        self.assertEqual((data["refused"], data["again"]), (refused, refused))
-        self.assertEqual(data["freed"], [False, "Pin to Home: Metric tokens/interval/y", "false", True])
-        self.assertEqual(data["long"], [True, "Pin to Home: not possible, the id runs past 200 characters", "false"])
-        self.assertEqual(data["clicked"], [["metric", "tokens/interval/y", "Metric tokens/interval/y", {"chart": "tokens"}]])
-
-    def test_the_agent_priority_star_stays_the_same_button_and_keeps_its_focus_through_a_redraw(self):
-        data = node(ORDER_PROBE, str(PANELS), str(TEMPLATES / "page-agent-order.js"))
-        self.assertEqual(data, {"count": 1, "same": True, "focused": True, "head": True, "ranks": ["Stage", "Skills", "Docs"]})
+        self.assertEqual(data["refused"], {"kind": "metric", "id": "tokens/interval/x", "view": {"chart": "tokens"}, "refused": "too many series"})
+        self.assertEqual(data["freed"], {"kind": "metric", "id": "tokens/interval/y", "view": {"chart": "tokens"}})
+        self.assertEqual(data["long"], {"kind": "artifact", "id": None, "refused": "the id runs past 200 characters"})
+        self.assertEqual(data["pins"], [{"kind": "metric", "id": "tokens/interval/y", "w": 4, "h": 3, "view": {"chart": "tokens"}}])
 
     def test_the_client_pin_id_grammar_is_the_hubs(self):
         done = subprocess.run(["node", "-e", "console.log(JSON.stringify(require(process.argv[1]).ID.source))", str(PANELS)], capture_output=True, text=True, timeout=60, check=True)
@@ -911,7 +825,7 @@ class TestHomeOpen(unittest.TestCase):
     PANEL_IDS = (
         "stream", "radio-log", "agents/orbit", "agents/chord", "agents/swimlane", "agents/3d", "agents/tree", "agents/hierarchy", "agents/order",
         "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "artifacts/tree", "artifacts/3d",
-        "tasks/list", "tasks/board", "tasks/rasci", "tasks/gantt", "tasks/burn", "tasks/3d", "tasks/operator",
+        "tasks/list", "tasks/board", "tasks/rasci", "tasks/gantt", "tasks/burn", "tasks/3d", "tasks/operator", "stream/schedules",
     )
     ITEMS: ClassVar[dict] = {
         "task": ("#tasks/list", "task:work/a", "tasks", "list"),
@@ -937,7 +851,7 @@ class TestHomeOpen(unittest.TestCase):
 
     def test_every_panel_and_item_kind_links_to_its_own_tab_and_view_and_an_item_names_itself_to_open(self):
         data = node(LINK_PROBE, str(NAV), str(PANELS), str(HOME), json.dumps(self.PANEL_IDS))
-        special = {"stream": ("stream", None), "radio-log": ("stream", None), "agents/order": ("agents", "hierarchy"), "tasks/operator": ("inbox", None)}
+        special = {"stream": ("stream", None), "radio-log": ("stream", None), "agents/order": ("agents", "hierarchy"), "tasks/operator": ("inbox", None), "stream/schedules": ("rules", "schedules")}
         for panel in self.PANEL_IDS:
             with self.subTest(panel=panel):
                 found = data["panels"][panel]
@@ -966,9 +880,10 @@ class TestHomeIndex(HubCase):
         for name in ("panels.js", "page-home.js", "style-home.css"):
             with self.subTest(name=name):
                 self.assertIn((TEMPLATES / name).read_text(encoding="utf-8").strip(), html)
-        for glyph in ("bi-star", "bi-star-fill", "bi-house-door", "bi-grip-vertical", "bi-arrow-down-right", "bi-arrows-angle-expand"):
+        for glyph in ("bi-house-door", "bi-grip-vertical", "bi-arrow-down-right", "bi-arrows-angle-expand"):
             with self.subTest(glyph=glyph):
                 self.assertIn(f'<symbol id="{glyph}"', html)
+        self.assertNotIn('<symbol id="bi-star"', html)
 
 
 if __name__ == "__main__":

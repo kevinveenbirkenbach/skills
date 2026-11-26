@@ -177,7 +177,7 @@ function element(tag, attrs, ...children) {
 }
 function faced(mode) {
   const calls = [];
-  const sandbox = {RadioSet, radioSet: RadioSet.valid({mode, fallback: "morse"}), settings: {morse: {wpm: 18}}, h: element, icon: (name) => name, named: (label, hint) => ({"aria-label": label, title: hint})};
+  const sandbox = {RadioSet, radioSet: RadioSet.valid({mode, fallback: "morse"}), settings: {morse: {wpm: 18}, bubbles: false}, toggleBubbles: () => null, h: element, icon: (name) => name, named: (label, hint) => ({"aria-label": label, title: hint})};
   vm.runInNewContext(viewCode, sandbox);
   sandbox.knobs = () => [];
   sandbox.morseSpeed = () => element("label", {class: "morse-speed"});
@@ -185,7 +185,7 @@ function faced(mode) {
   sandbox.keepRadio = (change) => calls.push(change);
   const part = {};
   const face = sandbox.faceplate(part);
-  const modes = face.children.find((child) => child.attrs["aria-label"] === "Mode");
+  const modes = face.children.flatMap((child) => [child, ...(child.children || [])]).find((child) => child.attrs && child.attrs["aria-label"] === "Mode");
   const button = (id) => modes.children.find((child) => child.dataset.mode === id);
   return {calls, part, modes, button, carets: modes.children.filter((child) => child.children.some((node) => node.attrs && node.attrs.class === "mode-caret")).map((child) => child.dataset.mode)};
 }
@@ -449,7 +449,6 @@ ROWS = {
     "mayday": {"class": "mayday", "source": "s1", "voice": "v1", "word": WORD, "rest": "this is Docs Docs Docs, disk full, over"},
     "security": {"class": "security", "source": "s2", "voice": "v2", "word": "say-cure-ee-tay say-cure-ee-tay say-cure-ee-tay", "rest": "all stations, this is Stage, rotate, over"},
     "post": {"class": "post", "source": "s2", "voice": "v2", "word": "", "rest": "Operator, Operator, this is Stage, ready, over"},
-    "muted": {"class": "security", "source": "s9", "voice": "v9", "word": "say-cure-ee-tay say-cure-ee-tay say-cure-ee-tay", "rest": "all stations, this is Muted, x, over"},
     "voiceless": {"class": "post", "source": "s3", "voice": "", "word": "", "rest": "x"},
 }
 LOG = [
@@ -473,8 +472,14 @@ TONES = ("mayday", "review", "direct", "radio")
 BELL_SET = {
     "sounds": {"mayday": {"on": True, "volume": 0.9}, "review": {"on": True, "volume": 0.6}, "direct": {"on": True, "volume": 0.5}, "radio": {"on": False, "volume": 0.25}},
     "classes": ["mayday", "pan-pan", "security", "newsletter"],
-    "muted": ["s1"],
 }
+AGENTS = {
+    "s1": {"sound": False, "aloud": False, "bubbles": False},
+    "s2": {"sound": False, "aloud": True, "bubbles": True},
+    "s3": {"sound": True, "aloud": False, "bubbles": False},
+}
+STEPS = [{"kind": "word", "text": "W"}, {"kind": "speech", "text": "R"}, {"kind": "burst"}, {"kind": "morse"}, {"kind": "gibberlink"}]
+SENDERS = [("security", "s2"), ("post", "s3"), ("mayday", "s1"), ("security", "s1"), ("post", "s4")]
 
 
 def run(calls: dict[str, list[list]]) -> dict:
@@ -485,7 +490,7 @@ def run(calls: dict[str, list[list]]) -> dict:
 class TestRadioSetModule(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        defaults = {"mode": "auto", "fallback": "burst", "classes": ["mayday", "pan-pan", "security"], "muted": ["s9"], "sounds": {}, "squelch": 1, "log": {}}
+        defaults = {"mode": "auto", "fallback": "burst", "classes": ["mayday", "pan-pan", "security"],"sounds": {}, "squelch": 1, "log": {}}
         modes = ("auto", "quiet", "silence")
         lives = ({"tts": True, "open": True}, {"tts": True, "open": False}, {"tts": False, "open": True})
         plans = [["plan", ROWS[name], {**defaults, "mode": mode}, live] for mode in modes for live in lives for name in ROWS]
@@ -518,7 +523,8 @@ class TestRadioSetModule(unittest.TestCase):
             "bursts": [["burst", 0.45], ["burst", 0]],
             "bells": [["bell", BELL_SET, tone] for tone in TONES] + [["bell", {**BELL_SET, "classes": ["mayday", "post"]}, "direct"]],
             "rings": [["ring", BELL_SET, tone] for tone in TONES],
-            "mutes": [["muting", BELL_SET, "s1"], ["muting", BELL_SET, "s2"]],
+            "voiced": [["voiced", STEPS, {"class": cls, "source": source}, AGENTS] for cls, source in SENDERS],
+            "heard": [["heard", {"class": cls, "source": source}, AGENTS, "bubbles"] for cls, source in SENDERS],
         })
         cls.modes, cls.lives = modes, lives
 
@@ -549,12 +555,11 @@ class TestRadioSetModule(unittest.TestCase):
                 self.assertEqual(self.plan("silence", live, "mayday"), [{"kind": "word", "text": WORD}] if self.lives[live]["tts"] else [])
                 self.assertEqual(self.plan("silence", live, "post"), [])
 
-    def test_the_read_aloud_filters_skip_classes_and_muted_agents_but_never_a_mayday(self):
+    def test_the_read_aloud_filters_skip_classes_but_never_a_mayday(self):
         for mode in self.modes:
             for live in range(len(self.lives)):
                 with self.subTest(mode=mode, live=live):
                     self.assertEqual(self.plan(mode, live, "post"), [])
-                    self.assertEqual(self.plan(mode, live, "muted"), [])
                     self.assertEqual(self.plan(mode, live, "voiceless"), [])
         self.assertNotEqual(self.plan("auto", 0, "security"), [])
 
@@ -570,8 +575,10 @@ class TestRadioSetModule(unittest.TestCase):
         self.assertEqual((radio["sounds"]["radio"], radio["classes"]), ({**sounds["radio"], "on": True}, ["mayday", "pan-pan", "security"]))
         self.assertEqual(mayday["sounds"]["review"], sounds["review"])
 
-    def test_muting_toggles_one_agent_and_keeps_the_others(self):
-        self.assertEqual(self.data["mutes"], [{"muted": []}, {"muted": ["s1", "s2"]}])
+    def test_an_agents_own_switches_drop_its_spoken_steps_sounds_or_bubble_but_never_a_mayday(self):
+        word, speech, burst, morse, gibberlink = STEPS
+        self.assertEqual(self.data["voiced"], [[word, speech], [burst, morse, gibberlink], STEPS, [], STEPS])
+        self.assertEqual(self.data["heard"], [True, False, True, False, True])
 
     def test_the_burst_is_band_passed_noise_of_about_0_6_seconds_at_the_given_loudness(self):
         loud, silent = self.data["bursts"]
@@ -585,7 +592,7 @@ class TestRadioSetModule(unittest.TestCase):
         self.assertEqual((empty, broken, listed), (defaults, defaults, defaults))
         self.assertEqual(defaults["mode"], "auto")
         self.assertEqual(self.data["constants"]["key"], "kvb-orchestrator.radio")
-        self.assertEqual((wrong["mode"], wrong["squelch"], wrong["classes"], wrong["muted"]), ("auto", 1, ["post", "mayday"], ["s1", "s2"]))
+        self.assertEqual((wrong["mode"], wrong["squelch"], wrong["classes"], "muted" in wrong), ("auto", 1, ["post", "mayday"], False))
         self.assertEqual(wrong["sounds"]["radio"], {"on": False, "volume": 0.4})
         self.assertEqual(wrong["sounds"]["review"], {"on": False, "volume": 0.6})
         self.assertEqual((chosen["mode"], chosen["squelch"], chosen["classes"]), ("quiet", 0, list(council.CLASSES)))

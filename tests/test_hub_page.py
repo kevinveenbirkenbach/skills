@@ -61,7 +61,7 @@ class TestHubPage(HubCase):
         embedded = re.search(r'<script nonce="[^"]+" id="state" type="application/json">(.*?)</script>', html, re.DOTALL).group(1)
         state = json.loads(embedded)
         self.assertEqual((state["reviews"][0]["title"], state["reviews"][0]["notes"]), ("<script>alert(1)</script>", "</pre><script>alert(2)</script>"))
-        self.assertEqual((state["register"][0]["title"], state["radio"][0]["from"]), ("<script>alert(3)</script>", "<img src=x>"))
+        self.assertEqual((state["tasks"][0]["title"], state["radio"][0]["from"]), ("<script>alert(3)</script>", "<img src=x>"))
 
     def test_the_index_scripts_parse_and_embed_the_ambience_voice_nav_popup_faces_plan_and_space_modules(self):
         html = self.index()

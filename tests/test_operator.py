@@ -264,13 +264,13 @@ class TestOperator(unittest.TestCase):
             [
                 HEADER,
                 "|---|---|---|---|---|",
-                f"| 1 | {repo} | git commit -m wip | work uncommitted | manual |",
-                f"| 2 | {repo} | git-sign-push | branch ahead | pushed:{repo} |",
-                f"| 3 | {src} | make install | copy \\| stale | installed:{src}={dst} |",
-                f"| 4 | {base} | pipx install kvb-fake-tool | tool missing | binary:kvb-fake-tool |",
-                f"| 5 | {base} | sudo rm {stale} | root owned | absent:{stale} |",
-                f"| 6 | {base} | sudo reboot | new kernel | manual |",
-                f"| 7 | {base} | sudo systemctl restart docker | daemon config | manual |",
+                f"| 1 | {repo} | step 1 | work uncommitted | manual |",
+                f"| 2 | {repo} | step 2 | branch ahead | pushed:{repo} |",
+                f"| 3 | {src} | step 3 | copy \\| stale | installed:{src}={dst} |",
+                f"| 4 | {base} | step 4 | tool missing | binary:kvb-fake-tool |",
+                f"| 5 | {base} | step 5 | root owned | absent:{stale} |",
+                f"| 6 | {base} | step 6 | new kernel | manual |",
+                f"| 7 | {base} | step 7 | daemon config | manual |",
                 *self._block(1, "commit-row", repo, "git commit -m wip"),
                 *self._block(2, "push-row", repo, "git-sign-push"),
                 *self._block(3, "installed-row", src, "make install"),
@@ -334,6 +334,30 @@ class TestOperator(unittest.TestCase):
         row = self._register()["operator/first"]
         self.assertEqual((row["title"], row["description"]), ("sudo reboot now", "kernel 7.2.9"))
         self.assertNotIn("end", self._register()["operator/second"])
+
+    def test_a_second_add_of_the_same_command_in_the_same_directory_joins_the_open_row(self):
+        self._add("first", self.base, "sudo reboot", "kernel", "manual")
+        joined = self._as("s2", "add", "again", "--dir", str(self.base), "--command", "sudo reboot", "--reason", "too",
+                          "--check", "manual")
+        self.assertEqual((joined.returncode, joined.stdout), (0, "joined operator/first: it holds the same command in the same directory\n"))
+        self.assertEqual(self._open(), ["operator/first"])
+        row = self._register()["operator/first"]
+        self.assertEqual((row["roles"]["One"], row["roles"]["s2"], row["sessions"]["s2"]), ("A", "A", "s2"))
+        (self.base / "sub").mkdir()
+        self._add("elsewhere", self.base / "sub", "sudo reboot", "other host", "manual")
+        self.assertEqual(self._open(), ["operator/first", "operator/elsewhere"])
+        self._add("mine", self.base, "sudo reboot", "a second step of its own", "manual")
+        self.assertEqual(self._open(), ["operator/first", "operator/elsewhere", "operator/mine"])
+
+    def test_list_prints_each_command_once(self):
+        self._add("first", self.base, "sudo reboot", "kernel", "manual")
+        twin = self._run("set", "operator/twin", "--title", "sudo reboot", "--workdir", str(self.base), "--status", "queued",
+                         script=RASCI)
+        self.assertEqual(twin.returncode, 0, twin.stderr)
+        listed = self._out("list")
+        self.assertEqual(listed[:2], [HEADER, "|---|---|---|---|---|"])
+        self.assertEqual([line.split(" | ")[2] for line in listed[2:] if line.startswith("| ")], ["step 1"])
+        self.assertEqual(sum(line == "sudo reboot" for line in listed), 1)
 
     def test_legacy_row_without_check_counts_as_manual(self):
         result = self._run("set", "operator/legacy", "--title", "sudo reboot", "--status", "queued", script=RASCI)

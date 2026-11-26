@@ -28,7 +28,7 @@ function announced(change) {
   const mayday = {ts: 10, from: "Docs", to: [], class: "mayday", text: "disk full"};
   const direct = {ts: 11, from: "Stage", to: ["Operator"], class: "call", text: "gate red"};
   const sandbox = {
-    Notification, window: {Notification, setTimeout: (run) => run()}, settings: {channels: {...ON, ...change}}, radioSet: {mode: "auto"},
+    Notification, window: {Notification, setTimeout: (run) => run()}, settings: {channels: {...ON, ...change}, agents: {}}, RadioSet, radioSet: {mode: "auto"},
     state: {inbox: [{id: "r1", kind: "review", title: "feat: x"}], radio: [mayday, direct], pending: []},
     known: {inbox: new Set(), alarms: new Set(), radio: new Set(), batches: new Set(), now: null}, live: () => true, alarmRows: () => [mayday], keyOf: (item) => item.id,
     HUMAN: "Operator", Voice: {beep: () => "mayday"}, tones: () => ({}), loudness: () => 0.5, SOUND_KINDS: [["mayday", "MAYDAY"]], TONES: {mayday: [[880, 0, 0.2]]},
@@ -48,17 +48,29 @@ function synced(before, after) {
   sandbox.syncChannels({...ON, ...before});
   return calls;
 }
-function spoken(aloud, bubbles) {
+function spoken(aloud, bubbles, agents = {}, cls = "security") {
   const said = [];
   const sandbox = {
     RadioSet, Bubbles, Voice, radioSet: RadioSet.valid({mode: "auto"}), HUMAN: "Operator", SPEECH_FRESH: 300, short: (value) => value, quietBubbles: () => null,
-    state: {now: 1000, messages: [], speech: {tts: true, gate: {open: true}}}, settings: {bubbles, channels: {...ON, aloud}},
+    state: {now: 1000, messages: [], speech: {tts: true, gate: {open: true}}}, settings: {bubbles, channels: {...ON, aloud}, agents},
   };
   vm.runInNewContext(speechCode, sandbox);
-  sandbox.say = (...items) => said.push(...items.map((item) => item.silent));
-  sandbox.speakRows([{ts: 1000, from: "Stage", to: [], class: "security", source: "s2", voice: "v2", word: "W", rest: "R", text: "rotate keys now"}]);
+  sandbox.say = (...items) => said.push(...items.map((item) => [item.silent, item.bubble]));
+  sandbox.speakRows([{ts: 1000, from: "Stage", to: [], class: cls, source: "s2", voice: "v2", word: "W", rest: "R", text: "rotate keys now"}]);
+  return said.map(([silent]) => silent);
+}
+function perAgent(agents, cls = "security") {
+  const said = [];
+  const sandbox = {
+    RadioSet, Bubbles, Voice, radioSet: RadioSet.valid({mode: "quiet"}), HUMAN: "Operator", SPEECH_FRESH: 300, short: (value) => value, quietBubbles: () => null,
+    state: {now: 1000, messages: [], speech: {tts: true, gate: {open: true}}}, settings: {bubbles: true, channels: ON, agents},
+  };
+  vm.runInNewContext(speechCode, sandbox);
+  sandbox.say = (...items) => said.push(...items.map((item) => [item.silent, item.bubble]));
+  sandbox.speakRows([{ts: 1000, from: "Stage", to: [], class: cls, source: "s2", voice: "v2", word: "W", rest: "R", text: "rotate keys now"}]);
   return said;
 }
+const OFF = (change) => ({s2: {sound: true, aloud: true, bubbles: true, ...change}});
 console.log(JSON.stringify({
   announced: {on: announced({}), browser: announced({browser: false}), sounds: announced({sounds: false}), quiet: announced({browser: false, sounds: false, aloud: false, title: false})},
   synced: {
@@ -66,6 +78,11 @@ console.log(JSON.stringify({
     stays: synced({sounds: false, aloud: false}, {sounds: false, aloud: false}), back: synced({sounds: false, aloud: false}, {}), title: synced({}, {title: false}),
   },
   spoken: {on: spoken(true, false), off: spoken(false, false), bubbles: spoken(false, true), both: spoken(true, true)},
+  agents: {
+    all: perAgent({}), aloud: perAgent(OFF({aloud: false})), sound: perAgent(OFF({sound: false})), bubbles: perAgent(OFF({bubbles: false})),
+    mute: perAgent(OFF({sound: false, aloud: false})), none: perAgent(OFF({sound: false, aloud: false, bubbles: false})), other: perAgent({s9: {sound: false, aloud: false, bubbles: false}}),
+    mayday: perAgent(OFF({sound: false, aloud: false, bubbles: false}), "mayday"),
+  },
 }));
 """
 
@@ -149,6 +166,12 @@ class TestChannelGates(unittest.TestCase):
 
     def test_the_read_aloud_channel_plans_no_audible_step_and_keeps_the_silent_bubble(self):
         self.assertEqual(self.data["spoken"], {"on": [False], "off": [], "bubbles": [True], "both": [False]})
+
+    def test_an_agents_own_switches_silence_its_speech_its_sounds_or_its_bubble_and_spare_other_agents_and_a_mayday(self):
+        agents = self.data["agents"]
+        self.assertEqual((agents["all"], agents["other"], agents["mayday"]), ([[False, True]], [[False, True]], [[False, True]]))
+        self.assertEqual((agents["aloud"], agents["sound"], agents["bubbles"]), ([[False, True]], [[False, True]], [[False, False]]))
+        self.assertEqual((agents["mute"], agents["none"]), ([[True, True]], []))
 
     def test_switching_a_channel_off_stops_what_it_already_queued_and_every_switch_redraws_the_title(self):
         synced = self.data["synced"]

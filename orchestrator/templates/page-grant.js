@@ -4,6 +4,7 @@
     [GRANT_SELECT]: ["Select", "bi-check2-square", "Select mode", "Select: every grant button and option adds its item to the selection; Grant grants the selection under one passkey signature, each rule and red-gate review under its own"],
   };
   const PICKED_HINT = "In the selection: take it out with ✕ in the Grant menu";
+  const UNPICK_HINT = "Selected: press again to take it out of the selection";
   const SOLO_HINT = "Select: press to add it to the selection; Grant asks its own passkey signature for it";
   const grantView = {tray: null, sig: "", open: false};
   const choices = new Map();
@@ -73,16 +74,17 @@
     }
     const picked = ui.selected.has(keyOf(item));
     if (picked) {
-      button.disabled = true;
       button.setAttribute("class", `${button.getAttribute("class")} picked`);
-      button.setAttribute("title", PICKED_HINT);
     }
-    if (grantMode() === GRANT_SELECT) {
-      button.setAttribute("aria-pressed", String(picked));
-      if (!picked) {
-        button.setAttribute("title", solo(item) ? SOLO_HINT : "Select: press to add it to the selection; Grant grants it");
+    if (grantMode() !== GRANT_SELECT) {
+      button.disabled = picked;
+      if (picked) {
+        button.setAttribute("title", PICKED_HINT);
       }
+      return button;
     }
+    button.setAttribute("aria-pressed", String(picked));
+    button.setAttribute("title", picked ? UNPICK_HINT : solo(item) ? SOLO_HINT : "Select: press to add it to the selection; Grant grants it");
     return button;
   }
 

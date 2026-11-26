@@ -32,6 +32,7 @@ CARD = """
   };
   const head = () => ({
     card: card().dataset.card, kind: card().dataset.kind, stale: card().dataset.stale, face: Boolean(card().querySelector(".match-who .avatar svg")),
+    opens: Boolean(card().querySelector(".match-who .avatar").closest("button.agent-link")),
     name: text(card().querySelector(".match-name")), age: text(card().querySelector(".match-age")),
     metrics: all(".match-metric", card()).map((chip) => [chip.dataset.metric, text(chip.querySelector("strong"))]),
     under: Boolean(card().querySelector(".match-metrics")) && card().querySelector(".match-metrics").getBoundingClientRect().top >= card().querySelector(".match-name").getBoundingClientRect().bottom - 1,
@@ -182,9 +183,9 @@ class TestMatchReview(HubCase):
         order = [path for path, _ in FILES]
         paints = set()
         for width, _ in widths:
+            stack, scroll, mark, command, stale = (next(results) for _ in range(5))
             with self.subTest(width=width):
-                stack = next(results)
-                self.assertEqual((stack["card"], stack["kind"], stack["stale"], stack["face"]), (f"review:{self.commit}", "commit", "false", True), stack)
+                self.assertEqual((stack["card"], stack["kind"], stack["stale"], stack["face"], stack["opens"]), (f"review:{self.commit}", "commit", "false", True, True), stack)
                 self.assertEqual((stack["name"], stack["age"]), ("Skills", "3 days"), stack)
                 self.assertEqual((stack["metrics"], stack["under"]), ([["fix", "95"], ["break", "3"]], True), stack)
                 place = [["branch", "feature/match", "Branch: feature/match (click copies)"], ["repo", "repo", "Repository: /repo (click copies)"],
@@ -197,25 +198,21 @@ class TestMatchReview(HubCase):
                 self.assertEqual(stack["peeks"], ["operator:operator/issue", f"review:{self.stale}"], stack)
                 self.assertFalse(stack["accept"], stack)
                 self.assertFalse(stack["wide"], stack)
-                scroll = next(results)
                 self.assertEqual(scroll["steps"][0], order[:1], scroll)
                 self.assertEqual(scroll["steps"][-1], order, scroll)
                 for step in scroll["steps"]:
                     self.assertEqual(step, order[: len(step)], scroll)
                 self.assertGreater(len({len(step) for step in scroll["steps"]}), 2, scroll)
                 self.assertEqual(scroll["numbered"], [[path, True] for path in order], scroll)
-                mark = next(results)
                 self.assertEqual((mark["clicked"], mark["pressed"]), (True, True), mark)
                 self.assertEqual(mark["marks"], [["3", "use the helper here"], ["6", "long press note"]], mark)
                 self.assertEqual(mark["marked"], ["3", "6"], mark)
                 self.assertEqual((mark["presets"], mark["preset"]), (["long press note", "use the helper here"], ["use the helper here", True]), mark)
                 self.assertEqual(mark["count"], "2", mark)
-                command = next(results)
                 self.assertEqual((command["kind"], command["stale"], command["command"], command["why"]), ("command", "false", self.command, "file the release issue"), command)
                 self.assertEqual(command["where"], str(self.work), command)
                 self.assertEqual(command["payload"], [["body.md", "read", 14], ["link.md", "refused", 0]], command)
                 self.assertEqual((command["name"], command["age"]), ("Skills", "3 days"), command)
-                stale = next(results)
                 self.assertEqual((stale["kind"], stale["stale"], stale["accept"], stale["name"], stale["age"]), ("commit", "true", True, "Stage", "9 days"), stale)
                 self.assertIn("changed", stale["reason"])
         self.assertEqual(len(paints), 1, paints)

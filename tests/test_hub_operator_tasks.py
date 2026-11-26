@@ -24,7 +24,7 @@ hub_limits = importlib.import_module("hub_limits")
 approval = importlib.import_module("approval")
 TEMPLATES = HUB / "templates"
 DIFFS = TEMPLATES / "diffs.js"
-PAGE_MODULES = ["page-constants.js", "answers.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-inbox.js", "page-grant.js", "page-stream.js", "page-screens.js", "page-keyboard.js"]
+PAGE_MODULES = ["page-constants.js", "answers.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-codebox.js", "page-inbox.js", "page-grant.js", "page-stream.js", "page-screens.js", "page-keyboard.js"]
 SECRET = 'api_key = "plain-example-words"'
 ARMOURED = "before\n-----BEGIN EXAMPLE-----\nplain words only\n-----END EXAMPLE-----\nafter\n"
 WITHHELD = "content withheld"
@@ -144,6 +144,17 @@ openSheet = (title, body) => calls.sheets.push({title, body});
 const operatorCard = inboxItem(operator, 0);
 const streamCard = eventRow({id: "e1", kind: "operator", waiting: true, ts: now, agent: "Skills", title: "make ship", text: "release the build", ref: {task: "operator/ship", directory: "/repo", status: "queued"}});
 const plainCard = eventRow({id: "e2", kind: "operator", waiting: false, ts: now, agent: "Skills", title: "make other", text: "-", ref: {task: "operator/other", directory: "/repo", status: "done"}});
+const pressedOf = (card) => {
+  const check = all(card).find((el) => el.tag === "button" && el.attrs["aria-pressed"] !== undefined);
+  return check ? check.attrs["aria-pressed"] : null;
+};
+ViewStore = {get: () => GRANT_SELECT};
+ui.selected.add(keyOf(operator));
+const pickedCard = inboxItem(operator, 0);
+ui.selected.delete(keyOf(operator));
+const freeCard = inboxItem(operator, 0);
+ViewStore = null;
+const selection = {picked: [pickedCard.attrs["aria-selected"], pressedOf(pickedCard)], free: [freeCard.attrs["aria-selected"], pressedOf(freeCard)], direct: [operatorCard.attrs["aria-selected"] || null, pressedOf(operatorCard)]};
 diffView.cache.set("review:0123456789abcdef", [
   {path: "src/app.py", status: "M", mode: "100644", additions: 2, deletions: 1, patch: "@@ -1,2 +1,3 @@\\n keep\\n-old\\n+new\\n+more", note: ""},
   {path: "logo.png", status: "B", mode: "100644", additions: 0, deletions: 0, patch: "", note: ""},
@@ -178,9 +189,10 @@ const results = {
   operator: {classes: classes(operatorCard), checkbox: all(operatorCard).filter((el) => el.tag === "input" && el.attrs.type === "checkbox").length, ref: operatorCard.dataset.ref, to: operatorCard.dataset.to,
     command: all(operatorCard).filter((el) => classes(el).includes("command")).map((el) => [el.dataset.path, all(el).find((inner) => inner.tag === "code").textContent]),
     text: operatorCard.textContent, buttons: labels(operatorCard)},
-  stream: {buttons: labels(streamCard), actions: all(streamCard).filter((el) => classes(el).includes("line-actions")).length, ref: streamCard.dataset.ref || null, plain: [labels(plainCard), plainCard.dataset.ref || null]},
+  stream: {buttons: labels(streamCard), actions: all(streamCard).filter((el) => classes(el).includes("line-actions")).length, foot: all(streamCard).filter((el) => classes(el).includes("code-foot")).map(labels), ref: streamCard.dataset.ref || null, plain: [labels(plainCard), plainCard.dataset.ref || null]},
   review: {ref: reviewCard.dataset.ref, files: sections.map(read), feedback: all(reviewCard).filter((el) => classes(el).includes("feedback-list")).map((el) => el.textContent)},
   status: badgeState,
+  selection,
   ask: {ref: askCard.dataset.ref, to: askCard.dataset.to, files: all(askCard).filter((el) => classes(el).includes("diff-file")).map((el) => [el.dataset.path, all(el).filter((inner) => inner.tag === "tr").length]),
     regions: all(askCard).filter((el) => el.dataset.path !== undefined).map((el) => el.dataset.path)},
 };
@@ -338,10 +350,10 @@ class TestOperatorPage(unittest.TestCase):
         self.assertEqual(status["zero"], [True, "Agent Orchestrator"])
         self.assertEqual(status["untitled"], ["2", False, "Agent Orchestrator"])
 
-    def test_an_operator_task_is_a_stream_card_with_a_checkbox_and_every_action(self):
+    def test_an_operator_task_is_a_stream_card_without_a_checkbox_and_with_every_action(self):
         card = self.data["operator"]
         self.assertTrue({"item", "entry", "k-operator", "waiting"} <= set(card["classes"]), card["classes"])
-        self.assertEqual((card["checkbox"], card["ref"], card["to"]), (1, "operator:operator/ship", "Skills"))
+        self.assertEqual((card["checkbox"], card["ref"], card["to"]), (0, "operator:operator/ship", "Skills"))
         self.assertEqual(card["command"], [["/repo", "make ship"]])
         for text in ("in /repo", "release the build"):
             with self.subTest(text=text):
@@ -350,12 +362,17 @@ class TestOperatorPage(unittest.TestCase):
             with self.subTest(label=label):
                 self.assertIn(label, card["buttons"])
 
-    def test_the_stream_keeps_its_operator_card_with_its_actions(self):
+    def test_select_mode_shows_the_pick_as_the_selected_row_and_the_pressed_green_check(self):
+        self.assertEqual(self.data["selection"], {"picked": ["true", "true"], "free": ["false", "false"], "direct": [None, None]})
+
+    def test_the_stream_keeps_its_operator_card_with_its_actions_in_the_code_foot(self):
         stream = self.data["stream"]
-        self.assertEqual((stream["actions"], stream["ref"]), (1, "operator:operator/ship"))
-        self.assertIn("Run", stream["buttons"])
-        self.assertIn("Deny", stream["buttons"])
-        self.assertEqual(stream["plain"], [["Skills", "Copy"], None])
+        self.assertEqual((stream["actions"], stream["ref"]), (0, "operator:operator/ship"))
+        self.assertEqual(len(stream["foot"]), 1, stream)
+        self.assertEqual(stream["foot"][0][:2], ["Copy", "Show all"], stream)
+        self.assertIn("Run", stream["foot"][0])
+        self.assertIn("Deny", stream["foot"][0])
+        self.assertEqual(stream["plain"], [["Skills", "Copy", "Show all"], None])
 
     def test_a_review_card_shows_one_unified_block_per_file_expanded_collapsed_past_400_lines_and_binary_named_only(self):
         files = self.data["review"]["files"]

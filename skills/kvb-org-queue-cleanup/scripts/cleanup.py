@@ -17,8 +17,10 @@ Environment:
     CLAUDE_CODE_SESSION_ID: run refuses to start while it is set.
 
 Args:
-    run: one round, accountable to the live holder of the council office
-        chair; without one it deletes nothing. --window: seconds of each
+    run: one round. It first drops the rows of both queue histories (the
+        agents' and the host-only copy) that ended over the kvb-org-queue
+        history.py WINDOW_SECONDS ago, then is accountable to the live holder
+        of the council office chair; without one it deletes no job. --window: seconds of each
         window, at least WINDOW_FLOOR (the service passes 900). It refuses
         unless it can write the host state. A job is a waiting or active
         entry with a string id, status, kind and lock; every other entry
@@ -475,6 +477,48 @@ def claim(state: dict) -> bool:
     return True
 
 
+def ended_before(line: str, cutoff: float) -> bool:
+    try:
+        row = json.loads(line)
+    except (ValueError, RecursionError):
+        return False
+    return isinstance(row, dict) and isinstance(row.get("end"), (int, float)) and row["end"] < cutoff
+
+
+def trim_history(base: Path, path: Path, cutoff: float) -> int:
+    """Args:
+        base: the trusted directory holding path.
+        path: a queue history; every line but a row that ended before cutoff
+            stays byte for byte, and lines appended while it is rewritten
+            follow into the new file.
+        cutoff: epoch seconds.
+
+    Returns:
+        The rows dropped; 0 for a missing or unreadable file.
+    """
+    try:
+        with open(nofollow.open_below(base, path, os.O_RDONLY, 0), "rb") as old:
+            lines = old.read(nofollow.READ_LIMIT).decode("utf-8", errors="replace").splitlines()
+            kept = [line for line in lines if not ended_before(line, cutoff)]
+            if len(kept) == len(lines):
+                return 0
+            nofollow.replace(base, path, "".join(f"{line}\n" for line in kept), 0o600)
+            late = old.read(nofollow.READ_LIMIT)
+        if late:
+            nofollow.append(base, path, late.decode("utf-8", errors="replace"), 0o600)
+    except OSError:
+        return 0
+    return len(lines) - len(kept)
+
+
+def trim_histories(now: float) -> None:
+    cutoff = now - queue.history.WINDOW_SECONDS
+    dropped = trim_history(watch.ROOT, watch.HISTORY, cutoff) + trim_history(watch.KEPT, watch.KEPT_HISTORY, cutoff)
+    if dropped:
+        print(f"queue-cleanup: dropped {dropped} queue history rows that ended over "
+              f"{queue.history.WINDOW_SECONDS // 86400} days ago")
+
+
 def run_round(window: float, clock: Clock) -> int:
     """Args:
         window: seconds each of the two windows lasts.
@@ -483,6 +527,7 @@ def run_round(window: float, clock: Clock) -> int:
     Returns:
         The exit code.
     """
+    trim_histories(clock.time())
     session, chair = top_chair()
     if session is None:
         print(f"queue-cleanup: {chair}; no one is accountable, nothing is deleted")

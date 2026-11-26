@@ -19,6 +19,7 @@ from hub_case import HubCase
 
 OUT = Path(os.environ.get("E2E_OUT", "/tmp/box-heads-shots"))
 VIEWS = {
+    "stream": "Stream",
     "tasks/match": "Match",
     "tasks/list": "Tasks",
     "tasks/board": "Tasks",
@@ -52,10 +53,19 @@ BAND = """(async () => {@HELPERS@@BUTTON@
   const style = getComputedStyle(main);
   const outer = main.getBoundingClientRect();
   const box = head.getBoundingClientRect();
-  const tops = [...head.querySelectorAll(":scope > *, :scope > .box-slot > *")].filter((node) => node.getClientRects().length).map((node) => Math.round(node.getBoundingClientRect().top));
+  const shown = [...head.querySelectorAll(":scope > *, :scope > .box-slot > *")].filter((node) => node.getClientRects().length);
+  const tops = shown.map((node) => Math.round(node.getBoundingClientRect().top));
+  const control = ':is(.btn, .field, select, input[type="search"], input[type="text"], .segmented, .chip, .menu > summary, .mic-line)';
+  const controls = all(control, head).filter((node) => node.getClientRects().length && !node.closest(".menu-box") && !node.parentElement.closest(".mic-line, .segmented"))
+    .map((node) => [node.getAttribute("aria-label") || node.className || node.tagName, Math.round(node.getBoundingClientRect().height * 10) / 10]);
+  const centers = shown.map((node) => {
+    const box = node.getBoundingClientRect();
+    return Math.round((box.top + box.height / 2) * 10) / 10;
+  });
   return {
+    controls, centers, token: getComputedStyle(document.documentElement).getPropertyValue("--control-h").trim(),
     label: head.getAttribute("aria-label"), count: all(".box-head", main).length, cards: all(".card.controls", main).length, first,
-    edges: [box.top - outer.top - parseFloat(style.borderTopWidth), box.left - outer.left - parseFloat(style.borderLeftWidth), outer.right - parseFloat(style.borderRightWidth) - box.right].map((value) => Math.round(value * 10) / 10),
+    edges: [box.top - outer.top - parseFloat(style.borderTopWidth), box.left - outer.left - parseFloat(style.borderLeftWidth), outer.left + main.clientLeft + main.clientWidth - box.right].map((value) => Math.round(value * 10) / 10),
     height: Math.round(box.height), rows: new Set(tops).size, button: buttonHeight(head, "button.btn.small, button.btn"),
     wide: document.documentElement.scrollWidth > innerWidth + 1, violations: window.e2eViolations || null,
   };
@@ -92,9 +102,11 @@ EDGE = """(async () => {@HELPERS@
     card.dataset.pattern = pattern;
     await sleep(60);
     const shown = getComputedStyle(card);
+    const edge = getComputedStyle(card, "::before");
     const after = getComputedStyle(head, "::before");
     found[pattern] = {
-      border: shown.borderTopWidth, bar: shown.backgroundImage.startsWith("linear-gradient"), size: shown.backgroundSize.split(",")[0].trim(),
+      border: shown.borderTopWidth, bar: edge.backgroundImage.startsWith("linear-gradient"), size: edge.height, scroll: shown.overflowY,
+      fade: (edge.maskImage || edge.webkitMaskImage || "").replace(/\\s+/g, " "),
       flush: Math.round(head.getBoundingClientRect().top - card.getBoundingClientRect().top), top: after.top,
       mask: (after.maskImage || after.webkitMaskImage || "").replace(/\\s+/g, " "), hatch: after.backgroundImage !== "none",
     };
@@ -146,6 +158,11 @@ class TestBoxHeads(HubCase):
         self.assertEqual((row["label"], row["count"], row["cards"], row["first"]), (VIEWS[view], 1, 0, True), row)
         self.assertEqual(row["edges"], [0, 0, 0], row)
         self.assertEqual((row["wide"], w4.quiet(row["violations"])), (False, []), row)
+        self.assertEqual(row["token"], "36px", row)
+        self.assertTrue(row["controls"], row)
+        self.assertEqual([control for control in row["controls"] if abs(control[1] - 36) > 1], [], row)
+        if view == "stream" and row["rows"] == 1:
+            self.assertLessEqual(max(row["centers"]) - min(row["centers"]), 2, row)
         if width == 1920 and row["rows"] == 1:
             self.assertLessEqual(abs(row["height"] - home["head"]), 1, (row, home["head"]))
             self.assertLessEqual(abs(row["button"] - home["button"]), 1, (row, home["button"]))
@@ -172,8 +189,9 @@ class TestBoxHeads(HubCase):
             with self.subTest(browser=browser, width=width, step="edge"):
                 self.assertNotIn("error", edge, edge)
                 for pattern, found in edge["found"].items():
-                    self.assertEqual((found["border"], found["bar"], found["size"], found["flush"], found["top"], found["hatch"]), ("0px", True, "100% 6px", 0, "0px", True), (pattern, found))
-                    self.assertTrue(found["mask"].startswith("linear-gradient(rgba(0, 0, 0, 0) 6px"), (pattern, found))
+                    self.assertEqual((found["border"], found["bar"], found["size"], found["scroll"], found["flush"], found["top"], found["hatch"]), ("0px", True, "22px", "hidden", 0, "0px", True), (pattern, found))
+                    self.assertTrue(found["fade"].startswith("linear-gradient(rgb(0, 0, 0) 0px"), (pattern, found))
+                    self.assertTrue(found["mask"].startswith("linear-gradient(rgba(0, 0, 0, 0) 0px"), (pattern, found))
 
     def test_chromium_puts_one_flush_band_on_every_box_and_keeps_the_card_bar_on_the_edge(self):
         data = self.drive(self.steps("chromium"), None, init=w4.GUARD)

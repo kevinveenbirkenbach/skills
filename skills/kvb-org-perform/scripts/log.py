@@ -7,7 +7,8 @@ Usage:
                       rate the latest spawn with this Agent description
     log.py followup --description D --text T
                       record an operator follow-up question or correction on it
-    log.py persist    hook (PostToolUse on Bash): append the one line a sandboxed
+    log.py persist    hook (PostToolUse on Bash through hooks.py post-bash):
+                      append the one line a sandboxed
                       feedback or followup printed as `pending: <json>`, only
                       when the command was that bare call and the line is
                       well-formed and from the hook's own session

@@ -231,15 +231,14 @@ class TestMatchRelease(MatchCase):
         self.assertEqual(self.cards(), before)
 
     def test_a_batch_holds_its_items_until_apply_returns_and_refuses_an_undo_meanwhile(self):
-        pending = batches.Pending()
+        pending = batches.Pending(lambda: 0.05)
         applying, finish = threading.Event(), threading.Event()
 
         def apply(_batch: dict) -> None:
             applying.set()
             finish.wait(10)
 
-        with mock.patch.object(batches, "UNDO", 0.05):
-            batch = pending.add([{"kind": "review", "id": "r1"}], "operator", None, apply)
+        batch = pending.add([{"kind": "review", "id": "r1"}], "operator", None, apply)
         self.assertTrue(applying.wait(10))
         self.assertEqual((pending.holds("review", "r1"), pending.listed()), (True, []))
         with self.assertRaises(Conflict):

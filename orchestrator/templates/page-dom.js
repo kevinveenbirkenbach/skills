@@ -99,7 +99,17 @@
       s("title", {}, PRESENCE[value][0]), s("rect", {class: "presence-dot", x: fixed(-size * 0.65), y: fixed(-size * 0.65), width: fixed(size * 1.3), height: fixed(size * 1.3), rx: fixed(size * 0.65)}),
       s("g", {class: "glyph"}, s("use", {href: `#${PRESENCE[value][1]}`, x: fixed(-size / 2), y: fixed(-size / 2), width: fixed(size), height: fixed(size)}))) : null;
   };
-  const person = (name) => (name && name !== "-" && name !== "all" && name !== HUMAN ? h("button", {type: "button", class: "linkish", title: revealed(`Open ${name}`), on: {click: () => openAgent(name)}}, revealed(name)) : dash(name));
+  const isAgent = (name) => Boolean(name) && name !== "-" && name !== "all" && name !== HUMAN;
+  const person = (name) => (isAgent(name) ? h("button", {type: "button", class: "linkish", title: revealed(`Open ${name}`), on: {click: () => openAgent(name)}}, revealed(name)) : dash(name));
+  const openFrom = (name) => (event) => {
+    event.stopPropagation();
+    const self = event.currentTarget;
+    openAgent(name, () => (self.isConnected ? self : null));
+  };
+  const agentLink = (name, big, cls) => (isAgent(name)
+    ? h("button", {type: "button", class: "linkish agent-link", title: revealed(`Open ${name}`), on: {click: openFrom(name)}}, face(name, big), h("span", {class: cls || "agent-name"}, revealed(people()[name] ? nameOf(name) : name)))
+    : h("span", {class: "agent-link"}, face(name || "-", big), h("span", {class: cls || "agent-name"}, dash(name))));
+  const agentFace = (name, big) => (isAgent(name) ? h("button", {type: "button", class: "agent-face", ...named(revealed(`Open ${people()[name] ? nameOf(name) : name}`)), on: {click: openFrom(name)}}, face(name, big)) : face(name || "-", big));
   const people = () => state.people || {};
   const labelOf = (key) => (people()[key] || {name: String(key).replace(/^name:/, "")}).name;
   const nameOf = (key) => (people()[key] || {now: String(key).replace(/^name:/, "")}).now;
@@ -108,8 +118,10 @@
   const readLabel = (reader) => Receipts.label(reader, (ts) => absolute.format(stampOf(ts)));
   const readerRow = (row) => {
     const {shown, hidden} = Receipts.strip(row);
-    const avatar = (reader) => h("span", {class: "reader", "data-session": reader.session, "data-acked": String(reader.acked), role: "img", ...named(readLabel(reader))},
-      face(people()[reader.session] ? reader.session : reader.name, false), reader.acked ? h("span", {class: "ack", "aria-hidden": "true"}, icon("bi-check2-all")) : null);
+    const avatar = (reader) => {
+      const who = people()[reader.session] ? reader.session : reader.name;
+      return h("button", {type: "button", class: "reader", "data-session": reader.session, "data-acked": String(reader.acked), ...named(readLabel(reader)), on: {click: openFrom(who)}}, face(who, false), reader.acked ? h("span", {class: "ack", "aria-hidden": "true"}, icon("bi-check2-all")) : null);
+    };
     const more = hidden.length ? h("span", {class: "readers-more", role: "img", ...named(`${hidden.length} more readers`, [...shown, ...hidden].map(readLabel).join("\n"))}, `+${hidden.length}`) : null;
     return shown.length ? h("div", {class: "readers", role: "group", "aria-label": `Read by ${shown.length + hidden.length}`}, shown.map(avatar), more) : null;
   };
@@ -147,7 +159,49 @@
     return button;
   }
 
-  const MENUS = "details.menu, details.radio-station, .ctx-menu";
+  const MENUS = "details.menu, details.radio-station, details.radio-notify, .ctx-menu";
+  const MENU_LINGER = 3000;
+  const ACTIONS_IN_MENU = "button, a[href], [role='button']";
+
+  /**
+   * @param {MouseEvent} event a click anywhere on the page.
+   * The menu the click landed in stays open, read from the event path because a toggle chip may redraw itself away
+   * before the click reaches the document; an action entry of a details.menu (a button without aria-pressed) closes it.
+   */
+  function menuClick(event) {
+    const path = event.composedPath().filter((node) => node instanceof Element);
+    const menu = path.find((node) => node.matches(MENUS)) || null;
+    const control = path.find((node) => node.matches(`${ACTIONS_IN_MENU}, summary, label, input, select, textarea`));
+    const action = Boolean(menu && menu.matches("details.menu") && control && control.matches(ACTIONS_IN_MENU) && !control.hasAttribute("aria-pressed"));
+    closeMenus(action ? null : menu);
+  }
+
+  /**
+   * @param {Event} event a toggle of any details element, caught on the way down.
+   * An opened details.menu closes MENU_LINGER ms after a mouse or pen leaves it; coming back in time keeps it open.
+   */
+  function menuLinger(event) {
+    const menu = event.target;
+    if (!(menu instanceof HTMLDetailsElement) || !menu.matches("details.menu") || menu.dataset.linger) {
+      return;
+    }
+    menu.dataset.linger = "on";
+    let timer = 0;
+    menu.addEventListener("pointerleave", (left) => {
+      if (left.pointerType !== "touch" && menu.open) {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          menu.open = false;
+        }, MENU_LINGER);
+      }
+    });
+    menu.addEventListener("pointerenter", () => window.clearTimeout(timer));
+    menu.addEventListener("toggle", () => {
+      if (!menu.open) {
+        window.clearTimeout(timer);
+      }
+    });
+  }
 
   function closeMenus(keep) {
     for (const menu of document.querySelectorAll(MENUS)) {

@@ -5,6 +5,8 @@ Args:
     --repo: skills repository root.
     --index: count the staged versions in the git index instead of the files.
     --top: how many of the longest descriptions to list.
+    --memory: a MEMORY.md index to hold to MEMORY_WORDS; repeatable, a
+        missing file counts as empty.
 
 Exit codes:
     0 within budget, 1 over budget, 2 usage error.
@@ -20,6 +22,7 @@ from pathlib import Path
 LISTING_WORDS = 1500
 DESCRIPTION_WORDS = 40
 SKILL_WORDS = 600
+MEMORY_WORDS = 400
 
 
 def skill_sizes(repo: Path) -> dict[str, int]:
@@ -59,6 +62,7 @@ def main() -> int:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--index", action="store_true")
     parser.add_argument("--top", type=int, required=True)
+    parser.add_argument("--memory", action="append", default=[])
     args = parser.parse_args()
 
     repo = Path(args.repo)
@@ -76,7 +80,26 @@ def main() -> int:
     long = sorted(name for name, n in skill_sizes(repo).items() if n > SKILL_WORDS)
     for name in long:
         print(f"SKILL.md over {SKILL_WORDS}: {name}")
-    return 1 if total > LISTING_WORDS or over or long else 0
+    memory_over = report_memories(args.memory)
+    return 1 if total > LISTING_WORDS or over or long or memory_over else 0
+
+
+def report_memories(paths: list[str]) -> bool:
+    """Args:
+        paths: MEMORY.md indexes; a missing file counts as empty.
+
+    Returns:
+        Whether any index holds more than MEMORY_WORDS words.
+    """
+    over = False
+    for path in paths:
+        try:
+            n = len(Path(path).read_text(encoding="utf-8").split())
+        except FileNotFoundError:
+            n = 0
+        over = over or n > MEMORY_WORDS
+        print(f"{n}/{MEMORY_WORDS} words in {path}" if n <= MEMORY_WORDS else f"MEMORY.md over {MEMORY_WORDS}: {path} ({n})")
+    return over
 
 
 if __name__ == "__main__":

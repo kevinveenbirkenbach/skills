@@ -62,7 +62,7 @@
       moveCursor(event.key === "j" ? 1 : -1);
     } else if (inInbox && event.key === "x") {
       event.preventDefault();
-      toggle(current, false);
+      toggle(current);
     } else if (inInbox && event.key === "a") {
       event.preventDefault();
       if (current && !current.held) {
@@ -70,7 +70,7 @@
       }
     } else if (event.key === "f" && feedbackKey()) {
       event.preventDefault();
-    } else if (event.key.startsWith("Arrow") && (target === document.body || (target instanceof Element && target.closest(".match-stack"))) && matchKey(event.key)) {
+    } else if ((event.key.startsWith("Arrow") || /^[wasd]$/i.test(event.key)) && (target === document.body || (target instanceof Element && target.closest(".match-stack"))) && matchKey(event.key)) {
       event.preventDefault();
     } else if (event.key === "Enter" && current && target === document.body) {
       event.preventDefault();

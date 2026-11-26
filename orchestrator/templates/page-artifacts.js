@@ -245,7 +245,7 @@
     } else if (node.kind === "worktree") {
       body.push(h("div", {class: "states"}, worktreeStates(data)), workChips(data.open_work), meta([["Path", data.path], ["Branch", data.branch], ["HEAD", data.head.slice(0, 12), data.head]]),
         flowDetails(data.flow, data.branch),
-        data.workers.length ? h("div", {class: "who"}, data.workers.map((name) => [face(name, false), person(name)])) : h("p", {class: "muted"}, "No agent works here."),
+        data.workers.length ? h("div", {class: "who"}, data.workers.map((name) => agentLink(name))) : h("p", {class: "muted"}, "No agent works here."),
         data.review ? h("div", {class: "who"}, status(data.review.status), h("span", {}, data.review.title)) : null, h("div", {class: "actions"}, copyButton(data.path)));
     } else if (node.kind === "artefact") {
       body.push(meta([["Ref", data.ref], ["Kind", data.kind], ["Task", data.task], ["Since", data.added]]), data.ended ? pill("Task ended: clean up", "warn") : null);
@@ -255,13 +255,18 @@
     return [popupHead(icon(kindIcon), node.label, h("span", {class: "muted"}, kindName)), h("div", {class: "popup-body", "data-item": `artifact:${artifactRef(node.id)}`}, body)];
   }
 
+  function treeCount(words) {
+    tree.dom.count.textContent = words;
+    tree.dom.count.title = words;
+  }
+
   function artifactsScreen() {
     const view = ui.views.artifacts;
     const picker = h("select", {class: "field", "aria-label": "Repository", title: "Repository", on: {change: (event) => {
       art.repo = event.target.value;
       drawArtifacts();
     }}});
-    const count = h("span", {class: "muted"});
+    const count = h("span", {class: "muted art-count"});
     const reload = iconBtn("bi-arrow-clockwise", "Reload", "btn small soft", fetchTree, "Reload: read the tree state from pkgmgr");
     const stageBox = h("div", {class: "stage"});
     const legendBox = h("div", {});
@@ -277,7 +282,7 @@
       drawArtifacts();
       fetchTree();
     }, 0);
-    const controls = boxHead("Artifacts", "", viewSwitch("artifacts"), view === "3d" ? layoutTools("artifacts") : view === "tree" ? null : picker,
+    const controls = boxHead("Artifacts", "art-head", viewSwitch("artifacts"), view === "3d" ? layoutTools("artifacts") : view === "tree" ? null : picker,
       h("div", {class: "toolbar"}, search, reload, removeAll, apply), count);
     const body = view === "tree" ? h("div", {class: "tree-panel", "data-panel": "artifacts/tree"}, list) : h("div", {class: "card stage-card", "data-panel": `artifacts/${view}`}, stageBox, legendBox);
     return h("div", {class: "graph"}, controls, body);
@@ -314,7 +319,7 @@
     }
     tree.dom.apply.replaceChildren(gateApply() || "");
     const empty = !tree.data || tree.data.error;
-    tree.dom.count.textContent = empty ? "" : `${tree.data.repos.length} repositories · as of ${clock.format(stampOf(tree.data.scanned))}`;
+    treeCount(empty ? "" : `${tree.data.repos.length} repositories · as of ${clock.format(stampOf(tree.data.scanned))}`);
     if (empty) {
       tree.dom.stage.replaceChildren(emptyState(tree.busy || !tree.data ? "Reading repositories …" : "No tree", tree.data ? tree.data.error : "pkgmgr writes the tree every minute while this page is open."));
       return;

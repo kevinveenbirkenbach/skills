@@ -42,7 +42,7 @@
       const legend = h("div", {class: "res-legend"});
       const plot = h("div", {class: "res-plot"});
       const panel = h("section", {class: `card res-panel res-${kind}`, "data-panel": `resources-${kind}`, "aria-label": label, hidden: kind === "combined"},
-        h("div", {class: "res-head", "data-star-slot": ""}, h("span", {class: "res-title", title: label, "aria-label": label}, icon(name)), legend), plot);
+        h("div", {class: "res-head", "data-legend-slot": ""}, h("span", {class: "res-title", title: label, "aria-label": label}, icon(name)), legend), plot);
       return {kind, label, legend, plot, panel};
     });
     const accounts = accountsPanel();

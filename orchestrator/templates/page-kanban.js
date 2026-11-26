@@ -173,7 +173,7 @@
         },
       },
     },
-    h("div", {class: "head-row", "data-star-slot": ""}, queuePlace(row), h("code", {class: "task-id"}, row.task), cardLabels(row), h("span", {class: "spacer"}),
+    h("div", {class: "head-row"}, queuePlace(row), h("code", {class: "task-id"}, row.task), cardLabels(row), h("span", {class: "spacer"}),
       row.pending ? h("span", {class: "kanban-pending", role: "img", ...named("Staged", row.pending.map(shownArgv).join("\n"))}, icon("bi-pencil")) : null,
       openJobs(row.task).length ? h("span", {class: "kanban-wait", role: "img", ...named("At the runner", `${row.task}: a signed change waits for the runner`)}, icon("bi-hourglass-split")) : null,
       row.editable ? h("span", {class: "kanban-handle", role: "img", draggable: "true", ...named("Follows", `Drag onto the card that waits for ${row.task}`), on: {dragstart: dragFrom(row.task, "after"), dragend: () => {

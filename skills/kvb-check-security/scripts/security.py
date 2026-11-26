@@ -96,7 +96,8 @@ Accepted:
     is a usage error.
 
 Output:
-    `🛡️ security <n> % (medusa: <k> findings, <a> accepted in <m> files: <severity> <path>:<line>, ...; not covered: <path>, ...)`,
+    `🛡️ security <n> % critical <c> (medusa: <k> findings, <a> accepted in <m> files: <severity> <path>:<line>, ...; not covered: <path>, ...)`,
+    c the critical findings, the --critical of score.py,
     `, <a> accepted` only when a is above 0, m the files scanned, the first 5
     locations by severity and `+<rest> more`, the first 5 files not covered
     and `+<rest> more` only when there are any.
@@ -923,7 +924,7 @@ def main() -> int:
         waived = f", {len(passed)} accepted" if passed else ""
         rest = f"; not covered: {shown(missed)}" if missed else ""
         print(
-            f"🛡️ security {value} % (medusa: {plural(len(found), 'finding')}{waived} "
+            f"🛡️ security {value} % critical {counts['critical']} (medusa: {plural(len(found), 'finding')}{waived} "
             f"in {plural(scanned, 'file')}{detail}{rest})"
         )
     if counts["critical"]:

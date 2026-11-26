@@ -47,6 +47,7 @@ CLEANUP_UNIT="${NAME}-cleanup"
 OFFICES_UNIT="${NAME}-offices"
 SESSIONS_UNIT="${NAME}-sessions"
 RESOURCES_UNIT="${NAME}-resources"
+TOKENS_UNIT="${NAME}-tokens"
 FIREWALL_UNIT="${NAME}-firewall"
 INSTALLED_SKILLS="${HOME}/.claude/skills"
 HOST_SCRIPTS=(kvb-org-organize/scripts/council.py kvb-org-organize/scripts/nofollow.py kvb-org-organize/scripts/councilroot.py kvb-org-rasci/scripts/rasci.py kvb-org-operator/scripts/operator.py kvb-org-radio/scripts/radio.py)
@@ -268,7 +269,7 @@ sessions_timer() {
 	systemctl --user daemon-reload
 	systemctl --user enable --now "${SESSIONS_UNIT}.timer"
 	systemctl --user restart "${SESSIONS_UNIT}.timer"
-	log "skills: ${SESSIONS_UNIT}.timer writes ${STATE}/agent-sessions.json every 15 seconds while the Agent Orchestrator page polls"
+	log "skills: ${SESSIONS_UNIT}.timer writes ${STATE}/agent-sessions.json every 30 seconds while the Agent Orchestrator page polls and the sessions changed"
 }
 
 resources_timer() {
@@ -276,11 +277,13 @@ resources_timer() {
 		warn "skills: no systemd user session; the Resources view stays empty."
 		return 0
 	fi
-	cp -f "${HUB}/systemd/${RESOURCES_UNIT}.service" "${HUB}/systemd/${RESOURCES_UNIT}.timer" "${UNITS}/"
+	cp -f "${HUB}/systemd/${RESOURCES_UNIT}.service" "${HUB}/systemd/${RESOURCES_UNIT}.timer" "${HUB}/systemd/${TOKENS_UNIT}.service" "${HUB}/systemd/${TOKENS_UNIT}.timer" "${UNITS}/"
 	systemctl --user daemon-reload
 	systemctl --user enable --now "${RESOURCES_UNIT}.timer"
+	systemctl --user enable --now "${TOKENS_UNIT}.timer"
 	systemctl --user restart "${RESOURCES_UNIT}.timer"
-	log "skills: ${RESOURCES_UNIT}.timer samples the host and counts the transcripts' tokens into ${KEPT}/resources every minute"
+	systemctl --user restart "${TOKENS_UNIT}.timer"
+	log "skills: ${RESOURCES_UNIT}.timer samples the host into ${KEPT}/resources every minute, ${TOKENS_UNIT}.timer counts the transcripts' tokens every 10 minutes"
 }
 
 firewall_unit() {
@@ -340,7 +343,7 @@ stop_all() {
 		docker compose --file "${HUB}/compose.yml" stop || return 1
 	fi
 	if has_systemd; then
-		systemctl --user stop "${RUNNER}" "${OFFICES_UNIT}.path" "${OFFICES_UNIT}.service" "${RESOURCES_UNIT}.timer" "${RESOURCES_UNIT}.service" &>/dev/null || true
+		systemctl --user stop "${RUNNER}" "${OFFICES_UNIT}.path" "${OFFICES_UNIT}.service" "${RESOURCES_UNIT}.timer" "${RESOURCES_UNIT}.service" "${TOKENS_UNIT}.timer" "${TOKENS_UNIT}.service" &>/dev/null || true
 	fi
 }
 
@@ -349,7 +352,7 @@ start_all() {
 		docker compose --file "${HUB}/compose.yml" start || warn "skills: starting the Agent Orchestrator failed"
 	fi
 	if has_systemd; then
-		for unit in "${OFFICES_UNIT}.path" "${RESOURCES_UNIT}.timer" "${RUNNER}"; do
+		for unit in "${OFFICES_UNIT}.path" "${RESOURCES_UNIT}.timer" "${TOKENS_UNIT}.timer" "${RUNNER}"; do
 			if [[ "$(systemctl --user is-enabled "${unit}" 2>/dev/null || true)" == "enabled" ]]; then systemctl --user start "${unit}" || true; fi
 		done
 	fi

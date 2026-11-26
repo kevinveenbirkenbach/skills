@@ -68,7 +68,7 @@ FLOW = """(async () => {@HELPERS@
     }
     return send(path, init);
   };
-  const card = () => document.querySelector("#main .match-card.front");
+  const card = () => document.querySelector("#main .match-card.front:not(.match-release-card)");
   if (!(await until(card, 8000))) {
     return {error: text(document.getElementById("main"))};
   }

@@ -68,7 +68,7 @@ class TestHubState(HubCase):
         self.assertEqual(self.status(review_id), "pending")
 
     def test_state_is_empty_without_council_files(self):
-        empty = {"reviews": [], "operator": [], "register": [], "radio": [], "claims": [], "grants": [], "agent_order": []}
+        empty = {"reviews": [], "operator": [], "tasks": [], "radio": [], "claims": [], "grants": [], "agent_order": []}
         state = self.snapshot()
         self.assertEqual({key: state[key] for key in empty}, empty)
         self.assertEqual([(node["id"], node["kind"]) for node in state["graph"]["nodes"]], [("Operator", "operator")])
@@ -101,10 +101,12 @@ class TestHubState(HubCase):
             state = self.snapshot()
         operator = state["operator"]
         self.assertEqual([(row["task"], row["command"], row["why"], row["status"]) for row in operator], [("operator/push-skills", "git-sign-push", "needs the key", "queued")])
-        self.assertEqual([row["task"] for row in state["register"]], ["work/bare", "work/hub"])
-        hub = state["register"][1]
+        self.assertNotIn("register", state)
+        shown = {row["task"]: row for row in state["tasks"]}
+        self.assertEqual({task for task, row in shown.items() if not row["ended"] and not task.startswith("operator/")}, {"work/bare", "work/hub"})
+        hub = shown["work/hub"]
         self.assertEqual((hub["title"], hub["responsible"], hub["accountable"], hub["met"], hub["total"]), ("Build the hub", "One", "One", 1, 2))
-        self.assertEqual(state["register"][0]["status"], "queued")
+        self.assertEqual(shown["work/bare"]["status"], "queued")
         texts = [row["text"] for row in state["radio"]]
         self.assertEqual(len(texts), 30)
         self.assertEqual((texts[0], texts[-2], texts[-1]), ("item 05", "item 33", "disk full"))
@@ -151,12 +153,12 @@ class TestHubState(HubCase):
             set(state),
             {
                 "now", "since", "until", "first", "alarm_since", "reviews", "asks", "decisions", "messages", "reasons", "operator",
-                "register", "tasks", "task_edges", "queue_line", "queue_jobs", "agent_order", "radio", "claims", "grants", "night", "night_parts", "presence", "silence", "graph",
+                "schedules", "tasks", "task_edges", "queue_line", "queue_jobs", "agent_order", "radio", "claims", "grants", "night", "night_parts", "presence", "silence", "graph",
                 "inbox", "pending", "rules", "approvers", "jobs", "views", "llm", "people", "settings", "media", "speech",
                 "badges", "kinds",
             },
         )
-        self.assertEqual([row["speech"] for row in state["radio"]], [
+        self.assertEqual([phrasing.joined((row["word"], row["rest"])) for row in state["radio"]], [
             "Maintainer, Maintainer, this is Skills, ready, over",
             "Maintainer, Maintainer, this is Skills, again, over",
             "all stations, this is Maintainer, board, out",

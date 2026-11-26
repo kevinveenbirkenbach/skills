@@ -2,7 +2,8 @@
 """Watch disk, Docker and caches for the kvb-org-organize resource chair.
 
 Usage:
-    watch.py watch     hook (UserPromptSubmit, PostToolUse): measure at most once
+    watch.py watch     hook (UserPromptSubmit; PostToolUse on Bash through
+                       hooks.py post-bash): measure at most once
                        per interval machine-wide, act on the stage, show alerts,
                        and append the rows of <root>/queue-history.jsonl
                        (kvb-org-queue), <root>/security-accepted.jsonl
@@ -10,7 +11,8 @@ Usage:
                        <root>/gate-parents.jsonl (kvb-check-gate) whose id it
                        lacks to the same name in the host-only root
                        (councilroot.py durable), never through a link
-    watch.py block     hook (PreToolUse on Bash): exit 2 for a heavy job while the
+    watch.py block     hook (PreToolUse on Bash through hooks.py pre-bash): exit 2
+                       for a heavy job while the
                        disk stage is stop or critical, the memory stage is stop
                        or cannot be judged without memory_limits, or a
                        kvb-org-radio mayday holds radio silence
@@ -118,6 +120,7 @@ import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 from types import ModuleType
+from typing import TextIO
 
 
 def loaded(name: str, path: Path) -> ModuleType:
@@ -134,6 +137,7 @@ def sibling(name: str) -> ModuleType:
 nofollow = sibling("nofollow")
 hookpath = sibling("hookpath")
 councilroot = sibling("councilroot")
+popups = sibling("popups")
 QUEUE = Path(__file__).resolve().parents[2] / "kvb-org-queue" / "scripts" / "queue.py"
 ROOT = councilroot.root()
 CONFIG = Path(
@@ -160,6 +164,8 @@ MIRRORED = (
     (HISTORY, KEPT_HISTORY), (ACCEPTED, KEPT_ACCEPTED), (RECEIPTS, KEPT_RECEIPTS), (PARENTS, KEPT_PARENTS),
 )
 ALERT_TTL = 3600
+CHAIR = ROOT / "chair" / "claim.json"
+MEMORY_SETTLE = 2
 CLIP = 1000
 CLEANUP_LOCK = "cleanup.lock"
 LOCK_TTL = 1800
@@ -548,33 +554,91 @@ def stage_for(free: float, samples: list[list[float]], cfg: dict, now: float) ->
     return STAGES[level]
 
 
-def alert(stage: str, text: str) -> None:
+def alert(stage: str, text: str, chair_only: bool) -> None:
+    """Args:
+        stage: the stage the alert reports.
+        text: what each session sees.
+        chair_only: whether only the session holding the office chair sees it.
+    """
+    now = time.time_ns()
+    cutoff = now - ALERT_TTL * 10**9
+    row = json.dumps({"id": now, "stage": stage, "text": text, "chair": chair_only}) + "\n"
     try:
         ROOT.mkdir(parents=True, exist_ok=True)
-        nofollow.append(ROOT, ALERTS, json.dumps({"id": time.time_ns(), "stage": stage, "text": text}) + "\n", 0o600)
+        with open(nofollow.open_below(ROOT, ALERTS, os.O_RDWR | os.O_CREAT, 0o600), "r+", encoding="utf-8") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            kept = [line + "\n" for row_id, line in history_rows(handle.read()) if isinstance(row_id, int) and row_id > cutoff]
+            handle.seek(0)
+            handle.truncate()
+            handle.write("".join(kept) + row)
     except OSError:
         pass
 
 
+def seen_mark(path: Path) -> tuple[int, list[int] | None]:
+    """Args:
+        path: a session's seen marker: the id of the newest alert it saw and
+            the [inode, size, mtime_ns] of alerts.jsonl at that read, or a
+            bare id as older hooks wrote it.
+
+    Returns:
+        (id, file); 0 and None for a missing or unreadable marker.
+    """
+    try:
+        mark = json.loads(nofollow.read_text(ROOT, path))
+    except (OSError, ValueError, RecursionError):
+        return 0, None
+    if isinstance(mark, int):
+        return mark, None
+    if isinstance(mark, dict) and isinstance(mark.get("id"), int):
+        return mark["id"], mark.get("file")
+    return 0, None
+
+
+def chairs(session: str) -> bool:
+    try:
+        claim = json.loads(nofollow.read_text(ROOT, CHAIR))
+    except (OSError, ValueError, RecursionError):
+        return False
+    return isinstance(claim, dict) and claim.get("session") == session
+
+
+def changed_alerts(marked: list[int] | None) -> tuple[list[int], str] | None:
+    """Args:
+        marked: the [inode, size, mtime_ns] of alerts.jsonl at the session's
+            last read, or None.
+
+    Returns:
+        (its [inode, size, mtime_ns] now, its text), None while it is
+        unreadable or still as marked.
+    """
+    try:
+        with open(nofollow.open_below(ROOT, ALERTS, os.O_RDONLY, 0), "rb") as handle:
+            info = os.fstat(handle.fileno())
+            file = [info.st_ino, info.st_size, info.st_mtime_ns]
+            if file == marked:
+                return None
+            return file, handle.read(nofollow.READ_LIMIT).decode("utf-8", errors="replace")
+    except OSError:
+        return None
+
+
 def unseen_alerts(session: str) -> list[str]:
     seen_path = ROOT / "seen" / session
-    try:
-        seen = int(nofollow.read_text(ROOT, seen_path))
-    except (OSError, ValueError):
-        seen = 0
-    try:
-        text = nofollow.read_text(ROOT, ALERTS)
-    except OSError:
+    seen, marked = seen_mark(seen_path)
+    changed = changed_alerts(marked)
+    if changed is None:
         return []
-    cutoff = time.time_ns() - ALERT_TTL * 10**9
-    fresh = [json.loads(line) for _, line in history_rows(text)]
-    fresh = [
-        a for a in fresh
-        if isinstance(a["id"], int) and isinstance(a.get("text"), str) and a["id"] > max(seen, cutoff)
-    ]
-    if fresh:
-        write_text(seen_path, str(fresh[-1]["id"]))
-    return [clip(a["text"]) for a in fresh]
+    file, text = changed
+    fresh = fresh_alerts(text, max(seen, time.time_ns() - ALERT_TTL * 10**9))
+    write_text(seen_path, json.dumps({"id": fresh[-1]["id"] if fresh else seen, "file": file}))
+    shown = [a for a in fresh if a.get("chair") is not True or chairs(session)]
+    return [clip(a["text"]) for a in shown]
+
+
+def fresh_alerts(text: str, after: int) -> list[dict]:
+    rows = [json.loads(line) for _, line in history_rows(text)]
+    return [a for a in rows if isinstance(a["id"], int) and isinstance(a.get("text"), str) and a["id"] > after]
 
 
 def write_text(path: Path, text: str) -> None:
@@ -596,10 +660,12 @@ def consumers() -> str:
 
 
 def notify(cfg: dict, text: str) -> None:
+    if not popups.allowed(ROOT, "resources", time.time()):
+        return
     try:
         subprocess.run([*cfg["notify"], text], capture_output=True, timeout=10, check=False)
     except (OSError, subprocess.TimeoutExpired):
-        alert("critical", f"RESOURCE: desktop notification failed: {cfg['notify'][0]}")
+        alert("critical", f"RESOURCE: desktop notification failed: {cfg['notify'][0]}", False)
 
 
 def spawn_cleanup(mode: str) -> None:
@@ -614,12 +680,12 @@ def act(cfg: dict, stage: str, previous: str, free: float) -> None:
     limits = cfg["thresholds_gb"]
     head = f"/ has {free:.1f} GB free (warn < {limits['warn']}, stop < {limits['stop']}, critical < {limits['critical']} GB)"
     if STAGES.index(stage) < STAGES.index(previous):
-        alert(stage, f"RESOURCE {stage.upper()}: recovered, {head}.")
+        alert(stage, f"RESOURCE {stage.upper()}: recovered, {head}.", True)
         return
     if stage == "warn":
-        alert(stage, f"RESOURCE WARN: {head}. Biggest consumers: {consumers()}. Chair: plan a cleanup; peers: request no large slot.")
+        alert(stage, f"RESOURCE WARN: {head}. Biggest consumers: {consumers()}. Chair: plan a cleanup; peers: request no large slot.", False)
     elif stage in ("stop", "critical"):
-        alert(stage, f"RESOURCE {stage.upper()}: {head}. New heavy jobs are blocked; low-risk cleanup is running. {consumers()}")
+        alert(stage, f"RESOURCE {stage.upper()}: {head}. New heavy jobs are blocked; low-risk cleanup is running. {consumers()}", False)
         spawn_cleanup("--full")
         if stage == "critical":
             notify(cfg, f"Agents council: {head}. Heavy jobs blocked; a running stack needs the operator's OK to go.")
@@ -628,13 +694,13 @@ def act(cfg: dict, stage: str, previous: str, free: float) -> None:
 def act_memory(cfg: dict, stage: str, previous: str, sample: dict[str, float | None]) -> None:
     head = memory_text(sample)
     if MEMORY_STAGES.index(stage) < MEMORY_STAGES.index(previous):
-        alert(stage, f"RESOURCE MEMORY {stage.upper()}: recovered, {head}.")
+        alert(stage, f"RESOURCE MEMORY {stage.upper()}: recovered, {head}.", True)
         return
     holders = "; ".join(swap_holders(CGROUPS, container_names())) or "no container holds swap"
     if stage == "warn":
-        alert(stage, f"RESOURCE MEMORY WARN: {head}. Top swap holders: {holders}. Chair: find the holder; peers: start nothing heavy.")
+        alert(stage, f"RESOURCE MEMORY WARN: {head}. Top swap holders: {holders}. Chair: find the holder; peers: start nothing heavy.", False)
     else:
-        alert(stage, f"RESOURCE MEMORY STOP: {head}. New heavy jobs are blocked. Top swap holders: {holders}.")
+        alert(stage, f"RESOURCE MEMORY STOP: {head}. New heavy jobs are blocked. Top swap holders: {holders}.", False)
         notify(cfg, f"Agents council: memory nearly exhausted ({head}). Heavy jobs blocked; top swap holders: {holders}.")
 
 
@@ -650,25 +716,78 @@ def history_rows(text: str) -> list[tuple[str, str]]:
     return rows
 
 
+def mirror_mark(target: Path) -> Path:
+    return target.with_name(f".{target.name}.mirrored")
+
+
+def whole_lines(data: bytes) -> tuple[str, int]:
+    """Returns:
+        The complete lines of data as text and their byte length; a line still
+        being written stays for the next mirror.
+    """
+    end = data.rfind(b"\n") + 1
+    return data[:end].decode("utf-8", errors="replace"), end
+
+
 def keep_rows(origin: Path, target: Path) -> None:
-    # The kept file takes the source's mtime: an unchanged source is skipped without parsing.
+    """Mirror the rows of origin into target.
+
+    Args:
+        origin: the agents' file below ROOT.
+        target: its kept copy below KEPT. Its marker holds the source's
+            [inode, offset] of the last mirror: the same inode at its marked
+            size is skipped without reading the source, past that offset only
+            the rows after it are appended, any other source merges every row
+            whose id the copy lacks. An mtime match is no skip: a copy created
+            or a row appended in the source's timestamp tick shares its mtime.
+    """
     try:
-        source = origin.stat().st_mtime_ns
-        if target.exists() and target.stat().st_mtime_ns == source:
-            return
-        KEPT.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with open(nofollow.open_below(KEPT, target, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600), "a+", encoding="utf-8") as kept:
-            fcntl.flock(kept, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            kept.seek(0)
-            known = {row_id for row_id, _ in history_rows(kept.read())}
-            for row_id, line in history_rows(nofollow.read_text(ROOT, origin)):
-                if row_id not in known:
-                    known.add(row_id)
-                    kept.write(line + "\n")
-            kept.flush()
-            os.utime(kept.fileno(), ns=(source, source))
+        with open(nofollow.open_below(ROOT, origin, os.O_RDONLY, 0), "rb") as source:
+            info = os.fstat(source.fileno())
+            KEPT.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with open(nofollow.open_below(KEPT, target, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600), "a+", encoding="utf-8") as kept:
+                own = os.fstat(kept.fileno())
+                if (own.st_dev, own.st_ino) == (info.st_dev, info.st_ino):
+                    return
+                fcntl.flock(kept, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                offset = mirror_offset(target, info)
+                if offset == info.st_size:
+                    return
+                source.seek(offset or 0)
+                text, length = whole_lines(source.read(nofollow.READ_LIMIT))
+                if offset is None:
+                    merge_rows(kept, text)
+                else:
+                    kept.write("".join(line + "\n" for _, line in history_rows(text)))
+                kept.flush()
+                nofollow.replace(KEPT, mirror_mark(target), json.dumps([info.st_ino, (offset or 0) + length]), 0o600)
     except (OSError, ValueError, TypeError):
         pass
+
+
+def mirror_offset(target: Path, info: os.stat_result) -> int | None:
+    """Args:
+        target: the kept copy.
+        info: the source's stat.
+
+    Returns:
+        The source offset its tail starts at, None when the source has
+        another inode or is shorter than marked and takes the full merge.
+    """
+    try:
+        inode, offset = json.loads(nofollow.read_text(KEPT, mirror_mark(target)))
+    except (OSError, ValueError, TypeError, RecursionError):
+        return None
+    return offset if inode == info.st_ino and isinstance(offset, int) and 0 <= offset <= info.st_size else None
+
+
+def merge_rows(kept: TextIO, text: str) -> None:
+    kept.seek(0)
+    known = {row_id for row_id, _ in history_rows(kept.read())}
+    for row_id, line in history_rows(text):
+        if row_id not in known:
+            known.add(row_id)
+            kept.write(line + "\n")
 
 
 def keep_history() -> None:
@@ -678,6 +797,23 @@ def keep_history() -> None:
 
 def stale(state: dict, cfg: dict, now: float) -> bool:
     return now - state.get("checked", 0) >= cfg["interval_seconds"]
+
+
+def settled_memory(held: str, measured: str, below: int) -> tuple[str, int]:
+    """Args:
+        held: the memory stage the alerts last reported.
+        measured: the stage of this sample.
+        below: samples in a row so far that measured below held.
+
+    Returns:
+        (the stage to report, the new below count): a higher stage at once, a
+        lower one only on the MEMORY_SETTLE-th sample in a row below held.
+    """
+    rank = MEMORY_STAGES.index
+    if rank(measured) >= rank(held):
+        return (measured, 0)
+    below += 1
+    return (measured, 0) if below >= MEMORY_SETTLE else (held, below)
 
 
 def measure_and_act(cfg: dict, state: dict, now: float, problem: str | None) -> None:
@@ -690,8 +826,10 @@ def measure_and_act(cfg: dict, state: dict, now: float, problem: str | None) -> 
     sample = None if problem else memory()
     was_short = state.get("memory_stage", "ok")
     if sample is not None:
-        state["memory_stage"] = memory_stage(sample, cfg)
-    due = now - state.get("caches_checked", 0) >= cfg["cache_interval_seconds"]
+        state["memory_stage"], state["memory_below"] = settled_memory(
+            was_short, memory_stage(sample, cfg), state.get("memory_below", 0)
+        )
+    due =now - state.get("caches_checked", 0) >= cfg["cache_interval_seconds"]
     if due:
         state["caches_checked"] = now
     write_json(STATE, state)
@@ -2769,6 +2907,7 @@ def cmd_cleanup(cfg: dict, args: argparse.Namespace) -> int:
                     f"RESOURCE CLEANUP: freed {after - before:.1f} GB ({cache_gb:.1f} GB caches), "
                     f"/ now {after:.1f} GB free; {len(results) - len(failed)} commands ok"
                     + (f", failed: {' | '.join(failed)}" if failed else "."),
+                    False,
                 )
         finally:
             os.rmdir(CLEANUP_LOCK, dir_fd=root)

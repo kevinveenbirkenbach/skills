@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -15,6 +16,7 @@ GUARD = "X-Kvb-Orchestrator"
 PLAIN_CSP = "default-src 'none'; frame-ancestors 'none'"
 LENGTH = re.compile(r"[0-9]{1,9}")
 QUERY_FIELDS = 32
+TAG_LENGTH = 32
 
 
 class HubServer(ThreadingHTTPServer):
@@ -46,7 +48,25 @@ class Exchange(BaseHTTPRequestHandler):
         self.send(status, "text/plain; charset=utf-8", f"{message}\n".encode(), {"Content-Security-Policy": PLAIN_CSP})
 
     def send_json(self, status: HTTPStatus, payload: dict) -> None:
-        self.send(status, "application/json", json.dumps(payload).encode(), {"Content-Security-Policy": PLAIN_CSP})
+        self.send_body(status, json.dumps(payload).encode())
+
+    def send_body(self, status: HTTPStatus, body: bytes) -> None:
+        self.send(status, "application/json", body, {"Content-Security-Policy": PLAIN_CSP})
+
+    def send_tagged(self, payload: dict) -> None:
+        """Args:
+            payload: the answer; its digest is the ETag, and a request whose
+                If-None-Match names it gets 304 without a body.
+        """
+        body = json.dumps(payload).encode()
+        tag = f'"{hashlib.sha256(body).hexdigest()[:TAG_LENGTH]}"'
+        if self.headers.get_all("If-None-Match") == [tag]:
+            self.send_response(HTTPStatus.NOT_MODIFIED)
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+        self.send(HTTPStatus.OK, "application/json", body, {"Content-Security-Policy": PLAIN_CSP, "ETag": tag})
 
     def not_allowed(self) -> None:
         self.send_response(HTTPStatus.METHOD_NOT_ALLOWED)

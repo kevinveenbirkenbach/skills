@@ -44,6 +44,13 @@ HELPERS = """
   const all = (selector, root) => [...(root || document).querySelectorAll(selector)];
   const text = (node) => (node ? node.textContent.trim() : null);
   const name = (node) => (node ? node.getAttribute("aria-label") || text(node) : null);
+  const streamShowsAll = async () => {
+    const chip = await until(() => all("#main .chip").find((node) => text(node) === "only waiting"), 8000);
+    if (chip && chip.getAttribute("aria-pressed") === "true") {
+      chip.click();
+      await sleep(1500);
+    }
+  };
   const toolbarRows = () => {
     const bar = document.querySelector('#main [role="toolbar"][aria-label="Tasks"]');
     const boxes = bar ? [...bar.children].filter((node) => node.getClientRects().length).map((node) => node.getBoundingClientRect()).sort((a, b) => a.top - b.top) : [];
@@ -57,6 +64,23 @@ HELPERS = """
       }
     }
     return rows;
+  };
+  const pressKey = async (key) => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", {key, bubbles: true, cancelable: true}));
+    await sleep(60);
+  };
+  const cursorTo = async (ref) => {
+    const row = () => document.querySelector(`#main .inbox-list > li[data-ref="${ref}"]`);
+    const cursor = () => document.querySelector("#main .inbox-list > li.cursor");
+    for (let steps = 0; steps < 50 && row() && cursor() !== row(); steps += 1) {
+      await pressKey(Number(row().dataset.index) > Number(cursor() ? cursor().dataset.index : -1) ? "j" : "k");
+    }
+    return Boolean(row() && cursor() === row());
+  };
+  const selectRow = async (ref) => {
+    await cursorTo(ref);
+    await pressKey("x");
+    await sleep(200);
   };
   const taskLayout = () => all("#main .graph.tasks > *").map((node) => (node.matches('[role="toolbar"]') ? "toolbar" : node.matches('[aria-label="Task filters"]') ? "chips" : "body"));
   const screenShown = async (ms) => {

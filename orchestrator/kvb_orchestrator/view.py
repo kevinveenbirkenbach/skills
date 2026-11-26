@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 
 from .asking import ask_row, decision_row
@@ -25,22 +26,21 @@ from .graph import graph
 from .jobs import JOB_OPEN
 from .messaging import message_row
 from .orbits import TRACK_STEPS, track
-from .phrasing import joined, phrase_parts
+from .phrasing import phrase_parts
 from .presence import presence, read_snapshot
 from .queue_order import grant_order, live_ids
 from .receipts import inline, read_of
-from .records import epoch, iso_epoch, read_jsonl
+from .records import epoch, iso_epoch, read_jsonl, write_atomic
 from .register import (
     AGENT_ORDER,
     REGISTER,
     agent_order,
     operator_rows,
     read_register,
-    register_rows,
     stored_order,
 )
 from .reviewing import review_row
-from .settings import completed, media_origins, station_origins, valid_settings
+from .settings import NOTIFY, completed, media_origins, station_origins, valid_settings
 from .signed import signing
 from .skill_scripts import OUTPUT_LIMIT
 from .tasks import queue_chain, queue_line, task_edges, task_rows
@@ -76,14 +76,21 @@ class View:
             raise ToolError("from must not lie after to")
         return begin, end
 
-    def window(self, query: dict[str, list[str]]) -> dict:
+    def window(self, query: dict[str, list[str]]) -> bytes:
+        """Returns:
+            The encoded state of the window; a live window, one without
+            `to`, is shared with every poll whose `from` falls into the same
+            live_state slot.
+        """
         sampled = single(query, "track")
         if sampled not in (None, "1"):
             raise ToolError("track must be 1 or left out")
         self.tree.beat()
-        if "from" in query or "to" in query:
-            return self.built(query, sampled)
-        return self.live_state.shared(sampled, lambda: self.built(query, sampled))
+        if "to" in query:
+            return json.dumps(self.built(query, sampled)).encode()
+        begin, _ = self.span(query, time.time())
+        key = (sampled, None if "from" not in query else self.live_state.slot(begin))
+        return self.live_state.encoded(key, lambda: self.built(query, sampled))
 
     def built(self, query: dict[str, list[str]], sampled: str | None) -> dict:
         now = time.time()
@@ -122,7 +129,7 @@ class View:
             called = [directory.at(key, row["ts"]) or name for key, name in zip(targets, row["to"], strict=True)]
             speaker = directory.at(source, row["ts"]) or row["from"]
             word, rest = phrase_parts(row["class"], speaker, called, row["text"])
-            spoken = {"speech": joined((word, rest)), "word": word, "rest": rest, "voice": self.speech.voice_of(source), "pitch": pitch_of(source), **sound_of(source), "speaker": speaker, "called": called}
+            spoken = {"word": word, "rest": rest, "voice": self.speech.voice_of(source), "pitch": pitch_of(source), **sound_of(source), "speaker": speaker, "called": called}
             read = read_of(inlined, row["ts"])
             radio.append({**row, "source": source, "targets": targets, "now": directory.now(source), **spoken, **read})
         grant_rows = [{**grant, "target": directory.key(grant["to"], grant["ts"])} for grant in grants(history, (begin, end), claims, tasks)]
@@ -142,6 +149,7 @@ class View:
         stored = self.messages.listed()
         return {
             "settings": settings,
+            "schedules": self.schedule_settings.view(),
             "media": media_origins(settings),
             "speech": {**self.speech.describe(), "gate": self.speech_gate.state()},
             "people": people,
@@ -165,7 +173,6 @@ class View:
             "messages": [{**message_row(message), **read_of(inlined, epoch(message.get("relay_ts")))} for message in stored if begin <= message["created_ts"] <= end],
             "reasons": recent_reasons(stored),
             "operator": operator_rows(tasks),
-            "register": register_rows(tasks),
             "tasks": rows,
             "task_edges": task_edges(rows, chain),
             "queue_line": queue_line(chain, queue),
@@ -190,14 +197,16 @@ class View:
             The items the operator's passkey signs for this save: the station
             origins and the new urls when the settings name a stream url the
             saved ones do not, and the speech threshold when it differs from
-            the saved one, since the hub's speech gate enforces it. The hub
-            dials no url before it is signed, and resolves its redirect
-            targets only after the signature.
+            the saved one, since the hub's speech gate enforces it, and the
+            desktop popups when they differ, since muting one silences an
+            alarm outside the page. The hub dials no url before it is signed,
+            and resolves its redirect targets only after the signature.
         """
         urls = sorted({stream["url"] for stream in settings["streams"]} - {stream["url"] for stream in saved["streams"]})
         threshold = settings["speech"]["threshold"]
         streams = [signing.stream_item(station_origins(settings), urls)] if urls else []
-        return streams + ([signing.threshold_item(threshold)] if threshold != saved["speech"]["threshold"] else [])
+        speech = [signing.threshold_item(threshold)] if threshold != saved["speech"]["threshold"] else []
+        return streams + speech + ([signing.popups_item(settings["popups"])] if settings["popups"] != saved["popups"] else [])
 
     def resolved(self, settings: dict, saved: dict) -> tuple[dict, list[str]]:
         """Args:
@@ -258,7 +267,10 @@ class View:
         for change in self.signed_changes(settings, saved):
             self.operator_proven(proof, change)
         resolved, problems = self.resolved(settings, saved)
-        return {"settings": self.settings.put(resolved, saved), "problems": problems}
+        stored = self.settings.put(resolved, saved)
+        self.council.mkdir(parents=True, exist_ok=True)
+        write_atomic(self.council / NOTIFY, json.dumps(stored["popups"], sort_keys=True).encode())
+        return {"settings": stored, "problems": problems}
 
     def render(self, nonce: str) -> tuple[str, str]:
         now = time.time()

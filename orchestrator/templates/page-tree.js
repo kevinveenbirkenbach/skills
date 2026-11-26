@@ -62,8 +62,11 @@
     const ready = items.length > 0;
     const hint = !ready && tree.data.delete_ready !== true ? `Delete all merged blocked: ${tree.data.delete_reason || "delete_ready is false"}` : items.length ? `Delete all merged: ${items.length} branches after dry run and signature` : "Delete all merged: no merged branch without a skip reason";
     const button = iconBtn("bi-trash3-fill", "Delete all merged", "btn small danger", () => deleteDialog(items, locked, held, kept), hint);
-    button.disabled = !ready;
-    return h("span", {class: "hint", title: hint}, button, items.length ? counter(items.length) : null,
+    const gate = whyOff(button);
+    gate.set(ready ? "" : hint, hint);
+    const blocked = tree.data.delete_ready === true ? "" : `Delete blocked: ${tree.data.delete_reason || "delete_ready is false"}`;
+    return h("span", {class: "hint"}, gate.root, items.length ? counter(items.length) : null,
+      blocked ? h("span", {class: "pill delete-blocked", "data-tone": "warn", title: blocked}, icon("bi-shield-lock"), h("span", {}, "Delete blocked")) : null,
       waiting.length ? chip("bi-key", `${waiting.length} token needed`, "warn", waiting.length) : null,
       held.length ? chip("bi-folder-symlink", `${held.length} held by a worktree: use branch gc`, "neutral", held.length) : null,
       kept.length ? chip("bi-sign-merge-left", `${kept.length} kept by the --local dry run: see each dry run`, "neutral", kept.length) : null,
@@ -83,11 +86,11 @@
   function worktreeRow(wt) {
     const review = wt.review;
     return h("div", {class: wt.open_work.length ? "wt open-work" : "wt", "data-open-work": wt.open_work.join(" ") || null, "data-item": `artifact:${artifactRef(`wt:${wt.path}`)}`},
-      h("div", {class: "wt-head", "data-star-slot": ""},
+      h("div", {class: "wt-head"},
         h("span", {class: "states"}, worktreeStates(wt), openWork(wt)),
         h("code", {}, wt.path),
         h("span", {class: "muted", title: wt.head}, wt.head.slice(0, 10)),
-        wt.workers.length ? h("span", {class: "who"}, wt.workers.map((name) => [face(name, false), person(name)])) : h("span", {class: "muted"}, "nobody"),
+        wt.workers.length ? h("span", {class: "who"}, wt.workers.map((name) => agentLink(name))) : h("span", {class: "muted"}, "nobody"),
         review ? [status(review.status), review.gate ? pill(review.gate === "pass" ? "Gate green" : "Gate red", review.gate === "pass" ? "ok" : "bad") : null] : null,
         copyButton(wt.path)),
       flowLine(wt.flow, wt.branch),
@@ -109,7 +112,7 @@
   function branchRow(repo, entry, glance) {
     const result = resultOf(repo, entry);
     return h("div", {class: "branch-row", "data-item": `artifact:${artifactRef(`branch:${repo.path}\u0000${entry.name}`)}`},
-      h("div", {class: "branch-name", "data-star-slot": ""}, h("strong", {}, entry.name), h("span", {class: "states"}, branchStates(entry)), entry.upstream ? h("span", {class: "muted"}, `↔ ${entry.upstream}`) : null,
+      h("div", {class: "branch-name"}, h("strong", {}, entry.name), h("span", {class: "states"}, branchStates(entry)), entry.upstream ? h("span", {class: "muted"}, `↔ ${entry.upstream}`) : null,
         h("span", {class: "muted", title: entry.head}, entry.head.slice(0, 10)), result ? resultChip(result) : null, h("span", {class: "spacer"}), gateChips(repo.path, entry.name), glance ? null : deleteButton(entry)),
       entry.worktrees.map(worktreeRow));
   }
@@ -119,14 +122,14 @@
       return;
     }
     if (!tree.data || tree.data.error) {
-      tree.dom.count.textContent = "";
+      treeCount("");
       tree.dom.removeAll.replaceChildren();
       tree.dom.list.replaceChildren(emptyState(tree.busy || !tree.data ? "Reading repositories …" : "No tree", tree.data ? tree.data.error : "pkgmgr writes the tree every minute while this page is open."));
       return;
     }
     tree.dom.removeAll.replaceChildren(deleteAll(), gateApply() || "");
     const shown = treeCards(tree.q.trim().toLowerCase());
-    tree.dom.count.textContent = `${shown.count} repositories · as of ${clock.format(stampOf(tree.data.scanned))}${tree.data.delete_ready ? "" : ` · Delete blocked: ${tree.data.delete_reason}`}`;
+    treeCount(`${shown.count} repositories · as of ${clock.format(stampOf(tree.data.scanned))}`);
     tree.dom.list.replaceChildren(...shown.nodes);
   }
 
@@ -159,7 +162,7 @@
       const merged = repo.branches.filter((entry) => entry.cleanup).length;
       const busy = trees.filter((wt) => wt.open_work.length).length;
       const details = h("details", {class: "card repo", open: Boolean(q) || tree.open.has(repo.path), "data-item": `artifact:${artifactRef(`repo:${repo.path}`)}`},
-        h("summary", {"data-star-slot": ""}, icon("bi-git"), h("span", {}, repo.name), counter(`${repo.branches.length} branches`), counter(`${trees.length} worktrees`),
+        h("summary", {},icon("bi-git"), h("span", {}, repo.name), counter(`${repo.branches.length} branches`), counter(`${trees.length} worktrees`),
           dirty ? chip("bi-pencil-square", `${dirty} worktrees with changes`, "warn", dirty) : null, merged ? chip("bi-sign-merge-left", `${merged} merged, deletable`, "ok", merged) : null,
           busy ? chip("bi-lightning-charge", `${busy} worktrees with open work`, "warn", busy) : null),
         repo.branches.length ? branchAncestry(repo) : null,

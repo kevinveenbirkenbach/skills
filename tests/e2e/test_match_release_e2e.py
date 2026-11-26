@@ -84,8 +84,11 @@ FLOW = """(async () => {@HELPERS@
   const leaned = await swipe(width * 0.4, 0);
   await until(() => front() !== order[2], 3000);
   order.push(front());
+  key("w");
+  await until(() => front() !== order[3], 3000);
+  order.push(front());
   const short = await swipe(width * 0.1, 0);
-  const stayed = front() === order[3];
+  const stayed = front() === order[4];
   await swipe(width * 0.4, 4);
   const overview = await until(() => document.querySelector("#main .match-overview"), 3000);
   const rows = overview ? all("#main .match-decision").map((item) => [item.dataset.card, item.dataset.verdict, text(item.querySelector(".match-decision-feedback"))]) : [];
@@ -175,7 +178,7 @@ class TestMatchRelease(HubCase):
     def check_flow(self, found: dict) -> None:
         reason = f"{FIRST}:3: rename it"
         self.assertNotIn("error", found, found)
-        self.assertEqual(found["order"], [self.cards[0], self.cards[1], self.cards[2], self.cards[1]], found)
+        self.assertEqual(found["order"], [self.cards[0], self.cards[1], self.cards[2], "release", self.cards[1]], found)
         self.assertEqual((found["prefill"], found["leaned"], found["short"], found["stayed"]), (reason, "accept", "accept", True), found)
         expected = [[self.cards[0], "reject", f"{reason}\nalso add a test"], [self.cards[1], "accept", None], [self.cards[2], "accept", None]]
         self.assertEqual(sorted(found["rows"]), sorted(expected), found)

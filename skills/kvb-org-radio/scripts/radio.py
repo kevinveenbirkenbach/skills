@@ -38,12 +38,15 @@ Args:
     assist [--session <id>]: join the active mayday as a helper, whom the
         block lets through like its sender.
     hook: UserPromptSubmit hook; prints the active silence and the
-        undelivered radio rows, mayday first, at most 10. Never fails.
+        undelivered radio rows, mayday first, at most 10, then the call
+        receipts while no other mail waits. Never fails.
     tool: PostToolBatch hook; adds the undelivered radio rows as
         additionalContext. Never fails.
     mailbox: Stop hook; prints the undelivered post, newsletters and call
         receipts to stderr, at most 10, and exits 2 so the agent reads them
-        before it idles. Never fails.
+        before it idles; receipts alone exit 0 and wait for the next prompt.
+        A receipt reads "read by <name> HH:MM" without the call's text.
+        Never fails.
     listen: Stop hook with asyncRewake; polls every POLL_SECONDS until a
         radio row reaches this session, prints it to stderr and exits 2;
         exits 0 once a newer listener of the session took over.
@@ -53,8 +56,11 @@ Args:
         mayday_allow regex matches from its start; a shell operator, double
         quote or backslash outside single quotes, or any parse error, blocks.
         The mayday's sender and its helpers pass. Never fails.
-    show [--all] [--session <id>]: print the active silence and the
-        undelivered rows, or every kept row, without delivering them.
+    show [--all] [--since <n>s|m|h|d] [--summary] [--session <id>]: print
+        the active silence and the undelivered rows, or every kept row,
+        without delivering them; --since keeps the rows of that last span,
+        --summary prints one line per class and sender with the count and
+        the newest row.
     feedback set post|call [--session <id>]: store the channel feedback
         send uses for the session, in <root>/feedback.json; post unless set.
         operator.py does not use it: it always calls.
@@ -88,7 +94,7 @@ import shlex
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
 
@@ -120,6 +126,9 @@ SILENCE_SECONDS = 7200
 NOTIFY_SECONDS = 10
 POLL_SECONDS = 15
 NEVER = 0.0
+DURATION = re.compile(r"(\d+)([smhd])")
+UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+HINT = "radio.py show --all --since 1d --summary"
 
 
 def fail(message: str) -> None:
@@ -204,7 +213,9 @@ def clip(value: object) -> str:
 
 def line(row: dict) -> str:
     if kind(row) == "receipt":
-        return f"MAIL CALL {clip(row.get('from'))} read {clock(row['ts'])}: {clip(row.get('text'))}"
+        call = row.get("call")
+        sent = f" (your call of {clock(call)})" if isinstance(call, int | float) else ""
+        return f"MAIL CALL read by {clip(row.get('from'))} {clock(row['ts'])}{sent}"
     target = f" to {', '.join(clip(name) for name in targets(row))}" if targets(row) else ""
     return (
         f"{channel(row).upper()} {kind(row).upper()} {clock(row['ts'])} "
@@ -215,7 +226,7 @@ def line(row: dict) -> str:
 def capped(rows: list[dict]) -> list[str]:
     picked = sorted(rows, key=lambda row: (rank(row), -row["ts"]))[:SHOWN]
     more = (
-        [f"{channel(rows[0]).upper()} {len(rows) - SHOWN} more items: radio.py show --all"]
+        [f"{channel(rows[0]).upper()} {len(rows) - SHOWN} more items: {HINT}"]
         if len(rows) > SHOWN
         else []
     )
@@ -314,7 +325,7 @@ def silence_line(active: dict) -> str:
 
 
 def notify_once(active: dict | None) -> None:
-    if active is None:
+    if active is None or not organize("popups").allowed(ROOT, "mayday", time.time()):
         return
     try:
         argv = config()["notify"]
@@ -489,14 +500,32 @@ def pending(sid: str, name: str, state: dict, family: str) -> list[dict]:
     return [row for row in items() if channel(row) == family and for_me(row, name, sid) and not seen(row, name, sid, prompt, state, since)]
 
 
-def take(sid: str, family: str) -> list[dict]:
+def take(sid: str, family: str, wanted: Callable[[list[dict]], bool]) -> list[dict]:
+    """Args:
+        sid: the session.
+        family: radio or mail.
+        wanted: whether the pending rows of the family are taken now; one
+            mark covers the whole family, so they are taken all or none.
+
+    Returns:
+        The rows taken.
+    """
     name = name_of(sid)
     with session(sid) as state:
         rows = pending(sid, name, state, family)
-        if rows:
-            state[family] = max(row["ts"] for row in rows)
-            save(sid, state)
+        if not wanted(rows):
+            return []
+        state[family] = max(row["ts"] for row in rows)
+        save(sid, state)
     return rows
+
+
+def letters(rows: list[dict]) -> bool:
+    return any(kind(row) != "receipt" for row in rows)
+
+
+def receipts_only(rows: list[dict]) -> bool:
+    return bool(rows) and not letters(rows)
 
 
 def acknowledge(sid: str, rows: list[dict]) -> None:
@@ -525,8 +554,9 @@ def cmd_hook(_: argparse.Namespace) -> int:
         if not sid:
             return 0
         active = silence()
-        rows = take(sid, "radio")
-        out = ([silence_line(active)] if active else []) + capped(rows)
+        rows = take(sid, "radio", bool)
+        receipts = take(sid, "mail", receipts_only)
+        out = ([silence_line(active)] if active else []) + capped(rows) + capped(receipts)
         if out:
             print("\n".join(out))
         notify_once(active)
@@ -564,7 +594,7 @@ def cmd_tool(_: argparse.Namespace) -> int:
 def cmd_mailbox(_: argparse.Namespace) -> int:
     try:
         sid = hook_session()
-        rows = take(sid, "mail") if sid else []
+        rows = take(sid, "mail", letters) if sid else []
     except Exception:  # noqa: BLE001
         return 0
     if not rows:
@@ -588,7 +618,7 @@ def cmd_listen(_: argparse.Namespace) -> int:
             mtime = news_mtime()
             if mtime != known:
                 known = mtime
-                rows = take(sid, "radio")
+                rows = take(sid, "radio", bool)
                 if rows:
                     print("\n".join(capped(rows)), file=sys.stderr)
                     notify_once(silence())
@@ -643,6 +673,29 @@ def cmd_block(_: argparse.Namespace) -> int:
     return 2
 
 
+def duration(text: str) -> int:
+    match = DURATION.fullmatch(text)
+    if match is None:
+        raise argparse.ArgumentTypeError(f"{text!r} is no duration like 30m, 2h or 1d")
+    return int(match[1]) * UNITS[match[2]]
+
+
+def summary(rows: list[dict]) -> list[str]:
+    """Returns:
+        One line per class and sender: the count and the newest row's time
+        and text, receipts without the text; radio classes first.
+    """
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for row in rows:
+        groups.setdefault((kind(row), clip(row.get("from"))), []).append(row)
+    lines = []
+    for (cls, peer), group in sorted(groups.items(), key=lambda item: ((RADIO + MAIL).index(item[0][0]), item[0][1])):
+        last = max(group, key=lambda row: row["ts"])
+        text = "" if cls == "receipt" else f": {clip(last.get('text'))}"
+        lines.append(f"{cls.upper()} {peer}: {len(group)}, last {clock(last['ts'])}{text}")
+    return lines
+
+
 def cmd_show(args: argparse.Namespace) -> int:
     active = silence()
     if active:
@@ -654,8 +707,11 @@ def cmd_show(args: argparse.Namespace) -> int:
         name = name_of(sid)
         with session(sid) as state:
             rows = ordered(pending(sid, name, state, "radio") + pending(sid, name, state, "mail"))
-    for row in rows:
-        print(line(row))
+    if args.since is not None:
+        cutoff = time.time() - args.since
+        rows = [row for row in rows if row["ts"] >= cutoff]
+    for text in summary(rows) if args.summary else [line(row) for row in rows]:
+        print(text)
     return 0
 
 
@@ -723,6 +779,8 @@ def main() -> int:
         sub.add_parser(name).set_defaults(func=func)
     p = sub.add_parser("show")
     p.add_argument("--all", action="store_true")
+    p.add_argument("--since", type=duration)
+    p.add_argument("--summary", action="store_true")
     p.add_argument("--session")
     p.set_defaults(func=cmd_show)
     feedback = sub.add_parser("feedback").add_subparsers(dest="action", required=True)

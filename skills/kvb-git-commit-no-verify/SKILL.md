@@ -8,13 +8,27 @@ description: >
 1. Run the kvb-code-clean pass (comments, defaults, principles) over the
    staged and unstaged changes first, then the kvb-check-legal check over
    the staging index. A legal blocker stops here.
-2. Show in the message right before the `git commit` call, never only after
-   it, the commit table of the kvb-check-score skill (`score.py ...
-   --commit-table <worktree>`): 📁 worktree, 🌿 branch, 📊 staged diff stat,
-   then fix, break, tokens, velocity, security, score and gate of the staged
-   bundle, as the kvb-check-confidence skill produces them: break risk
-   derived through the kvb-check-break-risk skill, never estimated. Never
-   print a diff in the chat, only its stat.
+2. Score the staged bundle in one run, in the background with its output in
+   a `/tmp` log:
+
+   ```bash
+   python3 ${CLAUDE_SKILL_DIR}/../kvb-check-score/scripts/block.py --repo <worktree> --base HEAD --fix <n> --break <n> [--transcripts ~/.claude/projects [--saves <tokens/day> --evidence "<line>"]] [-- <command...>]
+   ```
+
+   Fix confidence comes from the kvb-check-confidence skill, break risk
+   derived through the kvb-check-break-risk skill, never estimated.
+   `--transcripts` when skill text changed; `-- <command>` (the targeted
+   tests or a CLI call of the changed code) when runnable code changed, and
+   then the whole call runs inside
+   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold --kind test
+   --task <task> --`. It prints the commit table (📁 worktree, 🌿 branch,
+   📊 staged diff stat, fix, break, tokens, velocity, security, score,
+   gate), the `gate.py status` verdict that 90/5 also needs, the message
+   block and the call for step 5. Show the table and the verdict right
+   before the `git commit` call, never only after it. Exit 2 names the
+   failing script; `security.py exited 4` sends you to
+   `${CLAUDE_SKILL_DIR}/../kvb-check-security/coverage.md`. Never print a
+   diff in the chat, only its stat.
 3. Approval-prompt duty: the commit call's approval prompt (Claude Code: the
    Bash `description`; other runtimes: their prompt text) names the worktree
    path, the branch, the diff stat and the score values of step 2. Missing
@@ -30,12 +44,12 @@ description: >
 4. Commit exactly the staging index with `git commit --no-verify` and a
    Conventional-Commits message derived from the staged diff; never add
    unstaged files, never push. Message: `-m "<subject>" -m "<body>" -m
-   "<score.py ... --message-block>" --trailer "Created-with:
+   "<message block of step 2>" --trailer "Created-with:
    https://s.veen.world/skills" --trailer "Co-Authored-By: ..."`. A
    commit-creating call without block or `Created-with`, upstream commits
    included, is not sent; a merge is `git merge --no-ff --no-commit`, then
    this commit. Every commit and PR skill takes both from here; a PR body
    ends with `Created with https://s.veen.world/skills`.
-5. Report the created commit hash, the commit table again with
-   `--commit <hash>` (the committed diff stat and a 🔖 Commit column), and
-   what remains uncommitted.
+5. Report the created commit hash, the commit table again by the `after the
+   commit:` call of step 2 with the hash filled in (the committed diff stat
+   and a 🔖 Commit column), and what remains uncommitted.

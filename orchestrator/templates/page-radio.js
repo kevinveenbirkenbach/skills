@@ -94,7 +94,9 @@
     const stream = index < 0 ? null : settings.streams[index];
     const url = stream ? stream.url : "";
     if (url === radio.url && !radio.waiting) {
-      drawStations();
+      if (!document.hidden) {
+        drawStations();
+      }
       return;
     }
     const missing = stream ? Ambience.stationOrigins(stream).filter((origin) => !pageMedia.has(origin)) : [];

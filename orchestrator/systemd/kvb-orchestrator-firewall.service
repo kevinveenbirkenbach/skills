@@ -5,5 +5,6 @@ Description=Agent Orchestrator firewall: verify the operator signature, then wri
 Type=oneshot
 Environment=PATH=/usr/bin:/bin
 EnvironmentFile=%h/.local/share/kvb-orchestrator/.env
+ExecCondition=/bin/sh -c 'test -n "$(find %h/.local/state/kvb-orchestrator/tree-heartbeat -mmin -5 2>/dev/null)" || test -n "$(ls -A %h/.local/state/kvb-orchestrator/firewall/jobs 2>/dev/null)"'
 ExecStart=/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/settings_writer.py --port ${KVB_ORCHESTRATOR_PORT} --jobs %h/.local/state/kvb-orchestrator/firewall/jobs --results %h/.local/state/kvb-orchestrator/firewall/results --view %h/.local/state/kvb-orchestrator/firewall/view.json --approvers %h/.config/kvb-orchestrator/approvers.json --replay %h/.local/state/kvb-orchestrator-approvals/firewall.json --tree %h/.local/state/pkgmgr/tree/branch-tree.json
 TimeoutStartSec=120

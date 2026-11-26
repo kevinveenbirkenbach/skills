@@ -46,10 +46,7 @@ INBOX = """(async () => {@HELPERS@@COMMON@
   }
   const single = await pick(1, sheet().querySelector(".deny-reason textarea"));
   const menu = () => document.querySelector("#grant-bar details.grant-menu");
-  const checkbox = row("@ASK@").querySelector('input[type="checkbox"]');
-  if (checkbox && !checkbox.checked) {
-    checkbox.click();
-  }
+  await selectRow(row("@ASK@").dataset.ref);
   if (!(await until(() => menu(), 3000))) {
     return {single, error: "no selection menu"};
   }

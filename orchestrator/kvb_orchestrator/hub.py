@@ -53,6 +53,7 @@ from .resources import RESOURCES, SAMPLES
 from .revealing import Revealing
 from .reviewing import Reviewing
 from .rules import Offers, Rules
+from .schedules import Schedules
 from .settings import Settings
 from .signed import signing
 from .skill_scripts import Runner
@@ -142,6 +143,7 @@ class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Den
     merge_previews: Ledger
     live_state: LiveState
     accounts: Accounts
+    schedule_settings: Schedules
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -211,6 +213,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         replay=state / "replay" / "messages.json",
         view_store=ViewStore(state / "view.json"),
         accounts=Accounts(state, places.kept, council),
+        schedule_settings=Schedules(council),
         match_snapshots=Ledger(state / "match.json"),
         merge_previews=Ledger(state / "previews.json"),
         live_state=LiveState(live_ttl),
@@ -219,7 +222,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         jobs=Ledger(state / "jobs.json"),
         marks=Marks(state / "marks.json"),
         log=Log(state / "log.jsonl"),
-        batches=Pending(),
+        batches=Pending(lambda: settings.undo()),
         names=Names(state / "names.json"),
         receipt_names=ReceiptNames(state / NAMES),
         receipt_reads=ReceiptReads(state / READS),

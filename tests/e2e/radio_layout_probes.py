@@ -39,9 +39,6 @@ LAYOUT = """(async () => {@HELPERS@@PROBES@
   });
   const [device, speak, history] = ["radio-device", "radio-speak", "radio-log"].map((id) => box(spot.querySelector(`[data-panel="${id}"]`)));
   const owners = [spot, ...all("[data-panel]", spot)];
-  const controls = all('button, input, select, textarea, summary, [role="tab"]', spot).filter((node) => shown(node) && !node.classList.contains("star"));
-  const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-  const covered = owners.map(ownStar).filter(Boolean).flatMap((star) => controls.filter((node) => !node.contains(star) && overlap(box(star), box(node)) > 1).map((node) => `${star.title} over ${node.getAttribute("aria-label") || text(node)}`));
   const knobs = all(".radio-knobs .knob-row", spot).map((row) => Math.round(box(row.querySelector(".knob-label")).left));
   return {
     page: [document.documentElement.scrollWidth, innerWidth], tall: [document.documentElement.scrollHeight, innerHeight, Math.round(box(spot).height)],
@@ -57,7 +54,7 @@ LAYOUT = """(async () => {@HELPERS@@PROBES@
     sliver: Math.min(...avatars.map((row) => row.sliver)),
     order: {stacked: device.bottom <= speak.top + 1 && speak.bottom <= history.top + 1 && Math.abs(device.left - speak.left) < 2, beside: device.right <= speak.left && speak.bottom <= history.top + 1 && Math.abs(speak.left - history.left) < 2},
     labels: [...new Set(knobs)].length,
-    stars: owners.map((owner) => [owner.dataset.panel, Boolean(ownStar(owner))]), covered,
+    pinnable: owners.map((owner) => [owner.dataset.panel, Boolean(Panels.targetOf(owner))]), stars: all(".star, .star-row", spot).length,
     stations: [Boolean(spot.querySelector("details.radio-station")), spot.querySelector("details.radio-station").open],
   };
 })()"""
@@ -124,12 +121,7 @@ HOME = """(async () => {@HELPERS@@PROBES@
   const owners = Object.fromEntries(@PARTS@.map((id) => [id, id === "radio" ? spot : spot.querySelector(`[data-panel="${id}"]`)]));
   const pressed = {};
   for (const [id, owner] of Object.entries(owners)) {
-    const star = ownStar(owner);
-    if (star.getAttribute("aria-pressed") !== "true") {
-      star.click();
-      await sleep(250);
-    }
-    pressed[id] = star.getAttribute("aria-pressed");
+    pressed[id] = await pinByMenu(owner);
   }
   await until(() => (ViewStore.get("home.pins") || []).length === 4, 5000);
   const stored = (ViewStore.get("home.pins") || []).map((pin) => [`${pin.kind}:${pin.id}`, pin.w, pin.h]);
@@ -169,7 +161,7 @@ HOME = """(async () => {@HELPERS@@PROBES@
     speak: [Boolean(tile("radio-speak").querySelector("form.composer textarea")), tile("radio-speak").querySelectorAll("form.composer select option").length > 0],
     log: [tile("radio-log").querySelectorAll(".radio-row").length, tile("radio").querySelectorAll(".radio-row").length, document.querySelectorAll("#radio-spot .radio-row").length],
     gone: all("#main .home-tile.gone").length,
-    stars: all("#main .home-tile .home-body .star").length,
+    stars: all("#main .star, #main .star-row").length,
     ids: all("#main .home-tile .home-body [id]").map((node) => node.id).filter((id) => !id.startsWith("mic-field-")),
   };
   const count = (id) => tile(id).querySelectorAll(".radio-row").length;
@@ -332,7 +324,7 @@ SPOT = """(async () => {@HELPERS@@PROBES@@SPEAKING@
     const found = await cue("@CUE@");
     await sleep(300);
     states.speech = {...measure(), who: found && !found.error ? found.who : found};
-    const stop = display.querySelector("button");
+    const stop = display.querySelector('button[aria-label="Stop speaking"]');
     if (stop) {
       stop.click();
     }

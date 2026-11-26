@@ -58,3 +58,14 @@
 .apply-list ul { max-height: 40vh; margin: 8px 0 0; overflow: auto; }
 @media (prefers-reduced-motion: reduce) { .tool-row, .switch, .switch::after { transition: none; } }
 .passkey-prompt { position: fixed; top: 18px; left: 50%; z-index: 60; width: min(440px, calc(100vw - 36px)); transform: translateX(-50%); }
+.sched-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.sched-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 10px; border-radius: 9px; background: var(--panel); }
+.sched-row.off .sched-name { opacity: .6; }
+.sched-switch { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+.sched-name { overflow-wrap: anywhere; }
+.sched-hint { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.sched-field { display: inline-flex; align-items: center; gap: 6px; }
+.sched-hours { width: 5em; }
+.sched-times { width: 12em; max-width: 100%; }
+.sched-off { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.sched-off code { overflow-wrap: anywhere; }

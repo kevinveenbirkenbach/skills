@@ -34,7 +34,7 @@
   const KINDS = Object.entries(state.kinds);
   const ui = {screen: "stream", views: {agents: "orbit", artifacts: "tree", tasks: "list"}, preset: DAY, asOf: null, playing: false, busy: false, offline: false, agent: null, order: null, spot: false, nightOff: new Set(), cursor: 0, selected: new Set(), snoozed: false, review: null, file: 0};
   const filter = {view: "fuer-dich", saved: "", kinds: new Set(state.views["fuer-dich"].kinds), waiting: true, q: "", agent: "", session: "", sub: "", parts: new Set(PARTS.map(([id]) => id))};
-  const stream = {key: null, events: [], entries: [], last: 0, sessions: {}, busy: false, again: false, dom: null, error: ""};
+  const stream = {key: null, events: [], entries: [], last: 0, sessions: {}, busy: false, again: false, dom: null, error: "", tag: ""};
   const tree = {data: null, model: null, busy: false, q: "", open: new Set(), dom: null};
   const palette = {items: [], index: 0, input: null, list: null, plan: null, box: null};
   const known = {inbox: null, alarms: null, radio: null, batches: new Set(), now: null};

@@ -137,7 +137,7 @@
     const tasks = node ? node.tasks : [];
     const claims = node ? node.claims : [];
     return h("div", {class: "home-agent"},
-      h("div", {class: "who"}, face(key, true), person(nameOf(key)), presenceMark(key, true)),
+      h("div", {class: "who"}, agentLink(key, true), presenceMark(key, true)),
       h("p", {class: "muted"}, claims.length ? `Offices: ${claims.map((claim) => claim.office).join(", ")}` : "No office"),
       tasks.length ? h("ul", {class: "mini"}, tasks.map((task) => h("li", {}, h("div", {class: "row"}, h("code", {}, task.task), status(task.status)), h("span", {}, dash(task.title)))))
         : h("p", {class: "muted"}, "No open tasks."));
@@ -190,6 +190,7 @@
   Panels.panel("tasks/operator", "Tasks: Waits on Operator", homeInbox);
   Panels.panel("tasks/match", "Tasks: Match", () => homeMatch(), "", [6, 8]);
   Panels.panel("resources-accounts", "Resources: accounts", () => homeAccounts(), "", [12, 5]);
+  Panels.panel("stream/schedules", "Controls: schedules", () => schedulesContent(), "", [12, 6]);
   Panels.item("metric", (id, view) => metricTitle(view), (size, id, view) => homeMetric(id, view));
   Panels.capture("resources-hardware", () => resourcePin("hardware"));
   Panels.capture("resources-tokens", () => resourcePin("tokens"));
@@ -202,14 +203,14 @@
 
   function homeOrder() {
     const order = state.agent_order;
-    return order.length ? h("ol", {class: "order-list home-order"}, order.map((name, index) => h("li", {"data-name": name}, h("span", {class: "rank"}, `${index + 1}.`), face(name, false), person(name))))
+    return order.length ? h("ol", {class: "order-list home-order"}, order.map((name, index) => h("li", {"data-name": name}, h("span", {class: "rank"}, `${index + 1}.`), agentLink(name))))
       : h("p", {class: "muted"}, "No agent with an office or an open task.");
   }
 
   function homeInbox() {
     const items = visibleInbox();
     return items.length ? h("ol", {class: "home-inbox"}, items.map((item) => h("li", {class: `k-${item.kind}`, "data-wait": keyOf(item)},
-      h("div", {class: "msg-meta"}, when(item.ts), pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? [face(item.agent, false), person(item.agent)] : null),
+      h("div", {class: "msg-meta"}, when(item.ts), pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), item.agent ? agentLink(item.agent) : null),
       inboxHeadline(item),
       h("div", {class: "item-actions line-actions"}, actionsFor(item))))) : emptyState("All done", "Nothing is waiting for you right now.");
   }
@@ -573,6 +574,36 @@
     }
   }
 
+  const HOME_DOMINANT = 0.75;
+  const boxed = (look) => parseFloat(look.borderTopWidth) > 0 || look.backgroundColor !== "rgba(0, 0, 0, 0)" || look.backgroundImage !== "none";
+  const areaOf = (node) => node.offsetWidth * node.offsetHeight;
+
+  /**
+   * @param {Element} body a tile's .home-body.
+   * Walks down from the body's content through the child that covers at least HOME_DOMINANT of its parent's area, or
+   * into the one box of a wrapper that holds only it and .legend rows (Gantt, RASCI); the first box on that path
+   * (border, background) becomes .home-flat and fills the body, the wrappers above it .home-chain.
+   */
+  function homeFlatten(body) {
+    if (!body.isConnected) {
+      return;
+    }
+    body.querySelectorAll(".home-flat, .home-chain").forEach((node) => node.classList.remove("home-flat", "home-chain"));
+    const chain = [];
+    for (let node = body.firstElementChild; node;) {
+      if (boxed(getComputedStyle(node))) {
+        chain.forEach((wrapper) => wrapper.classList.add("home-chain"));
+        node.classList.add("home-flat");
+        return;
+      }
+      chain.push(node);
+      const biggest = [...node.children].reduce((best, child) => (!best || areaOf(child) > areaOf(best) ? child : best), null);
+      const boxes = [...node.children].filter((child) => boxed(getComputedStyle(child)));
+      const legended = boxes.length === 1 && [...node.children].every((child) => child === boxes[0] || child.matches(".legend"));
+      node = legended ? boxes[0] : biggest && areaOf(biggest) >= HOME_DOMINANT * areaOf(node) ? biggest : null;
+    }
+  }
+
   function homeContent(entry, pin) {
     try {
       return entry.render({w: pin.w, h: pin.h});
@@ -598,6 +629,7 @@
     const shown = content || homeGone(pin, key);
     if (body.childNodes.length !== 1 || body.firstChild !== shown) {
       body.replaceChildren(shown);
+      window.requestAnimationFrame(() => homeFlatten(body));
     }
     paintZoom(tile);
   }
@@ -655,7 +687,7 @@
       homeView.mark();
     });
     ViewStore.on(ZOOM_PATH, () => drawHome());
-    homeView.mark = Panels.decorate(document.body, {pinned: (kind, id) => Panels.has(homePins(), kind, id), press: homePress, marks: HOME_MARKS});
+    homeView.mark = Panels.decorate(document.body, HOME_MARKS);
     window.addEventListener("pointermove", homeDragMove);
     window.addEventListener("pointerup", homeDragEnd);
     window.addEventListener("pointercancel", homeDragEnd);

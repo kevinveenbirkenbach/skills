@@ -437,29 +437,49 @@ class TestSamplerInScratchHome(unittest.TestCase):
         self.assertTrue(all(ASLEEP not in " ".join(call) for call in calls), calls)
         self.assertEqual(sorted(path.name for path in samples.parent.iterdir()), ["cpu.json", "samples.jsonl"])
 
+    def test_an_empty_queue_starts_no_queue_script(self):
+        (self.council / "queue.json").write_text(json.dumps({"entries": []}), encoding="utf-8")
+        self.sample()
+        (found,) = [json.loads(line) for line in (self.resources / "samples.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(found["queue"], {"waiting": 0, "active": 0})
+        self.assertEqual([json.loads(line)[0] for line in self.log.read_text(encoding="utf-8").splitlines()], ["df", "nvidia-smi"])
+
 
 class TestTimer(unittest.TestCase):
-    def test_a_user_timer_runs_sample_and_tokens_every_minute_without_a_page_condition(self):
-        timer = (UNITS / "kvb-orchestrator-resources.timer").read_text(encoding="utf-8").splitlines()
-        service = (UNITS / "kvb-orchestrator-resources.service").read_text(encoding="utf-8").splitlines()
-        self.assertIn("OnCalendar=*-*-* *:*:00", timer)
-        self.assertIn("WantedBy=timers.target", timer)
+    def test_a_user_timer_runs_sample_every_minute_and_tokens_every_ten_without_a_page_condition(self):
         script = "/usr/bin/env python3 %h/.local/share/kvb-orchestrator/client/resources.py"
         shared = "--state ${KVB_ORCHESTRATOR_KEPT}/resources --council ${KVB_ORCHESTRATOR_COUNCIL}"
-        self.assertEqual([line for line in service if line.startswith("ExecStart=")], [
-            f"ExecStart={script} sample {shared} --proc /proc --sys /sys --queue ${{KVB_ORCHESTRATOR_SKILLS}}/kvb-org-queue/scripts/queue.py",
-            f"ExecStart={script} tokens {shared} --transcripts ${{KVB_ORCHESTRATOR_PROJECTS}}",
-        ])
-        self.assertIn("EnvironmentFile=%h/.local/share/kvb-orchestrator/.env", service)
-        self.assertIn("Type=oneshot", service)
-        self.assertFalse(any(line.startswith("ExecCondition=") for line in service))
+        for unit, calendar, starts in (
+            ("resources", "OnCalendar=*-*-* *:*:00", [f"ExecStart={script} sample {shared} --proc /proc --sys /sys --queue ${{KVB_ORCHESTRATOR_SKILLS}}/kvb-org-queue/scripts/queue.py"]),
+            ("tokens", "OnCalendar=*-*-* *:00/10:00", [f"ExecStart={script} tokens {shared} --transcripts ${{KVB_ORCHESTRATOR_PROJECTS}}"]),
+        ):
+            with self.subTest(unit=unit):
+                timer = (UNITS / f"kvb-orchestrator-{unit}.timer").read_text(encoding="utf-8").splitlines()
+                service = (UNITS / f"kvb-orchestrator-{unit}.service").read_text(encoding="utf-8").splitlines()
+                self.assertIn(calendar, timer)
+                self.assertIn("WantedBy=timers.target", timer)
+                self.assertEqual([line for line in service if line.startswith("ExecStart=")], starts)
+                self.assertIn("EnvironmentFile=%h/.local/share/kvb-orchestrator/.env", service)
+                self.assertIn("Type=oneshot", service)
+                self.assertFalse(any(line.startswith("ExecCondition=") for line in service))
 
-    def test_orchestrator_install_enables_the_resources_timer(self):
+    def test_orchestrator_install_enables_the_resources_and_tokens_timers(self):
         script = (hub_support.REPO_ROOT / "scripts" / "orchestrator.sh").read_text(encoding="utf-8")
         self.assertIn('RESOURCES_UNIT="${NAME}-resources"', script)
-        self.assertIn('systemctl --user enable --now "${RESOURCES_UNIT}.timer"', script)
+        self.assertIn('TOKENS_UNIT="${NAME}-tokens"', script)
+        self.assertIn('systemctl --user enable --now "${RESOURCES_UNIT}.timer"\n\tsystemctl --user enable --now "${TOKENS_UNIT}.timer"', script)
         self.assertIn('"${HUB}/client/resources.py"', script)
         self.assertIn("KVB_ORCHESTRATOR_SKILLS=%s", script)
+
+
+class TestHostUnitPins(unittest.TestCase):
+    def test_the_firewall_sessions_and_graph_units_hold_their_intervals_and_conditions(self):
+        firewall = (UNITS / "kvb-orchestrator-firewall.service").read_text(encoding="utf-8")
+        self.assertIn("tree-heartbeat -mmin -5", firewall)
+        self.assertIn("firewall/jobs", firewall.split("ExecCondition=", 1)[1].splitlines()[0])
+        self.assertIn("OnUnitInactiveSec=30s", (UNITS / "kvb-orchestrator-sessions.timer").read_text(encoding="utf-8").splitlines())
+        graph = (hub_support.REPO_ROOT / "skills" / "kvb-agent-optimize" / "scripts" / "graph.py").read_text(encoding="utf-8")
+        self.assertIn("SUPERVISE_SECONDS = 120\n", graph)
 
 
 if __name__ == "__main__":

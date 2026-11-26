@@ -48,7 +48,7 @@
     const [name, label] = sent ? ["bi-arrow-up-right", "Sent"] : ["bi-arrow-down-left", "Received"];
     const first = firstLine(row.text);
     const line = h("li", {class: "radio-row", "data-key": row.key, "data-dir": sent ? "sent" : "received", "data-class": row.class, "data-ts": row.ts, on: {click: (event) => openRadioRow(event.currentTarget.row, event.currentTarget)}},
-      row.source && !sent && row.from !== HUMAN ? muteFace(row.source, row.from) : null,
+      row.source && !sent && row.from !== HUMAN ? senderFace(row.source, row.from) : null,
       h("button", {type: "button", class: "radio-pick", "aria-haspopup": "dialog", title: first},
         when(row.ts),
         h("span", {class: "radio-dir", role: "img", ...named(label)}, icon(name)),
@@ -84,14 +84,11 @@
   /**
    * @param {string} key the sender's session key.
    * @param {string} name the sender's name.
-   * @returns {Element} the sender's avatar as a button that mutes or unmutes the sender on the radio, without opening the row.
+   * @returns {Element} the sender's avatar as a button that opens the agent with its own radio switches, without opening the row; greyed while its sound and read aloud are both off.
    */
-  function muteFace(key, name) {
-    const muted = radioSet.muted.includes(key);
-    return h("button", {type: "button", class: "radio-mute", "aria-pressed": String(muted), ...named(`Mute ${name}`, muted ? `Muted: a press lets the radio read ${name} aloud again` : `Mute ${name}: the radio stops reading this agent aloud`), on: {click: (event) => {
-      event.stopPropagation();
-      keepRadio(RadioSet.muting(radioSet, key));
-    }}}, face(key, false));
+  function senderFace(key, name) {
+    const quiet = !agentOn(key, "sound") && !agentOn(key, "aloud");
+    return h("button", {type: "button", class: "radio-sender", "data-quiet": String(quiet), ...named(`Open ${name}`, `Open ${name}${quiet ? ": its sound and read aloud are off" : ""}; its own switches sit in the agent card`), on: {click: openFrom(key)}}, face(key, false));
   }
 
   function patchList(list, lines) {
@@ -132,8 +129,7 @@
   function readerLine(reader) {
     const known = reader.read !== null && reader.read !== undefined;
     return h("li", {class: "popup-reader", "data-session": reader.session, "data-acked": String(reader.acked)},
-      face(people()[reader.session] ? reader.session : reader.name, false),
-      h("strong", {}, reader.name),
+      h("strong", {}, agentLink(people()[reader.session] ? reader.session : reader.name)),
       h("span", {class: "muted"}, known ? `read ${reader.approximate ? "about " : ""}${absolute.format(stampOf(reader.read))}` : "read, time unknown"),
       reader.acked ? pill("acknowledged", "ok") : null);
   }
@@ -205,7 +201,7 @@
 
   function drawLog() {
     const entry = radioSet.log;
-    const sig = JSON.stringify([state.radio.length, state.radio.length ? state.radio[state.radio.length - 1].ts : 0, state.messages.length, Receipts.signature(state.radio), Receipts.signature(state.messages), entry, radioSet.muted, Math.floor(Date.now() / 60000)]);
+    const sig = JSON.stringify([state.radio.length, state.radio.length ? state.radio[state.radio.length - 1].ts : 0, state.messages.length, Receipts.signature(state.radio), Receipts.signature(state.messages), entry, settings.agents, Math.floor(Date.now() / 60000)]);
     for (const dom of liveParts("logs")) {
       if (sig !== dom.sig) {
         dom.sig = sig;

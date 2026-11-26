@@ -35,6 +35,7 @@ LETTERS = re.compile(r"^(?!.*(.).*\1)[RASCI]+$")
 ORDER = "RASCI"
 WIDE = ("Prio", "WSJF", "Task", "OKR", "Status", "Worker", "Artifacts", "Start", "End", *ORDER)
 COMPACT = ("Prio", "WSJF", "Task", "Status", "Worker", "A")
+SHOWN = 30
 STATUSES = ("queued", "running", "blocked", "done", "stopped")
 ENDED = ("done", "stopped")
 FIELDS = (
@@ -601,12 +602,16 @@ def cmd_show(args: argparse.Namespace) -> int:
     print("| " + " | ".join(header) + " |")
     print("|" + "---|" * len(header))
     problems = []
-    for rank, task in enumerate(ranked(rows), 1):
+    order = ranked(rows)
+    shown = order if args.all else order[:SHOWN]
+    for rank, task in enumerate(shown, 1):
         row = rows[task]
         score = wsjf(row)
         values = [rank, f"{score[2]:g}" if score else "-", *columns(task, row)]
         print("| " + " | ".join(str(v) for v in values) + " |")
         problems += gaps(task, row)
+    if len(order) > len(shown):
+        print(f"{len(order) - len(shown)} more (show --all)")
     if problems:
         print("gaps: " + "; ".join(problems))
     return 0

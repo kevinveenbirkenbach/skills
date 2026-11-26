@@ -153,7 +153,7 @@ class Watch:
                 self.seen.setdefault(task, now)
             if self.last is not None and self.last != tasks:
                 self.changes.extend(register_changes(self.last, tasks, now))
-            self.last = json.loads(json.dumps(tasks))
+            self.last = tasks
 
     def first(self, task: str, now: float) -> float:
         with self.lock:

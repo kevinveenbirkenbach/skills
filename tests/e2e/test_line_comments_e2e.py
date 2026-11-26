@@ -91,7 +91,7 @@ OVERLAY = """(async () => {@HELPERS@@UNLABELLED@@CAPTURE@
   document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
   await until(() => document.getElementById("sheet").hidden, 4000);
   const card = listed(row());
-  row().querySelector(".item-actions button.primary").click();
+  row().querySelector(":is(.item-actions, .code-foot) button.primary").click();
   await until(() => posted.some(([path]) => path === (@SIGNS@ ? "/api/messages" : "/api/sign")), 10000);
   await sleep(1200);
   return {item, inline, marked, card, posted, kept: listed(row()), wide: document.documentElement.scrollWidth > innerWidth + 1};
@@ -140,7 +140,7 @@ class TestLineComments(base.OrchestratorE2ECase):
         denial = [["ask", "reject", "call", "a.txt:2: stream note"]]
         self.assertEqual(stream["posted"], [["/api/sign", None, denial], *([["/api/inbox/approve", None, denial]] if signs else [])])
         self.assertNotIn("error", overlay, overlay)
-        self.assertEqual((overlay["item"], overlay["inline"]), ("Comment", {"after": True, "unlabelled": []}))
+        self.assertEqual((overlay["item"], overlay["inline"]), (None, {"after": True, "unlabelled": []}))
         self.assertEqual(overlay["marked"], {"rows": ["3"], "notes": ["overlay note"], "list": ["src/app.py:3overlay note"], "field": False, "open": True})
         self.assertEqual(overlay["card"], ["src/app.py:3overlay note"])
         grant = [["review", "approve", "", ""]]

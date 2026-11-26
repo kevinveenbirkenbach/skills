@@ -145,7 +145,7 @@
     }
     const head = speech.current || speech.loading || speech.item;
     startQuiet(Bubbles.plan(head, speech.pending));
-    const planned = Bubbles.plan(head, speech.pending, bubbles.quiet);
+    const planned = Bubbles.plan(head, speech.pending, bubbles.quiet).filter((entry) => entry.item.bubble !== false);
     const kept = new Set(planned.map((entry) => entry.item));
     for (const [item, view] of bubbles.shown) {
       if (!kept.has(item)) {
@@ -182,6 +182,7 @@
 
   function syncBubbles() {
     document.getElementById("bubbles-toggle").setAttribute("aria-pressed", String(settings.bubbles));
+    document.querySelectorAll(".radio-bubbles").forEach((button) => button.setAttribute("aria-pressed", String(settings.bubbles)));
     bubbleLayer().hidden = !settings.bubbles;
     if (settings.bubbles) {
       bubbleFont();

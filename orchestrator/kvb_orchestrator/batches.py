@@ -7,11 +7,16 @@ from collections.abc import Callable
 
 from .errors import Conflict, Missing
 
-UNDO = 3.0
+UNDO = 3
 
 
 class Pending:
-    def __init__(self) -> None:
+    def __init__(self, window: Callable[[], float]) -> None:
+        """Args:
+            window: returns the undo window in seconds the operator set, read
+                anew for every batch; a running batch keeps its due time.
+        """
+        self.window = window
         self.lock = threading.Lock()
         self.batches: dict[str, dict] = {}
         self.applied: set[str] = set()
@@ -28,9 +33,10 @@ class Pending:
             The batch without its proof and timer.
         """
         batch_id = secrets.token_hex(8)
-        timer = threading.Timer(UNDO, self.fire, args=(batch_id, apply))
+        window = self.window()
+        timer = threading.Timer(window, self.fire, args=(batch_id, apply))
         timer.daemon = True
-        batch = {"id": batch_id, "items": items, "source": source, "due": time.time() + UNDO}
+        batch = {"id": batch_id, "items": items, "source": source, "due": time.time() + window}
         with self.lock:
             self.batches[batch_id] = {**batch, "proof": proof, "timer": timer}
         timer.start()

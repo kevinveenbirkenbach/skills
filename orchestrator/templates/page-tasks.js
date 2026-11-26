@@ -71,11 +71,11 @@
     const classes = ["task-row", row.open_work.length ? "open-work" : "", row.ended ? "ended" : ""].filter(Boolean).join(" ");
     const pick = row.editable ? h("input", {type: "checkbox", class: "task-pick", "aria-label": `Select ${row.task}`, title: `Select ${row.task} for a bulk business value`, checked: taskView.picked.has(row.task), on: {change: (event) => pickTask(row.task, event.target.checked)}}) : null;
     return h("li", {class: classes, "data-task": row.task, "data-item": `task:${row.task}`, "data-kind": row.kind, "data-status": row.status},
-      h("div", {class: "head-row", "data-star-slot": ""}, pick, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}), etaMark(eta),
+      h("div", {class: "head-row"}, pick, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}), etaMark(eta),
         row.editable ? iconBtn("bi-sort-numeric-down", "Priority", "btn small soft", () => taskSheet(row.task), `Priority and WSJF of ${row.task}: pin or estimate, signed with the passkey`) : null),
-      opener(row),
+      row.kind === "command" ? codeBox(`task:${row.task}`, "closed", [h("div", {class: "command"}, opener(row))], titleOf(row), [], null) : opener(row),
       row.objective !== "-" ? h("div", {class: "muted"}, `Objective: ${row.objective}`) : null,
-      h("div", {class: "task-meta"}, row.worker !== "-" ? h("span", {class: "who"}, face(row.worker, false), person(row.worker)) : null, roleSummary(row), taskPlace(row)),
+      h("div", {class: "task-meta"}, row.worker !== "-" ? h("span", {class: "who"}, agentLink(row.worker)) : null, roleSummary(row), taskPlace(row)),
       flowLine(row.flow, branchOf(row)),
       workChips(row.open_work));
   }

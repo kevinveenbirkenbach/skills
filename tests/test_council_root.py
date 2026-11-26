@@ -352,7 +352,7 @@ class TestMigrate(Home):
         units = (REPO_ROOT / "scripts" / "orchestrator.sh").read_text(encoding="utf-8")
         body = units[units.index("stop_all() {"):]
         body = body[:body.index("\n}\n")]
-        for unit in ("${RUNNER}", "${OFFICES_UNIT}.path", "${RESOURCES_UNIT}.timer", "${RESOURCES_UNIT}.service", "compose"):
+        for unit in ("${RUNNER}", "${OFFICES_UNIT}.path", "${RESOURCES_UNIT}.timer", "${RESOURCES_UNIT}.service", "${TOKENS_UNIT}.timer", "${TOKENS_UNIT}.service", "compose"):
             with self.subTest(unit=unit):
                 self.assertIn(unit, body)
         self.assertIn("stop) stop_all ;;", units)

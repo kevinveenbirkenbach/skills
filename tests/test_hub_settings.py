@@ -194,6 +194,21 @@ class TestHubSettings(HubCase):
         (self.state / "settings.json").write_text(json.dumps(older), encoding="utf-8")
         self.assertEqual(settings.Settings(self.state / "settings.json").get()["trend"], {"mode": "off", "days": 7})
 
+    def test_the_undo_window_takes_whole_seconds_from_0_to_60_and_a_sheet_without_it_keeps_it(self):
+        self.assertEqual((settings.SETTINGS["undo"], self.snapshot()["settings"]["undo"]), (3, 3))
+        good = self.guard(self.host)
+        for wrong in (-1, 61, 2.5, True, "10", None):
+            with self.subTest(wrong=wrong):
+                self.assertEqual(self.post_json("/api/settings", {**settings.SETTINGS, "undo": wrong}, good)[0], 400)
+        for chosen in (0, 60, 10):
+            with self.subTest(chosen=chosen):
+                status, _, body = self.post_json("/api/settings", {**self.snapshot()["settings"], "undo": chosen, "proof": None}, good)
+                self.assertEqual((status, json.loads(body)["settings"]["undo"]), (200, chosen))
+        self.assertEqual(settings.Settings(self.state / "settings.json").get()["undo"], 10)
+        sheet = {key: value for key, value in self.snapshot()["settings"].items() if key != "undo"}
+        self.assertEqual(self.post_json("/api/settings", {**sheet, "proof": None}, good)[0], 200)
+        self.assertEqual(self.snapshot()["settings"]["undo"], 10)
+
     def test_the_rates_chip_defaults_to_tasks_tokens_and_cpu_per_hour_is_validated_stored_without_a_passkey_survives_a_reload_and_a_sheet_without_it_keeps_it(self):
         default = {"period": "hour", "metrics": ["tasks", "tokens", "cpu"]}
         self.assertEqual((settings.SETTINGS["rates"], self.snapshot()["settings"]["rates"]), (default, default))

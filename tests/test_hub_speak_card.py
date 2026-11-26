@@ -59,23 +59,30 @@ class TestSpeakCard(unittest.TestCase):
         self.assertTrue(out["idle"][2].startswith("MAYDAY: "), out)
         self.assertEqual(out["active"], ["true", "Cancel mayday", "Cancel mayday: lift the radio silence so the agents write again; your passkey signs it"])
 
-    def test_the_channel_select_holds_no_mayday_and_every_option_has_a_title(self):
+    def test_the_channel_select_holds_no_mayday_and_every_channel_keeps_its_hint_for_the_choice_buttons(self):
         out = self.probe()
         self.assertEqual(out["channels"], ["post", "call", "newsletter", "broadcast", "pan-pan", "security"])
         self.assertTrue(out["titled"], out)
 
-    def test_the_card_has_no_hint_sentence_and_no_browser_confirm(self):
+    def test_the_card_has_no_hint_sentence_no_hint_tooltip_and_no_browser_confirm(self):
         composer = (TEMPLATES / "page-composer.js").read_text(encoding="utf-8")
         self.assertNotIn("window.confirm", composer)
         self.assertNotIn("Your passkey signs every message", composer)
         self.assertNotIn("composer-hint", composer)
-        self.assertRegex(composer, r"status, h\(\"div\", \{class: \"ptt-split\".*\), mayday\)\);")
+        self.assertNotIn("CHANNEL_HINTS[", composer)
+
+    def test_channel_row_textarea_and_footer_share_one_frame_with_ptt_and_mayday_after_the_mic(self):
+        composer = (TEMPLATES / "page-composer.js").read_text(encoding="utf-8")
+        self.assertIn("const frame = micFrame(text, [record, status]);", composer)
+        self.assertIn('frame.prepend(h("div", {class: "composer-grid"}', composer)
+        self.assertRegex(composer, r'frame\.querySelector\("\.mic-foot"\)\.append\(h\("div", \{class: "ptt-split".*\), mayday\);')
+        self.assertIn('h("form", {class: "composer"}, frame, replay)', composer)
 
     def test_the_card_is_one_rounded_surface(self):
         css = (TEMPLATES / "style-ui.css").read_text(encoding="utf-8")
         self.assertRegex(css, r"\.radio-card\.radio-speak \{ border-radius: 14px; \}")
-        self.assertRegex(css, r"\.composer-grid \{[^}]*border-radius: 10px;")
-        self.assertRegex(css, r"\.composer textarea \{[^}]*border-radius: 10px;")
+        self.assertRegex(css, r"\.composer-grid \{ display: flex; min-width: 0; border-bottom: 1px solid var\(--line\); \}")
+        self.assertNotRegex(css, r"\.composer textarea \{[^}]*border-radius")
         self.assertNotIn(".radio-cancel", css)
         self.assertIsNone(re.search(r'class: "[^"]*\bcard\b', (TEMPLATES / "page-composer.js").read_text(encoding="utf-8")))
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import threading
 from pathlib import Path
 
 from .council import HUMAN, agent, ordered
@@ -12,13 +14,34 @@ REGISTER = "rasci.json"
 AGENT_ORDER = "agent-order.json"
 OPERATOR = "operator/"
 ENDED = ("done", "stopped")
+PARSED_KEPT = 8
+parsed: dict[Path, tuple[tuple[int, int, int], dict[str, dict]]] = {}
+parsed_lock = threading.Lock()
 
 
 def read_register(path: Path) -> dict[str, dict]:
-    data = read_json(path)
-    if not isinstance(data, dict):
+    """Returns:
+        The task rows of the register, parsed again only when its inode, size
+        or mtime changed; a fresh top-level dict per call whose rows are
+        shared between callers and read only.
+    """
+    try:
+        info = os.lstat(path)
+    except OSError:
         return {}
-    return {task: row for task, row in data.items() if isinstance(row, dict)}
+    stamp = (info.st_ino, info.st_size, info.st_mtime_ns)
+    with parsed_lock:
+        found = parsed.get(path)
+        if found is not None and found[0] == stamp:
+            return dict(found[1])
+    data = read_json(path)
+    rows = {task: row for task, row in data.items() if isinstance(row, dict)} if isinstance(data, dict) else {}
+    with parsed_lock:
+        parsed.pop(path, None)
+        parsed[path] = (stamp, rows)
+        while len(parsed) > PARSED_KEPT:
+            parsed.pop(next(iter(parsed)))
+    return dict(rows)
 
 
 def status_of(row: dict) -> str:
@@ -126,10 +149,6 @@ def register_row(task: str, row: dict) -> dict:
         "met": sum(1 for kr in results if isinstance(kr, dict) and kr.get("met") is True),
         "total": len(results),
     }
-
-
-def register_rows(tasks: dict[str, dict]) -> list[dict]:
-    return [register_row(task, row) for task, row in sorted(tasks.items(), key=pinned) if is_open(task, row, False)]
 
 
 def stored_order(path: Path) -> list[str]:

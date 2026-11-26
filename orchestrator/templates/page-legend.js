@@ -60,13 +60,23 @@
 
   const ownOf = (host, selector) => [...host.querySelectorAll(selector)].find((node) => node.closest(Panels.HOSTS) === host) || null;
 
+  function legendSlot(host) {
+    const own = ownOf(host, "[data-legend-slot]") || [...host.children].find((child) => child.classList.contains("legend-row"));
+    if (own) {
+      return own;
+    }
+    const row = h("div", {class: "legend-row"});
+    host.prepend(row);
+    return row;
+  }
+
   function markLegends() {
     for (const host of document.querySelectorAll("#main [data-panel]")) {
       if (host.closest(".home-tile")) {
         continue;
       }
-      const star = ownOf(host, ".star");
-      legendFor(host, LEGEND_PATHS.view, host.dataset.panel, star && ownOf(host, LEGEND_PARTS) ? (button) => star.nextElementSibling !== button && star.after(button) : null);
+      const slot = ownOf(host, LEGEND_PARTS) ? legendSlot(host) : null;
+      legendFor(host, LEGEND_PATHS.view, host.dataset.panel, slot ? (button) => slot.lastElementChild !== button && slot.append(button) : null);
     }
     for (const tile of document.querySelectorAll(".home-tile[data-pin]")) {
       const open = tile.querySelector(".home-open");

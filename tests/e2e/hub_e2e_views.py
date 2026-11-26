@@ -6,7 +6,8 @@ PROBE = """(async () => {@HELPERS@
   await screenShown(8000);
   await until(() => !(text(document.querySelector("#main .space-note")) || "").startsWith("Loading") && !all("#main .empty h2").some((title) => text(title).endsWith("…")), 8000);
   const badge = (button) => {
-    const found = button.querySelector(".badge");
+    const next = button.nextElementSibling;
+    const found = button.querySelector(".badge") || (next && next.matches("a.badge") ? next : null);
     return found && !found.hidden ? text(found) : null;
   };
   const icons = all("svg.bi").filter((svg) => !svg.closest(".sprite"));
@@ -95,7 +96,7 @@ ACTIONS = """(async () => {@HELPERS@
   await sleep(500);
   found.popup = all("#popup input[type=radio]").map((input) => [input.value, input.checked]);
   found.popupUnlabelled = all("#popup svg.bi").map((svg) => svg.parentElement).filter((owner) => !text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label"))).length;
-  found.centred = [document.getElementById("popup").open, document.querySelector("#popup .leader line").getAttribute("display")];
+  found.leader = [document.getElementById("popup").open, document.querySelector("#popup .leader line").getAttribute("display")];
   return found;
 })()""".replace("@HELPERS@", HELPERS)
 POPUPS = """
@@ -140,7 +141,7 @@ POPUP_ORBIT = """(async () => {@HELPERS@@POPUPS@
   await sleep(400);
   const art = box.querySelector(".popup-head .avatar.big");
   const face = art ? {key: art.dataset.face, svg: Boolean(art.querySelector("svg.face-art .mouth")), text: art.textContent} : null;
-  const shown = {...opened(), ...look(pick()), sections: all("h3", box).map((head) => head.firstChild.textContent), composer: Boolean(box.querySelector("form textarea")), offices: text(box.querySelector(".popup-body p")), face};
+  const shown = {...opened(), ...look(pick()), sections: all("h3", box).map((head) => head.firstChild.textContent), composer: Boolean(box.querySelector("form textarea")), offices: text(box.querySelector(".popup-body > div:not(.agent-settings) > p")), face};
   const gone = await away(pick);
   click(pick());
   await sleep(300);

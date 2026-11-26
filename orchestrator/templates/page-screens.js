@@ -1,10 +1,11 @@
   const navButtons = new Map();
 
   function tabButton(id, label, hint) {
-    const badge = Object.hasOwn(state.badges, id) ? h("span", {class: "badge", hidden: true}) : null;
-    const button = h("button", {type: "button", id: `tab-${id}`, class: "icon-only", "aria-controls": "main", ...named(label, hint ? `${label} (${hint})` : label), on: {click: () => go(id, null)}}, icon(Nav.ICONS[id]), badge);
+    const own = id === "tasks";
+    const badge = Object.hasOwn(state.badges, id) ? h(own ? "a" : "span", {class: "badge", hidden: true, href: own ? Nav.hashOf("match", null) : null}) : null;
+    const button = h("button", {type: "button", id: `tab-${id}`, class: "icon-only", "aria-controls": "main", ...named(label, hint ? `${label} (${hint})` : label), on: {click: () => go(id, null)}}, icon(Nav.ICONS[id]), own ? null : badge);
     navButtons.set(id, {button, badge});
-    return button;
+    return own ? [button, badge] : button;
   }
 
   document.getElementById("tabs").append(...Nav.TABS.map(([id, label], index) => h("div", {class: "tab-group"},
@@ -57,7 +58,7 @@
     if (ui.screen === "agents") {
       return JSON.stringify([ui.views.agents]);
     }
-    return JSON.stringify(ui.screen === "artifacts" || ui.screen === "tasks" ? [ui.views[ui.screen]] : ui.screen === "rules" ? state.rules : []);
+    return JSON.stringify(ui.screen === "artifacts" || ui.screen === "tasks" ? [ui.views[ui.screen]] : ui.screen === "rules" ? [state.rules, state.schedules] : []);
   }
 
   function screenOf() {
@@ -111,6 +112,9 @@
       badge.textContent = String(count);
       badge.hidden = count === 0;
       badge.className = `badge${id === "tasks" && count ? " urgent" : ""}`;
+      if (badge.tagName === "A") {
+        badge.setAttribute("aria-label", `${count} open operator ${count === 1 ? "task" : "tasks"}: open Match`);
+      }
     }
     const banner = document.getElementById("mayday");
     const silence = state.silence;

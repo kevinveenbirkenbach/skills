@@ -89,7 +89,7 @@ from pathlib import Path
 SERVICE = "kvb-code-graph.service"
 ENABLE = f"systemctl --user enable --now {SERVICE}"
 NOTICE = f"codebase-memory-mcp: no permanent daemon; run: {ENABLE}"
-SUPERVISE_SECONDS = 30
+SUPERVISE_SECONDS = 120
 NOTICE_PENDING = f"codebase-memory-mcp: {SERVICE} starts the permanent daemon within {SUPERVISE_SECONDS} s after the last session ends; nothing to do"
 NOTICE_STUCK = f"codebase-memory-mcp: no daemon although {SERVICE} is active; check: journalctl --user -u {SERVICE}"
 NOTICE_NO_UNIT = f"codebase-memory-mcp: no permanent daemon; run make install in the skills repository, it installs {SERVICE}"

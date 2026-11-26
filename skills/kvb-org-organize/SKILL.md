@@ -37,24 +37,15 @@ after a restart.
 
 ## Capacity
 
-- Light runs self-admit: `watch.py admit --kind test-nostack -- <command>`,
-  start on `grant`. Light is only ruff, shellcheck, markdownlint, lizard, jq,
-  py_compile, cargo fmt, `env CARGO_BUILD_JOBS=4 cargo build|check|clippy|test`,
-  or one test file or module outside `e2e/` that reaches no Playwright;
-  anything else: `queue.py hold --kind test`.
-- Memory stop (also PSI or swap-out) blocks every admit and grant; running
-  jobs go on.
-- `make test`, `make test-lint`, quality gates, deploys,
-  iteration loops, swarm, image builds, cloud, shared-data cleanup, anything
-  with Docker or over a few minutes: run through `queue.py hold`
-  (`kvb-org-queue`), which grants by rule and releases on exit; the chair only
-  handles exceptions. In a worktree wrap `gate.py run` or `gate.py hold`
-  (`kvb-check-gate`).
-- No running job is cut short for capacity; only the operator orders one
-  down. Exception: void by a missing merged hotfix (`kvb-git-hotfix`).
-  `RESOURCE` hook lines address the chair; others adjust plans.
-- Read `capacity.md` when you hold the chair, a job seems
-  hung, or the resource watch fires.
+Read `capacity.md` before any run beyond one lint or one test file, when you
+hold the chair, a job seems hung, or a `RESOURCE` line fires.
+
+## Schedules
+
+Reminders and timers follow `<council>/schedules.json`, which the hub's
+Controls › Schedules tab writes: `scripts/schedules.py check|set|view`;
+`kvb-schedules.path` and `.timer` run `schedules.py run`, which switches the
+first-party units and lists every other timer and hook for the hub.
 
 ## Peer protocol
 

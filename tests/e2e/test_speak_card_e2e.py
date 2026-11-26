@@ -116,8 +116,8 @@ class TestSpeakCard(base.OrchestratorE2ECase):
                 layout = result["layout"]
                 self.assertEqual((layout["hints"], layout["mayday"], layout["next"], layout["face"], layout["cards"]), ([], False, True, ["MAYDAY", "false"], 0), layout)
                 self.assertEqual([value for value, _ in layout["channels"]], ["post", "call", "newsletter", "broadcast", "pan-pan", "security"], layout)
-                self.assertTrue(all(titled for _, titled in layout["channels"]), layout)
-                self.assertEqual(layout["radius"], ["14px", "10px", "10px"], layout)
+                self.assertFalse(any(titled for _, titled in layout["channels"]), layout)
+                self.assertEqual(layout["radius"], ["14px", "0px", "10px"], layout)
                 self.assertEqual((layout["fits"], layout["wide"]), (True, False), layout)
                 self.assertEqual((result["declined"], result["quiet"], result["asked"]), (ask, [], ask), result)
                 self.assertTrue((result["toast"] or "").startswith("Mayday to all: sent$ radio.py send mayday"), result)

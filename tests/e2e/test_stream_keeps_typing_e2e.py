@@ -39,6 +39,7 @@ PROBE = """(async () => {@HELPERS@
   field.dispatchEvent(new Event("input", {bubbles: true}));
   field.setSelectionRange(6, 6);
   const top = scroller.scrollTop;
+  all("#main .chip").find((chip) => text(chip) === "Transcripts").click();
   const redrawn = await until(() => {
     const [now, typed] = [askOf(), choiceOf()];
     return now && typed && now.dataset.probe !== "old" && typed.dataset.probe !== "old" ? [now, typed] : null;

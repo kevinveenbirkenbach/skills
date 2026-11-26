@@ -29,7 +29,7 @@
   }
 
   /**
-   * @param {Element} form the composer the question shows in, above its footer, its last child.
+   * @param {Element} form the composer the question shows in, inside its frame above the footer.
    * @param {string} question what the operator confirms.
    * @param {string} yes the confirming button's label.
    * @returns {Promise<boolean>} true on yes, false on Cancel or Escape; nothing leaves the page before.
@@ -49,7 +49,7 @@
           done(false);
         }
       });
-      form.lastElementChild.before(box);
+      form.querySelector(".mic-foot").before(box);
       accept.focus();
     });
   }
@@ -207,7 +207,7 @@
   }
 
   function composerForm() {
-    const channel = h("select", {class: "field"}, CHANNELS.map(([id, label]) => h("option", {value: id, title: CHANNEL_HINTS[id]}, label)));
+    const channel = h("select", {class: "field"}, CHANNELS.map(([id, label]) => h("option", {value: id}, label)));
     const recipient = h("select", {class: "field"});
     const toField = h("label", {}, "To", recipient);
     const text = h("textarea", {"aria-label": "Message", placeholder: "Message to the agents …", maxlength: 20000, "data-skills": ""});
@@ -240,12 +240,13 @@
     drawMayday(mayday);
     const sync = () => {
       toField.hidden = !TO_ONE.some(([id]) => id === channel.value);
-      channel.title = CHANNEL_HINTS[channel.value];
     };
     channel.addEventListener("change", sync);
     sync();
-    const form = h("form", {class: "composer"}, h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField), micFrame(text, [record]), replay,
-      h("div", {class: "actions"}, status, h("div", {class: "ptt-split", role: "group", "aria-label": "Send"}, submit, testMenu(text, channel)), mayday));
+    const frame = micFrame(text, [record, status]);
+    frame.prepend(h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField));
+    frame.querySelector(".mic-foot").append(h("div", {class: "ptt-split", role: "group", "aria-label": "Send"}, submit, testMenu(text, channel)), mayday);
+    const form = h("form", {class: "composer"}, frame, replay);
     const empty = () => {
       if (!text.value.trim()) {
         toast("Nothing to send", ["Write a text or record one; the transcript lands in the field for checking."], false);

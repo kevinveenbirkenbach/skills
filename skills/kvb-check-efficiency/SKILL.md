@@ -1,7 +1,7 @@
 ---
 name: kvb-check-efficiency
 description: >
-  Token cost of skill edits, CPU and RAM of code edits.
+  Token cost of skill edits, CPU, RAM and wall-clock velocity of code edits.
 ---
 
 💸 Tokens is the share of the base's resources a change uses: under 100 %
@@ -19,18 +19,16 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/tokens.py --repo <skills repo> --base <ref> 
 It compares every changed `*.md` under `skills/`, untracked ones included,
 at `<ref>` with the working tree, and the always-loaded listing: all
 `description:` words, counted by the repository's `scripts/budget.py`.
-Tokens are an estimate, characters / 4. Changed files without any base text
-print `tokens new`, which counts as over 100. Skills have no velocity.
+Changed files without any base text print `tokens new`, which counts as
+over 100. Skills have no velocity.
 
 A second line, `💰 value 1:<n>` (`<n>:1` when value < cost), weighs both
 per day and never changes the exit code; pass its quotient or `?` to
 `kvb-check-score --value`.
 
-- **Cost**: listing words delta x 1.33 x requests x 0.1 (cached) plus each
-  changed `SKILL.md`'s tokens delta x (its invocations + 0.1 x the later
-  turns it stays resident), per day of the last 7 days' session and
-  subagent transcripts (other runtimes: JSONL of that shape). A new skill
-  takes its category's median, named in the line.
+- **Cost**: the listing words delta and each changed `SKILL.md`'s tokens
+  delta times its daily requests, invocations and resident turns over the
+  last 7 days' transcripts; the docstring of `tokens.py` holds the formula.
 - **Value**: tokens/day saved, derived by one `--evidence` line, e.g.
   `"3829 SendMessage wakes/day x 10 % avoided x 43k"`; else `?:?`.
 - **Measured**: once shipped, `tokens.py value --repo <repo> --since
@@ -47,17 +45,14 @@ Start it in the directory the command expects. It checks `<ref>` out as a
 detached worktree under `/tmp`, runs the command there and in the working
 tree from the same relative directory, compares CPU seconds and peak RSS,
 and removes the worktree. Cost is the mean of the CPU and the RAM ratio.
-It also measures wall time for `kvb-check-speed`.
 
 - **Runs**: one per tree. Both values at most 100 end it; otherwise 4 more
   per tree, alternating, and the line reports the mean of all 5
   (`mean of 5`).
-- **Other load**: a 1 s sample of system CPU busy before and after, and per
-  run the busy share beyond the command's own CPU time. Above 30 %, or
-  unreadable without `/proc/stat`, the result is an estimate: time comes
-  from the CPU-time ratio, both values carry `~` and the line ends in
-  `(estimated: other load <x> %)`. Pass the numbers without `~` to
-  `kvb-check-score`; the exit code holds as for a measured result.
+- **Other load**: CPU busy beyond the command's own above 30 %, or no
+  `/proc/stat`, makes the result an estimate: velocity from the CPU-time
+  ratio, both values marked `~`, the line ending in `(estimated: other load
+  <x> %)`. Pass the numbers without `~`; the exit code holds.
 - **Command**: the targeted tests of the change or a CLI call of the
   changed code, runnable on a clean checkout: the base worktree holds no
   untracked build output, virtualenv or dependency directory.
@@ -67,6 +62,14 @@ It also measures wall time for `kvb-check-speed`.
   by the `kvb-org-queue` skill; a cancelled wait there also exits 3, but
   prints no 💸 line.
 - Report the run you made; never rerun to pick the best result.
+
+## Code: velocity
+
+⏱️ Velocity is the share of the base's wall-clock time a change needs,
+`⏱️ velocity <p> % (wall <b>→<a> s)` in the same `measure.py` line; pass
+it as `--speed` to `kvb-check-score`. Skills and code without a runnable
+path (configuration, templates no command renders) pass `--speed -`, shown
+as `–`; say why.
 
 ## Exit codes
 

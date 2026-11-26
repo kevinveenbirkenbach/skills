@@ -45,12 +45,14 @@
         ~/.local/state/agents-council/resources.
     --council: the council directory with queue.json and the claims.
     --queue (sample): the installed kvb-org-queue queue.py, run with
-        AGENTS_COUNCIL_ROOT set to --council.
+        AGENTS_COUNCIL_ROOT set to --council while an entry waits or runs.
     --transcripts (tokens): Claude Code's projects directory.
     --proc, --sys (sample): where /proc and /sys are mounted.
 
 Returns:
-    Runs on the host every minute through kvb-orchestrator-resources.timer,
+    Runs on the host, sample every minute through
+    kvb-orchestrator-resources.timer and tokens every 10 minutes through
+    kvb-orchestrator-tokens.timer,
     because the hub's container sees neither the host's disks, memory and
     GPUs nor its transcripts' offsets; nothing here calls a language model.
     The exit code is 0.
@@ -331,7 +333,12 @@ def queue_view(council: Path, script: Path, run: Callable[[list[str]], str | Non
 
 
 def queue_state(council: Path, script: Path, run: Callable[[list[str]], str | None]) -> dict:
-    return {**queue(council), **queue_view(council, script, run)}
+    """Returns:
+        queue() with queue_view() added, which starts queue.py only while
+        an entry waits or runs.
+    """
+    counts = queue(council)
+    return {**counts, **(queue_view(council, script, run) if counts["waiting"] or counts["active"] else {})}
 
 
 def integers(value: object, size: int) -> bool:

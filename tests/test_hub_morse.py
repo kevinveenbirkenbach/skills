@@ -173,20 +173,21 @@ def radio_row(cls: str, text: str) -> dict:
     return {"class": cls, "source": "s1", "from": "Docs", "to": ["Skills session"], "called": ["Skills session"], "speaker": "Docs", "pitch": 612, "voice": "", "word": "", "rest": "", "text": text}
 
 
-def radio_set(mode: str, muted: list[str]) -> dict:
-    return {"mode": mode, "classes": list(council.CLASSES), "muted": muted, "sounds": {}, "squelch": 1, "log": {}}
+def radio_set(mode: str, classes: list[str]) -> dict:
+    return {"mode": mode, "classes": classes, "sounds": {}, "squelch": 1, "log": {}}
 
 
 class TestMorseCode(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         offline, online = {"tts": False, "open": False}, {"tts": True, "open": True}
-        plans = [[radio_row(name, TEXT), radio_set("morse", []), offline] for name in council.CLASSES]
+        every = list(council.CLASSES)
+        plans = [[radio_row(name, TEXT), radio_set("morse", every), offline] for name in council.CLASSES]
         plans += [
-            [radio_row("security", TEXT), radio_set("morse", []), online],
-            [radio_row("security", TEXT), radio_set("morse", ["s1"]), offline],
-            [radio_row("mayday", TEXT), radio_set("morse", ["s1"]), offline],
-            [radio_row("broadcast", "word " * 600), radio_set("morse", []), offline],
+            [radio_row("security", TEXT), radio_set("morse", every), online],
+            [radio_row("security", TEXT), radio_set("morse", ["post"]), offline],
+            [radio_row("mayday", TEXT), radio_set("morse", ["post"]), offline],
+            [radio_row("broadcast", "word " * 600), radio_set("morse", every), offline],
         ]
         words = ["PARIS", "paris", "Gr\u00fc\u00dfe, Ëva! 😀 ~ À ÿ"]
         cls.data = node(CODES_PROBE, str(MORSE), str(RADIOSET), json.dumps({"words": words, "plans": plans}))

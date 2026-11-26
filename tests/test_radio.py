@@ -17,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RADIO = REPO_ROOT / "skills" / "kvb-org-radio" / "scripts" / "radio.py"
 LINE = re.compile(r"^(?:RADIO|MAIL) (CALL|BROADCAST|SECURITY|PAN-PAN|MAYDAY|POST|NEWSLETTER) \d\d:\d\d (.*)$", re.DOTALL)
 STORED = "ts: "
+RECEIPT = r"^MAIL CALL read by Two \d\d:\d\d \(your call of \d\d:\d\d\)$"
 LISTENER = (
     "import importlib.util, sys\n"
     "spec = importlib.util.spec_from_file_location('radio', sys.argv[1])\n"
@@ -298,7 +299,9 @@ class TestRadio(unittest.TestCase):
         )
         self.assertEqual(len(self._prompt("s2")), 1)
         self.assertNotIn("CALL One to Two: ring", self._prompt("s3"))
-        self.assertEqual(len(self._prompt("s1")), 1)
+        caller = self._prompt("s1")
+        self.assertEqual(len(caller), 2)
+        self.assertRegex(caller[1], RECEIPT)
 
     def test_prompt_hook_shows_ten_and_counts_the_rest(self):
         self._send("s1", "send", "security", "early warning")
@@ -307,7 +310,7 @@ class TestRadio(unittest.TestCase):
         lines = self._prompt("s2")
         self.assertEqual(lines[0], "SECURITY One: early warning")
         self.assertEqual(lines[1:-1], [f"BROADCAST One: item {n}" for n in range(3, 12)])
-        self.assertEqual(lines[-1], "RADIO 3 more items: radio.py show --all")
+        self.assertEqual(lines[-1], "RADIO 3 more items: radio.py show --all --since 1d --summary")
         self.assertEqual(self._prompt("s2"), [])
 
     def test_the_mailbox_delivers_post_and_newsletters_once_when_the_turn_ends(self):
@@ -326,7 +329,7 @@ class TestRadio(unittest.TestCase):
         code, lines = self._mailbox("s2")
         self.assertEqual(code, 2)
         self.assertEqual(lines[:-1], [f"NEWSLETTER One: item {n}" for n in range(2, 12)])
-        self.assertEqual(lines[-1], "MAIL 2 more items: radio.py show --all")
+        self.assertEqual(lines[-1], "MAIL 2 more items: radio.py show --all --since 1d --summary")
         self.assertEqual(self._mailbox("s2"), (0, []))
 
     def test_a_read_call_puts_one_receipt_in_the_callers_mailbox_without_waking_it(self):
@@ -340,12 +343,36 @@ class TestRadio(unittest.TestCase):
         self.assertEqual([(r["from"], r["to"], r["text"], r["v"], r["call"]) for r in receipts], [("Two", ["One"], "ring", 2, rows[0]["ts"])])
         time.sleep(0.5)
         self.assertIsNone(caller.poll())
-        code, lines = self._mailbox("s1")
-        self.assertEqual(code, 2)
+        self.assertEqual(self._mailbox("s1"), (0, []))
+        lines = self._prompt("s1")
         self.assertEqual(len(lines), 1)
-        self.assertRegex(lines[0], r"^MAIL CALL Two read \d\d:\d\d: ring$")
+        self.assertRegex(lines[0], RECEIPT)
+        self.assertEqual(self._prompt("s1"), [])
         self.assertEqual(self._mailbox("s1"), (0, []))
         self.assertEqual(self._mailbox("s2"), (0, []))
+
+    def test_receipts_ride_with_other_mail_at_the_stop(self):
+        self._send("s1", "send", "call", "ring", "--to", "Two")
+        self.assertEqual(self._tool("s2"), ["CALL One to Two: ring"])
+        self._send("s3", "post", "for one", "--to", "One")
+        code, lines = self._mailbox("s1")
+        self.assertEqual(code, 2)
+        self.assertRegex(lines[0], RECEIPT)
+        self.assertEqual(lines[1:], ["POST Three to One: for one"])
+        self.assertEqual(self._prompt("s1"), [])
+
+    def test_show_summary_prints_one_line_per_class_and_sender_since_a_span(self):
+        self._send("s1", "send", "broadcast", "first")
+        self._send("s1", "send", "broadcast", "second")
+        self._send("s2", "post", "board")
+        old = {"ts": time.time() - 7200, "class": "security", "from": "Old", "to": [], "text": "stale", "v": 2}
+        with (self.root / "news.jsonl").open("a", encoding="utf-8") as news:
+            news.write(json.dumps(old) + "\n")
+        shown = self._cli("s3", "show", "--all", "--since", "1h", "--summary")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        lines = [re.sub(r"\d\d:\d\d", "HH:MM", line) for line in shown.stdout.splitlines()]
+        self.assertEqual(lines, ["BROADCAST One: 2, last HH:MM: second", "NEWSLETTER Two: 1, last HH:MM: board"])
+        self.assertEqual(self._cli("s3", "show", "--since", "soon").returncode, 2)
 
     def test_tool_hook_delivers_radio_rows_once_and_leaves_the_mail_for_the_stop(self):
         self._send("s1", "post", "board")
@@ -396,6 +423,24 @@ class TestRadio(unittest.TestCase):
         script = "import sys; open(sys.argv[1], 'a').write(sys.argv[2] + '\\n')"
         self.config.write_text(json.dumps({"notify": [sys.executable, "-c", script, str(log)]}), encoding="utf-8")
         self._send("s1", "send", "mayday", "smoke")
+        self._prompt("s2")
+        self._prompt("s3")
+        self.assertEqual(log.read_text(encoding="utf-8"), "Agents radio MAYDAY by One: smoke\n")
+
+    def test_a_mayday_popup_muted_or_snoozed_in_notify_json_stays_away_and_comes_once_it_is_on_again(self):
+        log = self.root.parent / "notified.log"
+        script = "import sys; open(sys.argv[1], 'a').write(sys.argv[2] + '\\n')"
+        self.config.write_text(json.dumps({"notify": [sys.executable, "-c", script, str(log)]}), encoding="utf-8")
+        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        popups = self.root / "notify.json"
+        popups.write_text(json.dumps({"mayday": {"on": False, "until": 0}}), encoding="utf-8")
+        self._send("s1", "send", "mayday", "smoke")
+        self._prompt("s2")
+        self.assertFalse(log.exists())
+        popups.write_text(json.dumps({"mayday": {"on": True, "until": int(time.time()) + 3600}}), encoding="utf-8")
+        self._prompt("s3")
+        self.assertFalse(log.exists())
+        popups.write_text(json.dumps({"mayday": {"on": True, "until": int(time.time()) - 1}}), encoding="utf-8")
         self._prompt("s2")
         self._prompt("s3")
         self.assertEqual(log.read_text(encoding="utf-8"), "Agents radio MAYDAY by One: smoke\n")
@@ -544,7 +589,7 @@ class TestRadio(unittest.TestCase):
         (self.root / "news.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
         shown = self._tool("s2")
         self.assertEqual(len(shown), 11)
-        self.assertEqual(shown[-1], "RADIO 2 more items: radio.py show --all")
+        self.assertEqual(shown[-1], "RADIO 2 more items: radio.py show --all --since 1d --summary")
 
     def test_long_fields_are_clipped_and_a_planted_silence_stays_on_one_line(self):
         self.root.mkdir()
@@ -742,7 +787,10 @@ class TestRadio(unittest.TestCase):
         self._pidfile("s3").write_text(str(os.getpid()), encoding="utf-8")
         self.assertEqual(self._send("s1", "feedback", "send", "ran y", "--to", "Two", "--sid", "s2"), ["sent call to Two"])
         self.assertEqual(self._prompt("s3"), ["CALL One to Two: ran x", "CALL One to Two: ran y"])
-        self.assertEqual(self._prompt("s1"), [])
+        receipts = self._prompt("s1")
+        self.assertEqual(len(receipts), 2)
+        for line in receipts:
+            self.assertRegex(line, RECEIPT)
 
     def test_a_row_pinned_to_a_codex_session_reaches_it_by_its_id(self):
         self._send(None, "feedback", "set", "call", "--session", "codex-1")

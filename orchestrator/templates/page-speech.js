@@ -316,11 +316,12 @@
     const [spoken, quiet] = [[], []];
     for (const row of rows) {
       const fresh = row.ts >= state.now - SPEECH_FRESH;
-      const steps = fresh && settings.channels.aloud ? RadioSet.plan(row, radioSet, liveSpeech()) : [];
+      const steps = fresh && settings.channels.aloud ? RadioSet.voiced(RadioSet.plan(row, radioSet, liveSpeech()), row, settings.agents) : [];
       const line = short(row.text.split("\n").map((part) => part.trim()).find(Boolean) || "");
-      if (fresh && (steps.length || (settings.bubbles && Bubbles.picked(row, radioSet)))) {
-        spoken.push({row, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, sent: Boolean(RadioSet.ledgerOf(row, state.messages)), line, words: Bubbles.words(row.text), silent: !steps.length});
-      } else if (settings.bubbles && arrived && row.ts >= state.now - LIVE_GAP) {
+      const bubble = settings.bubbles && RadioSet.heard(row, settings.agents, "bubbles");
+      if (fresh && (steps.length || (bubble && Bubbles.picked(row, radioSet)))) {
+        spoken.push({row, voice: row.voice, tone: Voice.toneOf(row, HUMAN), cls: row.class, who: row.source, sent: Boolean(RadioSet.ledgerOf(row, state.messages)), line, words: Bubbles.words(row.text), silent: !steps.length, bubble});
+      } else if (bubble && arrived && row.ts >= state.now - LIVE_GAP) {
         quiet.push({who: row.source, cls: row.class, line, words: Bubbles.words(line), quiet: true});
       }
     }

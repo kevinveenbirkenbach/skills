@@ -25,7 +25,7 @@ RUN_DONE = """(async () => {@HELPERS@@LABELS@
   await until(() => document.querySelector("#main .console").dataset.status === "done", 20000);
   await sleep(500);
   const lines = out().textContent.trim().split("\\n");
-  return {done: line(), last: lines[lines.length - 1], lines: lines.length, followed: atEnd(), actions: all(".item-actions button", out().closest("li")).map(name)};
+  return {done: line(), last: lines[lines.length - 1], lines: lines.length, followed: atEnd(), actions: all(":is(.item-actions, .code-foot) button", out().closest("li")).map(name)};
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 INBOX_PICK = """(async () => {@HELPERS@
   navigator.credentials.get = @SIGNS@ ? navigator.credentials.get.bind(navigator.credentials) : () => Promise.reject(new DOMException("The operator canceled.", "NotAllowedError"));
@@ -50,14 +50,15 @@ INBOX_PICK = """(async () => {@HELPERS@
   last.scrollIntoView({block: "center"});
   await sleep(300);
   const title = text(last.querySelector(".command code"));
+  const ref = last.dataset.ref;
+  await cursorTo(ref);
+  await sleep(300);
   const before = scroller.scrollTop;
-  last.querySelector("input").click();
+  await pressKey("x");
   await sleep(300);
   const after = scroller.scrollTop;
-  const holder = document.activeElement && document.activeElement.closest("li");
-  const focused = Boolean(holder && text(holder.querySelector(".command code")) === title && document.activeElement.checked);
-  all("#main .inbox-list > li").find((li) => li.textContent.includes("pick a name")).querySelector("input").click();
-  await sleep(300);
+  const focused = Boolean(document.querySelector(`#main .inbox-list > li.cursor[data-ref="${ref}"]`));
+  await selectRow(all("#main .inbox-list > li").find((li) => li.textContent.includes("pick a name")).dataset.ref);
   const buttons = all("#grant-bar .grant-split button").map(name);
   document.querySelector("#grant-bar details.grant-menu > summary").click();
   await until(() => document.querySelector("#grant-bar details.grant-menu[open]"), 2000);
@@ -78,7 +79,8 @@ LAYOUT = """(async () => {@HELPERS@@LABELS@
   await until(() => document.querySelector("#main .console") && rowOf("Rule request"), 8000);
   const rule = rowOf("Rule request");
   return {
-    kinds: all("#main .inbox-list > li").map((li) => text(li.querySelector(".pill"))),
+    kinds: all("#main .inbox-list > li").map((li) => all(".msg-meta .pill", li).map(text).find((label) => label !== "done")),
+    done: all("#main .inbox-list > li[data-done]").length,
     splits: all("#main .deny-split").map((group) => all("button", group).map(name)),
     console: line(),
     followed: atEnd(),
@@ -210,8 +212,6 @@ CHOICE_SEND = """(async () => {@HELPERS@@WATCH@
   return {picked, counted, opened, runs, fields: all("textarea, input:not([type=checkbox])", bar()).length, ...fits()};
 })()""".replace("@HELPERS@", HELPERS).replace("@WATCH@", WATCH)
 CHOICE_ANSWER = """(async () => {@HELPERS@@WATCH@
-  bar().querySelector("summary").click();
-  await sleep(200);
   const closed = [bar().open, all("button[data-channel]", bar()).filter((button) => button.checkVisibility()).length];
   const card = await until(() => all("#main .inbox-list > li").find((li) => li.textContent.includes("@QUESTION@")), 8000);
   if (!card) {

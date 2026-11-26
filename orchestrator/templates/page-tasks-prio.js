@@ -82,7 +82,7 @@
   function taskRoles(row) {
     const entries = Object.entries(row.roles);
     return [h("h3", {}, "RASCI", counter(entries.length)),
-      entries.length ? h("ul", {class: "mini"}, entries.map(([party, letters]) => h("li", {}, h("div", {class: "row"}, h("span", {class: "who"}, face(party, false), person(party)), h("span", {}, roleLetters(letters)))))) : h("p", {class: "muted"}, "No roles entered.")];
+      entries.length ? h("ul", {class: "mini"}, entries.map(([party, letters]) => h("li", {}, h("div", {class: "row"}, h("span", {class: "who"}, agentLink(party)), h("span", {}, roleLetters(letters)))))) : h("p", {class: "muted"}, "No roles entered.")];
   }
 
   function taskEstimates(row) {
@@ -107,7 +107,7 @@
     }
     const facts = [["Objective", row.objective], ["Key Results", row.total ? `${row.met} of ${row.total} met` : ""], ["Workdir", row.workdir], ["Branch", row.branch], ["Worktree", row.worktree], ["Repository", row.repo]];
     openSheet(row.task, [
-      h("div", {class: "who"}, taskBadges(row, true), row.worker !== "-" ? [face(row.worker, false), person(row.worker)] : null),
+      h("div", {class: "who"}, taskBadges(row, true), row.worker !== "-" ? agentLink(row.worker) : null),
       h("p", {class: "text"}, titleOf(row)),
       meta(row.queue ? [["Queue", `${row.queue.kind} for ${row.queue.parent}`], ...facts.slice(2)] : facts),
       workChips(row.open_work),
