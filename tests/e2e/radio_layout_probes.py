@@ -276,6 +276,15 @@ SPOT = """(async () => {@HELPERS@@PROBES@@SPEAKING@
         const hit = document.elementFromPoint(edge.left + edge.width / 2, edge.top + edge.height / 2);
         return {height: Math.round(box(node).height), title: words.title, full: words.textContent, cut: words.scrollWidth > words.clientWidth + 1, cancel: Boolean(hit && cancel.contains(hit))};
       })(),
+      channel: (() => {
+        const select = form.querySelector(".composer-grid select");
+        const twin = select.cloneNode(true);
+        twin.style.cssText = "position: absolute; visibility: hidden; width: max-content; min-width: 0;";
+        select.after(twin);
+        const need = box(twin).width;
+        twin.remove();
+        return [Math.round(box(select).width), Math.round(need)];
+      })(),
       play: [note.querySelector(".voice-play"), note.querySelector("audio")].filter((node) => node && shown(node) && box(node).width > 0).map((node) => [node.tagName, Math.round(box(node).width), Math.round(box(node).height)]),
       line: (() => {
         const node = display.querySelector(".caption-line");

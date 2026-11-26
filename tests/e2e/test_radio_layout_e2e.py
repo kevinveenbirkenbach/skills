@@ -194,6 +194,7 @@ class TestRadioLayout(kit.RadioLayoutCase):
             self.assertEqual((found["banner"]["title"], found["banner"]["cut"], found["banner"]["cancel"]), (found["banner"]["full"], state == "mayday-long", True), found)
             self.assertTrue(found["banner"]["full"].endswith(ALARMS[state]), found)
         self.assertEqual(found["blocked"], [], found)
+        self.assertGreaterEqual(found["channel"][0], found["channel"][1] - 1, found)
         if state == "stations":
             self.assertEqual(found["closed"], [False, True], found)
         if state == "voice":

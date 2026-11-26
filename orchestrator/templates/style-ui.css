@@ -86,6 +86,7 @@ body.fit .spot-host { flex: none; }
 .composer-grid { display: flex; min-width: 0; border-bottom: 1px solid var(--line); }
 .composer-grid label { display: flex; flex: 1 1 0; align-items: center; gap: 6px; min-width: 0; padding-inline-start: 12px; color: var(--muted); font-size: var(--fs-sm); }
 .composer-grid label + label { border-inline-start: 1px solid var(--line); }
+.composer-grid .composer-channel { min-width: max-content; }
 .composer-grid .field { flex: 1 1 auto; width: 100%; min-width: 0; border: 0; border-radius: 0; background: transparent; }
 .composer textarea { min-height: 64px; }
 .composer [hidden] { display: none; }

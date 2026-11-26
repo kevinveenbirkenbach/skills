@@ -244,7 +244,7 @@
     channel.addEventListener("change", sync);
     sync();
     const frame = micFrame(text, [record, status]);
-    frame.prepend(h("div", {class: "composer-grid"}, h("label", {}, "Channel", channel), toField));
+    frame.prepend(h("div", {class: "composer-grid"}, h("label", {class: "composer-channel"}, "Channel", channel), toField));
     frame.querySelector(".mic-foot").append(h("div", {class: "ptt-split", role: "group", "aria-label": "Send"}, submit, testMenu(text, channel)), mayday);
     const form = h("form", {class: "composer"}, frame, replay);
     const empty = () => {
