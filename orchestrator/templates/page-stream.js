@@ -98,6 +98,9 @@
     if (entry.kind === "cron") {
       return [pill(ref.active ? "active" : "inactive", ref.active ? "ok" : "neutral")];
     }
+    if (entry.kind === "operator" && ref.answered) {
+      return [status("decided"), pill(ref.answered, "ok")];
+    }
     if (entry.kind === "run" || entry.kind === "operator" || entry.kind === "register") {
       return [ref.status ? status(ref.status) : null];
     }
@@ -135,15 +138,16 @@
   }
 
   function eventRow(entry) {
-    const item = entry.waiting ? inboxOf(entry) : null;
+    const answered = entry.kind === "operator" && entry.ref.answered;
+    const item = entry.waiting && !answered ? inboxOf(entry) : null;
     const choice = item ? choiceOf(item, () => {}) : null;
     const alarm = entry.kind === "radio" && (entry.part === "mayday" || entry.part === "pan-pan");
     const renamed = entry.now && entry.now !== entry.agent ? h("span", {title: `now: ${entry.now}`}, person(entry.agent)) : person(entry.agent);
     const who = entry.agent ? [face(entry.agent, false), renamed] : entry.session ? h("strong", {title: entry.session}, entry.session.slice(0, 8)) : null;
     const headline = entry.kind === "transcript" || entry.kind === "ask" || entry.kind === "operator" ? null : h("span", {class: "headline"}, Receipts.headline(entry));
     const blocked = (item && item.blocked) || (entry.kind === "operator" && entry.ref.blocked) || "";
-    return h("li", {class: `entry k-${entry.kind}${entry.waiting ? " waiting" : ""}${alarm ? " alarm" : ""}`, "data-ref": item ? keyOf(item) : null, "data-item": `message:${entry.ts}/${entry.id}`, "data-to": item && item.to ? item.to : null,
-      "data-blocked": blocked ? "" : null, title: blocked || null},
+    return h("li", {class: `entry k-${entry.kind}${entry.waiting && !answered ? " waiting" : ""}${alarm ? " alarm" : ""}`, "data-ref": item ? keyOf(item) : null, "data-item": `message:${entry.ts}/${entry.id}`, "data-to": item && item.to ? item.to : null,
+      "data-blocked": blocked ? "" : null, "data-answered": answered ? "" : null, title: blocked || null},
       h("div", {class: "msg-meta"}, when(entry.ts), kindPill(entry), extras(entry)),
       h("div", {},
         h("div", {class: "route", "data-star-slot": ""}, who, entry.sub ? h("button", {type: "button", class: "linkish muted", on: {click: () => focusSub(entry.session, entry.sub)}}, `› Subagent ${entry.sub.slice(0, 12)}`) : null, entry.kind === "ask" ? h("strong", {}, entry.title) : null, headline),

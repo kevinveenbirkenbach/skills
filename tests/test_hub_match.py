@@ -485,6 +485,10 @@ class TestWaitingCards(MatchCase):
     def answered(self, task: str) -> str:
         return next(item["answered"] for item in self.snapshot()["inbox"] if item["id"] == task)
 
+    def streamed(self, task: str) -> tuple[bool, str]:
+        row = next(row for row in self.events("kinds=operator&waiting=1")["events"] if row["id"] == f"operator:{task}")
+        return row["waiting"], row["ref"]["answered"]
+
     def waiting(self) -> dict[str, str]:
         self.claim("s1", "Skills session")
         self.add(staged_repo(self.work))
@@ -533,8 +537,10 @@ class TestWaitingCards(MatchCase):
         self.assertEqual({card["kind"] for card in self.cards()}, {"commit", "command", "rule"})
         self.assertEqual(self.post_json("/api/sign", {"items": [entries[0]]}, self.guard(self.host))[0], 409)
         self.assertEqual(self.answered("operator/pick"), "Wait")
+        self.assertEqual(self.streamed("operator/pick"), (True, "Wait"))
         self.write_council({"rasci.json": {"operator/pick": {**PICK, "title": "Merge the hub tonight?"}}})
         self.assertEqual((self.card("operator:operator/pick")["title"], self.answered("operator/pick")), ("Merge the hub tonight?", ""))
+        self.assertEqual(self.streamed("operator/pick"), (True, ""))
 
     def test_a_decision_row_takes_one_line_of_other_text_and_no_forged_line(self):
         self.waiting()

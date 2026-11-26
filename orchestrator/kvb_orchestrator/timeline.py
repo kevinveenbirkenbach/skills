@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from .asking import ask_state
-from .choosing import decision_status
+from .choosing import answered, decision_status
 from .council import MAYDAY_ACTIVE, NEWS, message_rows, read_claims, sessions
 from .crons import cron_event
 from .errors import Missing, ToolError
@@ -86,7 +86,8 @@ class Timeline:
         for row in operator_rows(tasks):
             first = self.watch.first(row["task"], now)
             if first <= end:
-                ref = {**{key: row[key] for key in ("task", "directory", "check", "status")}, "blocked": row_blocked(row, reasons)}
+                answer = self.answers.get(row["task"])
+                ref = {**{key: row[key] for key in ("task", "directory", "check", "status")}, "blocked": row_blocked(row, reasons), "answered": answer["label"] if answered(answer, row) else ""}
                 rows.append(event({"id": f"operator:{row['task']}", "ts": first, "kind": "operator", "title": row["command"], "text": row["why"], "waiting": True, "ref": ref}))
         rows += [change for change in self.watch.listed() if begin <= change["ts"] <= end]
         rows += [cron_event(cron, directory) for cron in self.schedules(claims, now) if cron["created"] <= end and (cron["active"] or cron["created"] >= begin)]
