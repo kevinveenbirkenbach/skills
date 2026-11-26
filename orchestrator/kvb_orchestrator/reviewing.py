@@ -28,6 +28,7 @@ REQUEST = ("repo", "worktree", "branch", "tree", "title", "page", "notes", "gate
 OPTIONAL = ("agent", "diff", "sealed")
 LISTED = ("id", "created", "worktree", "branch", "tree", "title")
 STATE = ("id", "status", "tree", "decided")
+DENIAL = ("channel", "reason", "to")
 
 
 def found(review: dict | None, review_id: str) -> dict:
@@ -38,11 +39,12 @@ def found(review: dict | None, review_id: str) -> dict:
 
 def state_of(review: dict) -> dict:
     """Returns:
-        The review's id, status, tree and decision time, and superseded_by
-        once a newer review of its worktree and branch replaced it.
+        The review's id, status, tree and decision time, superseded_by
+        once a newer review of its worktree and branch replaced it, and
+        channel, reason and to of a denial with a note.
     """
     replaced = {"superseded_by": review["superseded_by"]} if "superseded_by" in review else {}
-    return {**{key: review[key] for key in STATE}, **replaced}
+    return {**{key: review[key] for key in STATE}, **replaced, **{key: review[key] for key in DENIAL if key in review}}
 
 
 def proven(review: dict) -> dict:

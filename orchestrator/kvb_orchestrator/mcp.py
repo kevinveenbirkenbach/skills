@@ -59,7 +59,7 @@ class Mcp:
                     "agent": text_property("Your agent name as the radio knows it; the operator's denial and its reason go to it."),
                 },
             ),
-            tool("review_status", "Status of a review (pending, approved, rejected, superseded: a newer review of the same worktree and branch replaced it, named by superseded_by), its tree, decision time and the passkey proof that approval.py verify --record checks.", {"id": review_id}),
+            tool("review_status", "Status of a review (pending, approved, rejected, superseded: a newer review of the same worktree and branch replaced it, named by superseded_by), its tree, decision time, for a denial with a note its channel, reason and to, and the passkey proof that approval.py verify --record checks.", {"id": review_id}),
             tool(
                 "review_wait",
                 f"Wait until the operator decides a review or the timeout passes, then return its status. "

@@ -234,6 +234,26 @@ class TestHubDeny(HubCase):
             self.settle(lambda: any("no recipient" in row["text"] for row in self.events("kinds=approval")["events"]))
         self.assertEqual((self.ask_status(ask_id, "0"), self.radio()), ("denied", []))
 
+    def test_a_review_denied_without_recipient_still_returns_its_reason(self):
+        review_id = self.tool("review_request", self.arguments("feat: nameless", "", self.page("bundle.html", PAGE)))["structuredContent"]["id"]
+        entry = self.denial("review", review_id, "", "call", "  drop the\n comments ")
+        self.assertEqual(entry["to"], "")
+        with mock.patch.object(batches, "UNDO", 0.05):
+            self.assertEqual(self.approve([entry], self.signed([entry], self.pin()))[0], 202)
+            self.settle(lambda: any("no recipient" in row["text"] for row in self.events("kinds=approval")["events"]))
+        self.assertEqual(self.radio(), [])
+        for name, arguments in (("review_status", {"id": review_id}), ("review_wait", {"id": review_id, "timeout_seconds": 0})):
+            with self.subTest(tool=name):
+                state = self.tool(name, arguments)["structuredContent"]
+                self.assertEqual((state["status"], state["channel"], state["reason"], state["to"]), ("rejected", "call", "drop the comments", ""))
+
+    def test_a_review_rejected_without_a_note_carries_no_reason(self):
+        review_id = self.tool("review_request", self.arguments("feat: plain", "", self.page("bundle.html", PAGE)))["structuredContent"]["id"]
+        with mock.patch.object(batches, "UNDO", 0.05):
+            self.assertEqual(self.approve([{**self.entry("review", review_id, "", ""), "verb": "reject"}], None)[0], 202)
+            self.settle(lambda: self.tool("review_status", {"id": review_id})["structuredContent"]["status"] == "rejected")
+        self.assertFalse({"channel", "reason", "to"} & set(self.tool("review_status", {"id": review_id})["structuredContent"]))
+
     def answer(self, signer: Key, item: dict, channel: str, reason: str) -> dict:
         payload = signing.approval_payload([signing.item_hash(signing.denial_item(item, channel, reason, "Skills"))], secrets.token_hex(16), int(time.time()) + 60)
         return {"status": "denied", "channel": channel, "reason": reason, "to": "Skills", "proof": signer.proof(payload, self.origin)}
