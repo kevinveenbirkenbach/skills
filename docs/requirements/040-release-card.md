@@ -13,7 +13,7 @@ I decide.
    back.
 2. **Content**: the list of today's overview (each decision changeable or
    back to the stack), the release-block note and the Release button.
-3. **Gestures** (operator: "1 und 2"): swiping right or the right arrow
+3. **Gestures** (operator picked options 1 and 2): swiping right or the right arrow
    starts the passkey release exactly like the button; swiping left or the
    left arrow returns to the stack.
 4. **Behind it**: cards that arrive meanwhile and the greyed cards lie behind
