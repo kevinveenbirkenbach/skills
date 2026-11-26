@@ -57,6 +57,34 @@
       "skillPath": "skills/caveman-stats/SKILL.md",
       "computedHash": "d47db80af9353f411b5840fa207ac10c883f04576cd280b135e3a44a0ff86285"
     },
+    "kvb-coach": {
+      "source": "kevinveenbirkenbach/coach",
+      "commit": "6648a3e233593d1303c45a7ad316586955cfd2e9",
+      "sourceType": "github",
+      "skillPath": "skills/kvb-coach/SKILL.md",
+      "computedHash": "9fe030e9db95fbbbcb9015a9b728ecfc55f32cac41d2d8fbda5382db702a8991"
+    },
+    "kvb-coach-meditation": {
+      "source": "kevinveenbirkenbach/coach",
+      "commit": "6648a3e233593d1303c45a7ad316586955cfd2e9",
+      "sourceType": "github",
+      "skillPath": "skills/kvb-coach-meditation/SKILL.md",
+      "computedHash": "4b19d9ccf5b042aac1e1ea8f85a9f088616cc51c708571270ba156b6fafaf59c"
+    },
+    "kvb-coach-off": {
+      "source": "kevinveenbirkenbach/coach",
+      "commit": "6648a3e233593d1303c45a7ad316586955cfd2e9",
+      "sourceType": "github",
+      "skillPath": "skills/kvb-coach-off/SKILL.md",
+      "computedHash": "b0fa128b365d5906134ebb90fbc51da4c4ef0624071f3a485bb57b116845b9c5"
+    },
+    "kvb-coach-on": {
+      "source": "kevinveenbirkenbach/coach",
+      "commit": "6648a3e233593d1303c45a7ad316586955cfd2e9",
+      "sourceType": "github",
+      "skillPath": "skills/kvb-coach-on/SKILL.md",
+      "computedHash": "0c2aa55c68a3c315f0561dfb03a63d6beda3685e78133b9a2f0172cc0002b13c"
+    },
     "motion-designer": {
       "source": "infinito-nexus/motion-presenter",
       "commit": "fc490a433b8803ba27b4431db1e7a96eba023b4f",
