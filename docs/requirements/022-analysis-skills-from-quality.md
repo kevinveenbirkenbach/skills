@@ -19,9 +19,14 @@ this repository only orchestrates.
    break at their first run).
 2. **Pin**: one Quality tag in `plugins-lock.json`; raising it is a reviewed
    change.
-3. **Old names leave**: the eight skills of Quality 003 decision 1 leave
-   `skills/`; the skill-token half of `kvb-check-efficiency` stays as
-   `kvb-skill-tokens`; `kvb-check-gate` stays here as `kvb-org-gate`
+3. **Old names leave**: the skills Quality 003 decision 1 takes over
+   leave `skills/` (operator 2026-11-26: `kvb-check-security`, `-legal`,
+   `-principles`, `-score`, `-confidence`, `-break-risk`, and the CPU,
+   RAM and wall-clock half of `kvb-check-efficiency` (`measure.py`, which
+   already absorbed `kvb-check-speed` in 0fad1bf) as ONE skill,
+   `kvb-quality-performance`, replacing both `kvb-quality-speed` and
+   `kvb-quality-efficiency`; `kvb-quality-review` is new, not a move);
+   the skill-token half (`tokens.py`) stays as `kvb-skill-tokens`; `kvb-check-gate` stays here as `kvb-org-gate`
    (operator 2026-11-18: it orchestrates queue, register and hotfix runs).
    One script renames every reference (611 files today); its dry run is
    reviewed before it writes.
@@ -57,6 +62,23 @@ this repository only orchestrates.
    repository's tests run under that interpreter. Hook commands in
    settings files that call such a script with `python3` change too, as
    operator rows.
+10. **The commit block stays here** (Quality 2026-11-26, from Quality 003
+    decision 8): `kvb-check-score/scripts/block.py` and
+    `tests/test_block.py` stay in this repository, because block.py runs
+    `tokens.py` (`kvb-skill-tokens`) and `gate.py` (`kvb-org-gate`); it moves
+    to `kvb-git-commit-no-verify/scripts/block.py`, the skill that prints the
+    block into the commit message, and calls
+    `~/.claude/skills/kvb-quality-score/scripts/score.py`,
+    `kvb-quality-performance` and `kvb-quality-security` by their installed
+    paths. The constants it shares with score.py (`DASH`, `NEW`, `UNKNOWN`,
+    `percent`) come from `quality.agent.score` (decision 9; Quality's
+    score.py imports them from there too), never from an import out of a
+    Quality skill folder. Every other file of `kvb-check-score`
+    moves (score.py, journal.py, backfill.py, labels.json, tables.md,
+    journal.md); a moved `SKILL.md` (score, confidence) names no script of
+    this repository. Rejected: block.py in Quality (it would call into this
+    repository); beside `kvb-org-gate` or `kvb-skill-tokens` (each owns
+    only one of its inputs).
 
 ## Approach
 
@@ -117,6 +139,12 @@ flowchart TD
   `kvb-quality-score`, and `kvb-check-gate` with successor `kvb-org-gate`.
 - [ ] `skills/kvb-org-gate/SKILL.md` carries the frontmatter name
   `kvb-org-gate`, and `queue.py` and `hotfix.py` load its scripts.
+- [ ] `skills/kvb-git-commit-no-verify/scripts/block.py` and
+  `tests/test_block.py` exist; `git grep -nE '^(from score|import score)'
+  -- skills` prints nothing and block.py imports
+  `from quality.agent.score`; Quality's installed
+  `kvb-quality-score/SKILL.md` and `kvb-quality-confidence/SKILL.md` name
+  no `block.py`.
 
 ### Commit flow
 

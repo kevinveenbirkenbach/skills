@@ -67,3 +67,5 @@ skill defines the format.
 - [061 - Bounded Council Files](061-bounded-council-files.md)
 - [062 - Lean Agent Output](062-lean-agent-output.md)
 - [063 - One Commit Block](063-one-commit-block.md)
+- [064 - Code Review](064-code-review.md)
+- [065 - Accounts Spreadsheet Round Trip](065-accounts-round-trip.md)
