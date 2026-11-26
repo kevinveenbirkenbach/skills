@@ -1,14 +1,14 @@
 import {spawn} from "node:child_process";
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {createServer} from "node:net";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {connect, readPlan} from "./driver.mjs";
 
 // Args: <firefox binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, drag, probe, shot, gesture} and
 // an optional init like cdp.mjs.
 // Prints {results, errors}: one probe value per step and every JavaScript error the page logged.
-const [binary, planFile] = process.argv.slice(2);
-const plan = JSON.parse(readFileSync(planFile, "utf8"));
+const {binary, plan} = readPlan();
 const profile = mkdtempSync(join(tmpdir(), "bidi-"));
 writeFileSync(join(profile, "user.js"), ['user_pref("media.navigator.streams.fake", true);', 'user_pref("media.navigator.permission.disabled", true);', 'user_pref("media.volume_scale", "0.0");', ""].join("\n"));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -41,31 +41,13 @@ await new Promise((resolve, reject) => {
   socket.onopen = resolve;
   socket.onerror = reject;
 });
-const waiting = new Map();
 const errors = [];
-let next = 0;
-socket.onmessage = (event) => {
-  const data = JSON.parse(event.data);
+const call = connect(socket, browser, "BiDi", (data) => (data.type === "error" ? new Error(`${data.error}: ${data.message}`) : null), (data) => {
   if (data.method === "log.entryAdded" && data.params.level === "error" && data.params.type === "javascript") {
     errors.push(data.params.text);
   }
-  if (data.id && waiting.has(data.id)) {
-    const {resolve, reject} = waiting.get(data.id);
-    waiting.delete(data.id);
-    if (data.type === "error") {
-      reject(new Error(`${data.error}: ${data.message}`));
-    } else {
-      resolve(data.result);
-    }
-  }
-};
-
-function send(method, params) {
-  next += 1;
-  const id = next;
-  socket.send(JSON.stringify({id, method, params}));
-  return new Promise((resolve, reject) => waiting.set(id, {resolve, reject}));
-}
+});
+const send = (method, params) => call({method, params});
 
 const results = [];
 try {

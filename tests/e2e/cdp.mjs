@@ -1,7 +1,8 @@
 import {spawn} from "node:child_process";
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {connect, readPlan} from "./driver.mjs";
 
 // Args: <chromium binary> <plan.json>; the plan lists steps {width, height, url, wait, keys, drag, probe, shot, media, gesture},
 // keys being real key presses (Enter, Tab, ArrowLeft, ArrowRight) on the focused element before the probe, drag
@@ -9,8 +10,7 @@ import {join} from "node:path";
 // user activation like a click, an optional init, the text of a function every new document runs before its own scripts,
 // and an optional authenticator {credentialId, privateKey, rpId}: base64 id and PKCS#8 key of a passkey the page may sign with.
 // Prints {results, errors}: one probe value per step and every uncaught page exception.
-const [binary, planFile] = process.argv.slice(2);
-const plan = JSON.parse(readFileSync(planFile, "utf8"));
+const {binary, plan} = readPlan();
 const profile = mkdtempSync(join(tmpdir(), "cdp-"));
 // --no-sandbox: the agent sandbox already forbids the user namespaces Chromium's own sandbox needs.
 // --enable-unsafe-swiftshader: without a GPU, headless Chromium gives WebGL only through SwiftShader, which it no longer enables by itself.
@@ -39,32 +39,14 @@ await new Promise((resolve, reject) => {
   socket.onopen = resolve;
   socket.onerror = reject;
 });
-const waiting = new Map();
 const errors = [];
-let next = 0;
-socket.onmessage = (event) => {
-  const data = JSON.parse(event.data);
+const call = connect(socket, browser, "CDP",(data) => (data.error ? new Error(JSON.stringify(data.error)) : null), (data) => {
   if (data.method === "Runtime.exceptionThrown") {
     const details = data.params.exceptionDetails;
     errors.push(details.exception ? details.exception.description : details.text);
   }
-  if (data.id && waiting.has(data.id)) {
-    const {resolve, reject} = waiting.get(data.id);
-    waiting.delete(data.id);
-    if (data.error) {
-      reject(new Error(JSON.stringify(data.error)));
-    } else {
-      resolve(data.result);
-    }
-  }
-};
-
-function send(method, params, sessionId) {
-  next += 1;
-  const id = next;
-  socket.send(JSON.stringify({id, method, params, ...(sessionId ? {sessionId} : {})}));
-  return new Promise((resolve, reject) => waiting.set(id, {resolve, reject}));
-}
+});
+const send = (method, params, sessionId) => call({method, params, ...(sessionId ? {sessionId} : {})});
 
 const results = [];
 try {
