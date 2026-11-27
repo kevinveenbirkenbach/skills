@@ -117,7 +117,7 @@ class TestRunnerGates(HubCase):
         self.db = self.home / ".local" / "state" / "agents-council" / "gates.db"
 
     def run_gates_runner(self, flags: list[str]) -> None:
-        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json")]
+        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json"), "--state", str(self.state)]
         command = [sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, *flags, "--once"]
         done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False, env={**os.environ, "HOME": str(self.home)})
         self.assertEqual(done.returncode, 0, done.stderr)

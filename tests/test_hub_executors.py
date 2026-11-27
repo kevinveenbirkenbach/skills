@@ -107,7 +107,7 @@ class TestHubExecutors(HubCase):
         self.approvers.unlink()
         job = {"task": "operator/greet", "command": command, "directory": str(self.outside), "proof": proof}
         self.assertIn("no key is pinned", runner.refusal(job, self.trust("other"), time.time()))
-        reports, host = [], runner.Host(shell=str(self.shell), operator=None, council=None)
+        reports, host = [], runner.Host(shell=str(self.shell), operator=None, council=None, marker=self.state / runner.MARKER)
         self.assertEqual(runner.execute({"command": "exit 3", "directory": str(self.outside)}, host, reports.append), 3)
         self.assertEqual(reports[-1], {"output": "", "code": 3, "refused": False})
         self.assertEqual(runner.execute({"command": "true", "directory": str(self.outside)}, host, reports.append), 0)
@@ -128,7 +128,7 @@ class TestHubExecutors(HubCase):
         job = self.snapshot()["jobs"][-1]
         self.assertEqual((job["status"], job["code"], job["output"]), ("done", 0, "pushed\n"))
         self.assertEqual(self.scripts.calls[-1], (skill_scripts.OPERATOR_SCRIPT, ["ran", "push", f"--command={command}", f"--dir={self.outside}", "--check-failed"]))
-        host = runner.Host(shell=str(self.shell), operator=hub_support.OPERATOR, council=self.council)
+        host = runner.Host(shell=str(self.shell), operator=hub_support.OPERATOR, council=self.council, marker=self.state / runner.MARKER)
         self.assertIs(runner.checked({"task": "operator/push"}, host), False)
         self.assertIsNone(runner.checked({"task": "operator/missing"}, host))
         self.assertIsNone(runner.checked({"task": "operator/push"}, host._replace(shell=str(self.outside / "no-shell"))))
@@ -145,7 +145,7 @@ class TestHubExecutors(HubCase):
     def test_the_runner_closes_the_output_pipe_on_every_path(self):
         popen, spawned = subprocess.Popen, []
         job = {"command": "echo hi; sleep 0.3", "directory": str(self.outside)}
-        host = runner.Host(shell=str(self.shell), operator=None, council=None)
+        host = runner.Host(shell=str(self.shell), operator=None, council=None, marker=self.state / runner.MARKER)
 
         def spawn(*args: object, **kwargs: object) -> subprocess.Popen:
             spawned.append(popen(*args, **kwargs))

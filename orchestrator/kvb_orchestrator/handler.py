@@ -29,6 +29,7 @@ BOARD = re.compile(r"/api/board/([a-z-]{1,32})")
 UPLOADS = "/api/uploads"
 MATCH_ROUTE = "/api/match"
 PREVIEWS_ROUTE = "/api/runner/previews"
+RESTART_ROUTE = "/api/runner/restart"
 MATCH_POSTS = {"/api/match/stale": "match_stale", "/api/match/snapshot": "match_snapshot"}
 HOOK_POSTS = {"/api/asks": "ask", "/api/decisions": "question"}
 POSTS = (*HOOK_POSTS, UPLOADS, "/api/messages", *MATCH_POSTS)
@@ -283,7 +284,9 @@ class Handler(Exchange):
     def runner(self, path: str, body: bytes) -> None:
         hub = self.server.hub
         route = RUNNER_ROUTE.fullmatch(path)
-        if route is None:
+        if path == RESTART_ROUTE:
+            self.answer(hub.restart_runner, HTTPStatus.OK)
+        elif route is None:
             self.answer(lambda: hub.record_preview(body), HTTPStatus.OK)
         elif route.group(2) == "claim":
             self.answer(lambda: hub.claim(route.group(1)), HTTPStatus.OK)
@@ -303,7 +306,7 @@ class Handler(Exchange):
                 return lambda body: self.answer(lambda: receive(body), HTTPStatus.OK if path in MATCH_POSTS else HTTPStatus.CREATED)
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden: local POST with the X-Kvb-Orchestrator header and no foreign origin only")
             return None
-        if RUNNER_ROUTE.fullmatch(path) or path == PREVIEWS_ROUTE:
+        if RUNNER_ROUTE.fullmatch(path) or path in (PREVIEWS_ROUTE, RESTART_ROUTE):
             if self.client():
                 return lambda body: self.runner(path, body)
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden: the runner calls with the X-Kvb-Orchestrator header and no origin only")

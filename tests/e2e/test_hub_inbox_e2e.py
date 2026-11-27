@@ -60,7 +60,7 @@ class TestHubInbox(base.OrchestratorE2ECase):
     def test_chromium_runs_a_command_into_its_console_denies_by_call_and_accepts_a_rule(self):
         self.inbox_work()
         signer = self.pin()
-        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json")]
+        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json"), "--state", str(self.state)]
 
         def run_jobs() -> None:
             if any(job["status"] == "queued" for job in self.httpd.hub.jobs.listed()):

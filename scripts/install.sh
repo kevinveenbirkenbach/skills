@@ -43,6 +43,7 @@ migrate_council() {
 }
 status=0
 if [[ "${TARGET}" == "${HOME}" ]]; then
+	bash "${REPO_ROOT}/scripts/orchestrator.sh" idle || exit 1
 	if ! python3 "${council_root}" preflight; then
 		warn "skills: install refused before copying anything; the installed skills keep the earlier council root until the reasons above are gone."
 		exit 1

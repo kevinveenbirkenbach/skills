@@ -15,6 +15,7 @@ TASK_JOB = "task"
 GATE_JOB = "gate"
 CHANGES = (TASK_JOB, GATE_JOB)
 UNRUNNABLE = "The hub runner needs a command and an absolute directory, and this row lacks one; run it with operator.py run in a terminal."
+RESTARTED = "the runner restarted while this job ran; run the row again"
 
 
 def runner_job(job: dict) -> dict:
@@ -148,11 +149,39 @@ class Jobs:
         job, changed = self.jobs.transition(job_id, "running", {"status": status, "code": code, "output": output, "finished": time.time()})
         if not changed:
             raise Conflict({"id": job_id, "status": job["status"]})
-        runs = self.close_row(job, status, code, checked is True)
-        tail = "\n".join(output.splitlines()[-20:])
-        self.log.add({"kind": "run", "title": f"{status}: {job['command'][:200]}", "text": tail, "ref": {"job": job_id, "task": job["task"], "code": code, "status": status}})
+        return self.ended(job, checked is True)
+
+    def restart_runner(self) -> dict:
+        """Returns:
+            {"failed": ids}: every running job, which the restart of the
+            runner killed, turned failed with RESTARTED as its output, code
+            None and finished now, its row closed like a failed run.
+        """
+        failed = []
+        for job in self.jobs.listed():
+            record, changed = self.jobs.transition(job["id"], "running", {"status": "failed", "code": None, "output": RESTARTED, "finished": time.time()})
+            if changed:
+                self.ended(record, False)
+                failed.append(job["id"])
+        return {"failed": failed}
+
+    def ended(self, job: dict, checked: bool) -> dict:
+        """Args:
+            job: a job that just left running, with its status, code and
+                output.
+            checked: as in close_row().
+
+        Returns:
+            {"id", "status", "code", "runs", "told"} after its row closed
+            (close_row()), the run went to the log and, for a task change,
+            its batch was told (tell_applied()).
+        """
+        status, code = job["status"], job["code"]
+        runs = self.close_row(job, status, code, checked)
+        tail = "\n".join(job["output"].splitlines()[-20:])
+        self.log.add({"kind": "run", "title": f"{status}: {job['command'][:200]}", "text": tail, "ref": {"job": job["id"], "task": job["task"], "code": code, "status": status}})
         told = self.tell_applied(job) if job.get("kind") == TASK_JOB else []
-        return {"id": job_id, "status": status, "code": code, "runs": runs, "told": told}
+        return {"id": job["id"], "status": status, "code": code, "runs": runs, "told": told}
 
     def close_row(self, job: dict, status: str, code: int | None, checked: bool) -> list[dict]:
         """Args:
@@ -165,14 +194,16 @@ class Jobs:
             job on its row: `ran` on exit 0, with --check-failed unless
             checked, so the row stays open; `failed` with where the output
             stays, the job's console, never the output itself, on any other
-            exit; none for a refused job or a task or gate change.
+            exit and, why RESTARTED, on a failed job without code, which a
+            runner restart killed; none for a refused job or a task or gate
+            change.
         """
         if job.get("kind") in CHANGES or status not in ("done", "failed"):
             return []
         slug = job["task"].removeprefix(OPERATOR)
         shown = [slug, f"--command={job['command']}", f"--dir={job['directory']}"]
         if status == "failed":
-            why = f"killed by signal {-code}" if code < 0 else f"exit {code}"
+            why = RESTARTED if code is None else f"killed by signal {-code}" if code < 0 else f"exit {code}"
             where = f"the console of hub job {job['id']} under the row in Waits on Operator"
             return [self.scripts.run(OPERATOR_SCRIPT, ["failed", *shown, "--why", why, f"--where={where}"])]
         return [self.scripts.run(OPERATOR_SCRIPT, ["ran", *shown] if checked else ["ran", *shown, "--check-failed"])]

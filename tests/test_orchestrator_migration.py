@@ -230,6 +230,27 @@ class TestOrchestratorMigration(unittest.TestCase):
                 self.assertEqual((units / f"{NEW}-runner.service").read_text(encoding="utf-8") == shipped, enabled)
                 self.assertEqual(restart in calls, enabled)
 
+    def test_a_hub_row_the_runner_runs_makes_idle_stop_install_and_runner_refuse_before_any_call(self):
+        marker = self.home / ".local" / "state" / NEW / "runner-job.json"
+        job = {"job": "0123456789abcdef", "task": "operator/push", "started": 0}
+        self.write(marker, json.dumps({**job, "pid": os.getpid()}), 0o600)
+        before = snapshot(self.home)
+        for command in ("idle", "stop", "install", "runner"):
+            with self.subTest(command=command):
+                done = subprocess.run(["bash", str(SCRIPT), command], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+                self.assertEqual(done.returncode, 1, done.stderr)
+                self.assertIn("a hub row runs (operator/push, job 0123456789abcdef): the install would stop the runner and kill it; run the install in a terminal once no row runs", done.stderr)
+        self.assertEqual(json.loads(self.state.read_text(encoding="utf-8"))["calls"], [])
+        self.assertEqual(snapshot(self.home), before)
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        self.write(marker, json.dumps({**job, "pid": gone.pid}), 0o600)
+        passed = subprocess.run(["bash", str(SCRIPT), "idle"], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+        self.assertEqual((passed.returncode, passed.stderr), (0, ""))
+        marker.unlink()
+        passed = subprocess.run(["bash", str(SCRIPT), "idle"], env=self.env, capture_output=True, text=True, timeout=120, check=False)
+        self.assertEqual((passed.returncode, passed.stderr), (0, ""))
+
     def test_every_shipped_service_pins_the_path(self):
         units = sorted((REPO_ROOT / "orchestrator" / "systemd").glob("*.service"))
         self.assertIn(f"{NEW}-runner.service", [unit.name for unit in units])

@@ -29,6 +29,7 @@ COUNCIL_PARTS = (
     "skills/kvb-org-organize/scripts/councilroot.py", "skills/kvb-org-organize/scripts/nofollow.py",
     "skills/kvb-org-organize/scripts/schedules.py",
 )
+RUNNING_JOB = "0123456789abcdef"
 AGENT_ROOTS = {"sandbox": {"filesystem": {"allowWrite": ["~/.local/state/agents-shared", "~/.local/state/agents-release/**"]}}}
 CGROUP_KILL = """
 case "$*" in *try-restart*kvb-code-graph*)
@@ -122,7 +123,8 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(json.loads(config.read_text(encoding="utf-8")), {"mine": True})
             self.assertIn(str(config), done.stderr)
 
-    def home_install(self, root: Path, binary: bool, config: bool = True, fail_now: bool = False, schedules: dict | None = None) -> tuple[subprocess.CompletedProcess, list[str], list[str]]:
+    def home_install(self, root: Path, binary: bool, config: bool = True, fail_now: bool = False, schedules: dict | None = None,
+                     runner_job: dict | None = None) -> tuple[subprocess.CompletedProcess, list[str], list[str]]:
         repo, stubs, home = root / "repo", root / "bin", root / "home"
         (repo / "scripts").mkdir(parents=True)
         shutil.copy(INSTALL, repo / "scripts" / "install.sh")
@@ -162,6 +164,10 @@ class TestInstall(unittest.TestCase):
             council = home / ".local" / "state" / "agents-shared"
             council.mkdir(parents=True, mode=0o700)
             (council / "schedules.json").write_text(json.dumps(schedules), encoding="utf-8")
+        if runner_job is not None:
+            hub_state = home / ".local" / "state" / "kvb-orchestrator"
+            hub_state.mkdir(parents=True)
+            (hub_state / "runner-job.json").write_text(json.dumps(runner_job), encoding="utf-8")
         env = {"PATH": str(stubs), "TARGET": str(home), "HOME": str(home), "AGENTS_COUNCIL_LEGACY": str(root / "legacy")}
         done = subprocess.run(["/bin/bash", str(repo / "scripts" / "install.sh")], env=env, capture_output=True, text=True, check=False)
         return done, read_lines(log), read_lines(cbm)
@@ -245,6 +251,25 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertIn("skills: git or python3 not found; skipped TokenEconomizer.", done.stderr)
             self.assertFalse((Path(tmp) / "home" / "Repositories").exists())
+
+    def test_a_hub_row_the_runner_runs_stops_the_home_install_before_it_changes_anything(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            done, calls, _ = self.home_install(root, binary=True, runner_job={"pid": os.getpid(), "job": RUNNING_JOB, "task": "operator/push", "started": 0})
+            self.assertEqual(done.returncode, 1, done.stderr)
+            self.assertIn(f"a hub row runs (operator/push, job {RUNNING_JOB}): the install would stop the runner and kill it; run the install in a terminal once no row runs", done.stderr)
+            self.assertEqual(calls, [])
+            self.assertFalse((root / "repo" / ".agents").exists() or (root / "home" / ".agents").exists() or (root / "home" / ".claude" / "skills").exists())
+
+    def test_a_marker_whose_runner_is_gone_lets_the_home_install_pass(self):
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            done, _, _ = self.home_install(root, binary=True, runner_job={"pid": gone.pid, "job": RUNNING_JOB, "task": "operator/push", "started": 0})
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertNotIn("a hub row runs", done.stderr)
+            self.assertTrue((root / "home" / ".claude" / "skills" / "locked" / "SKILL.md").is_file())
 
     def test_reinstall_empties_the_skill_directories_in_place(self):
         with tempfile.TemporaryDirectory() as tmp:

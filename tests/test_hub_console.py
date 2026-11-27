@@ -165,6 +165,33 @@ class TestHubConsole(HubCase):
         ])
         self.assertNotIn("token-42", json.dumps(self.scripts.calls))
 
+    def test_a_runner_restart_fails_every_running_job_and_closes_its_row_like_a_failed_run(self):
+        self.register("queued")
+        now = time.time()
+        fields = {"task": "operator/greet", "command": COMMAND, "directory": str(self.outside), "sha256": DIGEST, "proof": None, "code": None, "output": "line 1\n", "created_ts": now, "finished": None, "dismissed": False}
+        command = self.httpd.hub.jobs.add({**fields, "status": "running", "started": now})
+        gate = self.httpd.hub.jobs.add({**fields, "status": "running", "started": now, "kind": "gate", "argv": []})
+        queued = self.httpd.hub.jobs.add({**fields, "status": "queued", "started": None})
+        done = self.httpd.hub.jobs.add({**fields, "status": "done", "code": 0, "started": now, "finished": now})
+        self.assertEqual(self.post_json("/api/runner/restart", {}, self.guard(self.host))[0], 403)
+        self.assertEqual(self.post_json("/api/runner/restart", {}, {"Host": self.host})[0], 403)
+        self.assertEqual(self.scripts.calls, [])
+        status, answer = self.runner("/api/runner/restart", {})
+        self.assertEqual((status, sorted(answer["failed"])), (200, sorted([command["id"], gate["id"]])))
+        for job in (command, gate):
+            with self.subTest(job=job["id"]):
+                stored = self.httpd.hub.jobs.get(job["id"])
+                self.assertEqual((stored["status"], stored["code"], stored["output"]), ("failed", None, jobs.RESTARTED))
+                self.assertGreaterEqual(stored["finished"], now)
+        self.assertEqual([self.httpd.hub.jobs.get(job["id"])["status"] for job in (queued, done)], ["queued", "done"])
+        shown = ["greet", f"--command={COMMAND}", f"--dir={self.outside}"]
+        where = f"--where=the console of hub job {command['id']} under the row in Waits on Operator"
+        self.assertEqual(self.scripts.calls, [(skill_scripts.OPERATOR_SCRIPT, ["failed", *shown, "--why", jobs.RESTARTED, where])])
+        stored = json.loads((self.state / "jobs.json").read_text(encoding="utf-8"))
+        self.assertEqual({stored[job["id"]]["status"] for job in (command, gate)}, {"failed"})
+        self.assertEqual(self.runner("/api/runner/restart", {}), (200, {"failed": []}))
+        self.assertEqual(len(self.scripts.calls), 1)
+
     def test_a_ran_the_installed_operator_refuses_never_falls_back_to_done(self):
         self.register("queued")
         fields = {"task": "operator/greet", "command": COMMAND, "directory": str(self.outside), "sha256": DIGEST, "status": "running", "proof": None}

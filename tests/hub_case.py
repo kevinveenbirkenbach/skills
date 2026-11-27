@@ -208,7 +208,7 @@ class HubCase(unittest.TestCase):
         return json.loads(body)["jobs"]
 
     def run_runner(self, register: bool = True, council: Path | None = None) -> None:
-        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json")]
+        trust = ["--approvers", str(self.approvers), "--replay", str(self.replay / "runner.json"), "--state", str(self.state)]
         flags = ["--rasci", str(RASCI), "--council", str(council or self.council)] if register else []
         command = [sys.executable, str(RUNNER), "--port", str(self.port), "--interval", "0.1", *trust, *flags, "--operator", str(OPERATOR), "--once"]
         done = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False, env={**os.environ, "SHELL": str(self.shell), "AGENTS_COUNCIL_ROOT": str(council or self.council)})

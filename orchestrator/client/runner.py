@@ -6,6 +6,8 @@
     --approvers: the pinned passkeys, e.g. ~/.config/kvb-orchestrator/approvers.json.
     --replay: the runner's replay store, outside the hub's reach, e.g.
         ~/.local/state/kvb-orchestrator-approvals/runner.json.
+    --state: the hub state dir, e.g. ~/.local/state/kvb-orchestrator, where
+        the runner keeps runner-job.json while a job runs.
     --rasci: the installed register script, e.g.
         ~/.claude/skills/kvb-org-rasci/scripts/rasci.py; optional.
     --council: the council directory holding rasci.json, the agents'
@@ -44,8 +46,15 @@ Returns:
     every PREVIEW_SECONDS, it posts, for each open operator row that is a git merge of a full commit
     id (staged_diff.merge_of) whose HEAD differs from the preview the hub
     holds, staged_diff.merge_preview, which its Match card shows; such a
-    merge whose job names the previewed HEAD is refused once HEAD moved. The
-    exit code is 0.
+    merge whose job names the previewed HEAD is refused once HEAD moved.
+    At start, before its first cycle, it removes a leftover runner-job.json
+    and posts /api/runner/restart once, so the hub fails every job an
+    earlier runner left running; a failed post is printed to stderr. While
+    it runs a job it keeps runner-job.json, {pid, job, task, started} with
+    its own pid, written by rename with mode 0600 and removed when the job
+    ends, whatever the outcome; `orchestrator.sh idle` refuses an install
+    while that pid lives, and a job whose marker cannot be written is
+    refused. The exit code is 0.
 """
 
 from __future__ import annotations
@@ -77,6 +86,8 @@ import verifier
 
 LINES = 200
 PREVIEWS = "/api/runner/previews"
+RESTART = "/api/runner/restart"
+MARKER = "runner-job.json"
 ERROR_LIMIT = 500
 PREVIEW_FAILURES = (OSError, ValueError, staged_diff.DiffError)
 BEAT = 2.0
@@ -100,6 +111,7 @@ class Host(NamedTuple):
     shell: str
     operator: Path | None
     council: Path | None
+    marker: Path
 
 
 def call(base: str, path: str, payload: dict | None) -> dict:
@@ -422,6 +434,42 @@ def sender(base: str, job_id: str) -> Callable[[dict], None]:
     return send
 
 
+def mark(marker: Path, job: dict) -> str | None:
+    """Args:
+        marker: runner-job.json in the hub state dir.
+        job: the claimed job about to run, with id and task.
+
+    Returns:
+        Why the job must not run: the marker that makes `orchestrator.sh
+        idle` refuse an install, which would stop the runner under the job,
+        cannot be written; None once it is written.
+    """
+    try:
+        verifier.write_private(marker, {"pid": os.getpid(), "job": job["id"], "task": job["task"], "started": time.time()})
+    except OSError as error:
+        return f"refused: the runner cannot write {marker}, which keeps an install from stopping it under this job: {error}"
+    return None
+
+
+def refused(claimed: dict, trust: verifier.Trust, register: Register | None, gates: Path | None) -> str | None:
+    kind = claimed.get("kind")
+    if kind == TASK_JOB:
+        return UNREGISTERED if register is None else council_refusal(register.council) or task_refusal(claimed, trust, time.time())
+    if kind == GATE_JOB:
+        return UNGATED if gates is None else gate_refusal(claimed, trust, time.time())
+    return refusal(claimed, trust, time.time()) or moved(claimed)
+
+
+def run(claimed: dict, register: Register | None, gates: Path | None, host: Host, send: Callable[[dict], None]) -> None:
+    kind = claimed.get("kind")
+    if kind == TASK_JOB:
+        change(claimed, register, send)
+    elif kind == GATE_JOB:
+        gate(claimed, gates, send)
+    else:
+        execute(claimed, host, send)
+
+
 def cycle(base: str, trust: verifier.Trust, register: Register | None, gates: Path | None, host: Host) -> None:
     for job in call(base, "/api/runner/jobs", None)["jobs"]:
         try:
@@ -429,21 +477,36 @@ def cycle(base: str, trust: verifier.Trust, register: Register | None, gates: Pa
         except urllib.error.HTTPError:
             continue
         send = sender(base, claimed["id"])
-        kind = claimed.get("kind")
-        if kind == TASK_JOB:
-            reason = UNREGISTERED if register is None else council_refusal(register.council) or task_refusal(claimed, trust, time.time())
-        elif kind == GATE_JOB:
-            reason = UNGATED if gates is None else gate_refusal(claimed, trust, time.time())
-        else:
-            reason = refusal(claimed, trust, time.time()) or moved(claimed)
+        reason = refused(claimed, trust, register, gates) or mark(host.marker, claimed)
         if reason is not None:
             send({"output": reason, "code": None, "refused": True})
-        elif kind == TASK_JOB:
-            change(claimed, register, send)
-        elif kind == GATE_JOB:
-            gate(claimed, gates, send)
-        else:
-            execute(claimed, host, send)
+            continue
+        try:
+            run(claimed, register, gates, host, send)
+        finally:
+            host.marker.unlink(missing_ok=True)
+
+
+def restart(base: str, marker: Path) -> None:
+    marker.unlink(missing_ok=True)
+    try:
+        call(base, RESTART, {})
+    except (OSError, ValueError, TypeError) as error:
+        print(f"runner: the hub keeps the jobs an earlier runner left running: {error}", file=sys.stderr)
+
+
+def post_previews(base: str, rules: Path | None, told: str) -> str:
+    """Returns:
+        The error this post failed with, printed unless it equals told, the
+        one printed last; "" once a post succeeds.
+    """
+    try:
+        previews(base, rules)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        if str(error) != told:
+            print(f"runner: no merge previews: {error}", file=sys.stderr)
+        return str(error)
+    return ""
 
 
 def main() -> int:
@@ -452,6 +515,7 @@ def main() -> int:
     parser.add_argument("--interval", type=float, required=True)
     parser.add_argument("--approvers", type=Path, required=True)
     parser.add_argument("--replay", type=Path, required=True)
+    parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--rasci", type=Path)
     parser.add_argument("--council", type=Path)
     parser.add_argument("--gates", type=Path)
@@ -461,18 +525,13 @@ def main() -> int:
     base = hub_api.base_url(args.port)
     trust = verifier.Trust(approvers=args.approvers, replay=args.replay, origin=signing.origin_of(args.port))
     register = Register(rasci=args.rasci, council=args.council) if args.rasci and args.council else None
-    host = Host(shell=os.environ.get("SHELL") or pwd.getpwuid(os.geteuid()).pw_shell, operator=args.operator, council=args.council)
+    host = Host(shell=os.environ.get("SHELL") or pwd.getpwuid(os.geteuid()).pw_shell, operator=args.operator, council=args.council, marker=args.state / MARKER)
     rules, told, previewed = staged_diff.rules_root(), "", None
+    restart(base, host.marker)
     while True:
         if previewed is None or time.monotonic() - previewed >= PREVIEW_SECONDS:
             previewed = time.monotonic()
-            try:
-                previews(base, rules)
-                told = ""
-            except (OSError, ValueError, KeyError, TypeError) as error:
-                if str(error) != told:
-                    print(f"runner: no merge previews: {error}", file=sys.stderr)
-                told = str(error)
+            told = post_previews(base, rules, told)
         try:
             cycle(base, trust, register, args.gates, host)
         except (OSError, ValueError, KeyError, TypeError):

@@ -1,30 +1,37 @@
 #!/usr/bin/env bash
-# Usage: orchestrator.sh install | migrate | stop | start | check | pin <blob> | runner | hook
-#   install  migrate, then copy orchestrator/ to ~/.local/share/kvb-orchestrator,
-#            write its .env, build and start the container, register the MCP
-#            server for Claude Code, build pkgmgr from the newest signed tag of
-#            PKGMGR_REPO and enable the tree timer and the cleanup path unit,
-#            enable the sessions timer and the offices path unit, enable the
-#            resources timer, the firewall path unit and timer; re-enable the
-#            runner and re-register the hook when the migration took them over;
-#            an enabled runner gets the fresh unit and a restart
+# Usage: orchestrator.sh install | migrate | stop | start | check | pin <blob> | runner | hook | idle
+#   install  refuse like idle, else migrate, then copy orchestrator/ to
+#            ~/.local/share/kvb-orchestrator, write its .env, build and start
+#            the container, register the MCP server for Claude Code, build
+#            pkgmgr from the newest signed tag of PKGMGR_REPO and enable the
+#            tree timer and the cleanup path unit, enable the sessions timer
+#            and the offices path unit, enable the resources timer, the
+#            firewall path unit and timer; re-enable the runner and
+#            re-register the hook when the migration took them over; an
+#            enabled runner gets the fresh unit and a restart
 #   migrate  move every trace of the earlier name to the kvb-orchestrator names
 #            once: container, image, code, state, approvals, pinned keys, MCP
 #            server, PermissionRequest hook, runner unit; a second run changes
 #            nothing
-#   stop     stop the container, the runner, the offices path unit and the
-#            resources timer, which write the council roots, keeping them
-#            enabled; exit 1 when the container does not stop
+#   stop     refuse like idle, else stop the container, the runner, the
+#            offices path unit and the resources timer, which write the
+#            council roots, keeping them enabled; exit 1 when the container
+#            does not stop
 #   start    start them again, the units only while enabled
 #   check    image imports, container, logs, HTTP, pinned keys, hook, runner,
 #            disk; exit 1 when a check fails
 #   pin      pin the credential blob the "Passkey registrieren" settings show
-#   runner   install, enable and restart the runner user service; disable it
-#            and exit 1 while the installed council.py, nofollow.py,
-#            councilroot.py or rasci.py differ from this tree
+#   runner   refuse like idle, else install, enable and restart the runner
+#            user service; disable it and exit 1 while the installed
+#            council.py, nofollow.py, councilroot.py or rasci.py differ from
+#            this tree
 #   hook     register the PermissionRequest hook in ~/.claude/settings.json,
 #            replacing an earlier entry, keeping everything else and the file
 #            mode, after a copy to settings.json.before-kvb-orchestrator-hook
+#   idle     exit 1 with the hub row's task and job id while runner-job.json
+#            in ~/.local/state/kvb-orchestrator names a live pid, the runner
+#            running that row, which a stop of the runner would kill; exit 0
+#            without the file or for a dead pid
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -323,6 +330,7 @@ offices_unit() {
 }
 
 install_all() {
+	idle || return 1
 	migrate || return 0
 	local hub=0
 	install_hub || hub=1
@@ -339,6 +347,7 @@ install_all() {
 }
 
 stop_all() {
+	idle || return 1
 	if [[ -f "${HUB}/compose.yml" ]] && command -v docker &>/dev/null; then
 		docker compose --file "${HUB}/compose.yml" stop || return 1
 	fi
@@ -362,7 +371,32 @@ runner_enabled() {
 	has_systemd && [[ "$(systemctl --user is-enabled "${RUNNER}" 2>/dev/null || true)" == "enabled" ]]
 }
 
+idle() {
+	python3 - "${STATE}/runner-job.json" <<'PY'
+import json, os, sys
+from pathlib import Path
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except (OSError, OverflowError):
+        return False
+    return True
+
+
+try:
+    marker = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    pid, job, task = int(marker["pid"]), marker["job"], marker["task"]
+except (OSError, ValueError, KeyError, TypeError):
+    sys.exit(0)
+if pid > 0 and alive(pid):
+    sys.exit(f"skills: a hub row runs ({task}, job {job}): the install would stop the runner and kill it; run the install in a terminal once no row runs")
+PY
+}
+
 runner() {
+	idle || return 1
 	if ! has_systemd; then
 		warn "skills: no systemd user session; the runner is off and approved operator commands wait."
 		return 1
@@ -484,8 +518,9 @@ check) check ;;
 pin) pin "${2:-}" ;;
 runner) runner ;;
 hook) hook ;;
+idle) idle ;;
 *)
-	warn "usage: orchestrator.sh install | migrate | stop | start | check | pin <blob> | runner | hook"
+	warn "usage: orchestrator.sh install | migrate | stop | start | check | pin <blob> | runner | hook | idle"
 	exit 2
 	;;
 esac
