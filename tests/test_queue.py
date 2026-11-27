@@ -35,7 +35,7 @@ BASE = {
     "memory": "ok",
     "silenced": False,
     "slot_limits": {"test": 5, "deploy": 1},
-    "budget": {"ram": 75, "cpu": 100},
+    "band": {"low": {"ram": 75, "cpu": 100}, "high": {"ram": 75, "cpu": 100}},
     "ranks": {"work/a": 0, "work/b": 1, "work/c": 2},
     "agents": {},
     "loaded": {},
@@ -102,27 +102,29 @@ class Passes:
 
     def run_pass(self, entries: list[dict], **overrides: object) -> tuple[dict, str | None, list[dict]]:
         footprints = {e["id"]: {"ram": 0, "cpu": 0} for e in entries} | overrides.pop("footprints", {})
-        return self.queue.evaluate(entries, **{**BASE, "footprints": footprints, **overrides})
+        load = {r: sum(footprints[e["id"]][r] for e in entries if e["status"] == "active") for r in ("ram", "cpu")}
+        return self.queue.evaluate(entries, **{**BASE, "footprints": footprints, "load": load, **overrides})
 
     def decide(self, entries: list[dict], **overrides: object) -> dict:
         return self.run_pass(entries, **overrides)[0]
 
 
 class TestEvaluate(Passes, unittest.TestCase):
-    def test_the_budget_refuses_a_job_whose_share_would_pass_it_and_a_smaller_one_backfills(self):
+    def test_the_band_refuses_a_job_whose_share_would_pass_its_high_and_a_smaller_one_backfills(self):
         running = job(1, kind="test", status="active")
         candidate = job(2, kind="gui-dind", workdir="/x")
         small = job(3, task="work/b", workdir="/y")
         shares = {"j1": {"ram": 60, "cpu": 40}, "j2": {"ram": 30, "cpu": 20}, "j3": {"ram": 10, "cpu": 5}}
         verdicts = self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=shares)
-        self.assertEqual(verdicts["j2"], "RAM 60 % in use or reserved + 30 % > budget 75 %")
+        self.assertEqual(verdicts["j2"], "would reach 90 % RAM > 75 %")
         self.assertIsNone(verdicts["j3"])
         fat = {**shares, "j3": {"ram": 16, "cpu": 5}}
         verdicts = self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=fat)
-        self.assertEqual(verdicts["j3"], "RAM 60 % in use or reserved + 16 % > budget 75 %")
+        self.assertEqual(verdicts["j3"], "would reach 76 % RAM > 75 %")
         unbounded = {"ram": 1000, "cpu": 1000}
         self.assertEqual(
-            self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=shares, budget=unbounded),
+            self.decide([running, candidate, small], slot_limits={"test": 5, "gui-dind": 1}, footprints=shares,
+                        band={"low": unbounded, "high": unbounded}),
             {"j2": None, "j3": None},
         )
 
@@ -130,13 +132,80 @@ class TestEvaluate(Passes, unittest.TestCase):
         alone = self.decide([job(1)], footprints={"j1": {"ram": 90, "cpu": 150}})
         self.assertEqual(alone, {"j1": None})
         busy = self.decide([job(1, status="active"), job(2)], footprints={"j1": {"ram": 1, "cpu": 70}, "j2": {"ram": 1, "cpu": 40}})
-        self.assertEqual(busy, {"j2": "CPU 70 % in use or reserved + 40 % > budget 100 %"})
+        self.assertEqual(busy, {"j2": "would reach 110 % CPU > 100 %"})
 
-    def test_a_share_beyond_the_budget_runs_only_alone_even_beside_a_job_of_no_share(self):
+    def test_a_share_beyond_the_band_runs_only_alone_even_beside_a_job_of_no_share(self):
         whole = {"ram": 80, "cpu": 1}
         beside = self.decide([job(1, status="active"), job(2)], footprints={"j1": {"ram": 0, "cpu": 0}, "j2": whole})
-        self.assertEqual(beside, {"j2": "RAM 0 % in use or reserved + 80 % > budget 75 %"})
+        self.assertEqual(beside, {"j2": "would reach 80 % RAM > 75 %"})
         self.assertEqual(self.decide([job(2)], footprints={"j2": whole}), {"j2": None})
+
+    def test_below_the_low_band_jobs_start_until_the_load_reaches_it_and_none_passes_the_high_band(self):
+        band = {"low": {"ram": 70, "cpu": 70}, "high": {"ram": 90, "cpu": 90}}
+        running = job(1, status="active")
+        waiting = [job(n, task="work/b", workdir=f"/b{n}") for n in (2, 3, 4, 5)]
+        shares = {f"j{n}": {"ram": 15, "cpu": 10} for n in (1, 2, 3, 4, 5)}
+        idle = {"ram": 36.0, "cpu": 30.0}
+        self.assertEqual(self.decide([running, *waiting], footprints=shares, band=band, load=idle),
+                         {"j2": None, "j3": None, "j4": None, "j5": "load 81 % RAM >= 70 % band"})
+        self.assertEqual(self.decide([running, *waiting], footprints=shares, band=band, load={"ram": 72.0, "cpu": 30.0}),
+                         dict.fromkeys(("j2", "j3", "j4", "j5"), "load 72 % RAM >= 70 % band"))
+        self.assertEqual(self.decide([running, *waiting], footprints=shares, band=band, load={"ram": 70.0, "cpu": 71.0}),
+                         dict.fromkeys(("j2", "j3", "j4", "j5"), "load 70 % RAM >= 70 % band, load 71 % CPU >= 70 % band"))
+        big = {**shares, "j2": {"ram": 30, "cpu": 10}}
+        self.assertEqual(self.decide([running, *waiting], footprints=big, band=band, load={"ram": 63.0, "cpu": 30.0}),
+                         {"j2": "would reach 93 % RAM > 90 %", "j3": None, "j4": "load 78 % RAM >= 70 % band",
+                          "j5": "load 78 % RAM >= 70 % band"})
+        self.assertIsNone(self.decide([running, *waiting], footprints=big, band=band, load={"ram": 60.0, "cpu": 30.0})["j2"])
+
+    def test_backfill_around_a_big_head_keeps_its_room_and_never_starves_it(self):
+        band = {"low": {"ram": 70, "cpu": 70}, "high": {"ram": 90, "cpu": 90}}
+        rules = {"band": band, "free_gb": 70.0, "drain": "j1"}
+        running = job(9, status="active", need_gb=40, workdir="/r")
+        head, small, greedy = job(1, need_gb=50), job(2, task="work/b", workdir="/s", need_gb=0), job(3, task="work/c", workdir="/t", need_gb=0)
+        shares = {"j9": {"ram": 30, "cpu": 20}, "j1": {"ram": 30, "cpu": 20}, "j2": {"ram": 10, "cpu": 5}, "j3": {"ram": 25, "cpu": 5}}
+        load = {"ram": 40.0, "cpu": 20.0}
+        trace: dict[str, list[str]] = {}
+        verdicts = self.run_pass([running, head, small, greedy], footprints=shares, load=load, trace=trace, **rules)[0]
+        self.assertEqual(verdicts, {"j1": "50 GB would cut into the 10 GB floor", "j2": None, "j3": "reserved for j1"})
+        self.assertIn("takes nothing j1 lacks", trace["j2"])
+        self.assertEqual(trace["j3"][-1], "reserved for j1: takes RAM")
+        self.assertIsNone(self.decide([running, head, greedy], footprints=shares, load=load, **{**rules, "drain": None})["j3"])
+        freed = self.decide([head, small, greedy], footprints=shares, load={"ram": 10.0, "cpu": 5.0}, **rules)
+        self.assertEqual(freed["j1"], None)
+
+    def test_the_drain_blocks_backfill_only_when_the_head_cannot_fit_even_with_nothing_backfilled(self):
+        band = {"low": {"ram": 70, "cpu": 70}, "high": {"ram": 90, "cpu": 90}}
+        running = job(9, status="active", workdir="/r")
+        head, small = job(1), job(2, kind="iteration", task="work/b", workdir="/s")
+        shares = {"j9": {"ram": 20, "cpu": 10}, "j1": {"ram": 40, "cpu": 10}, "j2": {"ram": 6, "cpu": 5}}
+        crowded = self.decide([running, head, small], footprints=shares, band=band, load={"ram": 55.0, "cpu": 20.0}, drain="j1")
+        self.assertEqual(crowded, {"j1": "would reach 95 % RAM > 90 %", "j2": "drained for j1"})
+        capped = {"band": band, "load": {"ram": 45.0, "cpu": 20.0}, "drain": "j1", "slot_limits": {"test": 1}}
+        self.assertEqual(self.decide([running, head, small], footprints=shares, **capped),
+                         {"j1": "all 1 test slots taken", "j2": "reserved for j1"})
+        fits = {**shares, "j2": {"ram": 5, "cpu": 5}}
+        self.assertEqual(self.decide([running, head, small], footprints=fits, **capped), {"j1": "all 1 test slots taken", "j2": None})
+
+    def test_the_band_comes_from_load_limits_with_defaults_70_and_90_and_low_below_high(self):
+        limits = {"cpu_percent": 90, "mem_percent": 85, "sample_seconds": 5}
+        self.assertEqual(self.queue.band({"load_limits": limits}), {"low": {"ram": 70, "cpu": 70}, "high": {"ram": 90, "cpu": 90}})
+        self.assertEqual(self.queue.band({"load_limits": {**limits, "band_low": 60, "band_high": 80}}),
+                         {"low": {"ram": 60, "cpu": 60}, "high": {"ram": 80, "cpu": 80}})
+        self.assertIsNone(self.queue.band_problem({"load_limits": limits}))
+        self.assertIsNone(self.queue.band_problem({"load_limits": {**limits, "band_low": 50.5, "band_high": 95}}))
+        problem = "load_limits.band_low and load_limits.band_high are percentages above 0, band_low below band_high"
+        for bad in ({"band_low": 90, "band_high": 90}, {"band_low": 95}, {"band_high": 60}, {"band_low": 0}, {"band_low": -5},
+                    {"band_low": "70"}, {"band_low": True}, {"band_high": float("nan")}):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.queue.band_problem({"load_limits": {**limits, **bad}}), problem)
+        self.assertEqual(self.queue.band_problem({"load_limits": [70, 90]}), problem)
+
+    def test_a_kind_without_a_configured_cap_has_no_slot_limit_and_a_cap_of_0_never_starts(self):
+        many = [job(n, status="active", workdir=f"/a{n}") for n in range(1, 8)]
+        self.assertEqual(self.decide([*many, job(8, kind="gui-dind")], slot_limits={}), {"j8": None})
+        self.assertEqual(self.decide([*many, job(8)], slot_limits={"test": 7}), {"j8": "all 7 test slots taken"})
+        self.assertEqual(self.decide([job(8, kind="swarm")], slot_limits={"swarm": 0}), {"j8": "all 0 swarm slots taken"})
 
     def test_load_counts_the_ram_in_use_plus_what_is_still_to_come(self):
         limits = {"cpu_percent": 90, "mem_percent": 90}
@@ -190,6 +259,14 @@ class TestEvaluate(Passes, unittest.TestCase):
         self.assertEqual(ramp([gate(1, 40, 70), {**undated, "id": "j3"}], NOW, signatures, kinds, 20), 80)
         self.assertEqual(self.queue.admitted_ram({"admits": [{"ram": 7, "expires": NOW + 1}, {"ram": 9, "expires": NOW}]}, NOW), 7)
         self.assertEqual(self.queue.admitted_ram({"entries": []}, NOW), 0)
+
+    def test_the_live_load_adds_the_young_jobs_ramp_on_ram_and_cpu_and_the_admits(self):
+        gate = {**job(1, kind="g", status="active", granted=NOW - 60), "workdir": "/w", "cmd": "g",
+                "footprint": {"ram": 40, "cpu": 30}, "granted_mem": 10, "granted_cpu": 20}
+        ramped = {**gate, "id": "j2", "granted": NOW - self.queue.RAMP_SECONDS}
+        self.assertEqual(self.queue.live_load([gate, ramped], NOW, {}, {}, 30.0, 20.0, 5.0), {"ram": 20 + 5 + 30, "cpu": 30 + 20})
+        undated = {k: v for k, v in gate.items() if k != "granted_cpu"}
+        self.assertEqual(self.queue.live_load([undated], NOW, {}, {}, 30.0, 20.0, 0.0), {"ram": 20 + 30, "cpu": 30 + 30})
 
     def test_a_signature_names_the_repository_every_worktree_shares(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -367,7 +444,7 @@ class TestEvaluate(Passes, unittest.TestCase):
         greedy = {"j1": {"ram": 30, "cpu": 30}, "j2": {"ram": 40, "cpu": 40}, "j3": {"ram": 5, "cpu": 5}, "j4": {"ram": 30, "cpu": 5}}
         self.assertEqual(self.decide([running, gate, deploy, light], footprints=greedy, **gates)["j4"], None)
         self.assertEqual(self.decide([running, gate, deploy, light], footprints=greedy | {"j4": {"ram": 40, "cpu": 70}}, **gates)["j4"],
-                         "drained for j2")
+                         "reserved for j2")
         self.assertEqual(
             self.decide([gate, deploy, light], **gates),
             {"j2": None, "j3": "quality-high runs only beside test-nostack", "j4": None},
@@ -450,7 +527,7 @@ class TestEvaluate(Passes, unittest.TestCase):
 
     def test_a_blocked_entry_reserves_nothing_for_light_and_heavy_kinds_alike(self):
         rules = {"slot_limits": {"test": 5, "test-nostack": 5, "deploy": 1}, "light": {"test-nostack"}}
-        with self.subTest("budget"):
+        with self.subTest("band"):
             running, head, twin = job(1, status="active"), job(2), job(3, task="work/b")
             light, heavy = job(4, kind="test-nostack", task="work/c", need_gb=0), job(5, task="work/c")
             shares = {
@@ -458,8 +535,8 @@ class TestEvaluate(Passes, unittest.TestCase):
                 "j4": {"ram": 6, "cpu": 11}, "j5": {"ram": 5, "cpu": 5},
             }
             self.assertEqual(self.decide([running, head, twin, light, heavy], footprints=shares, **rules), {
-                "j2": "RAM 30 % in use or reserved + 50 % > budget 75 %, CPU 50 % in use or reserved + 60 % > budget 100 %",
-                "j3": "RAM 30 % in use or reserved + 50 % > budget 75 %, CPU 50 % in use or reserved + 60 % > budget 100 %",
+                "j2": "would reach 80 % RAM > 75 %, would reach 110 % CPU > 100 %",
+                "j3": "would reach 80 % RAM > 75 %, would reach 110 % CPU > 100 %",
                 "j4": None,
                 "j5": None,
             })
@@ -474,7 +551,7 @@ class TestEvaluate(Passes, unittest.TestCase):
             heavy = job(4, task="work/c")
             shares = {"j1": {"ram": 10, "cpu": 60}, "j2": {"ram": 0, "cpu": 30}, "j3": {"ram": 0, "cpu": 30}, "j4": {"ram": 5, "cpu": 5}}
             self.assertEqual(self.decide([running, first, second, heavy], footprints=shares, **rules), {
-                "j2": None, "j3": "CPU 90 % in use or reserved + 30 % > budget 100 %", "j4": None,
+                "j2": None, "j3": "would reach 120 % CPU > 100 %", "j4": None,
             })
         with self.subTest("a head the host load keeps out while a job runs"):
             load = "RAM 55 % used + 41 % still to come reach the limit 90 %"
@@ -516,7 +593,7 @@ class TestBackfill(Passes, unittest.TestCase):
         self.assertEqual(drain, "j1926")
         backfill = self.decide(queue({2, 3, 4, 5}, [6, 7, 8]), free_gb=85.0, **rules)
         drained = self.decide(queue({2, 3, 4, 5}, [6, 7, 8]), free_gb=85.0, drain="j1926", **rules)
-        self.assertEqual((backfill["j8"], drained["j8"]), (None, "drained for j1926"))
+        self.assertEqual((backfill["j8"], drained["j8"]), (None, "reserved for j1926"))
         self.assertEqual(drained["j6"], "18 GB would cut into the 15 GB floor")
         verdicts, _, order = self.run_pass(queue(set(), [6, 7, 8]), free_gb=85.0, drain="j1926", **rules)
         self.assertEqual((order[0]["id"], verdicts["j1926"]), ("j1926", None))
@@ -552,7 +629,7 @@ class TestBackfill(Passes, unittest.TestCase):
         running, fixing = job(9, status="active", workdir="/r"), job(1, hotfix="main-red")
         shares = {"j9": {"ram": 50, "cpu": 10}, "j1": {"ram": 30, "cpu": 10}, "j2": {"ram": 5, "cpu": 5}, "j3": {"ram": 10, "cpu": 5}}
         self.assertEqual(self.decide([running, fixing, small, light], footprints=shares, **rules), {
-            "j1": "RAM 50 % in use or reserved + 30 % > budget 75 %", "j2": "waits behind hotfix j1", "j3": "waits behind hotfix j1",
+            "j1": "would reach 80 % RAM > 75 %", "j2": "waits behind hotfix j1", "j3": "waits behind hotfix j1",
         })
         self.assertEqual(self.decide([running, fixing, light], footprints=shares | {"j3": {"ram": 0, "cpu": 5}}, **rules)["j3"], None)
         pressed = self.decide([running, fixing, light], loaded={"j1": "CPU 95 % busy reaches the limit 90 %"}, **rules)
@@ -571,7 +648,7 @@ class TestBackfill(Passes, unittest.TestCase):
         self.assertEqual(self.run_pass([running, big, small], **rules)[1], "j1")
         self.assertEqual(self.decide([running, big, small, late, light], drain="j1", **rules), {
             "j1": "50 GB would cut into the 10 GB floor", "j2": "25 GB would cut into the 10 GB floor",
-            "j3": "drained for j1", "j4": None,
+            "j3": "reserved for j1", "j4": None,
         })
         self.assertEqual(self.run_pass([running, big, small, late], drain="j1", **rules)[1], "j1")
         self.assertEqual(self.decide([big, small, late], drain="j1", **rules), {
@@ -583,7 +660,7 @@ class TestBackfill(Passes, unittest.TestCase):
         fits, wide = job(3, task="work/c", need_gb=5, workdir="/t"), job(5, task="work/c", need_gb=45, workdir="/u")
         slots = {**rules, "slot_limits": {"test": 5, "deploy": 1}}
         self.assertEqual(self.decide([deploying, head, fits, wide], drain="j1", **slots), {
-            "j1": "all 1 deploy slots taken", "j3": None, "j5": "drained for j1",
+            "j1": "all 1 deploy slots taken", "j3": None, "j5": "reserved for j1",
         })
 
     def test_claims_name_the_worktree_and_the_compose_stack_its_directory_derives(self):
@@ -689,7 +766,7 @@ class TestBackfill(Passes, unittest.TestCase):
         light = job(2, kind="test-nostack", task="work/b", workdir="/l")
         shares = {"j9": {"ram": 40, "cpu": 0}, "j1": {"ram": 45, "cpu": 0}, "j2": {"ram": 35, "cpu": 0}}
         self.assertEqual(self.decide([running, head, light], footprints=shares, **rules), {
-            "j1": "RAM 40 % in use or reserved + 45 % > budget 75 %", "j2": "drained for j1",
+            "j1": "would reach 85 % RAM > 75 %", "j2": "drained for j1",
         })
         self.assertIsNone(self.decide([running, head, light], footprints={**shares, "j2": {"ram": 0, "cpu": 0}}, **rules)["j2"])
 
@@ -760,7 +837,7 @@ class TestBackfill(Passes, unittest.TestCase):
                          {"quality-high-1060": None, "test-1008": "quality-high runs only beside test-nostack", "test-nostack-1": None})
 
     def test_r4_a_head_aged_out_waiting_only_for_an_exclusive_job_holds_back_no_light_job(self):
-        rules = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"}, "budget": {"ram": 75, "cpu": 100},
+        rules = {"exclusive": {"quality-high", "test"}, "light": {"test-nostack"}, "band": BASE["band"],
                  "slot_limits": {"quality-high": 1, "test": 1, "test-nostack": 4}}
         running = job(9, kind="test", status="active", workdir="/r", granted=NOW - 300)
         head, light = job(1, kind="quality-high", enqueued=NOW - 3700), job(2, kind="test-nostack", task="work/b", workdir="/l")
@@ -768,7 +845,7 @@ class TestBackfill(Passes, unittest.TestCase):
         verdicts, drain, _ = self.run_pass([running, head, light], footprints=shares, drain="j1", **rules)
         self.assertEqual((verdicts, drain), ({"j1": "quality-high runs only beside test-nostack, but test runs", "j2": None}, "j1"))
         greedy = {**shares, "j2": {"ram": 40.0, "cpu": 9.8}}
-        self.assertEqual(self.decide([running, head, light], footprints=greedy, drain="j1", **rules)["j2"], "drained for j1")
+        self.assertEqual(self.decide([running, head, light], footprints=greedy, drain="j1", **rules)["j2"], "reserved for j1")
 
 
 class TestTrace(Passes, unittest.TestCase):
@@ -811,13 +888,13 @@ class TestTrace(Passes, unittest.TestCase):
             "load head": ([running, job(1), job(2, task="work/b")], {"loaded": {"j1": load}, "drain": "j1"}, "j2",
                           "drained for j1: load holds it"),
             "takes what the head lacks": ([*machine[:2], job(2, kind="test-nostack", task="work/b")], {"footprints": greedy, **gates}, "j2",
-                                          "drained for j1: takes RAM and CPU"),
+                                          "reserved for j1: takes RAM and CPU"),
             "disk stage": ([job(1)], {"stage": "stop"}, "j1", "disk stage stop"),
             "memory stage": ([job(1)], {"memory": "stop"}, "j1", "memory stage stop"),
             "slot": ([job(1, kind="deploy", status="active"), job(2, kind="deploy", task="work/b")], {}, "j2", "all 1 deploy slots taken"),
             "alone": (machine, gates, "j1", "quality-high runs only beside test-nostack, but iteration runs"),
-            "budget": ([running, job(1)], {"footprints": {"j9": {"ram": 50, "cpu": 0}, "j1": {"ram": 30, "cpu": 0}}}, "j1",
-                       "RAM 50 % in use or reserved + 30 % > budget 75 %"),
+            "band": ([running, job(1)], {"footprints": {"j9": {"ram": 50, "cpu": 0}, "j1": {"ram": 30, "cpu": 0}}}, "j1",
+                     "would reach 80 % RAM > 75 %"),
             "floor": ([job(1, need_gb=95)], {}, "j1", "95 GB would cut into the 10 GB floor"),
             "load": ([job(1)], {"loaded": {"j1": load}}, "j1", load),
         }
@@ -858,7 +935,7 @@ class TestTrace(Passes, unittest.TestCase):
         self.assertEqual(verdicts["j2"], None)
         self.assertIn("takes nothing j1 lacks", trace["j2"])
         greedy = shares | {"j2": {"ram": 7.2, "cpu": 40.0}}
-        self.assertEqual(self.decide([gate, head, light], footprints=greedy, drain="j1", **gates)["j2"], "drained for j1")
+        self.assertEqual(self.decide([gate, head, light], footprints=greedy, drain="j1", **gates)["j2"], "reserved for j1")
 
     def test_r7_a_hotfix_never_waits_in_line_behind_an_older_waiting_entry_that_is_no_hotfix(self):
         gates = {"exclusive": {"quality-high"}, "light": {"test-nostack"},
@@ -884,8 +961,8 @@ class TestTrace(Passes, unittest.TestCase):
         rival = job(2, id="I2", kind="iteration", workdir="/v", enqueued=NOW - 4000)
         running = job(9, id="L1", kind="test-nostack", status="active", workdir="/h")
         verdicts, trace = self.traced([*busy, running, head, rival], drain="H", **gates)
-        self.assertEqual(verdicts, {"H": "waits in line behind L1", "I2": "drained for H"})
-        self.assertEqual(trace["I2"][-1], "drained for H: takes its iteration slot")
+        self.assertEqual(verdicts, {"H": "waits in line behind L1", "I2": "reserved for H"})
+        self.assertEqual(trace["I2"][-1], "reserved for H: takes its iteration slot")
         later = job(3, id="L2", kind="test-nostack", workdir="/h", enqueued=NOW - 100)
         elsewhere = job(4, id="L3", kind="test-nostack", workdir="/z", enqueued=NOW - 50)
         verdicts, trace = self.traced([*busy, {**rival, "status": "active"}, head, later, elsewhere], drain="H", **gates)
@@ -895,7 +972,7 @@ class TestTrace(Passes, unittest.TestCase):
         next_one = job(5, id="L4", kind="test-nostack", workdir="/h", enqueued=NOW - 20)
         third = job(6, id="I3", kind="iteration", workdir="/w", enqueued=NOW - 10)
         freed = [busy[0], {**rival, "status": "active"}, {**later, "status": "active"}, head, next_one, third]
-        self.assertEqual(self.decide(freed, drain="H", **gates), {"H": "waits in line behind L2", "L4": "waits in line behind L2", "I3": "drained for H"})
+        self.assertEqual(self.decide(freed, drain="H", **gates), {"H": "waits in line behind L2", "L4": "waits in line behind L2", "I3": "reserved for H"})
         self.assertEqual(self.decide([busy[0], {**rival, "status": "active"}, head, next_one, third], drain="H", **gates),
                          {"H": None, "L4": "waits in line behind H", "I3": "all 3 iteration slots taken"})
 
@@ -1314,6 +1391,8 @@ class TestHistory(unittest.TestCase):
         signatures, kinds = self.learn(rows)
         self.assertEqual((signatures["test", "make test"]["cpu_share"], kinds["test"]["cpu_share"]), (2, 2))
         self.assertEqual(kinds["test"]["ram_share"], 10)
+        ram = [history_row(n, mem_before=20, mem_max=20 + share) for n, share in enumerate((5, 5, 10, 15, 15))]
+        self.assertAlmostEqual(self.learn(ram)[0]["test", "make test"]["ram_share"], 15)
 
     def test_learn_fits_the_slot_limit_between_the_median_load_and_the_load_limits(self):
         loads = ((10, 5), (20, 5), (20, 10), (30, 15), (40, 15))
@@ -1431,7 +1510,7 @@ class TestQueueCommands(unittest.TestCase):
             "projection_minutes": 30,
             "slot_need_gb": {"test": 0.001, "deploy": 0},
             "slot_limits": {"test": 1, "deploy": 1},
-            "load_limits": {"cpu_percent": 101, "mem_percent": 101, "sample_seconds": 0.1},
+            "load_limits": {"cpu_percent": 101, "mem_percent": 101, "sample_seconds": 0.1, "band_low": 99, "band_high": 100},
             "budget_percent": {"ram": 75, "cpu": 100},
             "memory_limits": {stage: OPEN_MEMORY for stage in ("warn", "stop")},
             "heavy_commands": ["^make compose-deploy"],
@@ -1540,7 +1619,7 @@ class TestQueueCommands(unittest.TestCase):
         self.assertEqual(self.run_queue("hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", "false").returncode, 1)
         self.assertEqual(len(self.history_file.read_text(encoding="utf-8").splitlines()), 1)
 
-    def test_hold_runs_without_slot_limits_on_the_seed_limit(self):
+    def test_hold_runs_without_slot_limits_uncapped(self):
         del self.cfg["slot_limits"]
         self.write_config()
         result = self.run_queue("hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", "true")
@@ -1662,7 +1741,7 @@ class TestQueueCommands(unittest.TestCase):
         self.assertEqual(listing.returncode, 0, listing.stderr)
         rows = json.loads(listing.stdout)
         self.assertEqual([list(row) for row in rows], [[
-            "position", "id", "status", "kind", "task", "session", "agent", "class", "prio", "wsjf", "waited_s", "eta_s", "reason", "trace",
+            "position", "id", "status", "kind", "task", "session", "agent", "class", "prio", "wsjf", "waited_s", "eta_s", "reason", "trace", "override",
         ]] * 3)
         shown = {row["id"]: row for row in rows}
         self.assertEqual([(row["position"], row["id"]) for row in rows], [(None, "test-3"), (1, "deploy-1"), (2, "test-2")])
@@ -1855,6 +1934,17 @@ class TestQueueCommands(unittest.TestCase):
         self.assertIn("ram_cap_percent is no {kind: percent above 0 up to 100} map", result.stderr)
         self.assertFalse((self.root / "queue.json").exists())
 
+    def test_a_band_whose_low_is_not_below_its_high_keeps_the_last_good_config_and_a_hold_refuses_it(self):
+        queue = _load(QUEUE)
+        inverted = {**self.cfg, "load_limits": {**self.cfg["load_limits"], "band_low": 90, "band_high": 80}}
+        with mock.patch.object(queue.watch, "load_config", return_value=inverted):
+            self.assertEqual(queue.fresh(self.cfg), self.cfg)
+        self.config.write_text(json.dumps(inverted), encoding="utf-8")
+        result = self.run_queue("hold", "--kind", "test", "--task", "work/a", "--session", "s1", "--", "true")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("band_low below band_high", result.stderr)
+        self.assertFalse((self.root / "queue.json").exists())
+
     def test_hold_takes_the_need_learned_for_its_command_from_both_history_files(self):
         self.cfg["slot_limits"]["deploy"] = 0
         self.write_config()
@@ -1907,10 +1997,10 @@ class TestQueueCommands(unittest.TestCase):
         result = self.run_queue("history")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, (
-            "| Signature | Kind | Runs | Median min | p90 disk GB | p90 RAM % | Need GB |\n"
-            "| --- | --- | --- | --- | --- | --- | --- |\n"
-            "| make compose-deploy | deploy | 5 | 12.0 | 4.6 | 10.0 | 6 |\n"
-            "| true | test | 2 | - | - | - | - |\n"
+            "| Signature | Kind | Runs | Median min | p90 disk GB | p95 RAM % | Margin | Need GB |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- |\n"
+            "| make compose-deploy | deploy | 5 | 12.0 | 4.6 | 10.0 | 1.00 | 6 |\n"
+            "| true | test | 2 | - | - | - | 1.00 | - |\n"
             "\n"
             "| Kind | Runs | p90 RAM share % | Median CPU share % | Slot limit | Source |\n"
             "| --- | --- | --- | --- | --- | --- |\n"

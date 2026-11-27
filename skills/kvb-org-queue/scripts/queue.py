@@ -7,6 +7,9 @@ Usage:
     queue.py list [--json]
     queue.py history
     queue.py cancel ID [--session ID]
+    queue.py override ID
+    queue.py learned --json
+    queue.py config set KEY VALUE
     queue.py block     hook (PreToolUse on Bash through hooks.py pre-bash)
 
 Environment:
@@ -68,12 +71,15 @@ Args:
             exits 0 on the tree it started on (gates.py tree of the workdir
             before and after) hold records a receipt for that tree, level
             and log, with INFINITO_TEST_GPU of its environment.
-    list: a header, then one line per entry: position (run for active jobs),
+    list: a header whose reason column names the AIMD target, the band and
+        the limits source (targets()), then one line per entry: position (run for active jobs),
         id, status, kind, task, need GB, minutes waited, ETA minutes (until a
         running job ends or a waiting one starts, from learned medians; - while
         one is unknown), workdir, reason (the one the holder saw at its last
-        poll, host load included, such as `waits in line behind <id>` or
-        `drained for <id>`, the head's after `escalated <step>: ` once the
+        poll, host load included, such as `waits in line behind <id>`,
+        `load 72 % RAM >= 70 % band`, `would reach 93 % RAM > target 84.0 %`,
+        `settles: the last grant was 2 s ago, one grant per 5 s`,
+        `reserved for <id>` or `drained for <id>`, the head's after `escalated <step>: ` once the
         stall reached it; `backfilled` for a job started past a blocked one;
         led by `suspect hung (<runtime> min)` for an active job past
         standstill.suspect_seconds() (suspected()); prefixed when the entry
@@ -84,6 +90,20 @@ Args:
     history: a markdown table per command signature and one per kind of what
         the last 30 days of history teach, with each slot limit's source.
     cancel ID: remove the caller's waiting entry ID; its hold exits 3.
+    override ID: mark the waiting entry ID, of any session, with OVERRIDE
+        {ts}; every pass grants the marked entries first, oldest mark
+        first, skipping the band, slot limits, reservations, rank and
+        `after` waits, while the live guard (load_limits), the memory
+        stage, radio silence, the disk stage and floor and the lines of
+        running jobs allow (forced()); else its reason starts with
+        `override held by`. Its history row carries override true. The
+        operator runs it, through the hub's signed Start now.
+    learned --json: print what learnings() lists, writing nothing.
+    config set KEY VALUE: set one setting of the config file (SETTINGS,
+        KIND_SETTINGS) to the number VALUE after the config check
+        (config_problem(), bound_problem()), rewriting the file atomically
+        as indented JSON in its mode, every other key kept; a link or an
+        unusable file is refused.
     block: read the hook payload on stdin. The permission matcher sees only
         `queue.py hold`, so every hold in the command is parsed like hold
         itself, and a held command any of whose word-started tails meets a
@@ -94,11 +114,17 @@ Args:
         `gate.py run|hold`, unless it matches never_block or runs `queue.py
         hold`.
 
-Config keys: budget_percent {ram, cpu}, required: the active and granted jobs'
-learned footprints (history.footprint, the whole budget for a kind not learned
-yet) may sum to at most these percentage points, a job alone always fits;
-slot_limits {kind: N}, optional, caps the learned slot limit of a kind from
-above (history.slot_limits); ram_cap_percent {kind: percent above 0 up to
+Config keys: budget_percent {ram, cpu}, required: the footprint booked for a
+job whose kind is not learned yet (history.footprint); load_limits.band_low
+and band_high, optional (BAND: 70 and 90), percentages above 0 with band_low
+below band_high: while a queue job runs or was granted in the pass, a job
+starts only while the live load (measured, plus what young jobs and admits
+still add, plus the pass's grants; live_load()) lies below band_low on CPU
+and RAM and, with the job's learned footprint added, stays at or below
+band_high (band_reason()), a job alone always fits; slot_limits {kind: N},
+optional, the operator's hard cap of concurrent jobs of a kind, a kind
+missing there has no count cap (history.slot_limits only reports what
+history would fit); ram_cap_percent {kind: percent above 0 up to
 100}, optional, caps the RAM share history.footprint and history.ceiling
 book for a job of that kind, the learned shares stay raw; exclusive_kinds [kind] and light_kinds [kind],
 optional: a job of an exclusive kind runs only beside jobs of light kinds, and
@@ -106,10 +132,21 @@ no job of another kind starts beside it; queue_enforce (bool), optional, read by
 disk, thresholds_gb (stop is the floor every grant leaves free), slot_need_gb (the disk seed per kind), load_limits (every grant
 also needs CPU busy below cpu_percent and RAM used plus the job's learned RAM
 share, the live admit records (admit()) and the young jobs' ramp
-(ramping_ram()) below mem_percent; both bound the learned slot limits), memory_limits (no
+(ramping_ram()) below mem_percent, the live guard above the band), memory_limits (no
 grant at memory stage stop), heavy_commands and never_block are used as
 watch.py documents them. A signature is `<repository>: <command signature>`
 (aliases()).
+
+Self-tuning (requirement 083): the limits file <root>/limits.json of the
+kvb-org-organize limits.py, while in force, sets the band from cpu and ram
+lower and upper and the live guard from their stop. Every poll steps the
+AIMD target (aimd.py, at most once per POLL_SECONDS, kept in
+<root>/limits-target.json): a job starts only while the load plus its
+footprint stays at or below the target (`would reach <n> % RAM > target
+<t> %`), and while a queue job runs at most one grant lands per
+load_limits.sample_seconds after the last (settle_reason()). The footprint
+is history.footprint: the p95 of the command's shares times its learned
+margin.
 
 Exit codes:
     hold: the command's exit code unchanged, 128+N when signal N ended it,
@@ -122,9 +159,15 @@ Exit codes:
         the installed hold's exit code.
     list, history: 0 done, 2 config error.
     cancel: 0 removed, 2 no waiting entry of the caller with that id.
+    override: 0 marked, 2 no waiting entry with that id; the queue stays
+        unchanged.
+    learned: 0 done, 2 config error.
+    config set: 0 written, 2 an unknown key, a value the config check
+        refuses or a config it cannot read; the file stays byte-identical.
     block: 0 allow, or ask when it prints an ask decision, or a council root
         that watch.py refuses; 2 refuse the tool call; every other error allows.
-    list, history, cancel, hold: 2 on a council root that watch.py refuses.
+    list, history, cancel, override, learned, config, hold: 2 on a council
+        root that watch.py refuses.
 """
 
 from __future__ import annotations
@@ -138,6 +181,7 @@ import functools
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import select
@@ -162,6 +206,8 @@ SIBLINGS = {
     "standstill": Path(__file__).resolve().parent / "standstill.py",
     "nofollow": SKILLS / "kvb-org-organize" / "scripts" / "nofollow.py",
     "councilroot": SKILLS / "kvb-org-organize" / "scripts" / "councilroot.py",
+    "limits": SKILLS / "kvb-org-organize" / "scripts" / "limits.py",
+    "aimd": Path(__file__).resolve().parent / "aimd.py",
 }
 TOOLS = {"gates": SKILLS / "kvb-check-gate" / "scripts" / "gates.py"}
 HOST_SKILLS = Path.home() / ".agents" / "skills"
@@ -180,6 +226,16 @@ THROUGH_QUEUE = re.compile(r"\bqueue\.py\s+hold\b")
 BASH_RULE = re.compile(r"Bash(?:\((.*)\))?", re.DOTALL)
 RULE_PART = re.compile(r"( \*|\*)")
 BUDGET_KEYS = ("budget_percent.ram", "budget_percent.cpu")
+OVERRIDE = "override"
+SETTINGS = {
+    "budget_percent": ("ram", "cpu"), "load_limits": ("cpu_percent", "mem_percent", "sample_seconds", "band_low", "band_high"),
+}
+PERCENT_KEYS = ("load_limits.cpu_percent", "load_limits.mem_percent", "load_limits.band_low", "load_limits.band_high")
+BAND = {"band_low": 70, "band_high": 90}
+GRANTED_CPU = "granted_cpu"
+SLOT_LIMITS = "slot_limits"
+NUMBER = re.compile(r"(0|[1-9][0-9]{0,5})(\.[0-9]{1,3})?")
+HISTORY_SHOWN = 20
 HOTFIX = "hotfix/"
 PYTEST = frozenset({"pytest", "py.test"})
 XDIST = frozenset({"-n", "--numprocesses"})
@@ -235,12 +291,16 @@ watch = sibling("watch")
 history = sibling("history")
 standstill = sibling("standstill")
 nofollow = sibling("nofollow")
+limit_file = sibling("limits")
+aimd = sibling("aimd")
 STORE = watch.ROOT / "queue.json"
+TARGET = watch.ROOT / aimd.NAME
 LOCK = watch.ROOT / "queue.lock"
 HOLDS = watch.ROOT / "holds"
 TAG = re.compile(r"\d+-\d+")
 SILENCE = watch.ROOT / "radio-silence.json"
 HISTORIES = (watch.HISTORY, watch.KEPT_HISTORY)
+KIND_SETTINGS = (SLOT_LIMITS, history.RAM_CAP)
 LEARNED: dict[str, tuple[dict, dict]] = {}
 
 
@@ -275,10 +335,42 @@ def config() -> dict:
     cfg, _ = watch.announced_config()
     if cfg is None:
         fail(f"no config at {watch.CONFIG}; the queue reads the kvb-org-organize watch config")
-    problem = watch.missing(cfg, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) or cap_problem(cfg)
+    problem = config_problem(cfg)
     if problem is not None:
         fail(problem)
     return cfg
+
+
+def config_problem(cfg: dict) -> str | None:
+    return watch.missing(cfg, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) or cap_problem(cfg) or band_problem(cfg)
+
+
+def band_problem(cfg: dict) -> str | None:
+    """Returns:
+        Why load_limits.band_low and band_high (BAND where unset) are no
+        finite numbers above 0 with band_low below band_high, None when
+        they are.
+    """
+    limits = cfg.get("load_limits")
+    values = [limits.get(key, BAND[key]) if isinstance(limits, dict) else None for key in BAND]
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v > 0 for v in values) and values[0] < values[1]:
+        return None
+    return "load_limits.band_low and load_limits.band_high are percentages above 0, band_low below band_high"
+
+
+def band(cfg: dict) -> dict[str, dict[str, float]]:
+    """Returns:
+        {low: {ram, cpu}, high: {ram, cpu}}: the lower and upper limit of
+        cpu and ram under the limits file in force (limit_file.KEY), else
+        load_limits.band_low and band_high of the config, BAND where unset,
+        for both resources.
+    """
+    held = cfg.get(limit_file.KEY)
+    if held is not None:
+        return {"low": {r: held[r]["lower"] for r in history.RESOURCES}, "high": {r: held[r]["upper"] for r in history.RESOURCES}}
+    limits = cfg["load_limits"]
+    low, high = (limits.get(key, BAND[key]) for key in BAND)
+    return {"low": dict.fromkeys(history.RESOURCES, low), "high": dict.fromkeys(history.RESOURCES, high)}
 
 
 def cap_problem(cfg: dict) -> str | None:
@@ -296,21 +388,22 @@ def cap_problem(cfg: dict) -> str | None:
 
 def fresh(cfg: dict) -> dict:
     """Returns:
-        The config as it stands now, else cfg while the file is missing,
-        unusable (watch.checked_config()) or incomplete, so a half-saved
-        edit never ends a wait.
+        The config as it stands now under the limits file in force
+        (watch.with_limits()), else cfg while the file is missing, unusable
+        (watch.checked_config()) or incomplete, so a half-saved edit never
+        ends a wait.
     """
     try:
-        now = watch.checked_config(watch.load_config())
+        now = watch.with_limits(watch.checked_config(watch.load_config()))[0]
     except watch.UNUSABLE:
         return cfg
-    if (watch.missing(now, (*BUDGET_KEYS, *watch.MEMORY_KEYS)) or cap_problem(now)) is not None:
+    if config_problem(now) is not None:
         return cfg
     return now
 
 
 def caps(cfg: dict) -> dict[str, int]:
-    return cfg.get("slot_limits", {})
+    return cfg.get(SLOT_LIMITS, {})
 
 
 def marks(paths: tuple[Path, ...]) -> tuple[tuple[int, int, int] | None, ...]:
@@ -662,21 +755,58 @@ def in_lines(order: list[dict]) -> list[dict]:
     return list(placed.values())
 
 
-def over_budget(used: dict[str, float], share: dict[str, float], budget: dict[str, float]) -> str | None:
-    over = [resource for resource in budget if used[resource] + share[resource] > budget[resource]]
+def band_reason(used: dict[str, float], share: dict[str, float], band: dict[str, dict[str, float]]) -> str | None:
+    """Args:
+        used: the load per resource in percent: measured, still to come and
+            granted earlier in the pass.
+        share: the job's footprint in percentage points.
+        band: {low, high} per resource (band()), with target per resource
+            when the AIMD target binds (aimed()).
+
+    Returns:
+        None when every resource lies below low and stays at or below
+        ceiling() with share added, else why not: `load <n> % <RESOURCE> >=
+        <low> % band`, else `would reach <n> % <RESOURCE> > <high> %`, or
+        `> target <t> %` while the target binds.
+    """
+    hot = [resource for resource in used if used[resource] >= band["low"][resource]]
+    if hot:
+        return ", ".join(f"load {used[r]:.0f} % {r.upper()} >= {band['low'][r]:g} % band" for r in hot)
+    limit = ceiling(band)
+    over = [resource for resource in used if used[resource] + share[resource] > limit[resource]]
     if not over:
         return None
-    return ", ".join(
-        f"{resource.upper()} {used[resource]:.0f} % in use or reserved + {share[resource]:.0f} % > budget {budget[resource]:g} %"
-        for resource in over
-    )
+    named = {r: f"target {limit[r]:.1f}" if "target" in band else f"{limit[r]:g}" for r in over}
+    return ", ".join(f"would reach {used[r] + share[r]:.0f} % {r.upper()} > {named[r]} %" for r in over)
+
+
+def ceiling(band: dict[str, dict[str, float]]) -> dict[str, float]:
+    return band.get("target", band["high"])
+
+
+def settle_reason(settle: tuple[float, float | None] | None, now: float) -> str | None:
+    """Args:
+        settle: (the settle window in seconds, load_limits.sample_seconds;
+            epoch seconds of the last grant or None), None for no window.
+        now: epoch seconds.
+
+    Returns:
+        `settles: the last grant was <n> s ago, one grant per <w> s` while
+        the window since the last grant is open, else None.
+    """
+    if settle is None or settle[1] is None:
+        return None
+    window, last = settle
+    waited = now - last
+    return f"settles: the last grant was {waited:.0f} s ago, one grant per {window:g} s" if 0 <= waited < window else None
 
 
 def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memory: str, silenced: bool,
-             slot_limits: dict[str, int], footprints: dict[str, dict[str, float]], budget: dict[str, float],
-             ranks: dict[str, int], agents: dict[str, int], loaded: dict[str, str],
+             slot_limits: dict[str, int], footprints: dict[str, dict[str, float]], band: dict[str, dict[str, float]],
+             load: dict[str, float], ranks: dict[str, int], agents: dict[str, int], loaded: dict[str, str],
              exclusive: set[str], light: set[str], drain: str | None,
-             now: float, *, trace: dict[str, list[str]] | None = None) -> tuple[dict[str, str | None], str | None, list[dict]]:
+             now: float, *, trace: dict[str, list[str]] | None = None,
+             settle: tuple[float, float | None] | None = None) -> tuple[dict[str, str | None], str | None, list[dict]]:
     """Decide every waiting entry in grant order, without disk or processes.
 
     Args:
@@ -686,11 +816,19 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       stage: the watch disk stage: ok, warn, stop or critical.
       memory: the watch memory stage: ok, warn or stop.
       silenced: whether a radio-silence mayday holds.
-      slot_limits: {kind: max concurrent jobs}, an upper cap beside the budget.
+      slot_limits: {kind: max concurrent jobs}, the operator's hard caps of
+        the config (slot_limits); a kind missing there has no count cap.
       footprints: {entry id: {ram, cpu}}, the learned share of every entry
         (footprint(), an active one's as granted), in percentage points.
-      budget: {ram, cpu}: the sum of the footprints of active and granted
-        entries may not pass it; a job alone always fits.
+      band: {low, high} per resource (band()), with the AIMD target per
+        resource when one binds (aimed()): while a queue job runs or was
+        granted in the pass, a job starts only while the load lies below
+        low on every resource and with its footprint added stays at or
+        below the target, else high (ceiling(), band_reason()); a job alone
+        always fits.
+      load: {ram, cpu}: the host load in percent the band starts from:
+        measured plus what young jobs and admits still add (live_load());
+        each grant of the pass, overridden ones first, adds its footprint.
       ranks: {task: index in the register's ranking}; a task missing there
         ranks after all of them.
       agents: {agent name: index in the operator's agent order}; it breaks
@@ -709,21 +847,32 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
         <why>`) per entry it passes, then the
         rule that blocked it, or `takes nothing <head> lacks`, the fit and
         `backfilled past <id>` for a granted one.
+      settle: (window seconds, the last grant's epoch seconds or None):
+        while a queue job runs or was granted in the pass and the window
+        since the last grant is open, every entry that would start waits
+        with settle_reason(), so at most one grant lands per window; None
+        checks no window.
 
     Returns:
       ({entry id: None when granted, else the blocking reason, a Disk when
       the disk stage or the floor alone blocks it} in grant order, the entry
       the next pass drains for (drained()), the polling waiting entries in
-      grant order). A granted entry counts against the disk, budget and
+      grant order). A granted entry counts against the disk, band and
       slots of the entries after it, whoever holds it. A blocked entry
       reserves nothing, so a later entry that fits starts past it
       (backfill), except the head: drain, or before it a blocked hotfix
       that is the first blocked entry not unstartable() or an exclusive entry that only
       running jobs of other kinds keep out (alone_reason()). Behind the
       head every later entry, light ones too, starts only when it takes
-      nothing the head still lacks, the last slot of its kind included
+      nothing the head still lacks: the load plus the head's footprint
+      plus its own stays at or below the band's high, the disk after both
+      needs above floor, the last capped slot of its kind included
       (takes(); beside a head that is
-      exclusive or waits for an exclusive job only light jobs count); every
+      exclusive or waits for an exclusive job only light jobs count, the
+      load less the footprints of the other running jobs); one that takes
+      what the head lacks waits `reserved for <head>`, or `drained for
+      <head>` when the head cannot fit even with nothing backfilled (live
+      load holds it or its own footprint breaks the band); every
       later one but light ones waits behind a
       hotfix head, and behind any head whose kind is exclusive or that live
       load holds while queue jobs run; light ones wait too while load the
@@ -743,20 +892,28 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
       entry of the session Main that could start, whose line only runs,
       waits for the machine or is the head, reserves like a head against the
       later entries of other claims: its slot, its exclusive room and its
-      budget (held_for()).
+      band room (held_for()).
       An entry that could not start with no queue job running (its disk
-      need cuts into floor, its kind has no slot, or load holds it that no
+      need cuts into floor, its kind is capped at 0 slots, or load holds it that no
       queue job causes: an Outside reason, or no queue job active) is no
       head; one with an Outside reason holds no line either. A waiting
       entry whose holder has not polled for CLAIM_SECONDS reserves nothing
       and comes last. An entry passes a waiting entry of its line that never
       could start (unstartable()) and takes its place in that line.
+      Before all of it every overridden entry the live guard, the host and
+      the disk let start is granted (forced()) and counts as active; an
+      overridden entry held back keeps its place, its reason the override's.
     """
+    entries, overrides = forced(entries, free_gb, floor, stage, memory, silenced, loaded, now)
     active = [e for e in entries if e["status"] == "active"]
-    used = {resource: sum(footprints[e["id"]][resource] for e in active) for resource in budget}
+    started = [e for e in active if e["id"] in overrides]
+    used = {resource: load[resource] + sum(footprints[e["id"]][resource] for e in started) for resource in load}
     available = free_gb - sum(e["need_gb"] for e in active)
     lit = [e for e in active if e["kind"] in light]
-    beside = {resource: sum(footprints[e["id"]][resource] for e in lit) for resource in budget}
+    beside = {
+        resource: max(0.0, used[resource] - sum(footprints[e["id"]][resource] for e in active if e["kind"] not in light))
+        for resource in load
+    }
     room = free_gb - sum(e["need_gb"] for e in lit)
     counts = Counter(e["kind"] for e in active)
     lines = {claim: e["id"] for e in active for claim in claims(e)}
@@ -788,18 +945,18 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
         alone, slot = alone_reason(kind, counts, exclusive, light), slot_reason(kind, slot_limits, counts)
         reason = blocking(
             lead and lead[0], disk_reason(stage, need),
-            host_reason(memory, silenced) or slot or alone or (over_budget(used, share, budget) if taken else None),
+            host_reason(memory, silenced) or slot or alone or (band_reason(used, share, band) or settle_reason(settle, now) if taken else None),
             None if available - need >= floor else floor_reason(need, floor), loaded.get(entry["id"]),
         )
         step = lead[1] if lead else reason
         if reason is None and reserve is not None:
-            slotted = reserve[5] if kind == reserve[5] and counts[kind] + 1 >= slot_limits.get(kind, 0) else None
-            short = takes(need, share, *((beside, room) if reserve[2] else (used, available)), floor, budget, reserve[:2], slotted)
+            slotted = reserve[5] if kind == reserve[5] and last_slot(kind, slot_limits, counts) else None
+            short = takes(need, share, *((beside, room) if reserve[2] else (used, available)), floor, ceiling(band), reserve[:2], slotted)
             reason = reserve[3] if short else None
             step = f"{reserve[3]}: takes {short}" if short else f"takes nothing {reserve[4]} lacks"
         pools = used, available, beside, room
         why = None if reason is not None else next(((h[2], s) for h in holds if not h[4] & set(mine) and (
-            s := held_for(kind, need, share, h, counts, slot_limits, exclusive, light, pools, floor, budget))), None)
+            s := held_for(kind, need, share, h, counts, slot_limits, exclusive, light, pools, floor, ceiling(band)))), None)
         if why:
             reason, step = f"reserved for {why[0]}", f"reserved for {why[0]}: {why[1]}"
         gate = None if reason is not None or kind in light else loaded_exclusive(able, verdicts, loaded, exclusive)
@@ -826,8 +983,10 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
             able += [] if never[entry["id"]] else [entry]
             first = entry["hotfix"] and able == [entry] or kind in exclusive and reason == alone
             if reserve is None and (entry["id"] == drain or entry["id"] in could and first):
-                held = f"waits behind hotfix {entry['id']}" if entry["hotfix"] else f"drained for {entry['id']}"
-                reserve = share, need, kind in exclusive or reason == alone, held, entry["id"], kind
+                apart = kind in exclusive or reason == alone
+                crowded = entry["id"] in loaded or bool(taken) and band_reason(beside if apart else used, share, band) is not None
+                held = f"waits behind hotfix {entry['id']}" if entry["hotfix"] else f"{'drained' if crowded else 'reserved'} for {entry['id']}"
+                reserve = share, need, apart, held, entry["id"], kind
             if not entry["hotfix"] and not lined and (lead or reason in (alone, slot)):
                 machine.add(entry["id"])
             settled = running | machine | {i for i, v in verdicts.items() if v is None} | {reserve[4] if reserve else None}
@@ -838,7 +997,68 @@ def evaluate(entries: list[dict], free_gb: float, floor: float, stage: str, memo
         if entry["status"] == "waiting" and silent(entry, now):
             verdicts[entry["id"]] = f"no poll for {now - entry['polled']:.0f} s; reserves nothing until it polls again"
             steps[entry["id"]] = [verdicts[entry["id"]]]
-    return verdicts, drained(order, verdicts, drain, could, now), order
+    return overridden(verdicts, overrides, steps), drained(order, verdicts, drain, could, now), order
+
+
+def forced(entries: list[dict], free_gb: float, floor: float, stage: str, memory: str, silenced: bool,
+           loaded: dict[str, str], now: float) -> tuple[list[dict], dict[str, str | None]]:
+    """Returns:
+        (entries with every overridden polling entry that may start marked
+        active, {overridden polling entry id: None when it starts, else
+        override_reason()} in the order of their OVERRIDE ts); each start
+        counts against the disk and the lines of the ones after it.
+    """
+    active = [e for e in entries if e["status"] == "active"]
+    available = free_gb - sum(e["need_gb"] for e in active)
+    lines = {claim: e["id"] for e in active for claim in claims(e)}
+    asked = sorted((e for e in entries if OVERRIDE in e and e["status"] == "waiting" and not silent(e, now)),
+                   key=lambda e: e[OVERRIDE]["ts"])
+    verdicts: dict[str, str | None] = {}
+    for entry in asked:
+        verdicts[entry["id"]] = override_reason(entry, available, floor, stage, (memory, silenced), loaded, lines)
+        if verdicts[entry["id"]] is None:
+            available -= entry["need_gb"]
+            lines.update((claim, entry["id"]) for claim in claims(entry))
+    started = {entry_id for entry_id, reason in verdicts.items() if reason is None}
+    return [{**e, "status": "active"} if e["id"] in started else e for e in entries], verdicts
+
+
+def override_reason(entry: dict, available: float, floor: float, stage: str, host: tuple[str, bool],
+                    loaded: dict[str, str], lines: dict[str, str]) -> str | None:
+    """Args:
+        entry: an overridden waiting entry.
+        available: free GB less the need of the active and forced entries.
+        floor: GB every grant must leave free.
+        stage: the watch disk stage.
+        host: (the watch memory stage, whether a radio-silence mayday holds).
+        loaded: held_back() of the pass.
+        lines: {claim: the active or forced entry holding it}.
+
+    Returns:
+        None when the override starts entry, else `override held by` the live
+        guard load_limits (load_reason()), the host, the disk or the running
+        job of one of its claims.
+    """
+    if entry["id"] in loaded:
+        return f"override held by the live guard load_limits: {loaded[entry['id']]}"
+    need = entry["need_gb"]
+    line = next((lines[claim] for claim in claims(entry) if claim in lines), None)
+    reason = (host_reason(*host) or disk_reason(stage, need) or (None if available - need >= floor else floor_reason(need, floor))
+              or (None if line is None else f"its line runs {line}"))
+    return None if reason is None else f"override held by {reason}"
+
+
+def overridden(verdicts: dict[str, str | None], overrides: dict[str, str | None],
+               steps: dict[str, list[str]]) -> dict[str, str | None]:
+    """Returns:
+        verdicts led by the overrides forced() granted, each overridden entry
+        held back with its override reason; steps gets the override step of
+        each.
+    """
+    for entry_id, reason in overrides.items():
+        steps[entry_id] = ["override: skips the band, slots, reservations and rank", *([] if reason is None else [reason])]
+    granted = {entry_id: None for entry_id, reason in overrides.items() if reason is None}
+    return granted | {entry_id: overrides.get(entry_id) or reason for entry_id, reason in verdicts.items()}
 
 
 def fitted(step: str | None, used: dict[str, float], share: dict[str, float], need: float, available: float,
@@ -934,18 +1154,18 @@ def plus(used: dict[str, float], share: dict[str, float]) -> dict[str, float]:
 
 
 def takes(need: float, share: dict[str, float], used: dict[str, float], available: float, floor: float,
-          budget: dict[str, float], reserve: tuple[dict[str, float], float], slotted: str | None) -> str | None:
+          limit: dict[str, float], reserve: tuple[dict[str, float], float], slotted: str | None) -> str | None:
     """Returns:
-        What a job of disk need and footprint share, beside jobs that use
-        used and leave available GB, takes that the head's reserve
-        (footprint, disk need) leaves too short: `its <kind> slot` when
-        slotted names the head's kind whose last free slot it takes, the
-        budget resources it pushes past, or disk; None when it takes none of
-        a short resource.
+        What a job of disk need and footprint share, beside a load of used
+        and available GB, takes that the head's reserve (footprint, disk
+        need) leaves too short: `its <kind> slot` when slotted names the
+        head's kind whose last capped slot it takes, the resources whose
+        load plus both footprints passes limit (the band's high), or disk;
+        None when it takes none of a short resource.
     """
     held, held_need = reserve
     over = plus(plus(used, held), share)
-    short = [r.upper() for r in budget if share[r] > 0 and over[r] > budget[r]]
+    short = [r.upper() for r in limit if share[r] > 0 and over[r] > limit[r]]
     if slotted:
         return f"its {slotted} slot"
     if short:
@@ -955,33 +1175,39 @@ def takes(need: float, share: dict[str, float], used: dict[str, float], availabl
 
 def held_for(kind: str, need: float, share: dict[str, float], hold: tuple[dict[str, float], float, str, str, set[str]],
              counts: Counter, slot_limits: dict[str, int], exclusive: set[str], light: set[str],
-             pools: tuple[dict[str, float], float, dict[str, float], float], floor: float, budget: dict[str, float]) -> str | None:
+             pools: tuple[dict[str, float], float, dict[str, float], float], floor: float, limit: dict[str, float]) -> str | None:
     """Returns:
         Why a job of kind, disk need and footprint share takes what hold
         (footprint, disk need, id, kind, claims), a job whose line only runs
         or waits for the machine, lacks: `<kind> is exclusive` when one of
         the two is exclusive and the other not light, else `takes` what
         takes() finds beside pools (used, available, then the light jobs'
-        beside and room, which count when hold's kind is exclusive), its last
-        free slot of hold's kind included; None when it takes nothing.
+        beside and room, which count when hold's kind is exclusive) under
+        limit, the band's high, its last capped slot of hold's kind
+        included; None when it takes nothing.
     """
     held = hold[3]
     if held in exclusive and kind not in light or kind in exclusive and held not in light:
         return f"{held if held in exclusive else kind} is exclusive"
     used, available, beside, room = pools
-    slotted = held if kind == held and counts[kind] + 1 >= slot_limits.get(kind, 0) else None
-    short = takes(need, share, *((beside, room) if held in exclusive else (used, available)), floor, budget, hold[:2], slotted)
+    slotted = held if kind == held and last_slot(kind, slot_limits, counts) else None
+    short = takes(need, share, *((beside, room) if held in exclusive else (used, available)), floor, limit, hold[:2], slotted)
     return f"takes {short}" if short else None
+
+
+def last_slot(kind: str, slot_limits: dict[str, int], counts: Counter) -> bool:
+    return kind in slot_limits and counts[kind] + 1 >= slot_limits[kind]
 
 
 def unstartable(entry: dict, free_gb: float, floor: float, slot_limits: dict[str, int]) -> str | None:
     """Returns:
         Why entry could not start even with no queue job running: `<cap>
-        <kind> slots` when its kind's cap is 0 or missing, floor_reason()
-        when its disk need cuts into floor of free_gb; else None.
+        <kind> slots` when the config caps its kind at 0 or below,
+        floor_reason() when its disk need cuts into floor of free_gb; else
+        None.
     """
-    cap = slot_limits.get(entry["kind"], 0)
-    if cap <= 0:
+    cap = slot_limits.get(entry["kind"])
+    if cap is not None and cap <= 0:
         return f"{cap} {entry['kind']} slots"
     return floor_reason(entry["need_gb"], floor) if free_gb - entry["need_gb"] < floor else None
 
@@ -1007,9 +1233,7 @@ def host_reason(memory: str, silenced: bool) -> str | None:
 
 
 def slot_reason(kind: str, slot_limits: dict[str, int], counts: Counter) -> str | None:
-    if kind not in slot_limits:
-        return f"slot_limits has no {kind}"
-    if counts[kind] >= slot_limits[kind]:
+    if kind in slot_limits and counts[kind] >= slot_limits[kind]:
         return f"all {slot_limits[kind]} {kind} slots taken"
     return None
 
@@ -1045,7 +1269,7 @@ def after_waits(entries: list[dict]) -> dict[str, str]:
             other for other in register.get(task, {}).get("after", [])
             if other in register and register[other].get("status") not in rasci.ENDED
         ]
-        if entry["status"] == "waiting" and ahead:
+        if entry["status"] == "waiting" and ahead and OVERRIDE not in entry:
             lift = shlex.join(["rasci.py", "set", task, "--drop-after", ahead[0]])
             waits[entry["id"]] = f"waits for {ahead[0]}, an after task of {task} not yet done or stopped; {lift} lifts it"
     return waits
@@ -1098,24 +1322,79 @@ def held_back(cfg: dict, entries: list[dict], now: float, signatures: dict[str, 
 
 
 def decide(cfg: dict, entries: list[dict], free_gb: float, now: float, signatures: dict[str, dict],
-           kinds: dict[str, dict], loaded: dict[str, str], drain: str | None, *,
-           trace: dict[str, list[str]] | None = None) -> tuple[dict[str, str | None], str | None, list[dict]]:
-    slots = {kind: limit for kind, (limit, _) in limits(cfg, kinds, entries).items()}
+           kinds: dict[str, dict], loaded: dict[str, str], load: dict[str, float] | None, drain: str | None, *,
+           trace: dict[str, list[str]] | None = None, target: dict[str, float] | None,
+           memory: dict[str, float | None] | None, granted: float | None) -> tuple[dict[str, str | None], str | None, list[dict]]:
+    """Args:
+        cfg: the config; slot_limits caps kinds, budget_percent is the
+            footprint of a job whose kind is not learned yet, band() the band,
+            load_limits.sample_seconds the settle window after a grant.
+        entries: the queue's entries.
+        free_gb: free disk in GB.
+        now: epoch seconds.
+        signatures: the signature map of history.learn().
+        kinds: the kind map of history.learn().
+        loaded: held_back() of the pass.
+        load: live_load() of the pass; None books the active jobs'
+            footprints instead, for a caller that samples no load (list).
+        drain: the entry the previous pass drained for.
+        trace: filled as evaluate() fills it.
+        target: {ram, cpu}, the AIMD target the band's footprints must stay
+            within (aimed(), stored_target()); None admits up to the band's
+            high.
+        memory: the watch memory sample of the pass; None samples it.
+        granted: epoch seconds of the last grant (GRANTED), None for none.
+
+    Returns:
+        evaluate() over the entries no `after` task holds, those led by
+        their wait.
+    """
     budget = cfg["budget_percent"]
     footprints = {}
     for entry in entries:
         share = footprint(entry, signatures, kinds)
         footprints[entry["id"]] = dict(budget) if share is None else share
+    if load is None:
+        load = {r: sum(footprints[e["id"]][r] for e in entries if e["status"] == "active") for r in history.RESOURCES}
     waits = after_waits(entries)
     steps = {} if trace is None else trace
     verdicts, drain, order = evaluate(
         [e for e in entries if e["id"] not in waits], free_gb, cfg["thresholds_gb"]["stop"], stage(cfg, free_gb, now),
-        watch.memory_stage(watch.memory(), cfg), silenced(now), slots, footprints, budget,
-        register_ranks(), agent_ranks(), loaded,
+        watch.memory_stage(watch.memory() if memory is None else memory, cfg), silenced(now), caps(cfg), footprints,
+        band(cfg) | ({} if target is None else {"target": target}), load, register_ranks(), agent_ranks(), loaded,
         set(cfg.get("exclusive_kinds", [])), set(cfg.get("light_kinds", [])), drain, now, trace=steps,
+        settle=(cfg["load_limits"]["sample_seconds"], granted),
     )
     steps.update({entry_id: [reason] for entry_id, reason in waits.items()})
     return verdicts | waits, drain, order
+
+
+def psi_calm(cfg: dict) -> float:
+    held = cfg.get(limit_file.KEY)
+    return aimd.PSI_CALM if held is None else held["psi"]["lower"]
+
+
+def aimed(cfg: dict, load: dict[str, float], pressure: dict[str, float | None], now: float) -> dict[str, float]:
+    """Args:
+        cfg: the config under the limits file in force.
+        load: {ram, cpu} measured this poll, in percent.
+        pressure: the watch memory sample of this poll.
+        now: epoch seconds.
+
+    Returns:
+        {ram, cpu}: the AIMD target after this poll's step (aimd.stepped()
+        over the band(), at most one step per POLL_SECONDS however many
+        holds poll), the state written back to TARGET; called under the
+        store lock, so polls never interleave.
+    """
+    state = aimd.stepped(watch.read_json(TARGET), band(cfg), load, pressure, psi_calm(cfg), now, POLL_SECONDS)
+    with contextlib.suppress(OSError):
+        nofollow.replace(watch.ROOT, TARGET, json.dumps(state), 0o600)
+    return aimd.target(state, band(cfg))
+
+
+def stored_target(cfg: dict) -> dict[str, float]:
+    return aimd.target(watch.read_json(TARGET), band(cfg))
 
 
 def latched(data: dict, drain: str | None, now: float) -> str | None:
@@ -1346,11 +1625,38 @@ def ramping_ram(entries: list[dict], now: float, signatures: dict[str, dict], ki
         others. An older job counts as ramped, its RAM inside the RAM used;
         one that peaks later is bounded by the memory stage only.
     """
+    return ramping(entries, now, mem, GRANTED_MEM, lambda e: ram_share(e, signatures, kinds))
+
+
+def ramping_cpu(entries: list[dict], now: float, signatures: dict[str, dict], kinds: dict[str, dict],
+                cpu: float) -> float:
+    """Returns:
+        ramping_ram() for CPU busy cpu: the young jobs' CPU shares (0 for a
+        kind not learned yet) less what CPU busy gained since the earliest
+        grant that recorded it (GRANTED_CPU).
+    """
+    return ramping(entries, now, cpu, GRANTED_CPU, lambda e: (footprint(e, signatures, kinds) or {"cpu": 0.0})["cpu"])
+
+
+def ramping(entries: list[dict], now: float, measured: float, mark: str, share: Callable[[dict], float]) -> float:
     young = [e for e in entries if e["status"] == "active" and now - e.get("granted", now) < RAMP_SECONDS]
-    dated = [e for e in young if GRANTED_MEM in e]
-    gained = max(0.0, mem - min((e[GRANTED_MEM] for e in dated), default=mem))
-    ramp = max(0.0, sum(ram_share(e, signatures, kinds) for e in dated) - gained)
-    return ramp + sum(ram_share(e, signatures, kinds) for e in young if GRANTED_MEM not in e)
+    dated = [e for e in young if mark in e]
+    gained = max(0.0, measured - min((e[mark] for e in dated), default=measured))
+    ramp = max(0.0, sum(share(e) for e in dated) - gained)
+    return ramp + sum(share(e) for e in young if mark not in e)
+
+
+def live_load(entries: list[dict], now: float, signatures: dict[str, dict], kinds: dict[str, dict],
+              cpu: float, mem: float, admitted: float) -> dict[str, float]:
+    """Returns:
+        {ram, cpu}, the load the band starts from: RAM used mem plus
+        admitted (admitted_ram()) and ramping_ram(), CPU busy cpu plus
+        ramping_cpu().
+    """
+    return {
+        "ram": mem + admitted + ramping_ram(entries, now, signatures, kinds, mem),
+        "cpu": cpu + ramping_cpu(entries, now, signatures, kinds, cpu),
+    }
 
 
 def pending_ram(entries: list[dict], entry_id: str, now: float, signatures: dict[str, dict],
@@ -1382,13 +1688,13 @@ def enqueue(fields: dict) -> dict:
     """Returns:
         The entry of fields; a hold that hand_over() left for the installed
         code at most CLAIM_SECONDS before, of the same pid, session and
-        command, keeps its id, seq and enqueue time.
+        command, keeps its id, seq, enqueue time and override.
     """
     with store() as data:
         kept = {pid: h for pid, h in data.get(HANDOVER, {}).items() if fields["enqueued"] - h["at"] <= CLAIM_SECONDS}
         mine = kept.pop(str(fields["pid"]), None)
         if mine is not None and (mine["session"], mine["cmd"]) == (fields["session"], fields["cmd"]):
-            entry = {**fields, "id": mine["id"], "seq": mine["seq"], "enqueued": mine["enqueued"]}
+            entry = {**fields, **{key: mine[key] for key in ("id", "seq", "enqueued", OVERRIDE) if key in mine}}
         else:
             data["seq"] += 1
             entry = {"id": f"{fields['kind']}-{data['seq']}", "seq": data["seq"], **fields}
@@ -1402,7 +1708,7 @@ def hand_over(entry_id: str) -> None:
         for entry in [e for e in data["entries"] if e["id"] == entry_id]:
             data["entries"].remove(entry)
             data.setdefault(HANDOVER, {})[str(entry["pid"])] = {
-                **{key: entry[key] for key in ("id", "seq", "enqueued", "session", "cmd")}, "at": time.time(),
+                **{key: entry[key] for key in ("id", "seq", "enqueued", "session", "cmd", OVERRIDE) if key in entry}, "at": time.time(),
             }
 
 
@@ -1422,7 +1728,7 @@ def pause(wake: int) -> None:
     select.select([wake], [], [], POLL_SECONDS)
 
 
-def wait(cfg: dict, entry_id: str, caught: list[int], wake: int) -> tuple[int | None, int]:
+def wait(cfg: dict, entry_id: str, caught: list[int], wake: int) -> tuple[int | None, int, bool]:
     """Poll until the grant.
 
     Args:
@@ -1433,8 +1739,10 @@ def wait(cfg: dict, entry_id: str, caught: list[int], wake: int) -> tuple[int | 
         readable, so a pause between polls ends at once.
 
     Returns:
-      (None, other active jobs at the grant) once granted, else (the exit
-      code, 0).
+      (None, other active jobs at the grant, whether the entry carries
+      OVERRIDE, the footprint the grant booked or None) once granted, else
+      (the exit code, 0, False, None). Each poll steps the AIMD target
+      (aimed()) and decides under it.
     """
     shown = None
     while not caught:
@@ -1443,6 +1751,7 @@ def wait(cfg: dict, entry_id: str, caught: list[int], wake: int) -> tuple[int | 
             raise Stale(host, caught)
         cfg = fresh(cfg)
         cpu, mem = watch.load(cfg)
+        pressure = watch.memory()
         free, _ = watch.disk(cfg)
         now = time.time()
         signatures, kinds = learned(cfg, now)
@@ -1451,22 +1760,28 @@ def wait(cfg: dict, entry_id: str, caught: list[int], wake: int) -> tuple[int | 
             mine = [e for e in data["entries"] if e["id"] == entry_id]
             if not mine:
                 print(f"queue: {entry_id} was cancelled", file=sys.stderr)
-                return CANCELLED, 0
+                return CANCELLED, 0, False, None
             rejoin(data, mine[0], now)
-            loaded = held_back(cfg, data["entries"], now, signatures, kinds, cpu, mem, admitted_ram(data, now))
+            admitted = admitted_ram(data, now)
+            loaded = held_back(cfg, data["entries"], now, signatures, kinds, cpu, mem, admitted)
+            load = live_load(data["entries"], now, signatures, kinds, cpu, mem, admitted)
             steps: dict[str, list[str]] = {}
-            verdicts, drain, order = decide(cfg, data["entries"], free, now, signatures, kinds, loaded, data.get(DRAIN), trace=steps)
+            verdicts, drain, order = decide(
+                cfg, data["entries"], free, now, signatures, kinds, loaded, load, data.get(DRAIN), trace=steps,
+                target=aimed(cfg, {"cpu": cpu, "ram": mem}, pressure, now), memory=pressure, granted=data.get(GRANTED),
+            )
             data[DRAIN] = latched(data, drain, now)
             mine[0]["trace"] = steps[entry_id]
             if verdicts[entry_id] is None:
                 concurrent = sum(e["status"] == "active" for e in data["entries"])
+                booked = footprint(mine[0], signatures, kinds)
                 mine[0].update(status="active", granted=now, reason=labelled(verdicts, [])[entry_id],
-                               **{GRANTED_MEM: mem, FROZEN: footprint(mine[0], signatures, kinds)})
+                               **{GRANTED_MEM: mem, GRANTED_CPU: cpu, FROZEN: booked})
                 data[GRANTED] = now
                 data.pop(STALL, None)
                 if shown is not None:
                     print(f"queue: {entry_id} granted after waiting; running {mine[0]['cmd']}", file=sys.stderr, flush=True)
-                return None, concurrent
+                return None, concurrent, OVERRIDE in mine[0], booked
             sends, clean, log = stalled(data, order, verdicts, cfg["thresholds_gb"]["stop"], free,
                                         functools.partial(cleanup_outcome, now), now)
             logs = [] if log is None else [log]
@@ -1481,7 +1796,7 @@ def wait(cfg: dict, entry_id: str, caught: list[int], wake: int) -> tuple[int | 
             print(f"queue: {entry_id} waits at position {position}: {reason}", file=sys.stderr, flush=True)
             shown = (position, reason)
         pause(wake)
-    return 128 + caught[0], 0
+    return 128 + caught[0], 0, False, None
 
 
 def send(child: subprocess.Popen, signum: int) -> None:
@@ -1552,6 +1867,19 @@ def keep(row: dict) -> None:
     except OSError as error:
         # A full disk refuses the row; the job's exit code must still come through.
         print(f"queue: no history row for {row['id']}: {error.strerror}", file=sys.stderr)
+
+
+def finished(entry: dict, name: str, hung: dict | None, overridden: bool, booked: dict | None) -> dict:
+    """Returns:
+        The job record() keeps for entry under its signature name: HUNG
+        with standstill's report when hold ended it, OVERRIDE true when
+        `queue.py override` started it, history.PREDICTED the footprint
+        booked, the margin's prediction, when the grant booked a learned
+        one.
+    """
+    return {"id": f"{entry['id']}-{time.time_ns()}", "kind": entry["kind"], "signature": name, "workdir": entry["workdir"],
+            **({} if hung is None else {history.HUNG: hung}), **({OVERRIDE: True} if overridden else {}),
+            **({history.PREDICTED: booked} if isinstance(booked, dict) else {})}
 
 
 def record(job: dict, start: float, code: int, samples: list[dict[str, float]], concurrent: int) -> None:
@@ -1647,7 +1975,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
         })
         try:
             try:
-                code, concurrent = wait(cfg, entry["id"], caught, wake)
+                code, concurrent, overridden, booked = wait(cfg, entry["id"], caught, wake)
             except Stale:
                 hand_over(entry["id"])
                 raise
@@ -1670,9 +1998,7 @@ def cmd_hold(args: argparse.Namespace) -> int:
             update(entry["id"], child=child.pid, child_start=identity(child.pid))
             code, hung = supervise(cfg, child, samples)
             code = code if code >= 0 else 128 - code
-            job = {"id": f"{entry['id']}-{time.time_ns()}", "kind": args.kind, "signature": names[0],
-                   "workdir": entry["workdir"], **({} if hung is None else {history.HUNG: hung})}
-            record(job, start, code, samples, concurrent)
+            record(finished(entry, names[0], hung, overridden, booked), start, code, samples, concurrent)
             keep_receipt(gates, args, here, before, code)
             return code
         finally:
@@ -1685,10 +2011,12 @@ def cmd_list(args: argparse.Namespace) -> int:
     now = time.time()
     signatures, kinds = learned(cfg, now)
     steps: dict[str, list[str]] = {}
+    aim = stored_target(cfg)
     with store() as data:
         data["entries"] = prune(data["entries"])
         entries = list(data["entries"])
-        verdicts, _, _ = decide(cfg, entries, free, now, signatures, kinds, {}, data.get(DRAIN), trace=steps)
+        verdicts, _, _ = decide(cfg, entries, free, now, signatures, kinds, {}, None, data.get(DRAIN), trace=steps,
+                                target=aim, memory=None, granted=data.get(GRANTED))
         verdicts = labelled(verdicts, (data.get(STALL) or {}).get("fired", []))
     by_id = {e["id"]: e for e in entries}
     running = [(key_of(e), e["granted"]) for e in entries if e["status"] == "active"]
@@ -1710,7 +2038,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         rasci = sibling("rasci")
         print(json.dumps(listed(rows, rasci.merged(False), rasci.wsjf, now), indent=1))
         return 0
-    print("position\tid\tstatus\tkind\ttask\tneed_gb\twaited_min\teta_min\tworkdir\treason")
+    print(f"position\tid\tstatus\tkind\ttask\tneed_gb\twaited_min\teta_min\tworkdir\treason ({targets(cfg, aim)})")
     for position, e, eta, reason, _ in rows:
         waited = ((e["granted"] or now) - e["enqueued"]) / 60
         print(tab_line(
@@ -1718,6 +2046,21 @@ def cmd_list(args: argparse.Namespace) -> int:
              "-" if eta is None else f"{eta:.0f}", e["workdir"], reason]
         ))
     return 0
+
+
+def targets(cfg: dict, aim: dict[str, float]) -> str:
+    """Returns:
+        `target CPU <t> % RAM <t> % in band CPU <low>-<high> % RAM
+        <low>-<high> %, limits <source>`: the source is the limits file
+        under watch.ROOT in force, its last valid copy while the file is
+        refused, else config; a refusal follows, naming why.
+    """
+    edges = band(cfg)
+    shown = " ".join(f"{r.upper()} {aim[r]:.1f} %" for r in ("cpu", "ram"))
+    span = " ".join(f"{r.upper()} {edges['low'][r]:g}-{edges['high'][r]:g} %" for r in ("cpu", "ram"))
+    refused = limit_file.read(watch.ROOT)[1]
+    source = watch.ROOT / (limit_file.NAME if refused is None else limit_file.LAST) if limit_file.KEY in cfg else "config"
+    return f"target {shown} in band {span}, limits {source}" + ("" if refused is None else f"; {refused}")
 
 
 def suspected(entry: dict, reason: str | None, signatures: dict[tuple[str, str], dict], now: float) -> str | None:
@@ -1765,8 +2108,9 @@ def listed(rows: list[tuple], register: dict[str, dict], score: Callable[[dict],
     Returns:
         One object per row: position, id, status, kind, task, session,
         agent, class (job_class()), prio (the task's pin or None), wsjf (or
-        None), waited_s, eta_s (or None), reason and trace, the steps of
-        evaluate() that decided the entry at the poll that set its reason.
+        None), waited_s, eta_s (or None), reason, trace, the steps of
+        evaluate() that decided the entry at the poll that set its reason,
+        and override, whether `queue.py override` marked it.
     """
     shown = []
     for position, e, eta, reason, trace in rows:
@@ -1776,7 +2120,7 @@ def listed(rows: list[tuple], register: dict[str, dict], score: Callable[[dict],
             "position": position, "id": e["id"], "status": e["status"], "kind": e["kind"], "task": e["task"],
             "session": e.get("session"), "agent": e["name"], "class": job_class(e, row.get("prio")), "prio": row.get("prio"),
             "wsjf": None if wsjf is None else wsjf[2], "waited_s": round((e["granted"] or now) - e["enqueued"]),
-            "eta_s": None if eta is None else round(eta * 60), "reason": reason, "trace": trace,
+            "eta_s": None if eta is None else round(eta * 60), "reason": reason, "trace": trace, OVERRIDE: OVERRIDE in e,
         })
     return shown
 
@@ -1803,6 +2147,125 @@ def cmd_cancel(args: argparse.Namespace) -> int:
             fail(f"no waiting entry {args.id} of this session; `queue.py list` shows the ids")
         data["entries"].remove(mine[0])
     print(f"cancelled {args.id}")
+    return 0
+
+
+def cmd_override(args: argparse.Namespace) -> int:
+    with store() as data:
+        waiting = [e for e in data["entries"] if e["id"] == args.id and e["status"] == "waiting"]
+        if not waiting:
+            fail(f"no waiting entry {args.id}; `queue.py list` shows the ids")
+        waiting[0].setdefault(OVERRIDE, {"ts": time.time()})
+    print(f"override {args.id}: it starts at its next poll while the live guard and the disk allow")
+    return 0
+
+
+def learnings(cfg: dict, signatures: dict[tuple[str, str], dict], kinds: dict[str, dict], rows: list[dict]) -> dict:
+    """Args:
+        cfg: the config.
+        signatures: the signature map of history.learn().
+        kinds: the kind map of history.learn().
+        rows: the history rows (history.read()).
+
+    Returns:
+        kinds: {kind: its learned values (history.kind_stats() with light
+        and ram_cap, runs 0 for a kind without rows), slot_limit and
+        slot_source (history.slot_limits())}; signatures: one object per
+        learned kind and signature with its values; budget_percent,
+        ram_cap_percent, load_limits and slot_limits of the config; history:
+        the last HISTORY_SHOWN rows by end.
+    """
+    light, ram_caps = set(cfg.get("light_kinds", [])), cfg.get(history.RAM_CAP, {})
+    unknown = history.kind_stats([], cfg["load_limits"])
+    return {
+        "kinds": {
+            kind: {**(kinds.get(kind) or {**unknown, "light": kind in light, "ram_cap": ram_caps.get(kind)}), "slot_limit": limit, "slot_source": source}
+            for kind, (limit, source) in limits(cfg, kinds, []).items()
+        },
+        "signatures": [
+            {"kind": kind, "signature": name, **stats}
+            for (kind, name), stats in sorted(signatures.items(), key=lambda item: item[0][::-1]) if kind != history.ANY_KIND
+        ],
+        "budget_percent": cfg["budget_percent"], history.RAM_CAP: ram_caps, "load_limits": cfg["load_limits"], SLOT_LIMITS: caps(cfg),
+        "history": sorted(rows, key=lambda row: row["end"])[-HISTORY_SHOWN:],
+    }
+
+
+def cmd_learned(_: argparse.Namespace) -> int:
+    cfg = config()
+    signatures, kinds = learned(cfg, time.time())
+    print(json.dumps(learnings(cfg, signatures, kinds, history.read(HISTORIES)), indent=1))
+    return 0
+
+
+def stored_config() -> dict:
+    """Returns:
+        The config file as it stands, checked like every reader checks it;
+        fail() on a missing, linked, unusable or incomplete file, so a
+        change never builds on the SHIPPED fallback.
+    """
+    if watch.CONFIG.is_symlink():
+        fail(f"{watch.CONFIG} is a link; change its target by hand")
+    try:
+        cfg = watch.load_config()
+        checked = None if cfg is None else watch.checked_config(cfg)
+    except watch.UNUSABLE as error:
+        fail(f"{watch.CONFIG} is unusable ({error}); fix it by hand first")
+    if checked is None:
+        fail(f"no config at {watch.CONFIG}")
+    problem = config_problem(checked)
+    if problem is not None:
+        fail(problem)
+    return checked
+
+
+def setting_keys(cfg: dict) -> list[str]:
+    return [*(f"{section}.{name}" for section, names in SETTINGS.items() for name in names),
+            *(f"{section}.{kind}" for section in KIND_SETTINGS for kind in cfg["slot_need_gb"])]
+
+
+def bound_problem(key: str, value: float) -> str | None:
+    """Returns:
+        Why value does not fit key beyond config_problem(): a slot limit is
+        a whole number, every other setting lies above 0 and a load limit
+        percentage at most 100; None when it fits.
+    """
+    if key.startswith(f"{SLOT_LIMITS}."):
+        return None if isinstance(value, int) else f"{key} takes a whole number of slots"
+    if value <= 0:
+        return f"{key} must lie above 0"
+    return f"{key} is a percentage up to 100" if key in PERCENT_KEYS and value > 100 else None
+
+
+def changed_config(cfg: dict, key: str, text: str) -> dict:
+    """Args:
+        cfg: the config file's content.
+        key: `<section>.<name>`, one of setting_keys().
+        text: the new value, a plain decimal number.
+
+    Returns:
+        cfg with key set to the number; fail() on an unknown key, a value
+        that is no number or one the config check refuses.
+    """
+    if key not in setting_keys(cfg):
+        fail(f"{key} is no setting config set changes; one of {', '.join(setting_keys(cfg))}")
+    if not NUMBER.fullmatch(text):
+        fail(f"{text!r} is no plain decimal number")
+    value = float(text) if "." in text else int(text)
+    section, _, name = key.partition(".")
+    changed = {**cfg, section: {**cfg.get(section, {}), name: value}}
+    problem = config_problem(changed) or bound_problem(key, value)
+    if problem is not None:
+        fail(problem)
+    return changed
+
+
+def cmd_config(args: argparse.Namespace) -> int:
+    cfg = stored_config()
+    changed = changed_config(cfg, args.key, args.value)
+    mode = stat.S_IMODE(os.lstat(watch.CONFIG).st_mode)
+    nofollow.rewrite(watch.CONFIG.parent, watch.CONFIG, json.dumps(changed, indent=2) + "\n", mode)
+    print(f"config {args.key} = {args.value}")
     return 0
 
 
@@ -1943,6 +2406,11 @@ def cli() -> argparse.ArgumentParser:
     cancel = sub.add_parser("cancel")
     cancel.add_argument("id")
     cancel.add_argument("--session")
+    sub.add_parser("override").add_argument("id")
+    sub.add_parser("learned").add_argument("--json", action="store_true", required=True)
+    setter = sub.add_parser("config").add_subparsers(dest="action", required=True).add_parser("set")
+    setter.add_argument("key")
+    setter.add_argument("value")
     sub.add_parser("block")
     return parser
 
@@ -1959,7 +2427,10 @@ def main() -> int:
             print(f"kvb-org-queue: the block hook failed ({error!r}), so the command counts as heavy and is refused.",
                   file=sys.stderr)
             return 2
-    commands = {"hold": cmd_hold, "list": cmd_list, "history": cmd_history, "cancel": cmd_cancel}
+    commands = {
+        "hold": cmd_hold, "list": cmd_list, "history": cmd_history, "cancel": cmd_cancel, "override": cmd_override,
+        "learned": cmd_learned, "config": cmd_config,
+    }
     try:
         return commands[args.cmd](args)
     except Stale as stale:

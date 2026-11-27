@@ -25,7 +25,7 @@
   "cache_budget_percent": 3,
   "slot_need_gb": {"quality-high": 15, "test": 15, "test-nostack": 0, "iteration": 20, "swarm": 30, "gui-dind": 65, "operator": 10},
   "notify": ["notify-send", "-u", "critical", "Agents council"],
-  "load_limits": {"cpu_percent": 90, "mem_percent": 85, "sample_seconds": 5, "kinds": ["test", "test-nostack", "quality-high"]},
+  "load_limits": {"cpu_percent": 90, "mem_percent": 85, "sample_seconds": 5, "band_low": 70, "band_high": 90, "kinds": ["test", "test-nostack", "quality-high"]},
   "memory_limits": {
     "warn": {"available": 15, "swap_free": 40, "psi_some": 10, "psi_full": 5, "swap_out_mb_min": 64, "container_swap_gb": 4},
     "stop": {"available": 8, "swap_free": 10, "psi_full": 5, "swap_out_mb_min": 256, "container_swap_gb": 16}

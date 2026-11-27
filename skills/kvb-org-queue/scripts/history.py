@@ -6,9 +6,12 @@ and the copy the kvb-org-organize watch hook keeps in ~/.local/state.
 A row: id, kind, signature, workdir, start, end (epoch seconds), minutes, exit,
 free_before_gb, min_free_gb, disk_gb (free_before_gb - min_free_gb, at least
 0), mem_before, mem_max, cpu_before, cpu_max (percent), concurrent (other
-active jobs at the grant), and HUNG ({cpu_s, read_bytes, written_bytes,
-still_min, members, tree}, the report of standstill.py) only on a run hold
-ended for standing still, whose exit is 124.
+active jobs at the grant), PREDICTED ({ram, cpu}, the footprint the grant
+booked) only on a run granted on a learned footprint, and HUNG ({cpu_s,
+read_bytes, written_bytes, still_min, members, tree}, the report of
+standstill.py) only on a run hold ended for standing still, whose exit is
+124, and override (true) only on a run `queue.py override` started past the
+budget; learn() counts it like every other run.
 """
 
 from __future__ import annotations
@@ -35,7 +38,11 @@ KIND_KEY = operator.itemgetter("kind")
 ANY_KIND = "*"
 RAM_CAP = "ram_cap_percent"
 HUNG = "hung"
-SIGNATURE_HEADER = ("Signature", "Kind", "Runs", "Median min", "p90 disk GB", "p90 RAM %", "Need GB")
+PREDICTED = "predicted"
+MARGIN = (1.0, 2.0)
+MARGIN_SHRINK = 0.05
+SHARE_SOURCES = {"ram": "mem", "cpu": "cpu"}
+SIGNATURE_HEADER = ("Signature", "Kind", "Runs", "Median min", "p90 disk GB", "p95 RAM %", "Margin", "Need GB")
 KIND_HEADER = ("Kind", "Runs", "p90 RAM share %", "Median CPU share %", "Slot limit", "Source")
 
 def first_operand(tokens: Iterable[str]) -> list[str]:
@@ -86,7 +93,8 @@ def row(job: dict, start: float, end: float, code: int, samples: list[dict[str, 
     """Build the history row of a finished job.
 
     Args:
-      job: its id, kind, signature and workdir.
+      job: its id, kind, signature and workdir, with HUNG and override when
+        set.
       start: epoch seconds the command started.
       end: epoch seconds it ended.
       code: its exit code.
@@ -148,6 +156,12 @@ def p90(values: list[float]) -> float:
     return statistics.quantiles(values, n=10, method="inclusive")[-1]
 
 
+def p95(values: list[float]) -> float:
+    import statistics
+
+    return statistics.quantiles(values, n=20, method="inclusive")[-1]
+
+
 def median(values: Iterable[float]) -> float:
     import statistics
 
@@ -167,15 +181,40 @@ def grouped(rows: list[dict], key: Callable[[dict], Hashable]) -> dict[Hashable,
 
 def command_stats(rows: list[dict]) -> dict:
     stats = {"runs": len(rows), "minutes": None, "longest": None, "disk_gb": None, "ram_share": None, "cpu_share": None,
-             "need_gb": None}
+             "need_gb": None, "margin": margin(rows)}
     if len(rows) >= MIN_RUNS:
         disk = p90([r["disk_gb"] for r in rows])
         stats.update(
             minutes=median(r["minutes"] for r in rows), longest=max(r["minutes"] for r in rows), disk_gb=disk,
-            ram_share=p90(shares(rows, "mem")), cpu_share=median(shares(rows, "cpu")),
+            ram_share=p95(shares(rows, "mem")), cpu_share=median(shares(rows, "cpu")),
             need_gb=math.ceil(disk + DISK_MARGIN_GB),
         )
     return stats
+
+
+def margin(rows: list[dict]) -> float:
+    """Returns:
+        The factor a command's learned shares are booked with, replayed
+        over its rows by end: from MARGIN[0], a row whose share (max minus
+        before) passed what its grant booked (PREDICTED) on a resource
+        multiplies it by the largest such ratio, any other row with
+        PREDICTED lowers it by MARGIN_SHRINK; always within MARGIN. Rows
+        without PREDICTED leave it as it is.
+    """
+    value = MARGIN[0]
+    for row in sorted(rows, key=lambda r: r["end"]):
+        booked = row.get(PREDICTED)
+        if not isinstance(booked, dict):
+            continue
+        ratios = [
+            (row[f"{source}_max"] - row[f"{source}_before"]) / booked[resource]
+            for resource, source in SHARE_SOURCES.items()
+            if isinstance(booked.get(resource), (int, float)) and not isinstance(booked[resource], bool) and booked[resource] > 0
+        ]
+        if ratios:
+            worst = max(ratios)
+            value = min(MARGIN[1], max(MARGIN[0], value * worst if worst > 1 else value - MARGIN_SHRINK))
+    return value
 
 
 def fit(ceiling: float, rows: list[dict], resource: str, share: float) -> int:
@@ -207,16 +246,17 @@ def learn(rows: list[dict], now: float, cfg: dict) -> tuple[dict[tuple[str, str]
 
     Returns:
       (signatures, kinds). signatures: {(kind, signature): {runs, minutes,
-      longest, disk_gb, ram_share, cpu_share, need_gb}}, and {(ANY_KIND, signature):
+      longest, disk_gb, ram_share, cpu_share, need_gb, margin}}, and {(ANY_KIND, signature):
       ...} over the rows of every kind with that signature, which is what a
       queue before the per-kind learning booked; kinds: {kind: {runs,
       ram_share, cpu_share, limit, light, ram_cap}}, ram_cap None without a
-      cap. With fewer than MIN_RUNS rows every value but runs, light and
-      ram_cap is None.
-      minutes is the median and longest the largest minutes, disk_gb and
-      ram_share the p90 of the disk taken
-      and of max minus before in percentage points, cpu_share the median of
-      max minus before; need_gb is ceil(disk_gb + DISK_MARGIN_GB); limit is
+      cap. With fewer than MIN_RUNS rows every value but runs, margin, light
+      and ram_cap is None.
+      minutes is the median and longest the largest minutes, disk_gb the
+      p90 of the disk taken; a signature's ram_share and cpu_share are the
+      p95 of max minus before in percentage points, its margin margin();
+      a kind's ram_share is the p90 and its cpu_share the median of max
+      minus before; need_gb is ceil(disk_gb + DISK_MARGIN_GB); limit is
       max(1, min over RAM and CPU of floor((load limit - median before) /
       max(share, MIN_SHARE_PERCENT))).
     """
@@ -255,7 +295,8 @@ def footprint(kind: str, aliases: tuple[str, ...], signatures: dict[tuple[str, s
 
     Returns:
       {ram, cpu}: the signature's share under kind once MIN_RUNS rows exist
-      there, for a kind not light at least booked_before(); else the
+      there, each share times its margin (largest()), for a kind not light
+      at least booked_before(); else the
       largest of the kind's share and each alias's share over every kind,
       so a shape without runs of its own never books less than its kind or
       the runs it was learned from; at least MIN_SHARE_PERCENT; RAM at most
@@ -296,7 +337,14 @@ def ceiling(kind: str, aliases: tuple[str, ...], signatures: dict[tuple[str, str
 
 
 def largest(sources: list[dict]) -> dict[str, float]:
-    return {resource: max(MIN_SHARE_PERCENT, *(s[f"{resource}_share"] for s in sources)) for resource in RESOURCES}
+    """Returns:
+        {ram, cpu}: the largest share of sources, each times its margin
+        (1.0 for a kind's stats), at least MIN_SHARE_PERCENT.
+    """
+    return {
+        resource: max(MIN_SHARE_PERCENT, *(s[f"{resource}_share"] * s.get("margin", MARGIN[0]) for s in sources))
+        for resource in RESOURCES
+    }
 
 
 def capped(stats: dict, shares: dict[str, float]) -> dict[str, float]:
@@ -339,7 +387,8 @@ def need_gb(signatures: dict[tuple[str, str], dict], kinds: dict[str, dict], kin
 
 
 def slot_limits(kinds: dict[str, dict], caps: dict[str, int], names: Iterable[str]) -> dict[str, tuple[int, str]]:
-    """Decide the slot limit of every kind.
+    """Report the slot limit history fits for every kind; queue.py admits by
+    its utilization band, and only the config caps bind there.
 
     Args:
       kinds: the kind map of learn().
@@ -411,7 +460,7 @@ def report(signatures: dict[tuple[str, str], dict], kinds: dict[str, dict], limi
     """
     commands = [
         [name, kind, str(s["runs"]), cell(s["minutes"]), cell(s["disk_gb"]),
-         cell(s["ram_share"]), "-" if s["need_gb"] is None else str(s["need_gb"])]
+         cell(s["ram_share"]), f"{s.get('margin', MARGIN[0]):.2f}", "-" if s["need_gb"] is None else str(s["need_gb"])]
         for (kind, name), s in sorted(signatures.items(), key=lambda item: item[0][::-1]) if kind != ANY_KIND
     ]
     per_kind = []

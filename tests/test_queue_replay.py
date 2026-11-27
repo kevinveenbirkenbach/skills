@@ -20,6 +20,7 @@ FP = {
 }
 SLOTS = {"gui-dind": 1, "iteration": 3, "operator": 1, "quality-high": 1, "swarm": 1, "test": 1, "test-nostack": 4}
 BUDGET = {"ram": 75, "cpu": 100}
+BAND = {"low": BUDGET, "high": BUDGET}
 LIMITS = {"cpu_percent": 101, "mem_percent": 85}
 EXCLUSIVE = {"quality-high", "test"}
 LIGHT = {"test-nostack"}
@@ -152,8 +153,9 @@ def simulate(queue, jobs: list[dict], name: str, branch: bool, events: list | No
             j["polled"] = t
         entries = active + waiting
         load, free = loaded(queue, active, waiting, host["baseline"], t), host["free"](t)
+        booked = {r: sum(FP[a["kind"]][r] for a in active) for r in BUDGET}
         args = (entries, free, FLOOR, "stop" if free < FLOOR else "ok", "ok", False, SLOTS, {j["id"]: FP[j["kind"]] for j in entries},
-                BUDGET, host["ranks"], host["agents"], load, EXCLUSIVE, LIGHT)
+                BAND, booked, host["ranks"], host["agents"], load, EXCLUSIVE, LIGHT)
         if branch:
             verdicts, drain, order = queue.evaluate(*args, data["drain"], t)
             data["drain"] = queue.latched(data, drain, t)

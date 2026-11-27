@@ -92,6 +92,12 @@ bound, or where one container (a docker-*.scope cgroup under system.slice,
 nested groups counted) holds at least container_swap_gb GB of swap, else ok;
 a host without swap, PSI or such a reading skips that bound. heavy_commands
 extend the built-in rules of heavy().
+
+Limits file: <root>/limits.json (limits.py documents its format and checks)
+overrides load_limits cpu_percent and mem_percent, memory_limits warn and
+stop (available, swap_free, psi_some; stop then also bounds psi_some) and
+thresholds_gb from its levels for every command; a refused file keeps the
+last valid copy in force and the watch hook names it to each session.
 """
 
 from __future__ import annotations
@@ -135,6 +141,7 @@ nofollow = sibling("nofollow")
 hookpath = sibling("hookpath")
 councilroot = sibling("councilroot")
 popups = sibling("popups")
+limit_file = sibling("limits")
 QUEUE = Path(__file__).resolve().parents[2] / "kvb-org-queue" / "scripts" / "queue.py"
 ROOT = councilroot.root()
 CONFIG = Path(
@@ -451,19 +458,34 @@ def settled_config() -> tuple[dict | None, str | None]:
         command stays off); the SHIPPED config and one warning naming the
         file when it cannot be read or checked (checked_config());
         REFUSE_ALL, which counts every command heavy, when SHIPPED cannot be
-        read or checked either.
+        read or checked either. The config and SHIPPED come under the
+        limits file in force (with_limits()).
     """
     try:
         cfg = load_config()
-        return (None if cfg is None else checked_config(cfg)), None
+        return (None if cfg is None else with_limits(checked_config(cfg))[0]), None
     except UNUSABLE as error:
         problem = f"agents council: {CONFIG} is unusable ({error})"
     try:
-        return checked_config(read_regular(SHIPPED)), (
+        return with_limits(checked_config(read_regular(SHIPPED)))[0], (
             f"{problem}; the built-in defaults of {SHIPPED} apply until it is fixed: light commands pass, heavy ones are refused"
         )
     except UNUSABLE as error:
         return dict(REFUSE_ALL), f"{problem} and so is {SHIPPED} ({error}); every command is refused until one is fixed"
+
+
+def with_limits(cfg: dict) -> tuple[dict, str | None]:
+    """Returns:
+        (cfg under the limits file in force (limit_file.read() below ROOT,
+        limit_file.applied(), the disk stages over the size of cfg's disk),
+        why the file was refused or None).
+    """
+    held, why = limit_file.read(ROOT)
+    total = None
+    if held is not None:
+        with contextlib.suppress(OSError, KeyError, TypeError, ValueError):
+            total = disk(cfg)[1]
+    return limit_file.applied(cfg, held, total), why
 
 
 def absent_part(cfg: dict, key: str) -> str | None:
@@ -834,7 +856,8 @@ def cmd_watch(cfg: dict, problem: str | None, unsettled: bool) -> int:
     if not unsettled and stale(state, cfg, now):
         measure_and_act(cfg, state, now, problem)
     keep_history()
-    texts = unseen_alerts(payload["session_id"]) + ([] if problem is None else [problem])
+    refused = limit_file.read(ROOT)[1]
+    texts = unseen_alerts(payload["session_id"]) + [text for text in (problem, refused) if text is not None]
     if texts:
         print(json.dumps({"hookSpecificOutput": {
             "hookEventName": payload["hook_event_name"],
@@ -2370,12 +2393,18 @@ def memory() -> dict[str, float | None]:
 
 
 def memory_stage(sample: dict[str, float | None], cfg: dict) -> str:
+    """Returns:
+        The first of stop and warn whose memory_limits bound the sample
+        reaches, else ok; under the limits file (limit_file.KEY) stop also
+        bounds psi_some by the file's psi stop.
+    """
     for name in ("stop", "warn"):
         bound = cfg["memory_limits"][name]
+        pressures = (*PRESSURES[name], *(("psi_some",) if name == "stop" and limit_file.KEY in cfg else ()))
         if (
             sample["available"] < bound["available"]
             or (sample["swap_free"] is not None and sample["swap_free"] < bound["swap_free"])
-            or any(sample[key] is not None and sample[key] >= bound[key] for key in PRESSURES[name])
+            or any(sample[key] is not None and sample[key] >= bound[key] for key in pressures)
             or sample["container_swap_gb"] >= bound["container_swap_gb"]
         ):
             return name
@@ -2929,7 +2958,7 @@ def main() -> int:
         return run()
     try:
         return run()
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001
         print(f"kvb-org-organize: the block hook failed ({error!r}), so the command counts as heavy and is refused.",
               file=sys.stderr)
         return 2
