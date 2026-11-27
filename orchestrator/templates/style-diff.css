@@ -35,7 +35,7 @@
 .feedback-float { position: fixed; z-index: 40; padding: 2px; border-radius: 10px; background: var(--glass-card); box-shadow: var(--shadow); }
 .code-box { display: flex; flex-direction: column; min-width: 0; margin-top: 4px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); }
 .code-body { display: grid; gap: var(--sp-1); min-width: 0; padding: 7px 10px; }
-.code-box[data-open="false"] > .code-body { max-height: 12lh; overflow: hidden; }
+.code-box[data-open="false"] > .code-body { max-height: 12lh; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .code-box[data-place="closed"] > .code-body { max-height: calc(1lh + 14px); }
 .code-box[data-place="closed"] .command > .linkish { min-width: 0; max-width: 100%; overflow: hidden; }
 .code-box[data-place="closed"] .command code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

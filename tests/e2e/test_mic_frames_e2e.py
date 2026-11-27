@@ -72,8 +72,10 @@ RADIO = """(async () => {@HELPERS@@SCAN@
   const mic = foot.querySelector(":scope > button.mic");
   const idle = getComputedStyle(mic).backgroundColor;
   mic.setAttribute("aria-pressed", "true");
+  await sleep(300);
   const recording = getComputedStyle(mic).backgroundColor;
   mic.setAttribute("aria-pressed", "false");
+  await sleep(300);
   area.style.height = "260px";
   await sleep(100);
   const after = scan().find((entry) => entry.id === area.id);

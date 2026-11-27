@@ -69,9 +69,12 @@ svg .res-icon.hung { fill: var(--violet); pointer-events: none; }
 svg .res-icon.asleep, svg .res-icon.unknown { fill: var(--muted); }
 svg .res-bar { fill: var(--c); }
 svg .res-bar.faint { opacity: 0.35; }
-.res-limits { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: var(--fs-xs); }
+.res-panel.res-hardware { min-height: min-content; }
+.res-panel.res-hardware > .res-plot { min-height: 48px; }
+.res-limits { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; font-size: var(--fs-xs); }
+.res-limits > * { flex: none; }
 .res-limits .segmented button { padding: 2px 8px; font-size: var(--fs-xs); }
-.limit-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res-limits > .limit-note { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .limit-error { margin: 0; color: var(--bad); }
 .limits-table { border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .limits-table th, .limits-table td { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
@@ -92,5 +95,17 @@ svg .res-target text { fill: var(--muted); font-size: var(--fs-2xs); }
 .res-c3 { --c: var(--warn); }
 .res-c4 { --c: var(--violet); }
 .res-c5 { --c: var(--bad); }
+.res-disk0 { --c: var(--ok); }
+.res-disk1 { --c: color-mix(in srgb, var(--ok) 55%, var(--text)); }
+.res-disk2 { --c: color-mix(in srgb, var(--ok) 55%, var(--panel)); }
+.res-cpu { --c: var(--info); }
+.res-ram { --c: var(--violet); }
+.res-swap { --c: var(--warn); }
+.res-util0 { --c: color-mix(in srgb, var(--bad) 50%, var(--violet)); }
+.res-util1 { --c: color-mix(in srgb, color-mix(in srgb, var(--bad) 50%, var(--violet)) 55%, var(--text)); }
+.res-util2 { --c: color-mix(in srgb, color-mix(in srgb, var(--bad) 50%, var(--violet)) 55%, var(--panel)); }
+.res-vram0 { --c: var(--bad); }
+.res-vram1 { --c: color-mix(in srgb, var(--bad) 55%, var(--text)); }
+.res-vram2 { --c: color-mix(in srgb, var(--bad) 55%, var(--panel)); }
 .res-burn.k-done { --c: var(--ok); }
 .res-burn.k-scope { --c: var(--text); }

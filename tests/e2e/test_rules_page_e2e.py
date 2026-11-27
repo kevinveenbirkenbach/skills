@@ -27,7 +27,7 @@ PAGE = """(async () => {@HELPERS@
   }
   window.e2eSameDocument = true;
   const fold = (id) => document.querySelector(`#main details[data-fold="${id}"]`);
-  const shown = (node) => Boolean(node && node.getClientRects().length);
+  const shown = (node) => Boolean(node && node.checkVisibility());
   const visible = (id) => all("li.hub-rule", fold(id)).filter(shown).length;
   const rowOf = (pattern) => all("#main li.hub-rule").find((node) => text(node.querySelector(".hub-rule-pattern")) === pattern);
   const chipOf = (row) => row.querySelector("[data-expiry]");

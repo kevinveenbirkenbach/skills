@@ -26,5 +26,5 @@
       kanban.running = !kanban.running;
       taskView.sig = "";
       drawTasks();
-    }}}, icon("bi-activity"), "Running", counter(count));
+    }}}, icon("bi-activity"), counter(count));
   }

@@ -190,18 +190,21 @@ def parse_df(text: str) -> list[dict]:
     """Returns:
         One {mount, used, total} in bytes per block device in the output of
         df -P -k, at the first mount df lists for it; loop devices and
-        filesystems without a device are left out.
+        filesystems without a device are left out. total is used plus
+        available, the size normal writes can fill, so used / total is df's
+        Capacity; the 1K-blocks column also counts the blocks reserved for
+        root and would understate the fill level.
     """
     found, seen = [], set()
     for line in text.splitlines()[1:]:
         parts = line.split(None, 5)
         if len(parts) < 6 or not parts[0].startswith("/dev/") or parts[0].startswith("/dev/loop") or parts[0] in seen:
             continue
-        total, used = number(parts[1]), number(parts[2])
-        if total is None or used is None:
+        used, available = number(parts[2]), number(parts[3])
+        if used is None or available is None:
             continue
         seen.add(parts[0])
-        found.append({"mount": parts[5], "used": int(used) * KIB, "total": int(total) * KIB})
+        found.append({"mount": parts[5], "used": int(used) * KIB, "total": int(used + available) * KIB})
     return found
 
 

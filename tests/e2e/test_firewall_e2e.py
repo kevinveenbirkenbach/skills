@@ -115,7 +115,7 @@ TOOLS = """(async () => {@HELPERS@
     return {error: text(document.getElementById("main"))};
   }
   const rows = () => all("#main .tool-row").map((node) => [node.closest("[data-list]").dataset.list, node.dataset.tool, node.dataset.on, node.hasAttribute("data-staged")]);
-  const bar = () => document.querySelector("#main .apply-bar");
+  const bar = () => document.querySelector('#main .apply-bar[aria-label="Apply changes"]');
   const found = {before: rows(), hidden: bar().hidden};
   await flip("blender", true);
   await flip("caveman@caveman", true);
@@ -308,7 +308,7 @@ class TestFirewallE2E(HubCase):
             with self.subTest(width=width):
                 self.assertNotIn("error", shown, shown)
                 self.assertEqual((shown["title"], shown["subs"]), ("Controls", base.SUBS))
-                self.assertEqual(shown["tabs"], {"first": [["tools", "true", False], ["rules", "false", True], ["schedules", "false", True]], "picked": [["tools", "false", True], ["rules", "true", False], ["schedules", "false", True]]})
+                self.assertEqual(shown["tabs"], {"first": [["tools", "true", False], ["rules", "false", True], ["schedules", "false", True], ["queue", "false", True]], "picked": [["tools", "false", True], ["rules", "true", False], ["schedules", "false", True], ["queue", "false", True]]})
                 self.assertEqual(shown["collapsed"], [True] * 4)
                 self.assertEqual(shown["sources"], [str(self.settings)])
                 self.assertEqual(shown["folded"], {"expanded": ["false"], "rows": 0})

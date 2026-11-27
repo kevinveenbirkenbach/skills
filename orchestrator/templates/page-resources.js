@@ -1,5 +1,6 @@
   const RESOURCE = {left: 46, right: 10, wide: 50, top: 6, bottom: 6, axis: 18, poll: 5000, stale: 60, tones: 6, glyph: 6.5, shown: 100, lane: 13};
   const RESOURCE_PANELS = [["hardware", "bi-cpu", "Hardware: disks, CPU, RAM, swap, GPU and VRAM"], ["tokens", "bi-coin", "Tokens per agent"], ["combined", "bi-layers", "Hardware, tokens and burnup"]];
+  const HARDWARE_TONES = {shades: 3, host: {CPU: "res-cpu", RAM: "res-ram", Swap: "res-swap"}};
   const RESOURCE_ZONES = {idle: "Idle: below 30 %", saturated: "Saturated: above 90 %"};
   const RESOURCE_MARKS = {
     wait: ["#bi-hourglass-split", (mark) => `Idle waiting: ${mark.peak} jobs waited while CPU and RAM stayed under 50 %`, 0],
@@ -229,14 +230,21 @@
     }
   }
 
+  /**
+   * @param samples - sampler rows.
+   * @returns the hardware lines, each with its tone: the disks in shades of one hue, CPU, RAM and swap each in its own
+   * hue, every GPU in shades of a further hue and its VRAM in yet another, so that no two kinds share a colour.
+   */
   function hardwareSeries(samples) {
-    const tones = new Map();
+    const shades = {disk: new Map(), util: new Map(), vram: new Map()};
     return Resources.hardware(samples).map((line) => {
-      if (!tones.has(line.name)) {
-        tones.set(line.name, tones.size % RESOURCE.tones);
+      const shade = shades[line.kind];
+      if (shade && !shade.has(line.name)) {
+        shade.set(line.name, shade.size % HARDWARE_TONES.shades);
       }
+      const tone = shade ? `res-${line.kind}${shade.get(line.name)}` : HARDWARE_TONES.host[line.name];
       const last = [...line.points].reverse().find(([, value]) => value !== null);
-      return {...line, id: ViewStore.id(line.kind, line.name), label: `${resourceLabel(line)} ${dash(last === undefined ? null : last[1])} %`, tone: `res-c${tones.get(line.name)} k-${line.kind}`};
+      return {...line, id: ViewStore.id(line.kind, line.name), label: `${resourceLabel(line)} ${dash(last === undefined ? null : last[1])} %`, tone: `${tone} k-${line.kind}`};
     });
   }
 

@@ -30,9 +30,9 @@ tmpfs              8000000      1000   7999000       1% /dev/shm
 overlay          976762584 512000000 460000000      53% /var/lib/docker/overlay2/x/merged
 """
 DISKS = [
-    {"mount": "/", "used": 512000000 * 1024, "total": 976762584 * 1024},
-    {"mount": "/boot/efi", "used": 12000 * 1024, "total": 523248 * 1024},
-    {"mount": "/mnt/Backup Disk", "used": 100000000 * 1024, "total": 1953514584 * 1024},
+    {"mount": "/", "used": 512000000 * 1024, "total": (512000000 + 460000000) * 1024},
+    {"mount": "/boot/efi", "used": 12000 * 1024, "total": (12000 + 511248) * 1024},
+    {"mount": "/mnt/Backup Disk", "used": 100000000 * 1024, "total": (100000000 + 1853514584) * 1024},
 ]
 MEMINFO = """MemTotal:       32000000 kB
 MemFree:         2000000 kB

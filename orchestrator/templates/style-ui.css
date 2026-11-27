@@ -112,6 +112,7 @@ body.fit .spot-host { flex: none; }
 @container composer-foot (max-width: 480px) {
   .composer .cell-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+@media (max-width: 640px) { .composer .composer-foot :is(button, summary) { min-width: 44px; min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .composer .composer-foot .bi { animation: none; } }
 [data-rec="busy"] > .bi { animation: presence-spin 1.2s linear infinite; }
 @media (prefers-reduced-motion: reduce) { [data-rec="busy"] > .bi { animation: none; } }

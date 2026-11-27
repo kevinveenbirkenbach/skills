@@ -82,6 +82,9 @@ class TestCommitTreeDiff(HubCase):
         repo, target = merge_repo(Path(work.name))
         tree = git(repo, "rev-parse", f"{target}^{{tree}}").strip()
         self.parent = git(repo, "rev-parse", "main").strip()
+        with self.assertRaises(staged_diff.DiffError) as missing:
+            staged_diff.git(repo, ["cat-file", "-t", MISSING], None)
+        self.missing = str(missing.exception)
         now = time.time()
         self.write_council({
             "work/s1/claim.json": {"office": "work/s1", "session": "s1", "runtime": "claude", "name": "Skills", "since": iso(now - 86400), "beat": now, "work": "commit-tree"},
@@ -120,7 +123,8 @@ class TestCommitTreeDiff(HubCase):
             with self.subTest(browser=browser, width=width, step="error"):
                 self.assertNotIn("error", broken, broken)
                 self.assertEqual((broken["failed"], broken["files"], broken["none"], broken["wide"]), ("true", 0, "No diff to show.", False), broken)
-                self.assertIn(f"No commit-tree diff: git cat-file -t {MISSING} failed: fatal: Not a valid object name {MISSING}", broken["line"])
+                self.assertTrue(self.missing.startswith(f"git cat-file -t {MISSING} failed: fatal: "), self.missing)
+                self.assertIn(f"No commit-tree diff: {self.missing}", broken["line"])
 
     def test_chromium_shows_the_commit_tree_diff_its_eye_toggle_and_the_git_error_line(self):
         data = self.drive(self.steps("chromium"), None)

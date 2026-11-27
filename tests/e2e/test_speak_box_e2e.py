@@ -54,7 +54,7 @@ HOME = """(async () => {@HELPERS@@SHAPE@
       }
       await sleep(40);
       const body = tile.querySelector(".home-body").getBoundingClientRect();
-      const out = [".ptt-split", ".mayday-toggle"].filter((selector) => {
+      const out = [".ptt-split > :first-child", ".ptt-split .ptt-more", ".mayday-toggle"].filter((selector) => {
         const edge = tile.querySelector(selector).getBoundingClientRect();
         return !(edge.width > 0 && edge.left >= body.left - 0.5 && edge.right <= body.right + 0.5 && edge.top >= body.top - 0.5 && edge.bottom <= body.bottom + 0.5);
       });

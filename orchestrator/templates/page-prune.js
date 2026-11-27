@@ -35,7 +35,7 @@
    */
   function pruneControls(stale) {
     const pending = Prune.pending(state.jobs || [], pruneNow());
-    const open = h("button", {type: "button", class: "btn small", id: "kanban-prune-open", disabled: !stale && !pending, ...named("Prune", "Prune stale tasks: one passkey signs the list and a deadline; the agents can keep a task until then")}, icon("bi-scissors"), "Prune");
+    const open = h("button", {type: "button", class: "btn small icon-only", id: "kanban-prune-open", disabled: !stale && !pending, ...named("Prune", "Prune stale tasks: one passkey signs the list and a deadline; the agents can keep a task until then")}, icon("bi-scissors"));
     open.addEventListener("click", openPrune);
     if (!pending) {
       return [open];

@@ -50,10 +50,10 @@ EXPLORE = """(async () => {@HELPERS@@READ@@KIT@
   rowOf("kvb-help").click();
   const drilled = Boolean(await until(() => filters().join() === "skill" && keys().join() === "kvb-help", 6000));
   choose(group(), "tool");
-  const switched = Boolean(await until(() => keys().join() === "Bash,Read," && split(), 6000));
+  const regrouped = Boolean(await until(() => keys().join() === "Bash,Read," && split(), 6000));
   const byTool = {group: group().value, keys: keys(), shares: cells("share"), split: split(), filters: filters()};
   box().scrollIntoView({block: "start"});
-  return {bySkill, byCost, drilled, switched, byTool, page: wide(), violations: window.e2eViolations || null};
+  return {bySkill, byCost, drilled, switched: regrouped, byTool, page: wide(), violations: window.e2eViolations || null};
 })()"""
 RESET = """(async () => {@HELPERS@@READ@@KIT@
   document.querySelector('#main .res-usage [data-filter="skill"]').click();

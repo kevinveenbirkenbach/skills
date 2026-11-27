@@ -106,14 +106,15 @@ USAGE = """(async () => {@HELPERS@@KIT@@BAR@
   pointer(document, "pointermove", rect.left + rect.width * 0.25, y);
   pointer(document, "pointermove", rect.left + rect.width * 0.4, y);
   pointer(document, "pointerup", rect.left + rect.width * 0.4, y);
-  const dragged = await settled(40);
+  const landed = await settled(40);
+  const dragged = landed ? read(landed) : null;
   const stored = (await (await fetch("/api/accounts", {cache: "no-store"})).json()).calibrations;
   const before = {pressed: toggle().getAttribute("aria-pressed"), marks: marks()};
   toggle().click();
   await until(() => toggle().getAttribute("aria-pressed") === "true" && marks().every(([, found]) => found.length === 1), 6000);
   const on = {pressed: toggle().getAttribute("aria-pressed"), marks: marks()};
   bar().scrollIntoView({block: "center", inline: "center"});
-  return {shown, right, paged, keyed: Boolean(keyed), kept, dragged: dragged ? read(dragged) : null, stored, before, on, page: wide(), violations: window.e2eViolations || null};
+  return {shown, right, paged, keyed: Boolean(keyed), kept, dragged, stored, before, on, page: wide(), violations: window.e2eViolations || null};
 })()"""
 RELOAD = """(async () => {@HELPERS@@KIT@@BAR@
   if (!(await until(() => bar() && toggle() && marks().every(([, found]) => found.length === 1), 15000))) {
@@ -141,7 +142,7 @@ class TestResourcesAccounts(HubCase):
     sample = w4.TestWorkbenchResources.sample
 
     def setUp(self):
-        super().setUp()
+        HubCase.setUp(self)
         OUT.mkdir(parents=True, exist_ok=True)
         now = int(time.time())
         self.start = now - now % 60 - w4.ROWS * 60

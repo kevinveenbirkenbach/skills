@@ -115,7 +115,11 @@ BULK = """(async () => {@HELPERS@@PLAN_HELPERS@
   found.toast = await fresh(shown, "Business value @VALUE@ for 2 tasks");
   found.asked = asked;
   found.posted = posted;
-  found.after = [button.disabled, all("#main .task-row input.task-pick:checked").length];
+  const picked = () => [document.getElementById("bulk-value").disabled, all("#main .task-row input.task-pick:checked").length];
+  if (@SIGNS@) {
+    await until(() => JSON.stringify(picked()) === JSON.stringify([true, 0]), 8000);
+  }
+  found.after = picked();
   Object.assign(found, fits());
   all('#main [aria-label="Estimation"] button').find((entry) => entry.dataset.estimation === "none").click();
   found.reset = Boolean(await until(() => requestShown() === false, 8000));

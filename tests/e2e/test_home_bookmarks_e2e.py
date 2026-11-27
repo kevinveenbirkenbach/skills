@@ -377,7 +377,7 @@ class TestHomeBookmarks(HubCase):
                 loaded = next(results)
                 self.assertTrue(loaded["drawn"], loaded)
                 found = next(results)
-                self.assertEqual((found["charts"], found["stars"]), ([True] * 4, 0), found)
+                self.assertEqual((found["charts"], found["stars"]), ([True] * 5, 0), found)
                 self.assertEqual(found["tree"], [True], found)
                 self.assertTrue(found["rows"]["repo"] and all(found["rows"]["repo"]), found)
                 self.assertTrue(found["rows"]["branch"] and all(found["rows"]["branch"]), found)
