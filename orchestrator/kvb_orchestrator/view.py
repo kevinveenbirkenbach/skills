@@ -27,7 +27,7 @@ from .jobs import JOB_OPEN
 from .messaging import message_row
 from .orbits import TRACK_STEPS, track
 from .phrasing import phrase_parts
-from .presence import presence, read_snapshot
+from .presence import beats, presence, read_snapshot
 from .queue_order import grant_order, live_ids
 from .receipts import inline, read_of
 from .records import epoch, iso_epoch, read_jsonl, write_atomic
@@ -40,6 +40,7 @@ from .register import (
     stored_order,
 )
 from .reviewing import review_row
+from .running import running_job
 from .settings import NOTIFY, completed, media_origins, station_origins, valid_settings
 from .signed import signing
 from .skill_scripts import OUTPUT_LIMIT
@@ -49,7 +50,7 @@ RADIO_WINDOW = 86400
 JOBS_SHOWN = 20
 ACTIVE = 900
 INDEX_CSP = (
-    "default-src 'none'; script-src 'nonce-{0}'; style-src 'nonce-{0}'; connect-src 'self'; media-src {1}; frame-src 'self'; "
+    "default-src 'none'; script-src 'nonce-{0}'; style-src 'nonce-{0}'; connect-src 'self'; media-src {1}; img-src blob:; frame-src 'self'; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
 ENCODER_CSP = (
@@ -147,6 +148,7 @@ class View:
         rows = task_rows(tasks, queue, self.tree.get())
         chain = grant_order(queue_chain(queue, tasks, order, now), queue_jobs)
         stored = self.messages.listed()
+        snapshot = read_snapshot(self.agent_sessions, now)
         return {
             "settings": settings,
             "schedules": self.schedule_settings.view(),
@@ -156,7 +158,7 @@ class View:
             "inbox": inbox,
             "badges": badges(self.match_open(inbox), claims, self.jobs.listed(), now),
             "pending": self.batches.listed(),
-            "rules": [{**{key: value for key, value in rule.items() if key != "proof"}, "signed": rule.get("proof") is not None} for rule in self.rules.listed()],
+            "rules": self.rule_rows(now),
             "approvers": self.keys(),
             "jobs": jobs,
             "views": VIEWS,
@@ -183,10 +185,21 @@ class View:
             "grants": grant_rows,
             "night": night_mode(self.council),
             "night_parts": night_parts(self.council),
-            "presence": presence(read_snapshot(self.agent_sessions, now), night_parts(self.council), night_mode(self.council), claims, news, now),
+            "presence": presence(snapshot, night_parts(self.council), night_mode(self.council), claims, news, now),
+            "beats": beats(snapshot, claims),
+            "runner": running_job(self.runner_marker, self.jobs.listed()),
             "silence": silence_of(self.council, now),
             "graph": drawn,
         }
+
+    def rule_rows(self, now: float) -> list[dict]:
+        """Returns:
+            The stored rules without their proof, each with signed and the
+            matched and of of rule_counts().
+        """
+        stored = self.rules.listed()
+        counts = self.rule_counts(stored, now)
+        return [{**{key: value for key, value in rule.items() if key != "proof"}, "signed": rule.get("proof") is not None, **counts[rule["id"]]} for rule in stored]
 
     def signed_changes(self, settings: dict, saved: dict) -> list[dict]:
         """Args:

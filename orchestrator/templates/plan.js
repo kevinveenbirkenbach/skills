@@ -11,7 +11,8 @@ const Plan = (() => {
   const DAY = 86400;
   const STALE_DAYS = 3;
 
-  const stale = (row, now) => !row.ended && typeof row.updated === "number" && now - row.updated >= STALE_DAYS * DAY;
+  const staleFor = (row, now, days) => !row.ended && typeof row.updated === "number" && now - row.updated >= days * DAY;
+  const stale = (row, now) => staleFor(row, now, STALE_DAYS);
 
   function median(values) {
     const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
@@ -332,7 +333,7 @@ const Plan = (() => {
     return keyed.map((entry) => entry.row);
   }
 
-  return {FORECASTS, ESTIMATIONS, TRENDS, SORTS, SERIES, TRENDED, STATUS_ORDER, STALE_DAYS, median, medians, forecastLength, bars, etas, stale, scoped, burn, steps, trend, finishes, lineAt, overlaySeries, overlayLabels, overlayTop, sortRows};
+  return {FORECASTS, ESTIMATIONS, TRENDS, SORTS, SERIES, TRENDED, STATUS_ORDER, STALE_DAYS, median, medians, staleFor, forecastLength, bars, etas, stale, scoped, burn, steps, trend, finishes, lineAt, overlaySeries, overlayLabels, overlayTop, sortRows};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Plan;

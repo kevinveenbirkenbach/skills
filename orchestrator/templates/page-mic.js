@@ -19,11 +19,25 @@
     button.title = reason || MIC_HINT;
   }
 
+  /**
+   * @param {HTMLButtonElement} button a recording control: a field's mic or the composer's Record.
+   * @param {string} look idle, recording or busy; busy is the spinning hourglass every recording control shows while its sound becomes text.
+   * @param {string} idle the icon at rest.
+   * @param {Node[]} label what follows the icon; [] for an icon-only control.
+   */
+  function recLook(button, look, idle, label) {
+    button.dataset.rec = look;
+    button.setAttribute("aria-pressed", String(look === "recording"));
+    button.setAttribute("aria-busy", String(look === "busy"));
+    button.replaceChildren(icon(look === "recording" ? "bi-stop-fill" : look === "busy" ? "bi-hourglass-split" : idle), ...label);
+  }
+
+  const micKey = (field) => field.getAttribute("aria-label") || "";
+
   function micLook(button, look) {
     const recording = look === "recording";
-    button.setAttribute("aria-pressed", String(recording));
-    button.setAttribute("aria-label", recording ? "Stop voice input" : "Voice input");
-    button.replaceChildren(icon(recording ? "bi-stop-fill" : look === "busy" ? "bi-hourglass-split" : "bi-mic"));
+    recLook(button, look, "bi-mic", []);
+    button.setAttribute("aria-label", recording ? "Stop voice input" : look === "busy" ? "Voice input: transcribing" : "Voice input");
     micLive().hidden = !recording;
     if (look === "busy") {
       button.disabled = true;
@@ -49,7 +63,12 @@
     micButtons.set(field, button);
     micFields.set(button, field);
     field.dataset.mic = "on";
-    micLook(button, "idle");
+    // Trip-wire: polled views (choice dialogs, cards) rebuild a field while it records; its rebuilt twin under the same aria-label takes over the recording, or the new mic stays dead and the text lands in a detached field.
+    const twin = mic.field && mic.field !== field && !mic.field.isConnected && micKey(field) && micKey(mic.field) === micKey(field);
+    if (twin) {
+      Object.assign(mic, {field, button});
+    }
+    micLook(button, twin ? (mic.busy ? "busy" : "recording") : "idle");
     button.addEventListener("click", () => toggleMic(field, button));
     return button;
   }
@@ -60,13 +79,15 @@
    * @param {HTMLInputElement|HTMLTextAreaElement} field the text field; it moves into the frame.
    * @param {Node[]} extras for a textarea what belongs to it besides its mic, on the footer's left (Record, a count); for a
    * one-line field the segments after the mic (its form's submit button); [] for none.
-   * @returns {HTMLElement} one frame around field and mic: for a one-line field the mic and then the extras as its last
-   * segments, for a textarea a footer row below it whose last child is the mic.
+   * @returns {HTMLElement} one frame around field and mic, which takes pasted and dropped files: for a one-line field the
+   * mic and then the extras as its last segments, for a textarea its chip row of attachments and a footer row below it
+   * whose last child is the mic, the 📎 picker right before it.
    */
   function micFrame(field, extras) {
     const button = micButton(field);
+    attachWire(field);
     if (field.tagName === "TEXTAREA") {
-      return h("div", {class: "mic-frame mic-area"}, field, h("div", {class: "mic-foot"}, extras, h("span", {class: "spacer"}), button));
+      return h("div", {class: "mic-frame mic-area"}, field, attachRow(field), h("div", {class: "mic-foot"}, extras, h("span", {class: "spacer"}), attachPicker(field), button));
     }
     return h("span", {class: "mic-frame mic-line"}, field, button, extras);
   }
@@ -144,6 +165,10 @@
 
   async function toggleMic(field, button) {
     if (mic.button) {
+      if (!mic.button.isConnected) {
+        Object.assign(mic, {field, button});
+        micLook(button, mic.busy ? "busy" : "recording");
+      }
       if (mic.button === button && mic.recorder) {
         stopMic(false);
       }
@@ -173,14 +198,13 @@
     recorder.addEventListener("stop", () => {
       media.getTracks().forEach((track) => track.stop());
       window.clearInterval(mic.timer);
-      const cancelled = mic.cancel;
-      micLook(button, "idle");
-      if (cancelled) {
+      mic.recorder = null;
+      if (mic.cancel) {
+        micLook(mic.button, "idle");
         micDone();
         return;
       }
-      mic.recorder = null;
-      micTranscribe(new Blob(chunks, {type: recorder.mimeType}), field, button);
+      micTranscribe(new Blob(chunks, {type: recorder.mimeType}));
     }, {once: true});
     Object.assign(mic, {recorder, started: Date.now()});
     recorder.start();
@@ -198,23 +222,28 @@
     field.dispatchEvent(new Event("input", {bubbles: true}));
   }
 
-  async function micTranscribe(blob, field, button) {
+  /**
+   * @param {Blob} blob the recorded sound; its text lands in mic.field, which a rebuilt twin may have replaced meanwhile.
+   */
+  async function micTranscribe(blob) {
     const sound = context();
     if (!sound || !blob.size) {
+      micLook(mic.button, "idle");
       micDone();
       return;
     }
     mic.busy = true;
-    micLook(button, "busy");
+    micLook(mic.button, "busy");
     try {
       const result = await send("/api/stt", await wavOf(blob, sound, state.speech.input), "audio/wav");
       if (!result.ok || !result.data) {
         throw new Error(`${result.status} ${result.text}`.trim());
       }
-      micInsert(field, result.data.text || "");
+      micInsert(mic.field, result.data.text || "");
     } catch (error) {
       toast("Voice input failed", [String(error.message || error)], false);
     } finally {
+      const button = mic.button;
       micDone();
       micLook(button, "idle");
     }

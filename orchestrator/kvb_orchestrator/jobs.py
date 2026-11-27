@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 from .errors import Conflict, Missing, ToolError
 from .fields import bounded, decode, expect, field
 from .register import OPERATOR, REGISTER, operator_rows, read_register, runnable
-from .signed import operator_signed
+from .signed import operator_signed, signing
 from .skill_scripts import OPERATOR_SCRIPT, OUTPUT_LIMIT
 
 JOB_OPEN = ("queued", "running")
@@ -13,7 +14,12 @@ RUN_OUTPUT = 64 << 10
 CONSOLE = ("id", "status", "code", "output", "created_ts", "started", "finished")
 TASK_JOB = "task"
 GATE_JOB = "gate"
-CHANGES = (TASK_JOB, GATE_JOB)
+QUEUE_JOB = "queue"
+SCHEDULE_JOB = "schedule"
+PRUNE_JOB = signing.PRUNE_KIND
+CHANGES = (TASK_JOB, GATE_JOB, QUEUE_JOB, SCHEDULE_JOB, PRUNE_JOB)
+ARGV_LIMIT = 100
+ARGV_KEYS = ("kind", "argv")
 UNRUNNABLE = "The hub runner needs a command and an absolute directory, and this row lacks one; run it with operator.py run in a terminal."
 RESTARTED = "the runner restarted while this job ran; run the row again"
 
@@ -22,12 +28,42 @@ def runner_job(job: dict) -> dict:
     """Returns:
         What the runner claims: an operator command, with head when a Match
         release bound it to a merge preview of that HEAD, or a task or gate
-        change with kind and argv; a runner that predates such changes
+        change with kind and argv, and not_before when the signed item
+        holds the job back until then; a runner that predates such changes
         verifies them as an operator command and refuses them.
     """
     change = {"kind": job["kind"], "argv": job["argv"]} if job.get("kind") in CHANGES else {}
     head = {"head": job["head"]} if job.get("head") else {}
-    return {**{key: job[key] for key in ("id", "task", "command", "directory", "sha256")}, **change, **head, "proof": job.get("proof")}
+    held = {"not_before": job["not_before"]} if job.get("not_before") is not None else {}
+    return {**{key: job[key] for key in ("id", "task", "command", "directory", "sha256")}, **change, **head, **held, "proof": job.get("proof")}
+
+
+def argv_items(raw: object, item_of: Callable[[object], dict], noun: str) -> list[dict]:
+    """Args:
+        raw: the page's items, each {"kind", "argv"}; the staged changes go
+            under one passkey assertion.
+        item_of: the signed item of an argv, raising signing.Refused for an
+            argv of another shape.
+        noun: what one change is, for the errors.
+
+    Returns:
+        The distinct signed items, one per change, in page order.
+    """
+    if not isinstance(raw, list) or not 1 <= len(raw) <= ARGV_LIMIT:
+        raise ToolError(f"items must be a list of 1 to {ARGV_LIMIT} {noun}s")
+    signed: list[dict] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise ToolError("every item must be an object with kind and argv")
+        expect(entry, ARGV_KEYS)
+        try:
+            item = item_of(entry["argv"])
+        except signing.Refused as error:
+            raise ToolError(f"{noun}: {error}") from None
+        if item in signed:
+            raise ToolError("items must be distinct")
+        signed.append(item)
+    return signed
 
 
 def console_of(job: dict | None) -> dict | None:
@@ -57,6 +93,33 @@ def blocked_reasons(jobs: list[dict], now: float) -> dict[str, str]:
         else:
             reasons[job["task"]] = f"Queued in the hub runner for {minutes_since(job['created_ts'], now)} min{ahead}; the runner runs one job at a time."
     return reasons
+
+
+def blocked_kinds(jobs: list[dict]) -> dict[str, str]:
+    """Args:
+        jobs: every hub job record.
+
+    Returns:
+        Per task with a queued or running hub job its kind, running when
+        any of its jobs runs, else queued: the stamp of blocked_reasons().
+    """
+    kinds: dict[str, str] = {}
+    for job in jobs:
+        if job["status"] in JOB_OPEN and kinds.get(job["task"]) != "running":
+            kinds[job["task"]] = job["status"]
+    return kinds
+
+
+def row_blocked_kind(row: dict, kinds: dict[str, str]) -> str:
+    """Args:
+        row: an open operator row.
+        kinds: blocked_kinds() of the hub jobs.
+
+    Returns:
+        The kind of row_blocked(): running, queued, unrunnable, or "" when
+        the row is not blocked.
+    """
+    return kinds.get(row["task"]) or ("" if row["check"] == "decision" or runnable(row) else "unrunnable")
 
 
 def row_blocked(row: dict, reasons: dict[str, str]) -> str:
@@ -111,6 +174,57 @@ class Jobs:
         job = {"task": row["task"], "command": row["command"], "directory": row["directory"], "sha256": item["sha256"], "status": "queued", "proof": proof, "head": head}
         self.jobs.add({**job, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None, "dismissed": False})
         return "handed to the runner"
+
+    def signed_jobs(self, body: bytes, items_of: Callable[[object], list[dict]], kind: str, task: str,
+                    shown: Callable[[list[str]], str]) -> dict:
+        """Args:
+            body: {"items", "proof"} from the page.
+            items_of: the signed items of the page's items (argv_items()).
+            kind: the job kind the runner dispatches on, one of CHANGES.
+            task: the task the jobs carry.
+            shown: the command line a job shows for its argv.
+
+        Returns:
+            {"jobs": ids, "status": "queued"}: one runner job per item once a
+            pinned key signed them all, logged as one run.
+        """
+        payload = decode(body)
+        expect(payload, ("items", "proof"))
+        items = items_of(payload["items"])
+        return self.queued_changes(items, self.proven(payload["proof"], items), kind, task, shown)
+
+    def proven(self, proof: object, items: list[dict]) -> dict:
+        """Returns:
+            The proof, once a pinned key signed an unexpired approval
+            listing every item, each used here for the first time;
+            ToolError otherwise.
+        """
+        checked = self.covered(proof, items, time.time())
+        for item in items:
+            self.operator_proven(checked, item)
+        return checked
+
+    def queued_changes(self, items: list[dict], proof: dict, kind: str, task: str, shown: Callable[[list[str]], str]) -> dict:
+        """Args:
+            items: the signed items, each with an argv and, for a job the
+                runner holds back, not_before.
+            proof: their checked proof (proven()).
+            kind: the job kind the runner dispatches on, one of CHANGES.
+            task: the task the jobs carry.
+            shown: the command line a job shows for its argv.
+
+        Returns:
+            {"jobs": ids, "status": "queued"}: one runner job per item,
+            logged as one run.
+        """
+        ids = []
+        for item in items:
+            held = {"not_before": item["not_before"]} if "not_before" in item else {}
+            fields = {"kind": kind, "task": task, "argv": item["argv"], **held, "command": shown(item["argv"]), "directory": "", "sha256": "", "status": "queued", "proof": proof}
+            ids.append(self.jobs.add({**fields, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None})["id"])
+        commands = [shown(item["argv"]) for item in items]
+        self.log.add({"kind": "run", "title": f"{kind.capitalize()} change signed: {len(items)}", "text": "\n".join(commands), "ref": {"jobs": ids, "status": "queued"}})
+        return {"jobs": ids, "status": "queued"}
 
     def runner_jobs(self) -> dict:
         return {"jobs": [runner_job(job) for job in self.jobs.listed() if job["status"] == "queued"]}

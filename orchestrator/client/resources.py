@@ -33,14 +33,32 @@
         is the name the council claim of the session carries, else the
         session id's first 8 characters; account is the email the
         SessionStart hook mapped the session to in the council's
-        session-accounts.jsonl, left out for an unmapped session. A message counts once by its message id and
-        request id, also when written over several lines or copied into a
-        fork's transcript. <state>/offsets.json holds {files: {path: offset},
-        seen: {hour: [key digest]}}, seen keeping the hours this run read and
-        the last two, and is replaced only when it changes. In the first
-        minute of an hour, rows of the same hour, agent and model merge and
-        the rows of a day that ended more than 90 days ago fold into one row
-        per day, agent and model with width: 86400, kept forever.
+        session-accounts.jsonl, left out for an unmapped session. The same
+        tokens go to <state>/usage.jsonl as those rows plus skill?, tool?,
+        subagent? and repo?: skill the last Skill call of the session (main
+        thread and sidechains) before the message; tool the sorted,
+        comma-joined tool names of the message; subagent the agentType of a
+        sidechain transcript's agent-<id>.meta.json; repo the base name of
+        the git top-level of the message's cwd; a tag is left out while ""
+        (none, the main thread, text only). Per usage row t and width each of
+        agent, model, account and the tags keeps its 50 values of the most
+        tokens and folds the rest into "(other)". A message counts once by
+        its message id and request id, also when written over several lines
+        (its tools joined over the lines one run reads) or copied into a
+        fork's transcript. Only names and counts are stored, never prompt
+        text, tool inputs or outputs. <state>/context.jsonl gets per day and
+        agent {t, agent, turns: {kilo: count}, compactions}: the main thread's
+        context per turn (input plus cache read) in thousands of tokens,
+        rounded down, and its compact boundaries. <state>/offsets.json holds
+        {files: {path: offset}, seen: {hour: [key digest]}, skills?: {session:
+        [[t, skill]]}}, seen keeping the hours this run read and the last two,
+        skills the calls from the last two hours and the one before, and is
+        replaced only when it changes. In the first minute of an hour, token
+        rows of the same hour, agent and model merge and the rows of a day
+        that ended more than 90 days ago fold into one row per day, agent and
+        model with width: 86400, kept forever; usage.jsonl is rewritten line
+        by line the same way by usage_tags.trimmed(); context rows merge per
+        day and agent.
     --state: the directory of these files, the unit passes
         ~/.local/state/agents-council/resources.
     --council: the council directory with queue.json and the claims.
@@ -74,15 +92,15 @@ import stat
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import queue_live
+import usage_tags as tags
+from usage_tags import COUNTS, DAY, HOUR, NAMES, add, token_rows
 
 INTERVAL = 60
 BUCKET = 900
-HOUR = 3600
-DAY = 86400
 FINE = 7 * DAY
 COARSE = 90 * DAY
 COMMAND_SECONDS = 10
@@ -95,12 +113,13 @@ NVIDIA = "0x10de"
 DISPLAY = "0x03"
 NVIDIA_QUERY = "pci.bus_id,utilization.gpu,memory.used,memory.total"
 UNREAD = {"util": None, "vram_used": None, "vram_total": None}
-COUNTS = (("input", "input_tokens"), ("output", "output_tokens"), ("cache_read", "cache_read_input_tokens"), ("cache_write", "cache_creation_input_tokens"))
-NAMES = tuple(name for name, _ in COUNTS)
 HOST_DIGITS = (("cpu", 1), ("ram", 1), ("swap", 1), ("load", 2), ("psi_some", 2), ("psi_full", 2), ("swap_out_mb_min", 1))
 CLAIMS = ("*/claim.json", "*/*/claim.json")
 SAMPLES = "samples.jsonl"
 TOKENS = "tokens.jsonl"
+CONTEXT = "context.jsonl"
+USAGE = "usage.jsonl"
+COMPACTION = "compact"
 SESSION_ACCOUNTS = "session-accounts.jsonl"
 EMAIL_CHARS = 254
 OFFSETS = "offsets.json"
@@ -609,6 +628,34 @@ def replace(path: Path, text: str) -> None:
         os.close(parent)
 
 
+def stream_rewrite(path: Path, produce: Callable[[Iterator[bytes]], Iterator[str]]) -> None:
+    """Args:
+        path: the file, read line by line without following a link and
+            replaced through a fresh temp file beside it, so its size meets
+            no read limit; a missing file stays missing, a link at its
+            directory or a file that is not regular raises OSError.
+        produce: the new file's lines from the old file's lines.
+    """
+    parent = folder(path)
+    temp = f".{path.name}.{os.urandom(8).hex()}"
+    try:
+        try:
+            source = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
+        except FileNotFoundError:
+            return
+        with open(source, "rb") as old, open(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent), "w", encoding="utf-8") as new:
+            if not stat.S_ISREG(os.fstat(old.fileno()).st_mode):
+                raise OSError(errno.EINVAL, "not a regular file", str(path))
+            new.writelines(produce(old))
+        os.replace(temp, path.name, src_dir_fd=parent, dst_dir_fd=parent)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temp, dir_fd=parent)
+        raise
+    finally:
+        os.close(parent)
+
+
 def rewrite(path: Path, keep: Callable[[list[dict], float], list[dict]], now: float) -> None:
     rows = read_rows(path)
     kept = keep(rows, now)
@@ -661,18 +708,27 @@ def count(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
 
 
-def assistant(raw: bytes) -> tuple[dict, dict, dict] | None:
-    """Returns:
-        (row, message, usage) of an assistant transcript line whose message
-        carries a usage map and whose row a session id, else None.
-    """
+def parsed(raw: bytes) -> dict | None:
     try:
         row = json.loads(raw)
     except (ValueError, RecursionError):
         return None
-    message = row.get("message") if isinstance(row, dict) and row.get("type") == "assistant" else None
+    return row if isinstance(row, dict) and isinstance(row.get("sessionId"), str) else None
+
+
+def turn_of(row: dict) -> tags.Turn | None:
+    """Returns:
+        The turn of an assistant transcript line whose message carries a
+        usage map and a model and whose row a time, else None; of the
+        message only its id, model, usage and tool names are kept.
+    """
+    message = row.get("message") if row.get("type") == "assistant" else None
     fields = message.get("usage") if isinstance(message, dict) else None
-    return (row, message, fields) if isinstance(fields, dict) and isinstance(row.get("sessionId"), str) else None
+    ts = epoch(row.get("timestamp"))
+    if not isinstance(fields, dict) or ts is None or not isinstance(message.get("model"), str):
+        return None
+    counts = tuple(count(fields.get(field)) for _, field in COUNTS)
+    return tags.Turn(message_key(message.get("id"), row.get("requestId")), ts, row["sessionId"], message["model"], counts, tags.tool_names(message), row.get("isSidechain") is True, string_of(row.get("cwd")))
 
 
 def message_key(ident: object, request: object) -> str:
@@ -683,22 +739,6 @@ def message_key(ident: object, request: object) -> str:
         return ""
     text = f"{ident}\0{request if isinstance(request, str) else ''}"
     return base64.urlsafe_b64encode(hashlib.blake2b(text.encode("utf-8"), digest_size=KEY_BYTES).digest()).decode("ascii")
-
-
-def usage(raw: bytes) -> tuple[str, float, str, str, tuple[int, ...]] | None:
-    """Returns:
-        (message key, time, session, model, counts in COUNTS order) of an
-        assistant transcript line with a usage field, a time and a model,
-        else None.
-    """
-    found = assistant(raw)
-    if found is None:
-        return None
-    row, message, fields = found
-    ts, model = epoch(row.get("timestamp")), message.get("model")
-    if ts is None or not isinstance(model, str):
-        return None
-    return message_key(message.get("id"), row.get("requestId")), ts, row["sessionId"], model, tuple(count(fields.get(field)) for _, field in COUNTS)
 
 
 def first_sight(key: str, ts: float, seen: dict[int, set[str]], keys: dict[int, set[str]]) -> bool:
@@ -716,13 +756,39 @@ def first_sight(key: str, ts: float, seen: dict[int, set[str]], keys: dict[int, 
     return not known
 
 
-def scan(path: Path, start: int, budget: int, seen: dict[int, set[str]]) -> tuple[int, list[tuple[float, str, str, tuple[int, ...]]], dict[int, set[str]]]:
+def take(row: dict, found: tags.Read, turns: dict[str, tags.Turn], seen: dict[int, set[str]], keys: dict[int, set[str]]) -> None:
+    """Args:
+        row: one parsed transcript line.
+        found: gets its first-seen turn, its skill calls and its compaction.
+        turns: this scan's turns by message key; a later line of the same
+            message adds its tool names to the turn.
+        seen: the keys of earlier runs and files per hour.
+        keys: the keys this scan read per hour.
+    """
+    if tags.is_compaction(row):
+        ts = epoch(row.get("timestamp"))
+        if ts is not None and first_sight(message_key(row.get("uuid"), COMPACTION), ts, seen, keys):
+            found.compactions.append((row["sessionId"], ts))
+        return
+    turn = turn_of(row)
+    if turn is None:
+        return
+    found.skills += [(turn.session, turn.ts, name) for name in tags.skill_calls(row["message"])]
+    if turn.key and turn.key in turns:
+        turns[turn.key].tools |= turn.tools
+    elif first_sight(turn.key, turn.ts, seen, keys) and any(turn.counts):
+        found.turns.append(turn)
+        turns[turn.key] = turn
+
+
+def scan(path: Path, start: int, budget: int, seen: dict[int, set[str]]) -> tuple[int, tags.Read, dict[int, set[str]]]:
     """Returns:
         The offset after the last complete line read from start, at most
-        about budget bytes on, the usage of every message seen holds no key
-        of, and per hour the keys of every message read.
+        about budget bytes on, what take() found in the lines, and per hour
+        the keys of every message read.
     """
-    found = []
+    found = tags.Read()
+    turns: dict[str, tags.Turn] = {}
     keys: dict[int, set[str]] = {}
     position = start
     with path.open("rb") as handle:
@@ -731,25 +797,10 @@ def scan(path: Path, start: int, budget: int, seen: dict[int, set[str]]) -> tupl
             if not raw.endswith(b"\n") or position - start >= budget:
                 break
             position += len(raw)
-            read = usage(raw) if b'"usage"' in raw else None
-            if read is not None and first_sight(read[0], read[1], seen, keys) and any(read[4]):
-                found.append(read[1:])
+            row = parsed(raw) if b'"usage"' in raw or tags.COMPACT in raw else None
+            if row is not None:
+                take(row, found, turns, seen, keys)
     return position, found, keys
-
-
-def token_rows(sums: dict[tuple, list[int]]) -> list[dict]:
-    """Args:
-        sums: per (t, agent, model, width, account) the counts in COUNTS
-            order, account "" for a session the hook mapped to none.
-
-    Returns:
-        One token row per key in key order; a row other than hourly names
-        its width, a row of a mapped session its account.
-    """
-    return [
-        {"t": t, "agent": agent, "model": model, **dict(zip(NAMES, counts, strict=True)), **({} if width == HOUR else {"width": width}), **({"account": account} if account else {})}
-        for (t, agent, model, width, account), counts in sorted(sums.items())
-    ]
 
 
 def token_key(row: dict, line: float) -> tuple:
@@ -763,12 +814,6 @@ def token_key(row: dict, line: float) -> tuple:
     if row.get("width") == DAY or day + DAY <= line:
         return day, row["agent"], row["model"], DAY, account
     return row["t"], row["agent"], row["model"], HOUR, account
-
-
-def add(sums: dict[tuple, list[int]], key: tuple, counts: tuple[int, ...]) -> None:
-    total = sums.setdefault(key, [0] * len(COUNTS))
-    for index, value in enumerate(counts):
-        total[index] += value
 
 
 def compact(rows: list[dict], now: float) -> list[dict]:
@@ -789,15 +834,15 @@ def start_of(entry: object, info: os.stat_result, now: float) -> int:
     return info.st_size if info.st_mtime < now - COARSE else 0
 
 
-def read_transcript(path: Path, entry: object, budget: int, now: float, seen: dict[int, set[str]]) -> tuple[int, int, list, dict[int, set[str]]]:
+def read_transcript(path: Path, entry: object, budget: int, now: float, seen: dict[int, set[str]]) -> tuple[int, int, tags.Read, dict[int, set[str]]]:
     """Returns:
-        (start, end, usages, keys per hour) of path read from the offset
+        (start, end, read, keys per hour) of path read from the offset
         entry records, without reading once budget is spent.
     """
     info = path.stat()
     start = start_of(entry, info, now)
     if budget <= 0 or start >= info.st_size:
-        return start, start, [], {}
+        return start, start, tags.Read(), {}
     return start, *scan(path, start, budget, seen)
 
 
@@ -807,9 +852,38 @@ def seen_of(value: object) -> dict[int, set[str]]:
     return {int(hour): {key for key in keys if isinstance(key, str)} for hour, keys in value.items() if hour.isdigit() and isinstance(keys, list)}
 
 
+def seen_floor(now: float) -> float:
+    return now // HOUR * HOUR - HOUR
+
+
 def kept_seen(seen: dict[int, set[str]], touched: set[int], now: float) -> dict[str, list[str]]:
-    floor = now // HOUR * HOUR - HOUR
+    floor = seen_floor(now)
     return {str(hour): sorted(keys) for hour, keys in sorted(seen.items()) if hour in touched or hour >= floor}
+
+
+def read_all(transcripts: Path, offsets: dict, seen: dict[int, set[str]], budget: int, now: float) -> tuple[dict, set[int], tags.Read]:
+    """Returns:
+        (files, touched, read): the offset per transcript after this run,
+        the hours whose keys it read, and what the transcripts held, each
+        sidechain turn tagged with its transcript's agent type.
+    """
+    found = tags.Read()
+    files, touched = {}, set()
+    for path in sorted(transcripts.rglob("*.jsonl")):
+        key = path.relative_to(transcripts).as_posix()
+        try:
+            start, end, read, keys = read_transcript(path, offsets.get(key), budget, now, seen)
+        except OSError:
+            if key in offsets:
+                files[key] = offsets[key]
+            continue
+        files[key] = end
+        budget -= end - start
+        for hour, ids in keys.items():
+            seen.setdefault(hour, set()).update(ids)
+            touched.add(hour)
+        found.extend(read, tags.agent_type(path, read_json) if any(turn.sidechain for turn in read.turns) else "")
+    return files, touched, found
 
 
 def count_tokens(transcripts: Path, council: Path, state: Path, now: float, budget: int) -> list[dict]:
@@ -817,34 +891,26 @@ def count_tokens(transcripts: Path, council: Path, state: Path, now: float, budg
         The rows appended to <state>/tokens.jsonl by this run.
     """
     stored = read_json(state / OFFSETS)
-    offsets = stored.get("files") if isinstance(stored, dict) and isinstance(stored.get("files"), dict) else {}
-    seen = seen_of(stored.get("seen") if isinstance(stored, dict) else None)
-    names = claim_names(council)
-    accounts = session_accounts(council)
-    sums: dict[tuple, list[int]] = {}
-    files, touched = {}, set()
-    for path in sorted(transcripts.rglob("*.jsonl")):
-        key = path.relative_to(transcripts).as_posix()
-        try:
-            start, end, found, keys = read_transcript(path, offsets.get(key), budget, now, seen)
-        except OSError:
-            if key in offsets:
-                files[key] = offsets[key]
-            continue
-        files[key] = end
-        budget -= end - start
-        for hour, read in keys.items():
-            seen.setdefault(hour, set()).update(read)
-            touched.add(hour)
-        for ts, session, model, counts in found:
-            add(sums, (int(ts // HOUR * HOUR), names.get(session) or session[:8], model, HOUR, accounts.get(session, "")), counts)
-    rows = token_rows(sums)
+    kept_before = stored if isinstance(stored, dict) else {}
+    offsets = kept_before.get("files") if isinstance(kept_before.get("files"), dict) else {}
+    seen = seen_of(kept_before.get("seen"))
+    files, touched, found = read_all(transcripts, offsets, seen, budget, now)
+    history = tags.history_of(kept_before.get("skills"))
+    tags.add_calls(history, found.skills)
+    names, accounts = claim_names(council), session_accounts(council)
+    sums, context = tags.tally(found, history, lambda session: names.get(session) or session[:8], lambda session: accounts.get(session, ""))
+    rows = token_rows(tags.untagged(sums))
     append_rows(state / TOKENS, rows)
-    kept = {"files": files, "seen": kept_seen(seen, touched, now)}
+    append_rows(state / USAGE, token_rows(tags.fold(sums)))
+    append_rows(state / CONTEXT, tags.context_rows(context))
+    skills = tags.kept_history(history, seen_floor(now), now - COARSE)
+    kept = {"files": files, "seen": kept_seen(seen, touched, now), **({"skills": skills} if skills else {})}
     if kept != stored:
         replace(state / OFFSETS, json.dumps(kept, sort_keys=True, separators=(",", ":")))
     if now % HOUR < INTERVAL:
         rewrite(state / TOKENS, compact, now)
+        stream_rewrite(state / USAGE, functools.partial(tags.trimmed, now=now, line=now - COARSE))
+        rewrite(state / CONTEXT, tags.compact_context, now)
     return rows
 
 

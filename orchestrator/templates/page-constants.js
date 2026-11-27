@@ -25,7 +25,7 @@
   const TO_ONE = [["post", "Post"], ["call", "Call"]];
   const STATUS = {
     running: ["running", "ok"], queued: ["waiting", "info"], blocked: ["blocked", "bad"], stale: ["stale", "warn"], pending: ["open", "warn"], done: ["done", "neutral"], stopped: ["stopped", "neutral"],
-    approved: ["approved", "ok"], rejected: ["denied", "bad"], allowed: ["allowed", "ok"], denied: ["denied", "bad"], expired: ["expired", "neutral"], decided: ["decided", "ok"], failed: ["failed", "bad"], refused: ["refused", "bad"],
+    approved: ["approved", "ok"], rejected: ["denied", "bad"], allowed: ["allowed", "ok"], denied: ["denied", "bad"], expired: ["expired", "neutral"], terminal: ["answered in the terminal", "neutral"], decided: ["decided", "ok"], failed: ["failed", "bad"], refused: ["refused", "bad"],
   };
   const SECTIONS = {staged: "Staged", unstaged: "Not staged", untracked: "Untracked", commits: "Commits"};
   const FILE_STATUS = {added: ["A", "ok"], deleted: ["D", "bad"], modified: ["M", "info"], renamed: ["R", "violet"], copied: ["C", "violet"], untracked: ["U", "warn"]};

@@ -14,6 +14,8 @@ AGENT_CAP = 3
 TOTAL_CAP = 20
 WHY_LIMIT = 1000
 RECENT_DAYS = 7
+MATCH_WINDOW = 50
+COUNT_ID = "0" * 16
 RULE_FIELDS = ("kind", "tool", "pattern", "scope", "expires")
 REQUEST_STATE = ("id", "status", "rule", "reason", "decided")
 
@@ -42,6 +44,28 @@ def matched(record: dict, subjects: list[dict], now: float) -> int:
         payload = signing.targeted(payload, record["agents"])
     rule = {**{key: record[key] for key in RULE_FIELDS}, "enabled": True, "proof": {"payload": payload, "assertion": None}}
     return sum(rule_matches(rule, kind_name, subject, now) for subject in subjects)
+
+
+def counted_matches(rule: dict, subjects: list[dict], now: float) -> int:
+    """Args:
+        rule: kind, tool, pattern and scope of a stored or draft rule, with
+            agents when it applies to one agent or group only.
+        subjects: what a rule of that kind is matched against.
+        now: the current time in epoch seconds.
+
+    Returns:
+        How many subjects matched() lets the rule approve, on or off,
+        expired or not.
+    """
+    return matched({**rule, "id": COUNT_ID, "expires": now + RECENT_DAYS * 86400}, subjects, now)
+
+
+def window_count(rule: dict, subjects: list[dict], now: float) -> dict:
+    """Returns:
+        {"matched": counted_matches() of the rule, "of": how many subjects there
+        are}, at most MATCH_WINDOW for last_subjects().
+    """
+    return {"matched": counted_matches(rule, subjects, now), "of": len(subjects)}
 
 
 class Requesting:
@@ -78,14 +102,49 @@ class Requesting:
             raise ToolError(f"no rule request {request_id}")
         return request_state(record, time.time())
 
+    def kind_records(self, kind_name: str) -> list[dict]:
+        return {"ask": self.asks, "review": self.reviews, "decision": self.decisions}[kind_name].listed()
+
+    def subjects_of(self, kind_name: str, records: list[dict]) -> list[dict]:
+        return [subject_of(kind_name, entry, self.deciders(kind_name, entry)) for entry in records]
+
     def recent_subjects(self, kind_name: str, now: float) -> list[dict]:
         """Returns:
             The asks, reviews or decisions of the last RECENT_DAYS as a rule
             of that kind is matched against them.
         """
-        ledger = {"ask": self.asks, "review": self.reviews, "decision": self.decisions}[kind_name]
         since = now - RECENT_DAYS * 86400
-        return [subject_of(kind_name, entry, self.deciders(kind_name, entry)) for entry in ledger.listed() if created_of(entry) >= since]
+        return self.subjects_of(kind_name, [entry for entry in self.kind_records(kind_name) if created_of(entry) >= since])
+
+    def last_subjects(self, kind_name: str) -> list[dict]:
+        """Returns:
+            The newest MATCH_WINDOW asks, reviews or decisions as a rule of
+            that kind is matched against them.
+        """
+        return self.subjects_of(kind_name, sorted(self.kind_records(kind_name), key=created_of)[-MATCH_WINDOW:])
+
+    def rule_counts(self, stored: list[dict], now: float) -> dict[str, dict]:
+        """Args:
+            stored: the stored rules.
+            now: the current time in epoch seconds.
+
+        Returns:
+            window_count() of each rule by id over the last MATCH_WINDOW
+            records of its kind.
+        """
+        subjects = {kind_name: self.last_subjects(kind_name) for kind_name in {rule["kind"] for rule in stored}}
+        return {rule["id"]: window_count(rule, subjects[rule["kind"]], now) for rule in stored}
+
+    def match_rule(self, body: bytes) -> dict:
+        """Args:
+            body: a draft rule as POST /api/rules/sign takes it.
+
+        Returns:
+            window_count() of the draft over the last MATCH_WINDOW records of
+            its kind; it reads only, stores nothing and grants nothing.
+        """
+        fields = self.draft_fields(body)
+        return window_count(fields, self.last_subjects(fields["kind"]), time.time())
 
     def dry_run(self, record: dict, now: float) -> dict:
         """Returns:

@@ -123,9 +123,9 @@ class TestQueueRows(unittest.TestCase):
         found = queue_order.queue_jobs(json.dumps([{"id": ""}, "x", {"id": 5}, odd, {**odd, "kind": "again"}, {"id": "b", "position": "w" * 40, "wsjf": 2, "eta_s": 0}]))
         self.assertEqual(found, [
             {"position": None, "id": "a", "kind": "", "task": None, "session": "", "agent": "Docs", "class": None, "prio": None, "wsjf": 3.5,
-             "waited_s": None, "eta_s": None, "reason": "r" * 500, "trace": ["one", *(f"s{n}" for n in range(17))]},
+             "waited_s": None, "eta_s": None, "reason": "r" * 500, "trace": ["one", *(f"s{n}" for n in range(17))], "status": None, "override": False},
             {"position": "w" * 32, "id": "b", "kind": "", "task": None, "session": "", "agent": "", "class": None, "prio": None, "wsjf": 2.0,
-             "waited_s": None, "eta_s": 0.0, "reason": "", "trace": []},
+             "waited_s": None, "eta_s": 0.0, "reason": "", "trace": [], "status": None, "override": False},
         ])
         self.assertIsNone(queue_order.queue_jobs('[{"id": "n", "waited_s": NaN}]')[0]["waited_s"])
 

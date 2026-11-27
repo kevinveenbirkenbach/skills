@@ -20,7 +20,7 @@ COMPOSER = (hub_support.HUB / "templates" / "page-composer.js").read_text(encodi
 HINTS = re.findall(r'^\s+"?[\w-]+"?: "([^"]+)",$', COMPOSER.split("const MAYDAY_ASK")[0], re.MULTILINE)
 SHAPE = """
   const hints = @HINTS@;
-  const role = (node) => [["channel", ".composer-grid"], ["text", "textarea"], ["foot", ".mic-foot"], ["mic", "button.mic"], ["ptt", ".ptt-split"], ["mayday", ".mayday-toggle"],
+  const role = (node) => [["channel", ".composer-grid"], ["text", "textarea"], ["chips", ".mic-chips"], ["foot", ".mic-foot"], ["file", ".mic-attach-file"], ["attach", ".mic-attach"], ["mic", "button.mic"], ["ptt", ".ptt-split"], ["mayday", ".mayday-toggle"],
     ["spacer", ".spacer"], ["status", ".composer-status"], ["record", "button[aria-pressed]"]].find(([, selector]) => node.matches(selector))?.[0] || node.tagName.toLowerCase();
   const edges = (node) => ["Top", "Right", "Bottom", "Left"].map((side) => getComputedStyle(node)[`border${side}Width`]);
   const shape = (form) => {
@@ -70,8 +70,8 @@ HOME = """(async () => {@HELPERS@@SHAPE@
   await sleep(400);
   return {misfits, first, wide: document.documentElement.scrollWidth > innerWidth + 1};
 })()"""
-FRAME = ["channel", "text", "foot"]
-FOOT = ["record", "status", "spacer", "mic", "ptt", "mayday"]
+FRAME = ["channel", "status", "text", "chips", "foot"]
+FOOT = ["record", "file", "attach", "mic", "ptt", "mayday"]
 LINES = {"channel": ["0px", "0px", "1px", "0px"], "text": ["0px", "0px", "0px", "0px"], "foot": "1px"}
 
 

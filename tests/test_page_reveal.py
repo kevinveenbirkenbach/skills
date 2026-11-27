@@ -10,7 +10,7 @@ from pathlib import Path
 from hub_support import signing
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "orchestrator" / "templates"
-MODULES = ["page-constants.js", "glossary.js", "answers.js", "ancestry.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-codebox.js", "page-rule-request.js", "page-inbox.js", "page-grant.js", "page-firewall.js", "page-review.js", "page-cleanup.js", "page-offices.js", "page-ancestry.js", "page-tasks-prio.js"]
+MODULES = ["page-constants.js", "glossary.js", "answers.js", "ancestry.js", "page-reveal.js", "page-dom.js", "page-dialog.js", "page-diff.js", "page-codebox.js", "page-rule-request.js", "page-inbox.js", "page-grant.js", "page-firewall.js", "page-rules.js", "page-review.js", "page-cleanup.js", "page-offices.js", "page-ancestry.js", "page-tasks-prio.js"]
 RLO, ZWSP, LRI, SEPARATOR, CARRIAGE = chr(0x202E), chr(0x200B), chr(0x2066), chr(0x2028), chr(0x0D)
 FILLER, NBSP, CGJ, VS15, VS16 = chr(0x3164), chr(0xA0), chr(0x34F), chr(0xFE0E), chr(0xFE0F)
 HIDDEN = (RLO, ZWSP, LRI, SEPARATOR, CARRIAGE, FILLER, NBSP, CGJ, VS16)
@@ -178,14 +178,13 @@ class TestPageReveal(unittest.TestCase):
     def test_a_settings_entry_staged_for_removal_and_its_diff_show_every_hidden_character_as_a_marker(self):
         entry = f"Read(~/.ssh/**{RLO})"
         path = f"/home/op{FILLER}/.claude/settings.json"
-        group = {"id": path, "label": path, "file": True}
+        group = {"id": path, "label": path}
         row = {"filter": "deny", "action": "Deny", "tone": "bad", "tool": f"Read{CGJ}", "pattern": f"~/.ssh/**{RLO}", "list": "permissions.deny", "entry": entry, "hits": None, "never": ""}
-        rule = {"id": "0123456789abcdef", "kind": "ask", "tool": "Bash", "pattern": f"make test{RLO}*", "scope": f"/repo{ZWSP}*", "agents": ["*"], "expires": 1_800_000_000, "enabled": True, "signed": True}
-        signed = {"filter": "signed", "action": "Grant ask", "tone": "ok", "tool": f"Bash{NBSP}", "pattern": rule["pattern"], "rule": rule, "hits": 0, "never": ""}
-        found = shown(TEMPLATES, [["ruleRow", [group, row]], ["ruleRow", [{"id": "hub", "label": "Hub rules", "file": False}, signed]], ["diffLines", [f'-      "{entry}",\n+      "Bash(make{ZWSP} build:*)"']]])
+        rule = {"id": "0123456789abcdef", "kind": "ask", "tool": f"Bash{NBSP}", "pattern": f"make test{RLO}*", "scope": f"/repo{ZWSP}*", "agents": ["*"], "expires": 1_800_000_000, "enabled": True, "signed": True, "matched": 0, "of": 0}
+        found = shown(TEMPLATES, [["ruleRow", [group, row]], ["hubRuleRow", [rule]], ["diffLines", [f'-      "{entry}",\n+      "Bash(make{ZWSP} build:*)"']]])
         self.assertRevealed(found[0], ["202E", "3164", "034F"])
         self.assertRevealed(found[1], ["202E", "200B", "00A0"])
-        self.assertIn("unused", found[1])
+        self.assertIn("0 of the last 0 asks", found[1])
         self.assertRevealed(found[2], ["202E", "200B"])
 
 

@@ -7,7 +7,9 @@
     --approvers: the pinned passkeys, e.g. ~/.config/kvb-orchestrator/approvers.json.
     --replay: this hook's replay store, outside the hub's reach, e.g.
         ~/.local/state/kvb-orchestrator-approvals/hook.json.
-    stdin: the Claude Code PermissionRequest hook input.
+    stdin: the Claude Code PermissionRequest hook input, or the PostToolUse
+        input of a call that ran, which report_ran() tells the hub and which
+        prints nothing.
 
 Returns:
     stdout: the PermissionRequest decision JSON: allow only when a pinned
@@ -70,6 +72,8 @@ QUESTION_TOOL = "AskUserQuestion"
 SHELL = "Bash"
 SHELL_KEYS = frozenset({"command", "description", "timeout", "run_in_background"})
 OPTION_KEYS = ("label", "description", "preview")
+RAN_EVENT = "PostToolUse"
+RAN_TIMEOUT = 2.0
 
 
 def summary(tool: str, tool_input: object) -> str:
@@ -196,11 +200,41 @@ def encoded(payload: dict) -> bytes:
     return json.dumps(payload).encode()
 
 
-def create(base: str, ask: dict, timeout: float, shown: dict) -> str:
-    data = encoded({**ask, "timeout": timeout, **shown})
+def call_key_of(hook: dict) -> str:
+    """Returns:
+        signing.call_key() of the hook input's tool_name and tool_input, the
+        same for the PermissionRequest and the PostToolUse input of one call;
+        empty when they cannot be encoded, so the ask goes without it and
+        never becomes an expired Match card.
+    """
+    try:
+        return signing.call_key(hook.get("tool_name"), hook.get("tool_input"))
+    except (TypeError, ValueError):
+        return ""
+
+
+def report_ran(base: str, hook: dict) -> None:
+    """Args:
+        hook: the PostToolUse input of a call that ran; the hub closes the
+            oldest still pending ask of that session and call_key_of() as
+            answered in the terminal. The report approves and denies nothing.
+    """
+    key, session = call_key_of(hook), str(hook.get("session_id") or "")
+    if not key or not session or len(session) > NAME_LIMIT:
+        return
+    request = urllib.request.Request(f"{base}/api/asks/ran", data=encoded({"call_key": key, "session": session}), headers={"Content-Type": "application/json", **hub_api.GUARD}, method="POST")
+    hub_api.call(request, RAN_TIMEOUT)
+
+
+def create(base: str, ask: dict, timeout: float, shown: dict, key: str) -> str:
+    """Args:
+        key: the call's call_key_of(), sent only when not empty.
+    """
+    called = {"call_key": key} if key else {}
+    data = encoded({**ask, "timeout": timeout, **called, **shown})
     if len(data) > hub_limits.DIFF_BODY_LIMIT:
         print(f"kvb-orchestrator: the ask goes without its diff, its {len(data)} bytes pass the hub's {hub_limits.DIFF_BODY_LIMIT}", file=sys.stderr)
-        data = encoded({**ask, "timeout": timeout})
+        data = encoded({**ask, "timeout": timeout, **called})
     headers = {"Content-Type": "application/json", **hub_api.GUARD}
     request = urllib.request.Request(f"{base}/api/asks", data=data, headers=headers, method="POST")
     ask_id = hub_api.call(request, hub_api.SLACK)["id"]
@@ -350,6 +384,9 @@ def main() -> int:
     deadline = time.monotonic() + args.timeout
     try:
         hook = json.load(sys.stdin)
+        if hook.get("hook_event_name") == RAN_EVENT:
+            report_ran(base, hook)
+            return 0
         questions = asked_questions(hook)
         if questions is not None:
             chosen = answers_of(base, hook, questions, args.timeout, trust, deadline)
@@ -365,7 +402,7 @@ def main() -> int:
             print(f"kvb-orchestrator: {WORKTREE}", file=sys.stderr)
             return 0
         pinned, shown = commit_diff(ask, staged_diff.rules_root())
-        ask_id = create(base, ask, args.timeout, shown)
+        ask_id = create(base, ask, args.timeout, shown, call_key_of(hook))
         answer = {"status": "pending"}
         while answer["status"] == "pending" and (left := deadline - time.monotonic()) > 0:
             answer = status(base, ask_id, min(left, POLL))

@@ -70,6 +70,8 @@ CARD040 = """(async () => {@HELPERS@@CARD@@STEPS@
   const found = {ready: await decideAll()};
   const front = card();
   found.release = Boolean(front && front.closest(".match-deck") && front.querySelector(".match-release"));
+  found.held = text(document.querySelector("#main .match-release-held"));
+  found.verdicts = all("#main .match-decision").filter((node) => node.querySelector(".match-verdict")).map((node) => node.dataset.card);
   found.layers = all("#main .match-layer").map((node) => node.dataset.card);
   found.block = Boolean(document.querySelector("#main .match-release-block"));
   found.risk = all("#main .match-accept-risk").map((node) => [node.closest(".match-decision").dataset.card, node.getAttribute("aria-pressed")]);
@@ -107,7 +109,9 @@ RELEASE = """(async () => {@HELPERS@@CARD@@STEPS@
   const leaning = @SWIPE@ ? await swipeRight() : (key("ArrowRight"), "");
   await until(() => window.e2eSubmits.length >= @SUBMITS@, 20000);
   await sleep(1500);
-  await until(() => card() && !releasing(), 8000);
+  if (@SUBMITS@) {
+    await until(() => card() && !releasing(), 8000);
+  }
   return {pressed, label, leaning, submits: window.e2eSubmits, front: card() ? card().dataset.card : null, peeks: all("#main .match-peek").map((node) => node.dataset.card)};
 })()"""
 
@@ -163,18 +167,17 @@ class TestMatchReleaseCard(ReleaseDeck):
         for (width, _), found in zip(((390, 844), (1920, 1080)), data["results"], strict=True):
             with self.subTest(width=width):
                 self.assertNotIn("error", found, found)
-                self.assertEqual((found["ready"], found["release"], found["block"], found["wide"]), (True, True, False, False), found)
+                self.assertEqual((found["ready"], found["release"], found["block"], found["wide"]), (True, False, False, False), found)
                 self.assertIn(f"review:{self.stale}", found["layers"], found)
                 self.assertEqual(found["risk"], [[f"review:{self.red}", "false"]], found)
-                self.assertEqual(found["label"], "Release 2 decisions", found)
+                self.assertNotIn(f"review:{self.red}", found["verdicts"], found)
+                self.assertEqual((found["label"], found["held"]), (None, "One red-gate commit waits for your risk accept or its way back to the stack."), found)
                 self.assertEqual(found["back"], f"review:{self.stale}", found)
                 self.assertEqual((found["again"], found["arrived"], found["stays"]), (True, True, True), found)
 
-    def test_chromium_release_by_arrow_leaves_the_red_gate_commit_in_the_stack_until_its_risk_is_accepted(self):
-        found = self.release("no-risk", 0, False, 1)
-        self.assertEqual(self.sorted_submits(found), [sorted([["review", self.commit, "approve"], ["operator", "operator/issue", "approve"]])], found)
-        self.assertEqual(found["label"], "Release 2 decisions", found)
-        self.assertIn(f"review:{self.red}", [found["front"], *found["peeks"]], found)
+    def test_chromium_an_open_risk_hides_the_release_and_the_arrow_releases_nothing(self):
+        found = self.release("no-risk", 0, False, 0)
+        self.assertEqual((found["submits"], found["label"], found["front"]), ([], None, "release"), found)
 
     def test_chromium_release_by_swipe_signs_a_risk_accepted_red_gate_commit_on_its_own_first(self):
         found = self.release("risk", 1, True, 2)
@@ -182,11 +185,9 @@ class TestMatchReleaseCard(ReleaseDeck):
         self.assertEqual(self.sorted_submits(found), [[["review", self.red, "approve"]], sorted([["review", self.commit, "approve"], ["operator", "operator/issue", "approve"]])], found)
         self.settle(lambda: self.status(self.red) == "approved" and self.status(self.commit) == "approved")
 
-    def test_chromium_a_withdrawn_risk_leaves_the_red_gate_commit_out_again(self):
-        found = self.release("withdrawn", 2, False, 1)
-        self.assertEqual((found["pressed"], found["label"]), (["true", "false"], "Release 2 decisions"), found)
-        self.assertEqual(self.sorted_submits(found), [sorted([["review", self.commit, "approve"], ["operator", "operator/issue", "approve"]])], found)
-        self.assertIn(f"review:{self.red}", [found["front"], *found["peeks"]], found)
+    def test_chromium_a_withdrawn_risk_hides_the_release_again(self):
+        found = self.release("withdrawn", 2, False, 0)
+        self.assertEqual((found["pressed"], found["label"], found["submits"], found["front"]), (["true", "false"], None, [], "release"), found)
 
 
 if __name__ == "__main__":

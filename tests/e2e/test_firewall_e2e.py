@@ -26,7 +26,12 @@ SHOW = """(async () => {@HELPERS@
   const tabs = () => all('#main [role="tab"]').map((node) => [node.dataset.tab, node.getAttribute("aria-selected"), document.getElementById(node.getAttribute("aria-controls")).hidden]);
   const first = tabs();
   document.querySelector('#main [role="tab"][data-tab="rules"]').click();
-  const ready = await until(() => all("#main table.fw-table tbody[data-source]").length > 1, 10000);
+  const sections = ["settings", "patterns", "groups", "sets"].map((id) => document.querySelector(`#main details[data-fold="${id}"]`));
+  const collapsed = sections.map((node) => Boolean(node) && !node.open);
+  sections.forEach((node) => {
+    node.open = true;
+  });
+  const ready = await until(() => all("#main table.fw-table tbody[data-source]").length > 0, 10000);
   if (!ready) {
     return {error: text(document.getElementById("main"))};
   }
@@ -43,10 +48,15 @@ SHOW = """(async () => {@HELPERS@
   chip("deny").click();
   const withoutDeny = {pressed: chip("deny").getAttribute("aria-pressed"), deny: rows().filter((node) => node.dataset.filter === "deny").length, rows: rows().length};
   chip("deny").click();
+  document.querySelector("#main [data-new-rule]").click();
+  const sheet = await until(() => document.querySelector("#sheet .rule-form"), 4000);
+  const targets = sheet ? all('select[aria-label="Applies to"] option', sheet).map(text) : null;
+  document.querySelector("#sheet .sheet-head button").click();
   const wrap = document.querySelector("#main .fw-table-wrap");
   wrap.scrollIntoView({block: "start"});
   await sleep(100);
   return {
+    collapsed,
     title: text(document.querySelector("#main .box-head h2.box-title")),
     tabs: {first, picked: tabs()},
     subs: all("#tabs .subtabs button").map(name),
@@ -59,7 +69,7 @@ SHOW = """(async () => {@HELPERS@
     heads: all("#main table.fw-table thead th").map(text),
     chips: all('#main [aria-label="Show rules"] button').map((node) => [node.dataset.filter, node.getAttribute("aria-pressed")]),
     patterns: all('#main [aria-label="Never granted"] li').length,
-    targets: all('#main .rule-form select[aria-label="Applies to"] option').map(text),
+    targets,
     unlabelled: all("#main svg.bi").map(owned).filter((owner) => !owner || (!text(owner) && !(owner.getAttribute("title") && owner.getAttribute("aria-label")))).length,
     secret: document.documentElement.innerHTML.includes("@SECRET@"),
     wide: document.documentElement.scrollWidth > innerWidth + 1,
@@ -157,9 +167,16 @@ GROUP_RULE = """(async () => {@HELPERS@
     form.requestSubmit();
     return until(() => all('#main [aria-label="Staged changes"] li').find((node) => node.dataset.staged === `add ${entry}`), 8000);
   };
+  const unfold = () => all("#main details[data-fold]").forEach((fold) => {
+    fold.open = true;
+  });
+  const openForm = async () => {
+    document.querySelector("#main [data-new-rule]").click();
+    return until(() => document.querySelector("#sheet .rule-form"), 8000);
+  };
   await screenShown(8000);
   await until(() => document.querySelector('#main form[aria-label="New agent group"]'), 10000);
-  (await until(() => document.querySelector('#main tbody[data-source="hub"] .fw-fold'), 10000)).click();
+  unfold();
   const group = document.querySelector('#main form[aria-label="New agent group"]');
   group.querySelector('input[aria-label="Group name"]').value = "builders";
   for (const box of group.querySelectorAll('[aria-label="Members"] input[type="checkbox"]')) {
@@ -167,7 +184,7 @@ GROUP_RULE = """(async () => {@HELPERS@
   }
   group.requestSubmit();
   const row = await until(() => document.querySelector('#main [data-group="builders"]'), 8000);
-  const rules = document.querySelector("#main .rule-form");
+  const rules = await openForm();
   const target = rules.querySelector('select[aria-label="Applies to"]');
   const choice = await until(() => [...target.options].find((option) => option.value.startsWith("group:")), 8000);
   if (!row || !choice) {
@@ -176,10 +193,11 @@ GROUP_RULE = """(async () => {@HELPERS@
   target.value = choice.value;
   rules.querySelector('input[placeholder="make test*"]').value = "make e2e";
   rules.requestSubmit();
-  const ruleRow = () => all("#main tr[data-rule]").find((node) => all("code", node).some((code) => text(code) === "make e2e"));
-  const pill = await until(() => all("#main tr[data-rule] [data-agents]").find((node) => text(node) === "group builders"), 15000);
-  const hits = await until(() => ruleRow() && text(ruleRow().querySelector(".fw-hits")) !== "…" && text(ruleRow().querySelector(".fw-hits")), 8000);
-  const found = {group: text(row.querySelector("strong")), members: text(row.querySelector(".muted")), pills: all("#main tr[data-rule] [data-agents]").map(text), found: Boolean(pill), hits, toasts: all("#toasts .toast").map(text)};
+  const ruleRow = () => all("#main li.hub-rule").find((node) => all("code", node).some((code) => text(code) === "make e2e"));
+  const pill = await until(() => all("#main li.hub-rule [data-agents]").find((node) => text(node) === "group builders"), 15000);
+  unfold();
+  const hits = await until(() => ruleRow() && text(ruleRow().querySelector(".hub-rule-count")), 8000);
+  const found = {group: text(document.querySelector('#main [data-group="builders"] strong')), members: text(document.querySelector('#main [data-group="builders"] .muted')), pills: all("#main li.hub-rule [data-agents]").map(text), found: Boolean(pill), hits, sheet: Boolean(document.querySelector("#sheet .rule-form")), toasts: all("#toasts .toast").map(text)};
   const sets = document.querySelector('#main form[aria-label="New rule set"]');
   sets.querySelector('input[aria-label="Set name"]').value = "ci";
   for (const box of sets.querySelectorAll('[aria-label="Rules"] input[type="checkbox"]')) {
@@ -195,8 +213,8 @@ GROUP_RULE = """(async () => {@HELPERS@
   found.kept = setState();
   setTake().click();
   found.taken = await until(() => all("#toasts .toast").map(text).find((line) => line.startsWith("ci:")), 15000);
-  found.reloaded = await until(() => setRow() && setTarget().value.startsWith("group:") && document.querySelector("#main .rule-form") && setState(), 8000);
-  const form = document.querySelector("#main .rule-form");
+  found.reloaded = await until(() => setRow() && setTarget().value.startsWith("group:") && document.querySelector("#main .hub-rule-list") && setState(), 8000);
+  const form = await openForm();
   const picker = form.querySelector('select[aria-label="Applies to"]');
   const sign = form.querySelector("[data-sign]");
   choose(picker, groupValue(picker));
@@ -214,14 +232,14 @@ GROUP_RULE = """(async () => {@HELPERS@
   found.setGone = setState();
   setTake().click();
   await sleep(500);
-  found.sent = sent.filter((url) => url.startsWith("/api/rules"));
+  found.sent = sent.filter((url) => url.startsWith("/api/rules") && url !== "/api/rules/match");
   choose(picker, "all");
   found.again = {value: picker.value, valid: picker.checkValidity(), blocked: sign.disabled, options: [...picker.options].map((option) => option.value).includes("gone")};
-  const toggle = (label) => ruleRow() && [...ruleRow().querySelectorAll("button")].find((button) => text(button) === label);
-  toggle("Turn off").click();
-  found.off = Boolean(await until(() => toggle("Turn on"), 8000));
-  toggle("Turn on").click();
-  found.on = Boolean(await until(() => toggle("Turn off"), 15000));
+  const toggle = () => ruleRow().querySelector("input.switch");
+  toggle().click();
+  found.off = Boolean(await until(() => ruleRow() && ruleRow().dataset.on === "false" && !toggle().checked, 8000));
+  toggle().click();
+  found.on = Boolean(await until(() => ruleRow() && ruleRow().dataset.on === "true" && toggle().checked, 15000));
   found.prompts = prompts;
   return found;
 })()"""
@@ -290,12 +308,13 @@ class TestFirewallE2E(HubCase):
             with self.subTest(width=width):
                 self.assertNotIn("error", shown, shown)
                 self.assertEqual((shown["title"], shown["subs"]), ("Controls", base.SUBS))
-                self.assertEqual(shown["tabs"], {"first": [["tools", "true", False], ["rules", "false", True], ["groups", "false", True], ["schedules", "false", True]], "picked": [["tools", "false", True], ["rules", "true", False], ["groups", "false", True], ["schedules", "false", True]]})
-                self.assertEqual(shown["sources"], ["hub", str(self.settings)])
-                self.assertEqual(shown["folded"], {"expanded": ["false"] * 2, "rows": 0})
-                self.assertEqual(shown["opened"], ["true"] * 2)
+                self.assertEqual(shown["tabs"], {"first": [["tools", "true", False], ["rules", "false", True], ["schedules", "false", True]], "picked": [["tools", "false", True], ["rules", "true", False], ["schedules", "false", True]]})
+                self.assertEqual(shown["collapsed"], [True] * 4)
+                self.assertEqual(shown["sources"], [str(self.settings)])
+                self.assertEqual(shown["folded"], {"expanded": ["false"], "rows": 0})
+                self.assertEqual(shown["opened"], ["true"])
                 self.assertEqual(shown["heads"], ["Action", "Tool", "Pattern", "Scope", "Source", "Hits (7 days)", ""])
-                self.assertEqual(shown["chips"], [[chip, "true"] for chip in ("allow", "ask", "deny", "sandbox", "signed")])
+                self.assertEqual(shown["chips"], [[chip, "true"] for chip in ("allow", "ask", "deny", "sandbox")])
                 rows = shown["rows"]
                 self.assertEqual([row[0] for row in rows], sorted((row[0] for row in rows), key=["deny", "ask", "allow", "sandbox"].index))
                 for row in (
@@ -364,7 +383,7 @@ class TestFirewallE2E(HubCase):
         self.assertEqual(data["errors"], [])
         found = data["results"][0]
         self.assertNotIn("error", found, found)
-        self.assertEqual((found["group"], found["members"], found["found"], found["hits"]), ("builders", "Skills, Stage", True, "0 unused"), found)
+        self.assertEqual((found["group"], found["members"], found["found"], found["hits"], found["sheet"]), ("builders", "Skills, Stage", True, "0 of the last 0 asks", False), found)
         stored = [rule for rule in self.httpd.hub.rules.listed() if rule["pattern"] == "make e2e"]
         self.assertEqual([(rule["agents"], rule["proof"]["payload"]["agents"]) for rule in stored], [(["s1", "s2"], ["s1", "s2"])] * 2)
         for rule in stored:

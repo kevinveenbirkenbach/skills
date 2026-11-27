@@ -16,12 +16,39 @@ from .signed import signing
 from .skill_scripts import task_pattern
 
 SNOOZE_LIMIT = 8 * 86400
+LAPSE_WINDOW = 86400
+
+
+def item_base() -> dict:
+    return {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": "", "reviews": [], "blocked": ""}
+
+
+def lapsed_of(records: list[dict], now: float, called: bool) -> list[dict]:
+    """Args:
+        records: asks or decisions; a decision without expires never lapses.
+        now: the current time in epoch seconds.
+        called: True for asks, which count only with the call_key of their
+            call: an ask of an older hook has none, and one whose call ran is
+            no longer pending (ask_ran()).
+
+    Returns:
+        The records still pending whose expires passed at most LAPSE_WINDOW
+        ago: what expired before the operator decided it. A decided record
+        is never among them.
+    """
+    return [record for record in records if record.get("status") == "pending" and now - LAPSE_WINDOW <= record.get("expires", now + 1) <= now and (record.get("call_key") or not called)]
+
+
+def decision_item(base: dict, decision: dict) -> dict:
+    recommended = decision.get("recommended", "")
+    fields = {"title": decision["question"][:300], "agent": decision["agent"], "green": recommended != "", "options": decision["options"], "recommended": recommended, "multi": bool(decision.get("multi"))}
+    return {**base, "kind": "decision", "id": decision["id"], "ts": decision["created_ts"], **fields}
 
 
 class Inbox:
     def inbox(self, now: float, tasks: dict[str, dict], directory: Directory) -> list[dict]:
         claims = read_claims(self.council)
-        base = {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": "", "reviews": [], "blocked": ""}
+        base = item_base()
         items = []
         for review in self.reviews.pending():
             created = iso_epoch(review["created"]) or now
@@ -29,14 +56,8 @@ class Inbox:
             agent = review.get("agent", "")
             fields = {"title": review["title"], "detail": review["branch"], "green": gate == "pass", "gate": gate, "score": review.get("score", ""), "directory": review["worktree"], "agent": agent, "to": requester_of(claims, agent)[0], "diff": review.get("diff_files")}
             items.append({**base, "kind": "review", "id": review["id"], "ts": created, **fields})
-        for ask in (ask for ask in self.asks.pending() if ask["expires"] > now):
-            warnings = signing.warnings(ask["command"])
-            fields = {"title": f"{ask['tool']}: {ask['command'][:200]}", "agent": directory.now(ask["session"]), "to": requester_of(claims, ask["session"])[0], "green": not warnings, "warnings": warnings, "deniable": True, "diff": ask.get("diff_files")}
-            items.append({**base, "kind": "ask", "id": ask["id"], "ts": ask["created_ts"], **fields, "command": ask["command"], "directory": ask["cwd"]})
-        for decision in (decision for decision in self.decisions.pending() if decision_status(decision, now) == "pending"):
-            recommended = decision.get("recommended", "")
-            fields = {"title": decision["question"][:300], "agent": decision["agent"], "green": recommended != "", "options": decision["options"], "recommended": recommended, "multi": bool(decision.get("multi"))}
-            items.append({**base, "kind": "decision", "id": decision["id"], "ts": decision["created_ts"], **fields})
+        items += [self.inbox_ask(base, ask, claims, directory) for ask in self.asks.pending() if ask["expires"] > now]
+        items += [decision_item(base, decision) for decision in self.decisions.pending() if decision_status(decision, now) == "pending"]
         held = self.open_jobs()
         reasons = self.blocked_rows(now)
         consoles = self.consoles()
@@ -54,10 +75,30 @@ class Inbox:
                 fields = {"title": job["command"], "command": job["command"], "directory": job["directory"], "job": console_of(job), "settled": True}
                 items.append({**base, "kind": "operator", "id": task, "ts": job["created_ts"], **fields})
         items += self.request_items(base, now, claims)
+        return self.marked_items(items, now)
+
+    def marked_items(self, items: list[dict], now: float) -> list[dict]:
         for item in items:
             mark = self.marks.get(f"{item['kind']}:{item['id']}")
             item.update(pinned=mark["pinned"], until=mark["until"] if mark["until"] > now else 0.0, held=self.batches.holds(item["kind"], item["id"]))
         return sorted(items, key=lambda item: (not item["pinned"], -item["ts"], item["id"]))
+
+    def inbox_ask(self, base: dict, ask: dict, claims: list[dict], directory: Directory) -> dict:
+        warnings = signing.warnings(ask["command"])
+        fields = {"title": f"{ask['tool']}: {ask['command'][:200]}", "agent": directory.now(ask["session"]), "to": requester_of(claims, ask["session"])[0], "green": not warnings, "warnings": warnings, "deniable": True, "diff": ask.get("diff_files")}
+        return {**base, "kind": "ask", "id": ask["id"], "ts": ask["created_ts"], **fields, "command": ask["command"], "directory": ask["cwd"]}
+
+    def lapsed_items(self, now: float, directory: Directory) -> list[dict]:
+        """Returns:
+            An item as inbox() builds it, with its expires, of every ask and
+            decision lapsed_of() keeps; the Inbox lists none of them, Match
+            keeps each greyed until the operator denies it.
+        """
+        claims = read_claims(self.council)
+        base = item_base()
+        asks = [{**self.inbox_ask(base, ask, claims, directory), "expires": ask["expires"]} for ask in lapsed_of(self.asks.pending(), now, True)]
+        decisions = [{**decision_item(base, decision), "to": requester_of(claims, decision["agent"])[0], "expires": decision["expires"]} for decision in lapsed_of(self.decisions.pending(), now, False)]
+        return self.marked_items(asks + decisions, now)
 
     def linked(self, command: str) -> list[dict]:
         """Returns:

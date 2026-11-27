@@ -23,6 +23,7 @@ from hub_support import (
     OPERATOR,
     OPTIONS,
     PAGE,
+    PRESENT,
     RASCI,
     RUNNER,
     SCORE,
@@ -141,6 +142,21 @@ class HubCase(unittest.TestCase):
         signer = key(-7, "main")
         signer.pin(self.approvers, self.origin)
         return signer
+
+    def signed_rule(self, signer: Key, fields: dict) -> dict:
+        """Args:
+            signer: the pinned passkey that signs the rule.
+            fields: the draft as POST /api/rules/sign takes it.
+
+        Returns:
+            The stored rule, on.
+        """
+        status, _, body = self.post_json("/api/rules/sign", fields, self.guard(self.host))
+        self.assertEqual(status, 200, body)
+        payload = json.loads(body)["payload"]
+        status, _, body = self.post_json("/api/rules", {"rule": payload, "assertion": signer.assertion(payload, self.origin, "localhost", PRESENT, 0), "enabled": True}, self.guard(self.host))
+        self.assertEqual(status, 201, body)
+        return json.loads(body)
 
     def prepare(self, items: list[dict]) -> dict:
         status, _, body = self.post_json("/api/sign", {"items": items}, self.guard(self.host))

@@ -1,20 +1,19 @@
   const FIREWALL_LISTS = {"permissions.allow": "Allow", "permissions.ask": "Ask", "permissions.deny": "Deny", "sandbox.filesystem.allowWrite": "Sandbox: write", "sandbox.filesystem.denyRead": "Sandbox: no read", "sandbox.network.allowedDomains": "Sandbox: domain"};
   const LIST_TONES = {allow: "ok", ask: "warn", deny: "bad"};
-  const ROW_FILTERS = [["allow", "Allow"], ["ask", "Ask"], ["deny", "Deny"], ["sandbox", "Sandbox"], ["signed", "Signed"]];
-  const ACTION_ORDER = ["deny", "ask", "allow", "sandbox", "signed"];
+  const ROW_FILTERS = [["allow", "Allow"], ["ask", "Ask"], ["deny", "Deny"], ["sandbox", "Sandbox"]];
+  const ACTION_ORDER = ["deny", "ask", "allow", "sandbox"];
   const ENTRY_HINTS = {
     allow: "Claude Code runs a matching call without asking, so it never reaches the ask ledger.",
     ask: "Claude Code asks before a matching call; the ask reaches the Agent Orchestrator.",
     deny: "Claude Code refuses a matching call, so it never reaches the ask ledger.",
     sandbox: "Bounds what a sandboxed command may write, read or reach.",
   };
-  const HUB_SOURCE = "hub";
   const SETTINGS_RESULTS = {done: ["written", "ok"], refused: ["refused", "bad"], failed: ["failed", "bad"]};
   const EVERY_AGENT = "*";
   const TARGET_GONE = "gone";
   const TARGET_PICK = "";
   const SESSION_KEY = /^(?!-)[A-Za-z0-9_-]{1,128}$/;
-  const CONTROL_TABS = [["tools", "Tools", "bi-plug"], ["rules", "Rules", "bi-shield-lock"], ["groups", "Groups", "bi-people"], ["schedules", "Schedules", "bi-clock"]];
+  const CONTROL_TABS = [["tools", "Tools", "bi-plug"], ["rules", "Rules", "bi-shield-lock"], ["schedules", "Schedules", "bi-clock"], ["queue", "Queue", "bi-hourglass-split"]];
   const CAPABILITY_WORDS = {deniedMcpServers: ["Unblock server", "Block server"], enabledPlugins: ["Enable plugin", "Disable plugin"], switches: ["Turn on", "Turn off"]};
   const TOOL_HINTS = {
     deniedMcpServers: "Off blocks the server before it loads, in every session and project.",
@@ -263,7 +262,7 @@
     const name = h("input", {class: "field", type: "text", placeholder: "ci", "aria-label": "Set name"});
     const days = h("input", {class: "field", type: "number", min: 1, max: 366, value: 7, "aria-label": "Days"});
     const chosen = checkChips("Rules", state.rules.map((rule) => [rule.id, revealed(`${rule.kind} ${rule.tool} ${rule.pattern}`.replace("  ", " ")), null]),
-      h("p", {class: "muted"}, "No rule yet: create one under Rules, New hub rule for automatic grants, then pick it here."));
+      h("p", {class: "muted"}, "No rule yet: create one under Rules with New rule, then pick it here."));
     const form = h("form", {class: "fw-form", "aria-label": "New rule set"}, h("label", {}, "Name", name), h("label", {}, "Days", days), chosen.node,
       h("button", {type: "submit", class: "btn soft", ...named("Save set", "Save set: keep the chosen rules as one named rule set")}, icon("bi-collection"), "Save set"));
     form.addEventListener("submit", async (event) => {
@@ -346,25 +345,14 @@
     return [...permissions, ...sandbox];
   }
 
-  /**
-   * @returns {Object[]} one row per stored hub rule, with the hits /api/firewall counted for it; pending until the next fetch counts a new rule.
-   */
-  function signedRows() {
-    const counted = firewall.data.rules;
-    return state.rules.map((rule) => ({filter: "signed", action: `Grant ${rule.kind}`, tone: "ok", tool: rule.tool, pattern: rule.pattern, rule, ...(Object.hasOwn(counted, rule.id) ? counted[rule.id] : {hits: null, never: "", pending: true})}));
-  }
-
   const fileStatus = (file) => (file.error ? pill(file.error, "bad") : file.exists ? pill(`sha256 ${file.sha256.slice(0, 12)}`, "neutral") : pill("missing: a change creates it", "warn"));
   const byAction = (one, two) => ACTION_ORDER.indexOf(one.filter) - ACTION_ORDER.indexOf(two.filter);
 
   function sourceGroups() {
-    return [{id: HUB_SOURCE, label: "Hub rules", file: false, status: null, rows: signedRows()}, ...SettingsFiles.listed(firewall.data.files, firewall.missing).shown.map((file) => ({id: file.path, label: file.path, file: true, status: fileStatus(file), rows: fileRows(file)}))];
+    return SettingsFiles.listed(firewall.data.files, firewall.missing).shown.map((file) => ({id: file.path, label: file.path, status: fileStatus(file), rows: fileRows(file)}));
   }
 
   function hitsCell(row) {
-    if (row.pending) {
-      return h("span", {class: "muted", title: "Counted with the next refresh"}, "…");
-    }
     if (row.never) {
       return h("span", {class: "muted", title: `The matcher never grants a command that ${row.never}`}, `never granted: ${row.never}`);
     }
@@ -374,41 +362,22 @@
     return row.hits ? h("strong", {}, String(row.hits)) : ["0 ", h("span", {class: "pill", "data-tone": "warn", title: "No ask of the counted days matched this entry"}, "unused")];
   }
 
-  function actionCell(row) {
-    const rule = row.rule;
-    const action = h("span", {class: "pill", "data-tone": row.tone, title: rule ? RULE_HINTS[rule.kind] : ENTRY_HINTS[row.filter]}, row.action);
-    if (!rule) {
-      return action;
-    }
-    const until = `until ${absolute.format(stampOf(rule.expires))}`;
-    return [action, rule.expires <= nowSeconds() ? pill("expired", "bad") : null, h("span", {class: "pill", "data-tone": rule.enabled ? "ok" : "neutral", title: until}, rule.enabled ? "active" : "off")];
-  }
+  const actionCell = (row) => h("span", {class: "pill", "data-tone": row.tone, title: ENTRY_HINTS[row.filter]}, row.action);
 
   function changeCell(group, row) {
-    const rule = row.rule;
-    if (rule) {
-      return [btn(rule.enabled ? "Turn off" : "Turn on", "btn small", () => changeRule(rule, rule.enabled ? "disable" : "enable")), btn("Delete", "btn small danger", () => {
-        if (window.confirm("Delete rule?")) {
-          changeRule(rule, "delete");
-        }
-      })];
-    }
     const editable = row.entry !== null && Object.hasOwn(FIREWALL_LISTS, row.list);
     return editable ? iconBtn("bi-dash-circle", "Remove", "btn small ghost", () => stageChange(group.id, {list: row.list, op: "remove", entry: row.entry}), `Remove: stage the removal of ${revealed(row.entry)} from ${row.list}`) : null;
   }
 
   /**
-   * @param {Object} group the source the row belongs to: id, label and file, false for the hub rules.
-   * @param {Object} row a row of fileRows() or signedRows().
-   * @returns {HTMLTableRowElement} the row: action, tool, pattern, scope, source, hits and its change buttons.
+   * @param {Object} group the settings file the row belongs to: id and label, its path.
+   * @param {Object} row a row of fileRows().
+   * @returns {HTMLTableRowElement} the row: action, tool, pattern, scope, source, hits and its change button.
    */
   function ruleRow(group, row) {
-    const rule = row.rule;
-    const pattern = [h("code", {}, revealed(row.pattern)), rule && rule.kind !== "decision" ? h("span", {class: "muted"}, " in ", h("code", {}, rule.scope ? revealed(rule.scope) : "–")) : null];
-    const source = rule ? h("span", {class: "muted"}, rule.signed ? "Hub, passkey-signed" : "Hub, unsigned: has no effect") : h("code", {class: "fw-path"}, revealed(group.label));
-    return h("tr", {"data-filter": row.filter, "data-list": row.list, "data-entry": row.entry, "data-rule": rule ? rule.id : null, "data-unused": row.hits === 0},
-      h("td", {}, actionCell(row)), h("td", {}, row.tool ? h("code", {}, revealed(row.tool)) : "–"), h("td", {}, pattern),
-      h("td", {}, rule ? targetPill(rule.agents) : h("span", {class: "muted"}, "file")), h("td", {}, source),
+    return h("tr", {"data-filter": row.filter, "data-list": row.list, "data-entry": row.entry, "data-unused": row.hits === 0},
+      h("td", {}, actionCell(row)), h("td", {}, row.tool ? h("code", {}, revealed(row.tool)) : "–"), h("td", {}, h("code", {}, revealed(row.pattern))),
+      h("td", {}, h("span", {class: "muted"}, "file")), h("td", {}, h("code", {class: "fw-path"}, revealed(group.label))),
       h("td", {class: "fw-hits"}, hitsCell(row)), h("td", {class: "fw-change"}, changeCell(group, row)));
   }
 
@@ -426,7 +395,7 @@
         firewall.open.add(group.id);
       }
       drawFirewall();
-    }}}, icon(open ? "bi-chevron-down" : "bi-chevron-right"), group.file ? h("code", {class: "fw-path"}, revealed(group.label)) : h("strong", {}, group.label), counter(rows.length), unused ? pill(`${unused} unused`, "warn") : null);
+    }}}, icon(open ? "bi-chevron-down" : "bi-chevron-right"), h("code", {class: "fw-path"}, revealed(group.label)), counter(rows.length), unused ? pill(`${unused} unused`, "warn") : null);
     return h("tbody", {"data-source": group.id}, h("tr", {class: "fw-source"}, h("th", {colspan: 7, scope: "rowgroup"}, h("div", {class: "row"}, fold, group.status))), open ? rows.map((row) => ruleRow(group, row)) : []);
   }
 
@@ -557,7 +526,7 @@
     }
     const files = data.files;
     return h("section", {class: "card stack-tight fw-rules", "aria-label": "Firewall rules"}, h("h3", {}, "Firewall rules"),
-      h("p", {class: "muted"}, `Every rule in one table: the hub rules and the permissions and sandbox entries of the listed settings files as the host read them, one folded group per source. Hits count the asks of the last ${data.days} days a rule matches, with the matcher of the rule request dry run; allow, deny and sandbox entries never reach the ask ledger and show not seen. A settings change shows as a diff, is signed with your passkey and is written by the host, never by an agent.`),
+      h("p", {class: "muted"}, `The permissions and sandbox entries of the listed settings files as the host read them, one folded group per file. Hits count the asks of the last ${data.days} days a rule matches, with the matcher of the rule request dry run; allow, deny and sandbox entries never reach the ask ledger and show not seen. A settings change shows as a diff, is signed with your passkey and is written by the host, never by an agent.`),
       data.error ? h("p", {class: "muted"}, data.error) : null,
       h("div", {class: "row fw-filters"}, filterChips(), missingToggle(SettingsFiles.listed(files, false).missing)), ruleTable(), files.length ? addForm(files) : null);
   }

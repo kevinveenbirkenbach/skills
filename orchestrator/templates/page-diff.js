@@ -143,7 +143,7 @@
     const hidden = hiddenFile(item, raw);
     const file = clear === undefined ? raw : {...raw, patch: clear, note: ""};
     const tone = DIFF_TONES[file.status] || "neutral";
-    const head = [h("span", {class: "letter", "data-tone": tone}, file.status), h("code", {class: "path"}, revealed(file.path)),
+    const head = [h("span", {class: "letter", "data-tone": tone}, file.status), pathCode(item.directory, file.path, revealed(file.path)),
       file.mode && file.mode !== "100644" ? h("code", {class: "mode", title: `mode: ${file.mode}`}, file.mode) : null, h("span", {class: "spacer"}),
       file.note ? h("span", {class: "note", title: file.note}, icon("bi-eye-slash"), file.note) : null,
       hidden ? revealButton(item, [file.path], "Reveal") : null,

@@ -9,7 +9,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 from . import NAME
-from .errors import Conflict, EngineError, Held, Missing, ToolError, Unavailable
+from .errors import (
+    Conflict,
+    EngineError,
+    Held,
+    Missing,
+    ToolError,
+    Unavailable,
+    Unsigned,
+)
 from .hub import Hub
 
 GUARD = "X-Kvb-Orchestrator"
@@ -84,6 +92,8 @@ class Exchange(BaseHTTPRequestHandler):
             self.send_text(HTTPStatus.BAD_REQUEST, str(error))
         except Missing:
             self.send_text(HTTPStatus.NOT_FOUND, "not found")
+        except Unsigned as error:
+            self.send_text(HTTPStatus.FORBIDDEN, str(error))
         except Conflict as error:
             self.send_json(HTTPStatus.CONFLICT, error.payload)
         except Unavailable as error:

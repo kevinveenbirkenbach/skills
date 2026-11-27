@@ -10,6 +10,7 @@ STALE = 15 * 60
 UNANSWERED = 10 * 60
 SNAPSHOT = "agent-sessions.json"
 SNAPSHOT_STALE = 5 * 60
+BUSY = "busy"
 
 
 def fresh_snapshot(path: Path, now: float) -> dict[str, dict] | None:
@@ -36,6 +37,35 @@ def read_snapshot(path: Path, now: float) -> dict[str, dict]:
         fresh_snapshot(), empty in place of None.
     """
     return fresh_snapshot(path, now) or {}
+
+
+def status_time(record: dict) -> float | None:
+    """Returns:
+        The record's statusUpdatedAt, which the host stores in
+        milliseconds, in epoch seconds; None when it is no valid time.
+    """
+    stamp = record.get("statusUpdatedAt")
+    return epoch(stamp / 1000) if isinstance(stamp, int | float) and not isinstance(stamp, bool) else None
+
+
+def beats(sessions: dict[str, dict], claims: list[dict]) -> dict[str, float]:
+    """Args:
+        sessions: the session records of read_snapshot.
+        claims: the council claims.
+
+    Returns:
+        The latest heartbeat per agent name as agent() reads it, in epoch
+        seconds: the status_time of each running busy session record and
+        the beat of each claim an agent other than the Operator holds.
+        Kanban.marks judges how fresh a beat must be.
+    """
+    stamps = [(agent(record.get("name")), status_time(record)) for record in sessions.values() if record.get("running") is True and record.get("status") == BUSY]
+    stamps += [(claim["agent"], claim["beat"]) for claim in claims if claim["agent"] != HUMAN]
+    found: dict[str, float] = {}
+    for name, beat in stamps:
+        if name and beat is not None:
+            found[name] = max(beat, found.get(name, beat))
+    return found
 
 
 def unanswered(news: list[dict], now: float) -> list[tuple[str, float]]:
@@ -85,9 +115,8 @@ def presence(sessions: dict[str, dict], parts: dict[str, str], mode: str, claims
         if record.get("running") is not True:
             states[sid] = "dead"
             continue
-        busy = record.get("status") == "busy"
-        stamp = record.get("statusUpdatedAt")
-        updated = (epoch(stamp / 1000) if isinstance(stamp, int | float) and not isinstance(stamp, bool) else None) or 0
+        busy = record.get("status") == BUSY
+        updated = status_time(record) or 0
         called = names.get(sid, set()) | {agent(record.get("name")), sid}
         if (busy and now - updated > STALE) or any(name in called and ts > updated for name, ts in late):
             states[sid] = "unreachable"

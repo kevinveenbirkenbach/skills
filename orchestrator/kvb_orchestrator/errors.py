@@ -9,6 +9,10 @@ class Missing(Exception):
     pass
 
 
+class Unsigned(Exception):
+    pass
+
+
 class Conflict(Exception):
     def __init__(self, payload: dict) -> None:
         super().__init__("conflict")

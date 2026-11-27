@@ -73,13 +73,6 @@ class TestHubFirewall(HubCase):
             self.create_ask({**ASK, "command": command, "session": session})
         old = self.create_ask({**ASK, "command": "make deploy"})
         self.httpd.hub.asks.change(old, {"created_ts": time.time() - 8 * 86400})
-        signer = self.pin()
-        later = time.time() + 3600
-        mine = self.signed_rule(signer, {"kind": "ask", "tool": "Bash", "pattern": "make deploy*", "scope": "/repo*", "expires": later, "agents": ["s1"]})
-        elsewhere = self.signed_rule(signer, {"kind": "ask", "tool": "Bash", "pattern": "make deploy*", "scope": "/elsewhere*", "expires": later})
-        pushing = self.signed_rule(signer, {"kind": "ask", "tool": "Bash", "pattern": "git push *", "scope": "*", "expires": later})
-        review = self.signed_rule(signer, {"kind": "review", "tool": "", "pattern": "feature/*", "scope": "/repo/*", "expires": later})
-        self.assertEqual(self.call("POST", f"/api/rules/{mine['id']}/disable", b"", self.guard(self.host))[0], 200)
         found = self.firewall()
         entries = {(entry["list"], entry["entry"]): (entry["spec"], entry["hits"], entry["never"]) for group in found["files"][0]["groups"] for entry in group["entries"]}
         self.assertEqual(entries, {
@@ -91,7 +84,7 @@ class TestHubFirewall(HubCase):
             ("deny", "Bash(make deploy --prod:*)"): ("make deploy --prod:*", None, ""),
         })
         self.assertEqual(found["days"], requesting.RECENT_DAYS)
-        self.assertEqual(found["rules"], {mine["id"]: {"hits": 2, "never": ""}, elsewhere["id"]: {"hits": 0, "never": ""}, pushing["id"]: {"hits": None, "never": "pushes"}, review["id"]: {"hits": None, "never": ""}})
+        self.assertNotIn("rules", found)
 
     def test_an_entry_becomes_the_rule_the_dry_run_matcher_counts_and_a_hit_needs_the_rule_to_match(self):
         now = time.time()
@@ -316,14 +309,6 @@ class TestHubFirewall(HubCase):
             with self.subTest(path=path):
                 self.assertEqual(self.call("POST", f"/api/firewall/{path}/{ident}/delete", b"", self.guard(self.host))[0], 200)
                 self.assertEqual(self.call("POST", f"/api/firewall/{path}/{ident}/delete", b"", self.guard(self.host))[0], 404)
-
-    def signed_rule(self, signer, fields: dict) -> dict:
-        status, _, body = self.post_json("/api/rules/sign", fields, self.guard(self.host))
-        self.assertEqual(status, 200, body)
-        payload = json.loads(body)["payload"]
-        status, _, body = self.post_json("/api/rules", {"rule": payload, "assertion": signer.assertion(payload, self.origin, "localhost", PRESENT, 0), "enabled": True}, self.guard(self.host))
-        self.assertEqual(status, 201, body)
-        return json.loads(body)
 
     def test_a_rule_applies_to_one_agent_a_group_or_every_agent(self):
         signer = self.pin()

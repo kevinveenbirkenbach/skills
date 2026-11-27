@@ -262,6 +262,11 @@ def consume(store: Path, key: str, expires: int, credential: str, count: int, no
         count: its signature counter; 0 when the authenticator keeps none.
         nonce: the payload nonce; one bulk signature carries one counter.
         now: the current time in epoch seconds.
+
+    An assertion the store accepted once (its nonce, credential and count
+    under "seen" until expires) passes the counter check for its other
+    items later too: a prune's apply job uses its approval at the deadline,
+    after other signatures moved the counter on.
     """
     store.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor = os.open(store.with_name(f"{store.name}.lock"), os.O_RDWR | os.O_CREAT, 0o600)
@@ -271,12 +276,25 @@ def consume(store: Path, key: str, expires: int, credential: str, count: int, no
         used = {name: until for name, until in state["used"].items() if isinstance(until, int | float) and until > now}
         if key in used:
             raise Refused("this signature was already used for this item")
+        seen, mark = live_seen(state.get("seen"), now), {"credential": credential, "count": count, "until": expires}
         last = state["counts"].get(credential)
-        if last is not None and not (count > last["count"] or (count == last["count"] and (count == 0 or nonce == last["nonce"]))):
+        fresh = last is None or count > last["count"] or (count == last["count"] and (count == 0 or nonce == last["nonce"]))
+        if not fresh and seen.get(nonce) != mark:
             raise Refused("the signature counter did not grow: a cloned authenticator or a replay")
-        write_private(store, {"used": {**used, key: expires}, "counts": {**state["counts"], credential: {"count": count, "nonce": nonce}}})
+        counts = {**state["counts"], credential: {"count": count, "nonce": nonce}} if fresh else state["counts"]
+        write_private(store, {"used": {**used, key: expires}, "counts": counts, "seen": {**seen, nonce: mark}})
     finally:
         os.close(descriptor)
+
+
+def live_seen(raw: object, now: float) -> dict[str, dict]:
+    """Returns:
+        The "seen" entries of the replay store whose until lies after now;
+        none for a store written before them.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    return {nonce: entry for nonce, entry in raw.items() if isinstance(entry, dict) and isinstance(entry.get("until"), int | float) and entry["until"] > now}
 
 
 def check(proof: object, item: dict, gate: str, trust: Trust, now: float) -> None:

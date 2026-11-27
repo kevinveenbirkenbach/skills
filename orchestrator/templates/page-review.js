@@ -42,7 +42,7 @@
     const ref = item ? keyOf(item) : null;
     const list = fileList(review.id);
     const treeNav = h("nav", {class: "card tree", "aria-label": "Changed files"}, treePane(list));
-    const diff = h("section", {class: "card diff-pane", "aria-label": "Diff"}, diffPane(list, ref));
+    const diff = h("section", {class: "card diff-pane", "aria-label": "Diff"}, diffPane(list, ref, review.worktree));
     const notes = h("div", {class: "review-notes"}, ref ? feedbackList(ref) : null);
     const id = ui.review;
     const head = h("article", {class: "card"},
@@ -68,7 +68,7 @@
     }
     openSheet(review.title, [head, split], true);
     ui.review = id;
-    reviewDom = {tree: treeNav, diff, notes, ref};
+    reviewDom = {tree: treeNav, diff, notes, ref, root: review.worktree};
   }
 
   function repaintReview() {
@@ -80,7 +80,7 @@
     const top = stack.scrollTop;
     const opened = [...stack.querySelectorAll(REVIEW_FILE)].map((file) => file.open);
     stack.replaceChildren(...list.map((file, index) => {
-      const node = reviewFile(file, index, reviewDom.ref);
+      const node = reviewFile(file, index, reviewDom.ref, reviewDom.root);
       node.open = opened[index];
       return node;
     }));
@@ -181,11 +181,11 @@
     return h("tr", {class: line.kind, "data-line": line.new || line.old || null}, h("td", {class: "num"}, line.old), h("td", {class: "num"}, line.new), h("td", {class: "sign"}, SIGNS[line.kind] || " "), h("td", {class: "code"}, line.text));
   }
 
-  function diffPane(list, ref) {
+  function diffPane(list, ref, root) {
     if (!Array.isArray(list) || !list.length) {
       return h("p", {class: "muted pad"}, list === "loading" ? "Loading changes …" : "No diff available.");
     }
-    const stack = h("div", {class: "review-stack"}, list.map((file, index) => reviewFile(file, index, ref)));
+    const stack = h("div", {class: "review-stack"}, list.map((file, index) => reviewFile(file, index, ref, root)));
     stack.addEventListener("scroll", () => followScroll(stack), {passive: true});
     return stack;
   }
@@ -195,13 +195,14 @@
    * @param {number} index its place in that list.
    * @param {string|null} ref the keyOf() of the review's inbox item, whose line comments its rows show; null when it
    * waits on nobody.
+   * @param {string} root the review's worktree, whose file heads link to root/path.
    */
-  function reviewFile(file, index, ref) {
+  function reviewFile(file, index, ref, root) {
     const [letter, tone] = FILE_STATUS[file.status] || ["?", "neutral"];
     return h("details", {class: "review-file", "data-index": index, "data-path": ref ? file.path : null, open: index === ui.file},
       h("summary", {class: "diff-head"},
         h("span", {class: "letter", "data-tone": tone}, letter),
-        h("code", {class: "path"}, file.old ? `${file.old} → ${file.path}` : file.path),
+        pathCode(root, file.path, file.old ? `${file.old} → ${file.path}` : file.path),
         file.tags.map((tag) => pill(tag, "neutral")),
         h("span", {class: "spacer"}),
         stat(file)),

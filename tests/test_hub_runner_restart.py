@@ -22,7 +22,7 @@ FAILED = "fedcba9876543210"
 class Answer(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         self.server.seen.append(("GET", self.path))
-        self.reply(200, {"jobs": self.server.jobs} if self.path == "/api/runner/jobs" else {"rows": [], "reviews": []})
+        self.reply(200, {"jobs": self.server.jobs} if self.path == "/api/runner/jobs" else {"rows": [], "reviews": [], "asks": []})
 
     def do_POST(self) -> None:
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -93,7 +93,7 @@ class TestRunnerRestart(unittest.TestCase):
 
     def cycle(self, hub: FakeHub) -> None:
         with mock.patch.object(runner, "refusal", return_value=None):
-            runner.cycle(runner.hub_api.base_url(hub.server_address[1]), self.trust, None, None, self.host)
+            runner.cycle(runner.hub_api.base_url(hub.server_address[1]), self.trust, runner.Scripts(register=None, gates=None, queue=None, schedules=None, radio=None), self.host)
 
     def finals(self, hub: FakeHub) -> dict[str, dict]:
         return {job_id: body for job_id, body in hub.reports if body["code"] is not None or body["refused"]}

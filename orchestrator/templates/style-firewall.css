@@ -56,16 +56,39 @@
 .apply-list { flex: 1 1 260px; min-width: 0; }
 .apply-list > summary { font-weight: 600; cursor: pointer; }
 .apply-list ul { max-height: 40vh; margin: 8px 0 0; overflow: auto; }
-@media (prefers-reduced-motion: reduce) { .tool-row, .switch, .switch::after { transition: none; } }
+.rule-fold > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 2px; list-style: none; cursor: pointer; }
+.rule-fold > summary::-webkit-details-marker { display: none; }
+.rule-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.rule-fold-mark { transition: transform .15s; }
+.rule-fold[open] > summary .rule-fold-mark { transform: rotate(90deg); }
+.hub-rule-list > .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hub-rule-list h3 { margin: 0; }
+.hub-rules { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.hub-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; padding: 7px 10px; border-radius: 9px; background: var(--panel); font-size: var(--fs-sm); }
+.hub-rule code { min-width: 0; overflow-wrap: anywhere; }
+.hub-rule-scope, .hub-rule-count, .hub-rule[data-on="false"] .hub-rule-pattern { color: var(--muted); }
+.hub-rule-count { font-variant-numeric: tabular-nums; }
+[data-live-count] { margin: 0; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .tool-row, .switch, .switch::after, .rule-fold-mark { transition: none; } }
 .passkey-prompt { position: fixed; top: 18px; left: 50%; z-index: 60; width: min(440px, calc(100vw - 36px)); transform: translateX(-50%); }
-.sched-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.sched-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 10px; border-radius: 9px; background: var(--panel); }
-.sched-row.off .sched-name { opacity: .6; }
-.sched-switch { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
-.sched-name { overflow-wrap: anywhere; }
-.sched-hint { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
-.sched-field { display: inline-flex; align-items: center; gap: 6px; }
-.sched-hours { width: 5em; }
-.sched-times { width: 12em; max-width: 100%; }
-.sched-off { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.sched-off code { overflow-wrap: anywhere; }
+.sched-bar { flex-wrap: wrap; gap: 6px 12px; }
+.sched-bar > .chips { margin-bottom: 0; }
+.sched-head { margin: 0; }
+.sched-table { min-width: 560px; }
+.sched-table tr.off th { opacity: .6; }
+.sched-cell[data-edit]:not([data-edit=""]) { cursor: text; }
+.sched-cell code { overflow-wrap: anywhere; }
+.sched-input { width: 100%; min-width: 10em; }
+.sched-on { white-space: nowrap; }
+.sched-on .btn { margin-left: 6px; }
+.queue-settings { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.queue-setting { display: inline-flex; flex-direction: column; gap: 2px; min-width: 0; }
+.queue-setting .field { width: 7em; max-width: 100%; }
+.queue-setting.staged .field { outline: 2px solid var(--warn, #b7791f); }
+.queue-tab .table-wrap { overflow-x: auto; max-width: 100%; }
+.queue-table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm, 0.9em); }
+.queue-table th, .queue-table td { padding: 2px 6px; text-align: left; vertical-align: top; }
+.queue-waiting { display: flex; flex-direction: column; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.queue-waiting .queue-job { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.queue-waiting .queue-reason { flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; }
+.queue-start { padding: 0 6px; }

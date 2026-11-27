@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from .asking import ASK_LIFETIME, ask_state
+from .choosing import decision_status
 from .council import read_claims
 from .errors import ToolError
 from .messaging import DIRECT, EVERYONE, TO_ALL
@@ -12,6 +13,8 @@ from .skill_scripts import RASCI
 
 DENIABLE = ("ask", "operator", "rule")
 NOTED = ("review",)
+LAPSING = ("ask", "decision")
+LAPSED = "expired before the operator decided"
 DENY_KEYS = ("channel", "reason", "to")
 DENY_CHANNELS = {**DIRECT, **{name: words for name, words in TO_ALL.items() if name != "mayday"}}
 REASON_LIMIT = 2000
@@ -85,7 +88,9 @@ def request_status(record: dict, now: float) -> str:
 class Denying:
     def deny(self, item: dict, proof: dict | None) -> str:
         """Args:
-            item: a checked inbox item with verb reject and its note.
+            item: a checked inbox item with verb reject and its note; an
+                expired ask or decision is denied too, its agent told it
+                expired before the operator decided.
             proof: the relayed signature over the denial item.
 
         Returns:
@@ -114,19 +119,26 @@ class Denying:
                 return f"already {record['status']}"
             title, branch = record["title"][:200], record["branch"]
             return f"rejected · {self.tell(item, proof, record.get('agent', ''), f'commit {title} on {branch}')}"
-        ledger = self.asks if item["kind"] == "ask" else self.rule_requests
+        ledger = {"ask": self.asks, "decision": self.decisions}.get(item["kind"], self.rule_requests)
         record = ledger.get(item["id"])
         if record is None:
             return "unknown"
         now = time.time()
-        if (ask_state(record, now)["status"] if item["kind"] == "ask" else request_status(record, now)) == "expired":
+        status = ask_state(record, now)["status"] if item["kind"] == "ask" else decision_status(record, now) if item["kind"] == "decision" else request_status(record, now)
+        if status == "expired" and item["kind"] not in LAPSING:
             return "expired"
+        if status == "pending" and item["kind"] == "decision":
+            return "refused: only an expired decision is denied"
         record, changed = ledger.decide(item["id"], {"status": "denied", "proof": proof, **note})
         if not changed:
             return f"already {record['status']}"
+        late = f", {LAPSED}" if status == "expired" else ""
         if item["kind"] == "ask":
             tool, command = record["tool"], record["command"][:200]
-            return f"denied · {self.tell(item, proof, record['session'], f'ask {tool}: {command}')}"
+            return f"denied · {self.tell(item, proof, record['session'], f'ask {tool}: {command}{late}')}"
+        if item["kind"] == "decision":
+            question = " ".join(record["question"].split())[:200]
+            return f"denied · {self.tell(item, proof, record['agent'], f'decision {question}{late}')}"
         return f"denied · {self.tell(item, proof, record['agent'], f'rule request {request_words(record)}')}"
 
     def addressee(self, who: str) -> tuple[str, str]:

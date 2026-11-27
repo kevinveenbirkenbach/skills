@@ -45,7 +45,9 @@ hold the chair, a job seems hung, or a `RESOURCE` line fires.
 Reminders and timers follow `<council>/schedules.json`, which the hub's
 Controls › Schedules tab writes: `scripts/schedules.py check|set|view`;
 `kvb-schedules.path` and `.timer` run `schedules.py run`, which switches the
-first-party units and lists every other timer and hook for the hub.
+first-party and hub timers and lists every user timer and Claude task for the
+hub; System timers and Claude tasks change only through passkey-signed
+`schedules.py timer|cron` jobs of the hub runner.
 
 ## Peer protocol
 

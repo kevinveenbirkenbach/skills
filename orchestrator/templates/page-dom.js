@@ -159,7 +159,52 @@
     return button;
   }
 
-  const MENUS = "details.menu, details.radio-station, details.radio-notify, .ctx-menu";
+  const PATH_ACTIONS = "click opens in VS Code, right-click copies the path";
+
+  /**
+   * @param {string} path a path on the operator's machine.
+   * @returns {string} the link that opens it in VS Code: vscode://file plus the absolute path, every segment
+   * URI-encoded and the slashes kept; "" for a relative or empty path.
+   */
+  function vscodeHref(path) {
+    return typeof path === "string" && path.startsWith("/") ? `vscode://file${path.split("/").map(encodeURIComponent).join("/")}` : "";
+  }
+
+  /**
+   * @param {string} root an absolute folder, such as a card's worktree.
+   * @param {string} path a path relative to root.
+   * @returns {string} path below root; "" without a root or a path.
+   */
+  const pathUnder = (root, path) => (root && path ? `${root.replace(/\/+$/, "")}/${path}` : "");
+
+  /**
+   * @param {string} path the full path the link names.
+   * @param {Object} attrs the link's attributes besides href and its right-click handler.
+   * @param {...*} children what the link shows.
+   * @returns {HTMLElement|null} a link that opens path in VS Code, whose right-click copies path with ctxCopy() and
+   * opens no context menu; null for a relative or empty path.
+   */
+  function pathLink(path, attrs, ...children) {
+    const href = vscodeHref(path);
+    return href ? h("a", {...attrs, href, on: {contextmenu: (event) => {
+      event.preventDefault();
+      ctxCopy(path);
+    }}}, ...children) : null;
+  }
+
+  /**
+   * @param {string} root the folder the diff was taken in: a card's worktree or directory.
+   * @param {string} path the file's path relative to root.
+   * @param {string} shown the text the head shows for the file.
+   * @returns {HTMLElement} the file head's code.path, inside a pathLink() to root/path when root is absolute.
+   */
+  function pathCode(root, path, shown) {
+    const full = pathUnder(root, path);
+    const code = h("code", {class: "path"}, shown);
+    return pathLink(full, {class: "path-link", title: `${revealed(full)}: ${PATH_ACTIONS}`}, code) || code;
+  }
+
+  const MENUS ="details.menu, details.radio-station, details.radio-notify, .ctx-menu";
   const MENU_LINGER = 3000;
   const ACTIONS_IN_MENU = "button, a[href], [role='button']";
 

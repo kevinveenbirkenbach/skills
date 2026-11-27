@@ -28,6 +28,7 @@ PREVIEW_LIMIT = 4000
 ASK_TEXTS = {"command": COMMAND_LIMIT, "cwd": PATH_LIMIT, "session": 200, "agent": 200}
 ANSWERS = {"allow": "allowed", "deny": "denied"}
 RECOMMENDED = "(Recommended)"
+TERMINAL = "terminal"
 
 
 def ask_state(ask: dict, now: float) -> dict:
@@ -91,15 +92,22 @@ def choice_of(arguments: dict) -> tuple[str, list[dict]]:
 
 class Asking:
     def ask(self, body: bytes) -> dict:
+        """Args:
+            body: the hook's ask: tool, ASK_TEXTS, timeout, optionally its diff
+                and sealed patches, and the call's signing.call_key(), which
+                an older hook leaves out; ask_ran() closes the ask by it.
+        """
         payload = decode(body)
         diff = valid_diff(payload.pop("diff")) if "diff" in payload else None
         sealed = valid_sealed(payload.pop("sealed"), diff) if "sealed" in payload else {}
+        key = field(payload, "call_key") if "call_key" in payload else ""
+        payload.pop("call_key", None)
         expect(payload, ("tool", *ASK_TEXTS, "timeout"))
         values = {name: bounded(payload, name, limit) for name, limit in ASK_TEXTS.items()}
         visible(values)
         lifetime = seconds(payload, "timeout", ASK_LIFETIME)
         created = time.time()
-        fields = {**values, "tool": field(payload, "tool").strip(), "status": "pending", "decided": None, "proof": None, "diff_files": None if diff is None else len(diff)}
+        fields = {**values, "tool": field(payload, "tool").strip(), "call_key": key, "status": "pending", "decided": None, "proof": None, "diff_files": None if diff is None else len(diff)}
         with self.asks.changed:
             ask_id = self.asks.fresh()
             if diff is not None:
@@ -109,6 +117,31 @@ class Asking:
             record = self.asks.insert(ask_id, {**fields, "created_ts": created, "expires": created + lifetime})
         self.automate("ask", record)
         return {"id": record["id"], "status": record["status"]}
+
+    def ask_ran(self, body: bytes) -> dict:
+        """Args:
+            body: {"call_key", "session"}: the PostToolUse report of a tool
+                call that ran, keyed by signing.call_key().
+
+        Returns:
+            {"closed"}: the id of the oldest ask of that session and key still
+            pending and created before the report, now TERMINAL, as answered
+            in the terminal; null when none is. An ask of another session or
+            one already decided stays as it is. Nothing is approved or
+            denied, and no signature is relayed.
+        """
+        payload = decode(body)
+        expect(payload, ("call_key", "session"))
+        key = field(payload, "call_key")
+        session = bounded(payload, "session", ASK_TEXTS["session"])
+        if not session:
+            raise ToolError("session must not be empty")
+        now = time.time()
+        found = sorted((ask for ask in self.asks.pending() if ask.get("call_key") == key and ask["session"] == session and ask["created_ts"] <= now), key=lambda ask: (ask["created_ts"], ask["id"]))
+        closed = next((ask["id"] for ask in found if self.asks.decide(ask["id"], {"status": TERMINAL})[1]), None)
+        if closed is not None:
+            sealed_file(self.reviews.pages, "ask", closed).unlink(missing_ok=True)
+        return {"closed": closed}
 
     def ask_wait(self, ask_id: str, query: dict[str, list[str]]) -> dict:
         wait = instant(query, "wait")

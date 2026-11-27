@@ -9,7 +9,7 @@
     unknown: ["#bi-question-circle", (mark) => `${mark.name} unknown: no reading`, 0],
   };
   const RESOURCE_BURN = {done: "Done", scope: "Scope"};
-  const RESOURCE_PICKS = [["hardware", "Hardware"], ["tokens", "Tokens"], ["combined", "Combined"], ["accounts", "Accounts"]];
+  const RESOURCE_PICKS = [["hardware", "Hardware"], ["tokens", "Tokens"], ["combined", "Combined"], ["accounts", "Accounts"], ["usage", "Usage"]];
   const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0, series: {}};
   const resourceKey = () => JSON.stringify([ui.preset, ui.asOf]);
   const resourcesStale = () => resourceKey() !== resourceView.key || nowSeconds() - resourceView.at >= RESOURCE.stale;
@@ -42,11 +42,12 @@
       const legend = h("div", {class: "res-legend"});
       const plot = h("div", {class: "res-plot"});
       const panel = h("section", {class: `card res-panel res-${kind}`, "data-panel": `resources-${kind}`, "aria-label": label, hidden: kind === "combined"},
-        h("div", {class: "res-head", "data-legend-slot": ""}, h("span", {class: "res-title", title: label, "aria-label": label}, icon(name)), legend), plot);
+        h("div", {class: "res-head", "data-legend-slot": ""}, h("span", {class: "res-title", title: label, "aria-label": label}, icon(name)), legend), kind === "hardware" ? limitBar() : null, plot);
       return {kind, label, legend, plot, panel};
     });
     const accounts = accountsPanel();
-    resourceView.dom = {count, switches, picks, panels, accounts};
+    const usage = usagePanel();
+    resourceView.dom = {count, switches, picks, panels, accounts, usage};
     if (!resourceView.timer) {
       resourceView.timer = window.setInterval(pollResources, RESOURCE.poll);
       window.addEventListener("resize", drawResources);
@@ -60,10 +61,13 @@
     const reload = iconBtn("bi-arrow-clockwise", "Reload", "btn small soft", () => {
       fetchResources();
       fetchAccounts();
-    }, "Reload: read the sampler files and the accounts again");
+      if (!usage.panel.hidden) {
+        fetchUsage();
+      }
+    }, "Reload: read the sampler files, the accounts and the usage again");
     return h("div", {class: "graph resources"},
       boxHead("Resources", "", h("div", {class: "toolbar"}, reload, switches.tokens, picks.menu, count)),
-      h("div", {class: "res-panels"}, panels.map((entry) => entry.panel), accounts.panel));
+      h("div", {class: "res-panels"}, panels.map((entry) => entry.panel), accounts.panel, usage.panel));
   }
 
   function pollResources() {
@@ -82,6 +86,7 @@
     }
     resourceView.busy = true;
     resourceView.key = resourceKey();
+    fetchLimits();
     try {
       const response = await fetch(`/api/resources?${windowQuery()}`, {cache: "no-store"});
       if (response.ok) {
@@ -262,6 +267,7 @@
     const y = resourceScale(frame, [0, 50, 100], percentOf, "left");
     resourceBackdrop(frame, y, parts.marks, span);
     resourceLines(frame, y, parts.hardware.filter((line) => !parts.hidden.has(line.id)));
+    limitLines(frame, y);
     return {svg: frame.svg, series: RESOURCE_SERIES.hardware(parts), path: "resources.hidden"};
   }
 
@@ -380,6 +386,12 @@
     }
     dom.accounts.panel.hidden = !view.panels.includes("accounts");
     drawAccounts();
+    dom.usage.panel.hidden = !view.panels.includes("usage");
+    if (!dom.usage.panel.hidden && usageView.ask === 0) {
+      fetchUsage();
+    }
+    drawUsage();
+    drawLimitBar();
     if (data === null) {
       return;
     }

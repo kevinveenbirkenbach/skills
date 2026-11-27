@@ -14,6 +14,7 @@ services:
     environment:
       TMPDIR: /scratch
       AGENTS_COUNCIL_ROOT: "${KVB_ORCHESTRATOR_COUNCIL:?written into .env by scripts/install.sh}"
+      AGENTS_COUNCIL_CONFIG: "/queue-config/${KVB_ORCHESTRATOR_QUEUE_CONFIG_NAME:?written into .env by scripts/orchestrator.sh}"
     cap_drop:
       - ALL
     security_opt:
@@ -127,6 +128,13 @@ services:
       - type: bind
         source: "${KVB_ORCHESTRATOR_KEPT:?written into .env by scripts/install.sh}"
         target: /kept
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        # the directory, not the file: queue.py config set replaces the file, and a file mount keeps showing the old inode
+        source: "${KVB_ORCHESTRATOR_QUEUE_CONFIG:?written into .env by scripts/orchestrator.sh}"
+        target: /queue-config
         read_only: true
         bind:
           create_host_path: false

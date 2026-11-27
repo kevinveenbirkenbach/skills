@@ -191,6 +191,8 @@
   Panels.panel("tasks/match", "Tasks: Match", () => homeMatch(), "", [6, 8]);
   Panels.panel("resources-accounts", "Resources: accounts", () => homeAccounts(), "", [12, 5]);
   Panels.panel("stream/schedules", "Controls: schedules", () => schedulesContent(), "", [12, 6]);
+  Panels.panel("stream/queue", "Controls: queue", () => homeQueue(), "", [12, 6]);
+  Panels.panel("resources-usage", "Resources: usage", () => homeUsage(), "", [12, 6]);
   Panels.item("metric", (id, view) => metricTitle(view), (size, id, view) => homeMetric(id, view));
   Panels.capture("resources-hardware", () => resourcePin("hardware"));
   Panels.capture("resources-tokens", () => resourcePin("tokens"));

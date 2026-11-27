@@ -210,7 +210,7 @@
       stage3d("tasks", dom.stage);
     }
     const q = taskView.q.trim().toLowerCase();
-    const sig = JSON.stringify([state.tasks, operatorItems().map((item) => [item.id, item.title, item.blocked]), state.jobs, state.task_edges, state.queue_line, Kanban.queueSig(state.queue_jobs), settings.estimation, settings.trend, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
+    const sig = JSON.stringify([state.tasks, operatorItems().map((item) => [item.id, item.title, item.blocked]), state.jobs, state.task_edges, state.queue_line, Kanban.queueSig(state.queue_jobs), state.beats, state.runner, settings.estimation, settings.trend, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
     if (sig === taskView.sig) {
       return;
     }

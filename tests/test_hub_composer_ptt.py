@@ -40,9 +40,10 @@ function rig() {
 }
 async function kept(ptt, heard) {
   const {sandbox, parts} = rig();
+  const looks = [];
   let submits = 0;
   Object.assign(sandbox, {
-    context: () => ({}), wavOf: async () => "wav", attachVoice: () => null, toast: () => null,
+    context: () => ({}), wavOf: async () => "wav", attachVoice: () => null, toast: () => null, recLook: (button, look) => looks.push(look), h: () => ({}),
     send: async () => ({ok: true, data: {id: "n1"}}), heardNote: async () => heard,
   });
   Object.assign(parts, {ptt, status: {textContent: ""}, text: {value: "", dispatchEvent: () => true, focus: () => null, form: {requestSubmit: () => {
@@ -50,7 +51,7 @@ async function kept(ptt, heard) {
   }}}});
   await sandbox.keepRecording({size: 3}, parts);
   await settle();
-  return {submits, ptt: parts.ptt, text: parts.text.value};
+  return {submits, ptt: parts.ptt, text: parts.text.value, looks};
 }
 (async () => {
   const quick = rig();
@@ -98,8 +99,8 @@ class TestHoldToTalk(unittest.TestCase):
         self.assertEqual(self.data["right"], [])
 
     def test_a_held_recording_sends_its_transcript_and_a_clicked_one_waits_for_the_check(self):
-        self.assertEqual(self.data["sent"], {"submits": 1, "ptt": "", "text": "hello"})
-        self.assertEqual(self.data["clicked"], {"submits": 0, "ptt": "", "text": "hello"})
+        self.assertEqual(self.data["sent"], {"submits": 1, "ptt": "", "text": "hello", "looks": ["busy", "idle"]})
+        self.assertEqual(self.data["clicked"], {"submits": 0, "ptt": "", "text": "hello", "looks": ["busy", "idle"]})
         self.assertEqual(self.data["empty"]["submits"], 0)
 
 

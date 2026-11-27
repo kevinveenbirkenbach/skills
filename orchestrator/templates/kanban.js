@@ -1,12 +1,12 @@
 const Kanban = (() => {
   "use strict";
+  const {BEAT_S, MARKS, span, head, marks} = typeof KanbanMarks === "object" ? KanbanMarks : require("./kanban-marks.js");
   const COLUMNS = [["queued", "Waiting"], ["running", "Running"], ["done", "Done"]];
   const LANES = [["p1", "P1"], ["p2", "P2"], ["p3", "P3"], ["p4", "P4+"], ["unpinned", "Unpinned"]];
   const PINS = {p1: 1, p2: 2, p3: 3};
   const FREE_FROM = 4;
   const OFF = ["command"];
   const DAY = 86400;
-  const HOUR = 3600;
   const MINUTE = 60;
   const REFUSED = ["failed", "refused"];
   const QUEUE = "queue/";
@@ -171,23 +171,6 @@ const Kanban = (() => {
   }
 
   /**
-   * @param seconds - a span in seconds.
-   * @returns the span in words, cut to its two largest units: "45 s", "12 min", "2 h 5 min", "3 d 4 h".
-   */
-  function span(seconds) {
-    const whole = Math.max(0, Math.floor(seconds));
-    if (whole < MINUTE) {
-      return `${whole} s`;
-    }
-    if (whole < HOUR) {
-      return `${Math.floor(whole / MINUTE)} min`;
-    }
-    const [big, unit, small, rest] = whole < DAY ? [HOUR, "h", MINUTE, "min"] : [DAY, "d", HOUR, "h"];
-    const part = Math.floor((whole % big) / small);
-    return part ? `${Math.floor(whole / big)} ${unit} ${part} ${rest}` : `${Math.floor(whole / big)} ${unit}`;
-  }
-
-  /**
    * @param rows - the shown cards' rows.
    * @param line - the hub's queue_line: tasks holding a live queue entry, in grant order.
    * @param jobs - the hub's queue_jobs: the rows of `queue.py list --json` in grant order, null where the installed
@@ -265,7 +248,7 @@ const Kanban = (() => {
     return jobs === null ? null : jobs.map((job) => ({...job, waited_s: minutes(job.waited_s), eta_s: minutes(job.eta_s)}));
   }
 
-  return {COLUMNS, LANES, FREE_FROM, QUEUE_LAYERS, onBoard, columnOf, laneOf, labelOf, board, freePin, move, stage, pending, lines, why, span, queued, jobChips, whyHere, layers, queueSig};
+  return {COLUMNS, LANES, FREE_FROM, QUEUE_LAYERS, BEAT_S, MARKS, onBoard, columnOf, laneOf, labelOf, board, freePin, move, stage, pending, lines, why, span, queued, jobChips, whyHere, layers, queueSig, head, marks};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Kanban;

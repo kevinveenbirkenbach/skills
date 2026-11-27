@@ -29,6 +29,7 @@ from .inbox import Inbox
 from .jobs import Jobs
 from .language import Language, Model
 from .ledger import Ledger, Marks, Reviews, Sealed
+from .limiting import Limiting
 from .livestate import LiveState
 from .matching import Matching
 from .mcp import Mcp
@@ -37,7 +38,9 @@ from .names import Names
 from .offices import Offices
 from .presence import SNAPSHOT
 from .previewing import Previewing
+from .prunes import Prunes
 from .queue_order import QUEUE_SCRIPT, QueueOrder
+from .queueing import Queueing
 from .receipts import (
     NAMES,
     READS,
@@ -53,7 +56,9 @@ from .resources import RESOURCES, SAMPLES
 from .revealing import Revealing
 from .reviewing import Reviewing
 from .rules import Offers, Rules
+from .running import RUNNER_JOB
 from .schedules import Schedules
+from .scheduling import Scheduling
 from .settings import Settings
 from .signed import signing
 from .skill_scripts import Runner
@@ -91,7 +96,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Firewall, Inbox, Matching, Previewing, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Queueing, Scheduling, Limiting, Prunes, Firewall, Inbox, Matching, Previewing, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -118,6 +123,7 @@ class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Den
     watch: Watch
     tree: Tree
     agent_sessions: Path
+    runner_marker: Path
     model: Model
     timers: Path
     kept: Path
@@ -231,6 +237,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         watch=Watch(),
         tree=Tree(file=places.tree_file, heartbeat=state / TREE_HEARTBEAT, lock=threading.Lock(), cached=None, stamp=None),
         agent_sessions=state / SNAPSHOT,
+        runner_marker=state / RUNNER_JOB,
         model=model,
         timers=places.timers,
         kept=places.kept,

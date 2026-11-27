@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -15,6 +16,7 @@ OUTPUT_LIMIT = 4000
 FIRST_LINE_LIMIT = 200
 ELIDED = "..."
 SAFE_PATH = "/usr/local/bin:/usr/bin:/bin"
+CONFIG_ENV = "AGENTS_COUNCIL_CONFIG"
 RADIO = "kvb-org-radio/scripts/radio.py"
 RASCI = "kvb-org-rasci/scripts/rasci.py"
 NIGHT = "kvb-org-suspend/scripts/night.py"
@@ -36,7 +38,13 @@ def bounded(stdout: str) -> str:
 
 
 def script_env(home: Path, council: Path) -> dict[str, str]:
-    return {"PATH": SAFE_PATH, "HOME": str(home), "AGENTS_COUNCIL_ROOT": str(council), "PYTHONDONTWRITEBYTECODE": "1"}
+    """Returns:
+        The whole environment of a skill script: PATH, HOME, the council
+        and, when the hub has one, CONFIG_ENV, the read-only mount of the
+        queue config compose.yml passes; nothing else of the hub's.
+    """
+    config = {CONFIG_ENV: os.environ[CONFIG_ENV]} if CONFIG_ENV in os.environ else {}
+    return {"PATH": SAFE_PATH, "HOME": str(home), "AGENTS_COUNCIL_ROOT": str(council), "PYTHONDONTWRITEBYTECODE": "1", **config}
 
 
 def script_module(script: Path) -> ModuleType | None:

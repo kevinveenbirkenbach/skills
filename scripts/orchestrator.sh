@@ -26,7 +26,8 @@
 #            council.py, nofollow.py, councilroot.py or rasci.py differ from
 #            this tree
 #   hook     register the PermissionRequest hook in ~/.claude/settings.json,
-#            replacing an earlier entry, keeping everything else and the file
+#            and the same client as async PostToolUse hook that reports a
+#            call that ran, replacing an earlier entry, keeping everything else and the file
 #            mode, after a copy to settings.json.before-kvb-orchestrator-hook
 #   idle     exit 1 with the hub row's task and job id while runner-job.json
 #            in ~/.local/state/kvb-orchestrator names a live pid, the runner
@@ -57,6 +58,7 @@ RESOURCES_UNIT="${NAME}-resources"
 TOKENS_UNIT="${NAME}-tokens"
 FIREWALL_UNIT="${NAME}-firewall"
 INSTALLED_SKILLS="${HOME}/.claude/skills"
+QUEUE_CONFIG="${AGENTS_COUNCIL_CONFIG:-${HOME}/.claude/agents-council/config.json}"
 HOST_SCRIPTS=(kvb-org-organize/scripts/council.py kvb-org-organize/scripts/nofollow.py kvb-org-organize/scripts/councilroot.py kvb-org-rasci/scripts/rasci.py kvb-org-operator/scripts/operator.py kvb-org-radio/scripts/radio.py)
 TREE_DIR="${HOME}/.local/state/pkgmgr/tree"
 PKGMGR_REPO="${PKGMGR_REPO:-https://github.com/kevinveenbirkenbach/package-manager.git}"
@@ -93,10 +95,11 @@ from pathlib import Path
 path, (marker, *added) = Path(sys.argv[1]), sys.argv[2:]
 settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
-entries = settings.setdefault("hooks", {}).setdefault("PermissionRequest", [])
-entries[:] = [entry for entry in entries if not any(marker in hook.get("command", "") for hook in entry.get("hooks", []))]
-if added:
-    entries.append({"matcher": "*", "hooks":[{"type": "command", "command": added[0], "timeout": int(added[1])}]})
+for event, extra in (("PermissionRequest", {}), ("PostToolUse", {"async": True})):
+    entries = settings.setdefault("hooks", {}).setdefault(event, [])
+    entries[:] = [entry for entry in entries if not any(marker in hook.get("command", "") for hook in entry.get("hooks", []))]
+    if added:
+        entries.append({"matcher": "*", "hooks":[{"type": "command", "command": added[0], "timeout": int(added[1]), **extra}]})
 temporary = path.with_name(f"{path.name}.{os.getpid()}")
 temporary.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 temporary.chmod(mode)
@@ -190,8 +193,9 @@ install_hub() {
 	chmod +x "${HUB}/client/permission_hook.py" "${HUB}/client/runner.py" "${HUB}/client/approval.py" "${HUB}/client/cleanup.py" "${HUB}/client/offices.py" "${HUB}/client/sessions.py" "${HUB}/client/resources.py" "${HUB}/client/settings_writer.py" "${HUB}/client/skills_index.py"
 	log "skills: the PermissionRequest hook client is ${HUB}/client/permission_hook.py"
 	log "skills: approvals need a pinned passkey: settings, 'Passkey registrieren', then 'make orchestrator-pin CREDENTIAL=<blob>'; until then every executor refuses"
-	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\nKVB_ORCHESTRATOR_KEPT=%s\n' \
-		"$(id -u)" "$(id -g)" "${STATE}" "${COUNCIL}" "${HOME}/.claude/skills" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" "${KEPT}" >>"${HUB}/.env"
+	mkdir -p "$(dirname -- "${QUEUE_CONFIG}")"
+	printf 'KVB_ORCHESTRATOR_USER=%s:%s\nKVB_ORCHESTRATOR_STATE=%s\nKVB_ORCHESTRATOR_COUNCIL=%s\nKVB_ORCHESTRATOR_SKILLS=%s\nKVB_ORCHESTRATOR_PROJECTS=%s\nKVB_ORCHESTRATOR_TREE=%s\nKVB_ORCHESTRATOR_TIMERS=%s\nKVB_ORCHESTRATOR_APPROVERS=%s\nKVB_ORCHESTRATOR_KEPT=%s\nKVB_ORCHESTRATOR_QUEUE_CONFIG=%s\nKVB_ORCHESTRATOR_QUEUE_CONFIG_NAME=%s\n' \
+		"$(id -u)" "$(id -g)" "${STATE}" "${COUNCIL}" "${HOME}/.claude/skills" "${HOME}/.claude/projects" "${TREE_DIR}" "${UNITS}" "${APPROVERS}" "${KEPT}" "$(dirname -- "${QUEUE_CONFIG}")" "$(basename -- "${QUEUE_CONFIG}")" >>"${HUB}/.env"
 	if ! docker compose --file "${HUB}/compose.yml" build; then
 		docker compose --file "${HUB}/compose.yml" stop || true
 		warn "skills: building the Agent Orchestrator failed; it stays down until 'bash scripts/orchestrator.sh install' succeeds."

@@ -15,6 +15,15 @@
     --gates: the installed gates script, e.g.
         ~/.claude/skills/kvb-check-gate/scripts/gates.py; optional, gate
         changes need it.
+    --queue: the installed queue script, e.g.
+        ~/.agents/skills/kvb-org-queue/scripts/queue.py; optional, queue
+        changes need it and --council.
+    --schedules: the installed schedules script, e.g.
+        ~/.claude/skills/kvb-org-organize/scripts/schedules.py; optional,
+        schedule changes need it and --council.
+    --radio: the installed radio script, e.g.
+        ~/.claude/skills/kvb-org-radio/scripts/radio.py; optional, stale
+        task prunes need it, --rasci and --council.
     --operator: the installed operator script, e.g.
         ~/.claude/skills/kvb-org-operator/scripts/operator.py; optional,
         without it no row closes done after exit 0.
@@ -38,15 +47,38 @@ Returns:
     refuses a cycle or a done with an open key result, and its reason is the
     job's output. Runs every signed gate change (rule set|drop, parents
     add|drop) the same way as `python3 -I -B <gates> <argv>` with the
-    operator's HOME, so gates.py writes its default gates.db. Refuses task
+    operator's HOME, so gates.py writes its default gates.db. Runs every
+    signed queue change (`override <id>` or `config set <key> <value>`,
+    signing.queue_argv()) the same way as `python3 -I -B <queue> <argv>`
+    with the operator's HOME and the council, so queue.py marks the entry
+    in its queue and writes the operator's queue config. Runs every
+    signed schedule change of a System timer or a Claude task
+    (`timer <unit> ...` or `cron <file> <id> ...`,
+    signing.schedule_argv()) the same way as
+    `python3 -I -B <schedules> <argv>` with the operator's HOME and the
+    council, so schedules.py writes the timer's drop-in or the task's cron
+    and refreshes schedules-view.json. Runs a signed stale task prune
+    (pruning.prune_argv()) as two jobs of one signature: the announce job
+    as `python3 -I -B <radio> send security <text> --session Operator`,
+    naming every task and the deadline, and the apply job as
+    `python3 -I -B <rasci> prune --since <epoch> <task>...`; every job
+    whose not_before lies ahead stays queued, unclaimed, until a later
+    cycle. Refuses task
     changes without --rasci and --council or into a council that is a
-    symlink or another uid's, gate changes without --gates, and every other
-    job. Posts the last 200 output lines
+    symlink or another uid's, gate changes without --gates, queue changes
+    without --queue and --council or into such a council, schedule changes
+    without --schedules and --council or into such a council, prunes
+    without --radio, --rasci and --council or into such a council, and every
+    other job. Posts the last 200 output lines
     back while it runs and the exit code at its end. Before a poll, at most
     every PREVIEW_SECONDS, it posts, for each open operator row that is a git merge of a full commit
     id (staged_diff.merge_of) whose HEAD differs from the preview the hub
     holds, staged_diff.merge_preview, which its Match card shows; such a
     merge whose job names the previewed HEAD is refused once HEAD moved.
+    For each open operator row and each pending Bash ask that shipped no
+    diff that is a git commit-tree with a parent (staged_diff.commit_tree_of)
+    and has no preview of that parent at the hub, it posts
+    staged_diff.commit_tree_preview, or the git error line that kept it.
     At start, before its first cycle, it removes a leftover runner-job.json
     and posts /api/runner/restart once, so the hub fails every job an
     earlier runner left running; a failed post is printed to stderr. While
@@ -80,6 +112,7 @@ from typing import NamedTuple
 
 import hub_api
 import hub_limits
+import pruning
 import signing
 import staged_diff
 import verifier
@@ -92,19 +125,34 @@ ERROR_LIMIT = 500
 PREVIEW_FAILURES = (OSError, ValueError, staged_diff.DiffError)
 BEAT = 2.0
 PREVIEW_SECONDS = 10.0
+TREE_KIND = "commit-tree"
 SAFE_PATH = "/usr/bin:/bin"
 TASK_JOB = "task"
 TASK_LIMIT = 30.0
 GATE_JOB = "gate"
+QUEUE_JOB = "queue"
+SCHEDULE_JOB = "schedule"
+PRUNE_JOB = signing.PRUNE_KIND
 OPERATOR = "operator/"
 REFUSED = "refused: no valid operator signature for this command"
 UNREGISTERED = "refused: this runner was started without --rasci and --council; reinstall its unit with make orchestrator-runner"
 UNGATED = "refused: this runner was started without --gates; reinstall its unit with make orchestrator-runner"
+UNQUEUED = "refused: this runner was started without --queue and --council; reinstall its unit with make orchestrator-runner"
+UNSCHEDULED = "refused: this runner was started without --schedules and --council; reinstall its unit with make orchestrator-runner"
+UNPRUNED = "refused: this runner was started without --radio, --rasci and --council; reinstall its unit with make orchestrator-runner"
 
 
 class Register(NamedTuple):
     rasci: Path
     council: Path
+
+
+class Scripts(NamedTuple):
+    register: Register | None
+    gates: Path | None
+    queue: Path | None
+    schedules: Path | None
+    radio: Path | None
 
 
 class Host(NamedTuple):
@@ -176,12 +224,84 @@ def gate_refusal(job: dict, trust: verifier.Trust, now: float) -> str | None:
         Why the change must not run, or None when signing.gate_argv()
         accepts its argv and a pinned key signed it.
     """
+    return argv_refusal(job, trust, now, signing.gate_argv, signing.gate_item)
+
+
+def argv_refusal(job: dict, trust: verifier.Trust, now: float, shape: Callable[[object], list[str]],
+                 item: Callable[[list[str]], dict]) -> str | None:
+    """Args:
+        job: the claimed change with argv and proof.
+        trust: the pinned keys, the runner's replay store and the origin.
+        now: the current time in epoch seconds.
+        shape: the signing check of its argv, raising signing.Refused.
+        item: the signed item of that argv.
+
+    Returns:
+        Why the change must not run, or None when shape accepts its argv
+        and a pinned key signed its item.
+    """
     try:
-        argv = signing.gate_argv(job["argv"])
-        verifier.check(job.get("proof"), signing.gate_item(argv), "", trust, now)
+        argv = shape(job["argv"])
+        verifier.check(job.get("proof"), item(argv), "", trust, now)
     except (signing.Refused, OSError) as error:
         return f"{REFUSED}: {error}"
     return None
+
+
+def queue_refusal(job: dict, trust: verifier.Trust, now: float) -> str | None:
+    """Args:
+        job: the claimed queue change with argv and proof.
+        trust: the pinned keys, the runner's replay store and the origin.
+        now: the current time in epoch seconds.
+
+    Returns:
+        Why the change must not run, or None when signing.queue_argv()
+        accepts its argv and a pinned key signed it.
+    """
+    return argv_refusal(job, trust, now, signing.queue_argv, signing.queue_item)
+
+
+def schedule_refusal(job: dict, trust: verifier.Trust, now: float) -> str | None:
+    """Args:
+        job: the claimed schedule change with argv and proof.
+        trust: the pinned keys, the runner's replay store and the origin.
+        now: the current time in epoch seconds.
+
+    Returns:
+        Why the change must not run, or None when signing.schedule_argv()
+        accepts its argv and a pinned key signed it.
+    """
+    return argv_refusal(job, trust, now, signing.schedule_argv, signing.schedule_item)
+
+
+def prune_refusal(job: dict, trust: verifier.Trust, now: float) -> str | None:
+    """Args:
+        job: the claimed prune job with argv, not_before and proof.
+        trust: the pinned keys, the runner's replay store and the origin.
+        now: the current time in epoch seconds.
+
+    Returns:
+        Why the job must not run, or None when pruning.prune_argv() accepts
+        its argv with its not_before, it is due (pruning.timely()) and a
+        pinned key signed its item, not_before included.
+    """
+    try:
+        not_before = job.get("not_before")
+        argv = pruning.prune_argv(job["argv"], not_before)
+        pruning.timely(argv, not_before, now)
+        verifier.check(job.get("proof"), pruning.prune_item(argv, not_before), "", trust, now)
+    except (signing.Refused, OSError) as error:
+        return f"{REFUSED}: {error}"
+    return None
+
+
+def not_due(job: dict, now: float) -> bool:
+    """Returns:
+        Whether a listed job carries a not_before after now; the cycle
+        leaves it queued and unclaimed until then instead of waiting on it.
+    """
+    not_before = job.get("not_before")
+    return pruning.whole(not_before) and not_before > now
 
 
 def moved(job: dict) -> str | None:
@@ -212,11 +332,14 @@ def preview(row: dict, rules: Path | None) -> dict | None:
     Returns:
         The preview to post for a git merge row whose HEAD differs from the
         hub's: staged_diff.merge_preview, or {head, error} when it cannot be
-        built; None for every other row.
+        built; for a git commit-tree row, with kind TREE_KIND,
+        tree_preview() once head is not its parent; None for every other
+        row.
     """
     found = staged_diff.merge_of(row["command"], row["directory"])
     if found is None:
-        return None
+        tree = staged_diff.commit_tree_of(row["command"], row["directory"])
+        return None if tree is None or tree[2] == row["head"] else {"task": row["task"], "command": row["command"], "kind": TREE_KIND, **tree_preview(tree, rules)}
     try:
         head = staged_diff.head_of(found[0])
     except PREVIEW_FAILURES as error:
@@ -231,6 +354,36 @@ def preview(row: dict, rules: Path | None) -> dict | None:
         except PREVIEW_FAILURES as error:
             shown = {"error": str(error)[:ERROR_LIMIT]}
     return {"task": row["task"], "command": row["command"], "head": head, **shown}
+
+
+def tree_preview(found: tuple[Path, str, str], rules: Path | None) -> dict:
+    """Args:
+        found: the directory, tree and parent staged_diff.commit_tree_of
+            read from a git commit-tree.
+        rules: the MEDUSA rules directory.
+
+    Returns:
+        staged_diff.commit_tree_preview, or {head, error} with the parent
+        as head and the git error line that kept it.
+    """
+    try:
+        return staged_diff.commit_tree_preview(*found, rules)
+    except PREVIEW_FAILURES as error:
+        return {"head": found[2], "error": str(error)[:ERROR_LIMIT]}
+
+
+def ask_preview(ask: dict, rules: Path | None) -> dict | None:
+    """Args:
+        ask: a pending Bash ask that shipped no diff, with id, command, cwd
+            and head, the parent of the preview the hub holds, None for none.
+        rules: the MEDUSA rules directory.
+
+    Returns:
+        {ask, ...tree_preview()} for a git commit-tree with a parent whose
+        preview the hub lacks; None for every other ask.
+    """
+    found = staged_diff.commit_tree_of(ask["command"], ask["cwd"])
+    return None if found is None or found[2] == ask["head"] else {"ask": ask["id"], **tree_preview(found, rules)}
 
 
 def review_preview(row: dict, rules: Path | None) -> dict | None:
@@ -271,11 +424,15 @@ def previews(base: str, rules: Path | None) -> None:
     for row in listed["rows"]:
         shown = preview(row, rules)
         if shown is not None:
-            call(base, PREVIEWS, oversized(shown, ("task", "command", "head")))
+            call(base, PREVIEWS, oversized(shown, tuple(key for key in ("task", "command", "kind", "head") if key in shown)))
     for row in listed["reviews"]:
         shown = review_preview(row, rules)
         if shown is not None:
             call(base, PREVIEWS, oversized(shown, ("id", "head")))
+    for ask in listed["asks"]:
+        shown = ask_preview(ask, rules)
+        if shown is not None:
+            call(base, PREVIEWS, oversized(shown, ("ask", "head")))
 
 
 def council_refusal(council: Path) -> str | None:
@@ -371,6 +528,77 @@ def gate(job: dict, gates: Path, report: Callable[[dict], None]) -> int:
     return spawn([sys.executable, "-I", "-B", str(gates), *argv], "/", env, report, TASK_LIMIT)
 
 
+def queue(job: dict, scripts: Scripts, report: Callable[[dict], None]) -> int:
+    """Args:
+        job: the claimed and verified queue change with argv.
+        scripts: the runner's scripts; queue and the register's council set.
+        report: called with {"output", "code", "refused"}.
+
+    Returns:
+        The exit code of queue.py, run from / on the argv queue_argv()
+        checked, with the operator's HOME and the council as its
+        AGENTS_COUNCIL_ROOT.
+
+    Raises:
+        signing.Refused for an argv of any other shape.
+    """
+    return council_script(scripts.queue, signing.queue_argv(job["argv"]), scripts, report)
+
+
+def schedule(job: dict, scripts: Scripts, report: Callable[[dict], None]) -> int:
+    """Args:
+        job: the claimed and verified schedule change with argv.
+        scripts: the runner's scripts; schedules and the register's council
+            set.
+        report: called with {"output", "code", "refused"}.
+
+    Returns:
+        The exit code of schedules.py, run from / on the argv
+        schedule_argv() checked, with the operator's HOME and the council as
+        its AGENTS_COUNCIL_ROOT.
+
+    Raises:
+        signing.Refused for an argv of any other shape.
+    """
+    return council_script(scripts.schedules, signing.schedule_argv(job["argv"]), scripts, report)
+
+
+def prune(job: dict, scripts: Scripts, report: Callable[[dict], None]) -> int:
+    """Args:
+        job: the claimed and verified prune job with argv and not_before.
+        scripts: the runner's scripts; radio and the register set.
+        report: called with {"output", "code", "refused"}.
+
+    Returns:
+        The exit code of radio.py sending the announcement for the announce
+        job, else of rasci.py prune on the apply job's argv.
+
+    Raises:
+        signing.Refused for an argv of any other shape.
+    """
+    not_before = job.get("not_before")
+    argv = pruning.prune_argv(job["argv"], not_before)
+    if not_before is None:
+        return council_script(scripts.radio, pruning.radio_argv(argv), scripts, report)
+    return council_script(scripts.register.rasci, argv, scripts, report)
+
+
+def council_script(script: Path, argv: list[str], scripts: Scripts, report: Callable[[dict], None]) -> int:
+    """Args:
+        script: the skill script to run.
+        argv: its arguments, already checked against their signing shape.
+        scripts: the runner's scripts; the register's council set.
+        report: called with {"output", "code", "refused"}.
+
+    Returns:
+        The exit code of `python3 -I -B <script> <argv>`, run from / without
+        a shell with the operator's HOME and the council as its
+        AGENTS_COUNCIL_ROOT, killed after TASK_LIMIT seconds.
+    """
+    env = {"PATH": SAFE_PATH, "HOME": str(Path.home()), "AGENTS_COUNCIL_ROOT": str(scripts.register.council)}
+    return spawn([sys.executable, "-I", "-B", str(script), *argv], "/", env, report, TASK_LIMIT)
+
+
 def spawn(argv: list[str], cwd: str, env: dict[str, str] | None, report: Callable[[dict], None], limit: float | None = None) -> int:
     """Args:
         argv: the program and its arguments, run without a shell.
@@ -451,38 +679,52 @@ def mark(marker: Path, job: dict) -> str | None:
     return None
 
 
-def refused(claimed: dict, trust: verifier.Trust, register: Register | None, gates: Path | None) -> str | None:
-    kind = claimed.get("kind")
+def refused(claimed: dict, trust: verifier.Trust, scripts: Scripts) -> str | None:
+    kind, register = claimed.get("kind"), scripts.register
     if kind == TASK_JOB:
         return UNREGISTERED if register is None else council_refusal(register.council) or task_refusal(claimed, trust, time.time())
     if kind == GATE_JOB:
-        return UNGATED if gates is None else gate_refusal(claimed, trust, time.time())
+        return UNGATED if scripts.gates is None else gate_refusal(claimed, trust, time.time())
+    if kind == QUEUE_JOB:
+        return UNQUEUED if scripts.queue is None or register is None else council_refusal(register.council) or queue_refusal(claimed, trust, time.time())
+    if kind == SCHEDULE_JOB:
+        return UNSCHEDULED if scripts.schedules is None or register is None else council_refusal(register.council) or schedule_refusal(claimed, trust, time.time())
+    if kind == PRUNE_JOB:
+        return UNPRUNED if scripts.radio is None or register is None else council_refusal(register.council) or prune_refusal(claimed, trust, time.time())
     return refusal(claimed, trust, time.time()) or moved(claimed)
 
 
-def run(claimed: dict, register: Register | None, gates: Path | None, host: Host, send: Callable[[dict], None]) -> None:
+def run(claimed: dict, scripts: Scripts, host: Host, send: Callable[[dict], None]) -> None:
     kind = claimed.get("kind")
     if kind == TASK_JOB:
-        change(claimed, register, send)
+        change(claimed, scripts.register, send)
     elif kind == GATE_JOB:
-        gate(claimed, gates, send)
+        gate(claimed, scripts.gates, send)
+    elif kind == QUEUE_JOB:
+        queue(claimed, scripts, send)
+    elif kind == SCHEDULE_JOB:
+        schedule(claimed, scripts, send)
+    elif kind == PRUNE_JOB:
+        prune(claimed, scripts, send)
     else:
         execute(claimed, host, send)
 
 
-def cycle(base: str, trust: verifier.Trust, register: Register | None, gates: Path | None, host: Host) -> None:
+def cycle(base: str, trust: verifier.Trust, scripts: Scripts, host: Host) -> None:
     for job in call(base, "/api/runner/jobs", None)["jobs"]:
+        if not_due(job, time.time()):
+            continue
         try:
             claimed = call(base, f"/api/runner/{job['id']}/claim", {})
         except urllib.error.HTTPError:
             continue
         send = sender(base, claimed["id"])
-        reason = refused(claimed, trust, register, gates) or mark(host.marker, claimed)
+        reason = refused(claimed, trust, scripts) or mark(host.marker, claimed)
         if reason is not None:
             send({"output": reason, "code": None, "refused": True})
             continue
         try:
-            run(claimed, register, gates, host, send)
+            run(claimed, scripts, host, send)
         finally:
             host.marker.unlink(missing_ok=True)
 
@@ -519,12 +761,15 @@ def main() -> int:
     parser.add_argument("--rasci", type=Path)
     parser.add_argument("--council", type=Path)
     parser.add_argument("--gates", type=Path)
+    parser.add_argument("--queue", type=Path)
+    parser.add_argument("--schedules", type=Path)
+    parser.add_argument("--radio", type=Path)
     parser.add_argument("--operator", type=Path)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     base = hub_api.base_url(args.port)
     trust = verifier.Trust(approvers=args.approvers, replay=args.replay, origin=signing.origin_of(args.port))
-    register = Register(rasci=args.rasci, council=args.council) if args.rasci and args.council else None
+    scripts = Scripts(register=Register(rasci=args.rasci, council=args.council) if args.rasci and args.council else None, gates=args.gates, queue=args.queue, schedules=args.schedules, radio=args.radio)
     host = Host(shell=os.environ.get("SHELL") or pwd.getpwuid(os.geteuid()).pw_shell, operator=args.operator, council=args.council, marker=args.state / MARKER)
     rules, told, previewed = staged_diff.rules_root(), "", None
     restart(base, host.marker)
@@ -533,7 +778,7 @@ def main() -> int:
             previewed = time.monotonic()
             told = post_previews(base, rules, told)
         try:
-            cycle(base, trust, register, args.gates, host)
+            cycle(base, trust, scripts, host)
         except (OSError, ValueError, KeyError, TypeError):
             pass
         if args.once:

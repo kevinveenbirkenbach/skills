@@ -43,7 +43,7 @@ function page() {
     fetch, AbortController, STATE_TIMEOUT: 15000, windowQuery: () => "", FADE: 0, MOVE: 0,
     state: {now: 0, radio: []}, ui: {offline: false}, settingsSig: "", motion: {current: new Map([[1, 1]]), asOf: null},
     window: {getSelection: () => "", setTimeout: (run, ms) => timers.push({run, ms}), clearTimeout: stub}, document: {hidden: false},
-    adoptSettings: stub, tuneMusic: stub, drawSky: stub, render: stub, drawTime: stub, drawAgent: stub, drawStream: stub, relayout: stub, pulses: stub, tick: stub,
+    adoptSettings: stub, tuneMusic: stub, drawSky: stub, render: stub, drawTime: stub, drawAgent: stub, drawQueueJobs: stub, drawStream: stub, relayout: stub, pulses: stub, tick: stub,
     forgetRevealed: stub,
   };
   context.announce = () => announced.push(context.state.now);

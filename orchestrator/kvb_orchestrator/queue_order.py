@@ -21,6 +21,9 @@ ORDER_LIMIT = 1 << 20
 TRACE_SHOWN = 20
 POSITION_SHOWN = 32
 CLASSES = ("hotfix", "fix", "feature", "main")
+STATUSES = ("waiting", "active")
+LEARNED_ARGS = ("learned", "--json")
+LEARNED_KEYS = {"kinds": dict, "signatures": list, "budget_percent": dict, "ram_cap_percent": dict, "load_limits": dict, "slot_limits": dict, "history": list}
 
 
 def amount(value: object) -> float | None:
@@ -59,8 +62,10 @@ def queue_job(raw: object) -> dict | None:
         The row as the board shows it, each field of one type and bounded:
         position an int or a word such as run, class one of CLASSES, prio an
         int, wsjf (a number or {"score"}), waited_s and eta_s non-negative
-        numbers, each else None; trace at most TRACE_SHOWN strings; agent
-        falls back to name. None for a row without a string id.
+        numbers, status one of STATUSES, each else None; trace at most
+        TRACE_SHOWN strings; agent falls back to name; override true only
+        for a row queue.py marked overridden. None for a row without a
+        string id.
     """
     if not isinstance(raw, dict) or not isinstance(raw.get("id"), str) or not raw["id"]:
         return None
@@ -79,6 +84,8 @@ def queue_job(raw: object) -> dict | None:
         "eta_s": amount(raw.get("eta_s")),
         "reason": text(raw.get("reason")),
         "trace": steps_of(raw.get("trace")),
+        "status": raw["status"] if raw.get("status") in STATUSES else None,
+        "override": raw.get("override") is True,
     }
 
 
@@ -142,6 +149,39 @@ def grant_order(chain: list[tuple[str, bool]], jobs: list[dict] | None) -> list[
     return sorted(chain, key=lambda pair: place.get(pair[0], len(place)))
 
 
+def queue_output(script: Path, args: tuple[str, ...], home: Path, council: Path) -> str | None:
+    """Returns:
+        What the installed queue.py printed for args, run read-only with
+        script_env(); None when it fails, overruns ORDER_TIMEOUT or prints
+        more than ORDER_LIMIT bytes.
+    """
+    try:
+        done = subprocess.run(
+            [sys.executable, str(script), *args],
+            capture_output=True,
+            timeout=ORDER_TIMEOUT,
+            env=script_env(home, council),
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if done.returncode != 0 or len(done.stdout) > ORDER_LIMIT:
+        return None
+    return done.stdout.decode("utf-8", errors="replace")
+
+
+def learned_of(stdout: str | None) -> dict | None:
+    """Returns:
+        What `queue.py learned --json` printed when it is an object holding
+        every key of LEARNED_KEYS with its type, else None.
+    """
+    data = None if stdout is None else parsed(stdout)
+    if not isinstance(data, dict) or not all(isinstance(data.get(key), kind) for key, kind in LEARNED_KEYS.items()):
+        return None
+    return {key: data[key] for key in LEARNED_KEYS}
+
+
 @dataclass
 class QueueOrder:
     script: Path
@@ -153,20 +193,16 @@ class QueueOrder:
     at: float = 0.0
 
     def run(self) -> list[dict] | None:
-        try:
-            done = subprocess.run(
-                [sys.executable, str(self.script), *ORDER_ARGS],
-                capture_output=True,
-                timeout=ORDER_TIMEOUT,
-                env=script_env(self.home, self.council),
-                stdin=subprocess.DEVNULL,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return None
-        if done.returncode != 0 or len(done.stdout) > ORDER_LIMIT:
-            return None
-        return queue_jobs(done.stdout.decode("utf-8", errors="replace"))
+        stdout = queue_output(self.script, ORDER_ARGS, self.home, self.council)
+        return None if stdout is None else queue_jobs(stdout)
+
+    def learned(self) -> dict:
+        """Returns:
+            {"learned": learned_of() of a `queue.py learned --json` run, None
+            while the installed queue.py prints none}; the hub never writes
+            the queue config, the host runner does (`queue.py config set`).
+        """
+        return {"learned": learned_of(queue_output(self.script, LEARNED_ARGS, self.home, self.council))}
 
     def get(self, live: frozenset[str], now: float) -> list[dict] | None:
         """Args:

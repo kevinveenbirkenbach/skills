@@ -206,7 +206,7 @@ class TestTokensInScratchHome(unittest.TestCase):
             argv = [sys.executable, str(SCRIPT), "tokens", "--state", str(state), "--council", str(council), "--transcripts", str(home / ".claude" / "projects")]
             done = subprocess.run(argv, env={**os.environ, "HOME": str(home), "PATH": "/usr/bin:/bin"}, capture_output=True, text=True, timeout=60, check=False)
             self.assertEqual(done.returncode, 0, done.stderr)
-            self.assertEqual(sorted(path.name for path in state.iterdir()), ["offsets.json", "tokens.jsonl"])
+            self.assertEqual(sorted(path.name for path in state.iterdir()), ["context.jsonl", "offsets.json", "tokens.jsonl", "usage.jsonl"])
             written = [json.loads(line) for line in (state / "tokens.jsonl").read_text(encoding="utf-8").splitlines()]
             self.assertEqual(written, [{"t": int(ts - ts % HOUR), "agent": SESSION[:8], "model": OPUS, "input": 3, "output": 4, "cache_read": 5, "cache_write": 6}])
 

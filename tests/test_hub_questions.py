@@ -89,7 +89,7 @@ class TestHubQuestions(HubCase):
         expired = self.ask_question({**BODY, "timeout": 0})
         self.assertEqual(self.decision_state(expired)["status"], "expired")
         self.assertNotIn(expired, [item["id"] for item in self.snapshot()["inbox"]])
-        self.assertNotIn(f"decision:{expired}", [card["id"] for card in json.loads(self.get("/api/match")[2])["cards"]])
+        self.assertEqual([card["blocked_kind"] for card in json.loads(self.get("/api/match")[2])["cards"] if card["id"] == f"decision:{expired}"], ["expired"])
         self.assertNotIn(expired, [row["id"] for row in self.snapshot()["decisions"]])
         self.assertEqual(self.approve([self.entry("decision", expired, PICK, "")], None)[0], 409)
 

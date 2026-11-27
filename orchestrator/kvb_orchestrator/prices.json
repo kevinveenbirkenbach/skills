@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-06",
+  "source": "Input and output from the kvb-org-perform skill table (claude-api reference, cached 2026-10-06); cache read 0.1 x input and cache write 1.25 x input, Anthropic's standard 5-minute cache multipliers",
+  "unit": "USD per million tokens",
+  "families": {
+    "haiku": {"model": "Haiku 5.5", "input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.125},
+    "sonnet": {"model": "Sonnet 5.5", "input": 2, "output": 10, "cache_read": 0.2, "cache_write": 2.5},
+    "opus": {"model": "Opus 5.5", "input": 4, "output": 20, "cache_read": 0.4, "cache_write": 5},
+    "fable": {"model": "Fable 5.1", "input": 10, "output": 50, "cache_read": 1, "cache_write": 12.5}
+  }
+}

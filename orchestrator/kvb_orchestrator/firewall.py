@@ -10,7 +10,7 @@ from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, visible
 from .ledger import Ledger
 from .records import read_json, stamp
-from .requesting import RECENT_DAYS, matched
+from .requesting import RECENT_DAYS, counted_matches
 from .rules import EVERY_AGENT, RULE_KINDS
 from .signed import signing
 
@@ -26,7 +26,6 @@ HASH = re.compile(r"[0-9a-f]{64}")
 PERMISSION_LISTS = ("allow", "ask", "deny")
 SET_KEYS = ("kind", "tool", "pattern", "scope")
 CHAINED = "chains, pipes, redirects or substitutions"
-COUNT_ID = "0" * 16
 UNSEEN = {"hits": None, "never": ""}
 
 
@@ -82,7 +81,7 @@ def hits(rule: dict, asks: list[dict], now: float) -> dict:
     never = [*signing.warnings(pattern), *([CHAINED] if signing.CHAINED.search(pattern) else [])]
     if never:
         return {"hits": None, "never": never[0]}
-    return {"hits": matched({**rule, "id": COUNT_ID, "expires": now + RECENT_DAYS * 86400}, asks, now), "never": ""}
+    return {"hits": counted_matches(rule, asks, now), "never": ""}
 
 
 def counted(groups: list[dict], asks: list[dict], now: float) -> list[dict]:
@@ -95,17 +94,6 @@ def counted(groups: list[dict], asks: list[dict], now: float) -> list[dict]:
         return {**entry, "spec": tool_and_spec(entry["entry"])[1], **found}
 
     return [{**group, "entries": [shown(entry) for entry in group["entries"]]} for group in groups]
-
-
-def stored_hits(rule: dict, asks: list[dict], now: float) -> dict:
-    """Returns:
-        hits() of a stored ask rule for the agents it is signed for, UNSEEN
-        for a review or decision rule.
-    """
-    if rule["kind"] != "ask":
-        return UNSEEN
-    fields = {key: rule[key] for key in ("kind", "tool", "pattern", "scope")}
-    return hits({**fields, "agents": rule["agents"]} if "agents" in rule else fields, asks, now)
 
 
 def grouped(permissions: object) -> list[dict]:
@@ -270,8 +258,7 @@ class Firewall:
         now = time.time()
         asks = self.recent_subjects("ask", now)
         listed = [{key: entry[key] for key in ("path", "exists", "folder", "sha256", "error")} | {"groups": counted(grouped(entry["settings"].get("permissions")), asks, now), "sandbox": sandbox_entries(entry["settings"].get("sandbox"), "sandbox")} for entry in files]
-        rules = {rule["id"]: stored_hits(rule, asks, now) for rule in self.rules.listed()}
-        return {**meta, "files": listed, "lists": list(signing.SETTINGS_LISTS), "patterns": deny_patterns(), "groups": self.groups.listed(), "sets": self.rule_sets.listed(), "days": RECENT_DAYS, "rules": rules}
+        return {**meta, "files": listed, "lists": list(signing.SETTINGS_LISTS), "patterns": deny_patterns(), "groups": self.groups.listed(), "sets": self.rule_sets.listed(), "days": RECENT_DAYS}
 
     def settings_changes(self, raw: object) -> list[dict]:
         """Args:

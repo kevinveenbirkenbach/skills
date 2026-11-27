@@ -20,10 +20,11 @@ TRENDS = ("off", "regression", "velocity")
 TREND_DAYS = (1, 365)
 THRESHOLDS = tuple(range(0, ALWAYS + 1, 10))
 WPM = (5, 40)
-LATE = ("rates", "morse", "undo", "popups", "agents")
+LATE = ("rates", "morse", "undo", "popups", "agents", "forecast", "match")
 AGENT_SWITCHES = ("sound", "aloud", "bubbles")
 AGENTS_LIMIT = 200
 UNDO_RANGE = (0, 60)
+MATCH_REFRESH = (1, 60)
 POPUP_SOURCES = ("resources", "mayday", "dream")
 POPUP_UNTIL = 4102444800
 NOTIFY = "notify.json"
@@ -59,6 +60,8 @@ SETTINGS = {
     "undo": UNDO,
     "popups": {source: {"on": True, "until": 0} for source in POPUP_SOURCES},
     "agents": {},
+    "forecast": False,
+    "match": {"refresh": 2},
 }
 RATE_CHIP = (2, 9)
 SPACE_AXES = ("none", "time", "spawn")
@@ -205,6 +208,15 @@ def undo_setting(raw: object) -> int:
     return raw
 
 
+def match_setting(raw: object) -> dict:
+    entry = section(raw, "match", tuple(SETTINGS["match"]))
+    low, high = MATCH_REFRESH
+    refresh = entry["refresh"]
+    if isinstance(refresh, bool) or not isinstance(refresh, int) or not low <= refresh <= high:
+        raise ToolError(f"match.refresh must be whole seconds from {low} to {high}")
+    return {"refresh": refresh}
+
+
 def popups_setting(raw: object) -> dict:
     data = section(raw, "popups", POPUP_SOURCES)
     popups = {}
@@ -274,6 +286,8 @@ def valid_settings(raw: object) -> dict:
         "undo": undo_setting(data["undo"]),
         "popups": popups_setting(data["popups"]),
         "agents": agents_setting(data["agents"]),
+        "forecast": flag(data["forecast"], "forecast"),
+        "match": match_setting(data["match"]),
     }
 
 

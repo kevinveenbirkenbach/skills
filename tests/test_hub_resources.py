@@ -91,8 +91,9 @@ const fs = require("fs");
 const vm = require("vm");
 const Resources = require(process.argv[1]);
 const Plan = require(process.argv[2]);
-const code = [process.argv[3], process.argv[4], process.argv[5], process.argv[6]].map((path) => fs.readFileSync(path, "utf8")).join("\\n");
-const T = Number(process.argv[7]);
+const Limits = require(require("path").join(require("path").dirname(process.argv[1]), "limits.js"));
+const code = process.argv.slice(3, -1).map((path) => fs.readFileSync(path, "utf8")).join("\\n");
+const T = Number(process.argv[process.argv.length - 1]);
 @FIXTURE@
 const make = (tag, attrs, children) => {
   const node = {tag, attrs: {}, children: [], textContent: "", isConnected: true, listeners: {},
@@ -126,8 +127,8 @@ const tasks = [
   {task: "q", kind: "queue", status: "done", start: T - 500, end: T - 400, points: 0},
 ];
 const context = {
-  Resources, Plan, h, s: h, icon, DAY: 86400, ui: {preset: 86400, from: null, to: null, asOf: null, offline: false},
-  state: {tasks, now: T + 6000}, settings: {estimation: "none"}, setTimeout, clearTimeout,
+  Resources, Plan, Limits, h, s: h, icon, DAY: 86400, ui: {preset: 86400, from: null, to: null, asOf: null, offline: false},
+  state: {tasks, now: T + 6000}, settings: {estimation: "none", forecast: false}, setTimeout, clearTimeout,
   named: (label, hint) => ({title: hint || label, "aria-label": label}),
   iconBtn: (name, label, cls, run, hint) => make("button", {title: hint, "aria-label": label}, [icon(name)]), caret: () => icon("bi-caret-down-fill"),
   boxHead: (label, cls, ...children) => make("div", {class: "box-head", "aria-label": label}, children),
@@ -140,6 +141,9 @@ const context = {
   },
   windowQuery: () => "from=1", nowSeconds: () => 0,
   fetch: async (url, options) => {
+    if (url === "/api/limits") {
+      return {ok: true, json: async () => ({limits: null, why: null, target: null, profiles: {}, metrics: Limits.METRICS, levels: Limits.LEVELS})};
+    }
     if (url === "/api/accounts") {
       fetched.push(url);
       return {ok: true, json: async () => ({accounts: [], active: null, usage: {}})};
@@ -343,7 +347,7 @@ def chips(entries: list[list[str]], path: str, hidden: set[str]) -> list[list[st
 class TestResourcesPage(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        sources = [str(HUB / "templates" / name) for name in ("view-store.js", "legend-chips.js", "page-resources.js", "page-accounts.js")]
+        sources = [str(HUB / "templates" / name) for name in ("view-store.js", "legend-chips.js", "page-resources.js", "page-limits.js", "page-accounts.js", "page-usage.js", "page-account-bar.js")]
         done = subprocess.run(["node", "-e", PAGE_PROBE, str(MODULE), str(PLAN), *sources, str(T)], capture_output=True, text=True, timeout=60, check=False)
         if done.returncode != 0:
             raise AssertionError(done.stderr[-2000:])
@@ -352,8 +356,8 @@ class TestResourcesPage(unittest.TestCase):
     def test_normal_mode_draws_exactly_a_hardware_and_a_tokens_chart_on_one_time_axis(self):
         found = self.found["normal"]
         self.assertEqual(found["count"], "8")
-        self.assertEqual(found["panels"], [["resources-hardware", False], ["resources-tokens", False], ["resources-combined", True], ["resources-accounts", False]])
-        self.assertEqual(found["picks"], [["hardware", True, False], ["tokens", True, False], ["combined", False, False], ["accounts", True, False]])
+        self.assertEqual(found["panels"], [["resources-hardware", False], ["resources-tokens", False], ["resources-combined", True], ["resources-accounts", False], ["resources-usage", True]])
+        self.assertEqual(found["picks"], [["hardware", True, False], ["tokens", True, False], ["combined", False, False], ["accounts", True, False], ["usage", False, False]])
         self.assertIn("No account yet", found["accounts"])
         axis = [str(T - 600), str(T + 6000)]
         self.assertEqual(found["charts"], [["hardware", *axis], ["tokens", *axis]])
@@ -365,7 +369,7 @@ class TestResourcesPage(unittest.TestCase):
         self.assertEqual(found["bars"], [["Stage", T, False], ["Skills", T, False], ["Stage", T + 3600, False]])
         self.assertEqual(found["chips"], chips(HARDWARE_CHIPS + AGENT_CHIPS, "resources.hidden", set()))
         self.assertEqual(found["switches"], [["tokens", "false"]])
-        names = [("Hardware: disks, CPU, RAM, swap, GPU and VRAM", "bi-cpu"), ("Tokens per agent", "bi-coin"), ("Hardware, tokens and burnup", "bi-layers"), ("Accounts", "bi-person-badge")]
+        names = [("Hardware: disks, CPU, RAM, swap, GPU and VRAM", "bi-cpu"), ("Tokens per agent", "bi-coin"), ("Hardware, tokens and burnup", "bi-layers"), ("Accounts", "bi-person-badge"), ("Usage", "bi-pie-chart")]
         self.assertEqual(found["titles"], [[name, name, icon] for name, icon in names])
 
     def test_blocked_and_hung_marks_sit_in_lanes_of_their_own_and_name_head_wait_reason_and_ids(self):
@@ -400,7 +404,7 @@ class TestResourcesPage(unittest.TestCase):
 
     def test_the_panels_menu_shows_the_combined_chart_with_every_series_switched_on_instead_of_both(self):
         found = self.found["combined"]
-        self.assertEqual(found["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", False]])
+        self.assertEqual(found["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", False], ["resources-usage", True]])
         self.assertEqual(found["charts"], [["combined", str(T - 600), str(T + 6000)]])
         self.assertEqual(found["lines"], LINES)
         self.assertEqual(found["sums"], [["Stage", [0, 10, 510]], ["Skills", [0, 375, 375]]])
@@ -410,12 +414,12 @@ class TestResourcesPage(unittest.TestCase):
         self.assertAlmostEqual(done_last, 200 / 3)
         burn = [["burn:done", "Done 67 %"], ["burn:scope", "Scope 100 %"]]
         self.assertEqual(found["chips"], chips(HARDWARE_CHIPS + AGENT_CHIPS + burn, "resources.combinedHidden", set()))
-        self.assertEqual(found["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, False], ["accounts", True, False]])
+        self.assertEqual(found["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, False], ["accounts", True, False], ["usage", False, False]])
 
     def test_the_last_checked_panel_cannot_be_switched_off(self):
         found = self.found["last"]
-        self.assertEqual(found["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", True]])
-        self.assertEqual(found["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, True], ["accounts", False, False]])
+        self.assertEqual(found["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", True], ["resources-usage", True]])
+        self.assertEqual(found["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, True], ["accounts", False, False], ["usage", False, False]])
 
     def test_each_combined_series_is_deselectable_and_every_switch_is_stored_in_one_patch(self):
         found = self.found["deselected"]

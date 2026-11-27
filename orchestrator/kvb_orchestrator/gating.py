@@ -1,22 +1,17 @@
 from __future__ import annotations
 
 import sqlite3
-import time
 from contextlib import closing
 from pathlib import Path
 from types import ModuleType
 
-from .errors import ToolError
-from .fields import decode, expect
-from .jobs import GATE_JOB
+from .jobs import GATE_JOB, argv_items
 from .signed import signing
 from .skill_scripts import script_module
 
 GATES_SCRIPT = "kvb-check-gate/scripts/gates.py"
 GATES_DB = "gates.db"
 GATE_TASK = "gates"
-CHANGE_LIMIT = 100
-CHANGE_KEYS = ("kind", "argv")
 
 
 def gate_request(raw: object) -> bool:
@@ -82,33 +77,7 @@ class Gating:
         Returns:
             The signed items, each with an argv signing.gate_argv() accepts.
         """
-        if not isinstance(raw, list) or not 1 <= len(raw) <= CHANGE_LIMIT:
-            raise ToolError(f"items must be a list of 1 to {CHANGE_LIMIT} gate changes")
-        signed: list[dict] = []
-        for entry in raw:
-            if not isinstance(entry, dict):
-                raise ToolError("every item must be an object with kind and argv")
-            expect(entry, CHANGE_KEYS)
-            try:
-                item = signing.gate_item(signing.gate_argv(entry["argv"]))
-            except signing.Refused as error:
-                raise ToolError(f"gate change: {error}") from None
-            if item in signed:
-                raise ToolError("items must be distinct")
-            signed.append(item)
-        return signed
+        return argv_items(raw, lambda argv: signing.gate_item(signing.gate_argv(argv)), "gate change")
 
     def change_gates(self, body: bytes) -> dict:
-        payload = decode(body)
-        expect(payload, ("items", "proof"))
-        items = self.gate_changes(payload["items"])
-        proof = self.covered(payload["proof"], items, time.time())
-        for item in items:
-            self.operator_proven(proof, item)
-        ids = []
-        for item in items:
-            fields = {"kind": GATE_JOB, "task": GATE_TASK, "argv": item["argv"], "command": shown_command(item["argv"]), "directory": "", "sha256": "", "status": "queued", "proof": proof}
-            ids.append(self.jobs.add({**fields, "code": None, "output": "", "created_ts": time.time(), "started": None, "finished": None})["id"])
-        commands = [shown_command(item["argv"]) for item in items]
-        self.log.add({"kind": "run", "title": f"Gate change signed: {len(items)}", "text": "\n".join(commands), "ref": {"jobs": ids, "status": "queued"}})
-        return {"jobs": ids, "status": "queued"}
+        return self.signed_jobs(body, self.gate_changes, GATE_JOB, GATE_TASK, shown_command)

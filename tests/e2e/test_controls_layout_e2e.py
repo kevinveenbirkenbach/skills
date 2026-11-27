@@ -23,6 +23,9 @@ BROKEN = {PRESENT[3], PRESENT[7]}
 READ = """
   const box = () => document.querySelector("#main .fw-controls");
   const tab = (id) => document.getElementById(`controls-tab-${id}`);
+  const unfold = () => all("#main details[data-fold]").forEach((fold) => {
+    fold.open = true;
+  });
   const flush = () => {
     const head = box().querySelector(":scope > .box-head");
     const main = document.getElementById("main");
@@ -46,6 +49,7 @@ RULES = """(async () => {@HELPERS@@READ@
     return {error: text(document.getElementById("main")), sources: sources()};
   }
   tab("rules").click();
+  unfold();
   const folded = {sources: sources(), toggle: text(toggle()), pressed: toggle().getAttribute("aria-pressed")};
   toggle().click();
   await until(() => sources().length === 40, 4000);
@@ -55,7 +59,8 @@ RULES = """(async () => {@HELPERS@@READ@
   return {folded, opened, flush: flush(), rules: width("Firewall rules"), forms: forms(), multiple: all("#main select[multiple]").length, wide: wide()};
 })()"""
 GROUPS = """(async () => {@HELPERS@@READ@
-  tab("groups").click();
+  tab("rules").click();
+  unfold();
   const form = await until(() => width("Agent groups") && document.querySelector('#main form[aria-label="New agent group"]'), 4000);
   const chips = all('[aria-label="Members"] label.check-chip', form);
   const faces = chips.filter((chip) => chip.querySelector(".avatar svg")).length;

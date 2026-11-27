@@ -1,6 +1,6 @@
   const ACCOUNT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const ACCOUNT_COLUMNS = ["Provider", "Email", "Renewal", "Next reset", "Resubscribe", "Autorenew", "Since reset", "Today", "Total", "Remaining", ""];
-  const accountsView = {data: null, busy: false, body: null};
+  const accountsView = {data: null, busy: false, body: null, toggle: null, held: new Map()};
   const momentText = (moment) => `${ACCOUNT_DAYS[moment.day]} ${moment.time}`;
 
   function accountsPanel() {
@@ -9,7 +9,7 @@
     const add = iconBtn("bi-plus-lg", "Add account", "btn small soft", () => accountSheet(null), "Add account: provider, email, renewal and weekly reset; kept on this host only");
     const panel = h("section", {class: "card res-panel res-accounts", "data-panel": "resources-accounts", "aria-label": "Accounts"},
       h("div", {class: "res-head", "data-legend-slot": ""}, h("span", {class: "res-title", title: "Accounts", "aria-label": "Accounts"}, icon("bi-person-badge")), h("span", {class: "acc-title"}, "Accounts"), h("span", {class: "spacer"}),
-        accountsExportMenu(), accountsImportButton(), add), body);
+        forecastToggle(), accountsExportMenu(), accountsImportButton(), add), body);
     return {panel, body};
   }
 
@@ -58,14 +58,19 @@
   }
 
   /**
-   * @param data - /api/accounts: {accounts, active, usage}.
+   * @param data - /api/accounts: {accounts, active, usage, calibrations}.
    * @param now - epoch milliseconds.
-   * @returns the table rows: each account with its next reset and usage, sorted by the next reset, then one
-   * unassigned row for the tokens of no stored account, when there are any.
+   * @returns the table rows: each account with its next reset, usage entry, usage and UsageBar.usage() bar (null
+   * without a limit), sorted by the next reset, then one unassigned row for the tokens of no stored account, when
+   * there are any.
    */
   function accountRows(data, now) {
     const empty = {total: 0, hours: []};
-    const rows = data.accounts.map((account) => ({account, next: Resources.nextMoment(account.reset, now), used: Resources.accountUsage(data.usage[account.email] || empty, account.reset, now)}));
+    const rows = data.accounts.map((account) => {
+      const entry = data.usage[account.email] || empty;
+      const bar = account.limit === null ? null : UsageBar.usage(account.limit, entry, data.calibrations[account.id], Resources.lastMoment(account.reset, now));
+      return {account, entry, bar, next: Resources.nextMoment(account.reset, now), used: Resources.accountUsage(entry, account.reset, now)};
+    });
     rows.sort((a, b) => a.next - b.next || a.account.email.localeCompare(b.account.email));
     const known = new Set(data.accounts.map((account) => account.email));
     const rest = Object.entries(data.usage).filter(([email]) => !known.has(email)).map(([, entry]) => entry);
@@ -73,20 +78,21 @@
     return unassigned.total ? [...rows, {account: null, next: null, used: Resources.accountUsage(unassigned, null, now)}] : rows;
   }
 
-  function accountRow(row, active) {
+  function accountRow(row, active, now) {
     const count = (value) => (value === null ? "–" : Resources.compact(value));
     if (row.account === null) {
       return h("tr", {class: "acc-unassigned", "data-account": ""}, h("td", {colspan: 6}, "Unassigned: sessions the SessionStart hook mapped to no stored account"),
         h("td", {}, "–"), h("td", {}, count(row.used.today)), h("td", {}, count(row.used.total)), h("td", {}, "–"), h("td", {}));
     }
     const {account} = row;
-    const remaining = account.limit === null ? null : Math.max(0, account.limit - row.used.since);
+    const remaining = row.bar === null ? null : Math.max(0, account.limit - row.bar.used);
+    const left = row.bar === null ? "No weekly limit set" : `Limit ${account.limit} minus the ${row.bar.calibrated ? "calibrated share and the tokens since" : "tokens since the last reset"}`;
     const isActive = account.email === active;
     return h("tr", {"data-account": account.id, ...(isActive ? {"data-active": ""} : {})},
       h("td", {}, account.provider), h("td", {}, account.email, isActive ? h("span", {class: "pill", "data-tone": "ok", title: "The account Claude Code logged in with at the last session start"}, "active") : null),
       h("td", {}, momentText(account.renewal)), h("td", {title: momentText(account.reset)}, absolute.format(new Date(row.next))), h("td", {}, account.resubscribe || "–"),
       h("td", {}, account.autorenew ? "yes" : "no"), h("td", {}, count(row.used.since)), h("td", {}, count(row.used.today)), h("td", {}, count(row.used.total)),
-      h("td", {title: account.limit === null ? "No weekly limit set" : `Limit ${account.limit} minus the tokens since the last reset`}, count(remaining)),
+      h("td", {title: left}, h("div", {class: "acc-left"}, h("span", {}, count(remaining)), row.bar === null ? null : usageBar(row, now))),
       h("td", {}, iconBtn("bi-pencil", `Edit ${account.email}`, "btn small ghost", () => accountSheet(account), "Edit or remove this account")));
   }
 
@@ -94,19 +100,30 @@
     if (data === null) {
       return h("p", {class: "muted"}, "…");
     }
-    const rows = accountRows(data, Date.now());
+    const now = Date.now();
+    const rows = accountRows(data, now);
     if (!rows.length) {
       return h("p", {class: "muted"}, "No account yet. Add one: it stays on this host, in the hub's state only.");
     }
     return h("div", {class: "acc-scroll"}, h("table", {class: "acc-table"},
       h("thead", {}, h("tr", {}, ACCOUNT_COLUMNS.map((name) => h("th", {scope: "col"}, name)))),
-      h("tbody", {}, rows.map((row) => accountRow(row, data.active)))));
+      h("tbody", {}, rows.map((row) => accountRow(row, data.active, now)))));
   }
 
   function drawAccounts() {
     const body = accountsView.body;
-    if (body && body.isConnected) {
-      body.replaceChildren(accountsContent(accountsView.data));
+    if (accountsView.toggle) {
+      accountsView.toggle.setAttribute("aria-pressed", String(settings.forecast));
+    }
+    if (!body || !body.isConnected || accountsView.held.size) {
+      return;
+    }
+    const active = document.activeElement;
+    const focused = active && body.contains(active) ? active.getAttribute("data-usage") : null;
+    body.replaceChildren(accountsContent(accountsView.data));
+    const again = focused ? body.querySelector(`[data-usage="${focused}"]`) : null;
+    if (again) {
+      again.focus({preventScroll: true});
     }
   }
 

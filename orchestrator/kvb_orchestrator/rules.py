@@ -185,13 +185,24 @@ class Rules:
     def store_rule(self, rule: dict, fields: dict, proof: dict, enabled: bool, now: float) -> dict:
         return self.rules.insert(rule["id"], {**fields, "expires": float(fields["expires"]), "enabled": enabled, "created_ts": now, "proof": proof})
 
-    def sign_rule(self, body: bytes) -> dict:
+    def draft_fields(self, body: bytes) -> dict:
+        """Args:
+            body: the rules form's draft: RULE_INPUT, with agents when it
+                applies to one agent or group only.
+
+        Returns:
+            The checked fields of rule_fields() for agents the Agent
+            Orchestrator knows.
+        """
         payload = decode(body)
         targeted = "agents" in payload
         expect(payload, (*RULE_INPUT, "agents") if targeted else RULE_INPUT)
         fields = rule_fields(payload, payload["agents"] if targeted else EVERY_AGENT, time.time())
         self.known_agents(fields["agents"])
-        return {**self.rule_offer(fields), "sign": True}
+        return fields
+
+    def sign_rule(self, body: bytes) -> dict:
+        return {**self.rule_offer(self.draft_fields(body)), "sign": True}
 
     def add_rule(self, body: bytes) -> dict:
         payload = decode(body)

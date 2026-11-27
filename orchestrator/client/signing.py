@@ -14,6 +14,9 @@ VERSION = 1
 LIFETIME = 900
 REVIEW_LIFETIME = 7200
 RULE_LIFETIME = 366 * 86400
+PRUNE_KIND = "prune"
+PRUNE_WINDOW = 3600
+PRUNE_LIFETIME = LIFETIME + PRUNE_WINDOW
 ALGORITHMS = {-7: "ES256", -8: "EdDSA", -257: "RS256"}
 HASH = re.compile(r"[0-9a-f]{64}")
 NONCE = re.compile(r"[0-9a-f]{32}")
@@ -39,6 +42,18 @@ GATE_LEVELS = ("none", "quick", "test", "quality-high", "e2e")
 GATE_ACTIONS = ("commit", "merge", "push", "pr")
 GATE_REPO = re.compile(r"/[^\x00-\x1f\x7f]{0,4095}")
 GATE_BRANCH = re.compile(r"(?![-/])(?!.*\.\.)(?!.*@\{)(?!.*//)[^\x00-\x20\x7f~^:?*\[\\]{1,255}(?<![/.])")
+QUEUE_KIND = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+QUEUE_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}-[0-9]{1,12}")
+QUEUE_VALUE = re.compile(r"(0|[1-9][0-9]{0,5})(\.[0-9]{1,3})?")
+QUEUE_SETTINGS = {"budget_percent": ("ram", "cpu"), "load_limits": ("cpu_percent", "mem_percent", "sample_seconds", "band_low", "band_high"), "slot_limits": None, "ram_cap_percent": None}
+SCHEDULE_UNIT = re.compile(r"(?!kvb-orchestrator-)[A-Za-z0-9][A-Za-z0-9_.@:\\-]{0,200}\.timer")
+SCHEDULE_CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
+SCHEDULE_CALENDAR = re.compile(r"(?![ -])[A-Za-z0-9*:,./~_+ -]{1,128}(?<! )")
+SCHEDULE_TIMES = 6
+SCHEDULE_SWITCHES = (["--on"], ["--off"], ["--reset"])
+TASK_FILE = re.compile(r"/[^\x00-\x1f\x7f]{1,4000}/\.claude/scheduled_tasks\.json")
+TASK_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+CRON = re.compile(r"[0-9*,/-]{1,64}(?: [0-9*,/-]{1,64}){4}")
 TOKEN_FREE_MERGE = "ancestor"
 LOCAL_DELETE = ["local-branch"]
 APPROVAL_KEYS = {"v", "kind", "items", "nonce", "expires"}
@@ -94,6 +109,19 @@ def b64encode(data: bytes) -> str:
 
 def canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii")
+
+
+def call_key(tool_name: object, tool_input: object) -> str:
+    """Args:
+        tool_name: the hook input's tool_name.
+        tool_input: the hook input's tool_input.
+
+    Returns:
+        The sha256 hex digest of the canonical JSON of both: the key the
+        PermissionRequest hook gives an ask and the PostToolUse hook gives the
+        call that ran, as neither input carries a shared call id.
+    """
+    return hashlib.sha256(canonical({"tool_name": tool_name, "tool_input": tool_input})).hexdigest()
 
 
 def challenge(payload: dict) -> str:
@@ -234,6 +262,10 @@ def popups_item(popups: dict) -> dict:
     return {"kind": "popups", "popups": popups}
 
 
+def limits_item(limits: dict) -> dict:
+    return {"kind": "limits", "limits": limits}
+
+
 def task_item(task: str, argv: list[str]) -> dict:
     return {"kind": "task", "id": task, "argv": argv}
 
@@ -315,6 +347,82 @@ def gate_argv(argv: object) -> list[str]:
     if values.get("--action", GATE_ACTIONS[0]) not in GATE_ACTIONS or values.get("--level", GATE_LEVELS[0]) not in GATE_LEVELS:
         raise Refused(f"the action must be one of {', '.join(GATE_ACTIONS)} and the level one of {', '.join(GATE_LEVELS)}")
     return argv
+
+
+def queue_item(argv: list[str]) -> dict:
+    return {"kind": "queue", "argv": argv}
+
+
+def queue_argv(argv: object) -> list[str]:
+    """Args:
+        argv: the queue.py arguments, `override <id>` with an id QUEUE_ID
+            matches, or `config set <key> <value>` with a key of
+            QUEUE_SETTINGS (`<section>.<name>`, a kind QUEUE_KIND matches
+            for a section mapped to None) and a value QUEUE_VALUE matches.
+
+    Returns:
+        argv, the hub and the runner check it the same way; queue.py checks
+        the value against the config itself.
+
+    Raises:
+        Refused for every other argv.
+    """
+    if not isinstance(argv, list) or not all(isinstance(part, str) for part in argv):
+        raise Refused("the argv is no list of texts")
+    if len(argv) == 2 and argv[0] == "override" and QUEUE_ID.fullmatch(argv[1]):
+        return argv
+    if len(argv) != 4 or argv[:2] != ["config", "set"] or not QUEUE_VALUE.fullmatch(argv[3]):
+        raise Refused("the argv is no queue.py override <id> or config set <key> <value> with a plain number")
+    section, _, name = argv[2].partition(".")
+    names = QUEUE_SETTINGS.get(section, ())
+    if not (QUEUE_KIND.fullmatch(name) if names is None else name in names):
+        raise Refused(f"{argv[2]} is no queue setting the hub may change")
+    return argv
+
+
+def schedule_item(argv: list[str]) -> dict:
+    return {"kind": "schedule", "argv": argv}
+
+
+def timer_change(rest: list[str]) -> bool:
+    if rest in SCHEDULE_SWITCHES:
+        return True
+    if len(rest) == 2 and rest[0] == "--calendar":
+        return bool(SCHEDULE_CALENDAR.fullmatch(rest[1]))
+    times = rest[1:]
+    return rest[:1] == ["--at"] and 1 <= len(times) <= SCHEDULE_TIMES and len(set(times)) == len(times) and all(SCHEDULE_CLOCK.fullmatch(item) for item in times)
+
+
+def task_file(path: str) -> bool:
+    return bool(TASK_FILE.fullmatch(path)) and "/../" not in path and "/./" not in path and "//" not in path
+
+
+def schedule_argv(argv: object) -> list[str]:
+    """Args:
+        argv: the schedules.py arguments of one foreign row: `timer <unit>`
+            (a user timer SCHEDULE_UNIT matches, never a kvb-orchestrator-
+            one) with exactly one of `--on`, `--off`, `--reset`,
+            `--calendar <expr>` (SCHEDULE_CALENDAR) or `--at <HH:MM> ...`
+            (1 to SCHEDULE_TIMES distinct times), or `cron <file> <id>`
+            (an absolute .claude/scheduled_tasks.json, a TASK_ID) with
+            `--cron <5 fields>` (CRON) or `--remove`.
+
+    Returns:
+        argv, the hub and the runner check it the same way; schedules.py
+        validates the calendar with systemd-analyze and accepts only the
+        task files it lists itself.
+
+    Raises:
+        Refused for every other argv.
+    """
+    if not isinstance(argv, list) or not all(isinstance(part, str) for part in argv):
+        raise Refused("the argv is no list of texts")
+    if len(argv) >= 3 and argv[0] == "timer" and SCHEDULE_UNIT.fullmatch(argv[1]) and timer_change(argv[2:]):
+        return argv
+    rest = argv[3:]
+    if len(argv) >= 4 and argv[0] == "cron" and task_file(argv[1]) and TASK_ID.fullmatch(argv[2]) and (rest == ["--remove"] or (len(rest) == 2 and rest[0] == "--cron" and CRON.fullmatch(rest[1]))):
+        return argv
+    raise Refused("the argv is no schedules.py timer <unit> change or cron <file> <id> change of a foreign row")
 
 
 def names_default(ref: object, default: object) -> bool:
@@ -775,9 +883,13 @@ def lifetime(items: list[dict]) -> int:
         How long an approval of items may live: REVIEW_LIFETIME when every
         item is a review, whose approval names one exact tree and is used
         once at the commit, so a commit row may run well after the clicks;
-        LIFETIME for any other mix.
+        PRUNE_LIFETIME when every item is a stale task prune, whose apply
+        job waits for its deadline up to PRUNE_WINDOW seconds; LIFETIME for
+        any other mix.
     """
-    return REVIEW_LIFETIME if items and all(item.get("kind") == "review" for item in items) else LIFETIME
+    if items and all(item.get("kind") == "review" for item in items):
+        return REVIEW_LIFETIME
+    return PRUNE_LIFETIME if items and all(item.get("kind") == PRUNE_KIND for item in items) else LIFETIME
 
 
 def checked_approval(payload: object, now: float, cap: int) -> dict:

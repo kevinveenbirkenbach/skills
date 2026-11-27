@@ -103,6 +103,7 @@
       button.disabled = true;
       if (await deliver(key, text.value, file.files[0] || null, picked(classes))) {
         text.value = "";
+        text.dispatchEvent(new Event("input", {bubbles: true}));
         file.value = "";
       }
       button.disabled = false;

@@ -13,6 +13,26 @@
   const composer = {live: null};
 
   /**
+   * @param {string} text a footer cell's word.
+   * @returns {Element} the word as the cell label a narrow composer hides visually, its button keeping the name.
+   */
+  function cellLabel(text) {
+    return h("span", {class: "cell-label"}, text);
+  }
+
+  /**
+   * @param {HTMLTextAreaElement} text the message field; without CSS field-sizing it takes its content's height, which
+   * the stylesheet caps at six lines.
+   */
+  function grow(text) {
+    if (CSS.supports("field-sizing", "content")) {
+      return;
+    }
+    text.style.removeProperty("--composer-height");
+    text.style.setProperty("--composer-height", `${text.scrollHeight}px`);
+  }
+
+  /**
    * @param {boolean} silence whether a mayday holds the radio silent.
    * @returns {Object} {pressed, label, hint}: the MAYDAY toggle's face: Cancel mayday while one is active.
    */
@@ -25,7 +45,7 @@
     const shown = maydayFace(Boolean(state.silence));
     button.setAttribute("aria-pressed", String(shown.pressed));
     button.title = shown.hint;
-    button.replaceChildren(icon("bi-life-preserver"), shown.label);
+    button.replaceChildren(icon("bi-life-preserver"), cellLabel(shown.label));
   }
 
   /**
@@ -113,6 +133,7 @@
     const held = parts.ptt === "released";
     parts.ptt = "";
     parts.record.disabled = true;
+    recordLabel(parts, "busy");
     try {
       const sound = context();
       if (!sound || !blob.size) {
@@ -143,12 +164,16 @@
       toast("Recording failed", [String(error.message || error)], false);
     } finally {
       parts.record.disabled = false;
+      recordLabel(parts, "idle");
     }
   }
 
-  function recordLabel(parts, on) {
-    parts.record.setAttribute("aria-pressed", String(on));
-    parts.record.replaceChildren(icon(on ? "bi-stop-fill" : "bi-record-circle"), on ? "Stop" : "Record");
+  /**
+   * @param {Object} parts the composer's controls.
+   * @param {string} look idle, recording or busy (converting and transcribing), as recLook draws every recording control.
+   */
+  function recordLabel(parts, look) {
+    recLook(parts.record, look, "bi-record-circle", [cellLabel(look === "recording" ? "Stop" : look === "busy" ? "Working" : "Record")]);
   }
 
   function stopRecording(parts) {
@@ -186,14 +211,13 @@
       if (composer.live === parts) {
         composer.live = null;
       }
-      recordLabel(parts, false);
       keepRecording(new Blob(chunks, {type: recorder.mimeType}), parts);
     }, {once: true});
     freeMicrophone(parts);
     Object.assign(parts, {recorder, started: Date.now()});
     composer.live = parts;
     recorder.start();
-    recordLabel(parts, true);
+    recordLabel(parts, "recording");
     if (parts.ptt === "released") {
       stopRecording(parts);
     }
@@ -214,10 +238,10 @@
     const replay = h("div", {class: "voice-note", hidden: true});
     const status = h("span", {class: "muted composer-status", "aria-live": "polite"});
     const record = h("button", {type: "button", class: "btn small", "aria-pressed": "false", title: "Record: one click starts, another stops, you check the text before sending; hold it to talk, release to send"});
-    const submit = h("button", {type: "submit", class: "btn primary ptt", title: "PTT: push to transmit the message; your passkey signs it"}, icon("bi-broadcast-pin"), "PTT");
+    const submit = h("button", {type: "submit", class: "btn primary ptt", title: "PTT: push to transmit the message; your passkey signs it"}, icon("bi-broadcast-pin"), cellLabel("PTT"));
     const attach = h("input", {type: "checkbox", title: "Attach recording: the agents get the path of the sound file; otherwise only the checked text goes out"});
     const parts = {record, status, text, replay, attach, voice: "", recorder: null, timer: 0, started: 0, ptt: "", hold: 0, swallow: false};
-    recordLabel(parts, false);
+    recordLabel(parts, "idle");
     const gap = micGap();
     if (gap) {
       record.disabled = true;
@@ -243,9 +267,14 @@
     };
     channel.addEventListener("change", sync);
     sync();
-    const frame = micFrame(text, [record, status]);
+    const frame = micFrame(text, [record]);
     frame.prepend(h("div", {class: "composer-grid"}, h("label", {class: "composer-channel"}, "Channel", channel), toField));
-    frame.querySelector(".mic-foot").append(h("div", {class: "ptt-split", role: "group", "aria-label": "Send"}, submit, testMenu(text, channel)), mayday);
+    const foot = frame.querySelector(".mic-foot");
+    foot.classList.add("composer-foot");
+    foot.querySelector(":scope > .spacer").remove();
+    foot.append(h("div", {class: "ptt-split", role: "group", "aria-label": "Send"}, submit, testMenu(text, channel)), mayday);
+    text.before(status);
+    text.addEventListener("input", () => grow(text));
     const form = h("form", {class: "composer"}, frame, replay);
     const empty = () => {
       if (!text.value.trim()) {
@@ -258,6 +287,7 @@
       mayday.disabled = true;
       if (await radioSend({to, text: text.value, upload: "", cls, voice: attach.checked ? parts.voice : ""})) {
         text.value = "";
+        text.dispatchEvent(new Event("input", {bubbles: true}));
         status.textContent = "";
         attachVoice(parts, "");
       }

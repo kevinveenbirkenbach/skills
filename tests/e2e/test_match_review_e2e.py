@@ -188,8 +188,9 @@ class TestMatchReview(HubCase):
                 self.assertEqual((stack["card"], stack["kind"], stack["stale"], stack["face"], stack["opens"]), (f"review:{self.commit}", "commit", "false", True, True), stack)
                 self.assertEqual((stack["name"], stack["age"]), ("Skills", "3 days"), stack)
                 self.assertEqual((stack["metrics"], stack["under"]), ([["fix", "95"], ["break", "3"]], True), stack)
-                place = [["branch", "feature/match", "Branch: feature/match (click copies)"], ["repo", "repo", "Repository: /repo (click copies)"],
-                         ["worktree", ".worktrees/feature/match", "Worktree: /repo/.worktrees/feature/match (click copies)"]]
+                opens = "click opens in VS Code, right-click copies the path"
+                place = [["branch", "feature/match", "Branch: feature/match (click copies)"], ["repo", "repo", f"Repository: /repo ({opens})"],
+                         ["worktree", ".worktrees/feature/match", f"Worktree: /repo/.worktrees/feature/match ({opens})"]]
                 self.assertEqual(stack["place"], place, stack)
                 self.assertIn(stack["paint"][0], PATTERNS, stack)
                 self.assertTrue(stack["paint"][1] and stack["paint"][2] and stack["paint"][3], stack)

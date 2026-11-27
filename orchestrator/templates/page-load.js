@@ -32,6 +32,7 @@
       render(false);
       drawTime();
       drawAgent();
+      drawQueueJobs();
       drawStream(true);
       if (motion.current.size === 0 || ui.asOf !== motion.asOf) {
         const first = motion.current.size === 0;

@@ -33,7 +33,7 @@ SCAN = """
     const spans = (box) => Math.abs(box.top - outer.top - 1) <= 1 && Math.abs(outer.bottom - 1 - box.bottom) <= 1;
     return {
       id: field.id, label: field.getAttribute("aria-label") || "", framed: true, line,
-      last: line ? field.nextElementSibling === button && tail.every((node) => node.matches("button[type=submit]")) : Boolean(foot) && button.parentElement === foot && field.nextElementSibling === foot && [...foot.children].slice([...foot.children].indexOf(button) + 1).every((node) => node.matches(".ptt-split, .mayday-toggle")),
+      last: line ? field.nextElementSibling === button && tail.every((node) => node.matches("button[type=submit]")) : Boolean(foot) && button.parentElement === foot && [field.nextElementSibling, field.nextElementSibling && field.nextElementSibling.matches(".mic-chips") ? field.nextElementSibling.nextElementSibling : null].includes(foot) && [...foot.children].slice([...foot.children].indexOf(button) + 1).every((node) => node.matches(".ptt-split, .mayday-toggle")),
       fits: line ? spans(mic) && Math.abs(outer.right - 1 - end.right) <= 1 : mic.bottom <= outer.bottom && mic.top >= text.bottom - 1,
       divider: line ? getComputedStyle(button).borderLeftWidth : getComputedStyle(foot).borderTopWidth,
       clear: line ? text.right <= mic.left + 0.5 : true,
@@ -60,7 +60,8 @@ STREAM = """(async () => {@HELPERS@@SCAN@
 })()"""
 RULES = """(async () => {@HELPERS@@SCAN@
   (await until(() => document.getElementById("controls-tab-rules"), 15000)).click();
-  await until(() => document.querySelector("#main .rule-form .mic-frame"), 4000);
+  (await until(() => document.querySelector("#main [data-new-rule]"), 4000)).click();
+  await until(() => document.querySelector("#sheet .rule-form .mic-frame"), 4000);
   return {mics: scan(), wide: wide()};
 })()"""
 RADIO = """(async () => {@HELPERS@@SCAN@

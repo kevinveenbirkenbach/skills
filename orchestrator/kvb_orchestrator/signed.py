@@ -34,6 +34,7 @@ limits = client_module("hub_limits", {})
 signing = client_module("signing", {})
 passkey = client_module("passkey", {"signing": signing})
 verifier = client_module("verifier", {"signing": signing, "passkey": passkey})
+pruning = client_module("pruning", {"signing": signing})
 
 
 def ask_signed(ask: dict) -> dict:

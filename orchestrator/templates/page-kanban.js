@@ -3,7 +3,7 @@
   const KANBAN_DRAG = "application/x-kvb-task";
   const KANBAN_LAYERS = "kanban.hidden";
   const KANBAN_JOBS_SHOWN = 3;
-  const kanban = {staged: [], collapsed: new Set(), old: false, dragging: null, queue: {marks: {}, line: true, jobs: true}, bound: false};
+  const kanban = {staged: [], collapsed: new Set(), old: false, running: false, marks: {}, dragging: null, queue: {marks: {}, line: true, jobs: true}, bound: false};
 
   function restage(next) {
     kanban.staged = next;
@@ -129,7 +129,7 @@
     const hint = `Why ${job.id} stands at ${Kanban.whyHere(job).place}: the rules queue.py applied, in order`;
     const why = h("button", {type: "button", class: "btn small ghost queue-why", "data-job": job.id, ...named(`Why here: ${job.id}`, hint), on: {click: open}}, icon("bi-question-circle"), h("span", {class: "queue-why-text"}, "Why here?"));
     return h("li", {class: "queue-job", "data-job": job.id, "data-class": job.class || "", "data-kind": job.kind},
-      h("div", {class: "queue-chips"}, chips, why), job.reason ? h("p", {class: "queue-reason", title: job.reason}, job.reason) : null);
+      h("div", {class: "queue-chips"}, chips, why, job.status === "waiting" ? startNow(job) : null), job.reason ? h("p", {class: "queue-reason", title: job.reason}, job.reason) : null);
   }
 
   function queueJobs(row) {
@@ -146,8 +146,10 @@
     const open = () => taskSelect(row.task, cardOf(row.task));
     const own = (event) => !event.target.closest("button, summary, details, select, .kanban-handle");
     const after = () => kanban.dragging && kanban.dragging.mode === "after" && kanban.dragging.task !== row.task;
+    const found = kanban.marks[row.task];
     return h("li", {
       class: ["task-card", "kanban-card", row.pending ? "pending" : ""].filter(Boolean).join(" "), "data-task": row.task, "data-item": `task:${row.task}`, "data-lane": lane, "data-column": column, tabindex: 0,
+      "data-mark": found.length ? found[0].key : null, "data-marks": found.length ? found.map((mark) => mark.key).join(" ") : null,
       "data-pending": row.pending ? row.pending.map((argv) => argv.join(" ")).join("\n") : null, draggable: row.movable ? "true" : null,
       on: {
         click: (event) => own(event) && open(),
@@ -181,6 +183,7 @@
       }}}, icon("bi-arrow-right-circle")) : null,
       row.movable ? kanbanMenu(row, cards) : null),
     h("span", {class: "kanban-title"}, titleOf(row)),
+    markChips(row, found),
     row.worker !== "-" ? h("span", {class: "muted"}, row.worker) : null,
     queueJobs(row),
     cardWhy(row.task));
@@ -217,7 +220,7 @@
       h("div", {class: "kanban-cells", id, hidden: !open}, TASK_COLUMNS.map(([column, label]) => kanbanCell(lane, column, label, cards))));
   }
 
-  function kanbanBar(hidden, stale) {
+  function kanbanBar(hidden, stale, marked) {
     const count = kanban.staged.length;
     const words = `Apply ${count} changes`;
     const apply = h("button", {type: "button", class: "btn small primary", id: "kanban-apply", disabled: count === 0, ...named(words, `${words}: one passkey signs every staged move, the runner applies them through rasci.py`), on: {click: applyStaged}}, icon("bi-check2-all"), counter(count));
@@ -230,7 +233,7 @@
     const stalled = h("span", {class: "pill", id: "kanban-stale", "data-tone": "warn", role: "img", ...named(`Stale: ${stale}`, `Stale: ${stale} tasks without a register change for ${Plan.STALE_DAYS} days, counted apart`)}, icon("bi-hourglass-bottom"), String(stale));
     const listed = count ? h("ol", {class: "kanban-staged", id: "kanban-staged", "aria-label": `${words}: the passkey signs exactly these`},
       kanban.staged.map(({task, argv}) => h("li", {"data-task": task}, h("code", {}, shownArgv(argv))))) : null;
-    return [h("div", {class: "kanban-bar", role: "toolbar", "aria-label": "Board"}, apply, discard, older, stalled, queueLegend()), listed];
+    return [h("div", {class: "kanban-bar", role: "toolbar", "aria-label": "Board"}, apply, discard, older, runningToggle(marked), stalled, pruneControls(stale), queueLegend()), listed];
   }
 
   function queueLegend() {
@@ -298,7 +301,11 @@
       kanban.staged = kanban.staged.filter((change) => known.has(change.task));
     }
     const ids = new Set(shown.map((row) => row.task));
-    const rows = Kanban.pending(state.tasks, kanban.staged).filter((row) => ids.has(row.task) && Kanban.onBoard(row));
+    const placed = Kanban.pending(state.tasks, kanban.staged).filter((row) => ids.has(row.task) && Kanban.onBoard(row));
+    const sources = markSources();
+    kanban.marks = Object.fromEntries(placed.map((row) => [row.task, Kanban.marks(row, sources)]));
+    const marked = placed.filter((row) => kanban.marks[row.task].length);
+    const rows = kanban.running ? marked : placed;
     bindLayers();
     kanban.queue = {marks: Kanban.queued(rows, state.queue_line, state.queue_jobs), ...Kanban.layers(ViewStore.get(KANBAN_LAYERS))};
     const {lanes} = Kanban.board(rows, {now: state.now, old: kanban.old});
@@ -308,5 +315,5 @@
     const box = h("div", {class: "kanban"}, head, lanes.map((lane) => kanbanLane(lane, cards)), s("svg", {class: "kanban-lines", "aria-hidden": "true"}));
     const watch = new ResizeObserver(() => (box.isConnected ? kanbanLines(box, cards) : watch.disconnect()));
     watch.observe(box);
-    return h("div", {class: "kanban-box"}, kanbanBar(Kanban.board(rows, {now: state.now, old: false}).hidden, rows.filter((row) => Plan.stale(row, state.now)).length), box);
+    return h("div", {class: "kanban-box"}, kanbanBar(Kanban.board(rows, {now: state.now, old: false}).hidden, rows.filter((row) => Plan.stale(row, state.now)).length, marked.length), box);
   }

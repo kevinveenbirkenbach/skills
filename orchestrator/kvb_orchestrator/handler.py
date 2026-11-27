@@ -17,6 +17,7 @@ from .rates import rated
 from .resources import RESOURCES, sampled
 from .scores import scored
 from .skillindex import SKILLS_INDEX, served
+from .usage import usage_view
 
 BODY_LIMIT = 1 << 20
 UPLOAD_LIMIT = 50 << 20
@@ -35,7 +36,9 @@ PREVIEWS_ROUTE = "/api/runner/previews"
 RESTART_ROUTE = "/api/runner/restart"
 MATCH_POSTS = {"/api/match/stale": "match_stale", "/api/match/snapshot": "match_snapshot"}
 HOOK_POSTS = {"/api/asks": "ask", "/api/decisions": "question"}
-POSTS = (*HOOK_POSTS, UPLOADS, "/api/messages", *MATCH_POSTS)
+ASK_RAN = "/api/asks/ran"
+LOCAL_POSTS = {**MATCH_POSTS, ASK_RAN: "ask_ran"}
+POSTS = (*HOOK_POSTS, UPLOADS, "/api/messages", *LOCAL_POSTS)
 STORED = {
     "page": (".html", "text/html; charset=utf-8", PAGE_CSP),
     "files": (".json", "application/json", PLAIN_CSP),
@@ -49,14 +52,18 @@ RUNNER_ROUTE = re.compile(r"/api/runner/([0-9a-f]{16})/(claim|report)")
 PROOF_ROUTE = re.compile(r"/api/reviews/([0-9a-f]{16})")
 SIGN_ROUTE = "/api/sign"
 RULE_SIGN_ROUTE = "/api/rules/sign"
+RULE_MATCH_ROUTE = "/api/rules/match"
 CLEANUP_ROUTE = "/api/cleanup"
 CLEANUP_STATE = re.compile(r"/api/cleanup/([0-9a-f]{16})")
 OFFICES_ROUTE = "/api/offices"
 OFFICE_STATE = re.compile(r"/api/offices/([0-9a-f]{16})")
 TASKS_ROUTE = "/api/tasks"
 GATES_ROUTE = "/api/gates"
+QUEUE_ROUTE = "/api/queue"
+PRUNE_ROUTE = "/api/prune"
 TOKEN_ROUTE = "/api/cleanup/token"
 VIEW_ROUTE = "/api/view"
+USAGE_ROUTE = "/api/usage"
 ENCODER_ROUTE = "/gibberlink"
 VENDOR_ROUTE = re.compile(r"/vendor/([a-z0-9.-]{1,64})")
 SCRIPT_TYPE = "text/javascript; charset=utf-8"
@@ -84,11 +91,13 @@ FIREWALL_DROP = re.compile(r"/api/firewall/(groups|sets)/([0-9a-f]{16})/delete")
 FIREWALL_STATUS = {"settings_preview": HTTPStatus.OK, "change_settings": HTTPStatus.ACCEPTED, "add_group": HTTPStatus.CREATED, "add_set": HTTPStatus.CREATED}
 WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
 ACCOUNTS_ROUTE = "/api/accounts"
-ACCOUNT_DROP = re.compile(r"/api/accounts/([0-9a-f]{16})/delete")
+ACCOUNT_ITEM = re.compile(r"/api/accounts/([0-9a-f]{16})/(delete|calibrate)")
 ACCOUNTS_EXPORT = "/api/accounts/export"
 ACCOUNTS_IMPORT = {"/api/accounts/import/preview": "preview", "/api/accounts/import/apply": "apply"}
 SCHEDULES_ROUTE = "/api/schedules"
-ACTION_POSTS = (ACCOUNTS_ROUTE, *ACCOUNTS_IMPORT, SCHEDULES_ROUTE,"/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
+LIMITS_ROUTE = "/api/limits"
+LIMITS_SIGN_ROUTE = "/api/limits/sign"
+ACTION_POSTS = (ACCOUNTS_ROUTE, *ACCOUNTS_IMPORT, SCHEDULES_ROUTE, LIMITS_SIGN_ROUTE, "/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, RULE_MATCH_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, QUEUE_ROUTE, PRUNE_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
 
 
 class Handler(Exchange):
@@ -155,6 +164,10 @@ class Handler(Exchange):
             self.attempt(lambda: hub.events(self.query()), self.send_tagged)
         elif path == "/api/tree":
             self.answer(hub.repositories, HTTPStatus.OK)
+        elif path == QUEUE_ROUTE:
+            self.answer(hub.queue_view, HTTPStatus.OK)
+        elif path == LIMITS_ROUTE:
+            self.answer(hub.limits_view, HTTPStatus.OK)
         elif path == "/api/skills":
             self.answer(lambda: served(hub.tree.file.with_name(SKILLS_INDEX)), HTTPStatus.OK)
         elif path == MATCH_ROUTE:
@@ -165,6 +178,8 @@ class Handler(Exchange):
             self.export_accounts()
         elif path == "/api/resources":
             self.answer(lambda: sampled(hub.kept / RESOURCES, hub.span(self.query(), time.time())), HTTPStatus.OK)
+        elif path == USAGE_ROUTE:
+            self.answer(lambda: usage_view(hub.kept / RESOURCES, self.query(), time.time()), HTTPStatus.OK)
         elif path == "/api/scores":
             self.answer(lambda: scored(hub.council, hub.scripts.skills, hub.span(self.query(), time.time())), HTTPStatus.OK)
         elif path == "/api/rates":
@@ -206,16 +221,22 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.sign_board(body), HTTPStatus.OK)
         if board:
             return lambda body: self.answer(lambda: hub.board(board.group(1), body), HTTPStatus.OK)
-        drop = ACCOUNT_DROP.fullmatch(path)
+        account = ACCOUNT_ITEM.fullmatch(path)
         if path == ACCOUNTS_ROUTE:
             return lambda body: self.answer(lambda: hub.accounts.save(body), HTTPStatus.OK)
         if path in ACCOUNTS_IMPORT:
             method = getattr(Transfer(hub.accounts.ledger), ACCOUNTS_IMPORT[path])
             return lambda body: self.answer(lambda: method(body), HTTPStatus.OK)
-        if drop:
-            return lambda _body: self.answer(lambda: hub.accounts.drop(drop.group(1)), HTTPStatus.OK)
+        if account and account.group(2) == "calibrate":
+            return lambda body: self.answer(lambda: hub.accounts.calibrate(account.group(1), body, time.time()), HTTPStatus.OK)
+        if account:
+            return lambda _body: self.answer(lambda: hub.accounts.drop(account.group(1)), HTTPStatus.OK)
         if path == SCHEDULES_ROUTE:
-            return lambda body: self.answer(lambda: hub.schedule_settings.save(body), HTTPStatus.OK)
+            return lambda body: self.answer(lambda: hub.save_schedule(body), HTTPStatus.OK)
+        if path == LIMITS_ROUTE:
+            return lambda body: self.answer(lambda: hub.save_limits(body), HTTPStatus.OK)
+        if path == LIMITS_SIGN_ROUTE:
+            return lambda body: self.answer(lambda: hub.sign_limits(body), HTTPStatus.OK)
         reveal = REVEAL_ROUTE.fullmatch(path)
         if reveal:
             method = hub.sign_reveal if reveal.group(3) else hub.reveal
@@ -240,6 +261,8 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.sign(body), HTTPStatus.OK)
         if path == RULE_SIGN_ROUTE:
             return lambda body: self.answer(lambda: hub.sign_rule(body), HTTPStatus.OK)
+        if path == RULE_MATCH_ROUTE:
+            return lambda body: self.answer(lambda: hub.match_rule(body), HTTPStatus.OK)
         if path == CLEANUP_ROUTE:
             return lambda body: self.answer(lambda: hub.cleanup(body), HTTPStatus.ACCEPTED)
         if path == OFFICES_ROUTE:
@@ -248,6 +271,10 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.change_tasks(body), HTTPStatus.ACCEPTED)
         if path == GATES_ROUTE:
             return lambda body: self.answer(lambda: hub.change_gates(body), HTTPStatus.ACCEPTED)
+        if path == QUEUE_ROUTE:
+            return lambda body: self.answer(lambda: hub.change_queue(body), HTTPStatus.ACCEPTED)
+        if path == PRUNE_ROUTE:
+            return lambda body: self.answer(lambda: hub.prune(body), HTTPStatus.ACCEPTED)
         if path == TOKEN_ROUTE:
             return lambda body: self.answer(lambda: hub.token_row(body), HTTPStatus.CREATED)
         if inbox:
@@ -297,7 +324,7 @@ class Handler(Exchange):
         return None
 
     def posted(self, path: str) -> bool:
-        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE, FIREWALL_DROP, REVEAL_ROUTE, ACCOUNT_DROP))
+        return any(pattern.fullmatch(path) for pattern in (INBOX_ROUTE, UNDO_ROUTE, RULE_ROUTE, REQUEST_ROUTE, RUNNER_ROUTE, FIREWALL_DROP, REVEAL_ROUTE, ACCOUNT_ITEM))
 
     def runner(self, path: str, body: bytes) -> None:
         hub = self.server.hub
@@ -318,10 +345,10 @@ class Handler(Exchange):
         """
         if path == "/mcp":
             return self.mcp_receiver(host)
-        if path in HOOK_POSTS or path in MATCH_POSTS:
+        if path in HOOK_POSTS or path in LOCAL_POSTS:
             if self.local(host):
-                receive = getattr(self.server.hub, MATCH_POSTS.get(path) or HOOK_POSTS[path])
-                return lambda body: self.answer(lambda: receive(body), HTTPStatus.OK if path in MATCH_POSTS else HTTPStatus.CREATED)
+                receive = getattr(self.server.hub, LOCAL_POSTS.get(path) or HOOK_POSTS[path])
+                return lambda body: self.answer(lambda: receive(body), HTTPStatus.OK if path in LOCAL_POSTS else HTTPStatus.CREATED)
             self.send_text(HTTPStatus.FORBIDDEN, "forbidden: local POST with the X-Kvb-Orchestrator header and no foreign origin only")
             return None
         if RUNNER_ROUTE.fullmatch(path) or path in (PREVIEWS_ROUTE, RESTART_ROUTE):

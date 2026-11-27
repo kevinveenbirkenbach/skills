@@ -13,7 +13,7 @@
       ...ACTIONS.map(([id, label]) => ({label, hint: id === "clear-mayday" ? "Mayday" : "Day/Night", scope: "general", run: () => confirmAct(id, [])})),
       {label: "Priority …", hint: "agent order in the hierarchy", scope: "agents", run: openAgentOrder},
       {label: "Controls …", hint: "tools, rules, groups and schedules", scope: "stream", run: () => go("rules", null)},
-      {label: "Schedules …", hint: "switch off or retime the reminders, timers and hooks", scope: "stream", run: () => go("rules", "schedules")},
+      {label: "Schedules …", hint: "switch off or retime every timer, reminder and Claude task", scope: "stream", run: () => go("rules", "schedules")},
       {label: "Settings …", hint: "Ambience, location, colors, music, notifications, internet radio", scope: "general", run: settingsSheet},
       {label: settings.music.on ? "Music off" : "Music on", hint: "Ambience", scope: "general", run: toggleMusic},
       {label: space.look ? "Leave the sky" : "Look at the sky", hint: "h", scope: "general", run: () => skyLook(!space.look)},

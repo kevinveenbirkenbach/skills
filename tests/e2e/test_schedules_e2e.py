@@ -1,3 +1,5 @@
+"""Exercise requirement 068: one Schedules table of all four sources, source chips, inline edit on click and the passkey prompt for a foreign row."""
+
 from __future__ import annotations
 
 import json
@@ -11,17 +13,20 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE)]
 
 import hub_e2e_kit as base
-import test_home_bookmarks_e2e as bm
-import test_home_dashboard_e2e as dash
 from hub_case import HubCase
 from kvb_orchestrator import schedules
 
-OUT = Path(os.environ.get("E2E_OUT", "/tmp/hub-057-shots"))
-FOREIGN = {"name": "backup.timer", "kind": "timer", "owner": "other", "unit": "backup.timer", "file": "/u/backup.timer", "schedule": "OnCalendar=daily", "next": 1_900_000_000, "last": None, "event": "", "command": "", "off": "systemctl --user disable --now backup.timer"}
-HUB_UNIT = {**FOREIGN, "name": "kvb-orchestrator-tree.timer", "owner": "hub", "unit": "kvb-orchestrator-tree.timer", "off": ""}
-PROBE = """(async () => {@HELPERS@@HOME@
-  const row = (name) => document.querySelector(`#main [data-schedule="${name}"]`);
-  const rows = async () => (await (await fetch("/api/state")).json()).schedules.rows;
+OUT = Path(os.environ.get("E2E_OUT", "/tmp/hub-068-shots"))
+ROW = {"kind": "timer", "file": "", "task": "", "next": 1_900_000_000, "last": None, "on": True, "dropin": False, "error": "", "command": ""}
+SYSTEM = {**ROW, "name": "backup.timer", "source": "system", "unit": "backup.timer", "file": "/u/backup.timer", "schedule": "OnCalendar=daily", "dropin": True}
+HUB_UNIT = {**ROW, "name": "kvb-orchestrator-tree.timer", "source": "hub", "unit": "kvb-orchestrator-tree.timer", "schedule": "OnCalendar=*:0/5"}
+CLAUDE = {**ROW, "name": "repo f08cfd39", "source": "claude", "kind": "cron", "file": "/home/u/Repositories/github.com/me/repo/.claude/scheduled_tasks.json", "task": "f08cfd39",
+          "schedule": "7 * * * *", "next": None, "last": 1_799_000_000, "command": "Triage the last two CI runs"}
+PROBE = """(async () => {@HELPERS@
+  const panel = () => document.querySelector('#main [data-panel="stream/schedules"]');
+  const row = (key) => panel().querySelector(`tr[data-schedule="${CSS.escape(key)}"]`);
+  const sources = () => all("tbody tr", panel()).map((node) => node.dataset.source);
+  const stored = async () => (await (await fetch("/api/state")).json()).schedules.rows;
   const settle = async (check, ms) => {
     const end = Date.now() + ms;
     while (Date.now() < end) {
@@ -32,85 +37,72 @@ PROBE = """(async () => {@HELPERS@@HOME@
     }
     return false;
   };
-  const owner = await until(() => document.querySelector('#main [data-panel="stream/schedules"]') && row("coach"), 8000);
-  if (!owner) {
+  const edit = (key, value) => {
+    row(key).querySelector("td[data-edit]").click();
+    const field = row(key).querySelector("input.sched-input");
+    field.value = value;
+    field.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
+  };
+  if (!(await until(() => panel() && row("coach") && row("backup.timer"), 8000))) {
     return {error: text(document.getElementById("main"))};
   }
-  const tabs = all('#main [role="tab"]').map((tab) => [tab.dataset.tab, tab.getAttribute("aria-selected")]);
-  const foreign = all("#main [data-schedule-foreign]").map((node) => ({name: node.dataset.scheduleForeign, switches: node.querySelectorAll('input[role="switch"]').length, copy: Boolean(node.querySelector('button[aria-label="Copy"]')), off: text(node.querySelector(".sched-off code"))}));
-  const flip = async (wanted) => {
-    row("coach").querySelector('input[role="switch"]').click();
-    return settle(async () => (await rows()).coach.on === wanted && row("coach") && row("coach").querySelector('input[role="switch"]').checked === wanted, 8000);
-  };
-  const on = await flip(true);
-  const off = await flip(false);
-  const times = row("dream-popup").querySelector("input.sched-times");
-  times.value = "21:30, 06:00";
-  times.dispatchEvent(new Event("change", {bubbles: true}));
-  const retimed = await settle(async () => JSON.stringify((await rows())["dream-popup"].at) === '["06:00","21:30"]', 8000);
-  const wide = document.documentElement.scrollWidth > innerWidth + 1;
-  const panel = document.querySelector('#main [data-panel="stream/schedules"]');
-  const spot = [...panel.children].find((node) => node.closest("[data-panel], [data-item]") === panel) || panel;
-  const item = await pinItem(spot);
-  const label = item ? menuLabel(item) : null;
-  if (item) {
-    item.click();
-    await sleep(300);
-  }
-  await closeMenu();
-  return {hash: location.hash, tabs, foreign, on, off, retimed, wide, label, pinned: stored().includes("panel:stream/schedules")};
+  const head = all("thead th", panel()).map((cell) => text(cell));
+  const all4 = [...new Set(sources())];
+  panel().querySelector('[data-source-chip="system"]').click();
+  const withoutSystem = [...new Set(sources())];
+  panel().querySelector('[data-source-chip="system"]').click();
+  const back = [...new Set(sources())];
+  edit("dream-popup", "21:30, 06:00");
+  const retimed = await settle(async () => JSON.stringify((await stored())["dream-popup"].at) === '["06:00","21:30"]', 8000);
+  const prompts = [];
+  new MutationObserver(() => {
+    const prompt = document.getElementById("passkey-prompt");
+    if (prompt && !prompts.length) {
+      prompts.push(text(prompt));
+    }
+  }).observe(document.body, {childList: true, subtree: true});
+  await until(() => row("backup.timer"), 4000);
+  edit("backup.timer", "08:00");
+  await until(() => prompts.length, 8000);
+  await sleep(1500);
+  return {head, all4, withoutSystem, back, retimed, prompt: prompts[0] || null, reset: Boolean(row("backup.timer").querySelector("[data-reset]")), wide: document.documentElement.scrollWidth > innerWidth + 1};
 })()"""
-TILE = """(async () => {@HELPERS@@HOME@
-  await go("home");
-  const shown = await until(() => tile("panel:stream/schedules") && tile("panel:stream/schedules").querySelector('[data-schedule="coach"]'), 8000);
-  return {tile: Boolean(shown), switches: shown ? tile("panel:stream/schedules").querySelectorAll('input[role="switch"]').length : 0};
-})()"""
-
-
-def probe(template: str) -> str:
-    return template.replace("@HELPERS@", base.HELPERS).replace("@HOME@", dash.HOME)
 
 
 @unittest.skipUnless(shutil.which(os.environ.get("CHROMIUM", "chromium")), "no Chromium")
-class TestSchedules(HubCase):
+class TestSchedulesEditor(HubCase):
     drive = base.OrchestratorE2ECase.drive
+    authenticator = base.OrchestratorE2ECase.authenticator
 
     def setUp(self):
         super().setUp()
         OUT.mkdir(parents=True, exist_ok=True)
         self.council.mkdir(parents=True, exist_ok=True)
-        (self.council / schedules.SCHEDULES_VIEW).write_text(json.dumps({"at": 1_800_000_000, "rows": [FOREIGN, HUB_UNIT]}), encoding="utf-8")
+        (self.council / schedules.SCHEDULES_VIEW).write_text(json.dumps({"at": 1_800_000_000, "rows": [SYSTEM, HUB_UNIT, CLAUDE]}), encoding="utf-8")
         self.page_url = f"http://localhost:{self.port}/"
 
-    def test_chromium_opens_schedules_switches_coach_retimes_the_popup_shows_foreign_rows_read_only_and_pins_it_at_three_widths(self):
-        steps = []
-        for width, height in base.WIDTHS:
-            at = {"width": width, "height": height}
-            shot = OUT / f"chromium-{width}"
-            steps += [
-                {**at, "url": f"{self.page_url}?{width}-clear#stream", "wait": 600, "probe": bm.CLEAR, "shot": None},
-                {**at, "url": f"{self.page_url}?{width}#stream/schedules", "wait": 1500, "probe": probe(PROBE), "shot": f"{shot}-schedules.png"},
-                {**at, "url": None, "wait": 0, "probe": probe(TILE), "shot": f"{shot}-home.png"},
-            ]
-        data = self.drive(steps, None)
+    def test_chips_filter_a_click_edits_a_schedule_and_a_foreign_row_asks_the_passkey_at_three_widths(self):
+        probe = PROBE.replace("@HELPERS@", base.HELPERS)
+        steps = [{"width": width, "height": height, "url": f"{self.page_url}?{width}#stream/schedules", "wait": 1500, "probe": probe, "shot": str(OUT / f"chromium-{width}-schedules.png")} for width, height in base.WIDTHS]
+        data = self.drive(steps, self.authenticator())
         (OUT / "chromium-schedules.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
         self.assertEqual(data["errors"], [])
-        results = iter(data["results"])
-        for width, _ in base.WIDTHS:
-            _, found, home = next(results), next(results), next(results)
+        for (width, _), found in zip(base.WIDTHS, data["results"], strict=True):
             with self.subTest(width=width):
                 self.assertNotIn("error", found, found)
-                self.assertEqual(found["tabs"], [["tools", "false"], ["rules", "false"], ["groups", "false"], ["schedules", "true"]])
-                self.assertEqual(found["hash"], "#stream/schedules")
-                self.assertEqual((found["on"], found["off"], found["retimed"], found["wide"]), (True, True, True, False))
-                self.assertEqual(found["foreign"], [
-                    {"name": "backup.timer", "switches": 0, "copy": True, "off": "systemctl --user disable --now backup.timer"},
-                    {"name": "kvb-orchestrator-tree.timer", "switches": 0, "copy": False, "off": None},
-                ])
-                self.assertEqual((found["label"], found["pinned"]), ("Pin to Home", True))
-                self.assertEqual(home, {"tile": True, "switches": 5})
+                self.assertEqual(found["head"], ["Source", "Name", "Schedule", "Next", "Last", "On"])
+                self.assertEqual(found["all4"], ["skills", "hub", "claude", "system"])
+                self.assertEqual(found["withoutSystem"], ["skills", "hub", "claude"])
+                self.assertEqual(found["back"], found["all4"])
+                self.assertTrue(found["retimed"])
+                self.assertIn("Retime backup.timer", found["prompt"] or "")
+                self.assertTrue(found["reset"])
+                self.assertFalse(found["wide"])
         stored = json.loads((self.council / schedules.SCHEDULES).read_text(encoding="utf-8"))
-        self.assertEqual((stored["coach"], stored["dream-popup"]), ({"on": False, "every": 1}, {"on": False, "at": ["06:00", "21:30"]}))
+        self.assertEqual(stored["dream-popup"], {"on": False, "at": ["06:00", "21:30"]})
+        jobs = [job for job in self.httpd.hub.jobs.listed() if job.get("kind") == "schedule"]
+        self.assertEqual({tuple(job["argv"]) for job in jobs}, {("timer", "backup.timer", "--at", "08:00")})
+        self.assertEqual(len(jobs), len(base.WIDTHS))
 
 
 if __name__ == "__main__":

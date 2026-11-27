@@ -163,6 +163,7 @@
         bubbles: settings.bubbles,
         rates: settings.rates,
         undo: undo.value(),
+        match: settings.match,
       };
       if (await saveSettings(next)) {
         closeSheet();

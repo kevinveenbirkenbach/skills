@@ -37,10 +37,11 @@ const probe = `
 const toggle = new El("button");
 state.silence = null;
 drawMayday(toggle);
-const idle = [toggle.attrs["aria-pressed"], toggle.children[1], toggle.title];
+const label = () => toggle.children[1].attrs.class === "cell-label" ? toggle.children[1].children[0] : null;
+const idle = [toggle.attrs["aria-pressed"], label(), toggle.title];
 state.silence = {since: 1, by: "Docs", text: "disk full"};
 drawMayday(toggle);
-const active = [toggle.attrs["aria-pressed"], toggle.children[1], toggle.title];
+const active = [toggle.attrs["aria-pressed"], label(), toggle.title];
 JSON.stringify({idle, active, channels: CHANNELS.map(([id]) => id), titled: CHANNELS.every(([id]) => typeof CHANNEL_HINTS[id] === "string" && CHANNEL_HINTS[id].length > 0)});
 `;
 console.log(vm.runInNewContext(`${source}\n${probe}`, context));
@@ -73,9 +74,11 @@ class TestSpeakCard(unittest.TestCase):
 
     def test_channel_row_textarea_and_footer_share_one_frame_with_ptt_and_mayday_after_the_mic(self):
         composer = (TEMPLATES / "page-composer.js").read_text(encoding="utf-8")
-        self.assertIn("const frame = micFrame(text, [record, status]);", composer)
+        self.assertIn("const frame = micFrame(text, [record]);", composer)
         self.assertIn('frame.prepend(h("div", {class: "composer-grid"}', composer)
-        self.assertRegex(composer, r'frame\.querySelector\("\.mic-foot"\)\.append\(h\("div", \{class: "ptt-split".*\), mayday\);')
+        self.assertIn('foot.querySelector(":scope > .spacer").remove();', composer)
+        self.assertRegex(composer, r'foot\.append\(h\("div", \{class: "ptt-split".*\), mayday\);')
+        self.assertIn("text.before(status);", composer)
         self.assertIn('h("form", {class: "composer"}, frame, replay)', composer)
 
     def test_the_card_is_one_rounded_surface(self):

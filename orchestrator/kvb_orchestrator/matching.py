@@ -4,13 +4,13 @@ import json
 import time
 
 from .council import NEWS, read_claims
-from .denying import requester_of
+from .denying import LAPSED, requester_of
 from .diffs import stored_diff
 from .errors import Conflict, Missing, ToolError
 from .fields import decode, expect, field
-from .jobs import row_blocked
+from .jobs import blocked_kinds, row_blocked, row_blocked_kind
 from .payloads import denied_roots, payload_files, payload_hash
-from .previewing import merge_hash
+from .previewing import TREE, merge_hash, preview_line
 from .records import digest, iso_epoch, read_jsonl
 from .register import REGISTER, adder, operator_rows, read_register
 from .scores import metric_chips, score_labels
@@ -19,6 +19,19 @@ from .tree import inside
 
 OPERATOR = "operator/"
 WAITING = ("ask", "decision", "rule")
+EXPIRED = "expired"
+EXPIRED_REASON = f"{LAPSED.capitalize()}: its tool call went back to the terminal, only Reject is left"
+
+
+def expired_card(card: dict, expires: float) -> dict:
+    """Args:
+        card: the waiting_card() of an ask or decision lapsed_of() keeps.
+        expires: when it expired, in epoch seconds.
+
+    Returns:
+        The card greyed with blocked_kind EXPIRED and its expires time.
+    """
+    return {**card, "blocked": EXPIRED_REASON, "blocked_kind": EXPIRED, "expires": expires}
 
 
 def repository_of(common_dir: str) -> str:
@@ -50,7 +63,9 @@ class Matching:
         """Returns:
             {"now", "cards"}: every card waiting on the operator, none held
             by a release in its undo window or while it applies; a held
-            command card keeps its snapshot, so an undo shows it unchanged.
+            command card keeps its snapshot, so an undo shows it unchanged;
+            an expired ask or decision stays, greyed by expired_card(),
+            until the operator denies it.
         """
         now = time.time()
         claims = read_claims(self.council)
@@ -61,6 +76,7 @@ class Matching:
         cards = [{**self.commit_card(review, born_of(senders[review["id"]], names, claims), labels), "to": requester_of(claims, senders[review["id"]])[0]} for review in reviews if not self.batches.holds("review", review["id"])]
         tasks = read_register(self.council / REGISTER)
         blocked = self.blocked_rows(now)
+        kinds = blocked_kinds(self.jobs.listed())
         rows = [row for row in operator_rows(tasks) if row["check"] != "decision"]
         releasing = {f"operator:{row['task']}" for row in rows if self.batches.holds("operator", row["task"])}
         roots = denied_roots(self.settings_files()[0])
@@ -69,9 +85,11 @@ class Matching:
             if f"operator:{row['task']}" in releasing:
                 continue
             owner = adder(tasks[row["task"]])
-            cards.append({**self.command_card(row, owner, born_of(owner, names, claims), roots, scan, labels), "to": requester_of(claims, owner)[0], "blocked": row_blocked(row, blocked)})
-        items = self.inbox(now, tasks, self.directory(claims, read_jsonl(self.council / NEWS), now))
+            cards.append({**self.command_card(row, owner, born_of(owner, names, claims), roots, scan, labels), "to": requester_of(claims, owner)[0], "blocked": row_blocked(row, blocked), "blocked_kind": row_blocked_kind(row, kinds)})
+        directory = self.directory(claims, read_jsonl(self.council / NEWS), now)
+        items = self.inbox(now, tasks, directory)
         cards += [self.waiting_card(item, born_of(item["agent"], names, claims), scan, labels) for item in items if self.waits(item)]
+        cards += [expired_card(self.waiting_card(item, born_of(item["agent"], names, claims), scan, labels), item["expires"]) for item in self.lapsed_items(now, directory) if self.waits(item)]
         asked = {row["task"] for row in operator_rows(tasks) if row["check"] == "decision"}
         for answer in self.answers.listed():
             if answer["id"] not in asked:
@@ -117,7 +135,7 @@ class Matching:
     def card_payload(self, row: dict, roots: list[str] | None) -> tuple[list[dict], str, dict | None]:
         """Returns:
             What a command card shows and is bound to: the runner's merge
-            preview diff and merge_hash() for a git merge it previewed, else
+            preview diff and merge_hash() for a git merge or commit-tree it previewed, else
             the named payload files and payload_hash(); and the preview.
         """
         preview = self.preview_of(row)
@@ -158,6 +176,9 @@ class Matching:
                 files = stored_diff(self.reviews.pages, "ask", item["id"])["diff"]
             except Missing:
                 files = None
+        preview = self.ask_preview(item["id"]) if item["kind"] == "ask" and item["diff"] is None else None
+        if preview is not None:
+            files = preview.get("diff", [])
         repo, branch, worktree = place_of(item["directory"], scan) if item["directory"] else ("", "", "")
         shown = digest(json.dumps([item["title"], item["command"], item["detail"], item["options"], item["rule"]], sort_keys=True))
         return {
@@ -165,7 +186,7 @@ class Matching:
             "born": born, "created_ts": item["ts"], "repo": repo, "branch": branch, "worktree": worktree, "title": item["title"], "score": "",
             "metrics": metric_chips("\n".join((item["title"], item["command"], item["detail"])), labels, False), "gate": "", "hash": shown, "live_hash": shown, "stale": False, "stale_reason": "",
             "files": files, "command": item["command"], "directory": item["directory"], "reason": item["detail"], "sha256": item["sha256"], "options": item["options"],
-            "recommended": item["recommended"], "multi": item["multi"], "warnings": item["warnings"], "rule": item["rule"], "dry_run": item["dry_run"],
+            "recommended": item["recommended"], "multi": item["multi"], "warnings": item["warnings"], "rule": item["rule"], "dry_run": item["dry_run"], "merge": preview_line(preview),
         }
 
     def command_card(self, row: dict, agent: str, born: float | None, roots: list[str] | None, scan: dict, labels: dict | None) -> dict:
@@ -176,8 +197,8 @@ class Matching:
             self.match_snapshots.remove(card_id)
             snapshot = self.match_snapshots.insert(card_id, {"command_sha256": digest(row["command"]), "hash": live, "files": files, "previewed": preview is not None, "taken": time.time()})
         stale = snapshot["hash"] != live
-        moved = "HEAD or the merge base moved since it was added" if preview is not None else "a payload file changed since it was added"
-        merge = None if preview is None else {key: preview.get(key, "") for key in ("head", "base", "target", "error")}
+        merge = preview_line(preview)
+        moved = "a payload file changed since it was added" if merge is None else "its diff changed since it was added" if merge["kind"] == TREE else "HEAD or the merge base moved since it was added"
         repo, branch, worktree = place_of(row["directory"], scan)
         return {
             "id": card_id, "kind": "command", "ref": row["task"], "agent": agent, "born": born, "created_ts": snapshot["taken"], "repo": repo, "branch": branch, "worktree": worktree,

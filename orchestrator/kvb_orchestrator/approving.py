@@ -16,6 +16,7 @@ from .cleanup import cleanup_request
 from .denying import (
     DENIABLE,
     DENY_KEYS,
+    LAPSING,
     NOTED,
     denial_note,
     request_status,
@@ -26,9 +27,12 @@ from .fields import decode, expect, field, visible
 from .firewall import settings_request
 from .gating import gate_request
 from .offices import office_request
+from .prunes import prune_request
+from .queueing import queue_request
 from .records import digest, shown
 from .register import REGISTER, adder, operator_rows, read_register, runnable
 from .rules import enable_request, rule_matches, subject_of
+from .scheduling import schedule_request
 from .signed import (
     ask_signed,
     operator_signed,
@@ -271,7 +275,7 @@ class Approving:
         if not isinstance(raw, dict):
             raise ToolError("every item must be an object with kind, id, verb, label and sha256, and a denial also channel, reason and to")
         kind_name, verb = raw.get("kind"), raw.get("verb")
-        noted = verb == "reject" and (kind_name in DENIABLE or kind_name in NOTED and "channel" in raw)
+        noted = verb == "reject" and (kind_name in DENIABLE or kind_name in (*NOTED, *LAPSING) and "channel" in raw)
         shown = ("payload",) if kind_name == "operator" and verb == "approve" and "payload" in raw else ()
         expect(raw, (*ITEM_KEYS, *DENY_KEYS) if noted else (*ITEM_KEYS, *shown))
         if kind_name not in INBOX_KINDS or verb not in VERBS or not isinstance(raw["label"], str) or not isinstance(raw["sha256"], str):
@@ -285,10 +289,11 @@ class Approving:
         if record is None:
             raise Missing(item_id)
         status = ask_state(record, time.time())["status"] if kind_name == "ask" else request_status(record, time.time()) if kind_name == "rule" else decision_status(record, time.time()) if kind_name == "decision" else record["status"]
-        if status != "pending":
+        lapsed = status == "expired" and noted and kind_name in LAPSING
+        if status != "pending" and not lapsed:
             raise Conflict({"id": item_id, "status": status})
         label = ""
-        if kind_name == "decision":
+        if kind_name == "decision" and not lapsed:
             if verb != "approve" or not picks(record, raw["label"]):
                 raise ToolError("a decision is approved with one of its option labels, a multi decision with one or more of them in option order, or with one line of other text")
             visible([{"label": part} for part in raw["label"].split(PICKED)])
@@ -325,6 +330,12 @@ class Approving:
             signed = self.task_changes(raw)
         elif gate_request(raw):
             signed = self.gate_changes(raw)
+        elif queue_request(raw):
+            signed = self.queue_changes(raw)
+        elif schedule_request(raw):
+            signed = self.schedule_changes(raw)
+        elif prune_request(raw):
+            signed = self.prune_changes(raw)
         elif settings_request(raw):
             signed = self.settings_changes(raw)
         elif enable_request(raw):

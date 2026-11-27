@@ -12,7 +12,12 @@
 .match-peeks { display: flex; flex-wrap: wrap; gap: var(--sp-1); min-width: 0; }
 .match-peek { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 10px 4px 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: inherit; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
 .match-peek[data-stale="true"] { border-color: var(--bad); }
-.match-peek[data-blocked], .match-card.front[data-blocked] { filter: grayscale(1); opacity: 0.62; }
+.match-peek[data-blocked], .match-card.front[data-blocked] > :not(.match-stamp) { filter: grayscale(1); opacity: 0.62; }
+.match-stamp { position: absolute; top: 50%; left: 50%; z-index: 3; padding: 4px 14px; border: 4px solid currentColor; border-radius: 12px; background: color-mix(in srgb, var(--panel) 75%, transparent); font-size: 1.9rem; font-weight: 800; letter-spacing: 0.08em; transform: translate(-50%, -50%) rotate(-8deg); pointer-events: none; }
+.match-stamp[data-stamp="running"] { color: var(--info); }
+.match-stamp[data-stamp="queued"] { color: var(--warn); }
+.match-stamp[data-stamp="stale"], .match-stamp[data-stamp="blocked"] { color: var(--muted); }
+.match-stamp[data-stamp="expired"] { color: var(--bad); pointer-events: auto; cursor: help; }
 .match-blocked { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
 .match-peek .match-peek-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .match-deck { position: relative; isolation: isolate; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; padding-top: 24px; overflow-x: clip; }
@@ -59,6 +64,7 @@
 .match-where { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--panel) 80%, transparent); color: var(--muted); font: inherit; font-size: var(--fs-sm); cursor: copy; }
 .match-where span { overflow: hidden; font-family: var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .match-where:hover { border-color: var(--line-strong); color: var(--text); }
+a.match-where { text-decoration: none; cursor: pointer; }
 .match-where[data-place="branch"] { border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); color: var(--accent); font-weight: 650; }
 .match-title { margin: 0; font-size: var(--fs-md); overflow-wrap: anywhere; }
 .match-stale { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--bad); font-size: var(--fs-sm); }
@@ -101,8 +107,29 @@ table.diff tr.match-mark td, table.diff tr.match-comment td { padding: 4px 10px;
 .match-confetti { position: absolute; inset: 0; pointer-events: none; }
 .match-confetti i { position: absolute; top: -12px; left: var(--x); width: 9px; height: 14px; border-radius: 2px; background: hsl(var(--c) 85% 60%); animation: match-confetti 1.4s ease-in var(--d) forwards; opacity: 0; }
 @keyframes match-confetti { 0% { opacity: 1; transform: translateY(0) rotate(0); } 100% { opacity: 0; transform: translateY(70vh) rotate(var(--r)); } }
+.match-glass { display: inline-grid; place-items: center; padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
+.match-glass.small { width: 22px; height: 28px; }
+.match-glass.large { width: 72px; height: 96px; margin-bottom: var(--sp-2); }
+.match-glass:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.match-glass-face { width: 100%; height: 100%; overflow: visible; animation: match-flip 0.6s ease-out; }
+.match-glass-frame { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.match-glass-top, .match-glass-bottom { fill: currentColor; opacity: 0.85; transform-box: fill-box; transform-origin: 50% 100%; }
+.match-glass-top { animation: match-drain var(--match-refresh) linear forwards; }
+.match-glass-bottom { animation: match-fill var(--match-refresh) linear forwards; }
+.match-grain { fill: currentColor; opacity: 0; animation: match-grain 0.9s linear infinite; }
+.match-grain[data-grain="1"] { animation-delay: 0.3s; }
+.match-grain[data-grain="2"] { animation-delay: 0.6s; }
+@keyframes match-flip { from { transform: rotate(180deg); } to { transform: rotate(0deg); } }
+@keyframes match-drain { from { transform: scaleY(1); } to { transform: scaleY(0.05); } }
+@keyframes match-fill { from { transform: scaleY(0.15); } to { transform: scaleY(1); } }
+@keyframes match-grain { 0% { opacity: 1; transform: translateY(0); } 90% { opacity: 1; } 100% { opacity: 0; transform: translateY(11px); } }
+.match-refresh-sheet { display: grid; justify-items: center; gap: var(--sp-2); }
+.match-refresh-sheet .sheet-foot { justify-self: stretch; }
 @media (prefers-reduced-motion: reduce) {
   .match-card.front, .match-card.front .match-who .avatar, .match-confetti i { animation: none !important; }
+  .match-glass-face, .match-glass-top, .match-glass-bottom, .match-grain { animation: none !important; }
+  .match-glass-top { transform: scaleY(0.6); }
+  .match-glass-bottom { transform: scaleY(0.5); }
   .match-act-face { transition: none; }
 }
 .match-open-overview { display: inline-flex; align-items: center; gap: 4px; }
@@ -111,6 +138,7 @@ table.diff tr.match-mark td, table.diff tr.match-comment td { padding: 4px 10px;
 .match-release-card .match-body { display: grid; align-content: start; gap: var(--sp-2); }
 .match-release-card .match-title { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-lg); }
 .match-release-hint { margin: 0; font-size: var(--fs-sm); }
+.match-release-held { margin: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--bad); }
 .match-card.front.match-release-card[data-leaning="accept"]::after { content: "RELEASE"; }
 .match-card.front.match-release-card[data-leaning="reject"]::after { content: "NEXT"; color: var(--muted); }
 .match-overview .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
@@ -129,5 +157,5 @@ table.diff tr.match-mark td, table.diff tr.match-comment td { padding: 4px 10px;
   .match-body { padding: var(--sp-1) var(--sp-2) var(--sp-2); }
   .match-act-face { width: 64px; height: 64px; font-size: 1.7rem; }
   .match-later .match-act-face { width: 52px; height: 52px; font-size: 1.3rem; }
-  .match-card.front[data-leaning]::after { font-size: 1.4rem; }
+  .match-card.front[data-leaning]::after, .match-stamp { font-size: 1.4rem; }
 }

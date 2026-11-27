@@ -26,7 +26,7 @@ from hub_support import (
 )
 from kvb_orchestrator import batches, ledger, payloads, scores, skill_scripts
 from kvb_orchestrator.errors import Conflict
-from kvb_orchestrator.jobs import UNRUNNABLE, blocked_reasons
+from kvb_orchestrator.jobs import UNRUNNABLE, blocked_kinds, blocked_reasons
 
 MATCH = REPO_ROOT / "skills" / "kvb-match" / "scripts" / "match.py"
 CLIENT = HUB / "client"
@@ -415,6 +415,11 @@ class TestCommandCards(MatchCase):
         self.assertEqual(cards["operator/runs"]["blocked"], "The hub runner runs it for 30 min; its result comes in Waits on Operator.")
         self.assertEqual(cards["operator/waits"]["blocked"], "Queued in the hub runner for 10 min behind operator/runs, which runs for 30 min; the runner runs one job at a time.")
         self.assertEqual(cards["operator/loose"]["blocked"], UNRUNNABLE)
+        self.assertEqual({task: card["blocked_kind"] for task, card in cards.items()}, {"operator/free": "", "operator/runs": "running", "operator/waits": "queued", "operator/loose": "unrunnable"})
+
+    def test_a_task_with_a_running_and_a_queued_job_is_stamped_running(self):
+        jobs = [{"task": "operator/a", "status": "queued"}, {"task": "operator/a", "status": "running"}, {"task": "operator/a", "status": "queued"}, {"task": "operator/b", "status": "done"}]
+        self.assertEqual(blocked_kinds(jobs), {"operator/a": "running"})
 
     def test_every_open_row_operator_py_lists_shows_in_match_the_inbox_and_the_stream_with_its_reason(self):
         row = {"title": "true", "workdir": str(self.work), "description": "ship the release notes", "check": "done", "roles": {"Skills": "A", "Operator": "R"}}
@@ -591,7 +596,7 @@ class TestMergeCards(MatchCase):
         self.run_runner(register=False)
         card = self.card("operator:operator/merge")
         head = git(repo, "rev-parse", "HEAD").strip()
-        self.assertEqual((card["merge"], card["stale"]), ({"head": head, "base": head, "target": target, "error": ""}, False))
+        self.assertEqual((card["merge"], card["stale"]), ({"kind": "merge", "head": head, "base": head, "target": target, "error": ""}, False))
         shown = {"": "@@ -1 +1,2 @@\n keep = 1\n+added = 2", "content withheld": ""}
         self.assertEqual([(entry["path"], entry["status"], entry["additions"], entry["patch"] == shown[entry["note"]]) for entry in card["files"]], [("app.py", "M", 1, True)])
         status, _, body = self.call("GET", "/api/runner/previews", None, self.client())

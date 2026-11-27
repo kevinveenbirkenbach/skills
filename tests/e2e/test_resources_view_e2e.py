@@ -149,8 +149,8 @@ class TestResourcesView(HubCase):
                 self.assertNotIn("error", toggle, toggle)
                 before = toggle["before"]
                 self.assertEqual(before["charts"], ["hardware", "tokens"])
-                self.assertEqual(before["panels"], [["resources-hardware", False], ["resources-tokens", False], ["resources-combined", True], ["resources-accounts", False]])
-                self.assertEqual(before["picks"], [["hardware", True, False], ["tokens", True, False], ["combined", False, False], ["accounts", True, False]])
+                self.assertEqual(before["panels"], [["resources-hardware", False], ["resources-tokens", False], ["resources-combined", True], ["resources-accounts", False], ["resources-usage", True]])
+                self.assertEqual(before["picks"], [["hardware", True, False], ["tokens", True, False], ["combined", False, False], ["accounts", True, False], ["usage", False, False]])
                 self.assertEqual((before["lines"], before["agents"]), (hardware, ["Skills", "Stage"]))
                 self.assertEqual(set(before["pressed"].values()), {"true"})
                 self.assertEqual(set(before["pressed"]), {*hardware, "agent:Skills", STAGE})
@@ -169,8 +169,8 @@ class TestResourcesView(HubCase):
                 combined = combine["combined"]
                 self.assertEqual((combined["charts"], combined["lines"], combined["sums"], combined["burn"]), (["combined"], hardware, ["Skills", "Stage"], ["done", "scope"]))
                 self.assertEqual(combined["right"], 2)
-                self.assertEqual(combined["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", False]])
-                self.assertEqual(combined["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, False], ["accounts", True, False]])
+                self.assertEqual(combined["panels"], [["resources-hardware", True], ["resources-tokens", True], ["resources-combined", False], ["resources-accounts", False], ["resources-usage", True]])
+                self.assertEqual(combined["picks"], [["hardware", False, False], ["tokens", False, False], ["combined", True, False], ["accounts", True, False], ["usage", False, False]])
                 self.assertEqual(set(combined["pressed"].values()), {"true"})
                 self.assertEqual(set(combined["pressed"]), {*hardware, "agent:Skills", STAGE, "burn:done", SCOPE})
                 self.assertEqual(combine["page"], {"tall": False, "wide": False, "fits": True})

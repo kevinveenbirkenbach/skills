@@ -690,7 +690,7 @@ class TestHomePage(unittest.TestCase):
         marked = set(re.findall(r"\['[^']+', \"([^\"]+)\"\]", home))
         captured = set(re.findall(r'Panels\.capture\("([^"]+)"', home))
         made = set(re.findall(r'\{kind: "(\w+)", id, view[,}]', sources))
-        self.assertEqual((len(literal), marked), (14, {"radio-log"}))
+        self.assertEqual((len(literal), marked), (16, {"radio-log"}))
         literal |= marked
         self.assertEqual(len(dynamic), 13)
         self.assertEqual(sorted(literal | dynamic), sorted(registered))

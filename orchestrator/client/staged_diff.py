@@ -43,6 +43,9 @@ Returns:
     tree_of: (directory, tree, parents) of a single git commit-tree whose
         tree and parents are full object ids, which no later write can
         change; None for any other command.
+    commit_tree_of: (directory, tree, parent) of a tree_of command with at
+        least one parent, the first one; None without -p.
+    commit_tree_preview: what git diff <parent> <tree> shows for it.
     merge_of: (directory, target) of a single git merge of one full object
         id; merge_preview: what that merge brings in; head_of: the commit
         HEAD names.
@@ -51,8 +54,8 @@ Returns:
 Every git call runs GIT with core.fsmonitor, core.hooksPath, lazy fetching,
 the system and the global config off, and an environment of only PASSED_ENV
 and FIXED_ENV (PATH set to TRUSTED_PATH). The permission hook and runner path
-(binding, bound_diff, commit_tree_diff, merge_preview, head_of, commit_of,
-tree_of, merge_of) runs only plumbing that writes nothing (rev-parse,
+(binding, bound_diff, commit_tree_diff, merge_preview, commit_tree_preview,
+head_of, commit_of, tree_of, commit_tree_of, merge_of) runs only plumbing that writes nothing (rev-parse,
 merge-base, symbolic-ref, ls-tree, ls-files, cat-file); only approval.py, run
 inside the sandbox, adds git write-tree. The diff itself is computed here:
 the permission hook and the runner call this outside the sandbox in a directory the agent
@@ -551,6 +554,20 @@ def merge_preview(cwd: Path, target: str, rules: Path | None) -> dict:
     return {"head": head, "base": base, "target": target, "diff": commit_tree_diff(top, tree, [base], rules)[0]}
 
 
+def commit_tree_preview(cwd: Path, tree: str, parent: str, rules: Path | None) -> dict:
+    """Returns:
+        {head, base, target, diff}: what git diff <parent> <tree> shows, the
+        tree against the parent's tree, secrets masked; head and base are
+        the parent, target the tree. A parent or tree the repository lacks
+        fails with git's own error line; neither git diff nor commit-tree
+        runs, so no repository config can start a diff driver.
+    """
+    top = toplevel(cwd)
+    for oid in (parent, tree):
+        git(top, ["cat-file", "-t", oid], None)
+    return {"head": parent, "base": parent, "target": tree, "diff": commit_tree_diff(top, tree, [parent], rules)[0]}
+
+
 def fetched(cwd: Path, old: dict, new: dict, changed: list[str], contents: dict[str, bytes | None]) -> None:
     needed = {side[path][1] for side in (old, new) for path in changed if path in side and side[path][0] != GITLINK and side[path][1] not in contents}
     sizes = blob_sizes(cwd, needed)
@@ -625,6 +642,11 @@ def tree_of(command: str, cwd: str) -> tuple[Path, str, list[str]] | None:
         return None
     named = tree_words(found[1][1:])
     return None if named is None else (found[0], *named)
+
+
+def commit_tree_of(command: str, cwd: str) -> tuple[Path, str, str] | None:
+    found = tree_of(command, cwd)
+    return None if found is None or not found[2] else (found[0], found[1], found[2][0])
 
 
 def merge_of(command: str, cwd: str) -> tuple[Path, str] | None:

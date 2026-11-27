@@ -5,6 +5,7 @@ import datetime
 import re
 from pathlib import Path
 
+from .calibration import CALIBRATION, Calibrations, valid_share
 from .errors import Missing, ToolError
 from .fields import FIELDS, decode, visible
 from .ledger import Ledger
@@ -131,15 +132,33 @@ def usage(rows: list[dict], now: float) -> dict[str, dict]:
 class Accounts:
     def __init__(self, state: Path, kept: Path, council: Path) -> None:
         self.ledger = Ledger(state / ACCOUNTS)
+        self.calibrations = Calibrations(state / CALIBRATION)
         self.tokens = kept / RESOURCES / TOKENS
         self.sessions = council / SESSION_ACCOUNTS
 
     def view(self, now: float) -> dict:
         """Returns:
-            {accounts, active, usage}: the stored accounts, the active
-            account's email or None, and usage() of every token row.
+            {accounts, active, usage, calibrations}: the stored accounts, the
+            active account's email or None, usage() of every token row, and
+            per account id the calibration set since its last reset.
         """
-        return {"accounts": self.ledger.listed(), "active": active(self.sessions), "usage": usage(rows_between(self.tokens, 0, now, 0), now)}
+        listed = self.ledger.listed()
+        return {
+            "accounts": listed, "active": active(self.sessions), "usage": usage(rows_between(self.tokens, 0, now, 0), now),
+            "calibrations": self.calibrations.current(listed, now),
+        }
+
+    def calibrate(self, account_id: str, body: bytes, now: float) -> dict:
+        """Args:
+            body: {share}: the percent of the limit the provider shows now.
+
+        Returns:
+            {share, at}: the stored calibration; an unknown id raises
+            Missing, a share outside 0 to 100 ToolError.
+        """
+        if self.ledger.get(account_id) is None:
+            raise Missing("no such account")
+        return self.calibrations.put(account_id, valid_share(body), now)
 
     def save(self, body: bytes) -> dict:
         """Args:
