@@ -10,6 +10,13 @@ from .diffs import SEALED_SUFFIX
 from .records import read_json, stamp, write_atomic
 
 
+def unused(items: dict[str, dict]) -> str:
+    item_id = secrets.token_hex(8)
+    while item_id in items:
+        item_id = secrets.token_hex(8)
+    return item_id
+
+
 class Ledger:
     def __init__(self, file: Path) -> None:
         self.file = file
@@ -20,10 +27,24 @@ class Ledger:
 
     def fresh(self) -> str:
         with self.changed:
-            item_id = secrets.token_hex(8)
-            while item_id in self.items:
-                item_id = secrets.token_hex(8)
-            return item_id
+            return unused(self.items)
+
+    def batch(self, check: Callable[[list[dict]], None], changes: dict[str, dict], added: list[dict]) -> None:
+        """Args:
+            check: raises to refuse the whole batch; it sees every record
+                under the lock the write holds.
+            changes: fields merged into the record of each id, which keeps
+                its id and created stamp.
+            added: new records, each under a fresh id.
+        """
+        with self.changed:
+            check(self.listed())
+            items = {**self.items, **{item_id: {**self.items[item_id], **fields} for item_id, fields in changes.items()}}
+            created = stamp()
+            for fields in added:
+                item_id = unused(items)
+                items[item_id] = {**fields, "id": item_id, "created": created}
+            self.write(items)
 
     def write(self, items: dict[str, dict]) -> None:
         write_atomic(self.file, json.dumps(items, indent=1, sort_keys=True).encode("utf-8"))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import re
 import secrets
 import time
@@ -7,9 +8,11 @@ from collections.abc import Callable
 from http import HTTPStatus
 from urllib.parse import urlsplit
 
+from .accounts_io import Transfer
 from .diffs import DIFF_BODY_LIMIT
 from .engines import INPUT_LIMIT, STT_LIMIT
 from .exchange import PLAIN_CSP, Exchange
+from .fields import single
 from .rates import rated
 from .resources import RESOURCES, sampled
 from .scores import scored
@@ -82,8 +85,10 @@ FIREWALL_STATUS = {"settings_preview": HTTPStatus.OK, "change_settings": HTTPSta
 WAV_POSTS = (STT_ROUTE, VOICE_ROUTE)
 ACCOUNTS_ROUTE = "/api/accounts"
 ACCOUNT_DROP = re.compile(r"/api/accounts/([0-9a-f]{16})/delete")
+ACCOUNTS_EXPORT = "/api/accounts/export"
+ACCOUNTS_IMPORT = {"/api/accounts/import/preview": "preview", "/api/accounts/import/apply": "apply"}
 SCHEDULES_ROUTE = "/api/schedules"
-ACTION_POSTS = (ACCOUNTS_ROUTE, SCHEDULES_ROUTE,"/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
+ACTION_POSTS = (ACCOUNTS_ROUTE, *ACCOUNTS_IMPORT, SCHEDULES_ROUTE,"/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
 
 
 class Handler(Exchange):
@@ -94,6 +99,14 @@ class Handler(Exchange):
 
     def hear(self, body: bytes) -> None:
         self.answer(lambda: self.server.hub.speech.transcribe(body), HTTPStatus.OK)
+
+    def export_accounts(self) -> None:
+        transfer = Transfer(self.server.hub.accounts.ledger)
+        self.attempt(lambda: transfer.exported(single(self.query(), "format") or "", datetime.date.today()), self.send_file)
+
+    def send_file(self, exported: tuple[str, bytes, str]) -> None:
+        content_type, data, name = exported
+        self.send(HTTPStatus.OK, content_type, data, {"Content-Security-Policy": PLAIN_CSP, "Content-Disposition": f'attachment; filename="{name}"'})
 
     def replay_voice(self, note_id: str) -> None:
         headers = {"Content-Security-Policy": PLAIN_CSP}
@@ -148,6 +161,8 @@ class Handler(Exchange):
             self.answer(hub.match_cards, HTTPStatus.OK)
         elif path == ACCOUNTS_ROUTE:
             self.answer(lambda: hub.accounts.view(time.time()), HTTPStatus.OK)
+        elif path == ACCOUNTS_EXPORT:
+            self.export_accounts()
         elif path == "/api/resources":
             self.answer(lambda: sampled(hub.kept / RESOURCES, hub.span(self.query(), time.time())), HTTPStatus.OK)
         elif path == "/api/scores":
@@ -194,6 +209,9 @@ class Handler(Exchange):
         drop = ACCOUNT_DROP.fullmatch(path)
         if path == ACCOUNTS_ROUTE:
             return lambda body: self.answer(lambda: hub.accounts.save(body), HTTPStatus.OK)
+        if path in ACCOUNTS_IMPORT:
+            method = getattr(Transfer(hub.accounts.ledger), ACCOUNTS_IMPORT[path])
+            return lambda body: self.answer(lambda: method(body), HTTPStatus.OK)
         if drop:
             return lambda _body: self.answer(lambda: hub.accounts.drop(drop.group(1)), HTTPStatus.OK)
         if path == SCHEDULES_ROUTE:

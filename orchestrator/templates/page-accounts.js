@@ -8,8 +8,36 @@
     accountsView.body = body;
     const add = iconBtn("bi-plus-lg", "Add account", "btn small soft", () => accountSheet(null), "Add account: provider, email, renewal and weekly reset; kept on this host only");
     const panel = h("section", {class: "card res-panel res-accounts", "data-panel": "resources-accounts", "aria-label": "Accounts"},
-      h("div", {class: "res-head", "data-legend-slot": ""}, h("span", {class: "res-title", title: "Accounts", "aria-label": "Accounts"}, icon("bi-person-badge")), h("span", {class: "acc-title"}, "Accounts"), h("span", {class: "spacer"}), add), body);
+      h("div", {class: "res-head", "data-legend-slot": ""}, h("span", {class: "res-title", title: "Accounts", "aria-label": "Accounts"}, icon("bi-person-badge")), h("span", {class: "acc-title"}, "Accounts"), h("span", {class: "spacer"}),
+        accountsExportMenu(), accountsImportButton(), add), body);
     return {panel, body};
+  }
+
+  function accountsExportMenu() {
+    const link = (format, label) => h("a", {class: "menu-item", href: `/api/accounts/export?format=${format}`, download: "", "data-export": format, ...named(label, `${label}: download every stored account; the hub keeps no copy`)}, label);
+    return h("details", {class: "menu acc-export"}, h("summary", {class: "btn small soft icon-only", ...named("Export accounts", "Export: download the accounts as CSV or TSV")}, icon("bi-download")),
+      h("div", {class: "menu-box end", role: "group", "aria-label": "Export format"}, link("csv", "CSV"), link("tsv", "TSV")));
+  }
+
+  function accountsImportButton() {
+    const picker = h("input", {type: "file", accept: ".csv,.tsv,.txt,text/csv,text/tab-separated-values", hidden: true, "aria-label": "Import file", "data-import-file": ""});
+    picker.addEventListener("change", async () => {
+      const file = picker.files[0];
+      picker.value = "";
+      if (file) {
+        accountImportSheet(file.name, bytesBase64(await file.arrayBuffer()));
+      }
+    });
+    return h("span", {class: "acc-import"}, picker, iconBtn("bi-upload", "Import accounts", "btn small soft", () => picker.click(), "Import: a CSV or TSV file, mapped to the fields and previewed before anything is saved"));
+  }
+
+  function bytesBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let start = 0; start < bytes.length; start += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
+    }
+    return btoa(binary);
   }
 
   async function fetchAccounts() {
@@ -85,6 +113,101 @@
   function homeAccounts() {
     homeFetch("accounts", fetchAccounts);
     return h("div", {class: "acc-body"}, accountsContent(accountsView.data));
+  }
+
+  const IMPORT_FIELDS = [
+    ["provider", "Provider"], ["email", "Email"], ["renewal", "Renewal (day and time)"], ["renewal_day", "Renewal day"], ["renewal_time", "Renewal time"],
+    ["reset", "Next reset (day and time)"], ["reset_day", "Reset day"], ["reset_time", "Reset time"], ["resubscribe", "Resubscribe"], ["autorenew", "Autorenew"],
+    ["limit", "Weekly token limit"], ["note", "Note"],
+  ];
+  const IMPORT_SEPARATORS = [["", "Detect"], [",", "Comma"], [";", "Semicolon"], ["\t", "Tab"]];
+
+  function accountImportSheet(name, file) {
+    const state = {file, separator: "", mapping: null, choices: {}, result: null};
+    const box = h("div", {class: "acc-import-body"}, h("p", {class: "muted"}, "…"));
+    const run = async () => {
+      const result = await sendJson("/api/accounts/import/preview", {file: state.file, separator: state.separator, mapping: state.mapping, choices: state.choices});
+      if (!result.ok) {
+        box.replaceChildren(h("p", {class: "muted", "data-import-refused": ""}, fail(result)[0]));
+        return;
+      }
+      state.result = result.data;
+      box.replaceChildren(...importContent(state, run));
+    };
+    openSheet(`Import accounts: ${name}`, [h("p", {class: "muted"}, "Nothing is saved before Apply; accounts not in the file stay."), box], true);
+    run();
+  }
+
+  function importMapping(state, run) {
+    const {columns, mapping} = state.result;
+    const select = (field, label) => h("label", {class: "acc-field"}, h("span", {}, label), h("select", {class: "field", "aria-label": `${label} column`, "data-map": field, on: {change: (event) => {
+      state.mapping = {...state.result.mapping, [field]: event.target.value === "" ? null : Number(event.target.value)};
+      run();
+    }}}, h("option", {value: ""}, "not in file"), columns.map((column, index) => h("option", {value: String(index), ...(mapping[field] === index ? {selected: true} : {})}, column || `column ${index + 1}`))));
+    const separator = h("label", {class: "acc-field"}, h("span", {}, "Separator"), h("select", {class: "field", "aria-label": "Separator", "data-separator": "", on: {change: (event) => {
+      state.separator = event.target.value;
+      state.mapping = null;
+      run();
+    }}}, IMPORT_SEPARATORS.map(([value, label]) => h("option", {value, ...(state.separator === value ? {selected: true} : {})}, label))));
+    return h("div", {class: "acc-form"}, separator, IMPORT_FIELDS.map(([field, label]) => select(field, label)));
+  }
+
+  function importChoice(state, row, run) {
+    if (row.status !== "update") {
+      return null;
+    }
+    const email = row.account.email;
+    return h("select", {class: "field", "aria-label": `Conflict ${email}`, "data-choice": email, on: {change: (event) => {
+      state.choices = {...state.choices, [email]: event.target.value};
+      run();
+    }}}, ["overwrite", "keep"].map((choice) => h("option", {value: choice, ...(row.choice === choice ? {selected: true} : {})}, choice)));
+  }
+
+  function importRow(state, row, run) {
+    const detail = row.status === "error" ? row.error : row.status === "update" ? row.changed.join(", ") : "";
+    const who = row.account ? `${row.account.provider} · ${row.account.email}` : "–";
+    return h("tr", {"data-import-row": row.status}, h("td", {}, String(row.line)), h("td", {}, h("span", {class: "pill", "data-tone": row.status === "error" ? "bad" : "ok"}, row.status)),
+      h("td", {}, who), h("td", {}, detail), h("td", {}, importChoice(state, row, run)));
+  }
+
+  function importAll(state, run) {
+    const updates = state.result.rows.filter((row) => row.status === "update");
+    if (!updates.length) {
+      return null;
+    }
+    const all = (choice) => btn(`All ${choice}`, "btn small ghost", () => {
+      state.choices = Object.fromEntries(updates.map((row) => [row.account.email, choice]));
+      run();
+    });
+    return h("div", {class: "actions", role: "group", "aria-label": "Every conflict"}, all("overwrite"), all("keep"));
+  }
+
+  function importContent(state, run) {
+    const {rows, missing, errors} = state.result;
+    const blocked = missing.length > 0 || errors > 0 || rows.length === 0;
+    const apply = h("button", {type: "button", class: "btn primary", "data-import-apply": "", ...(blocked ? {disabled: true} : {})}, icon("bi-check-lg"), "Apply");
+    apply.addEventListener("click", () => applyImport(state, run));
+    const notice = missing.length ? h("p", {class: "muted", "data-import-missing": ""}, `Missing: ${missing.join(", ")}`) : null;
+    const table = rows.length ? h("div", {class: "acc-scroll"}, h("table", {class: "acc-table"},
+      h("thead", {}, h("tr", {}, ["Line", "Status", "Account", "Changes or error", "Conflict"].map((label) => h("th", {scope: "col"}, label)))),
+      h("tbody", {}, rows.map((row) => importRow(state, row, run))))) : null;
+    return [importMapping(state, run), notice, importAll(state, run), table, h("div", {class: "actions"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), apply)];
+  }
+
+  async function applyImport(state, run) {
+    const result = await sendJson("/api/accounts/import/apply", {file: state.file, separator: state.separator, mapping: state.result.mapping, choices: state.choices, digest: state.result.digest});
+    if (result.status === 409) {
+      toast("Import: the accounts changed meanwhile", ["The preview was refreshed; check it and apply again."], false);
+      run();
+      return;
+    }
+    if (!result.ok) {
+      toast("Import: not applied", fail(result), false);
+      return;
+    }
+    closeSheet();
+    fetchAccounts();
+    toast("Import applied", [`${result.data.added} added, ${result.data.updated} updated, ${result.data.kept} kept, ${result.data.unchanged} unchanged`], true);
   }
 
   function momentFields(label, moment) {
