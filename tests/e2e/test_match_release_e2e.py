@@ -84,8 +84,11 @@ FLOW = """(async () => {@HELPERS@
   const leaned = await swipe(width * 0.4, 0);
   await until(() => front() !== order[2], 3000);
   order.push(front());
+  key("w");
+  await until(() => front() !== order[3], 3000);
+  order.push(front());
   const short = await swipe(width * 0.1, 0);
-  const stayed = front() === order[3];
+  const stayed = front() === order[4];
   await swipe(width * 0.4, 4);
   const overview = await until(() => document.querySelector("#main .match-overview"), 3000);
   const rows = overview ? all("#main .match-decision").map((item) => [item.dataset.card, item.dataset.verdict, text(item.querySelector(".match-decision-feedback"))]) : [];
@@ -102,7 +105,12 @@ FLOW = """(async () => {@HELPERS@
       found.kept = all("#main .match-decision").length;
     }
     const flashed = new Set();
-    const watch = window.setInterval(() => all("#main .match-card").forEach((node) => flashed.add(node.dataset.card)), 20);
+    const shownBefore = new Set(all("#main .match-card").map((node) => node.dataset.card));
+    let cleared = false;
+    const watch = window.setInterval(() => {
+      cleared = cleared || Boolean(document.querySelector("#main .match-stack .empty"));
+      all("#main .match-card").filter((node) => !node.hasAttribute("data-blocked") && (cleared || !shownBefore.has(node.dataset.card))).forEach((node) => flashed.add(node.dataset.card));
+    }, 20);
     found.toast = await toastAfter(() => document.querySelector("#main .match-release").click());
     found.emptied = @SIGNS@ ? Boolean(await until(() => document.querySelector("#main .match-stack .empty"), 15000)) : false;
     await sleep(@SIGNS@ ? 2500 : 0);
@@ -175,7 +183,7 @@ class TestMatchRelease(HubCase):
     def check_flow(self, found: dict) -> None:
         reason = f"{FIRST}:3: rename it"
         self.assertNotIn("error", found, found)
-        self.assertEqual(found["order"], [self.cards[0], self.cards[1], self.cards[2], self.cards[1]], found)
+        self.assertEqual(found["order"], [self.cards[0], self.cards[1], self.cards[2], "release", self.cards[1]], found)
         self.assertEqual((found["prefill"], found["leaned"], found["short"], found["stayed"]), (reason, "accept", "accept", True), found)
         expected = [[self.cards[0], "reject", f"{reason}\nalso add a test"], [self.cards[1], "accept", None], [self.cards[2], "accept", None]]
         self.assertEqual(sorted(found["rows"]), sorted(expected), found)

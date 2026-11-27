@@ -65,8 +65,11 @@ WASD = """(async () => {@HELPERS@@CARD@@STEPS@
   for (let step = 0; step < 8; step += 1) {
     lap.push(await press("w"));
   }
-  while (front() !== "release") {
+  for (let tries = 0; tries < 12 && front() !== "release"; tries += 1) {
     await press("w");
+  }
+  if (front() !== "release") {
+    return {error: "W never brought the release card", seen, lap};
   }
   const onRelease = {a: await press("a")};
   document.querySelector("#main .match-open-overview").click();

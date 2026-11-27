@@ -48,7 +48,12 @@ RELEASED = """(async () => {@HELPERS@@CARD@@STEPS@
   if (!(await until(card, 8000)) || !(await decideAll())) {
     return {error: text(document.getElementById("main")).slice(0, 300)};
   }
-  return {title: document.querySelector("#main .match-release").title};
+  const risk = document.querySelector('#main .match-decision[data-card="@RED@"] .match-accept-risk');
+  if (risk) {
+    risk.click();
+  }
+  const release = await until(() => document.querySelector("#main .match-release"), 4000);
+  return release ? {title: release.title} : {error: text(document.getElementById("main")).slice(0, 300)};
 })()"""
 
 
@@ -63,7 +68,7 @@ class TestUndoDial(deck.ReleaseDeck):
     def test_chromium_sets_the_undo_window_on_a_dial_and_every_undo_text_names_the_saved_seconds(self):
         steps = [
             {"width": 1366, "height": 768, "url": f"{self.base}?dial#stream/inbox", "wait": 1500, "shot": str(OUT / "chromium-1366-undo-dial.png"), "probe": deck.probe(TEXTS, red=f"review:{self.red}")},
-            {"width": 1920, "height": 1080, "url": f"{self.base}?dial-release#tasks/match", "wait": 1500, "shot": str(OUT / "chromium-1920-undo-release.png"), "probe": deck.probe(RELEASED)},
+            {"width": 1920, "height": 1080, "url": f"{self.base}?dial-release#tasks/match", "wait": 1500, "shot": str(OUT / "chromium-1920-undo-release.png"), "probe": deck.probe(RELEASED, red=f"review:{self.red}")},
         ]
         data = self.drive(steps, None, init=deck.INIT)
         (OUT / "chromium-undo-dial.json").write_text(json.dumps(data, indent=1), encoding="utf-8")

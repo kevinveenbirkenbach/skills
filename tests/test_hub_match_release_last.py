@@ -87,8 +87,8 @@ class TestReleaseCardLast(unittest.TestCase):
     def test_a_new_card_queues_before_the_release_card(self):
         self.assertEqual(self.data["fresh"], "a,b,c,release")
 
-    def test_later_puts_a_card_before_the_release_card(self):
-        self.assertEqual(self.data["later"], "a,c,b,release")
+    def test_later_puts_a_card_behind_the_release_card(self):
+        self.assertEqual(self.data["later"], "a,c,release,b")
 
     def test_a_shown_release_card_stays_in_front_and_new_cards_queue_behind_it(self):
         self.assertEqual(self.data["shown"], "release,b,c,a,d")

@@ -27,23 +27,44 @@
   }
 
   const sending = new Set();
+  const refusedIds = new Map();
 
-  async function submit(entries, label) {
+  /**
+   * @param {object} result a hub answer; a 409 carries {id, status} of the item it refused.
+   * @param {string} label the batch's label.
+   * @param {Map<string, string>|undefined} names item id to the title the toast shows instead of the id.
+   * @returns {boolean} whether it was such a refusal: kept in refusedIds and toasted by title.
+   */
+  function namedRefusal(result, label, names) {
+    const id = result.status === 409 && result.data && typeof result.data.id === "string" ? result.data.id : "";
+    if (!id) {
+      return false;
+    }
+    const status = typeof result.data.status === "string" ? result.data.status : "refused";
+    refusedIds.set(id, status);
+    toast(`${label}: not possible`, [`${(names && names.get(id)) || id}: ${status}. Change or drop its row, then release again.`], false);
+    return true;
+  }
+
+  async function submit(entries, label, names) {
     const keys = entries.map(keyOf);
     keys.forEach((key) => sending.add(key));
     drawInbox();
     try {
-      return await sendBatch(entries, label, keys);
+      return await sendBatch(entries, label, keys, names);
     } finally {
       keys.forEach((key) => sending.delete(key));
       drawInbox();
     }
   }
 
-  async function sendBatch(entries, label, keys) {
+  async function sendBatch(entries, label, keys, names) {
     ui.busy = true;
     let missing = null;
     const gone = (result) => {
+      if (namedRefusal(result, label, names)) {
+        return true;
+      }
       if (keys.length > 1 && result.status === 404) {
         missing = result;
         return true;

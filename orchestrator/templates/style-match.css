@@ -145,6 +145,12 @@ table.diff tr.match-mark td, table.diff tr.match-comment td { padding: 4px 10px;
 .match-accept-risk { display: inline-flex; align-items: center; gap: 4px; border-color: var(--bad); color: var(--bad); }
 .match-accept-risk[aria-pressed="true"] { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 .match-decision[data-held="true"] { border-style: dashed; border-color: var(--bad); }
+.match-decision[data-bad="true"] { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.match-decision-bad { color: var(--bad); }
+.match-verdict-menu > summary { cursor: pointer; list-style: none; }
+.match-verdict-menu > summary::-webkit-details-marker { display: none; }
+.match-verdict-menu .menu-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.match-verdict-why { flex-basis: 100%; font-size: var(--fs-sm); }
 .match-decisions { display: grid; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
 .match-decision { display: grid; gap: 4px; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; }
 .match-decision > .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }

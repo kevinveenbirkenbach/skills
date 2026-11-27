@@ -12,7 +12,7 @@ from kvb_orchestrator import batches, skill_scripts
 from kvb_orchestrator.asking import TERMINAL
 from kvb_orchestrator.denying import LAPSED
 from kvb_orchestrator.inbox import LAPSE_WINDOW, lapsed_of
-from kvb_orchestrator.matching import EXPIRED, EXPIRED_REASON, expired_card
+from kvb_orchestrator.matching import EXPIRED, EXPIRED_REASONS, expired_card
 from test_hub_match import MatchCase
 
 FEEDBACK = "run it again after the gate"
@@ -49,8 +49,13 @@ class TestExpiredFilter(unittest.TestCase):
 
     def test_an_expired_card_is_greyed_with_blocked_kind_expired_and_keeps_its_expires(self):
         card = expired_card({"id": "ask:a1", "kind": "ask", "blocked": "", "stale": False}, 990.0)
-        self.assertEqual((card["blocked_kind"], card["blocked"], card["expires"], card["stale"]), (EXPIRED, EXPIRED_REASON, 990.0, False))
+        self.assertEqual((card["blocked_kind"], card["blocked"], card["expires"], card["stale"]), (EXPIRED, EXPIRED_REASONS["ask"], 990.0, False))
         self.assertIn(LAPSED, card["blocked"].lower())
+
+    def test_an_expired_decision_says_its_agent_stopped_waiting_not_that_a_tool_call_returned(self):
+        card = expired_card({"id": "decision:d1", "kind": "decision", "blocked": "", "stale": False}, 990.0)
+        self.assertEqual(card["blocked"], EXPIRED_REASONS["decision"])
+        self.assertNotIn("tool call", card["blocked"])
 
 
 class TestExpiredRelease(MatchCase):
@@ -81,7 +86,7 @@ class TestExpiredRelease(MatchCase):
     def test_an_expired_ask_stays_a_greyed_card_with_its_expiry_but_leaves_the_inbox_and_the_badge(self):
         ask = self.lapsed_ask(CALLED)
         card = self.card(f"ask:{ask}")
-        self.assertEqual((card["kind"], card["blocked_kind"], card["blocked"], card["to"]), ("ask", EXPIRED, EXPIRED_REASON, "Skills"))
+        self.assertEqual((card["kind"], card["blocked_kind"], card["blocked"], card["to"]), ("ask", EXPIRED, EXPIRED_REASONS["ask"], "Skills"))
         self.assertEqual(card["expires"], self.httpd.hub.asks.get(ask)["expires"])
         snapshot = self.snapshot()
         self.assertNotIn(ask, [item["id"] for item in snapshot["inbox"]])

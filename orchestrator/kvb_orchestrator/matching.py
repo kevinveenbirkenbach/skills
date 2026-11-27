@@ -20,7 +20,10 @@ from .tree import inside
 OPERATOR = "operator/"
 WAITING = ("ask", "decision", "rule")
 EXPIRED = "expired"
-EXPIRED_REASON = f"{LAPSED.capitalize()}: its tool call went back to the terminal, only Reject is left"
+EXPIRED_REASONS = {
+    "ask": f"{LAPSED.capitalize()}: its tool call went back to the terminal, only Reject is left",
+    "decision": f"{LAPSED.capitalize()}: its agent stopped waiting for the answer, only Reject is left",
+}
 
 
 def expired_card(card: dict, expires: float) -> dict:
@@ -29,9 +32,10 @@ def expired_card(card: dict, expires: float) -> dict:
         expires: when it expired, in epoch seconds.
 
     Returns:
-        The card greyed with blocked_kind EXPIRED and its expires time.
+        The card greyed with blocked_kind EXPIRED, the EXPIRED_REASONS line of
+        its kind and its expires time.
     """
-    return {**card, "blocked": EXPIRED_REASON, "blocked_kind": EXPIRED, "expires": expires}
+    return {**card, "blocked": EXPIRED_REASONS[card["kind"]], "blocked_kind": EXPIRED, "expires": expires}
 
 
 def repository_of(common_dir: str) -> str:

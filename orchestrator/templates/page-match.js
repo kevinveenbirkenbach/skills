@@ -8,6 +8,7 @@
   const FEEDBACK_LIMIT = 2000;
   const FLY_MS = 400;
   const CONFETTI = 28;
+  const DROPS_KEPT = 200;
   const COMMENTS_KEPT = 5;
   const PATTERNS = ["dots", "stripes", "waves", "grid", "rings"];
   const RELEASE = "release";
@@ -55,7 +56,8 @@
       if (response.ok) {
         const data = await response.json();
         if (epoch === matchView.epoch) {
-          matchView.cards = Array.isArray(data.cards) ? data.cards : [];
+          const dropped = new Set(droppedKeys());
+          matchView.cards = (Array.isArray(data.cards) ? data.cards : []).filter((card) => !dropped.has(cardKey(card)));
         }
       }
     } catch {
@@ -149,19 +151,20 @@
     matchView.order = [id, ...matchView.order.filter((one) => one !== id)];
   };
   const toBack = (id) => {
-    const rest = matchView.order.filter((one) => one !== id);
-    const release = id === RELEASE ? -1 : rest.indexOf(RELEASE);
-    matchView.order = release < 0 ? [...rest, id] : [...rest.slice(0, release), id, ...rest.slice(release)];
+    matchView.order = [...matchView.order.filter((one) => one !== id), id];
   };
 
   /**
-   * @param {string[]} order card ids and RELEASE.
+   * @param {string[]} kept the order so far: card ids and RELEASE.
+   * @param {string[]} fresh the ids of the cards new to the stack.
    * @param {Set<string>} open the ids of the undecided cards.
-   * @returns {string[]} order with the release card last, unless it is the front card the operator sees now.
+   * @returns {string[]} kept with the fresh cards queued before the release card, or behind it while it is the front
+   * card the operator sees now; the release card keeps its place in the round.
    */
-  function releaseLast(order, open) {
-    const front = order.find((id) => id === RELEASE || open.has(id));
-    return front === RELEASE || !order.includes(RELEASE) ? order : [...order.filter((id) => id !== RELEASE), RELEASE];
+  function releaseLast(kept, fresh, open) {
+    const at = kept.indexOf(RELEASE);
+    const front = kept.find((id) => id === RELEASE || open.has(id));
+    return at < 0 || front === RELEASE ? [...kept, ...fresh] : [...kept.slice(0, at), ...fresh, ...kept.slice(at)];
   }
 
   /**
@@ -192,7 +195,7 @@
     const kept = matchView.order.filter((id) => ids.has(id) || id === RELEASE);
     const fresh = cards.filter((card) => !kept.includes(card.id)).sort((a, b) => Number(Boolean(a.blocked)) - Number(Boolean(b.blocked)) || Number(a.stale) - Number(b.stale) || (a.created_ts || 0) - (b.created_ts || 0));
     const open = new Set(cards.filter((card) => !decisionOf(card)).map((card) => card.id));
-    matchView.order = releaseLast([...kept, ...fresh.map((card) => card.id)], open);
+    matchView.order = releaseLast(kept, fresh.map((card) => card.id), open);
     const byId = new Map(cards.map((card) => [card.id, card]));
     return matchView.order.filter((id) => id !== RELEASE).map((id) => byId.get(id));
   }
@@ -595,6 +598,7 @@
   function decide(card, verdict, feedback, label) {
     flyOff(verdict, () => {
       logStep(card.id);
+      refusedIds.delete(card.ref);
       matchView.decisions.set(card.id, {verdict, feedback, label, hash: card.hash, card, risk: false});
       drawMatch(true);
     });
@@ -794,36 +798,90 @@
   const decisionWords = (count) => (count === 1 ? "1 decision" : `${count} decisions`);
 
   /**
+   * @param {object} card a card on the release card.
+   * @param {object} decision its decision.
+   * @returns {string} why the release cannot carry the row now, "" when it can: the hub refused it last time, it was
+   * accepted and expired since, or it is blocked; a reject of an expired card still goes by radio.
+   */
+  function unreleasable(card, decision) {
+    if (card.withdrawn) {
+      return "";
+    }
+    const refused = refusedIds.get(card.ref);
+    if (refused) {
+      return `the hub refused it: ${refused}; reject or drop it`;
+    }
+    const lapsed = lapsedCard(card);
+    if (lapsed && decision.verdict === "accept") {
+      return `${expiredWords(card)}: can no longer be granted; reject or drop it`;
+    }
+    return card.blocked && !(lapsed && decision.verdict === "reject") ? `not possible now: ${card.blocked}; drop it or send it back to the stack` : "";
+  }
+
+  /**
    * @param {Array<Array>} picked [card, decision] pairs from decided().
    * @returns {object} lone: risk-accepted red-gate commits, each signed on its own first; rest: every other decision
    * signed together; gone: withdrawn rejects, sent by radio only; held: red-gate commits whose risk is not accepted,
-   * which block the release until each is risk-accepted or sent back to the stack.
+   * which block the release until each is risk-accepted or sent back to the stack; bad: rows unreleasable() names,
+   * which block the release until each is changed or dropped.
    */
   function releasePlan(picked) {
     const signed = picked.filter(([card]) => !card.withdrawn);
+    const bad = signed.filter(([card, decision]) => unreleasable(card, decision));
+    const good = signed.filter((pair) => !bad.includes(pair));
     return {
-      lone: signed.filter(([card, decision]) => risky(card, decision) && decision.risk),
-      rest: signed.filter(([card, decision]) => !risky(card, decision)),
+      lone: good.filter(([card, decision]) => risky(card, decision) && decision.risk),
+      rest: good.filter(([card, decision]) => !risky(card, decision)),
       gone: picked.filter(([card]) => card.withdrawn),
-      held: signed.filter(([card, decision]) => risky(card, decision) && !decision.risk),
+      held: good.filter(([card, decision]) => risky(card, decision) && !decision.risk),
+      bad,
     };
+  }
+
+  const droppedKeys = () => {
+    const kept = stored(STORE.dropped, []);
+    return Array.isArray(kept) ? kept.filter((key) => typeof key === "string") : [];
+  };
+
+  /**
+   * @param {Array<Array>} bad the unreleasable [card, decision] pairs: their decisions go, their cards leave the deck
+   * in this browser for good, the last DROPS_KEPT dropped cards remembered.
+   */
+  function dropUnreleasable(bad) {
+    const keys = bad.map(([card]) => cardKey(card));
+    bad.forEach(([card]) => {
+      matchView.decisions.delete(card.id);
+      refusedIds.delete(card.ref);
+    });
+    keep(STORE.dropped, [...keys, ...droppedKeys().filter((key) => !keys.includes(key))].slice(0, DROPS_KEPT));
+    const gone = new Set(bad.map(([card]) => card.id));
+    matchView.cards = matchView.cards.filter((card) => !gone.has(card.id));
+    matchView.order = matchView.order.filter((id) => !gone.has(id));
+    matchView.history = [];
+    toast(`Dropped ${decisionWords(bad.length)}`, bad.map(([card]) => card.title), true);
+    drawMatch(true);
   }
 
   async function releaseMatch(cards) {
     const plan = releasePlan(decided(cards));
+    if (plan.bad.length) {
+      toast("Release: not possible", plan.bad.map(([card, decision]) => `${card.title}: ${unreleasable(card, decision)}`), false);
+      return;
+    }
     if (matchView.releasing || plan.held.length || !(plan.lone.length + plan.rest.length + plan.gone.length)) {
       return;
     }
     matchView.releasing = true;
+    const names = new Map([...plan.lone, ...plan.rest].map(([card]) => [card.ref, card.title]));
     const done = [];
     try {
       for (const pair of plan.lone) {
-        if (!(await submit([matchEntry(...pair)], `Release: ${pair[0].title}`))) {
+        if (!(await submit([matchEntry(...pair)], `Release: ${pair[0].title}`, names))) {
           return;
         }
         done.push(pair);
       }
-      if (plan.rest.length && !(await submit(plan.rest.map((pair) => matchEntry(...pair)), `Release: ${decisionWords(plan.rest.length)}`))) {
+      if (plan.rest.length && !(await submit(plan.rest.map((pair) => matchEntry(...pair)), `Release: ${decisionWords(plan.rest.length)}`, names))) {
         return;
       }
       done.push(...plan.rest, ...plan.gone);
@@ -831,6 +889,8 @@
       matchView.releasing = false;
       if (done.length) {
         await settleRelease(done);
+      } else {
+        drawMatch(true);
       }
     }
   }
@@ -870,23 +930,68 @@
     }}}, icon(taken ? "bi-shield-fill-exclamation" : "bi-shield-exclamation"), words);
   }
 
+  function backToStack(card) {
+    logStep(card.id);
+    matchView.decisions.delete(card.id);
+    refusedIds.delete(card.ref);
+    toBack(card.id);
+    drawMatch(true);
+  }
+
+  /**
+   * @param {object} card a card on the release card.
+   * @returns {string} why Accept is impossible for it now, "" when it is possible.
+   */
+  function acceptBlock(card) {
+    if (lapsedCard(card)) {
+      return `${expiredWords(card)}: it can no longer be granted`;
+    }
+    if (card.blocked) {
+      return `not possible now: ${card.blocked}`;
+    }
+    if (card.stale) {
+      return `the card is stale: ${card.stale_reason}`;
+    }
+    return needsPick(card) || pickOnly(card) ? "pick one of its options" : "";
+  }
+
+  function menuEntry(words, mark, why, act) {
+    return h("button", {type: "button", class: "menu-item", disabled: Boolean(why), title: why ? revealed(`${words}: ${why}`) : revealed(words), on: {click: (event) => {
+      event.currentTarget.closest("details").open = false;
+      act();
+    }}}, icon(mark), revealed(words), why ? h("span", {class: "muted match-verdict-why"}, revealed(why)) : null);
+  }
+
+  /**
+   * @param {object} card a card on the release card, not withdrawn.
+   * @param {object} decision its decision.
+   * @returns {HTMLElement} its verdict pill as a menu: each option of a decision card, Accept, Reject and Back to the
+   * stack, an impossible entry greyed with its reason.
+   */
+  function verdictMenu(card, decision) {
+    const [word, tone, mark] = MATCH_VERDICTS[decision.verdict];
+    const lapsed = lapsedCard(card);
+    const options = card.kind === "decision" && !card.multi && Array.isArray(card.options) ? card.options.map((option) => menuEntry(`Pick: ${shownPick(option.label)}`, "bi-signpost-split", lapsed ? acceptBlock(card) : "", () => decide(card, "accept", "", option.label))) : [];
+    const accept = card.kind === "decision" && Array.isArray(card.options) ? null : menuEntry("Accept", "bi-check-lg", acceptBlock(card), () => acceptCard(card));
+    const rejectWhy = card.blocked && !lapsed ? `not possible now: ${card.blocked}` : pickOnly(card) && !lapsed ? "a choice is answered with one of its options" : "";
+    return h("details", {class: "menu match-verdict-menu"},
+      h("summary", {class: "pill match-verdict", "data-tone": tone, ...named(`${word}: change`, "Change this decision")}, icon(mark), decision.label ? revealed(`${word}: ${shownPick(decision.label)}`) : word, caret()),
+      h("div", {class: "menu-box end", role: "group", "aria-label": "Change the decision"}, options, accept, menuEntry("Reject …", "bi-x-lg", rejectWhy, () => rejectCard(card)), menuEntry("Back to the stack", "bi-stack", "", () => backToStack(card))));
+  }
+
   function overviewRow(card, decision) {
     const [kindName, kindTone, kindIcon] = MATCH_KINDS[card.kind] || [card.kind, "neutral", "bi-collection"];
     const [word, tone, mark] = MATCH_VERDICTS[decision.verdict];
-    const other = decision.verdict === "accept" ? "reject" : "accept";
-    const flip = card.withdrawn || (other === "reject" && pickOnly(card)) || (other === "accept" && !flies(card)) ? null : iconBtn(MATCH_VERDICTS[other][2], MATCH_VERDICTS[other][0], "btn small ghost match-flip", () => (other === "accept" ? acceptCard(card) : rejectCard(card)), `${MATCH_VERDICTS[other][0]} instead`);
-    const back = iconBtn("bi-arrow-counterclockwise", card.withdrawn ? "Drop the reject" : "Back to the stack", "btn small ghost match-undecide", () => {
-      matchView.decisions.delete(card.id);
-      toFront(card.id);
-      drawMatch(true);
-    });
+    const back = iconBtn("bi-arrow-counterclockwise", card.withdrawn ? "Drop the reject" : "Back to the stack", "btn small ghost match-undecide", () => backToStack(card), card.withdrawn ? "Drop the reject: nothing is sent" : "Back to the stack: the card goes behind the release card, last in the deck");
     const risk = risky(card, decision);
     const held = risk && !decision.risk;
-    const note = card.withdrawn ? "Card withdrawn: the feedback goes to its agent by radio call at the release." : decision.verdict === "reject" && decision.hash !== card.hash ? "Card changed since your reject." : held ? "Accept its risk or send it back to the stack: the release waits until you do." : "";
-    return h("li", {class: "match-decision", "data-card": card.id, "data-verdict": decision.verdict, "data-withdrawn": String(Boolean(card.withdrawn)), "data-held": String(held)},
+    const bad = unreleasable(card, decision);
+    const note = bad ? `Cannot be released: ${bad}.` : card.withdrawn ? "Card withdrawn: the feedback goes to its agent by radio call at the release." : decision.verdict === "reject" && decision.hash !== card.hash ? "Card changed since your reject." : held ? "Accept its risk or send it back to the stack: the release waits until you do." : "";
+    const verdict = card.withdrawn ? h("span", {class: "pill match-verdict", "data-tone": tone}, icon(mark), word) : verdictMenu(card, decision);
+    return h("li", {class: "match-decision", "data-card": card.id, "data-verdict": decision.verdict, "data-withdrawn": String(Boolean(card.withdrawn)), "data-held": String(held), "data-bad": String(Boolean(bad))},
       h("div", {class: "row"}, agentFace(card.agent || "-", false), h("span", {class: "pill", "data-tone": kindTone}, icon(kindIcon), kindName), h("strong", {class: "match-decision-title"}, revealed(card.title)), h("span", {class: "spacer"}),
-        risk ? riskButton(decision) : h("span", {class: "pill match-verdict", "data-tone": tone}, icon(mark), decision.label ? revealed(`${word}: ${shownPick(decision.label)}`) : word), decision.verdict === "reject" ? iconBtn("bi-pencil", "Edit feedback", "btn small ghost match-edit", () => rejectCard(card)) : null, flip, back),
-      note ? h("p", {class: "muted match-decision-note"}, icon("bi-info-circle"), note) : null,
+        risk && !bad ? riskButton(decision) : verdict, decision.verdict === "reject" && !card.withdrawn ? iconBtn("bi-pencil", "Edit feedback", "btn small ghost match-edit", () => rejectCard(card)) : null, back),
+      note ? h("p", {class: `muted match-decision-note${bad ? " match-decision-bad" : ""}`}, icon(bad ? "bi-exclamation-octagon" : "bi-info-circle"), revealed(note)) : null,
       decision.verdict === "reject" ? h("pre", {class: "match-decision-feedback"}, revealedLines(decision.feedback === "" ? "no feedback text" : decision.feedback)) : null);
   }
 
@@ -900,7 +1005,9 @@
     const picked = decided(cards);
     const plan = releasePlan(picked);
     const held = plan.held.length;
-    const count = held ? 0 : plan.lone.length + plan.rest.length + plan.gone.length;
+    const bad = plan.bad.length;
+    const count = held || bad ? 0 : plan.lone.length + plan.rest.length + plan.gone.length;
+    const badWhy = plan.bad.map(([card, decision]) => `${card.title}: ${unreleasable(card, decision)}`).join("\n");
     const signatures = plan.lone.length ? `${plan.lone.length === 1 ? "The risk-accepted commit gets its own" : `Each of the ${plan.lone.length} risk-accepted commits gets its own`} passkey signature first, then one signature releases the rest` : "One passkey signature releases every decision";
     const run = () => releaseMatch(cards);
     const back = open ? () => {
@@ -909,16 +1016,17 @@
       drawMatch(true);
     } : null;
     const release = held ? h("p", {class: "muted match-release-held"}, icon("bi-shield-exclamation"), `${held === 1 ? "One red-gate commit waits" : `${held} red-gate commits wait`} for your risk accept or its way back to the stack.`)
-      : h("button", {type: "button", class: "btn primary match-release", disabled: !count, title: count ? `${signatures}; after each signature ${undoWords()}.` : "Nothing to release yet.", on: {click: run}}, icon("bi-key"), `Release ${decisionWords(count)}`);
+      : h("button", {type: "button", class: "btn primary match-release", disabled: !(count || bad), "aria-disabled": String(Boolean(bad)), title: revealed(bad ? `Release waits: drop or change ${bad === 1 ? "this row" : `these ${bad} rows`} first.\n${badWhy}` : count ? `${signatures}; after each signature ${undoWords()}.` : "Nothing to release yet."), on: {click: run}}, icon("bi-key"), `Release ${decisionWords(count || plan.lone.length + plan.rest.length + plan.gone.length + bad)}`);
+    const cancel = h("button", {type: "button", class: "btn danger match-drop", disabled: !bad, title: revealed(bad ? `Cancel: drop the ${bad === 1 ? "row" : `${bad} rows`} that cannot be released, and their cards leave the deck.\n${badWhy}` : "Cancel: no row is blocked, nothing to drop."), on: {click: () => dropUnreleasable(plan.bad)}}, icon("bi-x-lg"), bad ? `Cancel ${bad}` : "Cancel");
     const article = h("article", {class: "card match-card front match-release-card match-overview", "data-card": "release", "aria-label": "Release card: the decisions"},
       h("header", {class: "match-head"}, widenToggle(), h("h2", {class: "match-title"}, icon("bi-key"), "Release"),
         h("p", {class: "muted match-release-hint"}, [count ? "D, → or a right swipe releases" : "", open ? "A, W, ← or a left swipe goes on to the next card" : "", "S undoes the last step."].filter(Boolean).join("; "))),
       h("div", {class: "match-body"},
         h("p", {class: "muted"}, "Nothing has run yet. Accepted commits get the operator's signature for their exact tree, accepted commands run once as jobs under Waits on Operator, accepted asks are granted, every picked option and every rejection goes to its agent by radio call."),
         picked.length ? h("ol", {class: "match-decisions"}, picked.map(([card, decision]) => overviewRow(card, decision))) : h("p", {class: "muted"}, "No decision yet."),
-        h("div", {class: "actions"}, back ? iconBtn("bi-stack", `Back to the stack (${open})`, "btn ghost match-back", back) : null, h("span", {class: "spacer"}), release)));
+        h("div", {class: "actions"}, cancel, back ? iconBtn("bi-stack", `Back to the stack (${open})`, "btn ghost match-back", back) : null, h("span", {class: "spacer"}), release)));
     paint(article, "release");
-    matchView.release = {accept: count ? run : null, reject: back, later: back};
+    matchView.release = {accept: count || bad ? run : null, reject: back, later: back};
     draggable(article, matchView.release, () => false);
     return article;
   }
