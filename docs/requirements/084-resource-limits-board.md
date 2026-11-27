@@ -7,6 +7,9 @@ charts, so that I steer the queue and the alarms without config files.
 
 ## Decisions (operator-confirmed 2026-11-27; do not re-litigate)
 
+Decisions 1 and 2 are replaced by [091](091-limits-on-the-chart.md): the lines
+are dragged, and the dial goes.
+
 1. **Lines** (operator): every hardware chart (CPU, RAM, swap, disk, PSI)
    shows labelled lines for the lower and upper limit, STOP and MAYDAY from
    the limits file of 083, plus a thin line for the live target. Rejected:
