@@ -95,8 +95,10 @@ class TestRasci(unittest.TestCase):
             f"| 2 | - | work/a: Alpha | Ship A | running | Skills | - | {local(start)} | - "
             "| Skills | Skills |  | Operator, Pkgmgr | Operator |",
         )
+        self.assertEqual(lines[4], "gaps: 3 (show --gaps)")
         self.assertEqual(
-            lines[4], "gaps: work/b has 0 A; work/b has no key result; work/a has no key result"
+            self._out("show", "--gaps")[-3:],
+            ["gap: work/b has 0 A", "gap: work/b has no key result", "gap: work/a has no key result"],
         )
 
     def test_show_prints_the_compact_table_by_default(self):
@@ -108,7 +110,7 @@ class TestRasci(unittest.TestCase):
                 "|---|---|---|---|---|---|",
                 "| 1 | - | work/b: Beta | queued | subagent Explore (haiku) |  |",
                 "| 2 | - | work/a: Alpha | running | Skills | Skills |",
-                "gaps: work/b has 0 A; work/b has no key result; work/a has no key result",
+                "gaps: 3 (show --gaps)",
             ],
         )
 
@@ -260,6 +262,22 @@ class TestRasci(unittest.TestCase):
         self.assertIn(
             f"| done | - | - | - | {local('2026-11-01T12:00:00+00:00')} |", self._out("show", "--all", "--wide")[2]
         )
+
+    def test_tasks_ended_over_a_week_ago_move_to_the_archive_and_stay_reachable(self):
+        now = datetime.datetime.now(datetime.UTC)
+        self._run("set", "work/old", "--status", "done", "--end", (now - datetime.timedelta(days=8)).isoformat())
+        self._run("set", "work/new", "--status", "done", "--end", (now - datetime.timedelta(days=1)).isoformat())
+        live = json.loads((self.root / "rasci.json").read_text(encoding="utf-8"))
+        archived = json.loads((self.root / "rasci-archive.json").read_text(encoding="utf-8"))
+        self.assertEqual((sorted(live), sorted(archived)), (["work/new"], ["work/old"]))
+        self.assertIn("status: done", self._out("get", "work/old"))
+        self.assertEqual(sorted(line.split(" | ")[2] for line in self._out("show", "--all")[2:] if line.startswith("| ")), ["work/new", "work/old"])
+        self._run("kr", "work/old", "add", "late note")
+        self.assertIn("key result 1 [ ]: late note", self._out("get", "work/old"))
+        self.assertNotIn("work/old", json.loads((self.root / "rasci.json").read_text(encoding="utf-8")))
+        self._run("rm", "work/old")
+        self.assertEqual(self._run("get", "work/old").returncode, 2)
+        self.assertNotIn("work/old", json.loads((self.root / "rasci-archive.json").read_text(encoding="utf-8")))
 
     def test_artifacts_and_tools(self):
         self._run("set", "work/a", "--workdir", "/w/a", "--branch", "feat/a", "--status", "done",
@@ -415,7 +433,8 @@ class TestRasci(unittest.TestCase):
             self._out("wsjf")[2:], ["| 1 | work/a | - (0/1 KR) | - | - | - | - | queued |", "unestimated: work/a"]
         )
         self._run("set", "work/b", "--title", "Beta")
-        self.assertEqual(self._out("show")[-1], "gaps: work/b has 0 A; work/b has no R; work/b has no key result")
+        self.assertEqual(self._out("show")[-1], "gaps: 3 (show --gaps)")
+        self.assertEqual(self._out("show", "--gaps")[-1], "gap: work/b has no key result")
         self._run("set", "hotfix/db", "--status", "done", "--branch", "fix/db", "--workdir", "/w/db")
         self._run("set", "operator/push", "--branch", "main", "--artifact", "dir:/tmp/push")
         self._run("set", "work/a", "--branch", "feat/a")

@@ -11,7 +11,7 @@ project:
 
 # Validate the lock, lint Python (ruff), scripts (shellcheck), and markdown.
 test:
-	@python3 -m unittest discover -s tests -v
+	@python3 -m unittest discover -s tests -q
 	@if command -v ruff >/dev/null; then ruff check .; else echo "ruff not installed - skipped"; fi
 	@if command -v shellcheck >/dev/null; then shellcheck scripts/*.sh; else echo "shellcheck not installed - skipped"; fi
 	@if command -v markdownlint-cli2 >/dev/null; then markdownlint-cli2 "**/*.md"; else echo "markdownlint-cli2 not installed - skipped"; fi

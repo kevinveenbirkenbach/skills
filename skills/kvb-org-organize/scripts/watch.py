@@ -98,7 +98,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import configparser
 import contextlib
 import fcntl
 import fnmatch
@@ -114,9 +113,7 @@ import shutil
 import stat
 import subprocess
 import sys
-import tempfile
 import time
-import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 from types import ModuleType
@@ -394,26 +391,7 @@ MAKE_VALUE_OPTIONS = frozenset({
 
 
 def guard_root(hook: bool) -> int | None:
-    try:
-        ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
-    except FileExistsError:
-        pass
-    except OSError as error:
-        print(
-            f"agents council: cannot create {ROOT} ({error.strerror or error}); a sandbox needs it in allowWrite; "
-            "the council hooks stay off until it exists",
-            file=sys.stdout if hook else sys.stderr,
-        )
-        return 0 if hook else 2
-    st = ROOT.lstat()
-    if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o022:
-        return None
-    print(
-        f"agents council: {ROOT} must be a directory of uid {os.getuid()} that group and others cannot write; "
-        "the council hooks stay off until it is",
-        file=sys.stdout if hook else sys.stderr,
-    )
-    return 0 if hook else 2
+    return councilroot.guard(ROOT, hook)
 
 
 def load_config() -> dict | None:
@@ -1398,6 +1376,9 @@ def pythonpath_entries(config: Path) -> list[str]:
     text = source(str(config))
     if text is None:
         return []
+    import configparser
+    import tomllib
+
     try:
         if config.name == "pyproject.toml":
             value = tomllib.loads(text).get("tool", {}).get("pytest", {}).get("ini_options", {}).get("pythonpath", [])
@@ -2870,6 +2851,8 @@ def run_cleanup(cfg: dict) -> list[str]:
     real = binaries["docker"]
     results: list[str] = []
     pruned = False
+    import tempfile
+
     with tempfile.TemporaryDirectory(prefix="kvb-docker-guard-") as directory:
         report = Path(directory) / "report"
         env = guard_env(Path(directory), report, binaries)
@@ -2946,7 +2929,7 @@ def main() -> int:
         return run()
     try:
         return run()
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:
         print(f"kvb-org-organize: the block hook failed ({error!r}), so the command counts as heavy and is refused.",
               file=sys.stderr)
         return 2
@@ -2977,6 +2960,32 @@ def block_hook() -> int:
 
 
 def run() -> int:
+    hooked = sys.argv[1:] in (["block"], ["watch"])
+    args = argparse.Namespace(cmd=sys.argv[1]) if hooked else cli().parse_args()
+    os.environ["PATH"] = hookpath.trusted(os.environ.get("PATH", ""))
+    if args.cmd == "preflight":
+        return cmd_preflight()
+    refused = guard_root(hook=hooked)
+    if refused is not None:
+        return refused
+    if hooked:
+        return {"block": block_hook, "watch": watch_hook}[args.cmd]()
+    cfg, warning = announced_config()
+    if cfg is None:
+        return 0
+    if warning is not None and args.cmd == "cleanup":
+        return 2
+    problem = missing(cfg, MEMORY_KEYS)
+    if problem is not None:
+        print(problem, file=sys.stderr)
+        return 2
+    handlers = {"admit": cmd_admit, "cleanup": cmd_cleanup}
+    if args.cmd in handlers:
+        return handlers[args.cmd](cfg, args)
+    return cmd_status(cfg)
+
+
+def cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="watch")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("watch")
@@ -2992,30 +3001,7 @@ def run() -> int:
     mode.add_argument("--full", action="store_true")
     sub.add_parser("status")
     sub.add_parser("preflight")
-    args = parser.parse_args()
-    os.environ["PATH"] = hookpath.trusted(os.environ.get("PATH", ""))
-    if args.cmd == "preflight":
-        return cmd_preflight()
-    refused = guard_root(hook=args.cmd in ("watch", "block"))
-    if refused is not None:
-        return refused
-    if args.cmd == "block":
-        return block_hook()
-    if args.cmd == "watch":
-        return watch_hook()
-    cfg, warning = announced_config()
-    if cfg is None:
-        return 0
-    if warning is not None and args.cmd == "cleanup":
-        return 2
-    problem = missing(cfg, MEMORY_KEYS)
-    if problem is not None:
-        print(problem, file=sys.stderr)
-        return 2
-    handlers = {"admit": cmd_admit, "cleanup": cmd_cleanup}
-    if args.cmd in handlers:
-        return handlers[args.cmd](cfg, args)
-    return cmd_status(cfg)
+    return parser
 
 
 if __name__ == "__main__":

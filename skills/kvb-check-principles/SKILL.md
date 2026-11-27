@@ -2,7 +2,7 @@
 name: kvb-check-principles
 description: >
   Find violated principles (SPOT, DRY, KISS, SRP, coupling, trust
-  boundaries) in a repository, path or diff. Trigger on "sei skeptisch", "kritische
+  boundaries) in a path or diff. Trigger on "sei skeptisch", "kritische
   analyse", or "review the architecture".
 ---
 

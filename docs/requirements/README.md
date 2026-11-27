@@ -69,3 +69,4 @@ skill defines the format.
 - [063 - One Commit Block](063-one-commit-block.md)
 - [064 - Code Review](064-code-review.md)
 - [065 - Accounts Spreadsheet Round Trip](065-accounts-round-trip.md)
+- [071 - Token and Velocity Diet](071-token-velocity-diet.md)

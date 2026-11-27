@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+import random
 import tempfile
 import unittest
 from pathlib import Path
 
 import hub_support  # noqa: F401
 from kvb_orchestrator import names
+from kvb_orchestrator.matching import born_of
 
 
 class TestRenameOnce(unittest.TestCase):
@@ -57,6 +60,38 @@ class TestDirectoryLookups(unittest.TestCase):
             book.observe([("s1", "B", 3.0, "claim")], 30.0)
             self.assertIsNot(book.directory(), first)
             self.assertEqual(book.directory().now("s1"), "B")
+
+
+def lookups(entries: list[dict]) -> dict:
+    directory = names.Directory(entries)
+    known = sorted(directory.by_name)
+    return {
+        "renames": [(row["id"], row["title"]) for row in directory.renames(-1.0, 1e9)],
+        "born": [born_of(name, entries, []) for name in known],
+        "aliases": [sorted(directory.aliases(name)) for name in known],
+        "holders": [directory.by_name[name] for name in known],
+        "now": {session: directory.now(session) for session in directory.by_session},
+        "names": {session: directory.names(session) for session in directory.by_session},
+        "find": [directory.find(name, 1e9) for name in known],
+    }
+
+
+class TestCompaction(unittest.TestCase):
+    def test_thirty_thousand_flip_flops_shrink_and_every_lookup_stays(self):
+        pick = random.Random(7)
+        cycle = [{"session": "s1", "name": pick.choice(("Stage", "i18n 2.0", "Stage:x")), "first_seen": float(index), "source": "claim"} for index in range(30000)]
+        entries = [{"session": "s0", "name": "Main", "first_seen": 0.0, "source": "claim"}, *cycle,
+                   {"session": "s1", "name": "Skills", "first_seen": 30000.0, "source": "title"},
+                   {"session": "s2", "name": "Stage", "first_seen": 30001.0, "source": "claim"}]
+        with tempfile.TemporaryDirectory() as folder:
+            store = Path(folder) / "names.json"
+            store.write_text(json.dumps({"entries": entries, "observed": {}}), encoding="utf-8")
+            before = store.stat().st_size
+            kept = names.Names(store).listed()
+            self.assertLess(len(kept), 60)
+            self.assertLess(store.stat().st_size * 100, before)
+            self.assertEqual(lookups(kept), lookups(entries))
+            self.assertEqual(names.Names(store).listed(), kept)
 
 
 if __name__ == "__main__":

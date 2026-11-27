@@ -15,7 +15,6 @@ import importlib.util
 import io
 import json
 import sys
-import traceback
 from pathlib import Path
 
 SKILLS = Path(__file__).resolve().parents[2]
@@ -69,7 +68,9 @@ def handle(script: str, sub: str, raw: str) -> tuple[int, str, str]:
             code = module.main()
         except SystemExit as stop:
             code = exit_code(stop)
-        except Exception:  # noqa: BLE001
+        except Exception:
+            import traceback
+
             traceback.print_exc()
             code = 1
     return code if isinstance(code, int) else 1, out.getvalue(), err.getvalue()

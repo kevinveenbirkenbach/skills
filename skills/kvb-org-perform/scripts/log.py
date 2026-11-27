@@ -184,6 +184,8 @@ def cmd_report() -> int:
 
 
 def main() -> int:
+    if sys.argv[1:] == ["persist"]:
+        return cmd_persist()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("spawn")

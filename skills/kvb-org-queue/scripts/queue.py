@@ -1948,7 +1948,7 @@ def cli() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = cli().parse_args()
+    args = argparse.Namespace(cmd="block") if sys.argv[1:] == ["block"] else cli().parse_args()
     refused = watch.guard_root(hook=args.cmd == "block")
     if refused is not None:
         return refused

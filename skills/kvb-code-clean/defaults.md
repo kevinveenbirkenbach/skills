@@ -12,6 +12,7 @@ same call differently (one means "use the default", the other forgot).
 `false`, `null` (`None`, `nil`, `undefined`), `""` and an empty list or map
 MAY be defaults without justification: they denote absence, not a guessed
 value. `${VAR:-}`, `d.get(k)`, `a ?? null` and `def f(a=None)` are fine.
+Optionality is an explicit `None` branch at the call site.
 
 Every other default (a number, a non-empty string, list or map, an enum
 member, a path, a timeout) MUST carry a comment on or directly above it, in

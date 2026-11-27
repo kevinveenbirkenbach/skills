@@ -6,9 +6,8 @@ description: >
 
 💸 Tokens is the share of the base's resources a change uses: under 100 %
 it saves, over 100 % it costs more. Paste the script's lines, never a
-paragraph about them. `<ref>` is the commit the change
-starts from: `HEAD` for uncommitted work, the merge base with the default
-branch for a branch.
+paragraph about them. `<ref>` is where the change starts: `HEAD` for
+uncommitted work, else the merge base with the default branch.
 
 ## Skills: tokens
 
@@ -16,11 +15,10 @@ branch for a branch.
 python3 ${CLAUDE_SKILL_DIR}/scripts/tokens.py --repo <skills repo> --base <ref> --transcripts ~/.claude/projects [--value <tokens/day> --evidence "<one line>"]
 ```
 
-It compares every changed `*.md` under `skills/`, untracked ones included,
-at `<ref>` with the working tree, and the always-loaded listing: all
-`description:` words, counted by the repository's `scripts/budget.py`.
-Changed files without any base text print `tokens new`, which counts as
-over 100. Skills have no velocity.
+It compares every changed `*.md` under `skills/` (untracked included) and
+the listing of all `description:` words (`scripts/budget.py`) at `<ref>`
+with the working tree. A file without base text prints `tokens new`,
+counted as over 100. Skills have no velocity.
 
 A second line, `💰 value 1:<n>` (`<n>:1` when value < cost), weighs both
 per day and never changes the exit code; pass its quotient or `?` to
@@ -41,27 +39,27 @@ per day and never changes the exit code; pass its quotient or `?` to
 python3 ${CLAUDE_SKILL_DIR}/scripts/measure.py --base <ref> -- <command...>
 ```
 
-Start it in the directory the command expects. It checks `<ref>` out as a
-detached worktree under `/tmp`, runs the command there and in the working
-tree from the same relative directory, compares CPU seconds and peak RSS,
-and removes the worktree. Cost is the mean of the CPU and the RAM ratio.
+Start it where the command expects. It runs the command in a detached
+`/tmp` worktree of `<ref>` and in the working tree, from the same relative
+directory, compares CPU seconds and peak RSS, and removes the worktree.
+Cost is the mean of the CPU and the RAM ratio.
 
 - **Runs**: one per tree. Both values at most 100 end it; otherwise 4 more
   per tree, alternating, and the line reports the mean of all 5
   (`mean of 5`).
-- **Other load**: CPU busy beyond the command's own above 30 %, or no
-  `/proc/stat`, makes the result an estimate: velocity from the CPU-time
-  ratio, both values marked `~`, the line ending in `(estimated: other load
-  <x> %)`. Pass the numbers without `~`; the exit code holds.
-- **Command**: the targeted tests of the change or a CLI call of the
-  changed code, runnable on a clean checkout: the base worktree holds no
-  untracked build output, virtualenv or dependency directory.
+- **Other load**: other CPU load above 30 % or no `/proc/stat` makes it an
+  estimate: velocity from the CPU-time ratio, values marked `~`, the line
+  ending `(estimated: other load <x> %)`. Pass them without `~`; the exit
+  code holds.
+- **Command**: the change's targeted tests or a CLI call of the changed
+  code, runnable on a clean checkout (no untracked build output, virtualenv
+  or dependencies).
 - **Every run** goes inside
   `${CLAUDE_SKILL_DIR}/../kvb-org-queue/scripts/queue.py hold --kind <kind>
   --task <register task> -- python3 <measure.py> ...`, in the background,
   by the `kvb-org-queue` skill; a cancelled wait there also exits 3, but
   prints no 💸 line.
-- Report the run you made; never rerun to pick the best result.
+- Report the run you made; never rerun for a better one.
 
 ## Code: velocity
 
@@ -70,6 +68,16 @@ and removes the worktree. Cost is the mean of the CPU and the RAM ratio.
 it as `--speed` to `kvb-check-score`. Skills and code without a runnable
 path (configuration, templates no command renders) pass `--speed -`, shown
 as `–`; say why.
+
+## Overhead: per call
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/overhead.py --skills <skills root> --runs <n> [--case <name>] [--flags=<python flags>]
+```
+
+One line per case (hooks, radio, register): wall ms median, min and max,
+the child's CPU ms (steady under load), output bytes. Compare two roots
+back to back.
 
 ## Exit codes
 

@@ -56,11 +56,11 @@ Args:
         mayday_allow regex matches from its start; a shell operator, double
         quote or backslash outside single quotes, or any parse error, blocks.
         The mayday's sender and its helpers pass. Never fails.
-    show [--all] [--since <n>s|m|h|d] [--summary] [--session <id>]: print
-        the active silence and the undelivered rows, or every kept row,
-        without delivering them; --since keeps the rows of that last span,
-        --summary prints one line per class and sender with the count and
-        the newest row.
+    show [--all] [--since <n>s|m|h|d] [--full] [--session <id>]: print
+        the active silence and the undelivered rows, or with --all one line
+        per class and sender with the count and the newest row, receipts
+        left out; --full prints every row instead; --since keeps the rows of
+        that last span. --summary is accepted and changes nothing.
     feedback set post|call [--session <id>]: store the channel feedback
         send uses for the session, in <root>/feedback.json; post unless set.
         operator.py does not use it: it always calls.
@@ -119,7 +119,8 @@ INTERPRETER = re.compile(r"(?:(?:/usr(?:/local)?)?/bin/)?python3?(?:\.\d+)?")
 BARE_FLAGS = re.compile(r"-[bBdEIOPqsSuv]+")
 SCRIPT = re.compile(r"~?/[\w./-]+")
 WINDOW = 86400
-SHOWN = 10
+SHOWN = 5
+BRIEF = 200
 SESSION_WAIT = 2
 KEPT = 500
 SILENCE_SECONDS = 7200
@@ -128,7 +129,8 @@ POLL_SECONDS = 15
 NEVER = 0.0
 DURATION = re.compile(r"(\d+)([smhd])")
 UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
-HINT = "radio.py show --all --since 1d --summary"
+HINT = "radio.py show --all --since 1d"
+HOOKS = ("hook", "tool", "mailbox", "listen", "block")
 
 
 def fail(message: str) -> None:
@@ -223,14 +225,29 @@ def line(row: dict) -> str:
     )
 
 
+def brief(text: str) -> str:
+    return text if len(text) <= BRIEF else f"{text[:BRIEF - 1]}…"
+
+
+def whole(row: dict) -> bool:
+    """Returns:
+        True for a call, a row to named peers, an alarm or a receipt: it
+        carries an order or a signed operator text, so it is never cut or
+        held back.
+    """
+    return bool(targets(row)) or kind(row) in (*ALARMS, "call", "receipt")
+
+
 def capped(rows: list[dict]) -> list[str]:
-    picked = sorted(rows, key=lambda row: (rank(row), -row["ts"]))[:SHOWN]
-    more = (
-        [f"{channel(rows[0]).upper()} {len(rows) - SHOWN} more items: {HINT}"]
-        if len(rows) > SHOWN
-        else []
-    )
-    return [line(row) for row in ordered(picked)] + more
+    """Returns:
+        Every whole() row, then the SHOWN newest other rows cut to BRIEF, in
+        radio order, and one line counting the rest.
+    """
+    kept = [row for row in rows if whole(row)]
+    others = sorted((row for row in rows if not whole(row)), key=lambda row: -row["ts"])
+    left = len(others) - SHOWN
+    more = [f"{channel(rows[0]).upper()} {left} more items: {HINT}"] if left > 0 else []
+    return [line(row) if whole(row) else brief(line(row)) for row in ordered(kept + others[:SHOWN])] + more
 
 
 def targets(row: dict) -> list:
@@ -687,12 +704,12 @@ def summary(rows: list[dict]) -> list[str]:
     """
     groups: dict[tuple[str, str], list[dict]] = {}
     for row in rows:
-        groups.setdefault((kind(row), clip(row.get("from"))), []).append(row)
+        if kind(row) != "receipt":
+            groups.setdefault((kind(row), clip(row.get("from"))), []).append(row)
     lines = []
     for (cls, peer), group in sorted(groups.items(), key=lambda item: ((RADIO + MAIL).index(item[0][0]), item[0][1])):
         last = max(group, key=lambda row: row["ts"])
-        text = "" if cls == "receipt" else f": {clip(last.get('text'))}"
-        lines.append(f"{cls.upper()} {peer}: {len(group)}, last {clock(last['ts'])}{text}")
+        lines.append(brief(f"{cls.upper()} {peer}: {len(group)}, last {clock(last['ts'])}: {clip(last.get('text'))}"))
     return lines
 
 
@@ -710,7 +727,7 @@ def cmd_show(args: argparse.Namespace) -> int:
     if args.since is not None:
         cutoff = time.time() - args.since
         rows = [row for row in rows if row["ts"] >= cutoff]
-    for text in summary(rows) if args.summary else [line(row) for row in rows]:
+    for text in summary(rows) if args.all and not args.full else [line(row) for row in rows]:
         print(text)
     return 0
 
@@ -745,7 +762,18 @@ def cmd_feedback_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def guarded(args: argparse.Namespace) -> int:
+    os.environ["PATH"] = organize("hookpath").trusted(os.environ.get("PATH", ""))
+    refused = organize("councilroot").guard(ROOT, hook=args.command in HOOKS)
+    if refused is not None:
+        return refused
+    return args.func(args)
+
+
 def main() -> int:
+    hooks = dict(zip(HOOKS, (cmd_hook, cmd_tool, cmd_mailbox, cmd_listen, cmd_block), strict=True))
+    if len(sys.argv) == 2 and sys.argv[1] in hooks:
+        return guarded(argparse.Namespace(command=sys.argv[1], func=hooks[sys.argv[1]]))
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("send")
@@ -769,18 +797,13 @@ def main() -> int:
     p = sub.add_parser("assist")
     p.add_argument("--session")
     p.set_defaults(func=cmd_assist)
-    for name, func in (
-        ("hook", cmd_hook),
-        ("tool", cmd_tool),
-        ("mailbox", cmd_mailbox),
-        ("listen", cmd_listen),
-        ("block", cmd_block),
-    ):
+    for name, func in hooks.items():
         sub.add_parser(name).set_defaults(func=func)
     p = sub.add_parser("show")
     p.add_argument("--all", action="store_true")
     p.add_argument("--since", type=duration)
     p.add_argument("--summary", action="store_true")
+    p.add_argument("--full", action="store_true")
     p.add_argument("--session")
     p.set_defaults(func=cmd_show)
     feedback = sub.add_parser("feedback").add_subparsers(dest="action", required=True)
@@ -797,12 +820,7 @@ def main() -> int:
     p.add_argument("--sid")
     p.add_argument("--session")
     p.set_defaults(func=cmd_feedback_send)
-    args = parser.parse_args()
-    os.environ["PATH"] = organize("hookpath").trusted(os.environ.get("PATH", ""))
-    refused = organize("watch").guard_root(hook=args.command in ("hook", "tool", "mailbox", "listen", "block"))
-    if refused is not None:
-        return refused
-    return args.func(args)
+    return guarded(parser.parse_args())
 
 
 if __name__ == "__main__":

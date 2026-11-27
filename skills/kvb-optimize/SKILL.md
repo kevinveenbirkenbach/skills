@@ -13,7 +13,9 @@ current session and repository and hand the same set to every skill.
 ## Order
 
 Each runs its own inventory and keeps its own confirmation step; an empty
-inventory is skipped with one line.
+inventory is skipped with one line. `overhead.py` of the
+`kvb-check-efficiency` skill measures hook and script cost per call before
+the first skill and after the last.
 
 1. `kvb-skill-cleanup`: delete the legacy skills first, so nothing below
    optimizes a dead copy.

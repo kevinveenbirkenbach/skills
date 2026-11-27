@@ -142,6 +142,39 @@ def root() -> Path:
     return Path(explicit) if os.path.isabs(explicit) else state_home() / SHARED
 
 
+def guard(base: Path, hook: bool) -> int | None:
+    """Args:
+        base: the council root.
+        hook: True for a hook, which must never block on a broken root.
+
+    Returns:
+        None once the root exists as a directory of the current user that
+        group and others cannot write; otherwise the exit code after the
+        reason was printed: 0 for a hook (to stdout), 2 otherwise (to stderr).
+    """
+    stream, code = (sys.stdout, 0) if hook else (sys.stderr, 2)
+    try:
+        base.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except FileExistsError:
+        pass
+    except OSError as error:
+        print(
+            f"agents council: cannot create {base} ({error.strerror or error}); a sandbox needs it in allowWrite; "
+            "the council hooks stay off until it exists",
+            file=stream,
+        )
+        return code
+    st = base.lstat()
+    if stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o022:
+        return None
+    print(
+        f"agents council: {base} must be a directory of uid {os.getuid()} that group and others cannot write; "
+        "the council hooks stay off until it is",
+        file=stream,
+    )
+    return code
+
+
 def directory(base: Path, *parts: str) -> Path:
     """Args:
         base: the directory the parts lie below; its missing parents are

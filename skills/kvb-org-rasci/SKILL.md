@@ -17,7 +17,7 @@ rasci.py kr <task> add "<measurable result>" | met <n> | open <n> | rm <n>
 rasci.py role <task> "<party>" <letters>
 rasci.py get <task>
 rasci.py rm <task>
-rasci.py show [--wide] [--all]
+rasci.py show [--wide] [--all] [--gaps]
 rasci.py artifacts [--ended] [--task <task>] [--worker <text>]
 rasci.py estimate <task> "<party>" --value <fib> --complexity <fib>
 rasci.py estimate <task> Operator --value <fib>
@@ -40,11 +40,11 @@ published). `done` is refused while one is open; a task ended short of them is
 - **R Responsible**: does the task: the claim holder, or the subagent it runs.
 - **A Accountable**: exactly one; takes the final decision. The claim
   holder, unless the operator decides.
-- **S Supportive**: actively helps carry it out: a peer's fix, the chair's
-  grant, a stack or runner.
-- **C Consulted**: asked for input before acting: line representatives,
-  lineage owners, the operator on a pending decision.
-- **I Informed**: kept informed of progress, without a say.
+- **S Supportive**: helps carry it out: a peer's fix, the chair's grant, a
+  runner.
+- **C Consulted**: asked before acting: line representatives, lineage
+  owners, the operator on a pending decision.
+- **I Informed**: kept informed, without a say.
 
 `-` clears a party; the operator is the party `Operator`.
 
@@ -52,8 +52,7 @@ published). `done` is refused while one is open; a task ended short of them is
 
 - On start, `set` title, objective, description, priority and worker, `kr
   add` every key result, and `role` every party beyond R and A; update the
-  status on each change. The worker is the session or subagent executing
-  it now.
+  status on each change.
 - Artifacts share this table and follow the `kvb-org-artefacts` skill:
   record each one when it appears, drop it once deleted. Add every script or
   tool the task ran (`--tool`): `tools` ranks them for `kvb-dream`.
@@ -65,11 +64,13 @@ published). `done` is refused while one is open; a task ended short of them is
 - `--after <task>` records that a task follows another (a Gantt arrow);
   an unknown task and a cycle are refused.
 - Write only your own rows; another session's task belongs to that session.
-- Read `show` (Prio, WSJF, Task, Status, Worker, A; cells cut short) or
-  `get` instead of asking a peer what it works on. `show --wide` adds OKR,
-  Artifacts, Start, End and every RASCI letter. Both cap at the top 30 open
-  tasks; `--all` lists every task.
+- Read `show` or `get` instead of asking a peer what it works on; `--wide`
+  adds OKR, artifacts, times and every letter. Both cap at the top 30 open
+  tasks; `--all` lists every task. Tasks ended over 7 days ago move to
+  `rasci-archive.json`; `get` and `--all` still read it, and a command
+  naming one brings it back.
 - When invoked, summarize `show --wide` (counts per status, top tasks, the
-  `gaps:` line: shown tasks without exactly one A, without R, or open
-  without a key result), never reprint it. `hotfix/` and `operator/` rows are records, not work tasks: `gaps:`, `wsjf` and
-  `artifacts` skip them. `get` prints one task in full, key results numbered.
+  `gaps:` count; `show --gaps` lists each: shown tasks without exactly one
+  A, without R, or open without a key result), never reprint it. `hotfix/`
+  and `operator/` rows are records: `gaps:`, `wsjf` and `artifacts` skip
+  them. `get` prints one task in full, key results numbered.

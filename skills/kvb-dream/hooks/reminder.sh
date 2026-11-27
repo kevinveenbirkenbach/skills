@@ -4,6 +4,17 @@ export PATH=/usr/bin:/bin
 
 schedules="$(dirname "$0")/../../kvb-org-organize/scripts/schedules.py"
 [[ -f "${schedules}" ]] || exit 0
+# Trip-wire: mirrors councilroot.root() so a row that cannot be on exits before any Python starts; schedules.py check stays the judge.
+council="${AGENTS_COUNCIL_ROOT:-}"
+if [[ "${council}" != /* ]]; then
+	state="${XDG_STATE_HOME:-}"
+	[[ "${state}" == /* ]] || state="${HOME}/.local/state"
+	council="${state}/agents-shared"
+fi
+rows="${council}/schedules.json"
+[[ -f "${rows}" && ! -L "${rows}" ]] || exit 0
+on='"dream": *\{[^}]*"on": *true'
+[[ "$(<"${rows}")" =~ ${on} ]] || exit 0
 hours="$(/usr/bin/python3 -I "${schedules}" check dream </dev/null 2>/dev/null)" || exit 0
 [[ "${hours}" =~ ^[0-9]+$ ]] || exit 0
 interval="$((hours * 3600))"

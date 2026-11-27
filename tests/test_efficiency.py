@@ -504,5 +504,28 @@ class TestMeasure(GitRepo):
         self.assertCleanedUp()
 
 
+class TestOverhead(unittest.TestCase):
+    def run_overhead(self, skills: Path, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(SCRIPTS / "overhead.py"), "--skills", str(skills), *args], capture_output=True, text=True, check=False, timeout=120)
+
+    def test_each_case_prints_one_line_with_its_timings_output_and_exit_code(self):
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / "kvb-org-radio" / "scripts" / "radio.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("import sys\nsys.stdin.read()\nprint('row')\nsys.exit(4)\n", encoding="utf-8")
+            done = self.run_overhead(Path(folder), "--runs", "2", "--case", "python-empty", "--case", "radio-tool", "--flags=-I -S")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        lines = done.stdout.splitlines()
+        self.assertEqual([line.split("\t")[0] for line in lines], ["python-empty", "radio-tool"])
+        for line in lines:
+            self.assertRegex(line, r"^[a-z-]+\t\d+ms\t\d+\t\d+\tcpu=\d+ms\t\d+B\trc=\d+$")
+        self.assertTrue(lines[1].endswith("\t4B\trc=4"))
+
+    def test_an_unknown_case_is_refused(self):
+        done = self.run_overhead(REPO_ROOT / "skills", "--runs", "1", "--case", "nope")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("unknown case nope", done.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

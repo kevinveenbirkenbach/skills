@@ -19,9 +19,10 @@ not installed copies) and the skills repository. Measure before changing:
   memory>/MEMORY.md`: listing words, the longest descriptions, every SKILL.md
   over the cap, and a `MEMORY.md` over 400 words.
 - Each own SKILL.md's word count, and what each registered hook prints per
-  turn (settings files, read-only).
-- The window's traffic: the radio store (`radio.py show --all --since 7d
-  --summary` of the `kvb-org-radio` skill; wakes carry `"wake": true` in its
+  turn (settings files, read-only); `overhead.py` of the
+  `kvb-check-efficiency` skill gives each hook's latency and output bytes.
+- The window's traffic: the radio store (`radio.py show --all --since 7d`
+  of the `kvb-org-radio` skill; wakes carry `"wake": true` in its
   `news.jsonl`),
   this session's `SendMessage` calls, and subagent runs
   (`log.py report` of the `kvb-org-perform` skill).

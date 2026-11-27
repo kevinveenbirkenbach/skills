@@ -61,7 +61,9 @@ for (const [plugin, marketplace] of Object.entries(RETIRED_PLUGINS)) {
 }
 data.env = data.env || {};
 if (!data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) data.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "300000";
-const PYTHON = "/usr/bin/python3 -I";
+// Trip-wire: -S skips the site import (a third of a hook's start-up); the skill scripts import the standard library only.
+const PYTHON = "/usr/bin/python3 -I -S";
+const SITED = "/usr/bin/python3 -I";
 const ABSOLUTE = { python3: PYTHON, bash: "/usr/bin/bash" };
 require("./council-deny").withCouncilDeny(data);
 
@@ -148,7 +150,8 @@ for (const [script, event, matcher, sub, extra] of SCRIPT_HOOKS) {
   const file = JSON.stringify(path.join(path.dirname(settingsPath), "skills", ...script.split("/")));
   // Trip-wire: python3 on a missing file exits 2, which blocks every prompt or tool call; the test makes it exit 1.
   const command = `[ -f ${file} ] && ${PYTHON} -c ${AS_MAIN} ${file} ${sub}`;
-  const legacy = [`${PYTHON} ${file} ${sub}`, `[ -f ${file} ] && ${PYTHON} ${file} ${sub}`];
+  const legacy = [SITED, PYTHON].flatMap((python) => [`${python} ${file} ${sub}`, `[ -f ${file} ] && ${python} ${file} ${sub}`])
+    .concat(`[ -f ${file} ] && ${SITED} -c ${AS_MAIN} ${file} ${sub}`);
   const owner = data.hooks[event].find((entry) => (entry.hooks || []).some((hook) => ran(hook, script, sub)));
   if (owner) {
     const registered = owner.hooks.find((hook) => ran(hook, script, sub));

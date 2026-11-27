@@ -27,8 +27,8 @@ blocks.
 - Trading error semantics, credential masking, concurrency safety or a lint's
   intent for speed. A per-item failure stays loud and names its item.
 
-Testing less to shrink the clock is reported as a coverage cut for the
-operator to decide, never applied as a tuning.
+Testing less to shrink the clock is a coverage cut the operator decides,
+never a tuning.
 
 ## Measure first
 
@@ -41,7 +41,8 @@ operator to decide, never applied as a tuning.
   beats a 60 s download paid once.
 - **The baseline is the newest log of the current code**; an older one may
   carry a step since replaced, and a saving against it is fiction.
-- **Ansible**: measure with the `kvb-check-ansible` skill first.
+- **Ansible**: measure with the `kvb-check-ansible` skill first; skill hooks
+  and scripts with `overhead.py` of `kvb-check-efficiency`.
 
 ## Coordinate every cost cluster
 

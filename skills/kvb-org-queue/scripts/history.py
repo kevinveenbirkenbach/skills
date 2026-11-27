@@ -18,7 +18,6 @@ import math
 import operator
 import os
 import re
-import statistics
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from pathlib import Path
 
@@ -144,7 +143,15 @@ def read(paths: Iterable[Path]) -> list[dict]:
 
 
 def p90(values: list[float]) -> float:
+    import statistics
+
     return statistics.quantiles(values, n=10, method="inclusive")[-1]
+
+
+def median(values: Iterable[float]) -> float:
+    import statistics
+
+    return statistics.median(values)
 
 
 def shares(rows: list[dict], resource: str) -> list[float]:
@@ -164,22 +171,22 @@ def command_stats(rows: list[dict]) -> dict:
     if len(rows) >= MIN_RUNS:
         disk = p90([r["disk_gb"] for r in rows])
         stats.update(
-            minutes=statistics.median(r["minutes"] for r in rows), longest=max(r["minutes"] for r in rows), disk_gb=disk,
-            ram_share=p90(shares(rows, "mem")), cpu_share=statistics.median(shares(rows, "cpu")),
+            minutes=median(r["minutes"] for r in rows), longest=max(r["minutes"] for r in rows), disk_gb=disk,
+            ram_share=p90(shares(rows, "mem")), cpu_share=median(shares(rows, "cpu")),
             need_gb=math.ceil(disk + DISK_MARGIN_GB),
         )
     return stats
 
 
 def fit(ceiling: float, rows: list[dict], resource: str, share: float) -> int:
-    before = statistics.median(r[f"{resource}_before"] for r in rows)
+    before = median(r[f"{resource}_before"] for r in rows)
     return math.floor((ceiling - before) / max(share, MIN_SHARE_PERCENT))
 
 
 def kind_stats(rows: list[dict], limits: dict) -> dict:
     stats = {"runs": len(rows), "ram_share": None, "cpu_share": None, "limit": None}
     if len(rows) >= MIN_RUNS:
-        ram, cpu = p90(shares(rows, "mem")), statistics.median(shares(rows, "cpu"))
+        ram, cpu = p90(shares(rows, "mem")), median(shares(rows, "cpu"))
         stats.update(ram_share=ram, cpu_share=cpu, limit=max(1, min(
             fit(limits["mem_percent"], rows, "mem", ram), fit(limits["cpu_percent"], rows, "cpu", cpu),
         )))

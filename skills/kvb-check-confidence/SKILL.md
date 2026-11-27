@@ -6,45 +6,19 @@ description: >
   deployable work.
 ---
 
-Every stage summary, fix report, or ready-to-commit bundle ends with the
-score block of the `kvb-check-score` skill. Invoke the `kvb-check-break-risk`
-skill every time before writing it; this skill reports the number it derives
-and never estimates one itself.
+Every stage summary, fix report or ready-to-commit bundle ends with the
+`kvb-check-score` block. Invoke `kvb-check-break-risk` before writing it and
+report its number, never your own.
 
-1. **Fix confidence** (percent): probability the change does what it claims.
-   **Break risk** (percent): probability it breaks anything else, from the
-   `kvb-check-break-risk` skill. Two numbers, never one blended figure.
-2. **Score**: for a commit, `block.py` measures and scores in one run, as
-   step 2 of `kvb-git-commit-no-verify` says. Otherwise pass both, with
-   tokens from the `kvb-check-efficiency`
-   skill, velocity from the same `kvb-check-efficiency` run and security and the
-   critical count from `security.py` of the `kvb-check-security` skill, to
-   `${CLAUDE_SKILL_DIR}/../kvb-check-score/scripts/score.py --fix <n> --break
-   <n> --efficiency <n|-> --speed <n|-> --security <n|~n> --critical <count>`
-   and show its score line and gate line verbatim. Exit 4 forbids the commit
-   (critical finding); exit 1 fails the 90/5 rule; exit 3 means ask the
-   operator again before the commit, naming the causes the gate line prints.
-3. **Evidence**: the strongest proof lines only: what was executed,
-   reproduced, enumerated, or read from an authoritative source. Mark proven
-   (ran it, saw it) apart from derived (reasoned statically).
-4. **Residuals**: exactly what keeps the number below 100 and what would
-   close the gap (live deploy, missing artifact, unexercised path). Never a
-   bare percentage without its residuals.
+1. **Fix confidence** and **break risk**, two percentages.
+2. **Score**: for a commit `block.py`, as step 2 of
+   `kvb-git-commit-no-verify` says; else
+   `${CLAUDE_SKILL_DIR}/../kvb-check-score/scripts/score.py` with both and
+   the flags it lists. Exit 4 forbids the commit.
+3. **Evidence**: the strongest proof lines, proven or derived.
+4. **Residuals** per number.
 
-Calibration rules:
+Read `chain.md` next to this file before every report.
 
-- Number the claim you verified, not the effort you spent; discount after
-  any error the operator caught in the same area.
-- Distinguish "fixes the observed failure" from "makes the job green" when
-  hidden layers may follow, and give both numbers.
-- Static analysis alone caps at the low nineties; only executed evidence
-  (test, reproduction, live probe) justifies more.
-
-A threshold the operator named ("95% confidence, break risk ≤5%") is a gate on
-the work for both numbers, handled as the `kvb-check-break-risk` skill's last
-section says. 90/5 also needs `gate: green` from `gate.py status` of the
-`kvb-check-gate` skill, which states the rule and its residuals.
-
-Objective: the `kvb-skill-tune` skill's **Objective** section. Two figures
-with their residuals replace a hedging paragraph and save the operator a
-verification round trip.
+Objective: the `kvb-skill-tune` skill's **Objective** section; two figures
+with residuals replace a hedging paragraph.

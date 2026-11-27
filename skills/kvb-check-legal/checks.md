@@ -1,5 +1,38 @@
 # Advocate: the checks
 
+The `kvb-check-legal` skill reads this file for the detail of each step.
+The stance is the project's counsel; every report says in one line that it
+is not legal advice. Leaked secrets belong to `kvb-check-security`,
+engineering principles to `kvb-check-principles`.
+
+## Target
+
+- Before a commit: the staging index (`git diff --cached`, plus every added
+  or changed file in full where origin or licence is in question).
+- A `<ref>` or `<a>..<b>` after the command: that commit or range.
+- The command alone: the index if it is non-empty, else `HEAD`.
+
+## In scope
+
+The target is in scope only if it adds or changes at least one of: a
+dependency manifest or lockfile; a vendored, generated or third-party file; a
+LICENSE, NOTICE or COPYING file or a licence header; code with a foreign
+origin (a source URL, a foreign copyright line, a block that reads unlike its
+surroundings); an external request (CDN, web font, analytics, embed, API);
+handling of personal data; a logo, icon or third-party brand name. Nothing
+in scope: report `advocate: nothing licence-relevant in <target>` in one
+line and let the commit proceed.
+
+## Project licence
+
+Read every declaration: LICENSE/COPYING, the manifest's licence field
+(`package.json`, `pyproject.toml`, `Cargo.toml`, `composer.json`, ...), SPDX
+headers, the README's licence section. Declarations that disagree are a
+finding. A project without any licence is a finding (all rights reserved),
+never a blocker of the commit at hand.
+
+## The seven checks
+
 Apply each check to a target the `kvb-check-legal` skill found in scope.
 
 1. **Inbound code** - every file or block of foreign origin carries a licence
@@ -35,3 +68,45 @@ Apply each check to a target the `kvb-check-legal` skill found in scope.
    used beyond plain reference: implied endorsement, use in the project's own
    name, modified logos. Icon sets carry their own licence, and a free licence
    on an icon does not license the trademark it depicts.
+
+## Severity
+
+- **Blocker**: the commit would distribute what the project may not: an
+  incompatible inbound or dependency licence, or non-trivial code or assets
+  without a licence.
+- **Finding**: fixable while keeping the change: missing attribution, NOTICE
+  or header; a data-protection gap; trademark use; a block of unclear origin.
+- **Note**: worth knowing, no action required.
+
+## Hardening a blocker
+
+The `kvb-think-dialectic` antithesis tries: the code is trivial or the
+operator's own; the dependency is build- or test-only and never distributed;
+an exception applies (linking or Classpath exception, dual licensing, a
+licence grant in the issue or commit history). A surviving blocker stops
+the commit: present it with the options (remove, replace with a compatible
+alternative, relicense, obtain permission) and wait. The operator's
+explicit acceptance lets this one commit proceed and never carries over.
+Findings and notes never stop a commit.
+
+## Output
+
+One line with the target, the project licence, and "not legal advice" in
+the operator's language. Then one table, blockers first:
+
+| Severity | Check | Location | What is wrong | Licence or law | Fix | Evidence |
+
+Close with the verdict (commit stops or proceeds) and the `kvb-check-score`
+block.
+
+## Evidence and rules
+
+- `Evidence` is `proven` (licence text, metadata or file read; cite
+  path:line or the registry URL) or `derived` (inferred).
+- Never infer a licence from a package's name or reputation; read it. An
+  unreachable registry makes the row `derived`, never clean.
+- Never invent a licence clause, a statute or a court ruling; cite only what
+  you read.
+- Read-only apart from stopping the commit: never edit licence files, add
+  headers or remove dependencies on your own. Propose the fix; the operator
+  decides.

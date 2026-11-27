@@ -209,7 +209,7 @@ class TestRadio(unittest.TestCase):
         ]
         (self.root / "news.jsonl").write_text("".join(json.dumps(r) + "\n" for r in old), encoding="utf-8")
         self.assertEqual(
-            [strip(line) for line in self._send("s2", "show", "--all")],
+            [strip(line) for line in self._send("s2", "show", "--all", "--full")],
             [
                 "NEWSLETTER Three: old board",
                 "POST Three to Two: old direct",
@@ -303,15 +303,22 @@ class TestRadio(unittest.TestCase):
         self.assertEqual(len(caller), 2)
         self.assertRegex(caller[1], RECEIPT)
 
-    def test_prompt_hook_shows_ten_and_counts_the_rest(self):
+    def test_prompt_hook_keeps_alarms_and_shows_five_broadcasts_and_counts_the_rest(self):
         self._send("s1", "send", "security", "early warning")
         for n in range(12):
             self._send("s1", "send", "broadcast", f"item {n}")
         lines = self._prompt("s2")
         self.assertEqual(lines[0], "SECURITY One: early warning")
-        self.assertEqual(lines[1:-1], [f"BROADCAST One: item {n}" for n in range(3, 12)])
-        self.assertEqual(lines[-1], "RADIO 3 more items: radio.py show --all --since 1d --summary")
+        self.assertEqual(lines[1:-1], [f"BROADCAST One: item {n}" for n in range(7, 12)])
+        self.assertEqual(lines[-1], "RADIO 7 more items: radio.py show --all --since 1d")
         self.assertEqual(self._prompt("s2"), [])
+
+    def test_calls_to_this_session_are_never_held_back_or_cut(self):
+        long = "z" * 900
+        for n in range(7):
+            self._send("s1", "send", "call", f"{long} {n}", "--to", "Two")
+        lines = self._tool("s2")
+        self.assertEqual(lines, [f"CALL One to Two: {long} {n}" for n in range(7)])
 
     def test_the_mailbox_delivers_post_and_newsletters_once_when_the_turn_ends(self):
         self._send("s1", "post", "board")
@@ -323,13 +330,16 @@ class TestRadio(unittest.TestCase):
         self.assertEqual(self._mailbox("s1"), (0, []))
         self.assertEqual(self._prompt("s2"), ["SECURITY One: sec"])
 
-    def test_the_mailbox_shows_ten_and_counts_the_rest(self):
-        for n in range(12):
+    def test_the_mailbox_shows_five_newsletters_cut_short_and_counts_the_rest(self):
+        for n in range(11):
             self._send("s1", "post", f"item {n}")
+        self._send("s1", "post", "w" * 400)
         code, lines = self._mailbox("s2")
         self.assertEqual(code, 2)
-        self.assertEqual(lines[:-1], [f"NEWSLETTER One: item {n}" for n in range(2, 12)])
-        self.assertEqual(lines[-1], "MAIL 2 more items: radio.py show --all --since 1d --summary")
+        self.assertEqual(lines[:-2], [f"NEWSLETTER One: item {n}" for n in range(7, 11)])
+        self.assertTrue(lines[-2].endswith("…"))
+        self.assertLess(len(lines[-2]), 200)
+        self.assertEqual(lines[-1], "MAIL 7 more items: radio.py show --all --since 1d")
         self.assertEqual(self._mailbox("s2"), (0, []))
 
     def test_a_read_call_puts_one_receipt_in_the_callers_mailbox_without_waking_it(self):
@@ -368,10 +378,17 @@ class TestRadio(unittest.TestCase):
         old = {"ts": time.time() - 7200, "class": "security", "from": "Old", "to": [], "text": "stale", "v": 2}
         with (self.root / "news.jsonl").open("a", encoding="utf-8") as news:
             news.write(json.dumps(old) + "\n")
-        shown = self._cli("s3", "show", "--all", "--since", "1h", "--summary")
-        self.assertEqual(shown.returncode, 0, shown.stderr)
-        lines = [re.sub(r"\d\d:\d\d", "HH:MM", line) for line in shown.stdout.splitlines()]
-        self.assertEqual(lines, ["BROADCAST One: 2, last HH:MM: second", "NEWSLETTER Two: 1, last HH:MM: board"])
+        receipt = {"ts": time.time(), "class": "receipt", "from": "Two", "to": ["One"], "text": "ring", "v": 2, "call": time.time()}
+        with (self.root / "news.jsonl").open("a", encoding="utf-8") as news:
+            news.write(json.dumps(receipt) + "\n")
+        expected = ["BROADCAST One: 2, last HH:MM: second", "NEWSLETTER Two: 1, last HH:MM: board"]
+        for extra in ((), ("--summary",)):
+            shown = self._cli("s3", "show", "--all", "--since", "1h", *extra)
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertEqual([re.sub(r"\d\d:\d\d", "HH:MM", line) for line in shown.stdout.splitlines()], expected)
+        full = self._cli("s3", "show", "--all", "--since", "1h", "--full").stdout.splitlines()
+        self.assertEqual(len(full), 4)
+        self.assertTrue(any("read by Two" in line for line in full))
         self.assertEqual(self._cli("s3", "show", "--since", "soon").returncode, 2)
 
     def test_tool_hook_delivers_radio_rows_once_and_leaves_the_mail_for_the_stop(self):
@@ -585,11 +602,11 @@ class TestRadio(unittest.TestCase):
     def test_the_tool_hook_caps_radio_items_like_the_prompt_hook(self):
         self.root.mkdir()
         now = time.time()
-        rows = [{"ts": now - 60 + i, "class": "security", "from": "Three", "to": [], "text": f"s{i}"} for i in range(12)]
+        rows = [{"ts": now - 60 + i, "class": "broadcast", "from": "Three", "to": [], "text": f"s{i}", "v": 2} for i in range(12)]
         (self.root / "news.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
         shown = self._tool("s2")
-        self.assertEqual(len(shown), 11)
-        self.assertEqual(shown[-1], "RADIO 2 more items: radio.py show --all --since 1d --summary")
+        self.assertEqual(len(shown), 6)
+        self.assertEqual(shown[-1], "RADIO 7 more items: radio.py show --all --since 1d")
 
     def test_long_fields_are_clipped_and_a_planted_silence_stays_on_one_line(self):
         self.root.mkdir()
@@ -767,7 +784,7 @@ class TestRadio(unittest.TestCase):
         sessions = self.home / ".claude" / "sessions"
         for sid, name in (("s2", "Deux"), ("s3", "Two"), ("s4", "Deux")):
             (sessions / f"{sid}.json").write_text(json.dumps({"sessionId": sid, "name": name}), encoding="utf-8")
-        self.assertEqual(self._send(None, "show", "--all")[0].split(" ", 3)[3], "Operator to Two: ran x")
+        self.assertEqual(self._send(None, "show", "--all", "--full")[0].split(" ", 3)[3], "Operator to Two: ran x")
         self.assertEqual(self._prompt("s2"), ["CALL Operator to Two: ran x"])
         self.assertEqual(self._prompt("s3"), ["CALL Operator to Two: ran x"])
         self.assertEqual(self._mailbox("s3"), (2, ["POST Operator to Three: ran x"]))

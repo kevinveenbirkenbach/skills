@@ -1,11 +1,36 @@
 # Break risk: the method in detail
 
 Each step of the `kvb-check-break-risk` skill, with the trap it defeats.
+Break risk is neither the inverse of fix confidence nor a mood.
+
+## Fast path
+
+A change whose files nothing builds, deploys, or runs (documentation and
+comments only, or tests that ran green with it) has no consumers outside
+itself. Any other file takes the full method.
+
+## Producing the number
+
+State it as a percentage next to fix confidence, as the shared chain rules
+of `kvb-check-confidence` say. Anchor roughly:
+
+- **Under 5%**: consumers enumerated, delta measured at the surface, every
+  axis of the matrix covered by executed evidence, failure mode closed.
+- **5 to 15%**: measured, but one axis or one layer rests on reasoning: no
+  live run, a mode not exercised, a runtime the render cannot prove.
+- **15 to 40%**: a real behaviour change whose consumers are enumerated but
+  whose effect is unmeasured, or a latent finding with a plausible trigger.
+- **Above 40%**: a known live defect, an unenumerated consumer set, or a
+  fail-open exposure without a verified control. Fix it rather than report
+  it.
 
 ## The consumer question, first and always
 
 Enumerate every consumer of every thing the change alters, before naming a
 number. A written caveat never licenses a low number; an enumeration does.
+Query the codebase-memory-mcp graph first (`detect_changes`, `trace_path`,
+`search_graph`; the `kvb-agent-optimize` skill sets it up), grep and read
+after.
 
 - Search the **committed** state, not just the working tree. A symbol that looks
   unused in your branch may still be called from a file you have not opened
@@ -79,3 +104,8 @@ over an exposure and not creating the exposure, prefer the second and say why.
   green gate whose rule never matched your case is silence, not a pass.
 - After a context compaction, rebuild attributions from the source; conclusions
   survive compaction, the evidence under them does not.
+
+## A named threshold
+
+A threshold the operator names is a gate on the work, not a field in the
+report. Missing it is a work item, not a result to report.

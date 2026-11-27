@@ -93,6 +93,56 @@ class Directory:
         return found
 
 
+def kept(entries: list[dict], indexes: list[int]) -> list[int]:
+    """Args:
+        entries: every entry.
+        indexes: the positions of one session's entries, in order.
+
+    Returns:
+        The positions of the first and the last entry of each name, of the
+        first entry of each rename with the entry before it, and of every
+        predecessor needed until two kept neighbours that were apart form a
+        rename the session showed before; so the kept entries show the same
+        renames at the same moments.
+    """
+    names = [entries[index]["name"] for index in indexes]
+    first: dict[tuple[str, str], int] = {}
+    seen: dict[str, int] = {}
+    last: dict[str, int] = {}
+    for position, name in enumerate(names):
+        seen.setdefault(name, position)
+        last[name] = position
+        if position:
+            first.setdefault((names[position - 1], name), position)
+    keep = {*seen.values(), *last.values()}
+    keep |= {near for position in first.values() for near in (position - 1, position)}
+    while apart := unshown(names, first, keep):
+        keep.update(later - 1 for later in apart)
+    return [indexes[position] for position in sorted(keep)]
+
+
+def unshown(names: list[str], first: dict[tuple[str, str], int], keep: set[int]) -> list[int]:
+    """Returns:
+        Each kept position whose kept neighbour before it was not its
+        predecessor and forms a rename the session first showed later or
+        never.
+    """
+    return [later for earlier, later in itertools.pairwise(sorted(keep))
+            if later - earlier > 1 and names[earlier] != names[later] and first.get((names[earlier], names[later]), later + 1) > later]
+
+
+def compacted(entries: list[dict]) -> list[dict]:
+    """Returns:
+        The entries in order without the repeats of a name flip-flop, by
+        kept() per session.
+    """
+    by_session: dict[str, list[int]] = {}
+    for index, entry in enumerate(entries):
+        by_session.setdefault(entry["session"], []).append(index)
+    keep = {index for indexes in by_session.values() for index in kept(entries, indexes)}
+    return [entries[index] for index in sorted(keep)]
+
+
 def valid_entry(entry: object) -> bool:
     if not isinstance(entry, dict) or set(entry) != {"session", "name", "first_seen", "source"}:
         return False
@@ -113,10 +163,13 @@ class Names:
         data = read_json(file)
         self.data = data if isinstance(data, dict) else {}
         entries, observed = self.data.get("entries"), self.data.get("observed")
-        self.entries = [entry for entry in entries if valid_entry(entry)] if isinstance(entries, list) else []
+        valid = [entry for entry in entries if valid_entry(entry)] if isinstance(entries, list) else []
+        self.entries = compacted(valid)
         self.observed: dict[str, str] = {key: name for key, name in observed.items() if isinstance(name, str)} if isinstance(observed, dict) else {}
         self.version = 0
         self.cached: tuple[int, Directory] | None = None
+        if len(self.entries) < len(valid):
+            self.save()
 
     def payload(self) -> dict:
         return {"entries": self.entries, "observed": self.observed}
@@ -152,6 +205,7 @@ class Names:
                 self.entries.append({"session": session, "name": name, "first_seen": first, "source": source})
                 self.version += 1
             if changed:
+                self.entries = compacted(self.entries)
                 self.save()
 
     def listed(self) -> list[dict]:

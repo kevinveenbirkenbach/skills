@@ -4,54 +4,37 @@ description: >
   Approve staged commits in the Agent Orchestrator; commit skills run it.
 ---
 
-The commit skills run this where they ask for the commit approval. A hub
-approval is the operator's word for one commit, the exact tree it names, only
-once the operator's pinned passkey signature over it verifies here.
+Commit skills run this for the commit approval. A hub approval is the
+operator's word for one commit, its exact tree, once the pinned passkey
+signature verifies here. Placeholders, fallbacks and lifetime:
+`reference.md` next to this file; the commit table:
+`${CLAUDE_SKILL_DIR}/../kvb-check-confidence/chain.md`.
 
-1. Render the page. `<repo>` is the repository's name, `<branch>` the
-   branch with every `/` as `-`, `<base>` the branch's base, `<table>` a
-   file under `/tmp` holding the kvb-check-score commit table, `<pages>`
-   and `<approvals>` the directories
-   `${CLAUDE_SKILL_DIR}/../kvb-org-organize/scripts/councilroot.py dir pages`
-   and `... dir approvals` print, in the council root the hub reads:
+1. Render the page:
 
    ```bash
    pkgmgr review --out <pages>/<repo>-<branch>.html --max-file-lines 400 --base <base> --note <table>
    ```
 
-2. Request the review in the worktree; it ships the staged diff, every file
-   MEDUSA's secret rules or an armour line flag by stat only, so the hub
-   shows it on the card. `<gate>` is
-   `pass` when every gate the calling skill ran is green, else `fail`;
-   `<agent>` your agent name, which inline feedback is posted to:
+2. Request the review in the worktree; `<gate>` is `pass` when every gate
+   the calling skill ran is green, else `fail`. Tell the operator the
+   printed `url` in plain text:
 
    ```bash
    python3 ~/.local/share/kvb-orchestrator/client/approval.py request --port 8737 --title "<subject>" --page <pages>/<repo>-<branch>.html --notes <table> --gate <gate> --score "<score line>" --agent "<agent>"
    ```
 
-   Only a `pass` review can be approved in bulk or by a rule. Tell the
-   operator the `url` it prints in one plain-text line; chat links do not
-   open for this operator. Without the script or port 8737, the MCP tool
-   `review_request` takes the same fields without the diff.
 3. Call `review_wait` with its `id` and `timeout_seconds` 240 until the
    status is no longer `pending`.
-4. `approved`: in the worktree, verify the operator's passkey signature
-   first, `<gate>` being the `gate` from step 2:
+4. `approved`: verify in the worktree:
 
    ```bash
    python3 ~/.local/share/kvb-orchestrator/client/approval.py verify --port 8737 --approvers ~/.config/kvb-orchestrator/approvers.json --replay <approvals>/commit.json --review <id> --gate <gate>
    ```
 
-   Sandboxed without port 8737: save `review_wait`'s answer under `/tmp`,
-   add `--record <file>`.
-   Exit 0 only: commit as the calling skill says. Any other exit,
-   `rejected`, or the tree changed: no commit; report the printed reason.
-   `superseded`: a newer request for the same worktree and branch replaced
-   it; wait on the review its `superseded_by` names.
-   A review's approval holds two hours. A `kvb-org-operator` commit row
-   chaining these steps runs only once every review is approved:
-   `operator.py run` skips it until then, and its hub card offers
-   `Approve n and run`.
+   Exit 0 only: commit as the calling skill says. Else, `rejected` or a
+   changed tree: no commit; report the reason. `superseded`: wait on its
+   `superseded_by`.
 
-No kvb-orchestrator tools, or the verify step refused: ask the calling
-skill's approval question in chat.
+No kvb-orchestrator tools, or verify refused: ask the calling skill's
+approval question in chat.

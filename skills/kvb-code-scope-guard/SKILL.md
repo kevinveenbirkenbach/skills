@@ -6,28 +6,14 @@ description: >
   something unrequested exists.
 ---
 
-The requested scope is the deliverable. A problem you noticed behind the
-request is not an invitation to solve it.
+The requested scope is the deliverable: before creating anything the
+request did not name, find the sentence asking for it. No sentence, no
+artifact.
 
-Before creating anything the request did not name, answer one question: which
-sentence of the request asks for this? No sentence, no artifact.
+1. No permanent scaffolding for a one-off need.
+2. Path-scope every `git add`: never `-A`, never `.`.
+3. Report an adjacent defect in one line, unfixed, unless it blocks.
+4. Hand over the artifact exactly as asked, nothing added.
 
-1. No permanent scaffolding for a one-off need. A migration you run once needs
-   a throwaway script, not a CLI subcommand that ships forever. Do the thing,
-   then delete the scaffolding.
-2. Path-scope every `git add`. Never `-A`, never `.`. The operator's tree
-   carries their own edits and their local config, and sweeping those into
-   your bundle makes them undo your work by hand.
-3. An adjacent defect gets reported in one line, not fixed, unless it blocks
-   the request. Fixing it quietly puts an unreviewed change in someone else's
-   commit.
-4. An instruction to hand something over is complete on its own. Print the
-   artifact in the shape asked for: do not optimize, reorder or deduplicate it,
-   do not wrap it in a command that consumes it, and do not append commentary,
-   next steps, confidence blocks or offers. A narrowing qualifier ("just the
-   line") re-shapes the earlier request; re-emit narrower without re-deriving
-   the content. A problem with the artifact is worth one sentence before it,
-   never a rewrite of it.
-
-When something genuinely seems missing, say so in one sentence and finish the
-requested scope anyway. Widening the scope is the operator's call.
+Name what seems missing in one sentence and finish the scope; widening it
+is the operator's call. Contested rule: `reference.md` next to this file.

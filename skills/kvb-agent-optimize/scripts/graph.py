@@ -783,7 +783,17 @@ def cmd_supervise(rounds: int, pause: float) -> int:
     return 0
 
 
+def hook() -> int:
+    try:
+        return cmd_hook()
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"graph: hook skipped: {error}", file=sys.stderr)
+        return 0
+
+
 def main() -> int:
+    if sys.argv[1:] == ["hook"]:
+        return hook()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("hook")
@@ -800,11 +810,7 @@ def main() -> int:
         enqueue.add_argument(flag, required=True)
     args = parser.parse_args()
     if args.command == "hook":
-        try:
-            return cmd_hook()
-        except (OSError, subprocess.SubprocessError) as error:
-            print(f"graph: hook skipped: {error}", file=sys.stderr)
-            return 0
+        return hook()
     if args.command == "supervise":
         return cmd_supervise(args.rounds, args.pause)
     if args.command == "enqueue":

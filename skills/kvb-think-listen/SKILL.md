@@ -1,7 +1,7 @@
 ---
 name: kvb-think-listen
 description: >
-  Pin down requirements by focused questions, then reflect the task
+  Pin down requirements by questions, then reflect the task
   back. Trigger on unclear scope, constraints or success criteria, or a skill
   needing an operator-only fact.
 ---

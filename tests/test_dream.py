@@ -118,6 +118,22 @@ class TestDreamHook(unittest.TestCase):
                 self.assertEqual(self._run(self._session("a1")), "")
                 self.assertFalse(self.stamps.exists())
 
+    def test_a_row_that_cannot_be_on_starts_no_python(self):
+        hook = Path(self.tmp.name) / "skills" / "kvb-dream" / "hooks" / "reminder.sh"
+        hook.parent.mkdir(parents=True)
+        shutil.copy(HOOK, hook)
+        marker = Path(self.tmp.name) / "checked"
+        fake = Path(self.tmp.name) / "skills" / "kvb-org-organize" / "scripts" / "schedules.py"
+        fake.parent.mkdir(parents=True)
+        fake.write_text(f"open({str(marker)!r}, 'a').close()\nprint(12)\n", encoding="utf-8")
+        env = {"PATH": "/usr/bin:/bin", "HOME": self.tmp.name, "DREAM_STAMP_DIR": str(self.stamps)}
+        for row, started in (({"on": False, "every": 12}, False), (None, False), ({"every": 12, "on": True}, True)):
+            with self.subTest(row=row):
+                marker.unlink(missing_ok=True)
+                self.schedule(row)
+                subprocess.run(["bash", str(hook)], input=self._session("a1"), capture_output=True, text=True, check=True, env={**env, **self.env})
+                self.assertEqual(marker.exists(), started)
+
     def test_corrupt_stamp_does_not_crash(self):
         self.stamps.mkdir()
         (self.stamps / "a1").write_text("not-a-timestamp\n", encoding="utf-8")
@@ -264,6 +280,14 @@ class TestSettingsRegistration(unittest.TestCase):
         runs = [subprocess.run(["sh", "-c", gate["command"]], capture_output=True, text=True, check=False) for _ in range(2)]
         self.assertEqual([(run.returncode, run.stdout) for run in runs], [(3, "__main__ ['pre-bash'] True\n")] * 2)
         self.assertEqual([path.name.split(".")[0] for path in (script.parent / "__pycache__").iterdir()], ["hooks"])
+
+    def test_a_hook_registered_with_the_site_import_moves_to_the_start_without_it(self):
+        data = self._patch()
+        (gate,) = self._hooks(data, "PreToolUse", "kvb-org-organize/scripts/hooks.py")
+        gate["command"] = gate["command"].replace("/usr/bin/python3 -I -S ", "/usr/bin/python3 -I ")
+        self.settings.write_text(json.dumps(data), encoding="utf-8")
+        (moved,) = self._hooks(self._patch(), "PreToolUse", "kvb-org-organize/scripts/hooks.py")
+        self.assertIn("/usr/bin/python3 -I -S -c ", moved["command"])
 
     def bash_entries(self, data: dict, event: str) -> list[dict]:
         return [entry for entry in data["hooks"].get(event, []) if not entry.get("matcher") or entry["matcher"] == "*" or re.fullmatch(entry["matcher"], "Bash")]

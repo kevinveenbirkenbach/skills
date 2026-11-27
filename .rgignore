@@ -1,0 +1,5 @@
+.worktrees/
+.state/
+.agents/
+.claude/
+.continue/

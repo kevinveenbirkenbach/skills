@@ -86,26 +86,46 @@ def script(name: str, path: Path) -> ModuleType:
 nofollow = script("kvb_rasci_nofollow", ORGANIZE / "nofollow.py")
 ROOT = script("kvb_rasci_councilroot", ORGANIZE / "councilroot.py").root()
 DB = ROOT / "rasci.json"
+ARCHIVE = ROOT / "rasci-archive.json"
+ARCHIVE_AFTER = datetime.timedelta(days=7)
 LOCK = ROOT / "rasci.lock"
 AGENT_ORDER = ROOT / "agent-order.json"
 
 
-def load() -> dict[str, dict]:
+def load(path: Path = DB) -> dict[str, dict]:
     try:
-        tasks = json.loads(nofollow.read_text(ROOT, DB))
+        tasks = json.loads(nofollow.read_text(ROOT, path))
     except FileNotFoundError:
         return {}
     except (ValueError, RecursionError):
-        fail(f"{DB} is not valid JSON")
+        fail(f"{path} is not valid JSON")
     except OSError as error:
-        fail(f"{DB} is no regular file below {ROOT}: {error.strerror}")
+        fail(f"{path} is no regular file below {ROOT}: {error.strerror}")
     if not isinstance(tasks, dict) or not all(isinstance(entry, dict) for entry in tasks.values()):
-        fail(f"{DB} is not an object of task objects")
+        fail(f"{path} is not an object of task objects")
     return tasks
 
 
+def aged(row: dict, now: datetime.datetime) -> bool:
+    try:
+        ended = datetime.datetime.fromisoformat(row["end"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return row.get("status") in ENDED and ended.tzinfo is not None and now - ended > ARCHIVE_AFTER
+
+
 @contextlib.contextmanager
-def database() -> Iterator[dict[str, dict]]:
+def database(revive: str | None = None) -> Iterator[dict[str, dict]]:
+    """Args:
+        revive: the task a command names; an archived one moves back into the
+            register first, and leaves the archive too when the command
+            removes it.
+
+    Yields:
+        The register; on exit, tasks done or stopped for more than
+        ARCHIVE_AFTER move to ARCHIVE, which is written before the register,
+        so a crash in between leaves a copy in both and loses none.
+    """
     with contextlib.ExitStack() as held:
         try:
             ROOT.mkdir(parents=True, exist_ok=True)
@@ -113,13 +133,32 @@ def database() -> Iterator[dict[str, dict]]:
         except OSError as error:
             fail(f"cannot lock {LOCK}: {error.strerror}")
         tasks = load()
+        archive = load(ARCHIVE)
+        if revive in archive and revive not in tasks:
+            tasks[revive] = archive[revive]
         before = {task: json.dumps(row, sort_keys=True) for task, row in tasks.items()}
         yield tasks
         now = stamp()
         for task, row in tasks.items():
             if before.get(task) != json.dumps(row, sort_keys=True):
                 row["updated"] = now
-        nofollow.replace(ROOT, DB, json.dumps(tasks, indent=1, sort_keys=True), FILE_MODE)
+        store(tasks, archive, revive if revive in archive and revive not in tasks else None, now)
+
+
+def store(tasks: dict[str, dict], archive: dict[str, dict], removed: str | None, now: str) -> None:
+    """Args:
+        tasks: the register after the command.
+        archive: the archive as loaded.
+        removed: an archived task the command removed, None when none.
+        now: the stamp of the write.
+    """
+    moment = datetime.datetime.fromisoformat(now)
+    old = {task: row for task, row in tasks.items() if aged(row, moment)}
+    if old or removed:
+        kept = {task: row for task, row in archive.items() if task != removed}
+        nofollow.replace(ROOT, ARCHIVE, json.dumps({**kept, **old}, indent=1, sort_keys=True), FILE_MODE)
+    live = {task: row for task, row in tasks.items() if task not in old}
+    nofollow.replace(ROOT, DB, json.dumps(live, indent=1, sort_keys=True), FILE_MODE)
 
 
 def open_results(entry: dict) -> int:
@@ -151,7 +190,7 @@ def track(task: str, holder: str, status: str, *, description: str | None = None
       workdir: the claiming process's directory, kept unless one is recorded.
       branch: the checked-out branch there, kept unless one is recorded.
     """
-    with database() as tasks:
+    with database(task) as tasks:
         entry = tasks.setdefault(task, {"roles": {}})
         roles = entry.setdefault("roles", {})
         if previous and previous != holder:
@@ -206,8 +245,13 @@ def claimed() -> dict[str, dict]:
 
 
 def merged(include_done: bool) -> dict[str, dict]:
+    """Args:
+        include_done: True also lists done and stopped tasks, the archived
+            ones included.
+    """
     rows = claimed()
-    for task, entry in load().items():
+    stored = {**load(ARCHIVE), **load()} if include_done else load()
+    for task, entry in stored.items():
         base = rows.get(task, {"status": "queued", "roles": {}})
         fields = {k: v for k, v in entry.items() if k != "roles"}
         rows[task] = {**base, **fields, "roles": {**base["roles"], **entry.get("roles", {})}}
@@ -385,7 +429,7 @@ def cmd_set(args: argparse.Namespace) -> int:
     for ref in (*args.artifact, *args.drop_artifact):
         if not ARTIFACT.match(ref):
             fail(f"invalid artifact {ref!r}; use <kind>:<ref>, e.g. image:<name>:<tag>")
-    with database() as tasks:
+    with database(args.task) as tasks:
         check_after(tasks, args.task, args.after)
         entry = tasks.setdefault(args.task, {"roles": {}})
         if args.status == "done" and open_results(entry):
@@ -429,7 +473,7 @@ def cmd_role(args: argparse.Namespace) -> int:
     letters = args.letters.upper()
     if letters != "-" and not LETTERS.match(letters):
         fail("letters must be distinct ones of R, A, S, C, I, or - to clear")
-    with database() as tasks:
+    with database(args.task) as tasks:
         roles = tasks.setdefault(args.task, {"roles": {}}).setdefault("roles", {})
         if letters == "-":
             roles.pop(args.party, None)
@@ -441,7 +485,7 @@ def cmd_role(args: argparse.Namespace) -> int:
 
 def cmd_kr(args: argparse.Namespace) -> int:
     check_task(args.task)
-    with database() as tasks:
+    with database(args.task) as tasks:
         entry = tasks.setdefault(args.task, {"roles": {}})
         results = entry.setdefault("key_results", [])
         if args.action == "add":
@@ -498,7 +542,7 @@ def cmd_estimate(args: argparse.Namespace) -> int:
         for name in ("value",) if alone else ("value", "complexity"):
             if getattr(args, name) not in FIBONACCI:
                 fail(f"--{name} must be one of {', '.join(map(str, FIBONACCI))}")
-    with database() as tasks:
+    with database(args.task) as tasks:
         entry = tasks.setdefault(args.task, {"roles": {}})
         estimates = entry.setdefault("estimates", {})
         if args.drop:
@@ -563,7 +607,7 @@ def cmd_tools(_: argparse.Namespace) -> int:
 
 def cmd_rm(args: argparse.Namespace) -> int:
     check_task(args.task)
-    with database() as tasks:
+    with database(args.task) as tasks:
         removed = tasks.pop(args.task, None)
     print(f"removed {args.task}" if removed is not None else f"{args.task}: not in the register")
     return 0
@@ -612,8 +656,10 @@ def cmd_show(args: argparse.Namespace) -> int:
         problems += gaps(task, row)
     if len(order) > len(shown):
         print(f"{len(order) - len(shown)} more (show --all)")
-    if problems:
-        print("gaps: " + "; ".join(problems))
+    if problems and args.gaps:
+        print("\n".join(f"gap: {problem}" for problem in problems))
+    elif problems:
+        print(f"gaps: {len(problems)} (show --gaps)")
     return 0
 
 
@@ -658,6 +704,7 @@ def main() -> int:
     p = sub.add_parser("show")
     p.add_argument("--all", action="store_true")
     p.add_argument("--wide", action="store_true")
+    p.add_argument("--gaps", action="store_true")
     p.set_defaults(func=cmd_show)
     p = sub.add_parser("artifacts")
     p.add_argument("--ended", action="store_true")

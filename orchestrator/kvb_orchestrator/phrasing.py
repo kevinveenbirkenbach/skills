@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import functools
 import re
 from datetime import UTC, datetime, timedelta, timezone
 
 from .fields import LINE
 
+PHRASED = 4096
 SPEECH_LIMIT = 1000
 SPOKEN_TEXT = 500
 SPOKEN_NAME = 60
@@ -157,6 +159,11 @@ def phrase_parts(cls: str, sender: str, called: list[str], text: str) -> tuple[s
         class, and the rest of the row in maritime radio phraseology (SMCP
         style).
     """
+    return phrased(cls, sender, tuple(called), text)
+
+
+@functools.lru_cache(maxsize=PHRASED)
+def phrased(cls: str, sender: str, called: tuple[str, ...], text: str) -> tuple[str, str]:
     station = clip(sender, SPOKEN_NAME) or "unknown station"
     if cls == "mayday":
         head, end = f"this is {station} {station} {station}", "over"
