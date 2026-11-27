@@ -68,7 +68,7 @@ def handle(script: str, sub: str, raw: str) -> tuple[int, str, str]:
             code = module.main()
         except SystemExit as stop:
             code = exit_code(stop)
-        except Exception:
+        except Exception:  # noqa: BLE001
             import traceback
 
             traceback.print_exc()

@@ -8,6 +8,15 @@ Environment:
         work/ and cluster/ claim of the council there. The operator's agent
         order (`agents order`) lies beside it in <root>/agent-order.json, apart
         from every task row: it breaks ties of equal task priority only.
+        `prune` reads the active entries of <root>/queue.json.
+
+Args:
+    keep <task>: set an open task's register change time to now and
+        nothing else, so a pending stale task prune keeps it.
+    prune --since <epoch> <task>...: under the register lock set every
+        listed task stopped that is open, has no active queue job and no
+        register change after <epoch>; print `stopped <task>` or
+        `kept <task>: <why>` per task. A second run stops nothing more.
 
 Exit codes:
     0 done, 2 usage error.
@@ -90,6 +99,7 @@ ARCHIVE = ROOT / "rasci-archive.json"
 ARCHIVE_AFTER = datetime.timedelta(days=7)
 LOCK = ROOT / "rasci.lock"
 AGENT_ORDER = ROOT / "agent-order.json"
+QUEUE = ROOT / "queue.json"
 
 
 def load(path: Path = DB) -> dict[str, dict]:
@@ -613,6 +623,76 @@ def cmd_rm(args: argparse.Namespace) -> int:
     return 0
 
 
+def change_time(row: dict) -> float | None:
+    try:
+        moment = datetime.datetime.fromisoformat(row["updated"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return moment.timestamp() if moment.tzinfo is not None else None
+
+
+def queue_running() -> set[str]:
+    """Returns:
+        The tasks of the active entries of <root>/queue.json; none without
+        the file. An unreadable or malformed file fails, so a prune never
+        stops a task whose queue job it cannot see.
+    """
+    try:
+        data = json.loads(nofollow.read_text(ROOT, QUEUE))
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError, RecursionError):
+        fail(f"{QUEUE} cannot be read; prune changes nothing while the running queue jobs are unknown")
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        fail(f"{QUEUE} holds no entries list; prune changes nothing while the running queue jobs are unknown")
+    return {entry.get("task") for entry in entries if isinstance(entry, dict) and entry.get("status") == "active"}
+
+
+def kept_why(task: str, entry: dict | None, running: set[str], since: int) -> str | None:
+    """Returns:
+        Why prune keeps the task: not in the register, already ended, an
+        active queue job, no change time, or a change after since; None
+        when it sets the task stopped.
+    """
+    if entry is None:
+        return "not in the register"
+    if entry.get("status") in ENDED:
+        return f"already {entry['status']}"
+    if task in running:
+        return "a queue job runs for it"
+    changed = change_time(entry)
+    if changed is None:
+        return "no register change time"
+    return f"changed at {entry['updated']}, after the prune list" if changed > since else None
+
+
+def cmd_keep(args: argparse.Namespace) -> int:
+    check_task(args.task)
+    with database() as tasks:
+        entry = tasks.get(args.task)
+        if entry is None or entry.get("status") in ENDED:
+            fail(f"{args.task}: no open task in the register; only an open one can be kept")
+        entry["updated"] = stamp()
+    print(f"kept {args.task}: its register change time is now, so a pending prune keeps it")
+    return 0
+
+
+def cmd_prune(args: argparse.Namespace) -> int:
+    for task in args.tasks:
+        check_task(task)
+    lines = []
+    with database() as tasks:
+        running = queue_running()
+        for task in dict.fromkeys(args.tasks):
+            why = kept_why(task, tasks.get(task), running, args.since)
+            if why is None:
+                apply_status(tasks[task], "stopped")
+            lines.append(f"stopped {task}" if why is None else f"kept {task}: {why}")
+    print("\n".join(lines))
+    return 0
+
+
 def holders(row: dict, letter: str, width: int) -> str:
     parties = sorted(row["roles"], key=lambda p: (p != OPERATOR, p.lower()))
     return cell(", ".join(p for p in parties if letter in row["roles"][p]), width)
@@ -697,10 +777,14 @@ def main() -> int:
     p.add_argument("party")
     p.add_argument("letters")
     p.set_defaults(func=cmd_role)
-    for name, func in (("get", cmd_get), ("rm", cmd_rm)):
+    for name, func in (("get", cmd_get), ("rm", cmd_rm), ("keep", cmd_keep)):
         p = sub.add_parser(name)
         p.add_argument("task")
         p.set_defaults(func=func)
+    p = sub.add_parser("prune")
+    p.add_argument("--since", type=int, required=True)
+    p.add_argument("tasks", nargs="+")
+    p.set_defaults(func=cmd_prune)
     p = sub.add_parser("show")
     p.add_argument("--all", action="store_true")
     p.add_argument("--wide", action="store_true")

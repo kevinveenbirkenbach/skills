@@ -352,7 +352,8 @@ class TestHotfix(unittest.TestCase):
         self.assertNotEqual(row["end"], old)
         self.rasci("set", "hotfix/closed", "--status", "done", "--end", old)
         self.out("add", "closed", *self.flags({"--branch": "fix/db", "--sha": self.fix, "--status": "merged"}))
-        self.assertEqual(self.rows()["hotfix/closed"]["end"], old)
+        archived = json.loads((self.root / "rasci-archive.json").read_text(encoding="utf-8"))
+        self.assertEqual(("hotfix/closed" in self.rows(), archived["hotfix/closed"]["end"]), (False, old))
 
     def test_pending_reports_missing_and_open_hotfixes_of_the_repository(self):
         expected = [

@@ -624,11 +624,20 @@ def set_status(rasci: ModuleType, row: dict, status: str) -> None:
     rasci.apply_status(row, final)
 
 
+def known(rasci: ModuleType) -> dict[str, dict]:
+    """Returns:
+        The register over its archive: rasci.py archives a task done or
+        stopped for more than a week, and a hotfix there is still this
+        skill's to adopt or move on.
+    """
+    return {**rasci.load(rasci.ARCHIVE), **rasci.load()}
+
+
 def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
     task = task_of(rasci, args.slug)
     repo = clone(args.repo)
     common, origin = identity(repo)
-    adoptable(task, rasci.load().get(task), args.branch, (common, origin))
+    adoptable(task, known(rasci).get(task), args.branch, (common, origin))
     entry = {
         "common_dir": common,
         "origin": origin,
@@ -644,7 +653,7 @@ def cmd_add(rasci: ModuleType, args: argparse.Namespace) -> int:
     council = module("council", rasci.COUNCIL)
     sid, _ = council.caller(args.session)
     author = council.live_sessions().get(sid) or sid
-    with rasci.database() as tasks:
+    with rasci.database(task) as tasks:
         row = adoptable(task, tasks.get(task), entry["branch"], (common, origin))
         entry = {**row, **entry, "roles": authored(row.get("roles") or {}, author)}
         set_status(rasci, entry, REGISTER_STATUS[args.status])
@@ -700,7 +709,7 @@ def cmd_update(rasci: ModuleType, args: argparse.Namespace) -> int:
     pr = number(args.pr)
     if args.status == "merged" and args.sha is None:
         fail("--status merged needs --sha, the commit as it sits on the default branch")
-    entry = rasci.load().get(task)
+    entry = known(rasci).get(task)
     if entry is None or "stage" not in entry:
         fail(f"{task}: no hotfix in the register; record it with add")
     fields: dict = {}
@@ -710,7 +719,7 @@ def cmd_update(rasci: ModuleType, args: argparse.Namespace) -> int:
             fields["sha"] = landed(where, args.sha, args.default) if args.status == "merged" else commit(where, args.sha)
     if pr is not None:
         fields["pr"] = pr
-    with rasci.database() as tasks:
+    with rasci.database(task) as tasks:
         entry = tasks.get(task)
         if entry is None or "stage" not in entry:
             fail(f"{task}: no hotfix in the register; record it with add")

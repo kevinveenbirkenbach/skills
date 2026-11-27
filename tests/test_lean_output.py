@@ -33,7 +33,7 @@ class Scratch(unittest.TestCase):
 class TestRegisterTable(Scratch):
     def show(self, roles: dict[str, str], results: list[dict], *args: str) -> list[str]:
         root = self.base / "council"
-        root.mkdir()
+        root.mkdir(exist_ok=True)
         rows = {
             f"work/t{n:03d}": {"title": f"T{n}", "prio": n, "roles": roles, "key_results": results}
             for n in range(1, OPEN_ROWS + 1)
@@ -59,8 +59,11 @@ class TestRegisterTable(Scratch):
     def test_gaps_name_only_the_shown_rows(self):
         lines = self.show({}, [])
         self.assertEqual(lines[-2], f"{OPEN_ROWS - 30} more (show --all)")
-        self.assertIn("work/t030 has 0 A", lines[-1])
-        self.assertNotIn("work/t031", lines[-1])
+        self.assertRegex(lines[-1], r"^gaps: \d+ \(show --gaps\)$")
+        listed = [line for line in self.show({}, [], "--gaps") if line.startswith("gap: ")]
+        self.assertTrue(any("work/t030 has 0 A" in line for line in listed), listed)
+        self.assertFalse(any("work/t031" in line for line in listed), listed)
+        self.assertEqual(lines[-1], f"gaps: {len(listed)} (show --gaps)")
 
 
 class TestMemoryBudget(Scratch):
