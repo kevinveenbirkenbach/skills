@@ -42,7 +42,11 @@ hands over, `kvb-git-pr-create`, `kvb-git-update-branches` and
 6. **Red**: fix every failure at its root cause, commit the fix by the
    project's commit rules, and rerun the full gate from step 2, never only
    the failed targets. No push command is handed over until it is green.
-7. **Hand over** through the `kvb-org-operator` skill the push command the
+7. **Review**: `${CLAUDE_SKILL_DIR}/../kvb-code-review/scripts/review.py
+   status --repo <root>` prints `review: clean` or `review: waived` for the
+   gated tree; otherwise run the `kvb-code-review` skill on everything the
+   push sends first. The pre-bash hook refuses the push row anyway.
+8. **Hand over** through the `kvb-org-operator` skill the push command the
    repository's agent rules name (for example the operator's `gipsn` alias),
    with the gated tree hash, the log path and the gate's result line
    verbatim.

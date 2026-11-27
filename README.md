@@ -43,6 +43,7 @@ flowchart LR
   code --> code_test[kvb-code-test]
   code --> code_tune[kvb-code-tune]
   code --> code_transcend[kvb-code-transcend]
+  code --> code_review[kvb-code-review]
   ci --> ci_triage[kvb-ci-triage]
   ci --> ci_artifacts[kvb-ci-artifacts]
   ci --> ci_observe[kvb-ci-observe]
@@ -151,6 +152,7 @@ flowchart LR
     test[kvb-code-test]
     tune[kvb-code-tune]
     code_transcend[kvb-code-transcend]
+    code_review[kvb-code-review]
   end
   subgraph cat_ci [ci]
     triage[kvb-ci-triage]
@@ -279,6 +281,14 @@ flowchart LR
   score --> break_risk
   score --> efficiency
   efficiency -. heavy commands .-> queue
+  git_push --> code_review
+  code_review --> medusa
+  code_review --> sceptic
+  code_review --> advocate
+  code_review --> efficiency
+  code_review --> score
+  code_review -. heavy lenses .-> queue
+  democracy -. push row without a clean stamp .-> code_review
   gate --> democracy
   gate --> hotfix
   triage --> hotfix

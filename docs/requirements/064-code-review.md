@@ -208,6 +208,9 @@ flowchart TD
 - [ ] The hook refuses `operator.py add ... --check pushed:<dir>` with
       exit 2 and the reason `no clean review for tree <hash>`; with a clean
       stamp it allows; other `operator.py add` rows pass untouched.
+- [ ] A row whose `--command` runs `git push`, `gipsn` or `git-sign-push`
+      is a push row for its `--dir` whatever its check (operator
+      2026-11-26: `--check manual` push rows are reviewed too).
 - [ ] A waiver whose signed answer `operator_message` does not match, or an
       unreachable hub, keeps the row refused.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the skills' Bash hooks in one interpreter.
 
-pre-bash   radio.py block, watch.py block, queue.py block, graph.py hook
+pre-bash   radio.py block, watch.py block, queue.py block, graph.py hook, review_hook.py
 post-bash  watch.py watch, log.py persist
 
 Every handler reads the same hook event; exit 2 of any handler blocks with the
@@ -26,6 +26,7 @@ HANDLERS = {
         ("kvb-org-organize/scripts/watch.py", "block"),
         ("kvb-org-queue/scripts/queue.py", "block"),
         ("kvb-agent-optimize/scripts/graph.py", "hook"),
+        ("kvb-code-review/scripts/review_hook.py", "hook"),
     ),
     "post-bash": (
         ("kvb-org-organize/scripts/watch.py", "watch"),
