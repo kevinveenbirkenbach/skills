@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 
+from .asking import IN_CLAUDE, IN_CLAUDE_WORDS
 from .council import NEWS, read_claims
 from .denying import LAPSED, requester_of
 from .diffs import stored_diff
@@ -38,6 +39,24 @@ def expired_card(card: dict, expires: float) -> dict:
     return {**card, "blocked": EXPIRED_REASONS[card["kind"]], "blocked_kind": EXPIRED, "expires": expires}
 
 
+def claude_card(card: dict, expires: float) -> dict:
+    """Args:
+        card: the waiting_card() of a bound ask or decision lapsed_of()
+            keeps (inbox.lapsed_item()).
+        expires: when its hook stopped waiting, in epoch seconds.
+
+    Returns:
+        The card greyed with blocked_kind IN_CLAUDE, IN_CLAUDE_WORDS and its
+        expires time: no stale or expired stamp, as its dialog is still open
+        in Claude until a hook closes it.
+    """
+    return {**card, "blocked": IN_CLAUDE_WORDS, "blocked_kind": IN_CLAUDE, "expires": expires}
+
+
+def lapsed_card(card: dict, item: dict) -> dict:
+    return (claude_card if item["claude"] else expired_card)(card, item["expires"])
+
+
 def repository_of(common_dir: str) -> str:
     return common_dir.removesuffix("/.git") if common_dir.endswith("/.git") else common_dir
 
@@ -66,10 +85,12 @@ class Matching:
     def match_cards(self) -> dict:
         """Returns:
             {"now", "cards"}: every card waiting on the operator, none held
-            by a release in its undo window or while it applies; a held
+            by a release in its undo window or while it applies and none
+            dismissed (Triage.hidden_refs()); a held
             command card keeps its snapshot, so an undo shows it unchanged;
-            an expired ask or decision stays, greyed by expired_card(),
-            until the operator denies it.
+            an expired ask or decision stays, greyed by lapsed_card(),
+            until the operator denies it or, for a bound one, a hook closes
+            it.
         """
         now = time.time()
         claims = read_claims(self.council)
@@ -77,7 +98,9 @@ class Matching:
         reviews = self.reviews.pending()
         labels = score_labels(self.scripts.skills)
         senders = {review["id"]: review.get("agent", "") for review in reviews}
-        cards = [{**self.commit_card(review, born_of(senders[review["id"]], names, claims), labels), "to": requester_of(claims, senders[review["id"]])[0]} for review in reviews if not self.batches.holds("review", review["id"])]
+        hidden = self.hidden_refs()
+        consoles = self.consoles()
+        cards = [{**self.commit_card(review, born_of(senders[review["id"]], names, claims), labels), "to": requester_of(claims, senders[review["id"]])[0]} for review in reviews if not self.batches.holds("review", review["id"]) and not self.review_hidden(hidden, review["id"])]
         tasks = read_register(self.council / REGISTER)
         blocked = self.blocked_rows(now)
         kinds = blocked_kinds(self.jobs.listed())
@@ -86,14 +109,14 @@ class Matching:
         roots = denied_roots(self.settings_files()[0])
         scan = self.tree.get()
         for row in rows:
-            if f"operator:{row['task']}" in releasing:
+            if f"operator:{row['task']}" in releasing or self.row_hidden(hidden, row, consoles):
                 continue
             owner = adder(tasks[row["task"]])
             cards.append({**self.command_card(row, owner, born_of(owner, names, claims), roots, scan, labels), "to": requester_of(claims, owner)[0], "blocked": row_blocked(row, blocked), "blocked_kind": row_blocked_kind(row, kinds)})
         directory = self.directory(claims, read_jsonl(self.council / NEWS), now)
         items = self.inbox(now, tasks, directory)
         cards += [self.waiting_card(item, born_of(item["agent"], names, claims), scan, labels) for item in items if self.waits(item)]
-        cards += [expired_card(self.waiting_card(item, born_of(item["agent"], names, claims), scan, labels), item["expires"]) for item in self.lapsed_items(now, directory) if self.waits(item)]
+        cards += [lapsed_card(self.waiting_card(item, born_of(item["agent"], names, claims), scan, labels), item) for item in self.lapsed_items(now, directory) if self.waits(item)]
         asked = {row["task"] for row in operator_rows(tasks) if row["check"] == "decision"}
         for answer in self.answers.listed():
             if answer["id"] not in asked:
@@ -105,15 +128,26 @@ class Matching:
                     store.remove(snapshot["id"])
         return {"now": now, "cards": cards}
 
+    def match_closed(self) -> dict:
+        """Returns:
+            {"closed"}: how many asks, decisions and reviews left pending
+            since the hub started, read from the ledgers' counters without
+            building a card or the state; a page that sees it move fetches
+            Match and the state at once instead of at its next interval.
+        """
+        return {"closed": self.asks.moves + self.decisions.moves + self.reviews.moves}
+
     def match_open(self, inbox: list[dict]) -> int:
         """Returns:
             How many cards match_cards() lists that can be decided, by its
             filters without building them: pending reviews, open command rows
-            not held by a release and without a row_blocked() reason, and the
-            inbox items waits() keeps.
+            not held by a release and without a row_blocked() reason, none
+            dismissed, and the inbox items waits() keeps.
         """
-        reviews = sum(1 for review in self.reviews.pending() if not self.batches.holds("review", review["id"]))
-        rows = sum(1 for row in self.open_rows() if not self.batches.holds("operator", row["task"]) and not row_blocked(row, {}))
+        hidden = self.hidden_refs()
+        consoles = self.consoles()
+        reviews = sum(1 for review in self.reviews.pending() if not self.batches.holds("review", review["id"]) and not self.review_hidden(hidden, review["id"]))
+        rows = sum(1 for row in self.open_rows() if not self.batches.holds("operator", row["task"]) and not row_blocked(row, {}) and not self.row_hidden(hidden, row, consoles))
         return reviews + rows + sum(1 for item in inbox if self.waits(item))
 
     def commit_card(self, review: dict, born: float | None, labels: dict | None) -> dict:

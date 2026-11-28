@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from .approving import INBOX_KINDS
+from .asking import IN_CLAUDE_WORDS
 from .choosing import answered, decision_status
 from .council import read_claims
 from .denying import requester_of
@@ -20,7 +21,21 @@ LAPSE_WINDOW = 86400
 
 
 def item_base() -> dict:
-    return {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": "", "reviews": [], "blocked": ""}
+    return {"agent": "", "to": "", "detail": "", "green": False, "gate": "", "score": "", "warnings": [], "options": [], "recommended": "", "multi": False, "check": "", "command": "", "directory": "", "sha256": "", "runnable": False, "deniable": False, "job": None, "rule": None, "dry_run": None, "diff": None, "settled": False, "answered": "", "reviews": [], "blocked": "", "stale": False, "claude": False}
+
+
+def lapsed_item(item: dict, record: dict) -> dict:
+    """Args:
+        item: the inbox item of a record lapsed_of() keeps.
+        record: that ask or decision.
+
+    Returns:
+        The item with its expires; a bound record's (asking.dialog_state()
+        IN_CLAUDE) also with claude true and IN_CLAUDE_WORDS as blocked, as
+        its dialog is open in Claude and the hub learns when it closes.
+    """
+    claude = {"claude": True, "blocked": IN_CLAUDE_WORDS} if record.get("bound") else {}
+    return {**item, "expires": record["expires"], **claude}
 
 
 def lapsed_of(records: list[dict], now: float, called: bool) -> list[dict]:
@@ -54,7 +69,7 @@ class Inbox:
             created = iso_epoch(review["created"]) or now
             gate = review.get("gate", "")
             agent = review.get("agent", "")
-            fields = {"title": review["title"], "detail": review["branch"], "green": gate == "pass", "gate": gate, "score": review.get("score", ""), "directory": review["worktree"], "agent": agent, "to": requester_of(claims, agent)[0], "diff": review.get("diff_files")}
+            fields = {"title": review["title"], "detail": review["branch"], "green": gate == "pass", "gate": gate, "score": review.get("score", ""), "directory": review["worktree"], "agent": agent, "to": requester_of(claims, agent)[0], "diff": review.get("diff_files"), "stale": self.review_moved(review)}
             items.append({**base, "kind": "review", "id": review["id"], "ts": created, **fields})
         items += [self.inbox_ask(base, ask, claims, directory) for ask in self.asks.pending() if ask["expires"] > now]
         items += [decision_item(base, decision) for decision in self.decisions.pending() if decision_status(decision, now) == "pending"]
@@ -67,7 +82,7 @@ class Inbox:
             busy = row["task"] in held
             answer = self.answers.get(row["task"])
             fields = {"answered": answer["label"] if answered(answer, row) else "", "title": row["command"], "detail": row["why"], "agent": adder(tasks[row["task"]]), "to": requester_of(claims, adder(tasks[row["task"]]))[0], "command": row["command"], "directory": row["directory"], "sha256": digest(row["command"]), "check": row["check"], "options": row["options"], "recommended": row["recommended"]}
-            state = {"runnable": runnable(row) and not busy, "deniable": not busy, "job": console_of(consoles.get(row["task"])), "reviews": self.linked(row["command"]), "blocked": row_blocked(row, reasons)}
+            state = {"runnable": runnable(row) and not busy, "deniable": not busy, "job": console_of(consoles.get(row["task"])), "reviews": self.linked(row["command"]), "blocked": row_blocked(row, reasons), "stale": self.row_moved(row)}
             items.append({**base, "kind": "operator", "id": row["task"], "ts": self.watch.first(row["task"], now), **fields, **state})
         listed = {row["task"] for row in rows}
         for task, job in consoles.items():
@@ -75,7 +90,7 @@ class Inbox:
                 fields = {"title": job["command"], "command": job["command"], "directory": job["directory"], "job": console_of(job), "settled": True}
                 items.append({**base, "kind": "operator", "id": task, "ts": job["created_ts"], **fields})
         items += self.request_items(base, now, claims)
-        return self.marked_items(items, now)
+        return self.marked_items(self.triaged(items), now)
 
     def marked_items(self, items: list[dict], now: float) -> list[dict]:
         for item in items:
@@ -90,15 +105,17 @@ class Inbox:
 
     def lapsed_items(self, now: float, directory: Directory) -> list[dict]:
         """Returns:
-            An item as inbox() builds it, with its expires, of every ask and
-            decision lapsed_of() keeps; the Inbox lists none of them, Match
-            keeps each greyed until the operator denies it.
+            An item as inbox() builds it, through lapsed_item(), of every ask
+            and decision lapsed_of() keeps and no dismissal hides; the
+            snapshot lists them apart from the inbox, Match keeps each greyed
+            until the operator denies it or, for a bound one, a hook closes
+            it (asking.CLOSING).
         """
         claims = read_claims(self.council)
         base = item_base()
-        asks = [{**self.inbox_ask(base, ask, claims, directory), "expires": ask["expires"]} for ask in lapsed_of(self.asks.pending(), now, True)]
-        decisions = [{**decision_item(base, decision), "to": requester_of(claims, decision["agent"])[0], "expires": decision["expires"]} for decision in lapsed_of(self.decisions.pending(), now, False)]
-        return self.marked_items(asks + decisions, now)
+        asks = [lapsed_item(self.inbox_ask(base, ask, claims, directory), ask) for ask in lapsed_of(self.asks.pending(), now, True)]
+        decisions = [lapsed_item({**decision_item(base, decision), "to": requester_of(claims, decision["agent"])[0]}, decision) for decision in lapsed_of(self.decisions.pending(), now, False)]
+        return self.marked_items(self.triaged(asks + decisions), now)
 
     def linked(self, command: str) -> list[dict]:
         """Returns:

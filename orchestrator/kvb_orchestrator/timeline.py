@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 
-from .asking import ask_state
-from .choosing import answered, decision_status
+from .asking import dialog_state
+from .choosing import answered
 from .council import MAYDAY_ACTIVE, NEWS, message_rows, read_claims, sessions
 from .crons import cron_event
 from .errors import Missing, ToolError
@@ -69,13 +69,13 @@ class Timeline:
                 ref = {key: review.get(key, "") for key in ("id", "status", "gate", "score", "branch", "worktree", "tree", "files")}
                 rows.append(event({"id": f"review:{review['id']}", "ts": created, "kind": "review", "title": review["title"], "text": review["notes"][:STREAM_CUT], "waiting": review["status"] == "pending", "ref": ref}))
         for ask in self.asks.listed():
-            state = ask_state(ask, now)
-            if ask["created_ts"] <= end and (state["status"] == "pending" or ask["created_ts"] >= begin):
-                ref = {"id": ask["id"], "status": state["status"], "cwd": ask["cwd"], "tool": ask["tool"], "warnings": signing.warnings(ask["command"])}
+            status = dialog_state(ask, now)
+            if ask["created_ts"] <= end and (status == "pending" or ask["created_ts"] >= begin):
+                ref = {"id": ask["id"], "status": status, "cwd": ask["cwd"], "tool": ask["tool"], "warnings": signing.warnings(ask["command"])}
                 who = {"agent": directory.at(ask["session"], ask["created_ts"]), "now": directory.now(ask["session"]), "session": ask["session"]}
-                rows.append(event({"id": f"ask:{ask['id']}", "ts": ask["created_ts"], "kind": "ask", **who, "title": ask["tool"], "text": ask["command"], "waiting": state["status"] == "pending", "ref": ref}))
+                rows.append(event({"id": f"ask:{ask['id']}", "ts": ask["created_ts"], "kind": "ask", **who, "title": ask["tool"], "text": ask["command"], "waiting": status == "pending", "ref": ref}))
         for decision in self.decisions.listed():
-            status = decision_status(decision, now)
+            status = dialog_state(decision, now)
             if decision["created_ts"] <= end and (status == "pending" or decision["created_ts"] >= begin):
                 ref = {**{key: decision.get(key, "") for key in ("id", "choice", "recommended", "options")}, "status": status}
                 text = " · ".join(option["label"] for option in decision["options"])

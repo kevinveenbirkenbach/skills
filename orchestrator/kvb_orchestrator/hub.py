@@ -68,6 +68,7 @@ from .tasking import Tasking
 from .timeline import Timeline
 from .transcripts import Transcripts
 from .tree import TREE_HEARTBEAT, Tree
+from .triage import Triage
 from .view import RADIO_WINDOW, View
 from .viewstore import ViewStore
 from .voicenotes import VoiceNotes
@@ -96,7 +97,7 @@ def environment(templates: Path) -> jinja2.Environment:
 
 
 @dataclass(frozen=True)
-class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Queueing, Scheduling, Limiting, Prunes, Firewall, Inbox, Matching, Previewing, Rules, Jobs, Sources, Timeline, View, Language):
+class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Denying, Requesting, Cleaning, Offices, Tasking, Gating, Queueing, Scheduling, Limiting, Prunes, Firewall, Triage, Inbox, Matching, Previewing, Rules, Jobs, Sources, Timeline, View, Language):
     council: Path
     pages: Path
     public_port: int
@@ -150,6 +151,7 @@ class Hub(Mcp, Reviewing, Revealing, Asking, Messaging, Choosing, Approving, Den
     live_state: LiveState
     accounts: Accounts
     schedule_settings: Schedules
+    dismissals: Ledger
 
     def hosts(self) -> tuple[str, str]:
         return f"127.0.0.1:{self.public_port}", f"localhost:{self.public_port}"
@@ -252,6 +254,7 @@ def open_hub(council: Path, pages: Path, public_port: int, state: Path, host_sta
         answers=Ledger(state / "answers.json"),
         messages=messages,
         rule_requests=Ledger(state / "rule-requests.json"),
+        dismissals=Ledger(state / "dismissals.json"),
         uploads=uploads,
         host_state=host_state,
         transcripts=Transcripts(transcripts),

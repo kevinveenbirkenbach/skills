@@ -191,7 +191,7 @@ class TestQueueView(unittest.TestCase):
             (council / "queue.json").write_text(json.dumps({"entries": [{"status": "waiting", "enqueued": NOW}]}), encoding="utf-8")
             self.calls.clear()
             silent = self.answer(None)
-            found = sampler.sample(council, council / "sys", functools.partial(sampler.queue_state, council, council / "missing.py", silent), silent, state)
+            found = sampler.sample(council, council / "sys", functools.partial(sampler.queue_state, council, council / "missing.py", silent), silent, lambda _argv: (None, ""), state)
             self.assertEqual(found["queue"], {"waiting": 1, "active": 0})
             self.assertEqual([argv[0] for argv in self.calls], ["df", "env"])
 
@@ -218,7 +218,7 @@ class TestCpu(unittest.TestCase):
             state.mkdir()
             (proc / "stat").write_text(STAT_BEFORE, encoding="utf-8")
             with mock.patch.object(sampler.time, "sleep", side_effect=AssertionError("slept")), mock.patch.object(sampler.time, "time", return_value=NOW - 60):
-                self.assertIsNone(sampler.sample(proc, Path(tmp) / "sys", functools.partial(sampler.queue_state, Path(tmp), Path(tmp) / "queue.py", lambda _argv: None), lambda _argv: None, state)["cpu"])
+                self.assertIsNone(sampler.sample(proc, Path(tmp) / "sys", functools.partial(sampler.queue_state, Path(tmp), Path(tmp) / "queue.py", lambda _argv: None), lambda _argv: None, lambda _argv: (None, ""), state)["cpu"])
             (proc / "stat").write_text(STAT_AFTER, encoding="utf-8")
             self.assertEqual(sampler.cpu_since(proc, state, NOW), 61.5)
             (proc / "stat").write_text(STAT_LATER, encoding="utf-8")
@@ -259,7 +259,7 @@ class TestPressure(unittest.TestCase):
 
     def test_a_sample_row_adds_the_pressure_keys_and_keeps_every_other_key(self):
         (self.proc / "pressure" / "memory").write_text("some avg10=3.00 avg60=0 avg300=0 total=1\n", encoding="utf-8")
-        found = sampler.sample(self.proc, self.proc / "sys", functools.partial(sampler.queue_state, self.proc, self.proc / "queue.py", lambda _argv: None), lambda _argv: None, self.state)
+        found = sampler.sample(self.proc, self.proc / "sys", functools.partial(sampler.queue_state, self.proc, self.proc / "queue.py", lambda _argv: None), lambda _argv: None, lambda _argv: (None, ""), self.state)
         self.assertEqual(sorted(found), ["cpu", "disks", "gpus", "load", "psi_full", "psi_some", "queue", "ram", "swap", "swap_out_mb_min", "t"])
         self.assertEqual((found["psi_some"], found["psi_full"], found["swap_out_mb_min"]), (3.0, None, None))
 
@@ -280,9 +280,9 @@ class TestGpus(unittest.TestCase):
         self.root = Path(tmp.name)
         self.calls = []
 
-    def run_smi(self, argv: list[str]) -> str:
+    def run_smi(self, argv: list[str]) -> tuple[str | None, str]:
         self.calls.append(argv)
-        return NVIDIA_SMI
+        return NVIDIA_SMI, ""
 
     def test_an_asleep_gpu_is_recorded_asleep_and_nvidia_smi_queries_only_the_awake_one(self):
         found = sampler.gpus(host_sys(self.root), self.run_smi)
@@ -300,9 +300,29 @@ class TestGpus(unittest.TestCase):
 
     def test_an_awake_gpu_nvidia_smi_gives_no_reading_for_is_recorded_unknown(self):
         unknown = {"name": AWAKE, "util": None, "vram_used": None, "vram_total": None}
-        self.assertEqual(sampler.gpus(host_sys(self.root), lambda argv: None), [unknown, {"name": ASLEEP, "asleep": True}])
-        self.assertEqual(sampler.gpus(self.root, lambda argv: NVIDIA_SMI.splitlines()[1]), [unknown, {"name": ASLEEP, "asleep": True}])
+        self.assertEqual(sampler.gpus(host_sys(self.root), lambda argv: (None, "")), [unknown, {"name": ASLEEP, "asleep": True}])
+        self.assertEqual(sampler.gpus(self.root, lambda argv: (NVIDIA_SMI.splitlines()[1], "")), [unknown, {"name": ASLEEP, "asleep": True}])
         self.assertEqual(sampler.mean_row(NOW, sampler.BUCKET, [row(NOW + 60, 1.0, 1, 0, unknown), row(NOW + 120, 1.0, 1, 0, unknown)])["gpus"], [unknown])
+
+    def test_a_failed_nvidia_smi_read_keeps_its_first_error_line_in_the_sample_and_the_mean(self):
+        mismatch = "Failed to initialize NVML: Driver/library version mismatch"
+        failed = {"name": AWAKE, "util": None, "vram_used": None, "vram_total": None, "error": mismatch}
+        self.assertEqual(sampler.gpus(host_sys(self.root), lambda argv: (None, mismatch)), [failed, {"name": ASLEEP, "asleep": True}])
+        rows = [row(NOW + 60, 1.0, 1, 0, failed), row(NOW + 120, 1.0, 1, 0, {**failed, "error": "NVIDIA-SMI has failed"})]
+        self.assertEqual(sampler.mean_row(NOW, sampler.BUCKET, rows)["gpus"], [{**failed, "error": "NVIDIA-SMI has failed"}])
+        read = {"name": AWAKE, "util": 40.0, "vram_used": 10, "vram_total": 100}
+        self.assertEqual(sampler.mean_row(NOW, sampler.BUCKET, [row(NOW + 60, 1.0, 1, 0, failed), row(NOW + 120, 1.0, 1, 0, read)])["gpus"], [read])
+
+    def test_attempt_names_the_first_stderr_line_else_the_first_stdout_line_of_a_failed_command(self):
+        script = "import sys; print(); print('  Failed to initialize NVML: Driver/library version mismatch  '); print('NVML library version: 620.70', file=sys.stderr); sys.exit(9)"
+        self.assertEqual(sampler.attempt([sys.executable, "-c", script]), (None, "NVML library version: 620.70"))
+        quiet = "print('\\n\\nFailed to initialize NVML: Driver/library version mismatch'); raise SystemExit(18)"
+        self.assertEqual(sampler.attempt([sys.executable, "-c", quiet]), (None, "Failed to initialize NVML: Driver/library version mismatch"))
+        self.assertEqual(sampler.attempt([sys.executable, "-c", "raise SystemExit(3)"]), (None, f"{sys.executable} exited 3"))
+        self.assertEqual(sampler.attempt([sys.executable, "-c", "print('x' * 500); raise SystemExit(1)"]), (None, "x" * sampler.ERROR_TEXT))
+        self.assertEqual(sampler.attempt([sys.executable, "-c", "print('ok')"]), ("ok\n", ""))
+        self.assertEqual(sampler.attempt(["kvb-no-such-tool-091"]), (None, "kvb-no-such-tool-091 not found"))
+        self.assertIsNone(sampler.command([sys.executable, "-c", "raise SystemExit(1)"]))
 
     def test_no_nvidia_gpu_means_no_gpu_row_and_no_call(self):
         device(self.root, "0000:00:02.0", "0x8086", "0x030000", "active")

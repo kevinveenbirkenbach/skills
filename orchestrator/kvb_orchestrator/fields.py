@@ -33,6 +33,7 @@ FIELDS = {
     "tool": (re.compile(LINE.format(200)), "one line of 1 to 200 characters"),
     "id": (re.compile(r"[0-9a-f]{16}"), "an id the Agent Orchestrator returned"),
     "call_key": (re.compile(r"[0-9a-f]{64}"), "the sha256 hex digest signing.call_key() gives the tool call"),
+    "closer": (re.compile(r"[A-Za-z0-9_-]{32,128}"), "the hook's closer token of the session, 32 to 128 URL-safe characters"),
 }
 
 

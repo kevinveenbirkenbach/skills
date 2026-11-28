@@ -6,10 +6,17 @@
         hook's timeout in settings.json.
     --approvers: the pinned passkeys, e.g. ~/.config/kvb-orchestrator/approvers.json.
     --replay: this hook's replay store, outside the hub's reach, e.g.
-        ~/.local/state/kvb-orchestrator-approvals/hook.json.
-    stdin: the Claude Code PermissionRequest hook input, or the PostToolUse
-        input of a call that ran, which report_ran() tells the hub and which
-        prints nothing.
+        ~/.local/state/kvb-orchestrator-approvals/hook.json; the closer
+        tokens live beside it (closer_path()).
+    --bound: set when the same registration runs this client on CLOSING
+        too (scripts/orchestrator.sh hook), so the hub keeps a card whose
+        wait ran out as open in Claude until a closing event ends it; each
+        registration then carries the session's closer_token(), the only
+        token a closing report closes its cards with.
+    stdin: the Claude Code PermissionRequest hook input, or the input of a
+        CLOSING event: the PostToolUse input of a call that ran, a Stop,
+        UserPromptSubmit or SessionEnd input, which report_ran() tells the
+        hub and which prints nothing.
 
 Returns:
     stdout: the PermissionRequest decision JSON: allow only when a pinned
@@ -43,6 +50,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+import secrets
 import sys
 import time
 import urllib.error
@@ -73,7 +83,15 @@ SHELL = "Bash"
 SHELL_KEYS = frozenset({"command", "description", "timeout", "run_in_background"})
 OPTION_KEYS = ("label", "description", "preview")
 RAN_EVENT = "PostToolUse"
+SESSION_END = "SessionEnd"
+CLOSING = (RAN_EVENT, "Stop", "UserPromptSubmit", SESSION_END)
 RAN_TIMEOUT = 2.0
+ANSWERS_LIMIT = 8
+QUESTION_LIMIT = 20_000
+ANSWER_LIMIT = 4000
+CLOSERS = "closers"
+CLOSER = re.compile(r"[A-Za-z0-9_-]{32,128}")
+CLOSER_BYTES = 32
 
 
 def summary(tool: str, tool_input: object) -> str:
@@ -203,34 +221,150 @@ def encoded(payload: dict) -> bytes:
 def call_key_of(hook: dict) -> str:
     """Returns:
         signing.call_key() of the hook input's tool_name and tool_input, the
-        same for the PermissionRequest and the PostToolUse input of one call;
-        empty when they cannot be encoded, so the ask goes without it and
-        never becomes an expired Match card.
+        same for the PermissionRequest and the PostToolUse input of one call,
+        an AskUserQuestion input keyed without the answers its PostToolUse
+        input may carry; empty when they cannot be encoded, so the ask goes
+        without it and never becomes an expired Match card.
     """
+    tool_input = hook.get("tool_input")
+    if hook.get("tool_name") == QUESTION_TOOL and isinstance(tool_input, dict):
+        tool_input = {name: value for name, value in tool_input.items() if name != "answers"}
     try:
-        return signing.call_key(hook.get("tool_name"), hook.get("tool_input"))
+        return signing.call_key(hook.get("tool_name"), tool_input)
     except (TypeError, ValueError):
         return ""
 
 
-def report_ran(base: str, hook: dict) -> None:
-    """Args:
-        hook: the PostToolUse input of a call that ran; the hub closes the
-            oldest still pending ask of that session and call_key_of() as
-            answered in the terminal. The report approves and denies nothing.
+def ran_answers(hook: dict) -> dict[str, str] | None:
+    """Returns:
+        The {question: answer} an AskUserQuestion call that ran carries in
+        its tool_response, else in its tool_input; None for another tool or
+        no such map of texts within the hub's ANSWERS_LIMIT, QUESTION_LIMIT
+        and ANSWER_LIMIT, so the report still closes the decisions.
     """
-    key, session = call_key_of(hook), str(hook.get("session_id") or "")
-    if not key or not session or len(session) > NAME_LIMIT:
+    if hook.get("tool_name") != QUESTION_TOOL:
+        return None
+    for source in (hook.get("tool_response"), hook.get("tool_input")):
+        answers = source.get("answers") if isinstance(source, dict) else None
+        if isinstance(answers, dict) and 0 < len(answers) <= ANSWERS_LIMIT and all(isinstance(question, str) and isinstance(answer, str) and len(question) <= QUESTION_LIMIT and len(answer) <= ANSWER_LIMIT for question, answer in answers.items()):
+            return answers
+    return None
+
+
+def closer_path(replay: Path, session: str) -> Path | None:
+    """Args:
+        replay: --replay, this hook's replay store; the closer tokens live
+            beside it in CLOSERS, outside the hub's reach.
+        session: the hook input's session_id.
+
+    Returns:
+        The file of the session's closer token, one per session id; None for
+        a session id signing.SESSION refuses, so no id names a path outside
+        CLOSERS.
+    """
+    return replay.parent / CLOSERS / f"{session}.token" if signing.SESSION.fullmatch(session) else None
+
+
+def read_closer(path: Path) -> str | None:
+    """Returns:
+        The closer token the file at path holds, None when there is none.
+
+    Raises:
+        OSError when path is a link, ValueError when it holds no CLOSER.
+    """
+    try:
+        handle = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(handle, encoding="ascii", errors="replace") as file:
+        token = file.read(256)
+    if not CLOSER.fullmatch(token):
+        raise ValueError(f"{path} holds no closer token")
+    return token
+
+
+def closer_token(replay: Path, session: str) -> str:
+    """Args:
+        replay: --replay (closer_path()).
+        session: the hook input's session_id.
+
+    Returns:
+        The session's closer token, which every registration and every
+        CLOSING report of the session sends as closer: on first use
+        secrets.token_urlsafe(CLOSER_BYTES) written to a mode 0600 file and
+        linked into place, so a file a concurrent hook linked first wins and
+        no reader sees it half written; empty for a session id closer_path()
+        refuses, whose cards only a PostToolUse closes.
+    """
+    path = closer_path(replay, session)
+    if path is None:
+        return ""
+    found = read_closer(path)
+    if found is not None:
+        return found
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}")
+    handle = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(handle, "w", encoding="ascii") as file:
+            file.write(secrets.token_urlsafe(CLOSER_BYTES))
+        os.link(temporary, path)
+    except FileExistsError:
+        pass
+    finally:
+        temporary.unlink(missing_ok=True)
+    token = read_closer(path)
+    if token is None:
+        raise ValueError(f"{path} went away while it was made")
+    return token
+
+
+def report_ran(base: str, hook: dict, replay: Path) -> None:
+    """Args:
+        hook: the input of a CLOSING event; the hub closes, of exactly that
+            session_id, for a PostToolUse the oldest still pending ask and
+            per question the oldest decision of call_key_of() as answered in
+            Claude, the decisions with ran_answers(); for Stop and
+            UserPromptSubmit every still open card of the main agent; for
+            SessionEnd every one as ended. Every report carries the
+            session's closer token when its file exists (closer_token()),
+            and the hub closes a card registered with a closer only for that
+            token; Stop, UserPromptSubmit and SessionEnd send nothing
+            without one. SessionEnd deletes the token file after its report,
+            even a failed one. One POST, no read; the report approves and
+            denies nothing.
+        replay: --replay (closer_path()).
+    """
+    event, session = hook.get("hook_event_name"), str(hook.get("session_id") or "")
+    if event not in CLOSING or not session or len(session) > NAME_LIMIT:
         return
-    request = urllib.request.Request(f"{base}/api/asks/ran", data=encoded({"call_key": key, "session": session}), headers={"Content-Type": "application/json", **hub_api.GUARD}, method="POST")
-    hub_api.call(request, RAN_TIMEOUT)
+    path = closer_path(replay, session)
+    try:
+        token = None if path is None else read_closer(path)
+        closer = {} if token is None else {"closer": token}
+        if event == RAN_EVENT:
+            key, answers = call_key_of(hook), ran_answers(hook)
+            if not key:
+                return
+            body = {"event": event, "call_key": key, "session": session, **({"answers": answers} if answers else {}), **closer}
+        elif token is None:
+            return
+        else:
+            body = {"event": event, "session": session, **closer}
+        request = urllib.request.Request(f"{base}/api/asks/ran", data=encoded(body), headers={"Content-Type": "application/json", **hub_api.GUARD}, method="POST")
+        hub_api.call(request, RAN_TIMEOUT)
+    finally:
+        if event == SESSION_END and path is not None:
+            path.unlink(missing_ok=True)
 
 
-def create(base: str, ask: dict, timeout: float, shown: dict, key: str) -> str:
+def create(base: str, ask: dict, timeout: float, shown: dict, key: str, closers: bool, closer: str) -> str:
     """Args:
         key: the call's call_key_of(), sent only when not empty.
+        closers: --bound, sent as bound only when set.
+        closer: the session's closer_token(), sent only when not empty.
     """
-    called = {"call_key": key} if key else {}
+    called = {**({"call_key": key} if key else {}), **({"bound": True} if closers else {}), **({"closer": closer} if closer else {})}
     data = encoded({**ask, "timeout": timeout, **called, **shown})
     if len(data) > hub_limits.DIFF_BODY_LIMIT:
         print(f"kvb-orchestrator: the ask goes without its diff, its {len(data)} bytes pass the hub's {hub_limits.DIFF_BODY_LIMIT}", file=sys.stderr)
@@ -291,9 +425,18 @@ def asked_questions(hook: dict) -> list[dict] | None:
     return questions
 
 
-def ask_question(base: str, question: dict, session: str, timeout: float) -> str:
+def ask_question(base: str, question: dict, hook: dict, timeout: float, closers: bool, closer: str) -> str:
+    """Args:
+        hook: the PermissionRequest input of the AskUserQuestion call; its
+            session_id, call_key_of() and agent_type (a subagent's) go with
+            the decision, so the CLOSING events close it.
+        closers: --bound, sent as bound only when set.
+        closer: the session's closer_token(), sent only when not empty.
+    """
     options = [{key: option[key] for key in OPTION_KEYS if key in option} if isinstance(option, dict) else option for option in question["options"]]
-    data = encoded({"question": question["question"], "options": options, "session": session, "timeout": timeout, "multi": question.get("multiSelect") is True})
+    key, subagent = call_key_of(hook), str(hook.get("agent_type") or "")
+    tied = {**({"call_key": key} if key else {}), **({"subagent": subagent} if subagent else {}), **({"bound": True} if closers else {}), **({"closer": closer} if closer else {})}
+    data = encoded({"question": question["question"], "options": options, "session": str(hook.get("session_id") or ""), "timeout": timeout, "multi": question.get("multiSelect") is True, **tied})
     request = urllib.request.Request(f"{base}/api/decisions", data=data, headers={"Content-Type": "application/json", **hub_api.GUARD}, method="POST")
     decision_id = hub_api.call(request, hub_api.SLACK)["id"]
     if not isinstance(decision_id, str) or not signing.ID.fullmatch(decision_id):
@@ -351,15 +494,14 @@ def signed(answer: dict, decision_id: str, question: dict, trust: verifier.Trust
     return True
 
 
-def answers_of(base: str, hook: dict, questions: list[dict], timeout: float, trust: verifier.Trust, deadline: float) -> dict | None:
+def answers_of(base: str, hook: dict, questions: list[dict], timeout: float, trust: verifier.Trust, deadline: float, closers: bool, closer: str) -> dict | None:
     """Returns:
         The PermissionRequest allow that answers every question with the
         option the operator picked and signed in the Agent Orchestrator;
         None as soon as one question goes unanswered or one signature does
         not hold.
     """
-    session = str(hook.get("session_id") or "")
-    asked = [(ask_question(base, question, session, timeout), question) for question in questions]
+    asked = [(ask_question(base, question, hook, timeout, closers, closer), question) for question in questions]
     picks = []
     for decision_id, question in asked:
         pick = picked(base, decision_id, question, deadline)
@@ -378,18 +520,20 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, required=True)
     parser.add_argument("--approvers", type=Path, required=True)
     parser.add_argument("--replay", type=Path, required=True)
+    parser.add_argument("--bound", action="store_true")
     args = parser.parse_args()
     base = hub_api.base_url(args.port)
     trust = verifier.Trust(approvers=args.approvers, replay=args.replay, origin=signing.origin_of(args.port))
     deadline = time.monotonic() + args.timeout
     try:
         hook = json.load(sys.stdin)
-        if hook.get("hook_event_name") == RAN_EVENT:
-            report_ran(base, hook)
+        if hook.get("hook_event_name") in CLOSING:
+            report_ran(base, hook, args.replay)
             return 0
         questions = asked_questions(hook)
         if questions is not None:
-            chosen = answers_of(base, hook, questions, args.timeout, trust, deadline)
+            closer = closer_token(args.replay, str(hook.get("session_id") or "")) if args.bound else ""
+            chosen = answers_of(base, hook, questions, args.timeout, trust, deadline, args.bound, closer)
             if chosen is not None:
                 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": chosen}}))
             return 0
@@ -402,7 +546,7 @@ def main() -> int:
             print(f"kvb-orchestrator: {WORKTREE}", file=sys.stderr)
             return 0
         pinned, shown = commit_diff(ask, staged_diff.rules_root())
-        ask_id = create(base, ask, args.timeout, shown, call_key_of(hook))
+        ask_id = create(base, ask, args.timeout, shown, call_key_of(hook), args.bound, closer_token(args.replay, ask["session"]) if args.bound else "")
         answer = {"status": "pending"}
         while answer["status"] == "pending" and (left := deadline - time.monotonic()) > 0:
             answer = status(base, ask_id, min(left, POLL))

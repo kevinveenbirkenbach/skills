@@ -32,6 +32,7 @@ ENTRY = re.compile(r"/api/stream/([0-9]{1,12})")
 BOARD = re.compile(r"/api/board/([a-z-]{1,32})")
 UPLOADS = "/api/uploads"
 MATCH_ROUTE = "/api/match"
+CLOSED_ROUTE = "/api/match/closed"
 PREVIEWS_ROUTE = "/api/runner/previews"
 RESTART_ROUTE = "/api/runner/restart"
 MATCH_POSTS = {"/api/match/stale": "match_stale", "/api/match/snapshot": "match_snapshot"}
@@ -61,6 +62,7 @@ TASKS_ROUTE = "/api/tasks"
 GATES_ROUTE = "/api/gates"
 QUEUE_ROUTE = "/api/queue"
 PRUNE_ROUTE = "/api/prune"
+DISMISS_ROUTE = "/api/requests/dismiss"
 TOKEN_ROUTE = "/api/cleanup/token"
 VIEW_ROUTE = "/api/view"
 USAGE_ROUTE = "/api/usage"
@@ -97,7 +99,7 @@ ACCOUNTS_IMPORT = {"/api/accounts/import/preview": "preview", "/api/accounts/imp
 SCHEDULES_ROUTE = "/api/schedules"
 LIMITS_ROUTE = "/api/limits"
 LIMITS_SIGN_ROUTE = "/api/limits/sign"
-ACTION_POSTS = (ACCOUNTS_ROUTE, *ACCOUNTS_IMPORT, SCHEDULES_ROUTE, LIMITS_SIGN_ROUTE, "/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, RULE_MATCH_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, QUEUE_ROUTE, PRUNE_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
+ACTION_POSTS = (ACCOUNTS_ROUTE, *ACCOUNTS_IMPORT, SCHEDULES_ROUTE, LIMITS_SIGN_ROUTE, "/api/rules", "/api/nl", SETTINGS_ROUTE, TTS_ROUTE, STT_ROUTE, SIGN_ROUTE, RULE_SIGN_ROUTE, RULE_MATCH_ROUTE, CLEANUP_ROUTE, OFFICES_ROUTE, TASKS_ROUTE, VOICE_ROUTE, MESSAGE_SIGN_ROUTE, SETTINGS_SIGN_ROUTE, CHOICES_ROUTE, CHOICES_SIGN_ROUTE, GATES_ROUTE, QUEUE_ROUTE, PRUNE_ROUTE, DISMISS_ROUTE, TOKEN_ROUTE, *FIREWALL_POSTS)
 
 
 class Handler(Exchange):
@@ -172,6 +174,8 @@ class Handler(Exchange):
             self.answer(lambda: served(hub.tree.file.with_name(SKILLS_INDEX)), HTTPStatus.OK)
         elif path == MATCH_ROUTE:
             self.answer(hub.match_cards, HTTPStatus.OK)
+        elif path == CLOSED_ROUTE:
+            self.answer(hub.match_closed, HTTPStatus.OK)
         elif path == ACCOUNTS_ROUTE:
             self.answer(lambda: hub.accounts.view(time.time()), HTTPStatus.OK)
         elif path == ACCOUNTS_EXPORT:
@@ -275,6 +279,8 @@ class Handler(Exchange):
             return lambda body: self.answer(lambda: hub.change_queue(body), HTTPStatus.ACCEPTED)
         if path == PRUNE_ROUTE:
             return lambda body: self.answer(lambda: hub.prune(body), HTTPStatus.ACCEPTED)
+        if path == DISMISS_ROUTE:
+            return lambda body: self.answer(lambda: hub.dismiss_requests(body), HTTPStatus.ACCEPTED)
         if path == TOKEN_ROUTE:
             return lambda body: self.answer(lambda: hub.token_row(body), HTTPStatus.CREATED)
         if inbox:

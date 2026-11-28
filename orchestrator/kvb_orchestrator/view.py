@@ -156,6 +156,7 @@ class View:
             "speech": {**self.speech.describe(), "gate": self.speech_gate.state()},
             "people": people,
             "inbox": inbox,
+            "lapsed": self.lapsed_items(now, directory),
             "badges": badges(self.match_open(inbox), claims, self.jobs.listed(), now),
             "pending": self.batches.listed(),
             "rules": self.rule_rows(now),

@@ -7,7 +7,6 @@ import signing
 
 ANNOUNCE = "announce"
 APPLY = "prune"
-TASKS_LIMIT = 50
 WINDOW_MIN = 60
 SKEW = 300
 SENDER = "Operator"
@@ -22,14 +21,15 @@ def whole(value: object) -> bool:
 
 def checked_tasks(tasks: list[str]) -> list[str]:
     """Returns:
-        tasks: 1 to TASKS_LIMIT distinct register slugs signing.TASK matches,
-        none an operator/ or hotfix/ record.
+        tasks: at least one distinct register slug signing.TASK matches,
+        none an operator/ or hotfix/ record; the hub's body limit is the
+        only bound on their number.
 
     Raises:
         signing.Refused for any other list.
     """
-    if not 1 <= len(tasks) <= TASKS_LIMIT or len(set(tasks)) != len(tasks):
-        raise signing.Refused(f"a prune names 1 to {TASKS_LIMIT} distinct tasks")
+    if not tasks or len(set(tasks)) != len(tasks):
+        raise signing.Refused("a prune names at least one task, each once")
     if not all(signing.TASK.fullmatch(task) and not task.startswith(RECORDS) for task in tasks):
         raise signing.Refused("a pruned task is no register task slug outside operator/ and hotfix/")
     return tasks

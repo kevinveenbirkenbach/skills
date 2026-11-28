@@ -20,11 +20,12 @@ TRENDS = ("off", "regression", "velocity")
 TREND_DAYS = (1, 365)
 THRESHOLDS = tuple(range(0, ALWAYS + 1, 10))
 WPM = (5, 40)
-LATE = ("rates", "morse", "undo", "popups", "agents", "forecast", "match")
+LATE = ("rates", "morse", "undo", "popups", "agents", "forecast", "match", "hook")
 AGENT_SWITCHES = ("sound", "aloud", "bubbles")
 AGENTS_LIMIT = 200
 UNDO_RANGE = (0, 60)
 MATCH_REFRESH = (1, 60)
+HOOK_WAIT = (1, 60)
 POPUP_SOURCES = ("resources", "mayday", "dream")
 POPUP_UNTIL = 4102444800
 NOTIFY = "notify.json"
@@ -62,6 +63,7 @@ SETTINGS = {
     "agents": {},
     "forecast": False,
     "match": {"refresh": 2},
+    "hook": {"wait": 60},
 }
 RATE_CHIP = (2, 9)
 SPACE_AXES = ("none", "time", "spawn")
@@ -217,6 +219,21 @@ def match_setting(raw: object) -> dict:
     return {"refresh": refresh}
 
 
+def hook_setting(raw: object) -> dict:
+    """Args:
+        raw: {"wait"}: whole minutes the PermissionRequest hook waits for the
+            hub while Claude shows its own dialog; scripts/orchestrator.sh
+            hook writes it into the hook's --timeout and its settings.json
+            timeout, so it applies from the next make orchestrator-hook.
+    """
+    entry = section(raw, "hook", tuple(SETTINGS["hook"]))
+    low, high = HOOK_WAIT
+    wait = entry["wait"]
+    if isinstance(wait, bool) or not isinstance(wait, int) or not low <= wait <= high:
+        raise ToolError(f"hook.wait must be whole minutes from {low} to {high}")
+    return {"wait": wait}
+
+
 def popups_setting(raw: object) -> dict:
     data = section(raw, "popups", POPUP_SOURCES)
     popups = {}
@@ -288,6 +305,7 @@ def valid_settings(raw: object) -> dict:
         "agents": agents_setting(data["agents"]),
         "forecast": flag(data["forecast"], "forecast"),
         "match": match_setting(data["match"]),
+        "hook": hook_setting(data["hook"]),
     }
 
 

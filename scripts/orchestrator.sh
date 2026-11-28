@@ -26,9 +26,12 @@
 #            council.py, nofollow.py, councilroot.py or rasci.py differ from
 #            this tree
 #   hook     register the PermissionRequest hook in ~/.claude/settings.json,
-#            and the same client as async PostToolUse hook that reports a
-#            call that ran, replacing an earlier entry, keeping everything else and the file
-#            mode, after a copy to settings.json.before-kvb-orchestrator-hook
+#            waiting the hub Settings' hook wait (else HOOK_TIMEOUT), and the
+#            same client as async PostToolUse, Stop and UserPromptSubmit hook
+#            and as SessionEnd hook, which close the session's cards in the
+#            hub, replacing an earlier entry, keeping everything else and the
+#            file mode, after a copy to settings.json.before-kvb-orchestrator-hook;
+#            refuse while the installed client lacks --bound
 #   idle     exit 1 with the hub row's task and job id while runner-job.json
 #            in ~/.local/state/kvb-orchestrator names a live pid, the runner
 #            running that row, which a stop of the runner would kill; exit 0
@@ -48,7 +51,9 @@ COUNCIL="$(python3 "${COUNCIL_ROOT}" root)"
 KEPT="$(python3 "${COUNCIL_ROOT}" durable)"
 SETTINGS="${HOME}/.claude/settings.json"
 LOCAL_SETTINGS="${HOME}/.claude/settings.local.json"
-HOOK_TIMEOUT=110
+HOOK_TIMEOUT=3600
+HOOK_WAIT_CAP=3600
+CLOSER_TIMEOUT=10
 RUNNER="${NAME}-runner.service"
 TREE_UNIT="${NAME}-tree"
 CLEANUP_UNIT="${NAME}-cleanup"
@@ -86,7 +91,10 @@ has_systemd() {
 }
 
 # Args: settings file, marker every dropped hook command contains, then
-# optionally the command and timeout of the entry to append.
+# optionally the command, the PermissionRequest timeout and the timeout of
+# the closing hooks (PostToolUse, Stop, UserPromptSubmit, SessionEnd) to
+# append; SessionEnd runs in the foreground, since Claude Code may exit
+# before an async hook ran.
 rewrite_hooks() {
 	python3 - "$@" <<'PY'
 import json, os, sys
@@ -95,11 +103,16 @@ from pathlib import Path
 path, (marker, *added) = Path(sys.argv[1]), sys.argv[2:]
 settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
-for event, extra in (("PermissionRequest", {}), ("PostToolUse", {"async": True})):
-    entries = settings.setdefault("hooks", {}).setdefault(event, [])
-    entries[:] = [entry for entry in entries if not any(marker in hook.get("command", "") for hook in entry.get("hooks", []))]
+events = {"PermissionRequest": ("*", False), "PostToolUse": ("*", True), "Stop": (None, True), "UserPromptSubmit": (None, True), "SessionEnd": (None, False)}
+hooks = settings.setdefault("hooks", {})
+for event, (matcher, background) in events.items():
+    entries = [entry for entry in hooks.get(event, []) if not any(marker in hook.get("command", "") for hook in entry.get("hooks", []))]
     if added:
-        entries.append({"matcher": "*", "hooks":[{"type": "command", "command": added[0], "timeout": int(added[1]), **extra}]})
+        timeout = int(added[1] if event == "PermissionRequest" else added[2])
+        hook = {"type": "command", "command": added[0], "timeout": timeout, **({"async": True} if background else {})}
+        entries.append({**({"matcher": matcher} if matcher else {}), "hooks": [hook]})
+    if entries or event in hooks:
+        hooks[event] = entries
 temporary = path.with_name(f"{path.name}.{os.getpid()}")
 temporary.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 temporary.chmod(mode)
@@ -505,12 +518,35 @@ pin() {
 	return "${FAILED}"
 }
 
+# Args: the hub's settings.json and the fallback in seconds. Prints the
+# seconds the PermissionRequest hook waits: the whole minutes of its
+# hook.wait times 60 when they lie from 1 to 60, at most HOOK_WAIT_CAP,
+# else the fallback.
+hook_wait() {
+	python3 - "$1" "$2" "${HOOK_WAIT_CAP}" <<'PY'
+import json, sys
+from pathlib import Path
+
+path, fallback, cap = Path(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
+try:
+    minutes = json.loads(path.read_text(encoding="utf-8"))["hook"]["wait"]
+except (OSError, ValueError, KeyError, TypeError):
+    minutes = None
+print(min(minutes * 60, cap) if type(minutes) is int and 1 <= minutes <= 60 else fallback)
+PY
+}
+
 hook() {
-	local command
-	command="/usr/bin/python3 -E -s \"${HUB}/client/permission_hook.py\" --port $(port_of "${HUB}/.env") --timeout ${HOOK_TIMEOUT} --approvers \"${APPROVERS}/approvers.json\" --replay \"${APPROVALS}/hook.json\""
+	local command seconds client="${HUB}/client/permission_hook.py"
+	if ! grep -qF -- '"--bound"' "${client}"; then
+		warn "skills: ${client} predates the closing hooks; run make install first, then make orchestrator-hook"
+		exit 1
+	fi
+	seconds="$(hook_wait "${STATE}/settings.json" "${HOOK_TIMEOUT}")"
+	command="/usr/bin/python3 -E -s \"${client}\" --port $(port_of "${HUB}/.env") --timeout ${seconds} --approvers \"${APPROVERS}/approvers.json\" --replay \"${APPROVALS}/hook.json\" --bound"
 	[[ -f "${SETTINGS}" ]] && cp -p "${SETTINGS}" "${SETTINGS}.before-${NAME}-hook"
-	rewrite_hooks "${SETTINGS}" "${NAME}/client/permission_hook.py" "${command}" "$((HOOK_TIMEOUT + 10))"
-	log "skills: registered the PermissionRequest hook in ${SETTINGS} (copy before: ${SETTINGS}.before-${NAME}-hook); restart Claude Code to load it"
+	rewrite_hooks "${SETTINGS}" "${NAME}/client/permission_hook.py" "${command}" "$((seconds + 10))" "${CLOSER_TIMEOUT}"
+	log "skills: registered the PermissionRequest hook (wait ${seconds} s) and its closing hooks in ${SETTINGS} (copy before: ${SETTINGS}.before-${NAME}-hook); restart every Claude Code session to load them"
 }
 
 case "${1:-}" in

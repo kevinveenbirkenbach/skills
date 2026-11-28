@@ -154,7 +154,7 @@ class TestHubState(HubCase):
             {
                 "now", "since", "until", "first", "alarm_since", "reviews", "asks", "decisions", "messages", "reasons", "operator",
                 "schedules", "tasks", "task_edges", "queue_line", "queue_jobs", "agent_order", "radio", "claims", "grants", "night", "night_parts", "presence", "beats", "runner", "silence", "graph",
-                "inbox", "pending", "rules", "approvers", "jobs", "views", "llm", "people", "settings", "media", "speech",
+                "inbox", "lapsed", "pending", "rules", "approvers", "jobs", "views", "llm", "people", "settings", "media", "speech",
                 "badges", "kinds",
             },
         )

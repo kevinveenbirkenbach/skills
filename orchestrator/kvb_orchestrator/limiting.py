@@ -121,9 +121,11 @@ class Limiting:
 
     def save_limits(self, body: bytes) -> dict:
         """Args:
-            body: {limits, proof}: the whole limits object and, when a value
-                loosens against the limits in force at this save, the
-                passkey proof over signing.limits_item() of exactly it.
+            body: {limits, proof}: the whole limits object, which carries a
+                batch of staged changes at once (requirement 091), and,
+                when any value of it loosens against the limits in force at
+                this save, one passkey proof over signing.limits_item() of
+                exactly it, which covers every looser value of the batch.
 
         Returns:
             limits_view() after the write; ToolError (400) for limits

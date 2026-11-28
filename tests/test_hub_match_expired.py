@@ -21,6 +21,7 @@ CALL = signing.call_key("Bash", {"command": "make deploy"})
 OTHER = signing.call_key("Bash", {"command": "make deploy", "run_in_background": True})
 CALLED = {**ASK, "call_key": CALL}
 QUESTION = {"question": "Clean up the two worktrees?", "options": [{"label": PICK, "description": "Both are merged"}], "session": "s1", "timeout": 60, "multi": False}
+NONE = {"asks": [], "decisions": []}
 
 
 class TestExpiredFilter(unittest.TestCase):
@@ -121,20 +122,20 @@ class TestExpiredRelease(MatchCase):
         report = {"call_key": CALL, "session": "s1"}
         self.assertEqual(self.ran(report, {"Host": self.host})[0], 403)
         self.assertEqual(self.ran(report, {**self.local(), "Origin": "http://evil.example"})[0], 403)
-        self.assertEqual(self.ran(report, self.local()), (200, {"closed": first}))
+        self.assertEqual(self.ran(report, self.local()), (200, {**NONE, "asks": [first]}))
         record = self.httpd.hub.asks.get(first)
         self.assertEqual((record["status"], record["proof"]), (TERMINAL, None))
         self.assertEqual(self.ask_status(first, "0"), TERMINAL)
         self.assertEqual(self.httpd.hub.asks.get(second)["status"], "pending")
         self.assertNotIn(f"ask:{first}", [card["id"] for card in self.cards()])
-        self.assertEqual(self.ran(report, self.local()), (200, {"closed": second}))
-        self.assertEqual(self.ran(report, self.local()), (200, {"closed": None}))
+        self.assertEqual(self.ran(report, self.local()), (200, {**NONE, "asks": [second]}))
+        self.assertEqual(self.ran(report, self.local()), (200, NONE))
         self.assertEqual(self.post_json("/api/sign", {"items": [self.denial("ask", first, "Skills")]}, self.guard(self.host))[0], 409)
 
     def test_a_report_never_closes_an_ask_created_after_it(self):
         ask = self.lapsed_ask(CALLED)
         self.httpd.hub.asks.change(ask, {"created_ts": time.time() + 60})
-        self.assertEqual(self.ran({"call_key": CALL, "session": "s1"}, self.local()), (200, {"closed": None}))
+        self.assertEqual(self.ran({"call_key": CALL, "session": "s1"}, self.local()), (200, NONE))
         self.assertEqual(self.httpd.hub.asks.get(ask)["status"], "pending")
 
     def test_the_hook_client_keys_its_ask_and_reports_the_call_that_ran_and_prints_nothing(self):
@@ -148,8 +149,8 @@ class TestExpiredRelease(MatchCase):
 
     def test_a_foreign_session_a_different_input_or_a_bad_report_closes_nothing(self):
         ask = self.lapsed_ask(CALLED)
-        self.assertEqual(self.ran({"call_key": CALL, "session": "s2"}, self.local()), (200, {"closed": None}))
-        self.assertEqual(self.ran({"call_key": OTHER, "session": "s1"}, self.local()), (200, {"closed": None}))
+        self.assertEqual(self.ran({"call_key": CALL, "session": "s2"}, self.local()), (200, NONE))
+        self.assertEqual(self.ran({"call_key": OTHER, "session": "s1"}, self.local()), (200, NONE))
         for bad in ({"call_key": CALL}, {"call_key": CALL, "session": ""}, {"call_key": "../x", "session": "s1"}, {"call_key": CALL, "session": "s1", "status": "allowed"}):
             with self.subTest(bad=bad):
                 self.assertEqual(self.ran(bad, self.local())[0], 400)

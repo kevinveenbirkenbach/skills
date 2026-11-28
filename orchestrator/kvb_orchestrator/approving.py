@@ -43,6 +43,7 @@ from .signed import (
     verifier,
 )
 from .tasking import task_request
+from .triage import DISMISS_VERB, dismiss_entry, dismiss_request
 
 BATCH_LIMIT = 100
 INBOX_KINDS = ("review", "ask", "decision", "operator", "rule")
@@ -176,11 +177,16 @@ class Approving:
 
     def apply(self, batch: dict) -> None:
         """Args:
-            batch: settled item by item; operator rows after every other
-                item, so a commit row's job never starts before the reviews
-                its verify steps check are decided.
+            batch: its dismissals of a Match release first, through
+                apply_dismissals(), then the rest settled item by item;
+                operator rows after every other item, so a commit row's job
+                never starts before the reviews its verify steps check are
+                decided.
         """
-        for item in sorted(batch["items"], key=lambda item: item["kind"] == "operator"):
+        dismissed = [item for item in batch["items"] if item["verb"] == DISMISS_VERB]
+        if dismissed:
+            self.apply_dismissals({**batch, "items": dismissed})
+        for item in sorted((item for item in batch["items"] if item["verb"] != DISMISS_VERB), key=lambda item: item["kind"] == "operator"):
             try:
                 outcome = self.settle_item(item, batch["proof"] if item["signed"] is not None else None)
             except (OSError, ToolError) as error:
@@ -318,6 +324,29 @@ class Approving:
             raise Conflict({"status": "held"})
         return items
 
+    def released(self, raw: object) -> list[dict]:
+        """Args:
+            raw: the page's entries: inbox entries (checked()) and the dismiss
+                entries (dismissable()) of a Match release, which one
+                signature covers together.
+
+        Returns:
+            The batch items of the inbox entries, then of the dismissals.
+
+        Raises:
+            ToolError as checked() for no inbox entry and no dismissal, and
+            for two items of one request.
+        """
+        dropped = [entry for entry in raw if dismiss_entry(entry)] if isinstance(raw, list) else []
+        if not dropped:
+            return self.checked(raw)
+        kept = [entry for entry in raw if not dismiss_entry(entry)]
+        items = (self.checked(kept) if kept else []) + self.dismissable(dropped)
+        keys = [(item["kind"], item["id"]) for item in items]
+        if len(set(keys)) != len(keys):
+            raise ToolError("items must be distinct")
+        return items
+
     def sign(self, body: bytes) -> dict:
         payload = decode(body)
         expect(payload, ("items",))
@@ -338,18 +367,28 @@ class Approving:
             signed = self.prune_changes(raw)
         elif settings_request(raw):
             signed = self.settings_changes(raw)
+        elif dismiss_request(raw):
+            signed = [item["signed"] for item in self.dismissable(raw)]
         elif enable_request(raw):
             signed = self.enable_items(raw)
             return {**self.challenge_for(signed), "enables": signed[0]["rule"]}
         else:
-            signed = signed_of(self.checked(raw))
+            signed = signed_of(self.released(raw))
         return self.challenge_for(signed)
 
     def approve(self, body: bytes) -> dict:
+        """Args:
+            body: {"items", "proof"}: the entries released() takes and the
+                one passkey assertion over their signed items; the hub
+                verifies a dismissal's signature itself, since it acts on it.
+        """
         payload = decode(body)
         expect(payload, ("items", "proof"))
-        items = self.checked(payload["items"])
+        items = self.released(payload["items"])
         proof = self.covered(payload["proof"], signed_of(items), time.time())
+        for item in items:
+            if item["verb"] == DISMISS_VERB:
+                self.operator_proven(proof, item["signed"])
         return self.batches.add(items, "operator", proof, self.apply)
 
     def undo(self, batch_id: str) -> dict:

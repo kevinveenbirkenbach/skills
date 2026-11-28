@@ -22,6 +22,7 @@ class Ledger:
         self.file = file
         self.changed = threading.Condition()
         self.items: dict[str, dict] = {}
+        self.moves = 0
         if file.is_file():
             self.items = json.loads(file.read_text(encoding="utf-8"))
 
@@ -93,6 +94,7 @@ class Ledger:
                 return dict(record), False
             updated = {**record, **changes}
             self.write({**self.items, item_id: updated})
+            self.moves += 1
             self.changed.notify_all()
             return dict(updated), True
 

@@ -20,7 +20,8 @@
         whose PCI runtime_status is not active is recorded asleep, and
         nvidia-smi is not run for it; an awake one nvidia-smi gives no
         reading for (no driver, a driver mismatch) keeps its name with util
-        and vram None. In the first minute of a 15-minute bucket, rows older
+        and vram None and, when nvidia-smi failed, error: its first error
+        line, which a mean without a reading keeps too. In the first minute of a 15-minute bucket, rows older
         than 7 days fold into 15-minute means and means older than 90 days
         into one mean per day, kept forever, each row weighted by the seconds
         it sampled, the queue keeping the last head and every hung id; a
@@ -130,6 +131,7 @@ MEGABYTE = 1_000_000
 QUEUE_ARGS = ("list", "--json")
 ID_TEXT = 64
 REASON_TEXT = 240
+ERROR_TEXT = 240
 HUNG = "suspect hung ("
 
 
@@ -176,14 +178,34 @@ def percent(part: float, whole: float | None) -> float | None:
     return round(100 * part / whole, 1) if whole else None
 
 
-def command(argv: list[str]) -> str | None:
+def first_line(text: str) -> str:
+    """Returns:
+        The first line of text holding more than blanks, stripped and cut to
+        ERROR_TEXT characters; "" for none.
+    """
+    return next((line.strip()[:ERROR_TEXT] for line in text.splitlines() if line.strip()), "")
+
+
+def attempt(argv: list[str]) -> tuple[str | None, str]:
+    """Returns:
+        (stdout, "") once argv, run without a shell, exits 0; else (None,
+        error): the first_line() of its stderr, else of its stdout, else its
+        exit code, for a missing program "<name> not found" and for one that
+        fails to start or times out the first_line() of that error.
+    """
     if shutil.which(argv[0]) is None:
-        return None
+        return None, f"{argv[0]} not found"
     try:
         done = subprocess.run(argv, capture_output=True, text=True, timeout=COMMAND_SECONDS, check=False)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return done.stdout if done.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError) as error:
+        return None, first_line(str(error)) or type(error).__name__
+    if done.returncode == 0:
+        return done.stdout, ""
+    return None, first_line(done.stderr) or first_line(done.stdout) or f"{argv[0]} exited {done.returncode}"
+
+
+def command(argv: list[str]) -> str | None:
+    return attempt(argv)[0]
 
 
 def parse_df(text: str) -> list[dict]:
@@ -284,11 +306,24 @@ def nvidia_gpus(sys_root: Path) -> list[tuple[str, bool]]:
     return found
 
 
-def gpus(sys_root: Path, run: Callable[[list[str]], str | None]) -> list[dict]:
+def gpus(sys_root: Path, run: Callable[[list[str]], tuple[str | None, str]]) -> list[dict]:
+    """Args:
+        run: attempt() or a stand-in: (stdout, "") of a command that
+            succeeded, (None, error line) of one that failed.
+
+    Returns:
+        A row per NVIDIA GPU of nvidia_gpus(): {name, asleep: true} while it
+        sleeps, else its reading; an awake GPU without one keeps util and
+        vram None and, when nvidia-smi failed, error, its first error line
+        (such as "Failed to initialize NVML: Driver/library version
+        mismatch").
+    """
     devices = nvidia_gpus(sys_root)
     awake = [address for address, active in devices if active]
-    readings = parse_nvidia(run(["nvidia-smi", f"--id={','.join(awake)}", f"--query-gpu={NVIDIA_QUERY}", "--format=csv,noheader,nounits"]) or "") if awake else {}
-    return [{"name": address, **readings.get(address, UNREAD)} if active else {"name": address, "asleep": True} for address, active in devices]
+    output, error = run(["nvidia-smi", f"--id={','.join(awake)}", f"--query-gpu={NVIDIA_QUERY}", "--format=csv,noheader,nounits"]) if awake else (None, "")
+    readings = parse_nvidia(output or "")
+    unread = {**UNREAD, "error": error} if error else UNREAD
+    return [{"name": address, **readings.get(address, unread)} if active else {"name": address, "asleep": True} for address, active in devices]
 
 
 def queue(council: Path) -> dict:
@@ -414,7 +449,12 @@ def swap_out_since(proc: Path, state: Path, t: int) -> float | None:
     return round((pages - stored[1]) * PAGE_BYTES / MEGABYTE * 60 / (t - stored[0]), 1)
 
 
-def sample(proc: Path, sys_root: Path, queued: Callable[[], dict], run: Callable[[list[str]], str | None], state: Path) -> dict:
+def sample(proc: Path, sys_root: Path, queued: Callable[[], dict], run: Callable[[list[str]], str | None], probe: Callable[[list[str]], tuple[str | None, str]], state: Path) -> dict:
+    """Args:
+        run: command() or a stand-in, for df.
+        probe: attempt() or a stand-in, for nvidia-smi, whose error line a
+            GPU without a reading keeps.
+    """
     t = int(time.time())
     ram, swap = memory(parse_meminfo(read_text(proc / "meminfo")))
     pressure = read_text(proc / "pressure" / "memory")
@@ -425,7 +465,7 @@ def sample(proc: Path, sys_root: Path, queued: Callable[[], dict], run: Callable
         "ram": ram,
         "swap": swap,
         "load": parse_loadavg(read_text(proc / "loadavg")),
-        "gpus": gpus(sys_root, run),
+        "gpus": gpus(sys_root, probe),
         "queue": queued(),
         "psi_some": psi_avg10(pressure, "some"),
         "psi_full": psi_avg10(pressure, "full"),
@@ -479,7 +519,9 @@ def gpu_mean(name: object, readings: list[tuple[int | float, dict]]) -> dict:
     awake = [(part, reading) for part, reading in readings if reading.get("asleep") is not True]
     if not awake:
         return {"name": name, "asleep": True}
-    return {"name": name, "util": average(means(awake, "util"), 1), "vram_used": whole(means(awake, "vram_used")), "vram_total": whole(means(awake, "vram_total"))}
+    found = {"name": name, "util": average(means(awake, "util"), 1), "vram_used": whole(means(awake, "vram_used")), "vram_total": whole(means(awake, "vram_total"))}
+    errors = [reading["error"] for _, reading in awake if isinstance(reading.get("error"), str) and reading["error"]]
+    return {**found, "error": errors[-1]} if errors and found["util"] is None and found["vram_used"] is None else found
 
 
 def disk_means(rows: list[dict]) -> list[dict]:
@@ -931,7 +973,7 @@ def main() -> int:
     args = parser.parse_args()
     args.state.mkdir(parents=True, exist_ok=True)
     if args.command == "sample":
-        row = sample(args.proc, args.sys, functools.partial(queue_state, args.council, args.queue, command), command, args.state)
+        row = sample(args.proc, args.sys, functools.partial(queue_state, args.council, args.queue, command), command, attempt, args.state)
         record(args.state, row, row["t"])
     else:
         count_tokens(args.transcripts, args.council, args.state, time.time(), BUDGET)

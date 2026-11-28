@@ -507,6 +507,51 @@ class TestPermissionHookInstall(Scratch):
         self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
         self.assertFalse(self.marker.exists())
 
+    def registered(self, saved: dict | None) -> tuple[subprocess.CompletedProcess, dict]:
+        home = self.root / "home"
+        hub = home / ".local" / "share" / "kvb-orchestrator"
+        shutil.rmtree(home, ignore_errors=True)
+        shutil.copytree(CLIENT, hub / "client", ignore=shutil.ignore_patterns("__pycache__"))
+        (hub / ".env").write_text("KVB_ORCHESTRATOR_PORT=1\n", encoding="utf-8")
+        (home / ".claude").mkdir(parents=True)
+        if saved is not None:
+            state = home / ".local" / "state" / "kvb-orchestrator"
+            state.mkdir(parents=True)
+            (state / "settings.json").write_text(json.dumps(saved), encoding="utf-8")
+        done = subprocess.run(["/usr/bin/bash", str(ORCHESTRATOR), "hook"], env={**os.environ, "HOME": str(home)}, capture_output=True, text=True, timeout=60, check=False)
+        path = home / ".claude" / "settings.json"
+        return done, json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+    def test_the_hook_waits_the_settings_minutes_and_registers_the_closing_hooks_beside_it(self):
+        for saved, wait in ((None, 3600), ({"hook": {"wait": 5}}, 300), ({"hook": {"wait": 60}}, 3600), ({"hook": {"wait": 61}}, 3600), ({"hook": {"wait": "5"}}, 3600), ({"match": {"refresh": 2}}, 3600)):
+            with self.subTest(saved=saved):
+                done, settings = self.registered(saved)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                hooks = settings["hooks"]
+                asked = hooks["PermissionRequest"][-1]
+                self.assertEqual((asked["matcher"], asked["hooks"][0]["timeout"]), ("*", wait + 10))
+                self.assertNotIn("async", asked["hooks"][0])
+                command = asked["hooks"][0]["command"]
+                self.assertIn(f"--timeout {wait} ", command)
+                self.assertTrue(command.endswith(" --bound"), command)
+                shapes = {event: (entries[-1].get("matcher"), entries[-1]["hooks"][0]["command"], entries[-1]["hooks"][0]["timeout"], entries[-1]["hooks"][0].get("async", False)) for event, entries in hooks.items() if event != "PermissionRequest"}
+                self.assertEqual(shapes, {"PostToolUse": ("*", command, 10, True), "Stop": (None, command, 10, True), "UserPromptSubmit": (None, command, 10, True), "SessionEnd": (None, command, 10, False)})
+
+    def test_a_second_registration_replaces_every_entry_and_a_client_without_bound_is_refused(self):
+        self.registered(None)
+        home = self.root / "home"
+        done = subprocess.run(["/usr/bin/bash", str(ORCHESTRATOR), "hook"], env={**os.environ, "HOME": str(home)}, capture_output=True, text=True, timeout=60, check=False)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        settings = json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual({event: len(entries) for event, entries in settings["hooks"].items()}, dict.fromkeys(("PermissionRequest", "PostToolUse", "Stop", "UserPromptSubmit", "SessionEnd"), 1))
+        client = home / ".local" / "share" / "kvb-orchestrator" / "client" / "permission_hook.py"
+        client.write_text(client.read_text(encoding="utf-8").replace('"--bound"', '"--other"'), encoding="utf-8")
+        before = (home / ".claude" / "settings.json").read_text(encoding="utf-8")
+        done = subprocess.run(["/usr/bin/bash", str(ORCHESTRATOR), "hook"], env={**os.environ, "HOME": str(home)}, capture_output=True, text=True, timeout=60, check=False)
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("make install first", done.stderr)
+        self.assertEqual((home / ".claude" / "settings.json").read_text(encoding="utf-8"), before)
+
 
 if __name__ == "__main__":
     unittest.main()

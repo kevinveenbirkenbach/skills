@@ -15,6 +15,7 @@ LIFETIME = 900
 REVIEW_LIFETIME = 7200
 RULE_LIFETIME = 366 * 86400
 PRUNE_KIND = "prune"
+DISMISS_KIND = "dismiss"
 PRUNE_WINDOW = 3600
 PRUNE_LIFETIME = LIFETIME + PRUNE_WINDOW
 ALGORITHMS = {-7: "ES256", -8: "EdDSA", -257: "RS256"}
@@ -164,6 +165,22 @@ def match_item(card_id: str, payload: str) -> dict:
 
 def cleanup_item(repository: str, branch: str, worktree: str, tip: str) -> dict:
     return {"kind": "cleanup", "repository": repository, "branch": branch, "worktree": worktree, "tip": tip}
+
+
+def dismiss_item(target: str, item_id: str, request: str, mark: str) -> dict:
+    """Args:
+        target: the inbox kind of the dismissed request.
+        item_id: its id.
+        request: its request kind as the operator saw it: open, expired,
+            stale or failed.
+        mark: the hub's digest of the command and hub job the request
+            showed.
+
+    Returns:
+        The item a dismissal signs; the hub acts on it alone and no executor
+        approves anything by it.
+    """
+    return {"kind": DISMISS_KIND, "target": target, "id": item_id, "request": request, "mark": mark}
 
 
 def office_item(action: str, office: str, holder: str, session: str, work: str) -> dict:
