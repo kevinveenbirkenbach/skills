@@ -150,7 +150,7 @@ class TestHubReviews(HubCase):
     def test_review_wait_times_out_at_the_cap(self):
         review_id = self.request("feat: slow", "")
         started = time.monotonic()
-        with mock.patch.object(reviewing, "WAIT_CAP", 0.2):
+        with mock.patch.object(reviewing, "MCP_WAIT_CAP", 0.2):
             result = self.tool("review_wait", {"id": review_id, "timeout_seconds": 10**6})
         self.assertLess(time.monotonic() - started, 5)
         self.assertEqual(result["structuredContent"]["status"], "pending")

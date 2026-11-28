@@ -8,6 +8,8 @@ from .errors import ToolError
 from .signed import limits, signing
 
 WAIT_CAP = 300
+# Claude Code's MCP client abandons a tool call before 240 s ("The operation timed out."); 50 s proved safe 2026-11-27.
+MCP_WAIT_CAP = 50
 TEXT_LIMIT = 20_000
 COMMAND_LIMIT = 4000
 PATH_LIMIT = limits.PATH_LIMIT

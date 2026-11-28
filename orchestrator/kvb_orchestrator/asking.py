@@ -9,6 +9,7 @@ from .errors import Conflict, Missing, ToolError
 from .fields import (
     COMMAND_LIMIT,
     DESCRIPTION_LIMIT,
+    MCP_WAIT_CAP,
     OPTION_LIMIT,
     PATH_LIMIT,
     WAIT_CAP,
@@ -233,7 +234,7 @@ class Asking:
     def decision_wait(self, arguments: dict) -> dict:
         expect(arguments, ("id", "timeout_seconds"))
         decision_id = field(arguments, "id")
-        record = self.decisions.wait(decision_id, seconds(arguments, "timeout_seconds", WAIT_CAP))
+        record = self.decisions.wait(decision_id, seconds(arguments, "timeout_seconds", MCP_WAIT_CAP))
         if record is None:
             raise ToolError(f"no decision {decision_id}")
         return decision_state(record)

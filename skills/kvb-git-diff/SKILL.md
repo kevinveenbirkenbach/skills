@@ -24,8 +24,9 @@ signature verifies here. Placeholders, fallbacks and lifetime:
    python3 ~/.local/share/kvb-orchestrator/client/approval.py request --port 8737 --title "<subject>" --page <pages>/<repo>-<branch>.html --notes <table> --gate <gate> --score "<score line>" --agent "<agent>"
    ```
 
-3. Call `review_wait` with its `id` and `timeout_seconds` 240 until the
-   status is no longer `pending`.
+3. Call `review_wait` with its `id` and `timeout_seconds` 50 (the hub caps
+   it there, below the MCP client's timeout) until the status is no longer
+   `pending`.
 4. `approved`: verify in the worktree:
 
    ```bash

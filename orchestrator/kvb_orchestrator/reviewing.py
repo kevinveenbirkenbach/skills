@@ -16,7 +16,7 @@ from .diffs import (
     valid_sealed,
 )
 from .errors import Conflict, Missing, ToolError
-from .fields import WAIT_CAP, bounded, decode, expect, field, seconds
+from .fields import MCP_WAIT_CAP, bounded, decode, expect, field, seconds
 from .review_page import review_files
 from .signed import limits, review_signed
 
@@ -127,7 +127,7 @@ class Reviewing:
     def wait(self, arguments: dict) -> dict:
         expect(arguments, ("id", "timeout_seconds"))
         review_id = field(arguments, "id")
-        timeout = seconds(arguments, "timeout_seconds", WAIT_CAP)
+        timeout = seconds(arguments, "timeout_seconds", MCP_WAIT_CAP)
         return proven(found(self.reviews.wait(review_id, timeout), review_id))
 
     def pending(self, arguments: dict) -> dict:

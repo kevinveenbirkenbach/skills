@@ -6,7 +6,7 @@ from http import HTTPStatus
 from . import NAME
 from .choosing import CHOICE_REQUEST
 from .errors import RpcError, ToolError
-from .fields import OPTION_LIMIT, WAIT_CAP
+from .fields import MCP_WAIT_CAP, OPTION_LIMIT
 from .requesting import AGENT_CAP
 from .reviewing import GATES
 from .rules import RULE_KINDS
@@ -30,7 +30,7 @@ def rpc_error(request_id: object, code: int, message: str) -> dict:
 class Mcp:
     def tools(self) -> list[dict]:
         review_id = text_property("Review id that review_request returned.")
-        wait = {"type": "number", "minimum": 0, "description": f"Seconds to wait, capped at {WAIT_CAP}."}
+        wait = {"type": "number", "minimum": 0, "description": f"Seconds to wait, capped at {MCP_WAIT_CAP}; on status pending call again."}
         option = {
             "type": "object",
             "properties": {
@@ -63,7 +63,7 @@ class Mcp:
             tool(
                 "review_wait",
                 f"Wait until the operator decides a review or the timeout passes, then return its status. "
-                f"Waits at most {WAIT_CAP} seconds.",
+                f"Waits at most {MCP_WAIT_CAP} seconds.",
                 {"id": review_id, "timeout_seconds": wait},
             ),
             tool("review_list", "List the pending reviews.", {}),
@@ -84,7 +84,7 @@ class Mcp:
                 "Wait until the operator picks an option or the timeout passes, then return the status "
                 "(pending, decided), the chosen label or the operator's own one-line Other answer and, for a click, message and answer: the id and text of the operator's "
                 "passkey-signed answer, a radio call to the asking agent; check it with operator_message(message, answer, your name) "
-                f"before acting on the choice. Waits at most {WAIT_CAP} seconds.",
+                f"before acting on the choice. Waits at most {MCP_WAIT_CAP} seconds.",
                 {"id": text_property("Decision id that decision_request returned."), "timeout_seconds": wait},
             ),
             tool(
@@ -106,7 +106,7 @@ class Mcp:
             tool(
                 "rule_request_wait",
                 f"Wait until the operator accepts or denies a rule request or the timeout passes, then return its status "
-                f"(pending, accepted, denied), the stored rule id and the operator's reason. Waits at most {WAIT_CAP} seconds.",
+                f"(pending, accepted, denied), the stored rule id and the operator's reason. Waits at most {MCP_WAIT_CAP} seconds.",
                 {"id": text_property("Request id that rule_request returned."), "timeout_seconds": wait},
             ),
             tool(

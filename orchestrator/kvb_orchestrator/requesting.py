@@ -4,7 +4,7 @@ import time
 
 from .denying import request_status, request_words, requester_of
 from .errors import Conflict, Missing, ToolError
-from .fields import WAIT_CAP, bounded, decode, expect, field, seconds
+from .fields import MCP_WAIT_CAP, bounded, decode, expect, field, seconds
 from .records import iso_epoch
 from .rules import EVERY_AGENT, rule_fields, rule_matches, signed_fields, subject_of
 from .signed import signing
@@ -97,7 +97,7 @@ class Requesting:
     def rule_request_wait(self, arguments: dict) -> dict:
         expect(arguments, ("id", "timeout_seconds"))
         request_id = field(arguments, "id")
-        record = self.rule_requests.wait(request_id, seconds(arguments, "timeout_seconds", WAIT_CAP))
+        record = self.rule_requests.wait(request_id, seconds(arguments, "timeout_seconds", MCP_WAIT_CAP))
         if record is None:
             raise ToolError(f"no rule request {request_id}")
         return request_state(record, time.time())
