@@ -98,3 +98,8 @@ skill defines the format.
 - [092 - Release Card Repairs](092-release-card-repairs.md)
 - [093 - Stale Operator Requests in Stream and Tasks](093-stale-requests-triage.md)
 - [094 - Hub Cards Bound to Their Claude Dialog](094-dialog-bound-cards.md)
+- [095 - Compact Agent Message Box](095-compact-agent-message.md)
+- [096 - Silent Reject of Expired Match Cards](096-silent-expired-reject.md)
+- [097 - Match Show Filter in the Right-Click Menu](097-match-show-filter.md)
+- [098 - Docked Speech Bubbles with Avatar and Close](098-docked-bubble-face-and-close.md)
+- [099 - Match Card Headline Capped at 120 Characters](099-match-headline-cap.md)

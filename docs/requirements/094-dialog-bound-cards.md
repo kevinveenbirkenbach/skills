@@ -30,6 +30,25 @@ while its dialog in Claude is still open.
    say). If the dialog only appears after the hook returns, the default wait
    stays at 110 s and decisions 3 and 4 still apply.
    Rejected: a longer fixed wait without the binding.
+   **Result 2026-11-27** (operator, AskUserQuestion live test, second run):
+   the Claude dialog appears at once while the hook waits, so both run side
+   by side and the longer default wait of decision 2 applies.
+6. **Closes bound to a session token** (operator, 2026-11-28, after a
+   skeptic found that any local process sending the guard header could end
+   another session's cards and forge an AskUserQuestion choice): the hook
+   keeps one `secrets.token_urlsafe(32)` closer token per session id in a
+   mode 0600 file beside its replay store
+   (`~/.local/state/kvb-orchestrator-approvals/closers/<session>.token`,
+   linked into place on first use, session id checked against
+   `signing.SESSION`), sends it as `closer` with every ask, every hooked
+   decision and every closing report, and deletes it after its
+   `SessionEnd` report. The hub keeps only its sha256 digest and closes a
+   card only when the digest matches (`hmac.compare_digest`); `Stop`,
+   `UserPromptSubmit` and `SessionEnd` never close a card without one, and a
+   PostToolUse records an answer as choice only for a matching one. A card
+   an older hook registered without a closer still closes by its call key
+   on PostToolUse, with no choice.
+   Rejected: signing each report with a passkey (a click per tool call).
 
 ## Approach
 
@@ -61,18 +80,24 @@ flowchart TD
 - [ ] An ask allowed in Claude leaves the hub's open cards within 5 s of
       its PostToolUse.
 - [ ] An AskUserQuestion answered in Claude closes its hub decision with
-      the answers shown.
+      the answers shown, and the card leaves an open Match deck within 5 s
+      of the answer, without waiting for the deck's refresh interval
+      (operator 2026-11-27: answered cards stayed far too long).
 - [ ] A denial in Claude closes the session's open cards at its next `Stop`
       or `UserPromptSubmit`.
 - [ ] `SessionEnd` closes every open card of the session.
 - [ ] After a hook timeout the card reads "open in Claude" and carries no
       stale or expired stamp.
+- [ ] A closing report without the session's closer token, or with another
+      one, closes no card and records no choice; the hub stores only the
+      token's digest; a card of an older hook closes by its call key on
+      PostToolUse only (decision 6).
 
 ### Wait
 
 - [ ] Settings holds the wait (1 to 60 min); the hook's `--timeout` and its
       settings.json timeout follow it after `make orchestrator-hook`.
-- [ ] The live test result is recorded in this document.
+- [x] The live test result is recorded in this document (decision 5).
 
 ### Tests
 
@@ -82,6 +107,10 @@ flowchart TD
 - Integration:
   - [ ] Each closing hook event through the HTTP handler closes exactly the
         cards of its session and call key.
+  - [ ] `tests/test_hub_dialog_bound_cards.py` `TestCloserBinding` and
+        `TestCloserToken`: no or a wrong closer closes nothing, the right
+        one only its own session's cards, no forged choice, older-hook
+        cards, a 0600 token file and refused session ids.
 - E2E:
   - [ ] `tests/e2e/test_dialog_bound_cards_e2e.py`: a card closes on a
         simulated PostToolUse, Stop and SessionEnd; the "open in Claude"
