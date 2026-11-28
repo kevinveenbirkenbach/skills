@@ -2775,8 +2775,20 @@ def run_step(command: str | list[str], shell: bool, env: dict[str, str] | None =
     return done.returncode, done.stdout, done.stderr
 
 
-def result_line(code: int | str, shown: str) -> str:
-    return f"{OK if code == 0 else f'failed ({code}): '}{shown}"
+CAUSE_LIMIT = 160
+
+
+def result_line(code: int | str, shown: str, err: bytes = b"") -> str:
+    """Args:
+        code: run_step()'s exit code or reason.
+        shown: the command as the line names it.
+        err: its standard error; a failed line ends with its last non-empty
+            line, cut to CAUSE_LIMIT characters, so the alert names the cause.
+    """
+    if code == 0:
+        return f"{OK}{shown}"
+    cause = next((line.strip() for line in reversed(err.decode(errors="replace").splitlines()) if line.strip()), "")
+    return f"failed ({code}): {shown}{f' ({cause[:CAUSE_LIMIT]})' if cause else ''}"
 
 
 def shown(prefix: list[str], args: list[str]) -> str:
@@ -2794,13 +2806,13 @@ def remove_leftovers(prefix: list[str]) -> list[str]:
         pull by digest keeps both and stays, an image a container uses is
         `kept (in use)`.
     """
-    code, out, _ = run_step([*prefix, *LEFTOVERS], False)
-    lines = [result_line(code, shown(prefix, LEFTOVERS))]
+    code, out, err = run_step([*prefix, *LEFTOVERS], False)
+    lines = [result_line(code, shown(prefix, LEFTOVERS), err)]
     rows = (row.split() for row in out.decode(errors="replace").splitlines()) if code == 0 else ()
     for image in dict.fromkeys(fields[0] for fields in rows if fields[1:] == [NONE, NONE] and IMAGE_ID.fullmatch(fields[0])):
         code, _, err = run_step([*prefix, "rmi", image], False)
         in_use = code != 0 and IN_USE.search(err.decode(errors="replace")) is not None
-        lines.append(KEPT_LINE + shown(prefix, ["rmi", image]) if in_use else result_line(code, shown(prefix, ["rmi", image])))
+        lines.append(KEPT_LINE + shown(prefix, ["rmi", image]) if in_use else result_line(code, shown(prefix, ["rmi", image]), err))
     return lines
 
 
@@ -2858,7 +2870,8 @@ def worktree_step(argv: list[str]) -> list[str]:
     text = " ".join(argv)
     if WORKTREE_REMOVAL.search(text) or WORKTREE_REMOVAL.search(QUOTING.sub("", text)):
         return [f"refused ({REFUSALS['nested']}): {shlex.join(argv)}"]
-    return [result_line(run_step(argv, False)[0], shlex.join(argv))]
+    code, _, err = run_step(argv, False)
+    return [result_line(code, shlex.join(argv), err)]
 
 
 def run_cleanup(cfg: dict) -> list[str]:

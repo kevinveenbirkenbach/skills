@@ -1930,10 +1930,9 @@ class TestImagePrune(unittest.TestCase):
         (self.base / "in-use.txt").write_text("aaaaaaaaaaaa\n", encoding="utf-8")
         (self.base / "gone.txt").write_text("dddddddddddd\n", encoding="utf-8")
         results = self._cleanup("docker image prune -f", "docker builder prune -f")
-        self.assertEqual(results[1:], [
-            "kept (in use): docker rmi aaaaaaaaaaaa", "failed (1): docker rmi dddddddddddd", "ok: docker builder prune -f",
-        ])
-        self.assertEqual(self.watch.cleanup_failures(results), ["failed (1): docker rmi dddddddddddd"])
+        gone = "failed (1): docker rmi dddddddddddd (Error response from daemon: No such image: dddddddddddd)"
+        self.assertEqual(results[1:], ["kept (in use): docker rmi aaaaaaaaaaaa", gone, "ok: docker builder prune -f"])
+        self.assertEqual(self.watch.cleanup_failures(results), [gone])
         held = "Error response from daemon: conflict: unable to delete f18bae17841e"
         for err, in_use in (
             (f"{held} (must be forced) - image is being used by stopped container 3c9a\n", True),
@@ -1947,10 +1946,19 @@ class TestImagePrune(unittest.TestCase):
             with self.subTest(err=err):
                 self.assertEqual(self.watch.IN_USE.search(err) is not None, in_use)
 
+    def test_a_failed_line_names_the_last_error_line_cut_to_its_limit(self):
+        cause = "service \"infinito\" is not running"
+        err = f"WARNING: config\n{cause}\n\n".encode()
+        self.assertEqual(self.watch.result_line(1, "docker images", err), f"failed (1): docker images ({cause})")
+        self.assertEqual(self.watch.result_line(1, "docker images"), "failed (1): docker images")
+        self.assertEqual(self.watch.result_line(0, "docker images", err), "ok: docker images")
+        long = self.watch.result_line(1, "x", b"e" * 500)
+        self.assertEqual(long, f"failed (1): x ({'e' * self.watch.CAUSE_LIMIT})")
+
     def test_an_unreachable_daemon_is_reported_and_removes_nothing(self):
         (self.base / "images.txt").unlink()
         results = self._cleanup("docker image prune -f", "docker builder prune -f")
-        self.assertEqual(results, [f"failed (1): {shlex.join(['docker', *LISTED])}", "ok: docker builder prune -f"])
+        self.assertEqual(results, [f"failed (1): {shlex.join(['docker', *LISTED])} (Cannot connect to the Docker daemon)", "ok: docker builder prune -f"])
         self.assertEqual(self._calls(), [LISTED, ["builder", "prune", "-f"]])
 
     def test_a_missing_docker_binary_is_reported_not_raised(self):
