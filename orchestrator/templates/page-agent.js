@@ -64,23 +64,6 @@
     placePopup();
   }
 
-  async function deliver(key, text, file, cls) {
-    let upload = "";
-    if (file) {
-      if (file.size > UPLOAD_LIMIT) {
-        toast("File too large", [`${file.name}: at most 50 MiB`], false);
-        return false;
-      }
-      const stored = await send(`/api/uploads?name=${encodeURIComponent(file.name)}`, file, "application/octet-stream");
-      if (!stored.ok || !stored.data) {
-        toast("Upload failed", [`${stored.status} ${stored.text}`.trim()], false);
-        return false;
-      }
-      upload = stored.data.id;
-    }
-    return message(nameOf(key), text, upload, cls);
-  }
-
   function message(to, text, upload, cls) {
     return radioSend({to, text, upload, cls, voice: ""});
   }
@@ -89,22 +72,22 @@
     const key = agentKey(who);
     const name = nameOf(key);
     const text = h("textarea", {"aria-label": `Message to ${name}`, placeholder: `Message to ${name} …`, "data-skills": ""});
-    const file = h("input", {type: "file", class: "field", "aria-label": "Attach file"});
-    const button = h("button", {type: "submit", class: "btn primary icon-only", ...named("Send")}, icon("bi-send"));
-    const classes = choice("to-one", TO_ONE, "post");
-    const form = h("form", {class: "popup-form"}, micFrame(text, []), file, classes,
-      h("p", {class: "muted"}, "Post arrives at the end of the turn, Call at once with a read receipt; your passkey signs, verifiable with operator_message."),
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), button));
+    const button = h("button", {type: "submit", class: "btn primary small icon-only agent-send", ...named("Send", "Send: your passkey signs the message, verifiable with operator_message")}, icon("bi-send"));
+    const classes = choice("to-one", TO_ONE, "post", CHANNEL_HINTS);
+    const frame = micFrame(text, [classes]);
+    const foot = frame.querySelector(":scope > .mic-foot");
+    foot.classList.add("agent-foot");
+    foot.append(button);
+    const form = h("form", {class: "popup-form"}, frame);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!text.value.trim()) {
         return;
       }
       button.disabled = true;
-      if (await deliver(key, text.value, file.files[0] || null, picked(classes))) {
+      if (await message(name, text.value, "", picked(classes))) {
         text.value = "";
         text.dispatchEvent(new Event("input", {bubbles: true}));
-        file.value = "";
       }
       button.disabled = false;
     });

@@ -12,7 +12,6 @@ const Kanban = (() => {
   const QUEUE = "queue/";
   const RUNNING = "run";
   const QUEUE_LAYERS = [["line", "Queue line", "k-queue-line"], ["jobs", "Queue jobs", "k-queue-jobs"]];
-  const CLASS_TONES = {hotfix: "bad", fix: "warn", feature: "info", main: "violet"};
 
   const onBoard = (row) => !OFF.includes(row.kind);
   const laneOf = (prio) => (prio === null ? "unpinned" : prio >= FREE_FROM ? "p4" : `p${Math.max(prio, 1)}`);
@@ -203,7 +202,7 @@ const Kanban = (() => {
     const running = job.position === RUNNING;
     const chips = [{key: "position", text: placeOf(job), hint: `${job.id}: ${running ? "granted, running now" : `grant position ${placeOf(job)}`}`, tone: "neutral"}];
     if (job.class) {
-      chips.push({key: "class", text: job.class, hint: `${job.id}: class ${job.class}`, tone: CLASS_TONES[job.class]});
+      chips.push({key: "class", text: job.class, hint: `${job.id}: class ${job.class}`, tone: "neutral"});
     }
     if (job.prio !== null) {
       chips.push({key: "prio", text: `P${job.prio}`, hint: `${job.id}: its task is pinned P${job.prio}`, tone: "neutral"});

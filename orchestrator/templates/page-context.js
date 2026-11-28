@@ -1,5 +1,7 @@
-  const ctxMenu = {node: null, back: null};
+  const ctxMenu = {node: null, back: null, checks: []};
   const CTX_FIELDS = ["INPUT", "TEXTAREA", "SELECT"];
+  const CTX_ITEMS = '[role="menuitem"], [role="menuitemcheckbox"]';
+  const CTX_MATCH = ".graph.match, .match-hidden";
   const CTX_GAP = 8;
   const CTX_MODIFIERS = ["Shift", "Control", "Alt", "Meta"];
   const CTX_OPENS = {task: "Open task", message: "Open message", artifact: "Open artifact"};
@@ -118,8 +120,8 @@
 
   /**
    * @param target - the element the menu is for.
-   * @returns [{scope, title, items}]: the element's own items, then the current tab's, then the general ones; empty
-   * sections left out.
+   * @returns [{scope, title, items}]: the element's own items, inside Match its Show filter, then the current tab's,
+   * then the general ones; empty sections left out.
    */
   function ctxSections(target) {
     const found = ctxFound(target);
@@ -129,6 +131,7 @@
     const tab = Nav.TABS.find(([id]) => id === Nav.tabOf(ui.screen));
     return [
       {scope: "element", title: own.title, items: own.items},
+      {scope: "match-show", title: "Show", items: target.closest(CTX_MATCH) ? matchShowItems() : []},
       ...(tab ? [{scope: tab[0], title: tab[1], items: items.filter((item) => item.scope === tab[0])}] : []),
       {scope: "general", title: "General", items: items.filter((item) => item.scope === "general")},
     ].filter((section) => section.items.length);
@@ -151,9 +154,19 @@
     return ctxMenu.node;
   }
 
+  /**
+   * @param item - {label, hint, run, face}; with checked, a function telling whether it is ticked now, it is a
+   * checkbox whose click keeps the menu open.
+   * @returns the menu entry.
+   */
   function ctxItem(item) {
-    return h("button", {type: "button", role: "menuitem", tabindex: -1, class: "ctx-item", title: revealed(item.hint), on: {click: () => ctxRun(item)}},
+    const check = typeof item.checked === "function";
+    const node = h("button", {type: "button", role: check ? "menuitemcheckbox" : "menuitem", tabindex: -1, class: "ctx-item", title: revealed(item.hint), ...(check ? {"aria-checked": String(item.checked())} : {}), on: {click: () => ctxRun(item)}}, check ? h("span", {class: "ctx-check", "aria-hidden": "true"}, icon("bi-check-lg")) : null,
       item.face ? face(item.face, false) : null, h("span", {class: "ctx-label"}, revealed(item.label)), h("span", {class: "muted"}, revealed(item.hint)));
+    if (check) {
+      ctxMenu.checks.push([node, item]);
+    }
+    return node;
   }
 
   function ctxGroup(section, index) {
@@ -176,10 +189,11 @@
    */
   function ctxShow(sections, at) {
     const node = ctxNode();
+    ctxMenu.checks = [];
     node.replaceChildren(...sections.flatMap(ctxGroup).filter(Boolean));
     node.hidden = false;
     ctxPlace(node, at);
-    const first = node.querySelector('[role="menuitem"]');
+    const first = node.querySelector(CTX_ITEMS);
     if (first) {
       first.focus({preventScroll: true});
     }
@@ -197,15 +211,22 @@
       return;
     }
     const back = ctxMenu.back;
-    ctxMenu.back = null;
-    ctxMenu.node.hidden = true;
-    ctxMenu.node.replaceChildren();
+    const node = ctxMenu.node;
+    Object.assign(ctxMenu, {back: null, node: null, checks: []});
+    node.classList.add("closing");
+    node.hidden = true;
+    vanish(node);
     if (restore && back && back.isConnected && typeof back.focus === "function") {
       back.focus({preventScroll: true});
     }
   }
 
   function ctxRun(item) {
+    if (typeof item.checked === "function") {
+      item.run();
+      ctxMenu.checks.forEach(([node, check]) => node.setAttribute("aria-checked", String(check.checked())));
+      return;
+    }
     ctxClose(true);
     item.run();
   }
@@ -220,7 +241,7 @@
   }
 
   function ctxKeys(event) {
-    const items = [...ctxMenu.node.querySelectorAll('[role="menuitem"]')];
+    const items = [...ctxMenu.node.querySelectorAll(CTX_ITEMS)];
     const at = items.indexOf(document.activeElement);
     const moves = {ArrowDown: at + 1, ArrowUp: Math.max(at, 0) - 1, Home: 0, End: items.length - 1};
     if (Object.hasOwn(moves, event.key)) {

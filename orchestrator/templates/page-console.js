@@ -42,6 +42,7 @@
       view.out.textContent = text;
     }
     view.box.dataset.status = job.status;
+    view.line.classList.toggle("is-working", job.status === "running");
     view.line.replaceChildren(status(job.status), h("span", {}, consoleWords(job)));
   }
 

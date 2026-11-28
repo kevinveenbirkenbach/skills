@@ -7,11 +7,20 @@
     blocked: ["#bi-sign-stop", (mark) => revealed(`${mark.head} waited ${Math.round(mark.peak / 60)} min: ${mark.reason}`), 1],
     hung: ["#bi-pause-circle", (mark) => revealed(`suspect hung: ${mark.hung.join(", ")}`), 2],
     asleep: ["#bi-moon", (mark) => `${mark.name} asleep`, 0],
-    unknown: ["#bi-question-circle", (mark) => `${mark.name} unknown: no reading`, 0],
+    unknown: ["#bi-question-circle", (mark) => revealed(`${mark.name} unknown: ${mark.causes.length ? mark.causes.join("; ") : "no reading"}`), 0],
   };
   const RESOURCE_BURN = {done: "Done", scope: "Scope"};
   const RESOURCE_PICKS = [["hardware", "Hardware"], ["tokens", "Tokens"], ["combined", "Combined"], ["accounts", "Accounts"], ["usage", "Usage"]];
-  const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0, series: {}};
+  const RESOURCE_SHOW = [
+    ["legend", "Legend", "the series chips above each chart; a chip still switches its series on and off"],
+    ["queue", "Queue markers", "the spans of a queue head blocked for 10 minutes and of suspect hung jobs"],
+    ["waits", "Wait bands", "the spans where jobs waited while CPU and RAM stayed under 50 %"],
+    ["limits", "Limit lines", "lower, upper, STOP, MAYDAY and the live target of the picked metric"],
+  ];
+  const RESOURCE_SHOW_KEY = "kvb-orchestrator.resources-view";
+  const RESOURCE_SHOW_MARKS = {wait: "waits", blocked: "queue", hung: "queue"};
+  const resourceView = {data: null, dom: null, busy: false, key: "", at: 0, timer: 0, series: {}, show: {legend: true, queue: true, waits: true, limits: true}};
+  const resourceShowOf = (value) => Object.fromEntries(RESOURCE_SHOW.map(([key]) => [key, !(value && value[key] === false)]));
   const resourceKey = () => JSON.stringify([ui.preset, ui.asOf]);
   const resourcesStale = () => resourceKey() !== resourceView.key || nowSeconds() - resourceView.at >= RESOURCE.stale;
   const compactCount = Resources.compact;
@@ -33,22 +42,42 @@
     return {menu, boxes};
   }
 
+  /**
+   * @returns {Object} {menu, boxes}: the View menu, a checkbox each for the legend, the queue markers, the wait bands
+   * and the limit lines, every choice kept in this browser.
+   */
+  function resourceShowMenu() {
+    const boxes = RESOURCE_SHOW.map(([key, label, hint]) => {
+      const box = h("input", {type: "checkbox", "data-show": key, "aria-label": label, on: {change: () => {
+        resourceView.show = {...resourceView.show, [key]: box.checked};
+        keep(RESOURCE_SHOW_KEY, resourceView.show);
+        drawResources();
+      }}});
+      return {key, box, row: h("label", {class: "menu-item res-pick", title: `${label}: ${hint}`}, box, h("span", {}, label))};
+    });
+    const menu = h("details", {class: "menu res-view-menu"}, h("summary", {...named("View", "View: show or hide the legend, the queue markers, the wait bands and the limit lines; this browser keeps the choice")}, icon("bi-eye"), h("span", {}, "View"), caret()),
+      h("div", {class: "menu-box end", role: "group", "aria-label": "View"}, boxes.map((entry) => entry.row)));
+    return {menu, boxes};
+  }
+
   function resourcesScreen() {
     const count = h("span", {class: "count", title: "Samples", "aria-label": "Samples"}, "0");
     const switches = {
       tokens: resourceSwitch("tokens", (mode) => (mode === "accumulated" ? "interval" : "accumulated"), "bi-graph-up-arrow", "Accumulated", "Accumulated: per-agent running sums of the tokens instead of the tokens per hour"),
     };
     const picks = resourcePicks();
+    resourceView.show = resourceShowOf(stored(RESOURCE_SHOW_KEY, null));
+    const shows = resourceShowMenu();
     const panels = RESOURCE_PANELS.map(([kind, name, label]) => {
       const legend = h("div", {class: "res-legend"});
-      const plot = h("div", {class: "res-plot"});
+      const plot = h("div", {class: "res-plot", ...(kind === "hardware" ? {on: {contextmenu: limitContext}} : {})});
       const panel = h("section", {class: `card res-panel res-${kind}`, "data-panel": `resources-${kind}`, "aria-label": label, hidden: kind === "combined"},
         h("div", {class: "res-head", "data-legend-slot": ""}, h("span", {class: "res-title", title: label, "aria-label": label}, icon(name)), legend), kind === "hardware" ? limitBar() : null, plot);
       return {kind, label, legend, plot, panel};
     });
     const accounts = accountsPanel();
     const usage = usagePanel();
-    resourceView.dom = {count, switches, picks, panels, accounts, usage};
+    resourceView.dom = {count, switches, picks, shows, panels, accounts, usage};
     if (!resourceView.timer) {
       resourceView.timer = window.setInterval(pollResources, RESOURCE.poll);
       window.addEventListener("resize", drawResources);
@@ -67,7 +96,7 @@
       }
     }, "Reload: read the sampler files, the accounts and the usage again");
     return h("div", {class: "graph resources"},
-      boxHead("Resources", "", h("div", {class: "toolbar"}, reload, switches.tokens, picks.menu, count)),
+      boxHead("Resources", "", h("div", {class: "toolbar"}, reload, switches.tokens, picks.menu, shows.menu, count)),
       h("div", {class: "res-panels"}, panels.map((entry) => entry.panel), accounts.panel, usage.panel));
   }
 
@@ -379,11 +408,14 @@
   function drawResources() {
     const dom = resourceView.dom;
     const data = resourceView.data;
-    if (!dom || !dom.count.isConnected) {
+    if (!dom || !dom.count.isConnected || limitView.drag) {
       return;
     }
     const view = ViewStore.get("resources");
     dom.switches.tokens.setAttribute("aria-pressed", String(view.tokens === "accumulated"));
+    for (const {key, box} of dom.shows.boxes) {
+      box.checked = resourceView.show[key];
+    }
     for (const {kind, box} of dom.picks.boxes) {
       box.checked = view.panels.includes(kind);
       box.disabled = box.checked && view.panels.length === 1;
@@ -405,8 +437,10 @@
     }
     const active = document.activeElement;
     const focused = active && typeof active.getAttribute === "function" ? active.getAttribute("data-chip") : null;
+    const line = active && typeof active.getAttribute === "function" ? active.getAttribute("data-line") : null;
     const span = {from: data.since, to: Math.max(data.until, data.since + 60)};
     const parts = resourceParts(data, view, span);
+    parts.marks = parts.marks.filter((mark) => !Object.hasOwn(RESOURCE_SHOW_MARKS, mark.kind) || resourceView.show[RESOURCE_SHOW_MARKS[mark.kind]]);
     dom.count.textContent = String(data.samples.length);
     for (const entry of dom.panels) {
       if (entry.panel.hidden) {
@@ -421,9 +455,14 @@
       resourceView.series[entry.kind] = {ids: drawn.series.map((line) => line.id), shown: drawn.series.map((line) => line.id).filter((id) => !hidden.has(id)), tokens: view.tokens};
       entry.plot.replaceChildren(...(resourceSmall(size) ? [] : [drawn.svg]));
       entry.legend.replaceChildren(LegendChips.render(drawn.series, drawn.path, "hidden"));
+      entry.legend.hidden = !resourceView.show.legend;
       const chip = focused === null ? null : [...entry.legend.querySelectorAll("[data-chip]")].find((node) => node.getAttribute("data-chip") === focused);
       if (chip) {
         chip.focus();
+      }
+      const limit = line === null || entry.kind !== "hardware" ? null : entry.plot.querySelector(`g.res-limit[data-line="${line}"]`);
+      if (limit) {
+        limit.focus();
       }
     }
   }

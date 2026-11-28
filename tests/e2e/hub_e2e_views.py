@@ -48,7 +48,7 @@ PROBE = """(async () => {@HELPERS@
     org: all("#main .org-chart .org-row[data-office]").map((row) => [row.dataset.office, text(row.querySelector(".org-holder"))]),
     toggles: all("#main .org-toggle").map((button) => [name(button), button.getAttribute("aria-expanded")]),
     order: all("#main .agent-order li").map((item) => item.dataset.name),
-    taskFilters: all('#main [aria-label="Task filters"] button').map((button) => [button.dataset.filter, button.getAttribute("aria-pressed"), text(button.querySelector(".count"))]),
+    taskFilters: all('#main [aria-label="Task filters"] [data-filter]').map((label) => [label.dataset.filter, String(label.querySelector("input").checked), text(label.querySelector(".count"))]),
     taskRows: all("#main .task-row").map((row) => [row.dataset.task, row.classList.contains("open-work")]),
     columns: all("#main .task-column").map((column) => [column.dataset.column, all(`#main .kanban-cell[data-column="${column.dataset.column}"] .task-card`).map((card) => card.dataset.task)]),
     matrix: [all("#main table.matrix thead th").length, all("#main table.matrix tbody tr").length, all("#main table.matrix td .letter").map(text).join("")],
@@ -62,10 +62,12 @@ PROBE = """(async () => {@HELPERS@
   };
 })()""".replace("@HELPERS@", HELPERS)
 INBOX_CHIP = """(async () => {@HELPERS@
-  const chip = (id) => document.querySelector(`#main [aria-label="Task filters"] button[data-filter="${id}"]`);
+  const chip = (id) => document.querySelector(`#main [aria-label="Task filters"] [data-filter="${id}"]`);
+  await openTaskMenu("task-filter");
   chip("operator").click();
   await until(() => location.hash === "#tasks/operator" && document.querySelector("#main .inbox-list"), 4000);
-  const inbox = {hash: location.hash, items: all("#main .inbox-list > li").length, counted: Number(text(chip("operator").querySelector(".count"))), pressed: chip("operator").getAttribute("aria-pressed"), current: all("#tabs button[aria-current=page]").map(name)};
+  const inbox = {hash: location.hash, items: all("#main .inbox-list > li").length, counted: Number(text(chip("operator").querySelector(".count"))), pressed: String(chip("operator").querySelector("input").checked), current: all("#tabs button[aria-current=page]").map(name)};
+  await openTaskMenu("task-filter");
   chip("grant").click();
   await until(() => location.hash.startsWith("#tasks/"), 4000);
   await sleep(300);

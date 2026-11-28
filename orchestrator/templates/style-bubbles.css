@@ -9,11 +9,16 @@
 .speech-bubble[data-state="speaking"]:not(.leaving) { z-index: 1; }
 .bubble-words { display: block; max-height: calc(6 * 1.35em); overflow: hidden; overflow-wrap: anywhere; scroll-behavior: smooth; }
 .speech-bubble[data-state="waiting"] .bubble-words { letter-spacing: .12em; }
-.bubble-who { display: none; color: var(--muted); font: 650 var(--fs-xs)/1.2 var(--sans); }
+.bubble-head { display: none; }
+.bubble-who { color: var(--muted); font: 650 var(--fs-xs)/1.2 var(--sans); }
+.bubble-skip { pointer-events: auto; }
+.speech-bubble.leaving .bubble-skip, .speech-bubble[data-vanishing] .bubble-skip { pointer-events: none; }
 .bubble-bar { position: absolute; right: 0; bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); left: 0; display: flex; flex-wrap: wrap-reverse; justify-content: center; align-items: flex-end; gap: var(--sp-3) var(--sp-4); padding: 0 var(--sp-3); }
 .bubble-bar .speech-bubble { position: relative; transform: scale(var(--scale)); }
 .bubble-bar .speech-bubble::before, .bubble-bar .speech-bubble::after { display: none; }
-.bubble-bar .bubble-who { display: block; }
+.bubble-bar .bubble-head { display: flex; align-items: center; gap: 6px; }
+.bubble-bar .bubble-head .avatar { width: 22px; height: 22px; }
+.bubble-bar .bubble-skip { min-width: 0; margin-left: auto; padding: 2px 4px; font-size: var(--fs-xs); }
 @media (prefers-reduced-motion: reduce) {
   .speech-bubble { transition: opacity .4s var(--ease); }
   .bubble-words { scroll-behavior: auto; }

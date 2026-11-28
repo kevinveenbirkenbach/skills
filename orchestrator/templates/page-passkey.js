@@ -32,7 +32,7 @@
       toast(`${label}: not signed`, [`${(error && error.name) || error}: KeePassXC locked or canceled; nothing was sent.`], false);
       return null;
     } finally {
-      prompt.remove();
+      vanish(prompt);
     }
   }
 

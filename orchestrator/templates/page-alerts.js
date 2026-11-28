@@ -101,7 +101,7 @@
     for (const batch of state.pending) {
       if (!known.batches.has(batch.id)) {
         known.batches.add(batch.id);
-        const source = batch.source.startsWith("rule:") ? "Rule" : "Grant";
+        const source = batch.source.startsWith("rule:") ? "Rule" : batch.items.every((item) => item.verb === "dismiss") ? "Delete" : "Grant";
         undoToast(batch, `${source}: ${batch.items.map((item) => short(item.title)).join(", ")}`);
       }
     }

@@ -1,4 +1,4 @@
-"""Exercise requirement 075: the stale list and the dial of the page, the signed prune through the hub and the runner's argv, not_before and replay rules."""
+"""Exercise requirements 075 and 088: the stale list, its prefix groups and filter and the dial of the page, the uncapped signed prune through the hub and the runner's argv, not_before and replay rules."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ console.log(JSON.stringify({
   pending: P.pending([apply("j2", "queued", now + 900), {id: "j0", kind: "prune", status: "queued", argv: ["announce"]}, apply("j1", "queued", now + 125), apply("j3", "done", now + 5)], now),
   late: P.pending([apply("j1", "queued", now - 5)], now),
   none: P.pending([], now),
-  clocks: [P.clock(0), P.clock(65), P.clock(600)],
+  clocks: [D.countdown(0), D.countdown(65), D.countdown(600)],
   days: ["3", " 12 ", "0", "1000", "x", "2.5"].map(P.daysOf),
   points: [D.point(0, 60, 58), D.point(15, 60, 58), D.point(30, 60, 58)].map((point) => point.map(Math.round)),
   keys: ["ArrowRight", "PageUp", "End", "Home", "ArrowLeft", "PageDown", "Tab"].map((key) => D.stepped(key, 10, range)),
@@ -55,8 +55,16 @@ console.log(JSON.stringify({
   angles: [D.fromAngle(90, 60), D.fromAngle(-90, 60), D.fromAngle(180, 60)],
   ticks: [D.ticks(5).length, D.ticks(5).filter((tick) => tick.long).length],
   clamp: [D.clamp(61.4, {min: 0, max: 60}), D.clamp(-3, range), D.clamp(7.6, {min: 0, max: 60})],
+  groups: P.groups([row("work/b", 4), row("solo", 5), row("ci/x", 6), row("work/a", 7), row("other/y", 3)]).map((group) => [group.prefix, group.rows.map((found) => found.task)]),
+  owners: [P.owner(row("a", 1, {worker: "Docs"})), P.owner(row("a", 1, {responsible: "Main, Docs"})), P.owner(row("a", 1, {responsible: "-"})), P.owner(row("a", 1))],
+  matches: [P.matches(row("ci/x", 1, {title: "Fix the Build"}), " build "), P.matches(row("ci/x", 1, {worker: "Docs"}), "DOC"), P.matches(row("ci/x", 1), "CI/"), P.matches(row("ci/x", 1), "work"), P.matches(row("ci/x", 1), "  ")],
 }));
 """
+PREFIXES = ("ci", "cluster", "work", "fix")
+
+
+def many_tasks(count: int) -> list[str]:
+    return [f"{PREFIXES[index % len(PREFIXES)]}/t{index:03d}" if index % 25 else f"solo-{index:03d}" for index in range(count)]
 
 
 def prune_items(tasks: list[str], since: int, deadline: int, days: str = "3") -> list[dict]:
@@ -97,6 +105,11 @@ class TestPagePrune(unittest.TestCase):
         self.assertEqual(self.data["ticks"], [60, 12])
         self.assertEqual(self.data["clamp"], [60, 1, 8])
 
+    def test_the_dialog_groups_by_prefix_with_other_last_and_filters_on_slug_title_and_owner(self):
+        self.assertEqual(self.data["groups"], [["ci", ["ci/x"]], ["work", ["work/b", "work/a"]], ["other", ["solo", "other/y"]]])
+        self.assertEqual(self.data["owners"], ["Docs", "Main", "-", "-"])
+        self.assertEqual(self.data["matches"], [True, True, True, False, True])
+
 
 class TestPruneArgv(unittest.TestCase):
     def test_exactly_the_announce_and_the_apply_shapes_pass(self):
@@ -106,8 +119,21 @@ class TestPruneArgv(unittest.TestCase):
         self.assertEqual(pruning.prune_item(apply["argv"], NOW + 600), apply)
         self.assertEqual(pruning.prune_item(announce["argv"], None), announce)
 
+    def test_checked_tasks_takes_300_distinct_slugs_and_still_refuses_duplicates_invalid_slugs_and_records(self):
+        tasks = many_tasks(300)
+        self.assertEqual(pruning.checked_tasks(tasks), tasks)
+        announce, apply = prune_items(tasks, NOW - 60, NOW + 600)
+        self.assertEqual(pruning.prune_argv(announce["argv"], None), announce["argv"])
+        self.assertEqual(pruning.prune_argv(apply["argv"], apply["not_before"]), apply["argv"])
+        refused = {
+            "none": [], "duplicate": [*tasks, tasks[150]], "upper case": [*tasks, "Work/x"], "empty segment": ["work//x"],
+            "leading dash": ["-x"], "too long": ["a" * 101], "space": ["work/a b"], "operator row": [*tasks, "operator/x"], "hotfix row": [*tasks, "hotfix/x"],
+        }
+        for name, listed in refused.items():
+            with self.subTest(name=name):
+                self.assertRaises(signing.Refused, pruning.checked_tasks, listed)
+
     def test_every_other_argv_or_not_before_is_refused(self):
-        many = [f"work/t{index}" for index in range(pruning.TASKS_LIMIT + 1)]
         cases = {
             "text": ("prune --since 1 work/a", NOW), "no texts": (["prune", "--since", 1, "work/a"], NOW),
             "announce with not_before": (["announce", "--days", "3", "--deadline", str(NOW), "work/a"], NOW),
@@ -116,7 +142,7 @@ class TestPruneArgv(unittest.TestCase):
             "window too short": (["prune", "--since", str(NOW - 59), "work/a"], NOW),
             "window too long": (["prune", "--since", str(NOW - 3601), "work/a"], NOW),
             "no tasks": (["prune", "--since", str(NOW - 600)], NOW), "twice": (["prune", "--since", str(NOW - 600), "work/a", "work/a"], NOW),
-            "too many": (["prune", "--since", str(NOW - 600), *many], NOW), "operator row": (["prune", "--since", str(NOW - 600), "operator/x"], NOW),
+            "operator row": (["prune", "--since", str(NOW - 600), "operator/x"], NOW),
             "hotfix row": (["prune", "--since", str(NOW - 600), "hotfix/x"], NOW), "option task": (["prune", "--since", str(NOW - 600), "--status"], NOW),
             "zero days": (["announce", "--days", "0", "--deadline", str(NOW), "work/a"], None), "short epoch": (["announce", "--days", "3", "--deadline", "99", "work/a"], None),
             "set": (["set", "work/a", "--status", "stopped"], None), "rm": (["rm", "work/a"], None),
@@ -270,6 +296,21 @@ class TestRunnerPrune(PruneCase):
         output = next(job["output"] for job in self.httpd.hub.jobs.listed() if job["argv"][0] == "prune")
         self.assertIn("stopped work/a", output)
         self.assertIn("kept work/b: changed at ", output)
+
+    def test_one_signature_prunes_300_tasks_through_the_hub_and_the_runner(self):
+        tasks = many_tasks(300)
+        (self.council / "rasci.json").write_text(json.dumps({task: register_row("queued") for task in tasks}), encoding="utf-8")
+        now = int(time.time())
+        deadline = now + 4
+        self.assertEqual(len(self.queue_prune(tasks, now - 100, deadline)["jobs"]), 2)
+        self.run_prune_runner(self.flags())
+        self.assertEqual(self.jobs(), [("announce", "done", 0), ("prune", "queued", None)])
+        sent = [json.loads(line) for line in self.radio.with_suffix(".calls").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(sent, [pruning.radio_argv(prune_items(tasks, now - 100, deadline)[0]["argv"])])
+        time.sleep(max(0.0, deadline - time.time()) + 1)
+        self.run_prune_runner(self.flags())
+        self.assertEqual(self.jobs(), [("announce", "done", 0), ("prune", "done", 0)])
+        self.assertEqual(self.statuses(), dict.fromkeys(tasks, "stopped"))
 
     def test_without_radio_the_runner_refuses_the_announce_and_leaves_the_apply_job_unclaimed(self):
         now = int(time.time())

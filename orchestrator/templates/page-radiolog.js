@@ -92,7 +92,7 @@
   }
 
   function patchList(list, lines) {
-    const before = [...list.children];
+    const before = [...list.children].filter((child) => !child.dataset.vanishing);
     const focused = before.find((node) => node.contains(document.activeElement)) || null;
     const old = new Map(before.filter((node) => node.dataset.key).map((node) => [node.dataset.key, node]));
     const wanted = lines.map((line) => {
@@ -101,17 +101,18 @@
       return kept ? keepLine(kept, line) : line;
     });
     const keep = new Set(wanted);
-    for (const node of before.filter((child) => !keep.has(child))) {
-      node.remove();
-    }
+    const gone = before.filter((child) => !keep.has(child));
+    gone.forEach((node) => vanish(node));
+    const staying = () => [...list.children].filter((child) => !child.dataset.vanishing);
     wanted.forEach((node, index) => {
-      if (list.children[index] !== node) {
-        list.insertBefore(node, list.children[index] || null);
+      const at = staying()[index];
+      if (at !== node) {
+        list.insertBefore(node, at || null);
       }
     });
-    if (focused && !focused.isConnected) {
+    if (focused && gone.includes(focused)) {
       const at = before.indexOf(focused);
-      const near = before.filter((node) => node.isConnected && node.querySelector(".radio-pick")).sort((a, b) => Math.abs(before.indexOf(a) - at) - Math.abs(before.indexOf(b) - at))[0];
+      const near = before.filter((node) => keep.has(node) && node.querySelector(".radio-pick")).sort((a, b) => Math.abs(before.indexOf(a) - at) - Math.abs(before.indexOf(b) - at))[0];
       (near ? near.querySelector(".radio-pick") : list).focus({preventScroll: true});
     }
   }

@@ -59,6 +59,7 @@ const [a, b, c] = ["A", "B", "C"].map(item);
 const speech = {current: null, loading: null, pending: []};
 const context = {
   Bubbles, speech, document, h, settings: {bubbles: true}, g3: {tab: "stream"}, CSS: {escape: (value) => value}, nameOf: (key) => key, fixed: (value) => value.toFixed(1),
+  face: () => element("span", {}), iconBtn: () => element("button", {}),
   performance: {now: () => 5000}, window: {innerWidth: 1366, innerHeight: 768, setTimeout: () => 0, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {}},
 };
 vm.createContext(context);

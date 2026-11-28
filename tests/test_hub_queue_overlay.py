@@ -252,11 +252,11 @@ class TestOverlayModel(unittest.TestCase):
 
     def test_the_chips_show_position_class_pin_wsjf_gate_wait_and_eta(self):
         self.assertEqual(self.data["chips"], {
-            "q-1": [["position", "running", "neutral"], ["class", "fix", "warn"], ["prio", "P2", "neutral"], ["gate", "test", "teal"], ["waited", "waited 1 min", "neutral"], ["eta", "ETA 4 min", "neutral"]],
-            "q-2": [["position", "#1", "neutral"], ["class", "hotfix", "bad"], ["prio", "P1", "neutral"], ["wsjf", "WSJF 2.67", "neutral"], ["gate", "quality-high", "teal"],
+            "q-1": [["position", "running", "neutral"], ["class", "fix", "neutral"], ["prio", "P2", "neutral"], ["gate", "test", "teal"], ["waited", "waited 1 min", "neutral"], ["eta", "ETA 4 min", "neutral"]],
+            "q-2": [["position", "#1", "neutral"], ["class", "hotfix", "neutral"], ["prio", "P1", "neutral"], ["wsjf", "WSJF 2.67", "neutral"], ["gate", "quality-high", "teal"],
                     ["waited", "waits 21 min", "neutral"], ["eta", "ETA 8 min", "neutral"]],
-            "q-4": [["position", "#2", "neutral"], ["class", "main", "violet"], ["gate", "deploy", "teal"], ["waited", "waits 1 h 6 min", "neutral"], ["eta", "ETA ?", "neutral"]],
-            "q-3": [["position", "#3", "neutral"], ["class", "feature", "info"], ["wsjf", "WSJF 1.5", "neutral"], ["gate", "test", "teal"], ["waited", "waits 30 s", "neutral"], ["eta", "ETA 1 h 5 min", "neutral"]],
+            "q-4": [["position", "#2", "neutral"], ["class", "main", "neutral"], ["gate", "deploy", "teal"], ["waited", "waits 1 h 6 min", "neutral"], ["eta", "ETA ?", "neutral"]],
+            "q-3": [["position", "#3", "neutral"], ["class", "feature", "neutral"], ["wsjf", "WSJF 1.5", "neutral"], ["gate", "test", "teal"], ["waited", "waits 30 s", "neutral"], ["eta", "ETA 1 h 5 min", "neutral"]],
         })
         self.assertEqual(self.data["hints"], [
             "q-2: grant position #1", "q-2: class hotfix", "q-2: its task is pinned P1", "q-2: WSJF 2.6667 of its task", "q-2: runs the gate quality-high",

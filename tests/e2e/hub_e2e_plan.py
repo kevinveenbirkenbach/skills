@@ -7,7 +7,7 @@ PLAN_HELPERS = """
   const modes = () => all('#main [aria-label="Estimation"] button').map((button) => [button.dataset.estimation, button.getAttribute("aria-pressed")]);
   const requestShown = () => {
     const button = document.getElementById("request-estimates");
-    return button ? !button.hidden && button.getClientRects().length > 0 : null;
+    return button ? withMenusOpen(button, () => !button.hidden && button.getClientRects().length > 0) : null;
   };
   const choose = async (select, value) => {
     select.value = value;
@@ -57,6 +57,7 @@ BURN = """(async () => {@HELPERS@@PLAN_HELPERS@
 })()""".replace("@HELPERS@", HELPERS).replace("@PLAN_HELPERS@", PLAN_HELPERS)
 POINTS_ON = """(async () => {@HELPERS@@PLAN_HELPERS@
   const before = {modes: modes(), request: requestShown()};
+  await openTaskMenu("task-filter");
   all('#main [aria-label="Estimation"] button').find((button) => button.dataset.estimation === "points").click();
   const shown = await until(() => requestShown(), 8000);
   return {before, modes: modes(), request: Boolean(shown), ...fits()};
@@ -68,6 +69,7 @@ REQUEST = """(async () => {@HELPERS@@PLAN_HELPERS@
   }
   const series = all("#main svg.burn path.burn-line").map((path) => [path.dataset.series, Number(path.dataset.last)]);
   const shown = new Set(all("#toasts .toast"));
+  await openTaskMenu("task-actions");
   document.getElementById("request-estimates").click();
   const toast = await fresh(shown, "Request estimates");
   return {modes: modes(), series, toast, ...fits()};
@@ -93,6 +95,7 @@ BULK = """(async () => {@HELPERS@@PLAN_HELPERS@
     return send(path, init);
   };
   const rows = () => all("#main .task-row").map((row) => row.dataset.task);
+  await openTaskMenu("task-filter");
   const sort = document.querySelector('#main select[aria-label="Sort"]');
   const direction = document.querySelector("#main button[data-direction]");
   const found = {sorts: all("option", sort).map((option) => option.value), prio: rows()};
@@ -107,6 +110,7 @@ BULK = """(async () => {@HELPERS@@PLAN_HELPERS@
   for (const task of ["work/next", "work/child"]) {
     all("#main .task-row").find((row) => row.dataset.task === task).querySelector("input.task-pick").click();
   }
+  await openTaskMenu("task-actions");
   const button = document.getElementById("bulk-value");
   found.armed = [button.disabled, text(button.querySelector(".count"))];
   await choose(document.querySelector('#main select[aria-label="Business value of the selection"]'), "@VALUE@");
@@ -154,7 +158,7 @@ TREND_READ = """
     const note = document.querySelector("#main .burn-forecast");
     const marker = document.querySelector("#main svg.burn .forecast-line");
     return {
-      value: select.value, options: all("option", select).map((option) => [option.value, text(option)]), days: [Number(days.value), days.getClientRects().length > 0],
+      value: select.value, options: all("option", select).map((option) => [option.value, text(option)]), days: [Number(days.value), withMenusOpen(days, () => days.getClientRects().length > 0)],
       note: note ? [note.dataset.forecast === "" ? null : Number(note.dataset.forecast), text(note)] : null, marker: marker ? Number(marker.dataset.forecast) : null,
       lines: all("#main svg.burn path.burn-trend").map((path) => [path.dataset.series, Number(path.dataset.from), Number(path.dataset.to)]),
       points: all('#main svg.burn circle.burn-point[data-series="remaining"]').map((circle) => [Number(circle.dataset.t), Number(circle.dataset.value)]),

@@ -334,7 +334,7 @@ async function transmitted(steps, cut, row = ROW, broken = "") {
       }
       return node;
     },
-    nameOf: (key) => key, fixed: (value) => value.toFixed(1), FontFace: class {}, toast: () => null, context: () => audio,
+    nameOf: (key) => key, fixed: (value) => value.toFixed(1), FontFace: class {}, toast: () => null, context: () => audio, face: () => new Node({}), iconBtn: () => new Node({}),
     duck: () => {
       if (broken === "duck") {
         throw new Error("no gain node");
@@ -418,7 +418,7 @@ function run(scenario) {
       node.append(...children);
       return node;
     },
-    nameOf: (key) => key, fixed: (value) => value.toFixed(1), fetch: async () => ({ok: false, status: 404}), FontFace: class {},
+    nameOf: (key) => key, fixed: (value) => value.toFixed(1), fetch: async () => ({ok: false, status: 404}), FontFace: class {}, face: () => new Node({}), iconBtn: () => new Node({}),
     drawSpeaker: () => null, toast: () => null, saveSettings: () => null, context: () => null, Voice: {enqueue: (pending, next) => [...pending, next]}, SPEECH_QUEUE: 9, SPEECH_QUIET: 0,
   };
   vm.runInNewContext(`${code}
@@ -699,7 +699,7 @@ class TestHubBubbles(HubCase):
             with self.subTest(part=part):
                 self.assertIn(part, toggle)
         self.assertIn('<symbol id="bi-chat-quote"', html)
-        self.assertIn('<div class="bubbles" id="bubbles" aria-hidden="true" hidden><div class="bubble-bar"></div></div>', html)
+        self.assertIn('<div class="bubbles" id="bubbles" hidden><div class="bubble-bar"></div></div>', html)
         self.assertIn(BUBBLES.read_text(encoding="utf-8").strip(), html)
         nonce = re.search(r"script-src 'nonce-([^']+)'", headers["content-security-policy"]).group(1)
         self.assertEqual(headers["content-security-policy"], view.INDEX_CSP.format(nonce, "'self'"))

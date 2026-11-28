@@ -27,6 +27,27 @@ EXPIRED_REASONS = {
 }
 
 
+HEADLINE = 120
+
+
+def headline(card: dict) -> dict:
+    """Args:
+        card: a Match card with its uncut title.
+
+    Returns:
+        The card with title cut to at most HEADLINE characters at the last
+        word boundary (inside a single long word when there is none) and
+        ended by "…", plus title_full with the uncut title; unchanged when
+        the title fits.
+    """
+    title = card["title"]
+    if len(title) <= HEADLINE:
+        return card
+    cut = title[: HEADLINE - 1]
+    space = cut.rstrip().rfind(" ")
+    return {**card, "title": f"{(cut[:space] if space > 0 else cut).rstrip()}…", "title_full": title}
+
+
 def expired_card(card: dict, expires: float) -> dict:
     """Args:
         card: the waiting_card() of an ask or decision lapsed_of() keeps.
@@ -126,7 +147,7 @@ class Matching:
             for snapshot in store.listed():
                 if snapshot["id"] not in listed:
                     store.remove(snapshot["id"])
-        return {"now": now, "cards": cards}
+        return {"now": now, "cards": [headline(card) for card in cards]}
 
     def match_closed(self) -> dict:
         """Returns:

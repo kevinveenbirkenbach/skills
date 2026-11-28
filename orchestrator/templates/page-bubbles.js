@@ -45,7 +45,7 @@
     if (projected && inView(projected)) {
       return projected;
     }
-    for (const node of document.querySelectorAll(`[data-face="${CSS.escape(key)}"]`)) {
+    for (const node of document.querySelectorAll(`[data-face="${CSS.escape(key)}"]:not(#bubbles *)`)) {
       const box = node.getBoundingClientRect();
       const shown = inView(box) ? clipsOf(node).reduce(clipped, box) : null;
       if (shown && inView(shown)) {
@@ -56,8 +56,37 @@
   }
 
   function bubbleNode(item) {
-    const words = h("span", {class: "bubble-words"});
-    return {node: h("div", {class: "speech-bubble", "data-who": item.who}, h("strong", {class: "bubble-who"}, nameOf(item.who)), words), words};
+    const words = h("span", {class: "bubble-words", "aria-hidden": "true"});
+    const name = nameOf(item.who);
+    const skip = iconBtn("bi-x-lg", `Skip message from ${name}`, "bubble-skip", () => skipBubble(item), `Skip this message from ${name} and go on with the next`);
+    return {node: h("div", {class: "speech-bubble", "data-who": item.who}, h("span", {class: "bubble-head"}, face(item.who), h("strong", {class: "bubble-who"}, name), skip), words), words};
+  }
+
+  /**
+   * @param {object} item the read-aloud, silent, queued or quiet item whose docked bubble the operator closes.
+   */
+  function skipBubble(item) {
+    const view = bubbles.shown.get(item);
+    bubbles.shown.delete(item);
+    if (bubbles.quiet.includes(item)) {
+      window.clearTimeout(item.timer);
+      bubbles.quiet = bubbles.quiet.filter((other) => other !== item);
+    } else if (speech.pending.includes(item)) {
+      speech.pending = speech.pending.filter((other) => other !== item);
+    } else if (speech.item === item && speech.timer) {
+      endSilent();
+      drawSpeaker();
+      pump();
+    } else if (speech.item === item) {
+      const playing = speech.source;
+      Object.assign(speech, {item: null, current: null, source: null, loading: speech.loading === item ? null : speech.loading});
+      if (playing) {
+        playing.stop();
+      }
+      drawSpeaker();
+    }
+    vanish(view && view.node);
+    drawBubbles();
   }
 
   function placeBubble(view, box, scale) {

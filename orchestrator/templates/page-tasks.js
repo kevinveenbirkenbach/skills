@@ -68,7 +68,7 @@
   }
 
   function taskItem(row, eta) {
-    const classes = ["task-row", row.open_work.length ? "open-work" : "", row.ended ? "ended" : ""].filter(Boolean).join(" ");
+    const classes = ["task-row", row.open_work.length ? "open-work" : "", row.ended ? "ended" : "", taskWorking(row, Kanban.marks(row, markSources())) ? "is-working" : ""].filter(Boolean).join(" ");
     const pick = row.editable ? h("input", {type: "checkbox", class: "task-pick", "aria-label": `Select ${row.task}`, title: `Select ${row.task} for a bulk business value`, checked: taskView.picked.has(row.task), on: {change: (event) => pickTask(row.task, event.target.checked)}}) : null;
     return h("li", {class: classes, "data-task": row.task, "data-item": `task:${row.task}`, "data-kind": row.kind, "data-status": row.status},
       h("div", {class: "head-row"}, pick, h("code", {class: "task-id"}, row.task), taskBadges(row, true), h("span", {class: "spacer"}), etaMark(eta),
@@ -142,12 +142,78 @@
     }
   }
 
+  function resetTaskFilter() {
+    kanban.running = false;
+    kanban.stale = false;
+    taskView.sig = "";
+    chooseTaskFilter("all");
+  }
+
+  /**
+   * @param rows - every task of the register.
+   * @param inbox - whether Waits on Operator shows.
+   * @returns {HTMLElement[]} the status tabs as one radio group of the Filter menu, each with its count.
+   */
   function taskChips(rows, inbox) {
     return TASK_FILTERS.map(([id, label, name, test]) => {
       const total = test ? rows.filter(test).length : waitingCount();
-      return h("button", {type: "button", class: "chip preset", "data-filter": id, "aria-pressed": String(inbox ? id === "operator" : id === taskView.filter), title: `${label}: ${total}`, on: {click: () => chooseTaskFilter(id)}},
-        icon(name), label, counter(total));
+      return h("label", {class: "check task-filter", "data-filter": id, title: `${label}: ${total}`},
+        h("input", {type: "radio", name: "task-filter", value: id, checked: inbox ? id === "operator" : id === taskView.filter, on: {change: () => chooseTaskFilter(id)}}),
+        icon(name), h("span", {class: "task-filter-word"}, label), counter(total));
     });
+  }
+
+  /**
+   * @param dom - taskView.dom.
+   * @returns {HTMLElement[]} the one removable chip naming the active filter (the status tab, and on the board Running
+   * and Stale), whose x resets to All with every card shown; [] while All shows everything.
+   */
+  function taskFilterChip(dom) {
+    const [id, label, name] = TASK_FILTERS.find(([key]) => key === (dom.inbox ? "operator" : taskView.filter));
+    const board = !dom.inbox && dom.view === "board";
+    const words = [id === "all" ? "" : label, board && kanban.running ? "Running" : "", board && kanban.stale ? "Stale" : ""].filter(Boolean).join(" · ");
+    if (!words) {
+      return [];
+    }
+    return [h("span", {class: "chip task-filter-chip", id: "task-filter-chip", "data-key": "task-filter-chip", "data-filter": id, role: "group", "aria-label": `Filter: ${words}`, title: `Filter: ${words}`},
+      icon(id === "all" ? "bi-funnel" : name), h("span", {class: "task-chip-word"}, words),
+      h("button", {type: "button", class: "x", ...named("Reset filter", `Reset filter: back to All${board ? ", every card shown" : ""}`), on: {click: resetTaskFilter}}, icon("bi-x-lg")))];
+  }
+
+  /**
+   * @param id - the menu's element id.
+   * @param label - the summary's name.
+   * @param hint - the summary's tooltip.
+   * @param name - the summary's icon.
+   * @param end - whether the box opens to the left, for a menu near the right edge.
+   * @param parts - the box's sections.
+   * @returns {HTMLElement} a details.menu of the Tasks toolbar.
+   */
+  function taskMenu(id, label, hint, name, end, parts) {
+    return h("details", {class: "menu task-menu", id}, h("summary", named(label, hint), icon(name), h("span", {class: "tool-word"}, label), caret()),
+      h("div", {class: end ? "menu-box end" : "menu-box"}, parts));
+  }
+
+  const taskSection = (title, ...nodes) => h("section", {class: "task-menu-section"}, h("h3", {}, title), ...nodes);
+
+  /**
+   * @param dom - taskView.dom of the board.
+   * Moves the groups of kanban.bar to their places: the status pills into the toolbar, the board filters into the
+   * Filter menu, the board actions into the Actions menu; an empty board leaves a note in both menus.
+   */
+  function placeBoardTools(dom) {
+    const group = (key) => (kanban.bar ? kanban.bar.querySelector(`[data-tools="${key}"]`) : null);
+    const none = () => h("p", {class: "muted"}, "No card matches the filter.");
+    const status = group("status");
+    const active = document.activeElement;
+    const kept = active && active.id && (dom.boardFilters.contains(active) || dom.boardActions.contains(active)) ? active.id : "";
+    fadeSwap(dom.status, status ? [...status.children] : []);
+    dom.boardFilters.replaceChildren(group("filters") || none());
+    dom.boardActions.replaceChildren(group("actions") || none());
+    const again = kept ? document.getElementById(kept) : null;
+    if (again) {
+      again.focus({preventScroll: true});
+    }
   }
 
   function taskViewSwitch(inbox) {
@@ -159,21 +225,32 @@
   function tasksScreen() {
     const inbox = ui.screen === "inbox";
     const view = ui.views.tasks;
-    const chips = h("div", {class: "chips", role: "group", "aria-label": "Task filters"});
-    const count = h("span", {class: "muted"});
+    const board = !inbox && view === "board";
+    const chips = h("div", {class: "task-filters", role: "radiogroup", "aria-label": "Task filters"});
+    const count = h("span", {class: "muted task-count"});
     const search = inbox ? null : h("input", {type: "search", class: "field", placeholder: "Filter by task, title, worker, branch …", value: taskView.q, "aria-label": "Filter tasks", on: {input: (event) => {
       taskView.q = event.target.value;
       drawTasks();
     }}});
     const stage = !inbox && view === "3d" ? h("div", {class: "stage"}) : null;
     const body = inbox ? inboxScreen() : stage ? h("div", {class: "card stage-card tasks-body", "data-panel": "tasks/3d"}, layoutTools("tasks"), stage) : h("div", {class: "tasks-body", "data-panel": `tasks/${view}`});
-    const slot = h("span", {class: "box-slot"});
-    taskView.dom = {chips, count, body, inbox, view, stage, slot};
+    const chip = h("span", {class: "task-chip"});
+    const status = h("span", {class: "task-status", role: "group", "aria-label": "Board status"});
+    const tools = () => h("div", {class: "task-menu-tools"});
+    const [boardFilters, boardActions, undo] = [tools(), tools(), h("div", {class: "task-menu-tools task-undo", "aria-live": "polite"})];
+    taskView.dom = {chips, count, body, inbox, view, stage, chip, status, boardFilters, boardActions};
     taskView.sig = "";
     taskView.plan = null;
     taskView.bulk = null;
-    const bar = boxHead("Tasks", "task-toolbar", taskViewSwitch(inbox), search, count, inbox ? null : planTools(view), slot, choiceMenu());
-    return h("div", {class: "graph tasks"}, bar, chips, body);
+    const plan = inbox ? null : planTools(view);
+    const filter = taskMenu("task-filter", "Filter", "Filter: the status tabs with their counts, the board toggles and the options of this view", "bi-funnel", false, [
+      taskSection("Status", chips), board ? taskSection("Board", boardFilters) : null, plan ? taskSection("View", h("div", {class: "task-menu-tools"}, plan.view)) : null]);
+    const actions = taskMenu("task-actions", "Actions", "Actions: prune stale tasks, apply or discard staged moves, request estimates or choices, undo a signature", "bi-lightning", true, [
+      board ? taskSection("Board", boardActions) : null, plan ? taskSection("Plan", h("div", {class: "task-menu-tools"}, plan.actions)) : null, taskSection("Undo", undo), choiceMenu()]);
+    const bar = boxHead("Tasks", "task-toolbar task-bar", taskViewSwitch(inbox), search, filter, chip, status, actions, count);
+    undoView.box = undo;
+    drawUndo();
+    return h("div", {class: "graph tasks"}, bar, body);
   }
 
   const operatorItems = () => state.inbox.filter((item) => item.kind === "operator" && !item.settled);
@@ -210,7 +287,7 @@
       stage3d("tasks", dom.stage);
     }
     const q = taskView.q.trim().toLowerCase();
-    const sig = JSON.stringify([state.tasks, operatorItems().map((item) => [item.id, item.title, item.blocked]), state.jobs, state.task_edges, state.queue_line, Kanban.queueSig(state.queue_jobs), state.beats, state.runner, settings.estimation, settings.trend, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
+    const sig = JSON.stringify([state.tasks, operatorItems().map((item) => [item.id, item.title, item.blocked]), openInbox().filter((item) => !item.until).map((item) => item.agent), state.jobs, state.task_edges, state.queue_line, Kanban.queueSig(state.queue_jobs), state.beats, state.runner, settings.estimation, settings.trend, taskView.filter, taskView.sort, taskView.descending, taskView.forecast, taskView.scope, q, waitingCount(), Math.floor(nowSeconds() / 60)]);
     if (sig === taskView.sig) {
       return;
     }
@@ -223,7 +300,13 @@
       }
     }
     syncPlan();
+    const focused = dom.chips.contains(document.activeElement);
     dom.chips.replaceChildren(...taskChips(rows, dom.inbox));
+    const checked = dom.chips.querySelector("input:checked");
+    if (focused && checked) {
+      checked.focus({preventScroll: true});
+    }
+    fadeSwap(dom.chip, taskFilterChip(dom));
     if (dom.inbox) {
       dom.count.textContent = `${rows.length} tasks in the register`;
       return;
@@ -243,7 +326,10 @@
       gantt: ganttChart,
       burn: (found) => burnChart(rows, found),
     };
-    dom.body.replaceChildren(shown.length || dom.view === "burn" ? views[dom.view](shown) : emptyState("No task", "No entry matches this filter."), ...(dom.view === "list" || dom.view === "board" ? [operatorSection()].filter(Boolean) : []));
-    const bar = dom.body.querySelector(".kanban-bar");
-    dom.slot.replaceChildren(...(bar ? [bar] : []));
+    kanban.bar = null;
+    const nodes = [shown.length || dom.view === "burn" ? views[dom.view](shown) : emptyState("No task", "No entry matches this filter."), ...(dom.view === "list" || dom.view === "board" ? [operatorSection()].filter(Boolean) : [])];
+    if (dom.view === "board") {
+      placeBoardTools(dom);
+    }
+    fadeSwap(dom.body, nodes);
   }

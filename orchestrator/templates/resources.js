@@ -172,7 +172,19 @@ const Resources = (() => {
   }
 
   const asleep = (samples) => gpuSpans(samples, (gpu) => gpu.asleep === true);
-  const unknown = (samples) => gpuSpans(samples, (gpu) => gpu.asleep !== true && !finite(gpu.util) && !finite(gpu.vram_used));
+  const unread = (gpu) => gpu.asleep !== true && !finite(gpu.util) && !finite(gpu.vram_used);
+
+  /**
+   * @param samples - sampler rows.
+   * @returns gpuSpans() of every awake GPU without a reading, each span with causes: the distinct nvidia-smi error
+   * lines (gpu.error) its rows recorded, in order; empty when none did.
+   */
+  function unknown(samples) {
+    const rows = timed(samples);
+    return gpuSpans(samples, unread).map(({name, spans: found}) => ({name, spans: found.map((span) => ({...span, causes: [...new Set(rows
+      .filter((row) => row.t >= span.from && row.t < span.to)
+      .flatMap((row) => listOf(row, "gpus").filter((gpu) => String(gpu.name) === name && unread(gpu) && typeof gpu.error === "string" && gpu.error !== "").map((gpu) => gpu.error)))]}))}));
+  }
 
   function stack(tokens) {
     const totals = new Map();

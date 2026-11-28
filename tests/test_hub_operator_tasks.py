@@ -66,7 +66,7 @@ const vm = require("vm");
 const [dir, names] = [process.argv[1], JSON.parse(process.argv[2])];
 class Node {}
 class El extends Node {
-  constructor(tag) { super(); Object.assign(this, {tag, attrs: {}, children: [], listeners: {}, hidden: false, className: "", style: {}, dataset: {}, disabled: false, value: ""}); }
+  constructor(tag) { super(); Object.assign(this, {tag, attrs: {}, children: [], listeners: {}, hidden: false, className: "", style: {}, dataset: {}, disabled: false, value: ""}); this.classList = {add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false}; }
   setAttribute(key, value) {
     this.attrs[key] = String(value);
     if (key === "class") { this.className = String(value); }
@@ -905,7 +905,7 @@ class TestHubOperatorTasks(HubCase):
             self.assertEqual(permission_hook.commit_diff({**commit, "tool": "Write"}, rules), (None, {}))
             self.assertEqual(permission_hook.commit_diff({**commit, "cwd": str(self.outside / "nowhere")}, rules), (None, {}))
             ask = {key: commit[key] for key in ("tool", "command", "cwd", "session", "agent")}
-            ask_id = permission_hook.create(f"http://{self.host}", ask, 60, permission_hook.commit_diff(ask, rules)[1], "")
+            ask_id = permission_hook.create(f"http://{self.host}", ask, 60, permission_hook.commit_diff(ask, rules)[1], "", False, "")
         item = next(item for item in self.snapshot()["inbox"] if item["id"] == ask_id)
         self.assertEqual((item["kind"], item["diff"]), ("ask", 4))
         status, _, body = self.get(f"/api/diffs/ask/{ask_id}")
@@ -924,9 +924,9 @@ class TestHubOperatorTasks(HubCase):
         self.assertEqual(diffs.valid_diff(diff), diff)
         ask = {key: ASK[key] for key in ("tool", "command", "cwd", "session", "agent")}
         self.assertGreater(len(permission_hook.encoded({**ask, "timeout": 60, "diff": diff})), hub_limits.DIFF_BODY_LIMIT)
-        ask_id = permission_hook.create(f"http://{self.host}", ask, 60, {"diff": diff}, "")
+        ask_id = permission_hook.create(f"http://{self.host}", ask, 60, {"diff": diff}, "", False, "")
         self.assertIsNone(next(item for item in self.snapshot()["inbox"] if item["id"] == ask_id)["diff"])
-        small = permission_hook.create(f"http://{self.host}", ask, 60, {"diff": [{**diff[0], "patch": "@@ -0,0 +1 @@\n+\U0001f600"}]}, "")
+        small = permission_hook.create(f"http://{self.host}", ask, 60, {"diff": [{**diff[0], "patch": "@@ -0,0 +1 @@\n+\U0001f600"}]}, "", False, "")
         self.assertEqual(next(item for item in self.snapshot()["inbox"] if item["id"] == small)["diff"], 1)
 
     def test_approval_request_with_a_broken_rule_file_withholds_every_text_file_and_exits_0(self):

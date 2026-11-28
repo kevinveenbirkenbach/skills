@@ -69,7 +69,7 @@
       h("div", {class: "days"}, days.map((box, index) => h("label", {class: "check"}, box, WEEKDAYS[index])), h("label", {class: "check"}, on, "active"), h("span", {class: "spacer"}),
         btn("Remove", "btn small danger", () => {
           rows.splice(rows.indexOf(entry), 1);
-          entry.row.remove();
+          vanish(entry.row);
         })));
     rows.push(entry);
     list.append(entry.row);
@@ -132,6 +132,7 @@
     const musicOn = h("input", {type: "checkbox", checked: settings.music.on});
     const volume = h("input", {type: "range", min: 0, max: 1, step: 0.05, value: settings.music.volume, "aria-label": "Overall volume"});
     const undo = undoDial(settings.undo, "Undo window in seconds");
+    const hookWait = h("input", {class: "field hook-wait", type: "number", min: 1, max: 60, step: 1, value: settings.hook.wait, required: true, "aria-label": "Hook wait in minutes"});
     const form = h("form", {class: "settings"},
       ambience(),
       h("section", {}, h("h3", {}, "Location"), h("p", {class: "muted"}, "Sun, moon and stars stand where you see them from here, looking south; under 🔭 Sky (key h) you turn the view. Decimal degrees, north and east positive."),
@@ -140,6 +141,8 @@
       h("section", {}, h("h3", {}, "Music"), h("p", {class: "muted"}, "Generative ambient music, made offline: calm with an empty inbox, a little tenser when something waits, quieter under messages."),
         h("div", {class: "grid"}, h("label", {class: "check"}, musicOn, "Music on"), h("label", {}, "Overall volume (music and radio)", volume))),
       h("section", {class: "undo-window"}, h("h3", {}, "Undo window"), h("p", {class: "muted"}, "Seconds between a passkey signature and the moment it takes effect, to undo it; 0 takes effect at once. Drag the hand, click a tick, or use the arrows (1 s) and Page Up / Down (5 s)."), undo.root),
+      h("section", {class: "hook-wait-section"}, h("h3", {}, "Claude dialogs"), h("p", {class: "muted"}, "Minutes the permission hook waits for your answer here while Claude shows the same dialog, 1 to 60; whichever side answers first wins, and an answer in Claude closes the card at once. After the wait the card reads \"open in Claude\" until Claude answers it. Takes effect after make orchestrator-hook and a restart of the Claude sessions."),
+        h("label", {}, "Hook wait in minutes", hookWait)),
       passkeySection(),
       h("div", {class: "sheet-foot"}, h("span", {class: "spacer"}), btn("Cancel", "btn ghost", closeSheet), h("button", {type: "submit", class: "btn primary"}, "Save")));
     form.addEventListener("submit", async (event) => {
@@ -164,6 +167,7 @@
         rates: settings.rates,
         undo: undo.value(),
         match: settings.match,
+        hook: {wait: Number(hookWait.value)},
       };
       if (await saveSettings(next)) {
         closeSheet();

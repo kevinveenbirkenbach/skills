@@ -242,15 +242,16 @@ class TestHubInbox(base.OrchestratorE2ECase):
                 self.assertEqual(view["filter"], ["Waits on Operator", "true"])
                 self.assertEqual(view["channels"], [[channel, label, channel in ("post", "call")] for channel, label in zip(CHOICE_CHANNELS, ["Post", "Call", "Newsletter", "Broadcast", "Pan-Pan", "Sécurité", "Mayday"], strict=True)])
                 self.assertEqual((view["fields"], view["choices"], view["multi"], view["unlabelled"], view["tall"], view["wide"]), (0, 0, ["Request choices", False, 0, "0", 0], [], False, False))
-                self.assertEqual(view["bar"], ["Tasks", view["bar"][1], ["toolbar", "chips", "body"]])
-                self.assertEqual(view["bar"][1] == 1, width != 390, view["bar"])
+                self.assertEqual(view["bar"], ["Tasks", view["bar"][1], ["toolbar", "body"]])
+                self.assertIn(view["bar"][1], (1, 2) if width == 390 else (1,), view["bar"])
                 self.assertGreaterEqual(len(view["agents"]), 2, view)
                 self.assertIn(["Choice", ["Merge now", "Wait"]], view["cards"])
                 self.requested(sent, signs)
                 self.answered(answer, signs)
                 for fit, name in zip(fitted, TASK_VIEWS, strict=True):
                     self.assertEqual((fit["hash"], fit["bar"], fit["choices"], fit["tall"], fit["wide"]), (f"#tasks/{name}", CHOICE_CHANNELS, 0, False, False), fit)
-                    self.assertEqual((fit["rows"] == 1, fit["layout"]), (width != 390, ["toolbar", "chips", "body"]), fit)
+                    self.assertIn(fit["rows"], (1, 2) if width == 390 else (1,), fit)
+                    self.assertEqual(fit["layout"], ["toolbar", "body"], fit)
                     if name == "board":
                         self.assertEqual(fit["columns"], ["queued", "running", "done"])
         hub = self.httpd.hub

@@ -44,7 +44,7 @@
     }
     radioStatus(kind, label, note);
     if (told) {
-      told.box.remove();
+      vanish(told.box);
     }
     const stream = settings.streams[radio.index];
     const box = toast(`Radio ${kind === "blocked" ? "blocked" : "silent"}: ${stream ? stream.name : radio.url}`, [note], false);

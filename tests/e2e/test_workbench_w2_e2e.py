@@ -102,9 +102,11 @@ BOARD = """(async () => {@HELPERS@@BOARD_HELPERS@
   card("work/stale").querySelector(".kanban-stop").click();
   await sleep(400);
   const staged = read();
+  await openTaskMenu("task-filter");
   document.getElementById("kanban-old").click();
   await sleep(300);
   const older = read().lanes.find(([lane]) => lane === "unpinned");
+  await openTaskMenu("task-filter");
   document.getElementById("kanban-old").click();
   await sleep(300);
   document.querySelector('#main .kanban-lane[data-lane="p4"] .lane-toggle').click();
@@ -120,6 +122,7 @@ BOARD = """(async () => {@HELPERS@@BOARD_HELPERS@
   (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
   await sleep(300);
   const shown = new Set(all("#toasts .toast"));
+  await openTaskMenu("task-actions");
   document.getElementById("kanban-apply").click();
   const toast = await fresh(shown, "Apply 6 changes");
   await sleep(600);
@@ -257,7 +260,7 @@ class TestWorkbenchKanban(HubCase):
             "work/d": "set work/d --prio 4",
             "work/stale": "set work/stale --status stopped",
         })
-        self.assertEqual((staged["apply"], staged["stale"], staged["labels"]["work/stale"]), ([False, "Apply 6 changes", "6"], "0", ["stopped"]))
+        self.assertEqual((staged["apply"], staged["stale"], staged["labels"]["work/stale"]), ([False, "Apply 6 changes", "6"], None, ["stopped"]))
         self.assertEqual(result["older"], ["unpinned", "true", {**EMPTY, "queued": ["queue/gate-2"], "running": ["queue/gate-1"], "done": ["work/done", "work/old", "work/stale", "work/stopped"]}])
         listed = [[task, f"rasci.py {argv}"] for task, argv in STAGED]
         self.assertEqual((staged["listed"], result["folded"], result["popped"]), (listed, ["false", True, listed], [True, "work/b"]))

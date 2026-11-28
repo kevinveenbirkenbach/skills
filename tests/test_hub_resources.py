@@ -16,7 +16,7 @@ T = 1_760_000_000
 FIXTURE = """
 const asleep = {name: "0000:01:00.0", asleep: true};
 const awake = (util, used) => ({name: "0000:01:00.0", util, vram_used: used, vram_total: 1000});
-const unread = {name: "0000:01:00.0", util: null, vram_used: null, vram_total: null};
+const unread = {name: "0000:01:00.0", util: null, vram_used: null, vram_total: null, error: "@MISMATCH@"};
 const row = (t, cpu, ram, waiting, gpu, disks, queued) => ({t, cpu, ram, swap: 0, load: 1, disks, gpus: [gpu], queue: {waiting, active: 1, ...queued}});
 const head = (id, waited_s, reason) => ({id, kind: "job", waited_s, reason});
 const root = [{mount: "/", used: 250, total: 1000}];
@@ -42,7 +42,8 @@ BESIDE = "quality-high runs only beside test-nostack, but test runs"
 ESCALATED = f"escalated post: {BESIDE}"
 RAM = "RAM 56 % used + 37 % still to come reach the limit 85 %"
 BEHIND = "waits in line behind test-1001"
-FIXTURE = FIXTURE.replace("@BESIDE@", BESIDE).replace("@ESCALATED@", ESCALATED).replace("@RAM@", RAM).replace("@BEHIND@", BEHIND)
+MISMATCH = "Failed to initialize NVML: Driver/library version mismatch"
+FIXTURE = FIXTURE.replace("@BESIDE@", BESIDE).replace("@ESCALATED@", ESCALATED).replace("@RAM@", RAM).replace("@BEHIND@", BEHIND).replace("@MISMATCH@", MISMATCH)
 QH = "quality-high-1002"
 PROBE = """
 const R = require(process.argv[1]);
@@ -64,6 +65,7 @@ console.log(JSON.stringify({
   quiet: R.hung(samples.slice(0, 5)),
   asleep: R.asleep(samples),
   unknown: R.unknown(samples),
+  causeless: R.unknown([row(T, 1, 1, 0, {...unread, error: ""}, root), row(T + 60, 1, 1, 0, {...unread, error: 7}, root), row(T + 120, 1, 1, 0, {...unread, error: "other"}, root), row(T + 180, 1, 1, 0, asleep, root), row(T + 240, 1, 1, 0, unread, root)]),
   stack: R.stack(tokens),
   hardware: R.hardware(samples).map((entry) => [entry.name, entry.kind, entry.points.length]),
   accumulated: R.accumulate(tokens),
@@ -134,6 +136,7 @@ const context = {
   boxHead: (label, cls, ...children) => make("div", {class: "box-head", "aria-label": label}, children),
   fixed: (value) => value.toFixed(1), dash: (value) => (value === null ? "–" : value), absolute: {format: () => "d"}, clock: {format: () => "c"}, stampOf: (t) => new Date(t * 1000),
   revealed: (text) => String(text), counter: (value) => make("span", {class: "count"}, [String(value)]), openSheet: (title, body, wide) => sheets.push({title, body, wide}),
+  stored: (key, fallback) => fallback, keep: () => true,
   window: {setTimeout: (run) => run(), setInterval: () => 1, addEventListener: () => null},
   document: {
     hidden: false, activeElement: null, createElement: (tag) => make(tag, {}, []), getElementById: (name) => (name === "view" ? {textContent: JSON.stringify(view)} : null),
@@ -300,7 +303,13 @@ class TestResourcesModule(unittest.TestCase):
         self.assertEqual(self.data["asleep"],[{"name": "0000:01:00.0", "spans": [{"from": T, "to": T + 120, "peak": 1}, {"from": T + 5000, "to": T + 5120, "peak": 1}]}])
 
     def test_an_awake_gpu_without_a_reading_gets_unknown_spans_apart_from_asleep_ones(self):
-        self.assertEqual(self.data["unknown"], [{"name": "0000:01:00.0", "spans": [{"from": T + 300, "to": T + 360, "peak": 1}]}])
+        self.assertEqual(self.data["unknown"], [{"name": "0000:01:00.0", "spans": [{"from": T + 300, "to": T + 360, "peak": 1, "causes": [MISMATCH]}]}])
+
+    def test_an_unknown_span_names_each_distinct_nvidia_smi_error_of_its_rows_once(self):
+        self.assertEqual(self.data["causeless"], [{"name": "0000:01:00.0", "spans": [
+            {"from": T, "to": T + 180, "peak": 1, "causes": ["other"]},
+            {"from": T + 240, "to": T + 300, "peak": 1, "causes": [MISMATCH]},
+        ]}])
 
     def test_tokens_stack_per_hour_with_the_biggest_agent_at_the_bottom(self):
         stack = self.data["stack"]
@@ -365,7 +374,7 @@ class TestResourcesPage(unittest.TestCase):
         self.assertEqual(found["lines"], LINES)
         self.assertEqual(found["waits"], [[T + 60, T + 180], [T + 240, T + 300], [T + 5000, T + 5060]])
         self.assertEqual(found["asleep"], [[T, T + 120], [T + 5000, T + 5120]])
-        self.assertEqual((found["unknown"], found["words"]), ([[T + 300, T + 360]], ["0000:01:00.0 unknown: no reading"]))
+        self.assertEqual((found["unknown"], found["words"]), ([[T + 300, T + 360]], [f"0000:01:00.0 unknown: {MISMATCH}"]))
         self.assertEqual(found["bars"], [["Stage", T, False], ["Skills", T, False], ["Stage", T + 3600, False]])
         self.assertEqual(found["chips"], chips(HARDWARE_CHIPS + AGENT_CHIPS, "resources.hidden", set()))
         self.assertEqual(found["switches"], [["tokens", "false"]])

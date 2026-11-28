@@ -25,8 +25,9 @@
   const TO_ONE = [["post", "Post"], ["call", "Call"]];
   const STATUS = {
     running: ["running", "ok"], queued: ["waiting", "info"], blocked: ["blocked", "bad"], stale: ["stale", "warn"], pending: ["open", "warn"], done: ["done", "neutral"], stopped: ["stopped", "neutral"],
-    approved: ["approved", "ok"], rejected: ["denied", "bad"], allowed: ["allowed", "ok"], denied: ["denied", "bad"], expired: ["expired", "neutral"], terminal: ["answered in the terminal", "neutral"], decided: ["decided", "ok"], failed: ["failed", "bad"], refused: ["refused", "bad"],
+    approved: ["approved", "ok"], rejected: ["denied", "bad"], allowed: ["allowed", "ok"], denied: ["denied", "bad"], expired: ["expired", "neutral"], terminal: ["answered in Claude", "neutral"], claude: ["open in Claude", "info"], ended: ["session ended", "neutral"], decided: ["decided", "ok"], failed: ["failed", "bad"], refused: ["refused", "bad"],
   };
+  const IN_CLAUDE_HINT = "Open in Claude: answer it there";
   const SECTIONS = {staged: "Staged", unstaged: "Not staged", untracked: "Untracked", commits: "Commits"};
   const FILE_STATUS = {added: ["A", "ok"], deleted: ["D", "bad"], modified: ["M", "info"], renamed: ["R", "violet"], copied: ["C", "violet"], untracked: ["U", "warn"]};
   const SIGNS = {add: "+", del: "-", ctx: " ", meta: " "};
@@ -37,7 +38,7 @@
   const MOVE = 2000;
   const RELAYOUT = 60000;
   const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
-  const STORE = {views: "kvb-orchestrator.views", status: "kvb-orchestrator.status", comments: "kvb-orchestrator.match-comments", peeks: "kvb-orchestrator.match-peeks", wide: "kvb-orchestrator.match-wide", dropped: "kvb-orchestrator.match-dropped"};
+  const STORE = {views: "kvb-orchestrator.views", status: "kvb-orchestrator.status", comments: "kvb-orchestrator.match-comments", peeks: "kvb-orchestrator.match-peeks", wide: "kvb-orchestrator.match-wide", dropped: "kvb-orchestrator.match-dropped", show: "kvb-orchestrator.match-show"};
   const PRESENCE = {
     working: ["Working", "bi-gear-fill", "info"],
     alive: ["Alive", "bi-heart-pulse-fill", "ok"],

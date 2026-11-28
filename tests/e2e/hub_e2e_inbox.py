@@ -174,16 +174,16 @@ CHOICE_VIEW = """(async () => {@HELPERS@@LABELS@
     return {error: text(document.getElementById("main"))};
   }
   const box = document.getElementById("choice-request");
-  const chip = document.querySelector('#main [aria-label="Task filters"] button[data-filter="operator"]');
+  const chip = document.querySelector('#main [aria-label="Task filters"] [data-filter="operator"]');
   const closed = all("button[data-channel]", box).filter((button) => button.checkVisibility()).length;
   return {
     kinds: [...new Set(all("#main .inbox-list > li").map((li) => text(li.querySelector(".pill"))))].sort(),
-    filter: [text(chip).replace(/[0-9]+$/, ""), chip.getAttribute("aria-pressed")],
+    filter: [text(chip).replace(/[0-9]+$/, ""), String(chip.querySelector("input").checked)],
     channels: all("button[data-channel]", box).map((button) => [button.dataset.channel, name(button), button.disabled]),
     fields: all("textarea, input:not([type=checkbox])", box).length,
     agents: all('input[type="checkbox"]', box).map((input) => input.value),
     multi: [name(box.querySelector("summary")), box.open, closed, text(box.querySelector(".menu-box h3 .count")), all('input[type="checkbox"]', box).filter((input) => input.checked).length],
-    bar: [box.parentElement.getAttribute("aria-label"), toolbarRows(), taskLayout()],
+    bar: [box.closest('[role="toolbar"]').getAttribute("aria-label"), toolbarRows(), taskLayout()],
     cards: all("#main .inbox-list > li").filter((li) => li.querySelector(".options")).map((li) => [text(li.querySelector(".pill")), all(".option strong", li).map(text)]),
     choices: all("#main [data-column], #main .group-title, #main h2, #main h3").filter((node) => node.dataset.column === "choices" || text(node) === "Choices").length,
     unlabelled: unlabelled(document),
@@ -192,6 +192,7 @@ CHOICE_VIEW = """(async () => {@HELPERS@@LABELS@
   };
 })()""".replace("@HELPERS@", HELPERS).replace("@LABELS@", LABELS)
 CHOICE_SEND = """(async () => {@HELPERS@@WATCH@
+  await openTaskMenu("task-actions");
   const menu = bar();
   menu.querySelector("summary").click();
   await sleep(200);

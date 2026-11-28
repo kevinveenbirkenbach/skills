@@ -50,7 +50,7 @@
       entry.text = data.text;
       entry.ref.truncated = false;
       holder.textContent = data.text;
-      button.remove();
+      vanish(button);
     } else {
       button.textContent = "No longer available";
     }
@@ -172,7 +172,7 @@
     const renamed = entry.now && entry.now !== entry.agent ? h("span", {title: `now: ${entry.now}`}, agentLink(entry.agent)) : agentLink(entry.agent);
     const who = entry.agent ? renamed : entry.session ? h("strong", {title: entry.session}, entry.session.slice(0, 8)) : null;
     const headline = entry.kind === "transcript" || entry.kind === "ask" || entry.kind === "operator" ? null : h("span", {class: "headline"}, Receipts.headline(entry));
-    const blocked = (item && item.blocked) || (entry.kind === "operator" && entry.ref.blocked) || "";
+    const blocked = (item && item.blocked) || (entry.kind === "operator" && entry.ref.blocked) || (entry.ref && entry.ref.status === "claude" ? IN_CLAUDE_HINT : "") || "";
     return h("li", {class: `entry k-${entry.kind}${entry.waiting && !answered ? " waiting" : ""}${alarm ? " alarm" : ""}`, "data-ref": item ? keyOf(item) : null, "data-item": `message:${entry.ts}/${entry.id}`, "data-to": item && item.to ? item.to : null,
       "data-blocked": blocked ? "" : null, "data-answered": answered ? "" : null, title: blocked || null},
       h("div", {class: "msg-meta"}, when(entry.ts), kindPill(entry), extras(entry)),
@@ -187,31 +187,75 @@
         item && !code ? h("div", {class: "line-actions"}, actionsFor(item)) : null));
   }
 
+  const BEHIND_FOOTER = ["expired", "stale"];
+
   /**
-   * @param {boolean} [polled] true from a poll: the rows stay when the shown entries, their inbox items and the error
-   * are unchanged; any other call redraws them.
+   * @returns {Object[]} the expired and stale requests the Stream keeps behind its footer line, the newest first; one
+   * open in Claude is open and stays inline with its "open in Claude" status.
+   */
+  const staleRequests = () => [...state.inbox, ...(state.lapsed || [])].filter((item) => BEHIND_FOOTER.includes(item.request)).sort((a, b) => b.ts - a.ts);
+
+  /**
+   * @param {Object} entry a stream entry.
+   * @param {Set<string>} behind kind:id of every staleRequests() item.
+   * @param {Set<string>} told the hub jobs of the failed rows whose operator entry the feed shows.
+   * @returns {boolean} whether the feed leaves the entry out: an expired or stale request, which only the footer lists,
+   * and the runner's line of a failed row the feed already shows once.
+   */
+  function streamHides(entry, behind, told) {
+    const ref = entry.ref || {};
+    return behind.has(`${entry.kind}:${entry.kind === "operator" ? ref.task : ref.id}`) || (entry.kind === "run" && told.has(ref.job));
+  }
+
+  /**
+   * @param {Object[]} items staleRequests().
+   * @returns {HTMLElement|null} one collapsed line naming how many stale requests wait and the count per kind; opened it
+   * lists them in place with select all and Delete N. Null without any.
+   */
+  function staleFooter(items) {
+    if (!items.length) {
+      return null;
+    }
+    const words = BEHIND_FOOTER.map((kind) => [kind, items.filter((item) => item.request === kind).length]).filter(([, count]) => count).map(([kind, count]) => `${count} ${kind}`).join(" · ");
+    const row = (item) => h("li", {class: `entry k-${item.kind}`, "data-ref": keyOf(item), "data-request": item.request},
+      h("div", {class: "msg-meta"}, when(item.ts), pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]), pill(item.request, REQUEST_TONES[item.request]), item.agent ? agentLink(item.agent) : null),
+      h("p", {class: "text stale-title"}, revealed(item.title)));
+    return h("details", {class: "card stale-footer", "data-key": "stale-footer", open: triage.footer, on: {toggle: (event) => {
+      triage.footer = event.currentTarget.open;
+    }}}, h("summary", {title: `Expired and stale requests: ${words}; open to select and delete them`}, `${items.length} stale ${items.length === 1 ? "request" : "requests"}`, h("span", {class: "muted"}, ` · ${words}`)),
+    triagePicker(TRIAGE_FOOTER, items), h("ol", {class: "stale-list"}, items.map(row)));
+  }
+
+  /**
+   * @param {boolean} [polled] true from a poll: the rows stay when the shown entries, their inbox items, the stale
+   * requests and the error are unchanged; any other call redraws them.
    */
   function drawStream(polled) {
     if (!stream.dom || ui.screen !== "stream") {
       return;
     }
+    const backlog = staleRequests();
+    const behind = new Set(backlog.map((item) => `${item.kind}:${item.id}`));
+    const told = new Set(state.inbox.filter((item) => item.request === "failed" && !item.settled).map((item) => item.job.id));
     const floor = live() && ui.preset > 0 ? nowSeconds() - ui.preset : -Infinity;
-    const rows = [...stream.events, ...stream.entries.filter((entry) => entry.ts >= floor)].sort((a, b) => b.ts - a.ts || (a.id < b.id ? 1 : -1));
+    const rows = [...stream.events, ...stream.entries.filter((entry) => entry.ts >= floor)].filter((entry) => !streamHides(entry, behind, told)).sort((a, b) => b.ts - a.ts || (a.id < b.id ? 1 : -1));
     const shown = rows.slice(0, FEED_LIMIT);
     stream.dom.count.textContent = `${rows.length} entries${live() ? " · following live" : ""}`;
-    const drawn = JSON.stringify([shown, shown.map((entry) => entry.waiting ? inboxOf(entry) : null), rows.length, stream.error, rows.length ? null : [stream.busy, activeWaiting()]]);
+    const footing = backlog.length ? [backlog.map((item) => [item.kind, item.id, item.request, item.title, item.ts]), triage.footer, triage.picked.get(TRIAGE_FOOTER) || [], ui.busy] : null;
+    const drawn = JSON.stringify([shown, shown.map((entry) => entry.waiting ? inboxOf(entry) : null), rows.length, stream.error, rows.length ? null : [stream.busy, activeWaiting()], footing]);
     if (polled === true && drawn === stream.dom.drawn) {
       return;
     }
     stream.dom.drawn = drawn;
     if (stream.error) {
-      stream.dom.list.replaceChildren(emptyState("Stream not readable", stream.error));
+      fadeSwap(stream.dom.list, [emptyState("Stream not readable", stream.error)]);
       return;
     }
-    keepTyping(stream.dom.list, () => keepScroll(stream.dom.list, () => stream.dom.list.replaceChildren(rows.length
+    fadeSwap(stream.dom.list, [rows.length
       ? h("div", {class: "card flush"}, h("ol", {class: "feed"}, shown.map(eventRow)),
         rows.length > shown.length ? h("p", {class: "footnote"}, `${rows.length - shown.length} older entries hidden; narrow down with a filter or the time range.`) : null)
-      : emptyState(stream.busy ? "Loading …" : "No entries", activeWaiting() ? "Nothing is waiting for you right now." : "Nothing in the chosen time range and filter."))));
+      : emptyState(stream.busy ? "Loading …" : "No entries", activeWaiting() ? "Nothing is waiting for you right now." : "Nothing in the chosen time range and filter."), staleFooter(backlog)],
+    (root, swap) => keepTyping(root, () => keepScroll(root, swap)));
   }
 
   function streamScreen() {

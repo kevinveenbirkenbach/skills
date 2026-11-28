@@ -19,3 +19,12 @@
 .rule-request p { margin: 0; }
 .rule-request .meta { margin: 0; }
 .dry-run-count strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.triage-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-width: 0; margin-bottom: var(--sp-2); }
+.triage-bar > .chips { min-width: 0; margin-bottom: 0; }
+.triage-pick { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.stale-footer { margin-top: var(--sp-2); padding: 8px 12px; }
+.stale-footer > summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; overflow-wrap: anywhere; }
+.stale-footer[open] > summary { margin-bottom: var(--sp-2); }
+.stale-list { display: grid; gap: var(--sp-2); margin: var(--sp-2) 0 0; padding: 0; list-style: none; }
+.stale-list > li { display: grid; gap: var(--sp-1); min-width: 0; padding-top: var(--sp-2); border-top: 1px solid var(--line); }
+.stale-title { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }

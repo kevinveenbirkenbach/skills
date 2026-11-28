@@ -95,6 +95,7 @@ LAYERS = """(async () => {@HELPERS@@READ@
   await sleep(300);
   const back = document.activeElement;
   const closed = [document.getElementById("popup").open, back && back.closest(".kanban-card") ? [back.closest(".kanban-card").dataset.task, back.dataset.job] : null];
+  await openTaskMenu("task-filter");
   chip("jobs").click();
   await until(() => !document.querySelector("#main .queue-job"), 4000);
   chip("line").click();
@@ -108,6 +109,7 @@ KEPT = """(async () => {@HELPERS@@READ@
   }
   await sleep(400);
   const kept = read();
+  await openTaskMenu("task-filter");
   chip("jobs").click();
   await until(() => document.querySelector("#main .queue-job"), 4000);
   chip("line").click();

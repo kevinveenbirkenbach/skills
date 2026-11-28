@@ -310,7 +310,10 @@
       taskView.sort = event.target.value;
       drawTasks();
     }}}, Plan.SORTS.map(([id, label]) => h("option", {value: id, selected: id === taskView.sort}, label)));
-    const turn = (button) => relabel(button, taskView.descending ? "bi-sort-up" : "bi-sort-down", taskView.descending ? "Descending" : "Ascending", `${taskView.descending ? "Descending" : "Ascending"}: click to reverse`);
+    const turn = (button) => {
+      relabel(button, taskView.descending ? "bi-sort-up" : "bi-sort-down", taskView.descending ? "Descending" : "Ascending", `${taskView.descending ? "Descending" : "Ascending"}: click to reverse`);
+      button.setAttribute("aria-pressed", String(taskView.descending));
+    };
     const direction = h("button", {type: "button", class: "btn small icon-only", "data-direction": "", on: {click: (event) => {
       taskView.descending = !taskView.descending;
       turn(event.currentTarget);
@@ -324,7 +327,7 @@
     const value = fibonacciPicker("Business value of the selection", 8);
     const count = counter(0);
     const button = h("button", {type: "button", class: "btn small primary", id: "bulk-value", disabled: true, ...named("Set business value", "Set business value: of every selected task as Operator, signed once with the passkey"), on: {click: () => bulkValue(Number(value.value))}},
-      icon("bi-gem"), count);
+      icon("bi-gem"), h("span", {class: "tool-word"}, "Set business value"), count);
     taskView.bulk = {button, count};
     return h("div", {class: "plan-group", role: "group", "aria-label": "Business value of the selection"}, value, button);
   }
@@ -352,14 +355,20 @@
     }}}, choices.map(([id, label]) => h("option", {value: id, selected: id === taskView.scope}, label)));
   }
 
+  /**
+   * @param {string} view the Tasks view: list, board, rasci, gantt, burn or 3d.
+   * @returns {Object} view: what the Filter menu shows under View (the
+   * estimation switch, then the sort of the list, the forecast of the Gantt, or the scope and trend of the burn chart);
+   * actions: what the Actions menu shows under Plan (Request estimates, and in the list the bulk business value).
+   */
   function planTools(view) {
     const modes = h("div", {class: "segmented", role: "group", "aria-label": "Estimation"}, Plan.ESTIMATIONS.map(([id, label]) => h("button", {
       type: "button", class: "icon-only", "data-estimation": id, "aria-pressed": String(estimation() === id), ...named(label, `${label}: ${id === "points" ? "the Fibonacci complexity of rasci.py estimate" : "every task counts 1"}`), on: {click: () => chooseEstimation(id)},
     }, icon(ESTIMATION_ICONS[id]))));
-    const request = h("button", {type: "button", class: "btn small icon-only", id: "request-estimates", hidden: estimation() !== "points", ...named("Request estimates", "Request estimates: one newsletter asks every agent with a RASCI role in an unestimated task for business value and complexity"), on: {click: requestEstimates}}, icon("bi-send-check"));
+    const request = h("button", {type: "button", class: "btn small", id: "request-estimates", hidden: estimation() !== "points", ...named("Request estimates", "Request estimates: one newsletter asks every agent with a RASCI role in an unestimated task for business value and complexity"), on: {click: requestEstimates}}, icon("bi-send-check"), h("span", {class: "tool-word"}, "Request estimates"));
     taskView.plan = {modes, request, trend: null};
-    const own = {list: () => [sortControls(), bulkControls()], gantt: forecastControl, burn: () => [scopeControl(), trendControls()]}[view];
-    return [modes, request, own ? own() : null];
+    const shown = {list: () => [sortControls()], gantt: () => [forecastControl()], burn: () => [scopeControl(), trendControls()]}[view];
+    return {view: [modes, ...(shown ? shown() : [])], actions: [request, ...(view === "list" ? [bulkControls()] : [])]};
   }
 
   function syncPlan() {

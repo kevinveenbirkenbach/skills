@@ -162,7 +162,7 @@
   function drawQueueJobs() {
     const dom = queueTab.dom;
     if (dom && dom.jobs.isConnected) {
-      dom.jobs.replaceChildren(waitingJobs());
+      fadeSwap(dom.jobs, [waitingJobs()]);
       if (Date.now() - queueTab.at >= QUEUE_REFRESH) {
         fetchQueue();
       }

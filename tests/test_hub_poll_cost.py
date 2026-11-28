@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from hub_case import HubCase
-from hub_support import HUB
+from hub_support import ASK, HUB
 from kvb_orchestrator import register
 from kvb_orchestrator.livestate import LiveState
 
@@ -28,11 +28,11 @@ const results = {};
 const timers = () => {
   const intervals = [];
   const listeners = {};
-  const calls = {sky: 0, relayout: 0, radio: 0};
+  const calls = {sky: 0, relayout: 0, radio: 0, closed: 0};
   const document = {hidden: true, addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }};
   const context = {
-    document, window: {setInterval: (fn, ms) => intervals.push([fn, ms])}, MOVE: 1, RELAYOUT: 15000, tree: {dom: null},
-    poll: () => {}, follow: () => {}, fetchTree: () => {}, live: () => true,
+    document, window: {setInterval: (fn, ms) => intervals.push([fn, ms])}, MOVE: 1, RELAYOUT: 15000, tree: {dom: null}, CLOSED_POLL: 2000,
+    poll: () => {}, follow: () => {}, fetchTree: () => {}, live: () => true, watchClosed: () => { calls.closed += 1; },
     drawSky: () => { calls.sky += 1; }, relayout: () => { calls.relayout += 1; }, syncRadio: () => { calls.radio += 1; },
   };
   vm.runInNewContext(`${read("page-timers.js")}\nstartTimers();`, context);
@@ -42,10 +42,29 @@ const timers = () => {
   document.hidden = false;
   listeners.visibilitychange.forEach((fn) => fn());
   const shown = {...calls};
+  run(10000);
+  const watched = {...calls};
   document.hidden = true;
   listeners.visibilitychange.forEach((fn) => fn());
   run(30000);
-  return {hidden, shown, after: {...calls}};
+  return {hidden, shown, watched, after: {...calls}};
+};
+
+const closedPolls = async () => {
+  const seen = {match: 0, refresh: 0, requests: []};
+  let closed = 4;
+  const context = {
+    STATE_TIMEOUT: 1000, state: {}, ui: {}, window: {setTimeout: () => 0, clearTimeout: () => {}, getSelection: () => ""}, document: {hidden: false},
+    fetch: async (url) => { seen.requests.push(url); return {ok: true, json: async () => ({closed})}; },
+    matchShown: () => true, fetchMatch: () => { seen.match += 1; },
+  };
+  vm.runInNewContext(`${read("page-load.js")}\nrefresh = () => { globalThis.refreshed = (globalThis.refreshed || 0) + 1; };`, context);
+  const step = async (name) => { await context.watchClosed(); return [name, seen.match, context.refreshed || 0]; };
+  const steps = [await step("first"), await step("same")];
+  closed = 5;
+  steps.push(await step("closed"));
+  steps.push(await step("same again"));
+  return {steps, requests: [...new Set(seen.requests)]};
 };
 
 const music = () => {
@@ -96,6 +115,7 @@ const streamDraws = async () => {
     state: {inbox: []}, ui: {screen: "stream", preset: 0, offline: false}, FEED_LIMIT: 400,
     live: () => true, nowSeconds: () => 200, activeWaiting: () => false, emptyState: () => new El(),
     keepTyping: (_, fn) => fn(), keepScroll: (_, fn) => fn(), h: () => new El(),
+    fadeSwap: (box, nodes, around) => (around ? around(box, () => box.replaceChildren(...nodes)) : box.replaceChildren(...nodes)),
     windowKey: () => "w", windowQuery: () => "from=0", filterQuery: () => "kinds=radio",
     fetch: async (url, options) => { requests.push(options.headers["If-None-Match"] || ""); return answer; },
   };
@@ -125,6 +145,7 @@ const streamDraws = async () => {
   results.timers = timers();
   results.music = music();
   results.stream = await streamDraws();
+  results.closed = await closedPolls();
   console.log(JSON.stringify(results));
 })().catch((error) => { console.error(error && error.stack || error); process.exit(1); });
 """
@@ -199,6 +220,27 @@ class TestLivePollsRoute(HubCase):
         return json.loads(body)
 
 
+class TestClosedCount(HubCase):
+    def closed(self) -> tuple[int, int]:
+        status, _, body = self.get("/api/match/closed")
+        self.assertEqual(status, 200, body)
+        return json.loads(body)["closed"], len(body)
+
+    def test_the_closed_count_moves_once_per_closed_card_and_builds_neither_the_state_nor_a_card(self):
+        closer = {"closer": "a" * 43}
+        self.create_ask({**ASK, **closer})
+        self.create_ask({**ASK, "session": "s2", **closer})
+        hub = type(self.httpd.hub)
+        with mock.patch.object(hub, "built", side_effect=AssertionError("state built")), mock.patch.object(hub, "match_cards", side_effect=AssertionError("cards built")):
+            before, size = self.closed()
+            self.assertLess(size, 64)
+            self.assertEqual(self.closed()[0], before)
+            status, _, body = self.post_json("/api/asks/ran", {"event": "SessionEnd", "session": "s1", **closer}, self.local())
+            self.assertEqual(status, 200, body)
+            self.assertEqual(self.closed()[0], before + 1)
+        self.assertEqual(self.post_json("/api/match/closed", {}, self.local())[0], 404)
+
+
 class TestEventsTag(HubCase):
     def tagged(self, tag: str) -> tuple[int, dict, bytes]:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
@@ -240,6 +282,15 @@ class TestPagePolls(unittest.TestCase):
         self.assertEqual(found["hidden"]["radio"], 3, found)
         self.assertEqual((found["shown"]["sky"], found["shown"]["relayout"], found["shown"]["radio"]), (0, 1, 4), found)
         self.assertEqual((found["after"]["sky"], found["after"]["relayout"], found["after"]["radio"]), (0, 1, 5), found)
+
+    def test_the_closed_card_poll_runs_every_2_s_only_while_the_tab_is_shown(self):
+        found = self.data["timers"]
+        self.assertEqual((found["hidden"]["closed"], found["shown"]["closed"], found["watched"]["closed"], found["after"]["closed"]), (0, 0, 5, 5), found)
+
+    def test_a_moved_closed_count_fetches_match_and_the_state_once_and_an_unchanged_one_nothing(self):
+        found = self.data["closed"]
+        self.assertEqual(found["steps"], [["first", 1, 1], ["same", 1, 1], ["closed", 2, 2], ["same again", 2, 2]], found)
+        self.assertEqual(found["requests"], ["/api/match/closed"], found)
 
     def test_music_level_zero_stops_the_graph_and_a_rise_restarts_it(self):
         steps = {step["name"]: step for step in self.data["music"]}

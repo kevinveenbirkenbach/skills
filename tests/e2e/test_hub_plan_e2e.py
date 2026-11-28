@@ -116,8 +116,8 @@ class TestHubPlan(base.OrchestratorE2ECase):
             with self.subTest(browser=browser, width=width):
                 for probe in (gantt, burn, points_on, request, gantt_points, bulk):
                     self.assertNotIn("error", probe)
-                    self.assertEqual((probe["tall"], probe["wide"], probe["layout"]), (False, False, ["toolbar", "chips", "body"]), probe)
-                    self.assertEqual(probe["rows"] == 1, width != 390, probe)
+                    self.assertEqual((probe["tall"], probe["wide"], probe["layout"]), (False, False, ["toolbar", "body"]), probe)
+                    self.assertIn(probe["rows"], (1, 2) if width == 390 else (1,), probe)
                 self.planned(gantt, points=False)
                 self.planned(gantt_points, points=True)
                 self.assertEqual((burn["modes"], burn["request"]), ([["none", "true"], ["points", "false"]], False))
@@ -276,8 +276,8 @@ class TestHubPlan(base.OrchestratorE2ECase):
             with self.subTest(browser=browser, width=width):
                 for probe in (eta, regression, reloaded, velocity, again, tips, shown):
                     self.assertNotIn("error", probe)
-                    self.assertEqual((probe["tall"], probe["wide"], probe["layout"]), (False, False, ["toolbar", "chips", "body"]), probe)
-                    self.assertEqual(probe["rows"] == 1, width != 390, probe["rows"])
+                    self.assertEqual((probe["tall"], probe["wide"], probe["layout"]), (False, False, ["toolbar", "body"]), probe)
+                    self.assertIn(probe["rows"], (1, 2) if width == 390 else (1,), probe["rows"])
                 for mode in ("none", "points", "back"):
                     self.eta_checked(eta[mode], "points" if mode == "points" else "none", rows, edges, (begun - 1, ended + 1))
                 self.assertEqual(eta["modes"], [["none", "true"], ["points", "false"]])

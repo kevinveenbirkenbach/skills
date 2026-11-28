@@ -55,10 +55,10 @@
    * @returns {Promise<boolean>} true on yes, false on Cancel or Escape; nothing leaves the page before.
    */
   function inlineConfirm(form, question, yes) {
-    form.querySelectorAll(".mayday-confirm").forEach((node) => node.remove());
+    form.querySelectorAll(".mayday-confirm").forEach((node) => vanish(node));
     return new Promise((resolve) => {
       const done = (answer) => {
-        box.remove();
+        vanish(box);
         resolve(answer);
       };
       const accept = h("button", {type: "button", class: "btn small danger", on: {click: () => done(true)}}, yes);

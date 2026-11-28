@@ -8,7 +8,7 @@
   }
 
   function moveCursor(delta) {
-    const items = visibleInbox();
+    const items = listedInbox();
     if (!items.length) {
       return;
     }
@@ -52,7 +52,7 @@
       return;
     }
     const inInbox = ui.screen === "inbox";
-    const current = inInbox ? visibleInbox()[ui.cursor] : null;
+    const current = inInbox ? listedInbox()[ui.cursor] : null;
     const index = Number(event.key) - 1;
     if (/^[1-9]$/.test(event.key) && index < Nav.TABS.length) {
       event.preventDefault();
@@ -65,7 +65,7 @@
       toggle(current);
     } else if (inInbox && event.key === "a") {
       event.preventDefault();
-      if (current && !current.held) {
+      if (current && !current.held && !dialogLapsed(current)) {
         approveOne(current);
       }
     } else if (event.key === "f" && feedbackKey()) {

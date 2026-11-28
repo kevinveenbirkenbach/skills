@@ -43,15 +43,38 @@
         window.setTimeout(() => homeOpen(route.open, route.screen, HOME_TRIES), 0);
       }
     };
-    if (document.startViewTransition && drawn.screen && !calm.matches) {
-      document.startViewTransition(show).ready.catch((error) => {
-        if (error.name !== "AbortError") {
-          throw error;
-        }
-      });
+    if (drawn.screen) {
+      fadeTransition(show);
     } else {
       show();
     }
+  }
+
+  const viewShift = {running: false};
+
+  /**
+   * @param {Function} run changes the DOM.
+   * @returns {Promise} settles once run has changed the DOM. Inside a View Transition, so what leaves fades out; at once
+   * without the API, under prefers-reduced-motion and while another transition runs, whose live new view then shows
+   * the change.
+   */
+  function fadeTransition(run) {
+    if (!document.startViewTransition || calm.matches || viewShift.running) {
+      run();
+      return Promise.resolve();
+    }
+    viewShift.running = true;
+    const shift = document.startViewTransition(run);
+    const done = () => {
+      viewShift.running = false;
+    };
+    shift.finished.then(done, done);
+    shift.ready.catch((error) => {
+      if (error.name !== "AbortError") {
+        throw error;
+      }
+    });
+    return shift.updateCallbackDone;
   }
 
   function signature() {

@@ -5,6 +5,7 @@
     document.addEventListener("visibilitychange", () => document.hidden || [moving, syncRadio].forEach((task) => task()));
     window.setInterval(poll, 10000);
     window.setInterval(follow, 3000);
+    window.setInterval(whileShown(watchClosed), CLOSED_POLL);
     window.setInterval(whileShown(moving), RELAYOUT);
     window.setInterval(whileShown(liveSky), 30000);
     window.setInterval(syncRadio, 20000);

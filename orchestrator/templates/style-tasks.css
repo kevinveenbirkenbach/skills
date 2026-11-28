@@ -5,8 +5,40 @@
 .task-toolbar input[type="search"] { flex: 1 1 120px; min-width: min(120px, 100%); }
 .task-toolbar .segmented button.icon-only { min-width: 30px; padding: 4px 8px; }
 .task-toolbar input[type="number"] { width: 4.5rem; }
-.task-toolbar > .choice-request { margin-left: auto; }
-.tasks > .chips { margin-bottom: 0; }
+.task-bar > :is(input[type="search"], .mic-line) { flex: 1 1 10rem; min-width: 6rem; }
+.task-bar > .task-count { white-space: nowrap; }
+.task-bar > :is(.task-chip, .task-status) { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.task-bar > :is(.task-chip, .task-status):empty { display: none; }
+.task-status .pill { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.task-filter-chip { max-width: 16rem; padding-inline: 10px 4px; border-color: transparent; background: var(--accent-soft); color: var(--accent); cursor: default; }
+.task-filter-chip .task-chip-word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.task-filter-chip .x { display: inline-flex; align-items: center; padding: 4px; border-radius: 999px; }
+.task-filter-chip .x:hover { background: var(--panel); }
+.task-menu > .menu-box { min-width: min(16rem, calc(100vw - 32px)); max-height: min(70vh, 36rem); overflow-y: auto; overscroll-behavior: contain; }
+.task-menu-section { display: grid; gap: 6px; min-width: 0; }
+.task-menu-section:has(> .task-menu-tools):not(:has(> .task-menu-tools > :not([hidden]))) { display: none; }
+.task-menu-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.task-menu-tools > .kanban-tools { display: contents; }
+.task-menu-tools .btn { display: inline-flex; align-items: center; gap: 6px; }
+.task-undo .undo-label { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-undo .undo-left, .task-menu .prune-left { font-variant-numeric: tabular-nums; }
+.task-filters { display: grid; gap: 2px; }
+.task-filter { padding: 4px 8px; border-radius: 8px; color: var(--text); }
+.task-filter:hover { background: var(--hover); }
+.task-filter:has(input:checked) { background: var(--accent-soft); color: var(--accent); }
+.task-filter-word { flex: 1 1 auto; }
+.task-filter .count { margin-left: auto; }
+.task-menu .choice-request > .menu-box { position: static; width: auto; max-width: none; margin-top: 6px; padding: var(--sp-2) 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (max-width: 640px) {
+  .task-bar > .segmented { order: 0; }
+  .task-bar .segmented button.icon-only { min-width: 28px; padding: 4px 6px; }
+  .task-bar > .task-menu { order: 1; }
+  .task-bar > .task-menu > summary { padding-inline: 8px; }
+  .task-bar > .task-menu > summary :is(.tool-word, .caret) { display: none; }
+  .task-bar > :is(input[type="search"], .mic-line) { order: 2; flex: 1 1 5rem; min-width: 4rem; }
+  .task-bar > :is(.task-chip, .task-status, .task-count) { order: 3; }
+  .task-filter-chip { max-width: 6.5rem; }
+}
 body.fit .graph.tasks > .tasks-body, body.fit .graph.tasks > .inbox { flex: 1; min-height: 0; overflow: auto; }
 .inbox { overflow-anchor: none; }
 .choice-agents { display: grid; gap: 6px; max-height: 30vh; overflow: auto; }

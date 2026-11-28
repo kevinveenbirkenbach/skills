@@ -77,9 +77,9 @@ class TestUndoDial(deck.ReleaseDeck):
         for found in (texts, released):
             self.assertNotIn("error", found, found)
         self.assertIn(f"then {WORDS}.", texts["deny"], texts)
-        self.assertEqual(texts["opened"], {"attrs": ["slider", "0", "60", "10", "10 seconds to undo"], "label": "Undo window in seconds", "readout": "10 s", "ticks": 60, "long": 12}, texts)
+        self.assertEqual(texts["opened"], {"attrs": ["slider", "0", "60", "10", "10 seconds to undo"], "label": "Undo window in seconds", "readout": "0:10", "ticks": 60, "long": 12}, texts)
         self.assertEqual(texts["keys"], [["ArrowRight", "11"], ["PageUp", "16"], ["End", "60"], ["ArrowRight", "60"], ["PageDown", "55"], ["Home", "0"], ["ArrowLeft", "0"]], texts)
-        self.assertEqual(texts["zero"], {"text": "0 seconds: takes effect at once", "readout": "0 s"}, texts)
+        self.assertEqual(texts["zero"], {"text": "0 seconds: takes effect at once", "readout": "0:00"}, texts)
         self.assertEqual((texts["focused"], texts["inside"], texts["wide"]), (True, True, False), texts)
         self.assertTrue(released["title"].endswith(f"after each signature {WORDS}."), released)
 

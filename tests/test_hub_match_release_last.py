@@ -55,6 +55,7 @@ console.log(JSON.stringify(vm.runInNewContext(`[
   greyStamp({stale: true, blocked: "runs", blocked_kind: "running"}),
   greyStamp({stale: false, blocked: "ask held"}),
   greyStamp({stale: false, blocked: "too late", blocked_kind: "expired"}),
+  greyStamp({stale: false, blocked: "answer it there", blocked_kind: "claude"}),
 ].map((key) => [key, key ? MATCH_STAMPS[key] : ""])`, sandbox)));
 """
 
@@ -72,7 +73,7 @@ class TestGreyedCardStamp(unittest.TestCase):
     def test_every_greyed_card_names_its_reason_and_an_active_card_has_none(self):
         done = subprocess.run(["node", "-e", STAMP_PROBE, stamp_source()], capture_output=True, text=True, timeout=60, check=True)
         self.assertEqual(json.loads(done.stdout), [
-            ["", ""], ["running", "RUNNING"], ["queued", "QUEUED"], ["blocked", "BLOCKED"], ["stale", "STALE"], ["blocked", "BLOCKED"], ["expired", "EXPIRED"],
+            ["", ""], ["running", "RUNNING"], ["queued", "QUEUED"], ["blocked", "BLOCKED"], ["stale", "STALE"], ["blocked", "BLOCKED"], ["expired", "EXPIRED"], ["claude", "IN CLAUDE"],
         ])
 
 

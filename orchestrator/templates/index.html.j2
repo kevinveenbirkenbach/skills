@@ -85,7 +85,6 @@ h1 { margin: 0; font-size: var(--fs-lg); font-weight: 680; letter-spacing: -.01e
 .menu-box.end { right: 0; }
 .menu-box h3 { margin: 0; color: var(--muted); font-size: var(--fs-xs); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
-.classes { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
 .updated { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; }
 .updated::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .updated.offline::before { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
@@ -544,7 +543,7 @@ pre.notes { margin: 0; padding: 8px 10px; background: var(--sunken); border-radi
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <div class="palette" id="palette" hidden></div>
 <div class="sky-panel" id="sky-panel" role="group" aria-label="View of the sky" hidden></div>
-<div class="bubbles" id="bubbles" aria-hidden="true" hidden><div class="bubble-bar"></div></div>
+<div class="bubbles" id="bubbles" hidden><div class="bubble-bar"></div></div>
 <script nonce="{{ nonce }}" id="state" type="application/json">{{ state | tojson }}</script>
 <script nonce="{{ nonce }}" id="view" type="application/json">{{ view | tojson }}</script>
 <script nonce="{{ nonce }}" id="emoji-bases" type="application/json">{{ emoji_bases | tojson }}</script>

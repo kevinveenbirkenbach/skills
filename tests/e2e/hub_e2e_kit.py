@@ -83,6 +83,28 @@ HELPERS = """
     await sleep(200);
   };
   const taskLayout = () => all("#main .graph.tasks > *").map((node) => (node.matches('[role="toolbar"]') ? "toolbar" : node.matches('[aria-label="Task filters"]') ? "chips" : "body"));
+  const openTaskMenu = async (id) => {
+    const menu = await until(() => document.getElementById(id), 8000);
+    if (menu && !menu.open) {
+      menu.querySelector(":scope > summary").click();
+      await sleep(150);
+    }
+    return menu;
+  };
+  const withMenusOpen = (node, read) => {
+    const opened = [];
+    for (let menu = node ? node.closest("details") : null; menu; menu = menu.parentElement ? menu.parentElement.closest("details") : null) {
+      if (!menu.open) {
+        menu.open = true;
+        opened.push(menu);
+      }
+    }
+    const found = read();
+    opened.forEach((menu) => {
+      menu.open = false;
+    });
+    return found;
+  };
   const screenShown = async (ms) => {
     const shown = await until(() => {
       if (typeof Nav !== "object") {

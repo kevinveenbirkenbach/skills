@@ -3,6 +3,14 @@
   const markSources = () => ({now: state.now, tasks: state.tasks, beats: state.beats, runner: state.runner});
 
   /**
+   * @param row - a task row.
+   * @param found - Kanban.marks of the row.
+   * @returns {boolean} whether the row works right now: it runs and a queue job, an agent beat or the hub job backs
+   * that, so it carries the heartbeat class is-working; a queued, waiting, stale or ended row stays still.
+   */
+  const taskWorking = (row, found) => row.status === "running" && !row.ended && found.length > 0;
+
+  /**
    * @param row - a card's task row.
    * @param found - Kanban.marks of the row.
    * @returns {HTMLElement|null} one labelled chip per mark, null without any.
@@ -13,7 +21,7 @@
     }
     const hint = (mark) => (mark.at === null ? mark.hint : `${mark.hint}, since ${absolute.format(stampOf(mark.at))}`);
     return h("div", {class: "kanban-marks", role: "group", "aria-label": `Running now: ${row.task}`}, found.map((mark) =>
-      h("span", {class: "pill kanban-mark", "data-mark": mark.key, "data-tone": mark.tone, role: "img", ...named(`${RUNNING_WORDS[mark.key]}: ${mark.text}`, hint(mark))}, icon(mark.icon), mark.text)));
+      h("span", {class: "pill kanban-mark", "data-mark": mark.key, "data-tone": "neutral", role: "img", ...named(`${RUNNING_WORDS[mark.key]}: ${mark.text}`, hint(mark))}, icon(mark.icon), mark.text)));
   }
 
   /**
@@ -26,5 +34,5 @@
       kanban.running = !kanban.running;
       taskView.sig = "";
       drawTasks();
-    }}}, icon("bi-activity"), counter(count));
+    }}}, icon("bi-activity"), h("span", {class: "tool-word"}, "Running"), counter(count));
   }

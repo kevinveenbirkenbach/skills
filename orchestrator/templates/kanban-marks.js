@@ -9,7 +9,7 @@ const KanbanMarks = (() => {
   const RUNNING = "running";
   const RESPONSIBLE = "R";
   const NOBODY = "-";
-  const MARKS = [["queue", "bi-cpu", "accent"], ["agent", "bi-person-workspace", "ok"], ["hub", "bi-terminal", "info"]];
+  const MARKS = [["queue", "bi-cpu"], ["agent", "bi-person-workspace"], ["hub", "bi-terminal"]];
 
   /**
    * @param seconds - a span in seconds.
@@ -72,13 +72,13 @@ const KanbanMarks = (() => {
    * @param sources - {now, tasks, beats, runner}: now the hub's epoch seconds; tasks the hub's task rows, whose queue
    * rows are the entries of queue.json; beats the hub's {agent: epoch of its latest heartbeat}; runner the hub job
    * runner-job.json names, {job, task, started, command}, or null.
-   * @returns the card's marks in MARKS order, each {key, icon, tone, text, hint, at}: queue while a queue job of the
+   * @returns the card's marks in MARKS order, each {key, icon, text, hint, at}: queue while a queue job of the
    * task or the queue card's own job runs (its kind and runtime), agent while the task's worker or an R beat within
    * BEAT_S (the freshest of them and how long ago), hub while runner-job.json names the task (the command's head).
    */
   function marks(row, sources) {
     const found = {queue: queueMark(row, sources.tasks, sources.now), agent: agentMark(row, sources.beats, sources.now), hub: hubMark(row, sources.runner, sources.now)};
-    return MARKS.filter(([key]) => found[key]).map(([key, icon, tone]) => ({key, icon, tone, ...found[key]}));
+    return MARKS.filter(([key]) => found[key]).map(([key, icon]) => ({key, icon, ...found[key]}));
   }
 
   return {BEAT_S, MARKS, span, head, marks};

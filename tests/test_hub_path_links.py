@@ -16,7 +16,7 @@ console.log(JSON.stringify(vm.runInNewContext(`({
   absolute: vscodeHref("/home/op/repo"),
   folder: vscodeHref("/home/op/repo/"),
   encoded: vscodeHref("/home/op/my repo/a#b/100%.md"),
-  unicode: vscodeHref("/home/op/Übung?x=1"),
+  unicode: vscodeHref("/home/op/café?x=1"),
   relative: vscodeHref("repo/src/app.py"),
   dotted: vscodeHref("./src/app.py"),
   empty: vscodeHref(""),
@@ -52,7 +52,7 @@ class TestPathLinks(unittest.TestCase):
 
     def test_every_segment_is_uri_encoded_and_the_slashes_are_kept(self):
         self.assertEqual(self.data["encoded"], "vscode://file/home/op/my%20repo/a%23b/100%25.md")
-        self.assertEqual(self.data["unicode"], "vscode://file/home/op/%C3%9Cbung%3Fx%3D1")
+        self.assertEqual(self.data["unicode"], "vscode://file/home/op/caf%C3%A9%3Fx%3D1")
 
     def test_a_relative_or_empty_path_gets_no_link(self):
         self.assertEqual([self.data[key] for key in ("relative", "dotted", "empty", "missing")], ["", "", "", ""])

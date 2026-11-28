@@ -187,7 +187,7 @@ class TestMatchRelease(HubCase):
         self.assertEqual((found["prefill"], found["leaned"], found["short"], found["stayed"]), (reason, "accept", "accept", True), found)
         expected = [[self.cards[0], "reject", f"{reason}\nalso add a test"], [self.cards[1], "accept", None], [self.cards[2], "accept", None]]
         self.assertEqual(sorted(found["rows"]), sorted(expected), found)
-        self.assertEqual((found["label"], found["disabled"], found["wide"]), ("Release 3 decisions", False, False), found)
+        self.assertEqual((found["label"], found["disabled"], found["wide"]), ("Release", False, False), found)
 
     def run_flow(self, browser: str, driver: str, binary: str, signs: bool) -> dict:
         with mock.patch.object(batches, "UNDO", 0.3):

@@ -52,8 +52,8 @@ console.log(JSON.stringify({
 
 
 def mark(key: str, text: str, hint: str, at: float) -> dict:
-    icon, tone = {"queue": ("bi-cpu", "accent"), "agent": ("bi-person-workspace", "ok"), "hub": ("bi-terminal", "info")}[key]
-    return {"key": key, "icon": icon, "tone": tone, "text": text, "hint": hint, "at": at}
+    icon = {"queue": "bi-cpu", "agent": "bi-person-workspace", "hub": "bi-terminal"}[key]
+    return {"key": key, "icon": icon, "text": text, "hint": hint, "at": at}
 
 
 class TestMarks(unittest.TestCase):
@@ -62,8 +62,8 @@ class TestMarks(unittest.TestCase):
         done = subprocess.run(["node", "-e", MARKS_PROBE, str(KANBAN), str(NOW), LONG], capture_output=True, text=True, timeout=60, check=True)
         cls.data = json.loads(done.stdout)
 
-    def test_the_three_marks_come_in_queue_agent_hub_order_with_their_icon_and_tone(self):
-        self.assertEqual(self.data["order"], [["queue", "bi-cpu", "accent"], ["agent", "bi-person-workspace", "ok"], ["hub", "bi-terminal", "info"]])
+    def test_the_three_marks_come_in_queue_agent_hub_order_with_their_icon(self):
+        self.assertEqual(self.data["order"], [["queue", "bi-cpu"], ["agent", "bi-person-workspace"], ["hub", "bi-terminal"]])
         self.assertEqual(self.data["marks"]["work/all"], [
             mark("queue", "test · 2 min", "work/all: queue job queue/q-1 runs test for 2 min", NOW - 125),
             mark("agent", "Main · 30 s", "work/all: Main works on it, last beat 30 s ago", NOW - 30),

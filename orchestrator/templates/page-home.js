@@ -150,7 +150,7 @@
 
   function homeBoard() {
     const board = kanbanBoard(shownTasks());
-    homeView.heads.set("tasks/board", board.querySelector(".kanban-bar"));
+    homeView.heads.set("tasks/board", kanban.bar);
     return board;
   }
 
@@ -649,7 +649,7 @@
     const keys = new Set(pins.map(Panels.keyOf));
     for (const [key, tile] of homeView.tiles) {
       if (!keys.has(key)) {
-        tile.remove();
+        vanish(tile);
         homeView.tiles.delete(key);
       }
     }

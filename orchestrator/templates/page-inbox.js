@@ -1,6 +1,95 @@
   let inboxDoneOpen = false;
   const GONE_NOTICE = "already done or removed elsewhere";
   const doneItem = (item) => Boolean(item.held || (item.job && !jobOpen(item.job)));
+  const REQUEST_CHIPS = [["open", "Open", "bi-play-circle"], ["expired", "Expired", "bi-hourglass-bottom"], ["stale", "Stale", "bi-exclamation-triangle"], ["failed", "Failed", "bi-x-octagon"], ["all", "All", "bi-list-check"]];
+  const REQUEST_TONES = {open: "info", expired: "neutral", stale: "warn", failed: "bad"};
+  const TRIAGE_FOOTER = "footer";
+  const triage = {chip: "all", picked: new Map(), footer: false};
+
+  /**
+   * @param {Object} item a request of requestItems().
+   * @returns {boolean} whether its hook stopped waiting, so the hub takes no answer for it: an expired ask or decision,
+   * or one whose dialog is open in Claude (claude), which counts as open.
+   */
+  const dialogLapsed = (item) => item.request === "expired" || Boolean(item.claude);
+
+  /**
+   * @returns {Object[]} every request the snapshot lists: the inbox and the lapsed asks and decisions, each with its
+   * request kind (open, expired, stale or failed); one open in Claude is open; a decision row already answered is none.
+   */
+  const requestItems = () => [...state.inbox, ...(state.lapsed || [])].filter((item) => !item.answered);
+  const requestsOf = (chip) => requestItems().filter((item) => chip === "all" || item.request === chip);
+  const listedInbox = () => requestsOf(triage.chip).filter((item) => ui.snoozed || !item.until);
+
+  /**
+   * @param {string} scope the chip the items are listed under, or TRIAGE_FOOTER for the Stream's stale requests.
+   * @param {Object[]} items the requests listed there.
+   * @returns {HTMLElement} the select-all checkbox and the "Delete N" button over items. The tick keeps the keys it saw,
+   * so a request that arrives later is never deleted with them; the box shows indeterminate until it is ticked again.
+   */
+  function triagePicker(scope, items) {
+    const keys = items.map(keyOf);
+    const picked = (triage.picked.get(scope) || []).filter((key) => keys.includes(key));
+    const chosen = items.filter((item) => picked.includes(keyOf(item)));
+    const redraw = () => (scope === TRIAGE_FOOTER ? drawStream() : drawInbox());
+    const all = h("input", {type: "checkbox", class: "triage-all", checked: Boolean(keys.length) && picked.length === keys.length, disabled: !keys.length || ui.busy, ...named("Select all", `Select all ${keys.length} listed here`), on: {change: (event) => {
+      triage.picked.set(scope, event.target.checked ? keys : []);
+      redraw();
+    }}});
+    all.indeterminate = picked.length > 0 && picked.length < keys.length;
+    const hint = `Delete ${chosen.length}: dismissed in the hub for every browser, no agent gets a message; one passkey signature, then ${undoWords()}`;
+    const remove = h("button", {type: "button", class: "btn small danger triage-delete", disabled: !chosen.length || ui.busy, ...named(`Delete ${chosen.length}`, hint), on: {click: () => deleteRequests(scope, chosen)}}, icon("bi-trash"), `Delete ${chosen.length}`);
+    return h("div", {class: "triage-pick", "data-scope": scope}, h("label", {class: "check"}, all, "Select all"), remove);
+  }
+
+  /**
+   * @param {string} scope the chip the items were picked under, or TRIAGE_FOOTER; the hub refuses a request of another
+   * kind than the chip, so an open one is deleted only from Open or All.
+   * @param {Object[]} items the requests to dismiss.
+   * @returns {Promise<boolean>} whether the hub took the dismissal; its undo toast then runs, every browser drops them at
+   * its next poll and the undo brings them back.
+   */
+  async function deleteRequests(scope, items) {
+    const entries = items.map((item) => ({kind: "dismiss", target: item.kind, id: item.id, scope: scope === TRIAGE_FOOTER ? item.request : scope}));
+    const label = `Delete ${items.length} ${items.length === 1 ? "request" : "requests"}`;
+    const names = new Map(items.map((item) => [item.id, short(item.title)]));
+    ui.busy = true;
+    const signed = await proofFor(entries, label, (result) => namedRefusal(result, label, names));
+    if (signed === null) {
+      ui.busy = false;
+      await load();
+      return false;
+    }
+    const result = await sendJson("/api/requests/dismiss", {items: entries, proof: signed.proof});
+    ui.busy = false;
+    if (!result.ok || !result.data) {
+      if (!namedRefusal(result, label, names)) {
+        toast(`${label}: not possible`, fail(result), false);
+      }
+      await load();
+      return false;
+    }
+    triage.picked.delete(scope);
+    known.batches.add(result.data.id);
+    undoToast(result.data, label);
+    await load();
+    return true;
+  }
+
+  /**
+   * @returns {HTMLElement} the request chips of Tasks → Operator, Open · Expired · Stale · Failed · All, each with its
+   * count and listing exactly its kind, and the select all and Delete N of the chosen chip.
+   */
+  function triageBar() {
+    const chips = REQUEST_CHIPS.map(([id, label, name]) => {
+      const total = requestsOf(id).length;
+      return h("button", {type: "button", class: "chip", "data-request": id, "aria-pressed": String(triage.chip === id), ...named(`${label} ${total}`, `${label}: ${total} requests`), on: {click: () => {
+        triage.chip = id;
+        drawInbox();
+      }}}, icon(name), label, counter(total));
+    });
+    return h("div", {class: "triage-bar"}, h("div", {class: "chips", role: "group", "aria-label": "Request kinds"}, chips), triagePicker(triage.chip, requestsOf(triage.chip)));
+  }
 
   function closeGone(result, keys, label) {
     if (result.status !== 404 || !keys.length) {
@@ -42,7 +131,7 @@
     }
     const status = typeof result.data.status === "string" ? result.data.status : "refused";
     refusedIds.set(id, status);
-    toast(`${label}: not possible`, [`${(names && names.get(id)) || id}: ${status}. Change or drop its row, then release again.`], false);
+    toast(`${label}: not possible`, [`${(names && names.get(id)) || id}: ${status}`], false);
     return true;
   }
 
@@ -98,6 +187,26 @@
    * or "it takes effect at once" for 0.
    */
   const undoWords = () => (settings.undo > 0 ? `${settings.undo} s remain to undo` : "it takes effect at once");
+  const undoView = {box: null, live: new Map()};
+
+  /**
+   * @param {Object} entry a running undo window: {id, label, due, undo, left}.
+   * @returns {HTMLElement} its Undo entry for the Actions menu of the Tasks toolbar, with the seconds left; entry.left
+   * keeps that readout so the toast's timer ticks both.
+   */
+  function undoItem(entry) {
+    entry.left = h("span", {class: "undo-left"}, `${Math.max(0, Math.ceil(entry.due - nowSeconds()))} s`);
+    return h("button", {type: "button", class: "btn small ghost", "data-key": `undo:${entry.id}`, ...named(`Undo: ${entry.label}`, `Undo ${entry.label}: possible until its undo window ends`), on: {click: entry.undo}},
+      icon("bi-arrow-counterclockwise"), h("span", {class: "tool-word"}, "Undo"), h("span", {class: "undo-label"}, short(entry.label)), entry.left);
+  }
+
+  function drawUndo() {
+    if (!undoView.box) {
+      return;
+    }
+    const entries = [...undoView.live.values()];
+    fadeSwap(undoView.box, entries.length ? entries.map(undoItem) : [h("p", {class: "muted", "data-key": "undo:none"}, "Nothing to undo")]);
+  }
 
   function undoToast(batch, label) {
     if (!(batch.due > nowSeconds())) {
@@ -107,28 +216,42 @@
     }
     const left = h("span", {class: "muted"});
     const button = h("button", {type: "button", class: "btn small", ...named("Undo")}, icon("bi-arrow-counterclockwise"), "Undo");
-    const box = h("div", {class: "toast wait", role: "status"}, h("strong", {}, label), h("div", {class: "undo-row"}, left, h("span", {class: "spacer"}), button));
+    const glass = h("span", {class: "undo-glass", "aria-hidden": "true"}, glassFace());
+    glass.style.animationDuration = `${Math.max(0, batch.due - nowSeconds())}s`;
+    const box = h("div", {class: "toast wait", role: "status"}, h("strong", {}, label), h("div", {class: "undo-row"}, left, h("span", {class: "spacer"}), button, glass));
     let timer = 0;
+    const entry = {id: batch.id, label, due: batch.due, undo: null, left: null};
+    const settle = () => {
+      window.clearInterval(timer);
+      undoView.live.delete(batch.id);
+      drawUndo();
+    };
     const count = () => {
       const rest = Math.ceil(batch.due - nowSeconds());
       if (rest <= 0) {
-        window.clearInterval(timer);
-        box.remove();
+        settle();
+        vanish(box);
         load();
         return;
       }
       left.textContent = `takes effect in ${rest} s`;
+      if (entry.left) {
+        entry.left.textContent = `${rest} s`;
+      }
     };
-    timer = window.setInterval(count, 250);
-    button.addEventListener("click", async () => {
-      window.clearInterval(timer);
+    entry.undo = async () => {
+      settle();
       button.disabled = true;
       const result = await send(`/api/inbox/undo/${encodeURIComponent(batch.id)}`, "", "application/json");
-      box.remove();
+      vanish(box);
       toast(result.ok ? `Undone: ${label}` : "Too late: already in effect", result.ok ? [] : [`${result.status} ${result.text}`.trim()], result.ok);
       await load();
-    });
+    };
+    timer = window.setInterval(count, 250);
+    button.addEventListener("click", entry.undo);
+    undoView.live.set(batch.id, entry);
     document.getElementById("toasts").append(box);
+    drawUndo();
     count();
   }
 
@@ -311,7 +434,7 @@
     }
     const key = keyOf(item);
     flip(key);
-    ui.cursor = Math.max(visibleInbox().findIndex((entry) => keyOf(entry) === key), 0);
+    ui.cursor = Math.max(listedInbox().findIndex((entry) => keyOf(entry) === key), 0);
     drawInbox();
     drawGrant();
   }
@@ -412,7 +535,8 @@
   function inboxItem(item, index) {
     const red = item.kind === "review" && item.gate !== "pass";
     const wait = waitOf(item);
-    const actions = actionsFor(item);
+    const actions = dialogLapsed(item) ? [] : actionsFor(item);
+    const triaged = item.claude ? status("claude") : item.request && item.request !== "open" ? pill(item.request, REQUEST_TONES[item.request]) : null;
     const code = itemCode(item, actions);
     const classes = ["item", "entry", `k-${item.kind}`, "waiting", isGreen(item) ? "green" : "", red ? "red" : "", item.held ? "held" : "", wait ? "pending" : "", index === ui.cursor ? "cursor" : ""].filter(Boolean).join(" ");
     const done = doneItem(item);
@@ -422,6 +546,7 @@
         when(item.ts),
         wait ? h("span", {class: "wait-spin", role: "status", "aria-label": wait, title: wait}) : null,
         done ? pill("done", "ok") : null,
+        triaged,
         asked(item) ? pill("Decision", KIND_TONES.decision) : pill(ITEM_LABELS[item.kind], KIND_TONES[item.kind]),
         item.kind === "review" ? pill(item.gate === "pass" ? "Gate green" : "Gate red", item.gate === "pass" ? "ok" : "bad") : null,
         reviewsPill(item),
@@ -439,7 +564,7 @@
         code,
         item.job ? consoleOf(item.job) : null,
         item.kind === "rule" ? ruleRequestBody(item) : null,
-        choiceOf(item, () => {}),
+        dialogLapsed(item) ? null : choiceOf(item, () => {}),
         feedbackList(keyOf(item))),
       h("div", {class: "item-actions line-actions"},
         code ? null : actions,
@@ -459,7 +584,7 @@
     if (!inboxDom) {
       return;
     }
-    const items = visibleInbox();
+    const items = listedInbox();
     ui.cursor = Math.min(ui.cursor, Math.max(items.length - 1, 0));
     const present = new Set(items.map(keyOf));
     for (const key of [...ui.selected]) {
@@ -468,7 +593,8 @@
       }
     }
     const mode = grantMode();
-    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], [...choices], [...sending], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id)]);
+    const requests = requestItems().map((item) => [keyOf(item), item.request]);
+    const sig = JSON.stringify([mode, items.map(withoutOutput), [...ui.selected], [...choices], [...sending], ui.cursor, ui.snoozed, ui.busy, Math.floor(nowSeconds() / 60), diffView.version, state.messages.map((message) => message.id), requests, triage.chip, [...triage.picked]]);
     if (sig === inboxSig) {
       repaintConsoles(items);
       return;
@@ -479,12 +605,15 @@
       ui.snoozed = event.target.checked;
       drawInbox();
     }}});
-    keepTyping(inboxDom, () => inboxDom.replaceChildren(
+    fadeSwap(inboxDom, [
       h("div", {class: "inbox-head"}, h("h2", {class: "group-title"}, "Waits on Operator", counter(waitingCount())), h("span", {class: "spacer"}),
         hidden ? h("label", {class: "check"}, snoozed, `${hidden} snoozed`) : null),
       onLocalhost() ? "" : h("p", {class: "muted"}, "The passkey signs grants only under ", localLink()),
-      ...inboxRows(items)));
-    settleConsoles(items);
+      triageBar(),
+      ...inboxRows(items)], (root, swap) => {
+      keepTyping(root, swap);
+      settleConsoles(items);
+    });
   }
 
   /**
@@ -517,8 +646,8 @@
       asked(item) && item.detail && item.detail !== "-" ? h("p", {class: "text reason"}, revealed(item.detail)) : null,
       item.kind === "rule" ? ruleRequestBody(item) : null,
       meta([["Directory", item.directory], ["Warnings", item.warnings.join(", ")], ["Id", item.id]]),
-      choiceOf(item, closeSheet),
-      h("div", {class: "actions"}, h("span", {class: "spacer"}), actionsFor(item).map((node) => {
+      dialogLapsed(item) ? null : choiceOf(item, closeSheet),
+      h("div", {class: "actions"}, h("span", {class: "spacer"}), (dialogLapsed(item) ? [] : actionsFor(item)).map((node) => {
         node.addEventListener("click", closeSheet);
         return node;
       })),

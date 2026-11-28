@@ -219,8 +219,8 @@
     if (picked.inline) {
       const box = h("div", {class: "match-comment-box"}, head, chips, words);
       const field = picked.anchor.tagName === "TR" ? h("tr", {class: "match-comment"}, h("td", {colspan: picked.anchor.children.length}, box)) : h("div", {class: "match-comment"}, box);
-      box.append(h("div", {class: "actions"}, btn("Cancel", "btn small ghost", () => field.remove()), saveButton("btn small primary", () => field.remove())));
-      document.querySelectorAll("#sheet .match-comment").forEach((open) => open.remove());
+      box.append(h("div", {class: "actions"}, btn("Cancel", "btn small ghost", () => vanish(field)), saveButton("btn small primary", () => vanish(field))));
+      document.querySelectorAll("#sheet .match-comment").forEach((open) => vanish(open));
       picked.anchor.after(field);
     } else {
       openSheet("Comment", [h("div", {class: "who"}, icon("bi-chat-left-text"), person(picked.to), head), h("p", {class: "muted"}, LINE_NOTES_GO), chips, words,

@@ -33,8 +33,15 @@
     }
   }
 
-  function choice(name, options, picked) {
-    return h("div", {class: "classes", role: "radiogroup", "aria-label": "Class"}, options.map(([id, label]) => h("label", {class: "check"},
+  /**
+   * @param {string} name the name of the radio group.
+   * @param {Array<Array<string>>} options [id, label] of each class, one segment each.
+   * @param {string} picked the id checked at first.
+   * @param {Object<string, string>} hints the tooltip of each id: how that class delivers.
+   * @returns {HTMLElement} a small segmented switch of native radios.
+   */
+  function choice(name, options, picked, hints) {
+    return h("div", {class: "segmented to-one", role: "radiogroup", "aria-label": "Class"}, options.map(([id, label]) => h("label", {title: hints[id] || label},
       h("input", {type: "radio", name, value: id, checked: id === picked}), label)));
   }
 

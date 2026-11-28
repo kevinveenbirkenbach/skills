@@ -44,7 +44,7 @@
     const made = legendView.buttons.get(owner);
     if (!place) {
       if (made) {
-        made.remove();
+        vanish(made);
         legendView.buttons.delete(owner);
       }
       if (owner.dataset.legend) {

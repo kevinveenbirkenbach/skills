@@ -3,6 +3,9 @@ const Dial = (() => {
   const SIZE = 140;
   const RADIUS = 58;
   const TICKS = 60;
+  const READOUT = 24;
+  const MINUTE = 60;
+  const SECOND = 1000;
 
   /**
    * @param value - a value on the dial, min to max.
@@ -57,7 +60,66 @@ const Dial = (() => {
     return Array.from({length: TICKS}, (_, at) => ({at, long: at % page === 0}));
   }
 
-  return {SIZE, RADIUS, TICKS, point, clamp, fromAngle, stepped, ticks};
+  /**
+   * @param value - a value on the dial, fractions allowed.
+   * @param max - the value a full turn stands for.
+   * @returns the hand's angle from the top, clockwise, in degrees.
+   */
+  function angle(value, max) {
+    return (value * 360) / max;
+  }
+
+  /**
+   * @param seconds - seconds left, rounded up to whole seconds and never below 0.
+   * @returns them as m:ss, the readout of a clock that runs out.
+   */
+  function countdown(seconds) {
+    const whole = Math.max(0, Math.ceil(seconds));
+    return `${Math.floor(whole / MINUTE)}:${String(whole % MINUTE).padStart(2, "0")}`;
+  }
+
+  /**
+   * @param epoch - a moment in epoch milliseconds.
+   * @returns its local time of day as HH:MM:SS, the readout of a wall clock.
+   */
+  function wall(epoch) {
+    const at = new Date(epoch);
+    return [at.getHours(), at.getMinutes(), at.getSeconds()].map((part) => String(part).padStart(2, "0")).join(":");
+  }
+
+  /**
+   * @param until - the epoch seconds the clock runs out at.
+   * @param per - how many seconds one value of the dial stands for: 60 on a face of minutes, 1 on one of seconds.
+   * @returns (epoch milliseconds) => {at, value, text}: at the hand's exact place in dial values, value the whole
+   * values left rounded up, text the seconds left as m:ss; all three stop at 0.
+   */
+  function counting(until, per) {
+    return (epoch) => {
+      const left = Math.max(0, until - epoch / SECOND);
+      return {at: left / per, value: Math.ceil(left / per), text: countdown(left)};
+    };
+  }
+
+  /**
+   * @returns (epoch milliseconds) => {at, value, text}: a wall clock on a face of 60, its hand sweeping the seconds
+   * of the minute, value the whole second and text the local time of day as HH:MM:SS.
+   */
+  function walled() {
+    return (epoch) => {
+      const at = new Date(epoch);
+      return {at: at.getSeconds() + at.getMilliseconds() / SECOND, value: at.getSeconds(), text: wall(epoch)};
+    };
+  }
+
+  /**
+   * @param progress - how far a sweep is, 0 to 1.
+   * @returns the share of the way the hand has turned: fast at first, slowing into its place.
+   */
+  function eased(progress) {
+    return 1 - (1 - progress) ** 3;
+  }
+
+  return {SIZE, RADIUS, TICKS, READOUT, point, clamp, fromAngle, stepped, ticks, angle, countdown, wall, counting, walled, eased};
 })();
 if (typeof module === "object" && module.exports) {
   module.exports = Dial;

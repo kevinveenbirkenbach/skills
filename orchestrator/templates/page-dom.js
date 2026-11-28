@@ -91,7 +91,7 @@
   };
   const presenceMark = (key, labelled) => {
     const value = presenceOf(key);
-    return value ? h("span", {class: "presence", "data-state": value, "data-tone": PRESENCE[value][2], role: "img", ...named(PRESENCE[value][0])}, icon(PRESENCE[value][1], "glyph"), labelled ? PRESENCE[value][0] : null) : null;
+    return value ? h("span", {class: value === "working" ? "presence is-working" : "presence", "data-state": value, "data-tone": PRESENCE[value][2], role: "img", ...named(PRESENCE[value][0])}, icon(PRESENCE[value][1], "glyph"), labelled ? PRESENCE[value][0] : null) : null;
   };
   const presenceGlyph = (key, x, y, size) => {
     const value = presenceOf(key);
@@ -127,11 +127,144 @@
   };
   const stamp = (life) => [life.born ? `🐣 ${life.born}` : "", life.died ? `🪦 ${life.died}` : ""].filter(Boolean).join(" · ");
 
+  /**
+   * @returns {SVGElement} a fresh hourglass face; a newly inserted face starts its flip and its sand from the top, so
+   * matchCycle() swaps it in after every fetch and undoToast() puts one in each countdown.
+   */
+  function glassFace() {
+    return s("svg", {class: "match-glass-face", viewBox: "0 0 24 32", "aria-hidden": "true", focusable: "false"},
+      s("path", {class: "match-glass-frame", d: "M4 2h16M4 30h16M6 3c0 7 5 9 5 13s-5 6-5 13M18 3c0 7-5 9-5 13s5 6 5 13"}),
+      s("path", {class: "match-glass-top", d: "M8 7h8l-4 7z"}),
+      s("path", {class: "match-glass-bottom", d: "M7.5 28h9c-1.5-3.5-3.5-4.5-4.5-4.5s-3 1-4.5 4.5z"}),
+      [0, 1, 2].map((grain) => s("circle", {class: "match-grain", cx: "12", cy: "15", r: "0.8", "data-grain": String(grain)})));
+  }
+
+  const VANISH_MS = 180;
+  const VANISH_SLACK = 150;
+  const VANISH_EDGES = ["Top", "Bottom"];
+  const VANISH_SIDES = ["Left", "Right"];
+
+  /**
+   * @param {Element} el an element in the page.
+   * @returns {Keyframe[]} its fade to opacity 0 from the opacity it shows now; an element in the flow also gives up its
+   * room: its height (its width when it is inline) with its margins and paddings along that axis.
+   */
+  function vanishFrames(el) {
+    const look = window.getComputedStyle(el);
+    const from = {opacity: look.opacity};
+    const to = {opacity: 0};
+    if (look.position === "absolute" || look.position === "fixed" || look.display.startsWith("table")) {
+      return [from, to];
+    }
+    const inline = look.display.startsWith("inline");
+    const [size, edges] = inline ? ["width", VANISH_SIDES] : ["height", VANISH_EDGES];
+    from[size] = `${el.getBoundingClientRect()[size]}px`;
+    to[size] = "0px";
+    for (const edge of edges) {
+      for (const box of ["margin", "padding"]) {
+        from[`${box}${edge}`] = look[`${box}${edge}`];
+        to[`${box}${edge}`] = "0px";
+      }
+    }
+    return [from, to];
+  }
+
+  /**
+   * @param {Element|null} el the element to take out of the page.
+   * @param {Function} [then] runs once el has left the DOM.
+   * Fades el and collapses its room in VANISH_MS before it leaves the DOM; at once under prefers-reduced-motion and for
+   * a detached or unrendered el. A second call on an element already leaving does nothing.
+   */
+  function vanish(el, then) {
+    if (!el || (el.dataset && el.dataset.vanishing)) {
+      return;
+    }
+    let gone = false;
+    const done = () => {
+      if (!gone) {
+        gone = true;
+        el.remove();
+        if (then) {
+          then();
+        }
+      }
+    };
+    if (!el.isConnected || typeof el.animate !== "function" || !el.getClientRects().length || calm.matches) {
+      done();
+      return;
+    }
+    el.dataset.vanishing = "true";
+    el.style.overflow = "hidden";
+    el.style.pointerEvents = "none";
+    el.animate(vanishFrames(el), {duration: VANISH_MS, easing: "ease-in", fill: "forwards"}).finished.then(done, done);
+    window.setTimeout(done, VANISH_MS + VANISH_SLACK);
+  }
+
+  const SWAP_KEYS = ["data-key", "data-item", "data-card", "data-task", "data-job", "data-ref"];
+  const SWAP_KEYED = SWAP_KEYS.map((name) => `[${name}]`).join(", ");
+  const swapsDue = new WeakMap();
+
+  /**
+   * @param {Array<Node|string>} nodes elements and text.
+   * @returns {Set<string>} the key of every keyed element in nodes and below them, as "attribute=value" of the first
+   * SWAP_KEYS attribute the element holds.
+   */
+  function swapKeys(nodes) {
+    const keyed = nodes.filter((node) => node instanceof Element).flatMap((node) => [node, ...node.querySelectorAll(SWAP_KEYED)]).filter((node) => node.matches(SWAP_KEYED));
+    return new Set(keyed.map((node) => {
+      const name = SWAP_KEYS.find((key) => node.hasAttribute(key));
+      return `${name}=${node.getAttribute(name)}`;
+    }));
+  }
+
+  /**
+   * @param {Element} box a container about to get new children.
+   * @param {Array<Node|string>} nodes the new children.
+   * @returns {boolean} whether a keyed element box shows now is missing from nodes, so it leaves the page; false
+   * without View Transitions, for a detached or unrendered box and while a field has the focus, whose typing a
+   * transition would freeze.
+   */
+  function swapLeaves(box, nodes) {
+    if (!document.startViewTransition || !box.isConnected || !box.getClientRects().length) {
+      return false;
+    }
+    const field = document.activeElement;
+    if (field && field.matches("input, textarea, select, [contenteditable]")) {
+      return false;
+    }
+    const next = swapKeys(nodes);
+    return [...swapKeys([...box.children])].some((key) => !next.has(key));
+  }
+
+  /**
+   * @param {Element} box a visible container whose children a re-render replaces.
+   * @param {Array<Node|string>} nodes its new children.
+   * @param {Function} [around] called as around(box, swap) in place of swap(), for a keeper such as keepTyping() or for
+   * work that needs nodes in the page.
+   * @returns {Promise} settles once box holds nodes. When a keyed child leaves, the swap runs inside fadeTransition()
+   * so it fades out; else at once. Only the newest nodes given for box land, so a late transition never undoes a
+   * newer swap.
+   */
+  function fadeSwap(box, nodes, around) {
+    swapsDue.set(box, nodes);
+    const swap = () => {
+      if (swapsDue.get(box) === nodes) {
+        box.replaceChildren(...nodes);
+      }
+    };
+    const run = around ? () => around(box, swap) : swap;
+    if (!swapLeaves(box, nodes)) {
+      run();
+      return Promise.resolve();
+    }
+    return fadeTransition(run);
+  }
+
   function toast(title, lines, good) {
     const box = h("div", {class: `toast${good ? "" : " bad"}`, role: "status", title: "Close"}, h("strong", {}, title), lines.length ? h("pre", {}, lines.join("\n")) : null);
-    box.addEventListener("click", () => box.remove());
+    box.addEventListener("click", () => vanish(box));
     document.getElementById("toasts").append(box);
-    window.setTimeout(() => box.remove(), good ? 9000 : 20000);
+    window.setTimeout(() => vanish(box), good ? 9000 : 20000);
     return box;
   }
 
@@ -248,9 +381,13 @@
     });
   }
 
+  /**
+   * @param {Element|null} [keep] the menu a click landed in: it stays open, and so does every menu around it, such as
+   * the Tasks Actions menu holding Request choices.
+   */
   function closeMenus(keep) {
     for (const menu of document.querySelectorAll(MENUS)) {
-      if (menu.open && menu !== keep) {
+      if (menu.open && menu !== keep && !(keep && menu.contains(keep))) {
         const inside = menu.contains(document.activeElement);
         menu.open = false;
         if (inside) {
@@ -270,10 +407,25 @@
     sheet.hidden = false;
   }
 
+  /**
+   * @param {HTMLElement} overlay a fixed overlay such as #sheet or #palette.
+   * Sets overlay hidden at once, so every check of its hidden flag sees it closed, while its boxes fade out through
+   * vanish(); the closing class keeps it drawn without taking clicks until the last box has left.
+   */
+  function fadeShut(overlay) {
+    const shut = () => {
+      if (!overlay.children.length) {
+        overlay.classList.remove("closing");
+      }
+    };
+    overlay.classList.add("closing");
+    overlay.hidden = true;
+    [...overlay.children].forEach((box) => vanish(box, shut));
+    shut();
+  }
+
   function closeSheet() {
-    const sheet = document.getElementById("sheet");
-    sheet.hidden = true;
-    sheet.replaceChildren();
+    fadeShut(document.getElementById("sheet"));
     reviewDom = null;
     ui.review = null;
   }

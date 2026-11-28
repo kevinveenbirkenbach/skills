@@ -154,6 +154,9 @@
   }
 
   function closePalette() {
-    document.getElementById("palette").hidden = true;
+    const box = document.getElementById("palette");
+    if (!box.hidden) {
+      fadeShut(box);
+    }
     palette.plan = null;
   }

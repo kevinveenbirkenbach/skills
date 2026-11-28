@@ -27,7 +27,7 @@ SPY = """() => {
   };
 }"""
 KIT = """@HELPERS@
-  const small = () => document.querySelector(".match-glass.small");
+  const headed = () => all("#main .box-head .match-glass").length;
   const large = () => document.querySelector("#main .match-glass.large");
   const fetches = () => window.matchFetches.length;
   const gaps = (times) => times.slice(1).map((at, index) => Math.round(at - times[index]));
@@ -39,8 +39,8 @@ KIT = """@HELPERS@
     }
   };
   const setDial = async (key, times) => {
-    const box = small().getBoundingClientRect();
-    const prevented = !small().dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: box.left + 4, clientY: box.top + 4}));
+    const box = large().getBoundingClientRect();
+    const prevented = !large().dispatchEvent(new MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: box.left + 4, clientY: box.top + 4}));
     const dial = await until(() => document.querySelector("#sheet .match-refresh-dial"), 3000);
     if (!dial) {
       return {prevented, error: "no dial"};
@@ -53,51 +53,51 @@ KIT = """@HELPERS@
     return {prevented, from, to, closed: Boolean(closed)};
   };"""
 FIRST = """(async () => {@KIT@
-  if (!(await until(() => small() && large() && fetches() >= 2, 8000))) {
+  if (!(await until(() => large() && fetches() >= 2, 8000))) {
     return {error: text(document.getElementById("main"))};
   }
   const start = fetches();
   await until(() => fetches() >= start + 3, 9000);
   const rate = gaps(window.matchFetches.slice(start - 1, start + 3));
   await sleep(300);
-  const turn = Number(small().dataset.turn);
+  const turn = Number(large().dataset.turn);
   const fetched = await until(() => (fetches() > start + 3 ? window.matchFetches[window.matchFetches.length - 1] : null), 4000);
-  await until(() => Number(small().dataset.turn) > turn, 1000);
-  const running = flips(small());
+  await until(() => Number(large().dataset.turn) > turn, 1000);
+  const running = flips(large());
   await sleep(Math.max(0, fetched + 1000 - performance.now()));
-  const flip = {turned: Number(small().dataset.turn) > turn, ran: running.length, finished: running.every((animation) => animation.playState === "finished"),
-    sand: getComputedStyle(small().querySelector(".match-glass-top")).animationDuration, grains: small().querySelectorAll(".match-grain").length};
+  const flip = {turned: Number(large().dataset.turn) > turn, ran: running.length, finished: running.every((animation) => animation.playState === "finished"),
+    sand: getComputedStyle(large().querySelector(".match-glass-top")).animationDuration, grains: large().querySelectorAll(".match-grain").length};
   await sleep(700);
   const before = fetches();
   const clickedAt = performance.now();
-  small().click();
+  large().click();
   await until(() => fetches() > before, 1000);
   const click = {at: Math.round(window.matchFetches[before] - clickedAt)};
   await until(() => fetches() > before + 1, 4000);
   click.next = Math.round(window.matchFetches[before + 1] - window.matchFetches[before]);
-  const sizes = {small: small().getBoundingClientRect().height, large: large().getBoundingClientRect().height};
+  const sizes = {headed: headed(), large: large().getBoundingClientRect().height};
   const dial = await setDial("ArrowRight", 8);
   return {rate, flip, click, sizes, dial, wide: document.documentElement.scrollWidth > window.innerWidth + 1};
 })()"""
 RELOADED = """(async () => {@KIT@
-  if (!(await until(() => small() && fetches() >= 1, 8000))) {
+  if (!(await until(() => large() && fetches() >= 1, 8000))) {
     return {error: text(document.getElementById("main"))};
   }
   const first = fetches();
   await sleep(3500);
-  const kept = {quiet: fetches() === first, sand: small().style.getPropertyValue("--match-refresh"), title: small().title};
+  const kept = {quiet: fetches() === first, sand: large().style.getPropertyValue("--match-refresh"), title: large().title};
   const dial = await setDial("ArrowLeft", 8);
   return {kept, dial};
 })()"""
 STILL = """(async () => {@KIT@
-  if (!(await until(() => small() && large() && fetches() >= 1, 8000))) {
+  if (!(await until(() => large() && fetches() >= 1, 8000))) {
     return {error: text(document.getElementById("main"))};
   }
-  const turn = Number(small().dataset.turn);
-  await until(() => Number(small().dataset.turn) > turn, 4000);
+  const turn = Number(large().dataset.turn);
+  await until(() => Number(large().dataset.turn) > turn, 4000);
   await sleep(200);
-  const glasses = [small(), large()];
-  return {turned: Number(small().dataset.turn) > turn, running: glasses.map((glass) => glass.getAnimations({subtree: true}).length), face: glasses.map((glass) => getComputedStyle(glass.querySelector(".match-glass-face")).animationName)};
+  const glasses = [large()];
+  return {turned: Number(large().dataset.turn) > turn, running: glasses.map((glass) => glass.getAnimations({subtree: true}).length), face: glasses.map((glass) => getComputedStyle(glass.querySelector(".match-glass-face")).animationName)};
 })()"""
 
 
@@ -134,14 +134,15 @@ class TestMatchHourglass(HubCase):
                 self.assertEqual(first["flip"], {"turned": True, "ran": 1, "finished": True, "sand": "2s", "grains": 3}, first)
                 self.assertLess(first["click"]["at"], 300, first)
                 self.assertAlmostEqual(first["click"]["next"], 2000, delta=300, msg=first)
-                self.assertGreater(first["sizes"]["large"], 2 * first["sizes"]["small"], first)
+                self.assertEqual(first["sizes"]["headed"], 0, first)
+                self.assertGreater(first["sizes"]["large"], 80, first)
                 self.assertEqual(first["dial"], {"prevented": True, "from": 2, "to": 10, "closed": True}, first)
                 self.assertFalse(first["wide"], first)
                 self.assertEqual(reloaded["kept"]["quiet"], True, reloaded)
                 self.assertEqual(reloaded["kept"]["sand"], "10s", reloaded)
                 self.assertIn("every 10 s", reloaded["kept"]["title"], reloaded)
                 self.assertEqual(reloaded["dial"], {"prevented": True, "from": 10, "to": 2, "closed": True}, reloaded)
-                self.assertEqual(still, {"turned": True, "running": [0, 0], "face": ["none", "none"]}, still)
+                self.assertEqual(still, {"turned": True, "running": [0], "face": ["none"]}, still)
 
 
 if __name__ == "__main__":

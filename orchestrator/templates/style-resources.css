@@ -71,22 +71,42 @@ svg .res-bar { fill: var(--c); }
 svg .res-bar.faint { opacity: 0.35; }
 .res-panel.res-hardware { min-height: min-content; }
 .res-panel.res-hardware > .res-plot { min-height: 48px; }
-.res-limits { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; font-size: var(--fs-xs); }
+.res-legend[hidden] { display: none; }
+.res-view-menu, .res-limits-menu { position: relative; }
+.res-view-menu > summary, .res-limits-menu > summary { padding: 4px 10px; }
+.res-view-menu .menu-box, .res-limits-menu .menu-box { gap: 2px; min-width: 11rem; padding: 6px; }
+@media (max-width: 640px) { .res-view-menu > summary > span { display: none; } }
+.res-limits-menu .menu-box h3 { padding: 6px 6px 2px; }
+.res-limits-menu .limit-profiles { margin: 2px 6px 6px; }
+.res-limits-menu .limit-matrix { justify-self: start; margin: 2px 6px; }
+.res-panel.res-hardware { overflow: visible; }
+.res-limits { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: var(--fs-xs); }
 .res-limits > * { flex: none; }
 .res-limits .segmented button { padding: 2px 8px; font-size: var(--fs-xs); }
-.res-limits > .limit-note { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res-limits > .limit-note { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.limit-stage { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.limit-stage[hidden] { display: none; }
+.limit-stage-note { min-width: 0; overflow-wrap: anywhere; }
 .limit-error { margin: 0; color: var(--bad); }
+.limit-swatch { display: inline-block; width: 16px; border-top: 2px solid var(--c); }
+.limit-swatch.target { border-top-style: dotted; }
+.limit-swatch.lower, svg .res-limit.lower { --c: var(--ok); }
+.limit-swatch.upper, svg .res-limit.upper { --c: var(--warn); }
+.limit-swatch.stop, svg .res-limit.stop { --c: var(--bad); }
+.limit-swatch.mayday, svg .res-limit.mayday { --c: var(--violet); }
+.limit-swatch.target { --c: var(--text); }
 .limits-table { border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .limits-table th, .limits-table td { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
-svg .res-limit { cursor: pointer; outline: none; }
-svg .res-limit.lower { --c: var(--ok); }
-svg .res-limit.upper { --c: var(--warn); }
-svg .res-limit.stop { --c: var(--bad); }
-svg .res-limit.mayday { --c: var(--violet); }
-svg .res-limit-hit { stroke: transparent; stroke-width: 10; }
-svg .res-limit-mark { stroke: var(--c); stroke-width: 1.2; stroke-dasharray: 6 3; }
-svg .res-limit:hover .res-limit-mark, svg .res-limit:focus-visible .res-limit-mark { stroke-width: 2.4; }
-svg .res-limit text { fill: var(--c); font-size: var(--fs-2xs); }
+.limits-table th[title] { cursor: help; }
+.limits-table .limit-cell { width: 4.5rem; font-variant-numeric: tabular-nums; }
+.limits-table .limit-cell.moved { border-color: var(--accent); border-style: dashed; }
+svg .res-limit { cursor: ns-resize; outline: none; touch-action: none; }
+svg .res-limit-hit { stroke: transparent; stroke-width: 14; }
+svg .res-limit-mark { stroke: var(--c); stroke-width: 1.4; }
+svg .res-limit.moved .res-limit-mark { stroke-width: 2; stroke-dasharray: 6 3; }
+svg .res-limit-was { stroke: var(--c); stroke-width: 1; stroke-dasharray: 1 3; opacity: 0.6; pointer-events: none; }
+svg .res-limit:hover .res-limit-mark, svg .res-limit:focus-visible .res-limit-mark, svg .res-limit[data-dragging] .res-limit-mark { stroke-width: 2.6; }
+svg .res-limit text { fill: var(--c); font-size: var(--fs-2xs); pointer-events: none; }
 svg .res-target line { stroke: var(--text); stroke-width: 0.8; stroke-dasharray: 2 2; }
 svg .res-target text { fill: var(--muted); font-size: var(--fs-2xs); }
 .res-c0 { --c: var(--info); }

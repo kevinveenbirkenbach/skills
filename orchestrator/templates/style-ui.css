@@ -12,7 +12,7 @@
 .dial-tick.long { stroke: var(--text); stroke-width: 2; }
 .dial-hand { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
 .dial-pin { fill: var(--accent); }
-.dial-readout { font-variant-numeric: tabular-nums; font-weight: 700; }
+.dial-readout { fill: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
 .rule-form [hidden] { display: none; }
 .rule-form > label.check { display: inline-flex; min-height: 34px; }
 .speaker-face { position: relative; display: inline-grid; flex: none; border-radius: 50%; }
@@ -127,6 +127,15 @@ body.fit .spot-host { flex: none; }
 .mic-chip-drop:hover { background: var(--hover); color: var(--text); }
 .mic-chip-drop:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 @media (max-width: 640px) { .mic-chip-drop { width: 32px; height: 32px; } }
+.agent-foot { gap: 4px; }
+.agent-foot > .to-one { flex: none; padding: 2px; }
+.to-one > label { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: 2px 10px; border-radius: 8px; color: var(--muted); font-size: var(--fs-sm); font-weight: 580; cursor: pointer; }
+.to-one > label:hover { color: var(--text); }
+.to-one > label:has(> input:checked) { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
+.to-one > label:has(> input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.to-one > label > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.agent-foot > .agent-send { flex: none; }
+@media (max-width: 640px) { .to-one > label, .agent-foot > .agent-send { min-width: 44px; min-height: 44px; } }
 .radio-home-radio-speak .composer { flex: 1 1 0; grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .radio-home-radio-speak .mic-area { min-height: 0; }
 .radio-home-radio-speak .mic-area > textarea { flex: 1 1 0; min-height: 2rem; max-height: none; resize: none; }
@@ -341,6 +350,8 @@ body.fit .spot-host { flex: none; }
 .ctx-rule { height: 1px; margin: 2px 6px; background: var(--line); }
 .ctx-item { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 10px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 .ctx-item:is(:hover, :focus) { background: var(--accent-soft); color: var(--accent); outline: none; }
+.ctx-item .ctx-check { flex: 0 0 auto; width: 1em; }
+.ctx-item[aria-checked="false"] .ctx-check { visibility: hidden; }
 .ctx-item .ctx-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ctx-item .muted { flex: 0 1 auto; max-width: 45%; overflow: hidden; font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
 .box-head > .toolbar { justify-content: flex-end; margin-inline-start: auto; }
@@ -367,3 +378,21 @@ body.fit .spot-host { flex: none; }
 :is(.box-head, .home-head) .mic-line > :is(input, .btn):not(.menu-box *) { block-size: 100%; }
 :is(.box-head, .home-head) .segmented { align-items: stretch; }
 :is(.box-head, .home-head) .chips { margin-bottom: 0; }
+.palette.closing[hidden], .sheet.closing[hidden] { display: grid; pointer-events: none; animation: shade-out .18s ease-in forwards; }
+.ctx-menu.closing[hidden] { display: grid; pointer-events: none; }
+@keyframes shade-out { to { background-color: transparent; } }
+.is-working { --beat: var(--ok); animation: lub-dub 1.2s ease-in-out infinite; }
+.kanban-card.is-working { --beat: var(--card-state, var(--ok)); }
+.queue-job.is-working { --beat: var(--accent); }
+.presence.is-working, .console-status.is-working { --beat: var(--info); }
+@keyframes lub-dub {
+  0%, 42%, 100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+  10% { transform: scale(1.025); box-shadow: 0 0 10px 2px var(--beat); }
+  20% { transform: scale(1); box-shadow: 0 0 4px 0 var(--beat); }
+  30% { transform: scale(1.018); box-shadow: 0 0 12px 3px var(--beat); }
+}
+@keyframes lub-dub-glow {
+  0%, 42%, 100% { box-shadow: 0 0 4px 0 var(--beat); }
+  10%, 30% { box-shadow: 0 0 12px 3px var(--beat); }
+}
+@media (prefers-reduced-motion: reduce) { .is-working { animation-name: lub-dub-glow; } }

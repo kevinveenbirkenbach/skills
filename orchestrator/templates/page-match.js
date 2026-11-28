@@ -2,25 +2,29 @@
   const LONG_PRESS = 550;
   const PRESS_SLOP = 10;
   const MATCH_KINDS = {commit: ["Commit", "info", "bi-git"], command: ["Command", "warn", "bi-terminal"], ask: ["Ask", "warn", "bi-shield-lock"], decision: ["Decision", "info", "bi-signpost-split"], rule: ["Rule", "neutral", "bi-shield-check"]};
-  const MATCH_VERDICTS = {accept: ["Accept", "ok", "bi-check-lg"], reject: ["Reject", "bad", "bi-x-lg"]};
+  const MATCH_VERDICTS = {accept: ["Accept", "ok", "bi-check-lg"], reject: ["Reject", "bad", "bi-x-lg"], drop: ["Drop (expired)", "neutral", "bi-trash"]};
   const SWIPE_SHARE = 0.25;
   const SWIPE_UP = 80;
   const FEEDBACK_LIMIT = 2000;
   const FLY_MS = 400;
   const CONFETTI = 28;
+  const CONFETTI_GONE = 9000;
   const DROPS_KEPT = 200;
   const COMMENTS_KEPT = 5;
   const PATTERNS = ["dots", "stripes", "waves", "grid", "rings"];
   const RELEASE = "release";
-  const MATCH_STAMPS = {running: "RUNNING", queued: "QUEUED", stale: "STALE", expired: "EXPIRED", blocked: "BLOCKED"};
-  const lapsedCard = (card) => card.blocked_kind === "expired";
+  const MATCH_STAMPS = {running: "RUNNING", queued: "QUEUED", stale: "STALE", expired: "EXPIRED", claude: "IN CLAUDE", blocked: "BLOCKED"};
+  const lapsedCard = (card) => card.blocked_kind === "expired" || card.blocked_kind === "claude";
+  const droppable = (card) => card.blocked_kind === "expired";
 
   /**
-   * @param {object} card an expired card with its expires time in epoch seconds.
-   * @returns {string} the stamp's tooltip: the expiry clock time and how long ago, as "expired 14:02, 12 minutes ago".
+   * @param {object} card a lapsed card (lapsedCard()) with its expires time in epoch seconds.
+   * @returns {string} the stamp's tooltip: the clock time its hook stopped waiting and how long ago, as "expired 14:02,
+   * 12 minutes ago", for a card whose dialog is still open in Claude as "open in Claude since 14:02, 12 minutes ago".
    */
   function expiredWords(card) {
-    return `expired ${clock.format(stampOf(card.expires))}, ${ago(card.expires)}`;
+    const since = `${clock.format(stampOf(card.expires))}, ${ago(card.expires)}`;
+    return card.blocked_kind === "claude" ? `open in Claude since ${since}` : `expired ${since}`;
   }
 
   /**
@@ -36,6 +40,85 @@
       return "";
     }
     return Object.hasOwn(MATCH_STAMPS, card.blocked_kind) ? card.blocked_kind : "blocked";
+  }
+
+  const MATCH_SHOWS = [...Object.entries(MATCH_KINDS).map(([kind, [word]]) => [kind, word]), ["expired", "Expired"], ["stale", "Stale"], ["greyed", "Greyed"]];
+  const SHOW_STATES = {stale: "stale", expired: "expired", claude: "expired", running: "greyed", queued: "greyed", blocked: "greyed"};
+  const showState = (card) => SHOW_STATES[greyStamp(card)] || "";
+  const shownCard = (card, hidden) => !hidden.has(card.kind) && !hidden.has(showState(card));
+  const hiddenWords = (count) => `${count} hidden`;
+  const allHiddenWords = (count) => `All ${count} ${count === 1 ? "card" : "cards"} hidden by the Show filter`;
+
+  /**
+   * @returns {Set<string>} the MATCH_SHOWS keys this browser's Show filter hides; any other stored value is ignored.
+   */
+  function matchHidden() {
+    const kept = stored(STORE.show, []);
+    return new Set(Array.isArray(kept) ? kept.filter((key) => MATCH_SHOWS.some(([one]) => one === key)) : []);
+  }
+
+  /**
+   * @param {Array<object>} cards the cards in stack order.
+   * @param {Set<string>} hidden the MATCH_SHOWS keys the Show filter hides.
+   * @returns {object} open: the undecided cards; shown: those of them the filter lets through; hidden: how many it
+   * hides. A decided card is never hidden: it stays on the release card and goes out with the release.
+   */
+  function showSplit(cards, hidden) {
+    const open = cards.filter((card) => !decisionOf(card));
+    const shown = open.filter((card) => shownCard(card, hidden));
+    return {open, shown, hidden: open.length - shown.length};
+  }
+
+  /**
+   * @param {Array<object>} open the undecided cards.
+   * @returns {object} per MATCH_SHOWS key how many of them it covers: each card counts once for its kind and once for
+   * its state (showState()), an acting card for no state.
+   */
+  function showCounts(open) {
+    return Object.fromEntries(MATCH_SHOWS.map(([key]) => [key, open.filter((card) => card.kind === key || showState(card) === key).length]));
+  }
+
+  /**
+   * @param {string} key a MATCH_SHOWS key: shown again when hidden, hidden when shown, remembered in this browser.
+   */
+  function toggleShow(key) {
+    const hidden = matchHidden();
+    if (hidden.has(key)) {
+      hidden.delete(key);
+    } else {
+      hidden.add(key);
+    }
+    keep(STORE.show, [...hidden]);
+    drawMatch(true);
+  }
+
+  function showAll() {
+    keep(STORE.show, []);
+    drawMatch(true);
+  }
+
+  /**
+   * @returns {Array<object>} the Show items of the context menu: per MATCH_SHOWS key a checkbox with the count of the
+   * undecided cards it covers, then Show all; none before the first fetch.
+   */
+  function matchShowItems() {
+    if (!matchView.cards) {
+      return [];
+    }
+    const counts = showCounts(showSplit(matchView.cards, new Set()).open);
+    return [...MATCH_SHOWS.map(([key, word]) => ({label: word, hint: String(counts[key]), checked: () => !matchHidden().has(key), run: () => toggleShow(key)})),
+      {label: "Show all", hint: "every kind and state", run: showAll}];
+  }
+
+  /**
+   * @param {Event} event the click on the "N hidden" button of the Match head: it opens the context menu under it and
+   * stops there, since menuClick() on the document would close the menu again at once.
+   */
+  function openShowMenu(event) {
+    const button = event.currentTarget;
+    const box = button.getBoundingClientRect();
+    event.stopPropagation();
+    ctxOpen(button, {x: box.left, y: box.bottom});
   }
   const MOVES = {ArrowRight: "accept", d: "accept", ArrowLeft: "reject", a: "reject", ArrowUp: "later", w: "later", s: "undo"};
   const matchView = {cards: null, order: [], marks: new Map(), opened: new Map(), decisions: new Map(), toggles: new Map(), history: [], release: null, releasing: false, front: null, drag: null, dom: null, sig: "", fetched: 0, loading: false, press: null, flying: false, openBefore: 0, epoch: 0, timer: null, turn: 0};
@@ -106,8 +189,8 @@
   }
 
   function refreshDial() {
-    const picked = dial({value: matchRefresh(), label: "Match refresh in seconds", name: "match-refresh-dial", min: MatchClock.MIN, max: MatchClock.MAX, page: MatchClock.PAGE, unit: "s",
-      spoken: (seconds) => `Match fetches the cards every ${seconds} seconds`, readonly: false});
+    const picked = dial({value: matchRefresh(), label: "Match refresh in seconds", name: "match-refresh-dial", min: MatchClock.MIN, max: MatchClock.MAX, page: MatchClock.PAGE, readout: Dial.countdown,
+      spoken: (seconds) => `Match fetches the cards every ${seconds} seconds`, readonly: false, live: null});
     const save = async () => {
       const refresh = picked.value();
       if (refresh === settings.match.refresh || await saveSettings({...settings, space: savedSpace(), match: {refresh}})) {
@@ -122,24 +205,11 @@
   }
 
   /**
-   * @returns {SVGElement} a fresh hourglass face; a newly inserted face starts its flip and its sand from the top, so
-   * matchCycle() swaps it in after every fetch.
+   * @returns {HTMLElement} the refresh hourglass of the empty deck: it flips after every fetch and its sand runs for
+   * the interval; a click fetches at once and restarts the cycle, a right-click opens the dial for the interval.
    */
-  function glassFace() {
-    return s("svg", {class: "match-glass-face", viewBox: "0 0 24 32", "aria-hidden": "true", focusable: "false"},
-      s("path", {class: "match-glass-frame", d: "M4 2h16M4 30h16M6 3c0 7 5 9 5 13s-5 6-5 13M18 3c0 7-5 9-5 13s5 6 5 13"}),
-      s("path", {class: "match-glass-top", d: "M8 7h8l-4 7z"}),
-      s("path", {class: "match-glass-bottom", d: "M7.5 28h9c-1.5-3.5-3.5-4.5-4.5-4.5s-3 1-4.5 4.5z"}),
-      [0, 1, 2].map((grain) => s("circle", {class: "match-grain", cx: "12", cy: "15", r: "0.8", "data-grain": String(grain)})));
-  }
-
-  /**
-   * @param {string} size "small" for the Match head, "large" for the empty deck.
-   * @returns {HTMLElement} the refresh hourglass: it flips after every fetch and its sand runs for the interval; a click
-   * fetches at once and restarts the cycle, a right-click opens the dial for the interval.
-   */
-  function matchGlass(size) {
-    const glass = h("button", {type: "button", class: `match-glass ${size}`, "aria-label": "Refresh", on: {click: () => fetchMatch(), contextmenu: (event) => {
+  function matchGlass() {
+    const glass = h("button", {type: "button", class: "match-glass large", "aria-label": "Refresh", on: {click: () => fetchMatch(), contextmenu: (event) => {
       event.preventDefault();
       refreshDial();
     }}}, glassFace());
@@ -212,12 +282,12 @@
 
   /**
    * @param {object} card a card as /api/match serves it now.
-   * @returns {object|undefined} its decision: a reject by card id whatever the card's hash, an accept only for the
-   * exact hash it was made on.
+   * @returns {object|undefined} its decision: a reject or drop by card id whatever the card's hash, an accept only for
+   * the exact hash it was made on.
    */
   function decisionOf(card) {
     const decision = matchView.decisions.get(card.id);
-    return decision && (decision.verdict === "reject" || decision.hash === card.hash) ? decision : undefined;
+    return decision && (decision.verdict !== "accept" || decision.hash === card.hash) ? decision : undefined;
   }
 
   /**
@@ -320,10 +390,7 @@
   }
 
   function closeComment(card) {
-    const open = card.querySelector(".match-comment");
-    if (open) {
-      open.remove();
-    }
+    vanish(card.querySelector(".match-comment:not([data-vanishing])"));
   }
 
   function commentField(card, data, row) {
@@ -458,7 +525,7 @@
       h("div", {class: "states"}, h("span", {class: "pill", "data-tone": kindTone}, icon(kindIcon), kindName), card.gate ? pill(`gate ${card.gate}`, card.gate === "pass" ? "ok" : "bad") : null,
         card.score && !metrics.length ? h("span", {class: "pill", "data-tone": "neutral"}, revealed(card.score)) : null, card.stale ? h("span", {class: "pill match-stale-pill", "data-tone": "bad"}, icon("bi-hourglass-split"), "stale") : null),
       placeRow(card),
-      h("h2", {class: "match-title"}, revealed(card.title)),
+      h("h2", {class: "match-title", title: card.title_full || null}, revealed(card.title)),
       card.stale ? h("p", {class: "match-stale"}, icon("bi-exclamation-triangle"), revealed(card.stale_reason)) : null);
   }
 
@@ -534,7 +601,7 @@
     body.addEventListener("scroll", () => openOnScroll(body, ".match-file"), {passive: true});
     const stamp = greyStamp(card);
     const article = h("article", {class: "card match-card front", "data-card": card.id, "data-kind": card.kind, "data-stale": String(Boolean(card.stale)), ...(card.blocked ? {"data-blocked": "", title: card.blocked} : {}), "aria-label": `${card.kind} card of ${card.agent || "an agent"}`},
-      matchHead(card), body, stamp ? h("span", {class: "match-stamp", "data-stamp": stamp, ...(stamp === "expired" ? {title: expiredWords(card), on: {mouseenter: (event) => {
+      matchHead(card), body, stamp ? h("span", {class: "match-stamp", "data-stamp": stamp, ...(lapsedCard(card) ? {title: expiredWords(card), on: {mouseenter: (event) => {
         event.currentTarget.title = expiredWords(card);
       }}} : {"aria-hidden": "true"})}, MATCH_STAMPS[stamp]) : null);
     article.style.setProperty("--agent-hue", String(Faces.hash(card.agent) % 360));
@@ -604,15 +671,39 @@
     });
   }
 
+  /**
+   * @param {object} card an expired card (droppable()): it leaves the deck at once with the vanish() fade, without a
+   * feedback sheet or a radio message, and the next release dismisses it in the hub for every browser; S puts it back.
+   */
+  function dropCard(card) {
+    logStep(card.id);
+    refusedIds.delete(card.ref);
+    matchView.decisions.set(card.id, {verdict: "drop", feedback: "", label: "", hash: card.hash, card, risk: false});
+    drawMatch(true);
+  }
+
   function confetti() {
-    return h("div", {class: "match-confetti", "aria-hidden": "true"}, Array.from({length: CONFETTI}, (_, index) => {
+    document.querySelectorAll(".confetti-rain").forEach((old) => vanish(old));
+    if (calm.matches) {
+      return;
+    }
+    const bar = document.getElementById("head");
+    const top = bar ? Math.max(0, Math.round(bar.getBoundingClientRect().bottom)) : 0;
+    const layer = h("div", {class: "confetti-rain", "aria-hidden": "true"}, Array.from({length: CONFETTI}, (_, index) => {
       const bit = h("i", {});
-      bit.style.setProperty("--x", `${(index * 37) % 100}%`);
+      bit.style.setProperty("--x", String(((index * 37) % 100) / 100));
       bit.style.setProperty("--c", String((index * 47) % 360));
-      bit.style.setProperty("--r", `${(index % 2 ? 1 : -1) * (180 + index * 23)}deg`);
-      bit.style.setProperty("--d", `${(index % 7) * 0.06}s`);
+      bit.style.setProperty("--r", `${(index % 2 ? 1 : -1) * 180 * (1 + (index % 3))}deg`);
+      bit.style.setProperty("--d", `${(index % 7) * 0.1}s`);
+      bit.style.setProperty("--t", `${1.4 + (index % 5) * 0.25}s`);
       return bit;
     }));
+    layer.style.setProperty("--top", `${top}px`);
+    layer.style.setProperty("--fall", `${Math.max(0, window.innerHeight - top)}px`);
+    const end = () => vanish(layer);
+    layer.addEventListener("animationend", (event) => event.target === layer && end());
+    window.setTimeout(end, CONFETTI_GONE);
+    document.body.append(layer);
   }
 
   /**
@@ -652,6 +743,10 @@
 
   function rejectCard(card) {
     if (refusedHere(card, "Reject")) {
+      return;
+    }
+    if (droppable(card)) {
+      dropCard(card);
       return;
     }
     if (pickOnly(card) && !lapsedCard(card)) {
@@ -767,11 +862,14 @@
    * @param {object} card a decided match card.
    * @param {object} decision its {verdict, feedback, label}.
    * @returns {object} the inbox entry the release signs: an approval of the review or the ask, the picked option of a
-   * decision, the operator row bound to the payload hash the card showed, or a rejection carrying the feedback as a
-   * radio call to the card's agent.
+   * decision, the operator row bound to the payload hash the card showed, a rejection carrying the feedback as a
+   * radio call to the card's agent, or for a drop the hub-wide dismissal of the expired request, which tells no agent.
    */
   function matchEntry(card, decision) {
     const kind = card.entry || (card.kind === "commit" ? "review" : "operator");
+    if (decision.verdict === "drop") {
+      return {kind: "dismiss", target: kind, id: card.ref, scope: "expired"};
+    }
     const entry = {kind, id: card.ref, verb: decision.verdict === "accept" ? "approve" : "reject", label: decision.verdict === "accept" ? decision.label || "" : "", sha256: kind === "operator" ? card.sha256 || "" : ""};
     if (card.kind === "decision" && Answers.pair(card) && !lapsedCard(card)) {
       return {...entry, verb: "approve", label: decision.label};
@@ -801,7 +899,7 @@
    * @param {object} card a card on the release card.
    * @param {object} decision its decision.
    * @returns {string} why the release cannot carry the row now, "" when it can: the hub refused it last time, it was
-   * accepted and expired since, or it is blocked; a reject of an expired card still goes by radio.
+   * accepted and expired since, or it is blocked; a reject or drop of a lapsed card still releases.
    */
   function unreleasable(card, decision) {
     if (card.withdrawn) {
@@ -815,15 +913,16 @@
     if (lapsed && decision.verdict === "accept") {
       return `${expiredWords(card)}: can no longer be granted; reject or drop it`;
     }
-    return card.blocked && !(lapsed && decision.verdict === "reject") ? `not possible now: ${card.blocked}; drop it or send it back to the stack` : "";
+    return card.blocked && !(lapsed && decision.verdict !== "accept") ? `not possible now: ${card.blocked}; drop it or send it back to the stack` : "";
   }
 
   /**
    * @param {Array<Array>} picked [card, decision] pairs from decided().
-   * @returns {object} lone: risk-accepted red-gate commits, each signed on its own first; rest: every other decision
-   * signed together; gone: withdrawn rejects, sent by radio only; held: red-gate commits whose risk is not accepted,
-   * which block the release until each is risk-accepted or sent back to the stack; bad: rows unreleasable() names,
-   * which block the release until each is changed or dropped.
+   * @returns {object} lone: risk-accepted red-gate commits, each signed on its own first; rest: every other accept and
+   * reject, signed together with dismissals: the dropped expired cards, dismissed in the hub without a radio message;
+   * gone: withdrawn rejects, sent by radio only, a withdrawn drop needing nothing; held: red-gate commits whose risk is
+   * not accepted, which block the release until each is risk-accepted or sent back to the stack; bad: rows
+   * unreleasable() names, which block the release until each is changed or dropped.
    */
   function releasePlan(picked) {
     const signed = picked.filter(([card]) => !card.withdrawn);
@@ -831,8 +930,9 @@
     const good = signed.filter((pair) => !bad.includes(pair));
     return {
       lone: good.filter(([card, decision]) => risky(card, decision) && decision.risk),
-      rest: good.filter(([card, decision]) => !risky(card, decision)),
-      gone: picked.filter(([card]) => card.withdrawn),
+      rest: good.filter(([card, decision]) => !risky(card, decision) && decision.verdict !== "drop"),
+      dismissals: good.filter(([, decision]) => decision.verdict === "drop"),
+      gone: picked.filter(([card, decision]) => card.withdrawn && decision.verdict !== "drop"),
       held: good.filter(([card, decision]) => risky(card, decision) && !decision.risk),
       bad,
     };
@@ -868,11 +968,12 @@
       toast("Release: not possible", plan.bad.map(([card, decision]) => `${card.title}: ${unreleasable(card, decision)}`), false);
       return;
     }
-    if (matchView.releasing || plan.held.length || !(plan.lone.length + plan.rest.length + plan.gone.length)) {
+    const together = [...plan.rest, ...plan.dismissals];
+    if (matchView.releasing || plan.held.length || !(plan.lone.length + together.length + plan.gone.length)) {
       return;
     }
     matchView.releasing = true;
-    const names = new Map([...plan.lone, ...plan.rest].map(([card]) => [card.ref, card.title]));
+    const names = new Map([...plan.lone, ...together].map(([card]) => [card.ref, card.title]));
     const done = [];
     try {
       for (const pair of plan.lone) {
@@ -881,10 +982,10 @@
         }
         done.push(pair);
       }
-      if (plan.rest.length && !(await submit(plan.rest.map((pair) => matchEntry(...pair)), `Release: ${decisionWords(plan.rest.length)}`, names))) {
+      if (together.length && !(await submit(together.map((pair) => matchEntry(...pair)), `Release: ${decisionWords(together.length)}`, names))) {
         return;
       }
-      done.push(...plan.rest, ...plan.gone);
+      done.push(...together, ...plan.gone);
     } finally {
       matchView.releasing = false;
       if (done.length) {
@@ -965,8 +1066,8 @@
   /**
    * @param {object} card a card on the release card, not withdrawn.
    * @param {object} decision its decision.
-   * @returns {HTMLElement} its verdict pill as a menu: each option of a decision card, Accept, Reject and Back to the
-   * stack, an impossible entry greyed with its reason.
+   * @returns {HTMLElement} its verdict pill as a menu: each option of a decision card, Accept, Reject (Drop for an
+   * expired card) and Back to the stack, an impossible entry greyed with its reason.
    */
   function verdictMenu(card, decision) {
     const [word, tone, mark] = MATCH_VERDICTS[decision.verdict];
@@ -976,7 +1077,7 @@
     const rejectWhy = card.blocked && !lapsed ? `not possible now: ${card.blocked}` : pickOnly(card) && !lapsed ? "a choice is answered with one of its options" : "";
     return h("details", {class: "menu match-verdict-menu"},
       h("summary", {class: "pill match-verdict", "data-tone": tone, ...named(`${word}: change`, "Change this decision")}, icon(mark), decision.label ? revealed(`${word}: ${shownPick(decision.label)}`) : word, caret()),
-      h("div", {class: "menu-box end", role: "group", "aria-label": "Change the decision"}, options, accept, menuEntry("Reject …", "bi-x-lg", rejectWhy, () => rejectCard(card)), menuEntry("Back to the stack", "bi-stack", "", () => backToStack(card))));
+      h("div", {class: "menu-box end", role: "group", "aria-label": "Change the decision"}, options, accept, droppable(card) ? menuEntry("Drop (expired)", "bi-trash", "", () => dropCard(card)) : menuEntry("Reject …", "bi-x-lg", rejectWhy, () => rejectCard(card)), menuEntry("Back to the stack", "bi-stack", "", () => backToStack(card))));
   }
 
   function overviewRow(card, decision) {
@@ -986,8 +1087,9 @@
     const risk = risky(card, decision);
     const held = risk && !decision.risk;
     const bad = unreleasable(card, decision);
-    const note = bad ? `Cannot be released: ${bad}.` : card.withdrawn ? "Card withdrawn: the feedback goes to its agent by radio call at the release." : decision.verdict === "reject" && decision.hash !== card.hash ? "Card changed since your reject." : held ? "Accept its risk or send it back to the stack: the release waits until you do." : "";
-    const verdict = card.withdrawn ? h("span", {class: "pill match-verdict", "data-tone": tone}, icon(mark), word) : verdictMenu(card, decision);
+    const dropped = decision.verdict === "drop";
+    const note = bad ? `Cannot be released: ${bad}.` : card.withdrawn ? "Card withdrawn: the feedback goes to its agent by radio call at the release." : dropped ? "Dismissed in the hub for every browser at the release; its agent gets no message." : decision.verdict === "reject" && decision.hash !== card.hash ? "Card changed since your reject." : held ? "Accept its risk or send it back to the stack: the release waits until you do." : "";
+    const verdict = card.withdrawn || dropped ? h("span", {class: "pill match-verdict", "data-tone": tone}, icon(mark), word) : verdictMenu(card, decision);
     return h("li", {class: "match-decision", "data-card": card.id, "data-verdict": decision.verdict, "data-withdrawn": String(Boolean(card.withdrawn)), "data-held": String(held), "data-bad": String(Boolean(bad))},
       h("div", {class: "row"}, agentFace(card.agent || "-", false), h("span", {class: "pill", "data-tone": kindTone}, icon(kindIcon), kindName), h("strong", {class: "match-decision-title"}, revealed(card.title)), h("span", {class: "spacer"}),
         risk && !bad ? riskButton(decision) : verdict, decision.verdict === "reject" && !card.withdrawn ? iconBtn("bi-pencil", "Edit feedback", "btn small ghost match-edit", () => rejectCard(card)) : null, back),
@@ -996,39 +1098,56 @@
   }
 
   /**
+   * @param {string} cls the button's classes after match-act: its tone and its role.
+   * @param {string} iconName the icon on its round face.
+   * @param {string} word the label under the face.
+   * @param {string} hint its tooltip.
+   * @param {boolean} disabled whether it is greyed and takes no click.
+   * @param {Function} run what a click runs.
+   * @returns {HTMLElement} one button of the deck's action row; every card's row holds three of the same width.
+   */
+  function matchAct(cls, iconName, word, hint, disabled, run) {
+    return h("button", {type: "button", class: `match-act ${cls}`, disabled, ...named(word, hint), on: {click: run}},
+      h("span", {class: "match-act-face", "aria-hidden": "true"}, icon(iconName)), h("span", {class: "match-act-label"}, word));
+  }
+
+  /**
    * @param {Array<object>} cards the cards in stack order.
    * @param {number} open how many cards wait undecided behind it.
-   * @returns {HTMLElement} the release card: front card of the deck with every decision, its own moves (D or a
-   * right swipe releases, A, W or a left swipe goes on to the next card) mirrored in matchView.release for the keys.
+   * @returns {object} card: the release card, front card of the deck with every decision; actions: its row of the
+   * deck, Cancel on the left, Skip, Release on the right; its moves (D or a right swipe releases, A, W or a left
+   * swipe skips to the next card) mirrored in matchView.release for the keys.
    */
   function releaseCard(cards, open) {
     const picked = decided(cards);
     const plan = releasePlan(picked);
     const held = plan.held.length;
     const bad = plan.bad.length;
-    const count = held || bad ? 0 : plan.lone.length + plan.rest.length + plan.gone.length;
+    const count = held || bad ? 0 : plan.lone.length + plan.rest.length + plan.dismissals.length + plan.gone.length;
     const badWhy = plan.bad.map(([card, decision]) => `${card.title}: ${unreleasable(card, decision)}`).join("\n");
+    const heldWhy = `Release waits: ${held === 1 ? "one red-gate commit waits" : `${held} red-gate commits wait`} for your risk accept or its way back to the stack.\n${plan.held.map(([card]) => card.title).join("\n")}`;
     const signatures = plan.lone.length ? `${plan.lone.length === 1 ? "The risk-accepted commit gets its own" : `Each of the ${plan.lone.length} risk-accepted commits gets its own`} passkey signature first, then one signature releases the rest` : "One passkey signature releases every decision";
     const run = () => releaseMatch(cards);
-    const back = open ? () => {
+    const skip = open ? () => {
       logStep(RELEASE);
       toBack(RELEASE);
       drawMatch(true);
     } : null;
-    const release = held ? h("p", {class: "muted match-release-held"}, icon("bi-shield-exclamation"), `${held === 1 ? "One red-gate commit waits" : `${held} red-gate commits wait`} for your risk accept or its way back to the stack.`)
-      : h("button", {type: "button", class: "btn primary match-release", disabled: !(count || bad), "aria-disabled": String(Boolean(bad)), title: revealed(bad ? `Release waits: drop or change ${bad === 1 ? "this row" : `these ${bad} rows`} first.\n${badWhy}` : count ? `${signatures}; after each signature ${undoWords()}.` : "Nothing to release yet."), on: {click: run}}, icon("bi-key"), `Release ${decisionWords(count || plan.lone.length + plan.rest.length + plan.gone.length + bad)}`);
-    const cancel = h("button", {type: "button", class: "btn danger match-drop", disabled: !bad, title: revealed(bad ? `Cancel: drop the ${bad === 1 ? "row" : `${bad} rows`} that cannot be released, and their cards leave the deck.\n${badWhy}` : "Cancel: no row is blocked, nothing to drop."), on: {click: () => dropUnreleasable(plan.bad)}}, icon("bi-x-lg"), bad ? `Cancel ${bad}` : "Cancel");
+    const releaseHint = held ? heldWhy : bad ? `Release waits: drop or change ${bad === 1 ? "this row" : `these ${bad} rows`} first.\n${badWhy}` : count ? `Release (D, right arrow, swipe right): ${signatures}; after each signature ${undoWords()}.` : "Nothing to release yet.";
+    const release = matchAct("match-release", "bi-key", "Release", revealed(releaseHint), !(count || bad), run);
+    release.setAttribute("aria-disabled", String(Boolean(bad)));
+    const skipHint = open ? `Skip: on to the next card, the release card to the back (A, W, left or up arrow, swipe left); S undoes the last step` : "Skip: no other card waits";
+    const cancel = matchAct("match-drop", "bi-x-lg", "Cancel", revealed(bad ? `Cancel: drop the ${bad === 1 ? "row" : `${bad} rows`} that cannot be released, and their cards leave the deck.\n${badWhy}` : "Cancel: no row is blocked, nothing to drop."), !bad, () => dropUnreleasable(plan.bad));
     const article = h("article", {class: "card match-card front match-release-card match-overview", "data-card": "release", "aria-label": "Release card: the decisions"},
       h("header", {class: "match-head"}, widenToggle(), h("h2", {class: "match-title"}, icon("bi-key"), "Release"),
-        h("p", {class: "muted match-release-hint"}, [count ? "D, → or a right swipe releases" : "", open ? "A, W, ← or a left swipe goes on to the next card" : "", "S undoes the last step."].filter(Boolean).join("; "))),
+        h("p", {class: "muted match-release-hint"}, [count ? "D, → or a right swipe releases" : "", open ? "A, W, ← or a left swipe skips to the next card" : "", "S undoes the last step."].filter(Boolean).join("; "))),
       h("div", {class: "match-body"},
-        h("p", {class: "muted"}, "Nothing has run yet. Accepted commits get the operator's signature for their exact tree, accepted commands run once as jobs under Waits on Operator, accepted asks are granted, every picked option and every rejection goes to its agent by radio call."),
-        picked.length ? h("ol", {class: "match-decisions"}, picked.map(([card, decision]) => overviewRow(card, decision))) : h("p", {class: "muted"}, "No decision yet."),
-        h("div", {class: "actions"}, cancel, back ? iconBtn("bi-stack", `Back to the stack (${open})`, "btn ghost match-back", back) : null, h("span", {class: "spacer"}), release)));
+        h("p", {class: "muted"}, "Nothing has run yet. Accepted commits get the operator's signature for their exact tree, accepted commands run once as jobs under Waits on Operator, accepted asks are granted, every picked option and every rejection goes to its agent by radio call, every dropped expired card is dismissed in the hub for every browser without a message."),
+        picked.length ? h("ol", {class: "match-decisions"}, picked.map(([card, decision]) => overviewRow(card, decision))) : h("p", {class: "muted"}, "No decision yet.")));
     paint(article, "release");
-    matchView.release = {accept: count || bad ? run : null, reject: back, later: back};
+    matchView.release = {accept: count || bad ? run : null, reject: skip, later: skip};
     draggable(article, matchView.release, () => false);
-    return article;
+    return {card: article, actions: h("div", {class: "match-actions"}, cancel, matchAct("match-skip", "bi-arrow-up", "Skip", skipHint, !skip, skip), release)};
   }
 
   /**
@@ -1055,13 +1174,14 @@
       keep(STORE.peeks, !peeksShown());
       drawMatch(true);
     }}}, icon("bi-collection"));
-    const glass = matchGlass("small");
-    matchView.dom = {stack, count, decisions, tally, peeks, glass};
+    const hiddenCount = h("span", {class: "match-hidden-count"});
+    const hidden = h("button", {type: "button", class: "btn small soft match-hidden", hidden: true, "aria-haspopup": "menu", ...named("Hidden cards", "Hidden cards: the Show filter hides them; a click opens the menu to show them again"), on: {click: openShowMenu}}, icon("bi-eye-slash"), hiddenCount);
+    matchView.dom = {stack, count, decisions, tally, peeks, hidden, hiddenCount};
     matchView.sig = "";
     if (matchView.drag) {
       matchView.drag.end();
     }
-    const bar = boxHead("Match", "task-toolbar", h("strong", {class: "box-title"}, icon("bi-stack"), "Match"), glass, count, h("span", {class: "spacer"}), decisions, peeks,
+    const bar = boxHead("Match", "task-toolbar", h("strong", {class: "box-title"}, icon("bi-stack"), "Match"), count, hidden, h("span", {class: "spacer"}), decisions, peeks,
       iconBtn("bi-list-check", "Tasks", "btn small soft", () => go("tasks", null), "Tasks: back to the task list"));
     fetchMatch();
     return h("div", {class: "graph tasks match", "data-panel": "tasks/match"}, bar, stack);
@@ -1079,7 +1199,7 @@
     const host = h("div", {class: "match-home"}, matchScreen());
     host.querySelectorAll("[data-panel]").forEach((node) => node.removeAttribute("data-panel"));
     host.querySelector(".task-toolbar").remove();
-    homeView.heads.set("tasks/match", h("div", {role: "toolbar", "aria-label": "Match"}, matchView.dom.glass, matchView.dom.count, matchView.dom.decisions, matchView.dom.peeks));
+    homeView.heads.set("tasks/match", h("div", {role: "toolbar", "aria-label": "Match"}, matchView.dom.count, matchView.dom.hidden, matchView.dom.decisions, matchView.dom.peeks));
     homeView.hosts.set("tasks/match", host);
     window.setTimeout(() => drawMatch(true), 0);
     return host;
@@ -1094,21 +1214,24 @@
       fetchMatch();
     }
     if (matchView.cards === null) {
-      dom.stack.replaceChildren(h("p", {class: "muted"}, "Loading cards …"));
+      fadeSwap(dom.stack, [h("p", {class: "muted"}, "Loading cards …")]);
       return;
     }
     const cards = matchOrder(matchView.cards);
     const byId = new Map(cards.map((card) => [card.id, card]));
     [...matchView.decisions].forEach(([id, decision]) => {
       const card = byId.get(id);
-      if (decision.verdict === "accept" && (!card || card.stale || card.hash !== decision.hash)) {
+      const lapsedAway = decision.verdict === "drop" && !card;
+      if (lapsedAway || (decision.verdict === "accept" && (!card || card.stale || card.hash !== decision.hash))) {
         matchView.decisions.delete(id);
         if (card && card.hash !== decision.hash) {
           toast(`Accept dropped: ${card.title}`, ["The card changed since your accept: decide it again."], false);
         }
       }
     });
-    const open = cards.filter((card) => !decisionOf(card));
+    const filter = matchHidden();
+    const split = showSplit(cards, filter);
+    const open = split.open;
     const waiting = open.filter((card) => !card.stale && !card.blocked);
     if (!matchView.decisions.size) {
       matchView.order = matchView.order.filter((id) => id !== RELEASE);
@@ -1116,64 +1239,85 @@
       matchView.order.push(RELEASE);
     }
     const cleared = matchView.openBefore > 0 && !waiting.length && matchView.decisions.size > 0;
-    matchView.openBefore = waiting.length;
     if (cleared) {
       toFront(RELEASE);
     }
-    const byOpen = new Map(open.map((card) => [card.id, card]));
+    const byOpen = new Map(split.shown.map((card) => [card.id, card]));
     const rotation = matchView.order.filter((id) => id === RELEASE || byOpen.has(id));
     const releasing = rotation[0] === RELEASE;
-    const sig = JSON.stringify([cards.map((card) => [card.id, card.hash, card.live_hash, card.stale, card.born, card.gate, card.files ? card.files.length : null, card.merge ? [card.merge.kind, card.merge.target, card.merge.error] : null]), [...matchView.decisions].map(([id, decision]) => [id, decision.verdict, decision.feedback, decision.label, decision.hash, decision.risk]), rotation, Math.floor(state.now / DAY)]);
+    const sig = JSON.stringify([cards.map((card) => [card.id, card.hash, card.live_hash, card.stale, card.born, card.gate, card.files ? card.files.length : null, card.merge ? [card.merge.kind, card.merge.target, card.merge.error] : null]), [...matchView.decisions].map(([id, decision]) => [id, decision.verdict, decision.feedback, decision.label, decision.hash, decision.risk]), rotation, [...filter], Math.floor(state.now / DAY)]);
     if (!force && sig === matchView.sig && !cleared) {
+      matchView.openBefore = waiting.length;
       return;
     }
+    const before = dom.stack.querySelector(".match-card.front");
+    if (before && !before.dataset.fly && before.dataset.card !== (rotation[0] || null)) {
+      Object.assign(matchView, {front: null, release: null});
+      vanish(before, () => drawMatch(true));
+      return;
+    }
+    matchView.openBefore = waiting.length;
     matchView.sig = sig;
-    dom.count.textContent = open.length === 1 ? "1 card waits" : `${open.length} cards wait`;
+    dom.count.textContent = split.shown.length === 1 ? "1 card waits" : `${split.shown.length} cards wait`;
+    dom.hidden.hidden = !split.hidden;
+    dom.hiddenCount.textContent = hiddenWords(split.hidden);
     dom.tally.textContent = String(matchView.decisions.size);
     dom.peeks.setAttribute("aria-pressed", String(peeksShown()));
     dom.decisions.hidden = !matchView.decisions.size || releasing;
     matchView.release = null;
+    if (!rotation.length && split.hidden) {
+      matchView.front = null;
+      const empty = emptyState(allHiddenWords(split.hidden), "The Show filter of the right-click menu hides them; Show all brings every card back.");
+      empty.classList.add("match-empty", "match-all-hidden");
+      empty.querySelector(".empty-mark").replaceWith(h("span", {class: "match-hidden-mark", "aria-hidden": "true", title: allHiddenWords(split.hidden)}, icon("bi-eye-slash")));
+      empty.append(h("button", {type: "button", class: "btn primary match-show-all", ...named("Show all", "Show all: every card kind and state back in the deck"), on: {click: showAll}}, icon("bi-eye"), "Show all"));
+      fadeSwap(dom.stack, [h("div", {class: "match-deck"}, empty)]);
+      return;
+    }
     if (!rotation.length) {
       matchView.front = null;
       const empty = emptyState("No card waits", "Nothing waits on the operator.");
-      empty.querySelector(".empty-mark").replaceWith(matchGlass("large"));
-      dom.stack.replaceChildren(empty);
+      empty.classList.add("match-empty");
+      empty.querySelector(".empty-mark").replaceWith(matchGlass());
+      fadeSwap(dom.stack, [h("div", {class: "match-deck"}, empty)]);
       return;
     }
     const behind = rotation.slice(1).filter((id) => id !== RELEASE).map((id) => byOpen.get(id));
     dom.stack.dataset.wide = String(matchWide());
-    const before = dom.stack.querySelector(".match-card.front");
     const peekRow = (rest) => (rest.length && peeksShown() ? h("div", {class: "match-peeks", role: "group", "aria-label": `${rest.length} more cards`}, rest.map(peekTab)) : null);
     if (releasing) {
       matchView.front = null;
       const scrolledRelease = before && before.dataset.card === "release" ? before.querySelector(".match-body").scrollTop : 0;
-      const shown = releaseCard(cards, behind.length);
+      const {card: shown, actions} = releaseCard(cards, behind.length);
       shown.dataset.fresh = String(!before || before.dataset.card !== "release");
       if (cleared) {
-        shown.prepend(confetti());
+        confetti();
       }
       const peeksBelow = peekRow(behind);
-      dom.stack.replaceChildren(h("div", {class: "match-deck"}, layersOf(behind), shown), ...(peeksBelow ? [peeksBelow] : []));
-      shown.querySelector(".match-body").scrollTop = scrolledRelease;
+      fadeSwap(dom.stack, [h("div", {class: "match-deck"}, layersOf(behind), shown), actions, ...(peeksBelow ? [peeksBelow] : [])], (root, swap) => {
+        swap();
+        shown.querySelector(".match-body").scrollTop = scrolledRelease;
+      });
       return;
     }
     const front = byOpen.get(rotation[0]);
     const rest = behind;
     matchView.front = front;
-    const act = (cls, iconName, word, hint, disabled, run) => h("button", {type: "button", class: `match-act ${cls}`, disabled, ...named(word, hint), on: {click: run}},
-      h("span", {class: "match-act-face", "aria-hidden": "true"}, icon(iconName)), h("span", {class: "match-act-label"}, word));
     const hint = front.blocked ? `Accept: not possible now. ${front.blocked}` : front.stale ? `Accept: refused while the card is stale (${front.stale_reason})` : front.kind === "rule" ? "Accept: opens its row, where the passkey signs exactly this rule" : front.kind === "decision" ? (needsPick(front) ? "Accept: pick one of its options" : `Accept: ${shownPick(acceptLabel(front))} (D, right arrow, swipe right)`) : "Accept (D, right arrow, swipe right)";
-    const accept = act("match-accept", "bi-check-lg", "Accept", revealed(hint), Boolean(front.blocked || front.stale) || needsPick(front), () => acceptCard(front));
+    const accept = matchAct("match-accept", "bi-check-lg", "Accept", revealed(hint), Boolean(front.blocked || front.stale) || needsPick(front), () => acceptCard(front));
     const declining = front.kind === "decision" && Answers.pair(front) ? `Reject: ${shownPick(Answers.pair(front).no)}, with an optional comment on what to do instead (A, left arrow, swipe left)` : "Reject with feedback (A, left arrow, swipe left)";
     const lapsed = lapsedCard(front);
-    const rejectHint = lapsed ? "Reject: it expired before you decided, its agent gets your feedback by radio (A, left arrow, swipe left)" : front.blocked ? `Reject: not possible now. ${front.blocked}` : pickOnly(front) ? "Reject: a choice is answered with one of its options" : declining;
-    const reject = act("match-reject", "bi-x-lg", "Reject", revealed(rejectHint), !lapsed && (Boolean(front.blocked) || pickOnly(front)), () => rejectCard(front));
-    const later = act("match-later", "bi-arrow-up", "Later", "Later: on to the next card, this one to the back (W, up arrow, swipe up); S undoes the last step", rotation.length < 2, () => laterCard(front));
+    const lapseHint = front.blocked_kind === "claude" ? "Reject: its dialog is open in Claude, answer it there; a reject here sends your feedback to its agent by radio (A, left arrow, swipe left)" : "Reject: it expired before you decided; it leaves the deck at once, without feedback or a message, and the release dismisses it for every browser (A, left arrow, swipe left; S undoes)";
+    const rejectHint = lapsed ? lapseHint : front.blocked ? `Reject: not possible now. ${front.blocked}` : pickOnly(front) ? "Reject: a choice is answered with one of its options" : declining;
+    const reject = matchAct("match-reject", "bi-x-lg", "Reject", revealed(rejectHint), !lapsed && (Boolean(front.blocked) || pickOnly(front)), () => rejectCard(front));
+    const later = matchAct("match-later", "bi-arrow-up", "Later", "Later: on to the next card, this one to the back (W, up arrow, swipe up); S undoes the last step", rotation.length < 2, () => laterCard(front));
     const peeks = peekRow(rest);
     const scrolled = before && before.dataset.card === front.id ? before.querySelector(".match-body").scrollTop : 0;
     const shown = matchCard(front);
     shown.dataset.fresh = String(!before || before.dataset.card !== front.id);
     draggable(shown, {accept: lapsed ? null : () => acceptCard(front), reject: () => rejectCard(front), later: () => laterCard(front)}, (swiped) => (swiped === "accept" && flies(front)) || swiped === "later");
-    keepTyping(dom.stack, () => dom.stack.replaceChildren(h("div", {class: "match-deck"}, layersOf(rest), shown), h("div", {class: "match-actions"}, reject, later, accept), ...(peeks ? [peeks] : [])));
-    shown.querySelector(".match-body").scrollTop = scrolled;
+    fadeSwap(dom.stack, [h("div", {class: "match-deck"}, layersOf(rest), shown), h("div", {class: "match-actions"}, reject, later, accept), ...(peeks ? [peeks] : [])], (root, swap) => {
+      keepTyping(root, swap);
+      shown.querySelector(".match-body").scrollTop = scrolled;
+    });
   }
