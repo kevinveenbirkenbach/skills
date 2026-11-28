@@ -103,3 +103,5 @@ skill defines the format.
 - [097 - Match Show Filter in the Right-Click Menu](097-match-show-filter.md)
 - [098 - Docked Speech Bubbles with Avatar and Close](098-docked-bubble-face-and-close.md)
 - [099 - Match Card Headline Capped at 120 Characters](099-match-headline-cap.md)
+- [100 - MEDUSA Regex False Positives Waived and Reported Upstream](100-medusa-regex-waiver.md)
+- [101 - Home Tile Flatten Skips the Match Card Pile](101-home-flatten-skips-pile.md)
