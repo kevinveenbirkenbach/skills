@@ -841,6 +841,12 @@
       }
       acts[swiped]();
     };
+    article.addEventListener("dragstart", (event) => {
+      // The swipe moves the card under the pressed point, so the browser would drag the link that lands there.
+      if (matchView.drag) {
+        event.preventDefault();
+      }
+    });
     head.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || matchView.drag || (event.target instanceof Element && event.target.closest("button, a, input, textarea, select"))) {
         return;

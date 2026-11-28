@@ -84,14 +84,14 @@ PROBE = """(async () => {@HELPERS@
   const takesPointer = Boolean(hit && hit.closest("button.bubble-skip") === skip);
   skip.focus();
   const focused = document.activeElement === skip;
-  (hit && hit.closest("button.bubble-skip") ? hit : skip).click();
+  (hit && hit.closest("button.bubble-skip") ? hit : skip).dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, view: window}));
   const gone = Boolean(await until(() => !layer.querySelector(`.speech-bubble[data-who="${CSS.escape(dockedWho)}"]`), 3000));
+  const kept = Boolean(of(anchoredWho));
   poll();
   await sleep(2500);
   poll();
   await sleep(1500);
   const back = Boolean(of(dockedWho));
-  const kept = Boolean(of(anchoredWho));
   all("[data-e2e-pin]").forEach((node) => node.remove());
   return {dockedWho, anchoredWho, anchored, dock, states, takesPointer, focused, gone, back, kept};
 })()"""

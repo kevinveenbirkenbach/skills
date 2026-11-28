@@ -272,14 +272,14 @@ VIEW = """(async () => {@HELPERS@@READ@
     limits: lines().length, target: target().length, unknown: all("#main svg.res-chart[data-chart=hardware] rect.res-mark.unknown").length,
   });
   const before = count();
-  const view = menu("#main .res-view-menu");
-  const entries = all("label.res-pick", view).map((label) => [text(label), label.getAttribute("title")]);
   const chip = document.querySelector('#main .res-hardware .legend-chip[data-chip="host:CPU"]');
   chip.click();
   await sleep(400);
   const chipped = all('#main svg.res-chart[data-chart=hardware] path.res-line[data-series="CPU"]').length;
   document.querySelector('#main .res-hardware .legend-chip[data-chip="host:CPU"]').click();
   await sleep(400);
+  const view = menu("#main .res-view-menu");
+  const entries = all("label.res-pick", view).map((label) => [text(label), label.getAttribute("title")]);
   for (const key of ["legend", "queue", "waits", "limits"]) {
     await tick(`#main .res-view-menu input[data-show="${key}"]`, false);
   }
@@ -438,7 +438,7 @@ class TestResourceLimits(HubCase):
         steps.append({**self.step(1366, 768, "kept", KEPT), "shot": None})
         data = self.drive(steps, None, init=w4.GUARD)["results"]
         balanced = PROFILES["balanced"]
-        for (width, _), found in zip(base.WIDTHS, data, strict=True):
+        for (width, _), found in zip(base.WIDTHS, data[:-1], strict=True):
             with self.subTest(width=width):
                 self.assertNotIn("error", found, found)
                 self.assertEqual([entry[0] for entry in found["entries"]], ["lower", "upper", "STOP", "MAYDAY", "target"])

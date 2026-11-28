@@ -151,10 +151,24 @@ BEAT = """(async () => {@HELPERS@
     }
     return {transforms: [...seen.transform].filter((value) => value !== "none").length, shadows: seen.shadow.size};
   };
+  const fadeRuns = () => document.getAnimations().some((running) => String((running.effect && running.effect.pseudoElement) || "").startsWith("::view-transition"));
+  const through = async () => {
+    const field = document.querySelector("#main .task-bar input[type=search]");
+    const spot = field.getBoundingClientRect();
+    field.value = "work/delta";
+    field.dispatchEvent(new Event("input", {bubbles: true}));
+    const began = performance.now();
+    while (!fadeRuns() && performance.now() - began < 2000) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    const active = fadeRuns();
+    const at = document.elementFromPoint(spot.left + spot.width / 2, spot.top + spot.height / 2);
+    return {active, hit: at === field};
+  };
   const tasks = [...@WORKING@, ...@STILL@];
   const marked = Object.fromEntries(tasks.map((task) => [task, card(task) ? card(task).classList.contains("is-working") : null]));
   const animation = Object.fromEntries(tasks.map((task) => [task, card(task) ? getComputedStyle(card(task)).animationName : null]));
-  return {marked, animation, beat: await sample(card("work/delta")), still: await sample(card("work/echo")), frames: {beat: keyframes("lub-dub"), glow: keyframes("lub-dub-glow")}};
+  return {marked, animation, beat: await sample(card("work/delta")), still: await sample(card("work/echo")), frames: {beat: keyframes("lub-dub"), glow: keyframes("lub-dub-glow")}, through: await through()};
 })()"""
 
 
@@ -243,6 +257,8 @@ class TestHubHeartbeat(HubCase):
                 self.assertEqual(found["animation"], {**dict.fromkeys(WORKING, name), **dict.fromkeys(STILL, "none")}, found)
                 self.assertGreater(found["beat"]["shadows"], 1, found)
                 self.assertEqual(found["still"], {"transforms": 0, "shadows": 1}, found)
+        self.assertEqual(moving["through"], {"active": True, "hit": True}, moving)
+        self.assertEqual(calm["through"], {"active": False, "hit": True}, calm)
         self.assertGreater(moving["beat"]["transforms"], 0, moving)
         self.assertEqual(calm["beat"]["transforms"], 0, calm)
         self.assertEqual(moving["frames"], {"beat": ["box-shadow", "transform"], "glow": ["box-shadow"]}, moving)

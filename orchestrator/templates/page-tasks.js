@@ -185,13 +185,13 @@
    * @param label - the summary's name.
    * @param hint - the summary's tooltip.
    * @param name - the summary's icon.
-   * @param end - whether the box opens to the left, for a menu near the right edge.
    * @param parts - the box's sections.
-   * @returns {HTMLElement} a details.menu of the Tasks toolbar.
+   * @returns {HTMLElement} a details.menu of the Tasks toolbar; its box opens to the left, because the search field
+   * pushes both menus to the right edge of the one-row toolbar.
    */
-  function taskMenu(id, label, hint, name, end, parts) {
+  function taskMenu(id, label, hint, name, parts) {
     return h("details", {class: "menu task-menu", id}, h("summary", named(label, hint), icon(name), h("span", {class: "tool-word"}, label), caret()),
-      h("div", {class: end ? "menu-box end" : "menu-box"}, parts));
+      h("div", {class: "menu-box end"}, parts));
   }
 
   const taskSection = (title, ...nodes) => h("section", {class: "task-menu-section"}, h("h3", {}, title), ...nodes);
@@ -243,9 +243,9 @@
     taskView.plan = null;
     taskView.bulk = null;
     const plan = inbox ? null : planTools(view);
-    const filter = taskMenu("task-filter", "Filter", "Filter: the status tabs with their counts, the board toggles and the options of this view", "bi-funnel", false, [
+    const filter = taskMenu("task-filter", "Filter", "Filter: the status tabs with their counts, the board toggles and the options of this view", "bi-funnel", [
       taskSection("Status", chips), board ? taskSection("Board", boardFilters) : null, plan ? taskSection("View", h("div", {class: "task-menu-tools"}, plan.view)) : null]);
-    const actions = taskMenu("task-actions", "Actions", "Actions: prune stale tasks, apply or discard staged moves, request estimates or choices, undo a signature", "bi-lightning", true, [
+    const actions = taskMenu("task-actions", "Actions", "Actions: prune stale tasks, apply or discard staged moves, request estimates or choices, undo a signature", "bi-lightning", [
       board ? taskSection("Board", boardActions) : null, plan ? taskSection("Plan", h("div", {class: "task-menu-tools"}, plan.actions)) : null, taskSection("Undo", undo), choiceMenu()]);
     const bar = boxHead("Tasks", "task-toolbar task-bar", taskViewSwitch(inbox), search, filter, chip, status, actions, count);
     undoView.box = undo;

@@ -118,7 +118,7 @@ class TestInboxGoneRows(HubCase):
                 self.assertEqual((gone["open"], gone["wide"]), (False, False), gone)
             with self.subTest(browser=browser, width=width, part="a present row whose run fails otherwise stays with its error"):
                 self.assertNotIn("error", kept, kept)
-                self.assertEqual((kept["toast"], kept["lines"], kept["bad"], kept["open"]), ("Run: echo kept: not possible", '409 {"id": "operator/kept", "status": "changed"}', True, True), kept)
+                self.assertEqual((kept["toast"], kept["lines"], kept["bad"], kept["open"]), ("Run: echo kept: not possible", "echo kept: changed", True, True), kept)
             with self.subTest(browser=browser, width=width, part="the next refresh drops every row the hub no longer returns, without a reload"):
                 self.assertEqual((refreshed["settled"], refreshed["samePage"], refreshed["rows"]), (True, True, ["echo kept changed"]), refreshed)
 

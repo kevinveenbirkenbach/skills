@@ -54,19 +54,30 @@
 
   /**
    * @param {Function} run changes the DOM.
+   * @param {Element} [box] the one container run changes. Only box is then captured, through the swap-box class, while
+   * swap-scope takes the root out of the transition: a captured element takes no clicks until the transition ends,
+   * so the rest of the page stays live. Without box the whole page is captured.
    * @returns {Promise} settles once run has changed the DOM. Inside a View Transition, so what leaves fades out; at once
    * without the API, under prefers-reduced-motion and while another transition runs, whose live new view then shows
    * the change.
    */
-  function fadeTransition(run) {
+  function fadeTransition(run, box) {
     if (!document.startViewTransition || calm.matches || viewShift.running) {
       run();
       return Promise.resolve();
     }
     viewShift.running = true;
+    if (box) {
+      document.documentElement.classList.add("swap-scope");
+      box.classList.add("swap-box");
+    }
     const shift = document.startViewTransition(run);
     const done = () => {
       viewShift.running = false;
+      if (box) {
+        document.documentElement.classList.remove("swap-scope");
+        box.classList.remove("swap-box");
+      }
     };
     shift.finished.then(done, done);
     shift.ready.catch((error) => {

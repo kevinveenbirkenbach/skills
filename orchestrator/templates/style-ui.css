@@ -135,7 +135,7 @@ body.fit .spot-host { flex: none; }
 .to-one > label:has(> input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 .to-one > label > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .agent-foot > .agent-send { flex: none; }
-@media (max-width: 640px) { .to-one > label, .agent-foot > .agent-send { min-width: 44px; min-height: 44px; } }
+@media (max-width: 640px) { .to-one > label, .agent-foot > .btn.small.agent-send { min-width: 44px; min-height: 44px; } }
 .radio-home-radio-speak .composer { flex: 1 1 0; grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .radio-home-radio-speak .mic-area { min-height: 0; }
 .radio-home-radio-speak .mic-area > textarea { flex: 1 1 0; min-height: 2rem; max-height: none; resize: none; }
@@ -395,4 +395,5 @@ body.fit .spot-host { flex: none; }
   0%, 42%, 100% { box-shadow: 0 0 4px 0 var(--beat); }
   10%, 30% { box-shadow: 0 0 12px 3px var(--beat); }
 }
-@media (prefers-reduced-motion: reduce) { .is-working { animation-name: lub-dub-glow; } }
+/* !important: the global reduced-motion rule in index.html.j2 sets every animation-duration to 0s !important. */
+@media (prefers-reduced-motion: reduce) { .is-working { animation-name: lub-dub-glow; animation-duration: 1.2s !important; } }

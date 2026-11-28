@@ -22,7 +22,7 @@ PINS = [
     {"kind": "panel", "id": "tasks/burn", "w": 6, "h": 4},
     {"kind": "panel", "id": "stream", "w": 6, "h": 4},
 ]
-OWN = ("agents/orbit", "agents/chord", "agents/swimlane", "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "tasks/rasci", "tasks/gantt", "tasks/burn")
+OWN = ("agents/orbit", "agents/chord", "agents/swimlane", "artifacts/orbit", "artifacts/chord", "artifacts/swimlane", "tasks/board", "tasks/rasci", "tasks/gantt", "tasks/burn")
 EXPECTED = {
     **{screen: [] for screen in base.SCREENS},
     **{screen: [screen] for screen in OWN},

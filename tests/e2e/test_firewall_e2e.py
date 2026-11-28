@@ -66,7 +66,7 @@ SHOW = """(async () => {@HELPERS@
     rows: shown,
     withoutDeny,
     restored: rows().length,
-    heads: all("#main table.fw-table thead th").map(text),
+    heads: all('#main table.fw-table[aria-label="Firewall rules"] thead th').map(text),
     chips: all('#main [aria-label="Show rules"] button').map((node) => [node.dataset.filter, node.getAttribute("aria-pressed")]),
     patterns: all('#main [aria-label="Never granted"] li').length,
     targets,
@@ -197,7 +197,8 @@ GROUP_RULE = """(async () => {@HELPERS@
   const pill = await until(() => all("#main li.hub-rule [data-agents]").find((node) => text(node) === "group builders"), 15000);
   unfold();
   const hits = await until(() => ruleRow() && text(ruleRow().querySelector(".hub-rule-count")), 8000);
-  const found = {group: text(document.querySelector('#main [data-group="builders"] strong')), members: text(document.querySelector('#main [data-group="builders"] .muted')), pills: all("#main li.hub-rule [data-agents]").map(text), found: Boolean(pill), hits, sheet: Boolean(document.querySelector("#sheet .rule-form")), toasts: all("#toasts .toast").map(text)};
+  const closed = await until(() => !document.querySelector("#sheet .rule-form"), 2000);
+  const found = {group: text(document.querySelector('#main [data-group="builders"] strong')), members: text(document.querySelector('#main [data-group="builders"] .muted')), pills: all("#main li.hub-rule [data-agents]").map(text), found: Boolean(pill), hits, sheet: !closed, toasts: all("#toasts .toast").map(text)};
   const sets = document.querySelector('#main form[aria-label="New rule set"]');
   sets.querySelector('input[aria-label="Set name"]').value = "ci";
   for (const box of sets.querySelectorAll('[aria-label="Rules"] input[type="checkbox"]')) {

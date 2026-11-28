@@ -30,7 +30,7 @@ MENU = """
     }
     await until(() => !shownMenu(), 3000);
   };
-  const deckIds = () => all("#main .match-stack [data-card]").map((node) => node.dataset.card);
+  const deckIds = () => [...new Set(all("#main .match-stack [data-card]").map((node) => node.dataset.card))];
   const hiddenHead = () => {
     const button = document.querySelector("#main .match-hidden");
     return button ? [button.hidden, text(button)] : null;

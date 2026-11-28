@@ -73,12 +73,13 @@
   }
 
   const CLOSED_POLL = 2000;
-  const closedWatch = {seen: null, busy: false};
+  const closedWatch = {seen: null, busy: false, primed: false};
 
   /**
-   * @returns {Promise<void>} settled once the hub's count of closed cards (/api/match/closed) is read; when it moved
-   * since the last read, the first read included, an open Match deck fetches its cards and the state reloads at once
-   * instead of at their next interval, so a card answered in Claude or another browser leaves within one CLOSED_POLL.
+   * @returns {Promise<void>} settled once the hub's count of closed cards (/api/match/closed) is read; the first read,
+   * taken at start beside the page's own first loads, only sets the baseline; when the count moved since the last
+   * read, an open Match deck fetches its cards and the state reloads at once instead of at their next interval, so a
+   * card answered in Claude or another browser leaves within one CLOSED_POLL.
    */
   async function watchClosed() {
     if (closedWatch.busy) {
@@ -88,11 +89,14 @@
     try {
       const response = await fetch("/api/match/closed", {cache: "no-store"});
       const data = response.ok ? await response.json() : null;
-      if (data && data.closed !== closedWatch.seen) {
-        closedWatch.seen = data.closed;
-        if (matchShown()) {
-          fetchMatch();
-        }
+      const moved = Boolean(data) && data.closed !== closedWatch.seen && closedWatch.primed;
+      if (data) {
+        Object.assign(closedWatch, {seen: data.closed, primed: true});
+      }
+      if (moved && matchShown()) {
+        fetchMatch();
+      }
+      if (moved) {
         refresh();
       }
     } catch {

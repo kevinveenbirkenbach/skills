@@ -242,7 +242,7 @@
    * @param {Function} [around] called as around(box, swap) in place of swap(), for a keeper such as keepTyping() or for
    * work that needs nodes in the page.
    * @returns {Promise} settles once box holds nodes. When a keyed child leaves, the swap runs inside fadeTransition()
-   * so it fades out; else at once. Only the newest nodes given for box land, so a late transition never undoes a
+   * scoped to box, so it fades out while the rest of the page keeps taking clicks; else at once. Only the newest nodes given for box land, so a late transition never undoes a
    * newer swap.
    */
   function fadeSwap(box, nodes, around) {
@@ -257,7 +257,7 @@
       run();
       return Promise.resolve();
     }
-    return fadeTransition(run);
+    return fadeTransition(run, box);
   }
 
   function toast(title, lines, good) {

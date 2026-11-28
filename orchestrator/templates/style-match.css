@@ -2,6 +2,8 @@
 .graph.tasks.match > .match-stack { flex: 1; }
 .match-home { display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; }
 .match-home > .graph.match { grid-template-rows: minmax(0, 1fr); min-height: 0; }
+/* A tile's .home-chain turns the walked wrappers into flex columns; the stack and the deck keep their grid rows so every card keeps the deck's height. */
+.home-body .match-home :is(.match-stack, .match-deck) { display: grid; }
 .match-stack { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--sp-2); min-height: 0; width: min(100%, 960px); margin: 0 auto; }
 .match-stack[data-wide="true"] { width: 100%; }
 .match-widen { position: absolute; top: 12px; right: 12px; z-index: 1; }

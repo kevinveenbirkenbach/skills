@@ -287,9 +287,9 @@ class TestPagePolls(unittest.TestCase):
         found = self.data["timers"]
         self.assertEqual((found["hidden"]["closed"], found["shown"]["closed"], found["watched"]["closed"], found["after"]["closed"]), (0, 0, 5, 5), found)
 
-    def test_a_moved_closed_count_fetches_match_and_the_state_once_and_an_unchanged_one_nothing(self):
+    def test_a_moved_closed_count_fetches_match_and_the_state_once_and_the_first_read_or_an_unchanged_one_nothing(self):
         found = self.data["closed"]
-        self.assertEqual(found["steps"], [["first", 1, 1], ["same", 1, 1], ["closed", 2, 2], ["same again", 2, 2]], found)
+        self.assertEqual(found["steps"], [["first", 0, 0], ["same", 0, 0], ["closed", 1, 1], ["same again", 1, 1]], found)
         self.assertEqual(found["requests"], ["/api/match/closed"], found)
 
     def test_music_level_zero_stops_the_graph_and_a_rise_restarts_it(self):

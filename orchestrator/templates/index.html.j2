@@ -29,7 +29,10 @@ button, input, select { font: inherit; color: inherit; }
 code, pre { font-family: var(--mono); font-size: var(--fs-sm); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
 .top, .navbar, main, .popup-box, .sheet-box, .palette-box, .toast, .sky-panel, .menu-box { -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); transition: background-color .8s var(--ease), border-color .8s var(--ease); }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; animation-timing-function: var(--ease); }
+::view-transition-old(root), ::view-transition-new(root), ::view-transition-group(list-swap), ::view-transition-old(list-swap), ::view-transition-new(list-swap) { animation-duration: .22s; animation-timing-function: var(--ease); }
+.swap-scope { view-transition-name: none; }
+.swap-box { view-transition-name: list-swap; }
+::view-transition { pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; scroll-behavior: auto !important; }
 }

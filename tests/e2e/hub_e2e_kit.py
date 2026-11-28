@@ -118,6 +118,10 @@ HELPERS = """
     await sleep(0);
     return Boolean(shown);
   };
+  const beatsAtRest = () => document.getAnimations().filter((motion) => motion.animationName === "lub-dub").forEach((motion) => {
+    motion.pause();
+    motion.currentTime = 0;
+  });
 """
 OVERLAP = """
   const shown = (node) => node.getClientRects().length > 0 && node.getBoundingClientRect().width > 0;

@@ -46,6 +46,7 @@ FLAT = """(async () => {@HELPERS@@HOME@@KIT@
     }
     return null;
   };
+  beatsAtRest();
   const found = all("#main .home-tile").map((node) => {
     const body = node.querySelector(".home-body");
     const flat = body.querySelector(".home-flat");

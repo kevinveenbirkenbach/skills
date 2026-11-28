@@ -25,7 +25,7 @@ VIEW = {
 APPROVAL_MODES = ("direct", "select")
 LEGEND_PANELS = (
     "agents/orbit", "agents/chord", "agents/swimlane", "artifacts/orbit", "artifacts/chord", "artifacts/swimlane",
-    "tasks/rasci", "tasks/gantt", "tasks/burn", "resources-hardware", "resources-tokens", "resources-combined",
+    "tasks/board", "tasks/rasci", "tasks/gantt", "tasks/burn", "resources-hardware", "resources-tokens", "resources-combined",
 )
 PIN_KEY = re.compile(r"[A-Za-z0-9:_./-]{1,32}:[A-Za-z0-9:_./-]{1,200}")
 VIEW_PATH = re.compile(r"[A-Za-z]{1,32}(?:\.[A-Za-z]{1,32})?")

@@ -28,7 +28,7 @@ LABELS = [
 ]
 SOURCES = [("resources", "Resource warnings"), ("mayday", "MAYDAY calls"), ("dream", "Dream reminder")]
 ON = {"browser": True, "sounds": True, "aloud": True, "title": True}
-SECTIONS = ["Ambience", "Location", "Appearance", "Music", "Undo window", "Passkey"]
+SECTIONS = ["Ambience", "Location", "Appearance", "Music", "Undo window", "Claude dialogs", "Passkey"]
 KIT = """
   const boxes = (group) => all("input[type=checkbox]", group).map((box) => [box.name, box.checked, words(box.closest("label"))]);
   const rows = (fold) => all(".notify-source", fold).map((row) => [row.dataset.source, row.dataset.state, words(row.querySelector("label")), text(row.querySelector(".notify-state")), all("button", row).map(text)]);

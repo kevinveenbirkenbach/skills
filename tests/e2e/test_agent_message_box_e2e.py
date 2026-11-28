@@ -115,6 +115,10 @@ def probe(template: str, width: int) -> str:
 class TestAgentMessageBox(base.OrchestratorE2ECase):
     stored = attached.TestFieldAttachments.stored
 
+    def setUp(self):
+        super().setUp()
+        OUT.mkdir(parents=True, exist_ok=True)
+
     def check_layout(self, width: int, layout: dict) -> None:
         self.assertNotIn("error", layout, layout)
         self.assertEqual(layout["files"], [["mic-attach-file", True, False]], layout)

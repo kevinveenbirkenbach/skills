@@ -121,7 +121,8 @@
   /**
    * @param {object} result a hub answer; a 409 carries {id, status} of the item it refused.
    * @param {string} label the batch's label.
-   * @param {Map<string, string>|undefined} names item id to the title the toast shows instead of the id.
+   * @param {Map<string, string>|undefined} names item id to the title the toast shows instead of the id; without an
+   * entry the title of the inbox row with that id shows, the id only when no row has it.
    * @returns {boolean} whether it was such a refusal: kept in refusedIds and toasted by title.
    */
   function namedRefusal(result, label, names) {
@@ -130,8 +131,9 @@
       return false;
     }
     const status = typeof result.data.status === "string" ? result.data.status : "refused";
+    const row = state.inbox.find((item) => item.id === id);
     refusedIds.set(id, status);
-    toast(`${label}: not possible`, [`${(names && names.get(id)) || id}: ${status}`], false);
+    toast(`${label}: not possible`, [`${(names && names.get(id)) || (row ? short(row.title) : id)}: ${status}`], false);
     return true;
   }
 

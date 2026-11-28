@@ -219,6 +219,9 @@
     if (restore && back && back.isConnected && typeof back.focus === "function") {
       back.focus({preventScroll: true});
     }
+    if (node.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
   }
 
   function ctxRun(item) {
@@ -241,6 +244,9 @@
   }
 
   function ctxKeys(event) {
+    if (event.currentTarget !== ctxMenu.node) {
+      return;
+    }
     const items = [...ctxMenu.node.querySelectorAll(CTX_ITEMS)];
     const at = items.indexOf(document.activeElement);
     const moves = {ArrowDown: at + 1, ArrowUp: Math.max(at, 0) - 1, Home: 0, End: items.length - 1};

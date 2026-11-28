@@ -51,7 +51,7 @@ READ = """
   const speaking = () => live().find((node) => node.dataset.state === "speaking") || null;
   const waiting = () => live().find((node) => node.dataset.state === "waiting") || null;
   const visible = (box) => box.width > 0 && box.height > 0 && box.right > 0 && box.bottom > 0 && box.left < innerWidth && box.top < innerHeight;
-  const face = (who) => [...document.querySelectorAll(`[data-face="${CSS.escape(who)}"]`)].map((node) => node.getBoundingClientRect()).find(visible) || null;
+  const face = (who) => [...document.querySelectorAll(`[data-face="${CSS.escape(who)}"]:not(#bubbles *)`)].map((node) => node.getBoundingClientRect()).find(visible) || null;
   const read = (node) => {
     if (!node) {
       return null;

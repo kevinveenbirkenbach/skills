@@ -335,8 +335,17 @@
     const svg = box.querySelector("svg.kanban-lines");
     const base = box.getBoundingClientRect();
     const rectIn = (node) => {
-      const found = node && node.getClientRects().length ? node.getBoundingClientRect() : null;
-      return found && {x: found.left - base.left, y: found.top - base.top, w: found.width, h: found.height};
+      if (!node || !node.getClientRects().length) {
+        return null;
+      }
+      const found = node.getBoundingClientRect();
+      // The heartbeat scales a working card about its centre and fires no resize: lines take the resting geometry.
+      const beat = node.closest(".is-working");
+      const look = beat ? getComputedStyle(beat).transform : "none";
+      const scale = look === "none" ? 1 : new DOMMatrixReadOnly(look).a;
+      const outer = beat ? beat.getBoundingClientRect() : found;
+      const [cx, cy] = [outer.left + outer.width / 2, outer.top + outer.height / 2];
+      return {x: cx + (found.left - cx) / scale - base.left, y: cy + (found.top - cy) / scale - base.top, w: found.width / scale, h: found.height / scale};
     };
     const cardNode = (task) => [...box.querySelectorAll(".kanban-card")].find((card) => card.dataset.task === task) || null;
     const rectOf = (task) => rectIn(cardNode(task));

@@ -88,7 +88,7 @@ RADIO = """
     filters: audio().filters.slice(at.filters).map((node) => [node.type, node.frequency.value]),
     oscillators: audio().oscillators - at.oscillators,
     levels: audio().levels.slice(at.levels),
-    requests: audio().requests.slice(at.requests).filter((url) => !/\\/api\\/(state|stream|events|tts|tree|subagents|voice\\/[a-d]0)/.test(url)),
+    requests: audio().requests.slice(at.requests).filter((url) => !/\\/api\\/(state|stream|events|tts|tree|subagents|match\\/closed|voice\\/[a-d]0)/.test(url)),
   });
   const cpuShown = async (label) => {
     refreshNow();
@@ -107,7 +107,7 @@ RADIO = """
   };
   const tabs = () => Object.fromEntries(all('.radio-tabs [role="tab"]', spot).map((tab) => [tab.dataset.tab, Number(text(tab.querySelector(".count")))]));
   const selected = () => (spot.querySelector('.radio-tabs [aria-selected="true"]') || {dataset: {}}).dataset.tab || null;
-  const rows = () => all(".radio-row", spot).map((item) => ({dir: item.dataset.dir, cls: item.dataset.class, route: text(item.querySelector(".radio-route")), line: text(item.querySelector(".radio-line")), ts: Number(item.querySelector("time").dataset.ts)}));
+  const rows = () => all(".radio-row:not([data-vanishing])", spot).map((item) => ({dir: item.dataset.dir, cls: item.dataset.class, route: text(item.querySelector(".radio-route")), line: text(item.querySelector(".radio-line")), ts: Number(item.querySelector("time").dataset.ts)}));
   const chip = async (name, value) => {
     const select = spot.querySelector(`.chip-select[data-chip="${name}"] select`);
     select.value = value;
@@ -193,7 +193,7 @@ LOG = """(async () => {@HELPERS@@RADIO@
   all(".radio-filters button", spot).find((button) => name(button) === "Clear filters").click();
   await sleep(150);
   const clearedChips = [chips(), search().value, rows().length];
-  const faceOf = () => spot.querySelector(".radio-row .radio-sender");
+  const faceOf = () => spot.querySelector(".radio-row:not([data-vanishing]) .radio-sender");
   const sender = name(faceOf());
   faceOf().click();
   const switches = await until(() => document.getElementById("popup").open && document.querySelector("#popup .agent-settings"), 4000);
@@ -213,7 +213,7 @@ LOG = """(async () => {@HELPERS@@RADIO@
   const unmuted = [faceOf().dataset.quiet, await stored()];
   all("#popup .popup-head button").find((button) => name(button) === "Close").click();
   await sleep(150);
-  spot.querySelector(".radio-row .radio-pick").click();
+  spot.querySelector(".radio-row:not([data-vanishing]) .radio-pick").click();
   const full = await until(() => document.getElementById("popup").open && document.querySelector("#popup .radio-full"), 4000);
   const opened = [document.getElementById("popup").open, text(full)];
   all("#popup .popup-head button").find((button) => name(button) === "Close").click();
@@ -238,8 +238,8 @@ LOG_KEPT = """(async () => {@HELPERS@@RADIO@
   await sleep(300);
   const top = Math.max(list.getBoundingClientRect().top, spot.getBoundingClientRect().top, document.querySelector(".head").getBoundingClientRect().bottom);
   const bottom = Math.min(list.getBoundingClientRect().bottom, spot.getBoundingClientRect().bottom, innerHeight);
-  const shown = all(".radio-row", list).filter((item) => item.getBoundingClientRect().top >= top - 1 && item.getBoundingClientRect().bottom <= bottom + 1).length;
-  return {...kept, shown, total: all(".radio-row", list).length, fits: fits()};
+  const shown = all(".radio-row:not([data-vanishing])", list).filter((item) => item.getBoundingClientRect().top >= top - 1 && item.getBoundingClientRect().bottom <= bottom + 1).length;
+  return {...kept, shown, total: all(".radio-row:not([data-vanishing])", list).length, fits: fits()};
 })()"""
 SOUND = """(async () => {@HELPERS@@RADIO@
   const found = {};

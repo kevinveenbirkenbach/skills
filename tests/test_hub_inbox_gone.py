@@ -154,7 +154,7 @@ class TestInboxGoneRows(unittest.TestCase):
         self.assert_closed("rule_404", ["operator/kept"], "Rule: Rule ask Bash make deploy")
 
     def test_a_present_row_whose_run_fails_otherwise_stays_with_its_error(self):
-        for name, line in (("run_409", "operator/kept: changed"),("run_offline", "0 TypeError: Failed to fetch")):
+        for name, line in (("run_409", "echo kept: changed"),("run_offline", "0 TypeError: Failed to fetch")):
             with self.subTest(name=name):
                 found = self.data[name]
                 self.assertEqual(found["inbox"], [GONE, "operator/kept"], found)

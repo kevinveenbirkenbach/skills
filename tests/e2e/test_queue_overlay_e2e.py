@@ -38,6 +38,7 @@ READ = """
     return [box.left + box.width / 2 - at.left, box.top + box.height / 2 - at.top];
   };
   const read = () => {
+    beatsAtRest();
     const at = document.querySelector("#main .kanban").getBoundingClientRect();
     const line = document.querySelector("#main svg.kanban-lines .kanban-queue");
     const points = line ? line.getAttribute("points").trim().split(/\\s+/).map((pair) => pair.split(",").map(Number)) : [];

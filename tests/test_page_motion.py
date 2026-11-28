@@ -126,7 +126,7 @@ class TestPageMotion(unittest.TestCase):
         self.assertIn(".is-working { --beat: var(--ok); animation: lub-dub 1.2s ease-in-out infinite; }", css)
         self.assertEqual(("transform" in beat, "box-shadow" in beat), (True, True))
         self.assertEqual(("transform" in glow, "box-shadow" in glow), (False, True))
-        self.assertIn("@media (prefers-reduced-motion: reduce) { .is-working { animation-name: lub-dub-glow; } }", css)
+        self.assertIn("@media (prefers-reduced-motion: reduce) { .is-working { animation-name: lub-dub-glow; animation-duration: 1.2s !important; } }", css)
 
 
 if __name__ == "__main__":
